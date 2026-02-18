@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 560">
+  <defs>
+    <linearGradient id="ag" x1="0" y1="0" x2=".6" y2="1">
+      <stop offset="0%" stop-color="#B8B8B8"/>
+      <stop offset="100%" stop-color="#8E8E8E"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ── LETTER "A" (back layer) ── -->
+  <!-- Sky-blue main body -->
+  <path d="M250 140 L405 440 L360 440 L250 215 L140 440 L95 440 Z" fill="#29AAE1"/>
+  <!-- Dark-navy lower left leg -->
+  <path d="M95 440 L48 545 L100 545 L140 440 Z" fill="#0D2D5B"/>
+  <!-- Dark-navy lower right leg -->
+  <path d="M360 440 L400 545 L452 545 L405 440 Z" fill="#0D2D5B"/>
+
+  <!-- ── ANCHOR (front layer) ── -->
+  <!-- Ring -->
+  <circle cx="250" cy="48" r="24" fill="none" stroke="url(#ag)" stroke-width="14"/>
+  <!-- Neck -->
+  <rect x="243" y="70" width="14" height="34" rx="3" fill="url(#ag)"/>
+  <!-- Crossbar -->
+  <rect x="148" y="98" width="204" height="16" rx="8" fill="url(#ag)"/>
+  <!-- Main shaft -->
+  <rect x="243" y="112" width="14" height="238" rx="3" fill="url(#ag)"/>
+
+  <!-- Left arm + fluke -->
+  <path d="M250 340 C248 368 198 392 168 374" fill="none" stroke="url(#ag)" stroke-width="13" stroke-linecap="round"/>
+  <line x1="162" y1="368" x2="176" y2="392" stroke="url(#ag)" stroke-width="12" stroke-linecap="round"/>
+
+  <!-- Right arm + fluke -->
+  <path d="M250 340 C252 368 302 392 332 374" fill="none" stroke="url(#ag)" stroke-width="13" stroke-linecap="round"/>
+  <line x1="338" y1="368" x2="324" y2="392" stroke="url(#ag)" stroke-width="12" stroke-linecap="round"/>
+</svg>
