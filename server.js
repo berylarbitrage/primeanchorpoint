@@ -48,6 +48,16 @@ db.exec(`
     resume_path TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inquiry_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'assigned',
+    notes TEXT DEFAULT '',
+    assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (inquiry_id) REFERENCES inquiries(id),
+    FOREIGN KEY (job_id) REFERENCES jobs(id)
+  );
 `);
 
 // ─── Middleware ───
@@ -180,8 +190,41 @@ app.delete('/api/admin/inquiries/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// CSV Export
-app.get('/api/admin/inquiries/export', requireAdmin, (req, res) => {
+// Assignments CRUD
+app.get('/api/admin/assignments', requireAdmin, (req, res) => {
+  res.json(db.prepare(`
+    SELECT a.*, i.name AS inquiry_name, i.phone AS inquiry_phone, i.email AS inquiry_email, i.type AS inquiry_type,
+           j.title AS job_title, j.location AS job_location, j.pay AS job_pay
+    FROM assignments a
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    ORDER BY a.assigned_at DESC
+  `).all());
+});
+
+app.post('/api/admin/assignments', requireAdmin, (req, res) => {
+  const { inquiry_id, job_id, notes } = req.body;
+  if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
+  const r = db.prepare('INSERT INTO assignments (inquiry_id, job_id, notes) VALUES (?, ?, ?)').run(inquiry_id, job_id, notes || '');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/assignments/:id', requireAdmin, (req, res) => {
+  const { status, notes } = req.body;
+  db.prepare('UPDATE assignments SET status=?, notes=? WHERE id=?').run(status || 'assigned', notes || '', req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/assignments/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// CSV Export (also accept token via query param for download links)
+app.get('/api/admin/inquiries/export', (req, res, next) => {
+  if (req.query.token && validSession(req.query.token)) return next();
+  return requireAdmin(req, res, next);
+}, (req, res) => {
   const rows = db.prepare('SELECT * FROM inquiries ORDER BY created_at DESC').all();
   const headers = ['Date', 'Name', 'Email', 'Phone', 'Company', 'Type', 'Positions', 'Workers', 'Location', 'Start Date', 'Experience', 'Languages', 'Comments'];
   let csv = headers.join(',') + '\n';
