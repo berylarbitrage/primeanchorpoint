@@ -60,6 +60,89 @@ db.exec(`
   );
 `);
 
+// ─── Backup System ───
+const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
+  .split(',').map(d => d.trim()).filter(Boolean);
+const BACKUP_INTERVAL = parseInt(process.env.BACKUP_INTERVAL_MIN || '60', 10) * 60 * 1000; // default 60 min
+const BACKUP_KEEP = parseInt(process.env.BACKUP_KEEP || '10', 10); // keep last N backups per location
+const backupLog = []; // in-memory log of recent backup results
+
+BACKUP_DIRS.forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+function runBackup(trigger) {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const results = [];
+  const dbPath = path.join(dataDir, 'prime.db');
+
+  for (const dir of BACKUP_DIRS) {
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      // Backup database using better-sqlite3 .backup()
+      const dest = path.join(dir, `prime-${ts}.db`);
+      db.backup(dest);
+
+      // Also copy uploads directory
+      const uploadsBackup = path.join(dir, `uploads-${ts}`);
+      if (fs.existsSync(uploadsDir)) {
+        copyDirSync(uploadsDir, uploadsBackup);
+      }
+
+      // Rotate: keep only last N backups
+      rotateBackups(dir);
+
+      results.push({ dir, status: 'ok', file: `prime-${ts}.db` });
+    } catch (e) {
+      results.push({ dir, status: 'error', error: e.message });
+    }
+  }
+
+  const entry = { time: new Date().toISOString(), trigger, results };
+  backupLog.unshift(entry);
+  if (backupLog.length > 50) backupLog.length = 50;
+  console.log(`[Backup] ${trigger}: ${results.map(r => `${r.dir}=${r.status}`).join(', ')}`);
+  return entry;
+}
+
+function copyDirSync(src, dest) {
+  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+  const entries = fs.readdirSync(src);
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry);
+    const destPath = path.join(dest, entry);
+    if (fs.statSync(srcPath).isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+function rotateBackups(dir) {
+  try {
+    const files = fs.readdirSync(dir)
+      .filter(f => f.startsWith('prime-') && f.endsWith('.db'))
+      .sort().reverse();
+    // Each db backup has a matching uploads dir
+    const toRemove = files.slice(BACKUP_KEEP);
+    for (const f of toRemove) {
+      fs.unlinkSync(path.join(dir, f));
+      const uploadsDir = path.join(dir, f.replace('prime-', 'uploads-').replace('.db', ''));
+      if (fs.existsSync(uploadsDir)) fs.rmSync(uploadsDir, { recursive: true, force: true });
+    }
+  } catch (e) {
+    console.error('[Backup] Rotate error:', e.message);
+  }
+}
+
+// Startup backup
+setTimeout(() => runBackup('启动备份'), 2000);
+
+// Periodic backup
+setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
+
 // ─── Middleware ───
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -218,6 +301,25 @@ app.put('/api/admin/assignments/:id', requireAdmin, (req, res) => {
 app.delete('/api/admin/assignments/:id', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Backup management
+app.get('/api/admin/backups', requireAdmin, (req, res) => {
+  const locations = BACKUP_DIRS.map(dir => {
+    try {
+      const files = fs.readdirSync(dir).filter(f => f.startsWith('prime-') && f.endsWith('.db')).sort().reverse();
+      const sizes = files.map(f => {
+        try { return { name: f, size: fs.statSync(path.join(dir, f)).size, time: f.replace('prime-', '').replace('.db', '').replace(/-/g, (m, i) => i < 10 ? '-' : i === 10 ? 'T' : ':').replace(/:(\d+):(\d+)$/, ':$1:$2') }; } catch { return { name: f, size: 0 }; }
+      });
+      return { dir, files: sizes, count: files.length };
+    } catch { return { dir, files: [], count: 0 }; }
+  });
+  res.json({ locations, log: backupLog.slice(0, 20), interval_min: BACKUP_INTERVAL / 60000, keep: BACKUP_KEEP });
+});
+
+app.post('/api/admin/backups/run', requireAdmin, (req, res) => {
+  const result = runBackup('手动备份');
+  res.json({ success: true, result });
 });
 
 // CSV Export (also accept token via query param for download links)

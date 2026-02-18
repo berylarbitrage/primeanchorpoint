@@ -85,6 +85,7 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('inquiries')">问卷管理</a>
   <a onclick="showTab('assignments')">派工管理</a>
   <a onclick="showTab('jobs')">职位管理</a>
+  <a onclick="showTab('backups')">备份管理</a>
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -151,6 +152,26 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+</div>
+
+<!-- Backups -->
+<div id="tab-backups" style="display:none">
+  <div class="top">
+    <h1>备份管理</h1>
+    <div class="top-actions">
+      <button class="btn btn-accent" id="backupNowBtn" onclick="runBackupNow()">立即备份</button>
+    </div>
+  </div>
+  <div class="stats-row" style="grid-template-columns:repeat(3,1fr)">
+    <div class="stat-card"><h3 id="bkLocations">0</h3><p>备份存储位置</p></div>
+    <div class="stat-card"><h3 id="bkInterval">0</h3><p>自动备份间隔(分钟)</p></div>
+    <div class="stat-card"><h3 id="bkKeep">0</h3><p>每位置保留份数</p></div>
+  </div>
+  <div id="backupLocations"></div>
+  <div class="card" style="margin-top:1rem">
+    <h3 style="margin-bottom:1rem;color:var(--blue)">备份日志</h3>
+    <div id="backupLogTable"></div>
+  </div>
 </div>
 
 </div></div>
@@ -267,6 +288,7 @@ function showTab(t) {
   if (t === 'jobs') loadJobs();
   if (t === 'inquiries') loadInquiries();
   if (t === 'assignments') loadAssignments();
+  if (t === 'backups') loadBackups();
 }
 
 // ─── Dashboard ───
@@ -520,6 +542,59 @@ async function deleteAssignment(id) {
   if (!confirm('确定删除此派工记录？')) return;
   await api(`/admin/assignments/${id}`, { method: 'DELETE' });
   loadAssignments();
+}
+
+// ─── Backups (备份管理) ───
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+async function loadBackups() {
+  const data = await api('/admin/backups');
+  document.getElementById('bkLocations').textContent = data.locations.length;
+  document.getElementById('bkInterval').textContent = data.interval_min;
+  document.getElementById('bkKeep').textContent = data.keep;
+
+  // Render each backup location
+  document.getElementById('backupLocations').innerHTML = data.locations.map((loc, idx) => `
+    <div class="card">
+      <h3 style="margin-bottom:.5rem;color:var(--blue)">存储位置 ${idx + 1}: <span style="font-weight:400;font-size:.85rem;color:var(--gray-600)">${esc(loc.dir)}</span></h3>
+      <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">共 ${loc.count} 份备份</p>
+      ${loc.files.length ? '<table><thead><tr><th>备份文件</th><th>大小</th></tr></thead><tbody>' +
+        loc.files.map(f => `<tr><td>${esc(f.name)}</td><td>${formatBytes(f.size)}</td></tr>`).join('') +
+        '</tbody></table>' : '<p class="empty">暂无备份文件</p>'}
+    </div>
+  `).join('');
+
+  // Render backup log
+  document.getElementById('backupLogTable').innerHTML = data.log.length ? '<table><thead><tr><th>时间</th><th>触发方式</th><th>结果</th></tr></thead><tbody>' +
+    data.log.map(l => `<tr>
+      <td>${new Date(l.time).toLocaleString()}</td>
+      <td>${esc(l.trigger)}</td>
+      <td>${l.results.map(r => `<span class="badge ${r.status === 'ok' ? 'badge-completed' : 'badge-urgent'}">${r.status === 'ok' ? '成功' : '失败'}</span> ${esc(r.dir.split('/').pop())}`).join(' &nbsp; ')}</td>
+    </tr>`).join('') +
+    '</tbody></table>' : '<p class="empty">暂无备份日志</p>';
+}
+
+async function runBackupNow() {
+  const btn = document.getElementById('backupNowBtn');
+  btn.disabled = true;
+  btn.textContent = '备份中...';
+  try {
+    const r = await api('/admin/backups/run', { method: 'POST' });
+    if (r.success) {
+      const ok = r.result.results.filter(x => x.status === 'ok').length;
+      const fail = r.result.results.filter(x => x.status === 'error').length;
+      alert(`备份完成！成功: ${ok} 个位置${fail ? ', 失败: ' + fail + ' 个位置' : ''}`);
+    }
+  } catch (e) {
+    alert('备份失败: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = '立即备份';
+  loadBackups();
 }
 
 </script>
