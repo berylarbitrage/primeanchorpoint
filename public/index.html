@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prime Anchorpoint — Workforce Solutions</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#0F2B5B;--blue-dark:#091D40;--blue-mid:#1A3F7A;--blue-light:#2E5BA0;--sky:#4A90D9;--sky-light:#E8F0FE;--accent:#F5A623;--white:#fff;--off-white:#F7F8FA;--gray-100:#f0f2f5;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--shadow:0 4px 24px rgba(15,43,91,.08);--shadow-lg:0 12px 48px rgba(15,43,91,.12);--tr:all .3s ease;--radius:8px}
+*{margin:0;padding:0;box-sizing:border-box}html{scroll-behavior:smooth}body{font-family:'DM Sans',sans-serif;color:var(--gray-800);background:var(--white);overflow-x:hidden}a{text-decoration:none;color:inherit}img{max-width:100%;display:block}
+
+/* TOP BAR */
+.top-bar{background:var(--blue-dark);padding:10px 0;font-size:.8rem;color:rgba(255,255,255,.6)}
+.tb-inner{max-width:1280px;margin:0 auto;padding:0 2rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.top-bar a{color:var(--accent);font-weight:600;transition:var(--tr)}.top-bar a:hover{color:#fff}
+.tb-right{display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap}
+.lang-switch{display:flex;border:1px solid rgba(255,255,255,.15);border-radius:20px;overflow:hidden}
+.lang-btn{padding:4px 14px;background:0 0;color:rgba(255,255,255,.5);border:none;border-right:1px solid rgba(255,255,255,.1);font-size:.72rem;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;transition:var(--tr)}
+.lang-btn:last-child{border-right:none}.lang-btn.active{background:var(--sky);color:#fff}.lang-btn:hover:not(.active){color:#fff}
+
+/* NAV */
+.main-nav{background:var(--white);position:sticky;top:0;z-index:999;box-shadow:0 1px 0 rgba(0,0,0,.06)}
+.nav-inner{max-width:1280px;margin:0 auto;padding:0 2rem;display:flex;justify-content:space-between;align-items:center;height:72px}
+.logo-link{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.logo-mark{width:40px;height:40px;background:var(--blue);border-radius:10px;display:flex;align-items:center;justify-content:center;position:relative}
+.logo-mark svg{width:22px;height:22px;fill:none;stroke:#fff;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.logo-text{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:1.15rem;color:var(--blue);letter-spacing:-.3px;line-height:1.1}
+.logo-text span{color:var(--sky)}
+.nav-menu{display:flex;gap:0;list-style:none;height:100%;align-items:stretch}
+.nav-item{position:relative;display:flex;align-items:center}
+.nav-item>a{padding:0 .9rem;font-family:'DM Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--gray-600);transition:var(--tr);display:flex;align-items:center;height:72px;border-bottom:2px solid transparent;white-space:nowrap}
+.nav-item>a:hover,.nav-item.active>a{color:var(--blue);border-bottom-color:var(--sky)}
+.nav-dropdown{position:absolute;top:100%;left:0;background:var(--white);min-width:220px;box-shadow:var(--shadow-lg);border-top:3px solid var(--sky);border-radius:0 0 var(--radius) var(--radius);opacity:0;visibility:hidden;transform:translateY(4px);transition:all .25s;z-index:100;list-style:none}
+.nav-item:hover .nav-dropdown{opacity:1;visibility:visible;transform:translateY(0)}
+.nav-dropdown li a{display:block;padding:12px 20px;font-size:.85rem;font-weight:500;color:var(--gray-600);transition:var(--tr)}.nav-dropdown li a:hover{color:var(--blue);background:var(--sky-light);padding-left:24px}
+.nav-cta{margin-left:1rem}
+.btn-blue{display:inline-block;padding:10px 24px;background:var(--blue);color:#fff;font-family:'DM Sans',sans-serif;font-weight:700;font-size:.82rem;border-radius:var(--radius);border:none;cursor:pointer;transition:var(--tr)}
+.btn-blue:hover{background:var(--blue-mid);transform:translateY(-1px);box-shadow:0 4px 16px rgba(15,43,91,.25)}
+.btn-sky{display:inline-block;padding:12px 32px;background:var(--sky);color:#fff;font-family:'DM Sans',sans-serif;font-weight:700;font-size:.88rem;border-radius:var(--radius);border:none;cursor:pointer;transition:var(--tr)}
+.btn-sky:hover{background:var(--blue-light);transform:translateY(-2px);box-shadow:0 8px 24px rgba(74,144,217,.3)}
+.btn-outline-w{display:inline-block;padding:12px 32px;background:transparent;color:#fff;font-family:'DM Sans',sans-serif;font-weight:700;font-size:.88rem;border-radius:var(--radius);border:2px solid rgba(255,255,255,.4);cursor:pointer;transition:var(--tr)}
+.btn-outline-w:hover{background:rgba(255,255,255,.1);border-color:#fff}
+.mobile-toggle{display:none;background:0 0;border:none;font-size:1.6rem;color:var(--blue);cursor:pointer}
+
+/* HERO — full-width photo background */
+.hero{position:relative;min-height:600px;display:flex;align-items:center;overflow:hidden}
+.hero-img{position:absolute;inset:0;background-image:url('https://images.pexels.com/photos/1267338/pexels-photo-1267338.jpeg?auto=compress&cs=tinysrgb&w=1600');background-size:cover;background-position:center}
+.hero-overlay{position:absolute;inset:0;background:linear-gradient(120deg,rgba(9,29,64,.92) 0%,rgba(15,43,91,.8) 40%,rgba(15,43,91,.4) 100%)}
+.hero-content{position:relative;z-index:2;max-width:1280px;margin:0 auto;padding:5rem 2rem;width:100%}
+.hero-badge{display:inline-block;padding:6px 16px;background:rgba(74,144,217,.2);border:1px solid rgba(74,144,217,.3);border-radius:20px;font-size:.75rem;font-weight:700;color:var(--sky);margin-bottom:1.5rem;letter-spacing:.5px}
+.hero h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(2.2rem,5vw,3.4rem);font-weight:800;color:#fff;line-height:1.15;margin-bottom:1rem;max-width:640px}
+.hero h1 .hl{color:var(--accent);display:block}
+.hero h2{font-size:1.05rem;font-weight:400;color:rgba(255,255,255,.65);max-width:520px;line-height:1.8;margin-bottom:2rem}
+.hero-btns{display:flex;gap:1rem;flex-wrap:wrap}
+
+/* PHOTO STRIP */
+.photo-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--white);padding:4px}
+.photo-item{position:relative;height:200px;overflow:hidden;border-radius:var(--radius)}
+.photo-item img{width:100%;height:100%;object-fit:cover;transition:transform .6s ease}
+.photo-item:hover img{transform:scale(1.06)}
+.photo-item .photo-label{position:absolute;bottom:0;left:0;right:0;padding:16px;background:linear-gradient(transparent,rgba(9,29,64,.8));display:flex;align-items:center;gap:8px}
+.photo-item .photo-label svg{width:18px;height:18px;stroke:var(--accent);stroke-width:2;fill:none;flex-shrink:0}
+.photo-item .photo-label span{font-weight:700;font-size:.82rem;color:#fff}
+
+/* TRUST BAR */
+.trust-bar{background:var(--off-white);padding:2.5rem 2rem;border-bottom:1px solid var(--gray-200)}
+.trust-inner{max-width:1280px;margin:0 auto;display:flex;justify-content:center;gap:3rem;flex-wrap:wrap;align-items:center}
+.trust-item{display:flex;align-items:center;gap:10px;color:var(--gray-600);font-weight:600;font-size:.85rem}
+.trust-item svg{width:20px;height:20px;stroke:var(--sky);stroke-width:2;fill:none;flex-shrink:0}
+
+/* SPLIT SECTIONS (image + text, alternating) */
+.split{display:grid;grid-template-columns:1fr 1fr;min-height:480px}
+.split.reverse .split-img{order:2}.split.reverse .split-text{order:1}
+.split-img{overflow:hidden;position:relative}
+.split-img img{width:100%;height:100%;object-fit:cover;min-height:480px}
+.split-text{padding:4rem 3.5rem;display:flex;flex-direction:column;justify-content:center;background:var(--white)}
+.split-text .tag{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;font-weight:700;color:var(--sky);text-transform:uppercase;letter-spacing:2px;margin-bottom:1rem}
+.split-text .tag::before{content:'';width:24px;height:2px;background:var(--sky)}
+.split-text h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.8rem;font-weight:800;color:var(--blue);margin-bottom:1rem;line-height:1.25}
+.split-text p{color:var(--gray-600);line-height:1.85;margin-bottom:1.5rem}
+.split-text ul{list-style:none;margin-bottom:2rem}
+.split-text ul li{padding:6px 0;color:var(--gray-600);font-size:.9rem;display:flex;align-items:center;gap:10px}
+.split-text ul li::before{content:'';width:8px;height:8px;background:var(--sky);border-radius:50%;flex-shrink:0}
+
+/* SECTIONS */
+.section{padding:5rem 2rem}.section-inner{max-width:1280px;margin:0 auto}
+.section-tag{font-size:.75rem;font-weight:700;color:var(--sky);text-transform:uppercase;letter-spacing:2px;text-align:center;margin-bottom:.5rem}
+.section-heading{font-family:'Plus Jakarta Sans',sans-serif;font-size:2rem;font-weight:800;color:var(--blue);text-align:center;margin-bottom:.5rem}
+.section-sub{font-size:.92rem;color:var(--gray-400);text-align:center;margin-bottom:3rem}
+
+/* SERVICE CARDS w/ photos */
+.svc-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.svc-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);overflow:hidden;transition:var(--tr)}
+.svc-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg);border-color:var(--sky)}
+.svc-card-img{height:180px;overflow:hidden}.svc-card-img img{width:100%;height:100%;object-fit:cover;transition:transform .5s}
+.svc-card:hover .svc-card-img img{transform:scale(1.05)}
+.svc-card-body{padding:1.5rem}
+.svc-card h3{font-family:'Plus Jakarta Sans',sans-serif;font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:.5rem}
+.svc-card p{color:var(--gray-600);font-size:.88rem;line-height:1.7}
+
+/* STATS */
+.stats-section{background:var(--blue);padding:4rem 2rem;position:relative;overflow:hidden}
+.stats-section::before{content:'';position:absolute;inset:0;background:url('https://images.pexels.com/photos/1267338/pexels-photo-1267338.jpeg?auto=compress&cs=tinysrgb&w=1600');background-size:cover;background-position:center;opacity:.08}
+.stats-grid{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:repeat(4,1fr);gap:2rem;position:relative;z-index:1}
+.stat-item{text-align:center}
+.stat-item h3{font-family:'Plus Jakarta Sans',sans-serif;font-size:2.8rem;font-weight:800;color:#fff}
+.stat-item p{font-size:.82rem;color:rgba(255,255,255,.55);font-weight:500;text-transform:uppercase;letter-spacing:1px;margin-top:4px}
+
+/* CTA w/ photo bg */
+.cta-banner{position:relative;padding:6rem 2rem;text-align:center;overflow:hidden}
+.cta-bg{position:absolute;inset:0;background:url('https://images.pexels.com/photos/1108101/pexels-photo-1108101.jpeg?auto=compress&cs=tinysrgb&w=1600');background-size:cover;background-position:center}
+.cta-ov{position:absolute;inset:0;background:rgba(9,29,64,.88)}
+.cta-ct{position:relative;z-index:1}
+.cta-ct h2{font-family:'Plus Jakarta Sans',sans-serif;font-size:2.2rem;font-weight:800;color:#fff;margin-bottom:.5rem}
+.cta-ct p{color:rgba(255,255,255,.6);margin-bottom:2rem;font-size:1rem}
+
+/* PHOTO MOSAIC */
+.mosaic{display:grid;grid-template-columns:2fr 1fr 1fr;grid-template-rows:220px 220px;gap:4px;max-width:1280px;margin:0 auto}
+.mosaic-item{overflow:hidden;border-radius:var(--radius);position:relative}
+.mosaic-item:first-child{grid-row:1/3}
+.mosaic-item img{width:100%;height:100%;object-fit:cover;transition:transform .6s}.mosaic-item:hover img{transform:scale(1.04)}
+
+/* PAGE HEADERS w/ photo */
+.pg-header{position:relative;padding:4.5rem 2rem 3.5rem;text-align:center;overflow:hidden}
+.pg-header-bg{position:absolute;inset:0;background-size:cover;background-position:center}
+.pg-header-ov{position:absolute;inset:0;background:linear-gradient(135deg,rgba(9,29,64,.9),rgba(15,43,91,.8))}
+.pg-header h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(2rem,4vw,2.8rem);font-weight:800;color:#fff;position:relative;z-index:1}
+.pg-header .subtitle{font-size:.92rem;color:rgba(255,255,255,.55);margin-top:.5rem;position:relative;z-index:1}
+
+/* JOBS */
+.job-filters{display:flex;gap:.5rem;margin-bottom:2rem;flex-wrap:wrap}
+.job-filter-btn{padding:8px 20px;background:var(--off-white);color:var(--gray-600);border:1px solid var(--gray-200);border-radius:20px;font-size:.82rem;font-weight:600;cursor:pointer;transition:var(--tr)}
+.job-filter-btn.active,.job-filter-btn:hover{background:var(--sky);color:#fff;border-color:var(--sky)}
+.job-list{display:grid;gap:.75rem}
+.job-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.25rem 1.5rem;display:flex;justify-content:space-between;align-items:center;transition:var(--tr);cursor:pointer}
+.job-card:hover{border-color:var(--sky);box-shadow:var(--shadow)}
+.job-card h3{font-family:'Plus Jakarta Sans',sans-serif;font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:4px}
+.job-card .meta{font-size:.82rem;color:var(--gray-400)}.job-card .meta span{margin-right:1rem}
+.job-badge{padding:4px 12px;background:var(--sky-light);color:var(--sky);font-size:.75rem;font-weight:700;border-radius:20px;white-space:nowrap}
+.job-badge.urgent{background:var(--accent);color:#fff}
+.job-detail{display:none;padding:1rem 0 0;border-top:1px solid var(--gray-200);margin-top:1rem;color:var(--gray-600);line-height:1.8;font-size:.9rem}
+
+/* POSITION TAGS */
+.pos-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem}
+.pos-tag{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);transition:var(--tr)}
+.pos-tag:hover{border-color:var(--sky);background:var(--sky-light)}
+.pos-tag .dot{width:8px;height:8px;background:var(--sky);border-radius:50%;flex-shrink:0}
+.pos-tag span{font-size:.85rem;color:var(--gray-600);font-weight:500}
+
+/* INDUSTRY */
+.ind-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.5rem}
+.ind-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);overflow:hidden;transition:var(--tr);cursor:pointer}
+.ind-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg);border-color:var(--sky)}
+.ind-card-img{height:140px;overflow:hidden}.ind-card-img img{width:100%;height:100%;object-fit:cover;transition:transform .5s}
+.ind-card:hover .ind-card-img img{transform:scale(1.05)}
+.ind-card-body{padding:1.2rem;text-align:center}
+.ind-card h4{font-family:'Plus Jakarta Sans',sans-serif;font-size:.9rem;font-weight:700;color:var(--blue)}
+
+/* FAQ */
+.faq-list{max-width:720px;margin:0 auto}
+.faq-item{border-bottom:1px solid var(--gray-200);padding:1.5rem 0;cursor:pointer}
+.faq-q{font-weight:700;font-size:.95rem;color:var(--blue);position:relative;padding-right:2rem}
+.faq-q::after{content:'+';position:absolute;right:0;top:0;font-size:1.3rem;color:var(--sky);font-weight:400;transition:var(--tr)}
+.faq-item.open .faq-q::after{transform:rotate(45deg)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .3s;color:var(--gray-600);font-size:.9rem;line-height:1.8}
+.faq-item.open .faq-a{max-height:200px;padding-top:.8rem}
+
+/* CONTACT */
+.contact-section{padding:4rem 2rem;background:var(--off-white)}
+.contact-inner{max-width:760px;margin:0 auto;background:var(--white);border-radius:12px;padding:3rem;box-shadow:var(--shadow)}
+.contact-intro{text-align:center;margin-bottom:2rem}
+.contact-intro h3{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.5rem;font-weight:800;color:var(--blue);margin-bottom:.5rem}
+.contact-intro p{color:var(--gray-400)}
+.req-note{font-size:.78rem;color:var(--gray-400);margin-bottom:1.5rem;text-align:center}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-group.full{grid-column:1/-1}
+.form-group label{font-size:.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px}
+.form-group .req{color:var(--accent)}
+.form-group input,.form-group select,.form-group textarea{background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 14px;font-family:'DM Sans',sans-serif;font-size:.9rem;color:var(--gray-800);transition:var(--tr);outline:none}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(74,144,217,.12);background:#fff}
+.form-group textarea{min-height:100px;resize:vertical}
+.form-group select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239BA3B0' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.radio-group{display:flex;gap:1.5rem;flex-wrap:wrap}
+.radio-label{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.9rem;color:var(--gray-600)}
+.radio-label input[type="radio"]{accent-color:var(--sky)}
+.file-upload-area{border:2px dashed var(--gray-200);border-radius:var(--radius);padding:2rem;text-align:center;cursor:pointer;transition:var(--tr)}
+.file-upload-area:hover{border-color:var(--sky);background:var(--sky-light)}
+.file-upload-area input{display:none}.file-upload-area p{color:var(--gray-400);font-size:.88rem}
+.file-upload-area .browse{color:var(--sky);font-weight:600;text-decoration:underline}
+.btn-submit{width:100%;padding:14px;background:var(--blue);color:#fff;font-family:'DM Sans',sans-serif;font-weight:700;font-size:.95rem;border:none;border-radius:var(--radius);cursor:pointer;transition:var(--tr);margin-top:1rem}
+.btn-submit:hover{background:var(--blue-mid);box-shadow:0 6px 20px rgba(15,43,91,.25)}
+.form-success{display:none;text-align:center;padding:3rem}
+.form-success .check{width:64px;height:64px;background:var(--sky);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:#fff;margin:0 auto 1rem}
+.form-success h3{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;color:var(--blue);font-size:1.4rem}
+.form-success p{color:var(--gray-400)}
+
+/* FOOTER */
+.mega-footer{background:var(--blue-dark);padding:4rem 2rem 2rem;color:rgba(255,255,255,.5)}
+.footer-inner{max-width:1280px;margin:0 auto;display:grid;grid-template-columns:1.5fr 1fr 1fr 1fr;gap:3rem}
+.footer-brand p{font-size:.85rem;line-height:1.7;margin-bottom:1rem}
+.footer-logo{display:flex;align-items:center;gap:10px;margin-bottom:1.2rem}
+.footer-phone{color:var(--accent);font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:1.2rem}
+.footer-col h4{font-size:.78rem;font-weight:700;color:var(--sky);text-transform:uppercase;letter-spacing:2px;margin-bottom:1rem}
+.footer-col ul{list-style:none}.footer-col ul li{margin-bottom:.5rem}
+.footer-col ul li a{color:rgba(255,255,255,.4);font-size:.85rem;transition:var(--tr)}.footer-col ul li a:hover{color:#fff;padding-left:4px}
+.footer-bottom{max-width:1280px;margin:2rem auto 0;padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;flex-wrap:wrap;gap:1rem;font-size:.78rem;color:rgba(255,255,255,.2)}
+
+/* STICKY BAR */
+.sticky-bar{position:fixed;bottom:0;left:0;right:0;z-index:998;background:var(--white);display:flex;box-shadow:0 -2px 16px rgba(0,0,0,.08);border-top:1px solid var(--gray-200)}
+.sticky-bar a{flex:1;padding:10px 0;text-align:center;font-size:.68rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px;border-right:1px solid var(--gray-200);transition:var(--tr);display:flex;flex-direction:column;align-items:center;gap:4px}
+.sticky-bar a:last-child{border-right:none}.sticky-bar a:hover{background:var(--sky-light);color:var(--blue)}
+.sticky-bar a svg{width:18px;height:18px;stroke:var(--sky);stroke-width:2;fill:none}
+
+.page{display:none}.page.active{display:block}
+
+@media(max-width:1024px){.svc-cards,.ind-grid{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}.split.reverse .split-img{order:1}.split.reverse .split-text{order:2}.split-img img{min-height:300px;height:300px}.photo-strip{grid-template-columns:1fr 1fr}.mosaic{grid-template-columns:1fr 1fr;grid-template-rows:auto}.mosaic-item:first-child{grid-row:auto}.stats-grid{grid-template-columns:1fr 1fr}.footer-inner{grid-template-columns:1fr 1fr}.pos-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:768px){.tb-inner{flex-direction:column;gap:6px;text-align:center}.tb-right{justify-content:center}.nav-menu,.nav-cta{display:none}.mobile-toggle{display:block}.nav-menu.open{display:flex;flex-direction:column;position:absolute;top:72px;left:0;right:0;background:var(--white);box-shadow:var(--shadow-lg);z-index:100}.nav-menu.open .nav-item>a{height:auto;padding:14px 2rem;border-bottom:1px solid var(--gray-100)}.nav-dropdown{display:none}.svc-cards,.ind-grid{grid-template-columns:1fr}.photo-strip{grid-template-columns:1fr 1fr}.photo-item{height:160px}.stats-grid{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.footer-inner{grid-template-columns:1fr}.mega-footer{padding-bottom:80px}body{padding-bottom:56px}.split-text{padding:2.5rem 1.5rem}.pos-grid{grid-template-columns:1fr 1fr}.mosaic{grid-template-columns:1fr}.hero-btns{flex-direction:column;align-items:flex-start}}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="top-bar"><div class="tb-inner">
+  <span data-i18n="topSlogan">Precision staffing. Nationwide coverage.</span>
+  <div class="tb-right">
+    <a href="tel:+12246527010">&#128222; 224-652-7010</a>
+    <a href="mailto:info@primeanchorpoint.com">&#9993; info@primeanchorpoint.com</a>
+    <div class="lang-switch">
+      <button class="lang-btn active" onclick="setLang('en')">EN</button>
+      <button class="lang-btn" onclick="setLang('zh')">中文</button>
+      <button class="lang-btn" onclick="setLang('es')">ES</button>
+    </div>
+  </div>
+</div></div>
+
+<!-- NAV -->
+<nav class="main-nav"><div class="nav-inner">
+  <a href="#" class="logo-link" onclick="go('home')">
+    <div class="logo-mark"><svg viewBox="0 0 24 24"><path d="M12 2L2 19h20L12 2z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="16.5" r=".5"/></svg></div>
+    <div class="logo-text">PRIME<br><span>ANCHORPOINT</span></div>
+  </a>
+  <ul class="nav-menu" id="navMenu">
+    <li class="nav-item"><a href="#" onclick="go('home')" data-i18n="navHome">Home</a></li>
+    <li class="nav-item"><a href="#" data-i18n="navFindTalent">Find Talent</a><ul class="nav-dropdown"><li><a href="#" onclick="go('recruit')" data-i18n="navRecruit">People We Place</a></li><li><a href="#" onclick="go('solutions')" data-i18n="navSolutions">Solutions</a></li></ul></li>
+    <li class="nav-item"><a href="#" data-i18n="navFindWork">Find Work</a><ul class="nav-dropdown"><li><a href="#" onclick="go('jobs')" data-i18n="navJobs">Open Positions</a></li><li><a href="#" onclick="go('faq')" data-i18n="navFaq">FAQs</a></li></ul></li>
+    <li class="nav-item"><a href="#" onclick="go('expertise')" data-i18n="navExpertise">Industries</a></li>
+    <li class="nav-item"><a href="#" onclick="go('about')" data-i18n="navAbout">About</a></li>
+    <li class="nav-item"><a href="#" onclick="go('contact')" data-i18n="navContact">Contact</a></li>
+  </ul>
+  <div class="nav-cta"><a href="#" class="btn-blue" onclick="go('contact')" data-i18n="navCta">Get Staff</a></div>
+  <button class="mobile-toggle" onclick="document.getElementById('navMenu').classList.toggle('open')">&#9776;</button>
+</div></nav>
+
+<!-- ======================== HOME ======================== -->
+<div class="page active" id="pg-home">
+<section class="hero">
+  <div class="hero-img"></div><div class="hero-overlay"></div>
+  <div class="hero-content">
+    <div class="hero-badge">&#9733; Trusted by 50+ Companies Nationwide</div>
+    <h1 data-i18n="heroH1">The Right Workers.<br><span class="hl">Right When You Need Them.</span></h1>
+    <h2 data-i18n="heroH2">Industrial staffing built on speed, safety, and trilingual communication. Warehouse, logistics, manufacturing — we've got it covered.</h2>
+    <div class="hero-btns">
+      <a href="#" class="btn-sky" onclick="go('contact')" data-i18n="heroCta">Get Staff Now</a>
+      <a href="#" class="btn-outline-w" onclick="go('jobs')" data-i18n="heroJobs">View Open Jobs</a>
+    </div>
+  </div>
+</section>
+
+<!-- Photo strip -->
+<div class="photo-strip">
+  <div class="photo-item"><img src="https://images.pexels.com/photos/1267338/pexels-photo-1267338.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Warehouse"><div class="photo-label"><svg viewBox="0 0 24 24"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21V12h6v9"/></svg><span data-i18n="bannerWarehouse">Warehouse</span></div></div>
+  <div class="photo-item"><img src="https://images.pexels.com/photos/3846508/pexels-photo-3846508.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Manufacturing"><div class="photo-label"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33"/></svg><span data-i18n="bannerMfg">Manufacturing</span></div></div>
+  <div class="photo-item"><img src="https://images.pexels.com/photos/2199293/pexels-photo-2199293.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Logistics"><div class="photo-label"><svg viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg><span data-i18n="bannerLogistics">Logistics</span></div></div>
+  <div class="photo-item"><img src="https://images.pexels.com/photos/1108101/pexels-photo-1108101.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Packaging"><div class="photo-label"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg><span data-i18n="bannerPkg">Packaging</span></div></div>
+</div>
+
+<!-- Trust Bar -->
+<div class="trust-bar"><div class="trust-inner">
+  <div class="trust-item"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span>OSHA Compliant</span></div>
+  <div class="trust-item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10"/></svg><span>Trilingual (EN/中文/ES)</span></div>
+  <div class="trust-item"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg><span>24–48hr Deployment</span></div>
+  <div class="trust-item"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Background Verified</span></div>
+
+</div></div>
+
+<!-- Split 1: Why Us -->
+<div class="split">
+  <div class="split-img"><img src="https://images.pexels.com/photos/4481259/pexels-photo-4481259.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Warehouse workers"></div>
+  <div class="split-text">
+    <div class="tag" data-i18n="whyTag">Why Prime Anchorpoint</div>
+    <h2 data-i18n="whyH2">We Don't Just Fill Spots. We Solve Problems.</h2>
+    <p data-i18n="whyP">You need workers who show up ready, certified, and safe. Our OSHA-compliant trilingual team handles everything — recruiting, vetting, scheduling — so you can focus on running your operation.</p>
+    <a href="#" class="btn-sky" onclick="go('solutions')" data-i18n="whyCta">See How We Work</a>
+  </div>
+</div>
+
+<!-- Split 2: Speed (reversed) -->
+<div class="split reverse">
+  <div class="split-img"><img src="https://images.pexels.com/photos/4483610/pexels-photo-4483610.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Fast deployment"></div>
+  <div class="split-text">
+    <div class="tag">Fast Response</div>
+    <h2 data-i18n="svc1H">Fast Deployment</h2>
+    <p data-i18n="svc1P">Workers on-site within 24–48 hours. Same-day for emergencies.</p>
+    <ul>
+      <li data-i18n="svc2H">Trilingual Crew</li>
+      <li data-i18n="svc3H">100% Compliant</li>
+      <li>Background Checked & Safety Trained</li>
+      <li>Flexible: Temp, Temp-to-Hire, Direct</li>
+    </ul>
+    <a href="#" class="btn-sky" onclick="go('contact')" data-i18n="heroCta">Get Staff Now</a>
+  </div>
+</div>
+
+<!-- Photo Mosaic -->
+<section class="section" style="background:var(--off-white)"><div class="section-inner">
+  <div class="section-tag">Our Work</div>
+  <div class="section-heading">Real Teams. Real Results.</div>
+  <div class="section-sub">We deploy skilled workers across warehouses, factories, and distribution centers nationwide.</div>
+  <div class="mosaic">
+    <div class="mosaic-item"><img src="https://images.pexels.com/photos/5439381/pexels-photo-5439381.jpeg?auto=compress&cs=tinysrgb&w=800" alt="Team"></div>
+    <div class="mosaic-item"><img src="https://images.pexels.com/photos/3846508/pexels-photo-3846508.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Factory"></div>
+    <div class="mosaic-item"><img src="https://images.pexels.com/photos/2199293/pexels-photo-2199293.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Trucks"></div>
+    <div class="mosaic-item"><img src="https://images.pexels.com/photos/1108101/pexels-photo-1108101.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Packaging"></div>
+    <div class="mosaic-item"><img src="https://images.pexels.com/photos/1267338/pexels-photo-1267338.jpeg?auto=compress&cs=tinysrgb&w=600" alt="Forklift"></div>
+  </div>
+</div></section>
+
+<!-- Stats -->
+<div class="stats-section"><div class="stats-grid">
+  <div class="stat-item"><h3>500+</h3><p data-i18n="stat1">Workers Placed</p></div>
+  <div class="stat-item"><h3>50+</h3><p data-i18n="stat2">Client Partners</p></div>
+  <div class="stat-item"><h3>24/7</h3><p data-i18n="stat3">Availability</p></div>
+  <div class="stat-item"><h3>98%</h3><p data-i18n="stat4">Satisfaction Rate</p></div>
+</div></div>
+
+<!-- CTA -->
+<div class="cta-banner"><div class="cta-bg"></div><div class="cta-ov"></div><div class="cta-ct">
+  <h2 data-i18n="ctaH2">Need Workers? We've Got Them.</h2><p data-i18n="ctaP">One call. Fast deployment. No hassle.</p>
+  <a href="#" class="btn-sky" onclick="go('contact')" data-i18n="ctaCta">Request Staff</a>
+</div></div>
+</div>
+
+<!-- ======================== JOBS ======================== -->
+<div class="page" id="pg-jobs">
+<div class="pg-header"><div class="pg-header-bg" style="background-image:url('https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg?auto=compress&cs=tinysrgb&w=1400')"></div><div class="pg-header-ov"></div><h1 data-i18n="jobsH1">Open Positions</h1><div class="subtitle" data-i18n="jobsSub">Find Your Next Role</div></div>
+<section class="section"><div class="section-inner">
+  <div class="job-filters" id="jobFilters">
+    <button class="job-filter-btn active" onclick="filterJobs('all',this)">All</button>
+    <button class="job-filter-btn" onclick="filterJobs('en',this)">English</button>
+    <button class="job-filter-btn" onclick="filterJobs('zh',this)">中文</button>
+    <button class="job-filter-btn" onclick="filterJobs('es',this)">Español</button>
+  </div>
+  <div class="job-list" id="jobList"></div>
+</div></section></div>
+
+<!-- ======================== RECRUIT ======================== -->
+<div class="page" id="pg-recruit">
+<div class="pg-header"><div class="pg-header-bg" style="background-image:url('https://images.pexels.com/photos/3846508/pexels-photo-3846508.jpeg?auto=compress&cs=tinysrgb&w=1400')"></div><div class="pg-header-ov"></div><h1 data-i18n="recruitH1">People We Place</h1><div class="subtitle" data-i18n="recruitSub">Screened. Trained. Ready.</div></div>
+<section class="section"><div class="section-inner">
+  <div class="pos-grid">
+    <div class="pos-tag"><div class="dot"></div><span>Warehouse Sorter</span></div><div class="pos-tag"><div class="dot"></div><span>Labeler</span></div><div class="pos-tag"><div class="dot"></div><span>Packer</span></div><div class="pos-tag"><div class="dot"></div><span>Forklift Operator</span></div><div class="pos-tag"><div class="dot"></div><span>CDL Truck Driver</span></div><div class="pos-tag"><div class="dot"></div><span>Delivery Driver</span></div><div class="pos-tag"><div class="dot"></div><span>Shift Supervisor</span></div><div class="pos-tag"><div class="dot"></div><span>Site Manager</span></div><div class="pos-tag"><div class="dot"></div><span>Quality Inspector</span></div><div class="pos-tag"><div class="dot"></div><span>Machine Operator</span></div><div class="pos-tag"><div class="dot"></div><span>Assembly Line</span></div><div class="pos-tag"><div class="dot"></div><span>Material Handler</span></div><div class="pos-tag"><div class="dot"></div><span>Inventory Clerk</span></div><div class="pos-tag"><div class="dot"></div><span>General Labor</span></div><div class="pos-tag"><div class="dot"></div><span>Janitorial</span></div><div class="pos-tag"><div class="dot"></div><span>Food Processing</span></div><div class="pos-tag"><div class="dot"></div><span>Warehouse Lead</span></div><div class="pos-tag"><div class="dot"></div><span>Loading / Unloading</span></div><div class="pos-tag"><div class="dot"></div><span>Order Picker</span></div><div class="pos-tag"><div class="dot"></div><span>Welder</span></div>
+  </div>
+  <div style="margin-top:3rem;text-align:center"><a href="#" class="btn-sky" onclick="go('contact')" data-i18n="recruitCta">Request These Workers</a></div>
+</div></section></div>
+
+<!-- ======================== SOLUTIONS ======================== -->
+<div class="page" id="pg-solutions">
+<div class="pg-header"><div class="pg-header-bg" style="background-image:url('https://images.pexels.com/photos/1108101/pexels-photo-1108101.jpeg?auto=compress&cs=tinysrgb&w=1400')"></div><div class="pg-header-ov"></div><h1 data-i18n="solH1">Our Solutions</h1><div class="subtitle" data-i18n="solSub">Flexible Staffing Models</div></div>
+<section class="section"><div class="section-inner"><div class="svc-cards">
+  <div class="svc-card"><div class="svc-card-img"><img src="https://images.pexels.com/photos/1267338/pexels-photo-1267338.jpeg?auto=compress&cs=tinysrgb&w=600" alt=""></div><div class="svc-card-body"><h3 data-i18n="sol1H">Warehouse & Sorting</h3><p data-i18n="sol1P">Fast, accurate teams for order fulfillment and distribution.</p></div></div>
+  <div class="svc-card"><div class="svc-card-img"><img src="https://images.pexels.com/photos/1108101/pexels-photo-1108101.jpeg?auto=compress&cs=tinysrgb&w=600" alt=""></div><div class="svc-card-body"><h3 data-i18n="sol2H">Labeling & Packaging</h3><p data-i18n="sol2P">Detail-oriented crews that maintain quality standards.</p></div></div>
+  <div class="svc-card"><div class="svc-card-img"><img src="https://images.pexels.com/photos/2199293/pexels-photo-2199293.jpeg?auto=compress&cs=tinysrgb&w=600" alt=""></div><div class="svc-card-body"><h3 data-i18n="sol3H">Forklift & Drivers</h3><p data-i18n="sol3P">Certified forklift operators and CDL drivers on demand.</p></div></div>
+  <div class="svc-card"><div class="svc-card-img"><img src="https://images.pexels.com/photos/4483610/pexels-photo-4483610.jpeg?auto=compress&cs=tinysrgb&w=600" alt=""></div><div class="svc-card-body"><h3 data-i18n="sol4H">On-Site Management</h3><p data-i18n="sol4P">Embedded supervisors for scheduling and performance.</p></div></div>
+  <div class="svc-card"><div class="svc-card-img"><img src="https://images.pexels.com/photos/3846508/pexels-photo-3846508.jpeg?auto=compress&cs=tinysrgb&w=600" alt=""></div><div class="svc-card-body"><h3 data-i18n="sol5H">Manufacturing</h3><p data-i18n="sol5P">Line operators, machine operators, assemblers.</p></div></div>
+  <div class="svc-card"><div class="svc-card-img"><img src="https://images.pexels.com/photos/5439381/pexels-photo-5439381.jpeg?auto=compress&cs=tinysrgb&w=600" alt=""></div><div class="svc-card-body"><h3 data-i18n="sol6H">Custom Programs</h3><p data-i18n="sol6P">Tell us what you need. We'll build a solution.</p></div></div>
+</div></div></section></div>
+
+<!-- ======================== EXPERTISE ======================== -->
+<div class="page" id="pg-expertise">
+<div class="pg-header"><div class="pg-header-bg" style="background-image:url('https://images.pexels.com/photos/4481259/pexels-photo-4481259.jpeg?auto=compress&cs=tinysrgb&w=1400')"></div><div class="pg-header-ov"></div><h1 data-i18n="expH1">Industries We Serve</h1><div class="subtitle" data-i18n="expSub">Deep Expertise Where It Matters</div></div>
+<section class="section"><div class="section-inner"><div class="ind-grid">
+  <div class="ind-card"><div class="ind-card-img"><img src="https://images.pexels.com/photos/1267338/pexels-photo-1267338.jpeg?auto=compress&cs=tinysrgb&w=500" alt=""></div><div class="ind-card-body"><h4 data-i18n="exp1">Warehousing</h4></div></div>
+  <div class="ind-card"><div class="ind-card-img"><img src="https://images.pexels.com/photos/3846508/pexels-photo-3846508.jpeg?auto=compress&cs=tinysrgb&w=500" alt=""></div><div class="ind-card-body"><h4 data-i18n="exp2">Manufacturing</h4></div></div>
+  <div class="ind-card"><div class="ind-card-img"><img src="https://images.pexels.com/photos/2199293/pexels-photo-2199293.jpeg?auto=compress&cs=tinysrgb&w=500" alt=""></div><div class="ind-card-body"><h4 data-i18n="exp3">Logistics</h4></div></div>
+  <div class="ind-card"><div class="ind-card-img"><img src="https://images.pexels.com/photos/2252584/pexels-photo-2252584.jpeg?auto=compress&cs=tinysrgb&w=500" alt=""></div><div class="ind-card-body"><h4 data-i18n="exp4">Food Processing</h4></div></div>
+  <div class="ind-card"><div class="ind-card-img"><img src="https://images.pexels.com/photos/6169668/pexels-photo-6169668.jpeg?auto=compress&cs=tinysrgb&w=500" alt=""></div><div class="ind-card-body"><h4 data-i18n="exp5">E-Commerce</h4></div></div>
+  <div class="ind-card"><div class="ind-card-img"><img src="https://images.pexels.com/photos/1108101/pexels-photo-1108101.jpeg?auto=compress&cs=tinysrgb&w=500" alt=""></div><div class="ind-card-body"><h4 data-i18n="exp6">Light Industrial</h4></div></div>
+</div></div></section></div>
+
+<!-- ======================== ABOUT ======================== -->
+<div class="page" id="pg-about">
+<div class="pg-header"><div class="pg-header-bg" style="background-image:url('https://images.pexels.com/photos/5439381/pexels-photo-5439381.jpeg?auto=compress&cs=tinysrgb&w=1400')"></div><div class="pg-header-ov"></div><h1 data-i18n="aboutH1">About Prime Anchorpoint</h1><div class="subtitle" data-i18n="aboutSub">Who We Are</div></div>
+<div class="split">
+  <div class="split-img"><img src="https://images.pexels.com/photos/4481259/pexels-photo-4481259.jpeg?auto=compress&cs=tinysrgb&w=900" alt="Team"></div>
+  <div class="split-text">
+    <div class="tag" data-i18n="aboutHeading">Built Different</div>
+    <h2 data-i18n="aboutH1">About Prime Anchorpoint</h2>
+    <p data-i18n="aboutP1">Prime Anchorpoint is an industrial staffing company built for speed and accountability. We serve warehousing, logistics, manufacturing, and light industrial clients with a trilingual management team (English, Chinese, Spanish) that eliminates communication barriers.</p>
+    <p data-i18n="aboutP2">Every worker is background-checked, safety-trained, and ready to perform. Every client gets a dedicated point of contact. No runaround, no excuses.</p>
+    <p data-i18n="aboutP3">5 workers or 500. Temp or permanent. We deliver.</p>
+    <a href="#" class="btn-sky" onclick="go('contact')" data-i18n="aboutCta">Talk to Us</a>
+  </div>
+</div></div>
+
+<!-- ======================== FAQ ======================== -->
+<div class="page" id="pg-faq">
+<div class="pg-header"><div class="pg-header-bg" style="background-image:url('https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg?auto=compress&cs=tinysrgb&w=1400')"></div><div class="pg-header-ov"></div><h1 data-i18n="faqH1">FAQs</h1><div class="subtitle" data-i18n="faqSub">What You Need to Know</div></div>
+<section class="section"><div class="section-inner"><div class="faq-list">
+  <div class="faq-item" onclick="this.classList.toggle('open')"><div class="faq-q" data-i18n="faq1Q">How do I apply?</div><div class="faq-a" data-i18n="faq1A">Go to Contact, select Job Seeker, fill the form and upload your resume.</div></div>
+  <div class="faq-item" onclick="this.classList.toggle('open')"><div class="faq-q" data-i18n="faq2Q">Do I need experience?</div><div class="faq-a" data-i18n="faq2A">Many entry-level roles include training. Forklift and CDL positions require certification.</div></div>
+  <div class="faq-item" onclick="this.classList.toggle('open')"><div class="faq-q" data-i18n="faq3Q">What benefits do you offer?</div><div class="faq-a" data-i18n="faq3A">Workers' comp, safety training, consistent schedules. Benefits vary by position.</div></div>
+  <div class="faq-item" onclick="this.classList.toggle('open')"><div class="faq-q" data-i18n="faq4Q">Temp or permanent?</div><div class="faq-a" data-i18n="faq4A">Both. We do temp, temp-to-hire, and direct placement.</div></div>
+  <div class="faq-item" onclick="this.classList.toggle('open')"><div class="faq-q" data-i18n="faq5Q">What languages do you support?</div><div class="faq-a" data-i18n="faq5A">English, Chinese (Mandarin), and Spanish.</div></div>
+</div></div></section></div>
+
+<!-- ======================== CONTACT ======================== -->
+<div class="page" id="pg-contact">
+<div class="pg-header"><div class="pg-header-bg" style="background-image:url('https://images.pexels.com/photos/4483610/pexels-photo-4483610.jpeg?auto=compress&cs=tinysrgb&w=1400')"></div><div class="pg-header-ov"></div><h1 data-i18n="contactH1">Contact Us</h1><div class="subtitle" data-i18n="contactSub">Let's Get Started</div></div>
+<section class="contact-section"><div class="contact-inner">
+  <div class="contact-intro"><h3 data-i18n="contactIntroH">Reach Out</h3><p data-i18n="contactIntroP">Need workers or looking for work? Fill out the form and we'll respond fast.</p></div>
+  <p class="req-note" data-i18n="contactReq">"*" required fields</p>
+  <form id="contactForm" onsubmit="submitForm(event)">
+    <div class="form-grid">
+      <div class="form-group"><label><span data-i18n="fName">Name</span> <span class="req">*</span></label><input type="text" name="name" required></div>
+      <div class="form-group"><label><span data-i18n="fEmail">Email</span> <span class="req">*</span></label><input type="email" name="email" required></div>
+      <div class="form-group"><label><span data-i18n="fPhone">Phone</span> <span class="req">*</span></label><input type="tel" name="phone" required></div>
+      <div class="form-group"><label data-i18n="fCompany">Company</label><input type="text" name="company" data-i18n="fCompanyPh" placeholder="Optional"></div>
+      <div class="form-group full"><label><span data-i18n="fIAm">I am a...</span> <span class="req">*</span></label><div class="radio-group"><label class="radio-label"><input type="radio" name="type" value="Employer" onchange="toggleFormSections()"> <span data-i18n="fEmployer">Employer</span></label><label class="radio-label"><input type="radio" name="type" value="Job Seeker" onchange="toggleFormSections()"> <span data-i18n="fSeeker">Job Seeker</span></label><label class="radio-label"><input type="radio" name="type" value="Other" checked onchange="toggleFormSections()"> <span data-i18n="fOther">Other</span></label></div></div>
+    </div>
+    <div id="employerFields" style="display:none"><div class="form-grid" style="margin-top:1rem">
+      <div class="form-group"><label><span data-i18n="fPositions">Positions Needed</span> <span class="req">*</span></label><select name="positions"><option value="" data-i18n="select">Select...</option><option>Warehouse / Sorting</option><option>Labeling / Packaging</option><option>Forklift</option><option>Drivers / CDL</option><option>Management</option><option>Manufacturing</option><option>General Labor</option><option>Other</option></select></div>
+      <div class="form-group"><label><span data-i18n="fWorkers">Workers Needed</span> <span class="req">*</span></label><select name="workers"><option value="" data-i18n="select">Select...</option><option>1–5</option><option>5–20</option><option>20–50</option><option>50–100</option><option>100+</option></select></div>
+      <div class="form-group"><label><span data-i18n="fLocation">Location</span> <span class="req">*</span></label><input type="text" name="location" placeholder="City, State"></div>
+      <div class="form-group"><label data-i18n="fStartDate">Start Date</label><input type="date" name="start_date"></div>
+      <div class="form-group full"><label data-i18n="fStaffNeeds">Staffing Details</label><textarea name="comments" data-i18n="fStaffPh" placeholder="Shifts, special requirements, timeline..."></textarea></div>
+    </div></div>
+    <div id="seekerFields" style="display:none"><div class="form-grid" style="margin-top:1rem">
+      <div class="form-group"><label data-i18n="fDesiredPos">Desired Position</label><select name="positions"><option value="" data-i18n="select">Select...</option><option>Warehouse / Sorting</option><option>Labeling / Packaging</option><option>Forklift Operator</option><option>Driver / CDL</option><option>Management</option><option>Manufacturing</option><option>General Labor</option><option>Other</option></select></div>
+      <div class="form-group"><label data-i18n="fAvail">Availability</label><select name="workers"><option value="" data-i18n="select">Select...</option><option data-i18n="fImmediate">Immediately</option><option data-i18n="fWeek1">Within 1 week</option><option data-i18n="fWeek2">Within 2 weeks</option><option data-i18n="fMonth1">Within 1 month</option></select></div>
+      <div class="form-group"><label data-i18n="fPrefLoc">Preferred Location</label><input type="text" name="location" placeholder="City, State"></div>
+      <div class="form-group"><label data-i18n="fPrefShift">Preferred Shift</label><select name="start_date"><option value="" data-i18n="select">Select...</option><option data-i18n="fShift1">1st Shift (Morning)</option><option data-i18n="fShift2">2nd Shift (Afternoon)</option><option data-i18n="fShift3">3rd Shift (Night)</option><option data-i18n="fShiftFlex">Flexible</option></select></div>
+      <div class="form-group"><label data-i18n="fExp">Experience</label><select name="experience"><option value="" data-i18n="select">Select...</option><option data-i18n="fExpNone">No experience</option><option data-i18n="fExpLess1">Less than 1 year</option><option data-i18n="fExp1_3">1–3 years</option><option data-i18n="fExp3_5">3–5 years</option><option data-i18n="fExp5">5+ years</option></select></div>
+      <div class="form-group"><label data-i18n="fLangs">Languages</label><input type="text" name="languages" data-i18n="fLangsPh" placeholder="e.g. English, Spanish, Chinese"></div>
+      <div class="form-group full"><label data-i18n="fResume">Upload Resume</label><div class="file-upload-area" onclick="this.querySelector('input').click()"><input type="file" name="resume" accept=".pdf,.doc,.docx"><p><span data-i18n="fResumeDrop">Drop files here or</span> <span class="browse" data-i18n="fResumeSelect">Select files</span></p></div></div>
+      <div class="form-group full"><label data-i18n="fSeekerNote">Anything else?</label><textarea name="comments" data-i18n="fSeekerPh" placeholder="Certifications, skills, preferences..."></textarea></div>
+    </div></div>
+    <div id="otherFields" style="display:block"><div class="form-grid" style="margin-top:1rem">
+      <div class="form-group full"><label data-i18n="fOtherQ">How can we help?</label><textarea name="comments" data-i18n="fOtherPh" placeholder="Tell us what you need..."></textarea></div>
+    </div></div>
+    <button type="submit" class="btn-submit" data-i18n="fSubmit">Submit</button>
+  </form>
+  <div class="form-success" id="formSuccess"><div class="check">&#10003;</div><h3 data-i18n="thankH">Got It.</h3><p data-i18n="thankP">We'll be in touch soon.</p></div>
+</div></section></div>
+
+<!-- FOOTER -->
+<div class="mega-footer"><div class="footer-inner">
+  <div class="footer-brand">
+    <div class="footer-logo">
+      <div class="logo-mark" style="width:32px;height:32px"><svg viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M12 2L2 19h20L12 2z"/></svg></div>
+      <span style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:.95rem;color:#fff">PRIME <span style="color:var(--sky)">ANCHORPOINT</span></span>
+    </div>
+    <p data-i18n="footDesc">Industrial staffing. Trilingual team. Nationwide coverage.</p>
+    <a href="tel:+12246527010" class="footer-phone">224-652-7010</a>
+  </div>
+  <div class="footer-col"><h4 data-i18n="footServices">Services</h4><ul><li><a href="#" onclick="go('solutions')" data-i18n="footSvc1">Warehouse & Sorting</a></li><li><a href="#" onclick="go('solutions')" data-i18n="footSvc2">Labeling & Packaging</a></li><li><a href="#" onclick="go('solutions')" data-i18n="footSvc3">Forklift & Drivers</a></li><li><a href="#" onclick="go('solutions')" data-i18n="footSvc4">Management</a></li><li><a href="#" onclick="go('solutions')" data-i18n="footSvc5">Manufacturing</a></li></ul></div>
+  <div class="footer-col"><h4 data-i18n="footCompany">Company</h4><ul><li><a href="#" onclick="go('about')" data-i18n="footAbout">About</a></li><li><a href="#" onclick="go('contact')" data-i18n="navContact">Contact</a></li><li><a href="#" onclick="go('jobs')" data-i18n="footCareers">Careers</a></li><li><a href="#" data-i18n="footPrivacy">Privacy</a></li></ul></div>
+  <div class="footer-col"><h4 data-i18n="footContact">Contact</h4><ul><li><a href="tel:+12246527010">&#128222; 224-652-7010</a></li><li><a href="mailto:info@primeanchorpoint.com">&#9993; info@primeanchorpoint.com</a></li><li><a href="https://primeanchorpoint.com">&#127760; primeanchorpoint.com</a></li></ul></div>
+</div><div class="footer-bottom"><span>&copy; 2026 Prime Anchorpoint</span><span><a href="https://primeanchorpoint.com" style="color:var(--sky)">primeanchorpoint.com</a></span></div></div>
+
+<!-- STICKY BAR -->
+<div class="sticky-bar">
+  <a href="#" onclick="go('jobs')"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><span data-i18n="stickyJobs">Jobs</span></a>
+  <a href="#" onclick="go('contact')"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><span data-i18n="stickyRequest">Staff</span></a>
+  <a href="#" onclick="go('about')"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span data-i18n="stickyAbout">About</span></a>
+  <a href="#" onclick="go('contact')"><svg viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.11 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.96.35 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.35 1.85.58 2.81.7A2 2 0 0 1 22 16.92z"/></svg><span data-i18n="stickyContact">Contact</span></a>
+</div>
+
+<script>
+const WP_API='/api';
+function toggleFormSections(){const v=document.querySelector('input[name="type"]:checked')?.value||'Other';document.getElementById('employerFields').style.display=v==='Employer'?'block':'none';document.getElementById('seekerFields').style.display=v==='Job Seeker'?'block':'none';document.getElementById('otherFields').style.display=v==='Other'?'block':'none'}
+
+const T={
+en:{topSlogan:'Precision staffing. Nationwide coverage.',navHome:'Home',navFindTalent:'Find Talent',navRecruit:'People We Place',navSolutions:'Solutions',navFindWork:'Find Work',navJobs:'Open Positions',navFaq:'FAQs',navExpertise:'Industries',navAbout:'About',navContact:'Contact',navCta:'Get Staff',heroH1:'The Right Workers.<br><span class="hl">Right When You Need Them.</span>',heroH2:'Industrial staffing built on speed, safety, and trilingual communication. Warehouse, logistics, manufacturing — we\'ve got it covered.',heroCta:'Get Staff Now',heroJobs:'View Open Jobs',bannerWarehouse:'Warehouse',bannerMfg:'Manufacturing',bannerLogistics:'Logistics',bannerPkg:'Packaging',whyTag:'Why Prime Anchorpoint',whyH2:'We Don\'t Just Fill Spots. We Solve Problems.',whyP:'You need workers who show up ready, certified, and safe. Our OSHA-compliant trilingual team handles everything — recruiting, vetting, scheduling — so you can focus on running your operation.',whyCta:'See How We Work',svc1H:'Fast Deployment',svc1P:'Workers on-site within 24–48 hours. Same-day for emergencies.',svc2H:'Trilingual Crew',svc2P:'English, Chinese, Spanish — zero communication gaps.',svc3H:'100% Compliant',svc3P:'Workers\' comp, OSHA, background checks, E-Verify. All covered.',stat1:'Workers Placed',stat2:'Client Partners',stat3:'Availability',stat4:'Satisfaction Rate',ctaH2:'Need Workers? We\'ve Got Them.',ctaP:'One call. Fast deployment. No hassle.',ctaCta:'Request Staff',jobsH1:'Open Positions',jobsSub:'Find Your Next Role',recruitH1:'People We Place',recruitSub:'Screened. Trained. Ready.',recruitCta:'Request These Workers',solH1:'Our Solutions',solSub:'Flexible Staffing Models',sol1H:'Warehouse & Sorting',sol1P:'Fast, accurate teams for order fulfillment.',sol2H:'Labeling & Packaging',sol2P:'Detail-oriented crews maintaining quality.',sol3H:'Forklift & Drivers',sol3P:'Certified operators and CDL drivers.',sol4H:'On-Site Management',sol4P:'Embedded supervisors for scheduling.',sol5H:'Manufacturing',sol5P:'Line operators, machine operators, assemblers.',sol6H:'Custom Programs',sol6P:'Tell us what you need. We\'ll build it.',expH1:'Industries We Serve',expSub:'Deep Expertise Where It Matters',exp1:'Warehousing',exp2:'Manufacturing',exp3:'Logistics',exp4:'Food Processing',exp5:'E-Commerce',exp6:'Light Industrial',aboutH1:'About Prime Anchorpoint',aboutSub:'Who We Are',aboutHeading:'Built Different',aboutP1:'Prime Anchorpoint is an industrial staffing company built for speed and accountability. Trilingual team (EN/中文/ES) that eliminates communication barriers.',aboutP2:'Every worker is background-checked and safety-trained. Every client gets a dedicated contact. No runaround.',aboutP3:'5 workers or 500. Temp or permanent. We deliver.',aboutCta:'Talk to Us',faqH1:'FAQs',faqSub:'What You Need to Know',faq1Q:'How do I apply?',faq1A:'Go to Contact, select Job Seeker, fill the form and upload your resume.',faq2Q:'Do I need experience?',faq2A:'Many roles include training. Forklift and CDL require certification.',faq3Q:'What benefits?',faq3A:'Workers\' comp, safety training, consistent schedules.',faq4Q:'Temp or permanent?',faq4A:'Both. Temp, temp-to-hire, and direct placement.',faq5Q:'Languages?',faq5A:'English, Chinese, Spanish.',contactH1:'Contact Us',contactSub:'Let\'s Get Started',contactIntroH:'Reach Out',contactIntroP:'Need workers or looking for work? We\'ll respond fast.',contactReq:'"*" required',fName:'Name',fEmail:'Email',fPhone:'Phone',fCompany:'Company',fCompanyPh:'Optional',fIAm:'I am a...',fEmployer:'Employer',fSeeker:'Job Seeker',fOther:'Other',fPositions:'Positions',fWorkers:'Workers Needed',fLocation:'Location',fStartDate:'Start Date',fStaffNeeds:'Details',fStaffPh:'Shifts, requirements, timeline...',fDesiredPos:'Desired Position',fAvail:'Availability',fPrefLoc:'Location',fPrefShift:'Shift',fExp:'Experience',fLangs:'Languages',fLangsPh:'e.g. English, Spanish',fResume:'Resume',fResumeDrop:'Drop files or',fResumeSelect:'Select',fSeekerNote:'Anything else?',fSeekerPh:'Certs, skills...',fOtherQ:'How can we help?',fOtherPh:'Tell us...',fSubmit:'Submit',fImmediate:'Immediately',fWeek1:'1 week',fWeek2:'2 weeks',fMonth1:'1 month',fShift1:'1st (Morning)',fShift2:'2nd (Afternoon)',fShift3:'3rd (Night)',fShiftFlex:'Flexible',fExpNone:'None',fExpLess1:'<1 year',fExp1_3:'1–3 years',fExp3_5:'3–5 years',fExp5:'5+',thankH:'Got It.',thankP:'We\'ll be in touch.',footServices:'Services',footCompany:'Company',footContact:'Contact',footAbout:'About',footCareers:'Careers',footPrivacy:'Privacy',footDesc:'Industrial staffing. Trilingual. Nationwide.',footSvc1:'Warehouse',footSvc2:'Packaging',footSvc3:'Forklift & Drivers',footSvc4:'Management',footSvc5:'Manufacturing',stickyJobs:'Jobs',stickyRequest:'Staff',stickyAbout:'About',stickyContact:'Contact',select:'Select...'},
+zh:{topSlogan:'全美专业用工服务 · 中英西三语团队',navHome:'首页',navFindTalent:'企业招工',navRecruit:'工种一览',navSolutions:'服务内容',navFindWork:'我要找工作',navJobs:'最新岗位',navFaq:'常见问题',navExpertise:'行业经验',navAbout:'关于我们',navContact:'联系我们',navCta:'我要招人',heroH1:'Prime Anchorpoint<br><span class="hl">专业用工 快速到岗</span>',heroH2:'仓储、物流、制造业临时工和正式工派遣。中英西三语团队，24小时响应，全美服务。',heroCta:'我要招人',heroJobs:'看看最新岗位',bannerWarehouse:'仓储',bannerMfg:'制造',bannerLogistics:'物流',bannerPkg:'包装',whyTag:'为什么选我们',whyH2:'不只是派人 是帮你解决问题',whyP:'找人难、管人累？我们帮你搞定。所有员工背景审查、持证上岗，中英西三语沟通无障碍，让你专心做业务。',whyCta:'看看我们怎么做',svc1H:'到岗快',svc1P:'48小时内派人到位，急单当天安排。',svc2H:'三语沟通',svc2P:'中文、英语、西班牙语都能聊，干活不误事。',svc3H:'手续齐全',svc3P:'工伤保险、OSHA合规、背景调查、E-Verify，全部搞定。',stat1:'派遣员工',stat2:'合作企业',stat3:'随时响应',stat4:'客户好评率',ctaH2:'缺人手？我们来帮你',ctaP:'一个电话就搞定，不磨叽。',ctaCta:'马上联系',jobsH1:'最新岗位',jobsSub:'找到适合你的工作',recruitH1:'工种一览',recruitSub:'培训到位 背调合格 随时上岗',recruitCta:'我需要这些工人',solH1:'服务内容',solSub:'灵活用工 按需派遣',sol1H:'仓储分拣',sol1P:'拣货、分拣、上架，仓库里的活都能干。',sol2H:'贴标包装',sol2P:'贴标签、打包、封箱，细心又快。',sol3H:'叉车和司机',sol3P:'叉车持证上岗，CDL司机随叫随到。',sol4H:'现场管理',sol4P:'派驻主管排班、盯现场、管考勤。',sol5H:'生产制造',sol5P:'产线操作、设备操作、组装都行。',sol6H:'按需定制',sol6P:'你说需求，我们来想办法。',expH1:'行业经验',expSub:'我们最擅长这些领域',exp1:'仓储物流',exp2:'生产制造',exp3:'运输配送',exp4:'食品加工',exp5:'电商发货',exp6:'轻工组装',aboutH1:'关于我们',aboutSub:'Prime Anchorpoint',aboutHeading:'我们不一样',aboutP1:'Prime Anchorpoint 做的就是帮企业找人。仓储、物流、工厂、轻工业，这些行业我们最熟。团队会说中文、英语和西班牙语，沟通到位。',aboutP2:'每个工人都经过背景调查和安全培训，上岗就能干活。每个客户都有专人对接，不踢皮球。',aboutP3:'你要5个人还是500个，临时的还是长期的，我们都能安排。',aboutCta:'跟我们聊聊',faqH1:'常见问题',faqSub:'找工作前看一看',faq1Q:'怎么申请工作？',faq1A:'点"联系我们"，选"找工作的"，填个表、传个简历就行。',faq2Q:'没经验能做吗？',faq2A:'很多岗位不要经验，入职就培训。叉车、CDL需要证。',faq3Q:'有什么福利？',faq3A:'工伤保险、安全培训，排班稳定。具体看岗位。',faq4Q:'临时工还是正式工？',faq4A:'都有。临时的、转正的、直接签的，看你需要哪种。',faq5Q:'能说什么语言？',faq5A:'中文、英语、西班牙语都行。',contactH1:'联系我们',contactSub:'有问题随时找我们',contactIntroH:'跟我们聊聊',contactIntroP:'招人还是找工作，填个表就行，我们尽快回复。',contactReq:'"*" 为必填',fName:'姓名',fEmail:'邮箱',fPhone:'电话',fCompany:'公司',fCompanyPh:'选填',fIAm:'我是...',fEmployer:'企业/招人的',fSeeker:'找工作的',fOther:'其他',fPositions:'需要什么岗位',fWorkers:'需要几个人',fLocation:'上班地点',fStartDate:'什么时候要人',fStaffNeeds:'具体说说你的需求',fStaffPh:'几个班次？特殊要求？急不急？',fDesiredPos:'想做什么岗位',fAvail:'什么时候能上班',fPrefLoc:'想在哪里上班',fPrefShift:'想上什么班',fExp:'干了几年',fLangs:'会说什么语言',fLangsPh:'比如：中文、英语、西班牙语',fResume:'上传简历',fResumeDrop:'把文件拖到这里 或者',fResumeSelect:'点击选择',fSeekerNote:'还有什么想说的',fSeekerPh:'有什么证？会什么技能？',fOtherQ:'有什么能帮到你的？',fOtherPh:'说说你的情况...',fSubmit:'提交',fImmediate:'马上能上',fWeek1:'一周内',fWeek2:'两周内',fMonth1:'一个月内',fShift1:'白班',fShift2:'中班',fShift3:'夜班',fShiftFlex:'都行',fExpNone:'没干过',fExpLess1:'不到1年',fExp1_3:'1到3年',fExp3_5:'3到5年',fExp5:'5年以上',thankH:'收到了！',thankP:'我们会尽快联系你。',footServices:'服务项目',footCompany:'了解我们',footContact:'联系方式',footAbout:'关于我们',footCareers:'工作机会',footPrivacy:'隐私条款',footDesc:'仓储、物流、制造业用工服务。三语团队，服务全美。',footSvc1:'仓储分拣',footSvc2:'贴标包装',footSvc3:'叉车和司机',footSvc4:'现场管理',footSvc5:'生产制造',stickyJobs:'找工作',stickyRequest:'招人',stickyAbout:'关于',stickyContact:'联系',select:'请选择...'},
+es:{topSlogan:'Personal de precisión. Cobertura nacional.',navHome:'Inicio',navFindTalent:'Talento',navRecruit:'Personal',navSolutions:'Soluciones',navFindWork:'Empleo',navJobs:'Vacantes',navFaq:'Preguntas',navExpertise:'Industrias',navAbout:'Nosotros',navContact:'Contacto',navCta:'Solicitar',heroH1:'El Personal Correcto.<br><span class="hl">Cuando Lo Necesita.</span>',heroH2:'Personal industrial con velocidad, seguridad y comunicación trilingüe. Almacenes, logística, manufactura — todo cubierto.',heroCta:'Solicitar Personal',heroJobs:'Ver Vacantes',bannerWarehouse:'Almacén',bannerMfg:'Manufactura',bannerLogistics:'Logística',bannerPkg:'Empaque',whyTag:'Por Qué Elegirnos',whyH2:'No Solo Llenamos Vacantes. Resolvemos Problemas.',whyP:'Necesita trabajadores listos, certificados y seguros. Nuestro equipo trilingüe con OSHA se encarga de todo.',whyCta:'Cómo Trabajamos',svc1H:'Despliegue Rápido',svc1P:'Personal en 24–48 horas. Emergencias el mismo día.',svc2H:'Equipo Trilingüe',svc2P:'Inglés, chino, español — sin barreras.',svc3H:'100% Legal',svc3P:'Seguro, OSHA, antecedentes, E-Verify.',stat1:'Trabajadores',stat2:'Empresas',stat3:'Disponibilidad',stat4:'Satisfacción',ctaH2:'¿Necesita Personal?',ctaP:'Una llamada. Despliegue rápido.',ctaCta:'Solicitar',jobsH1:'Vacantes',jobsSub:'Su Próximo Trabajo',recruitH1:'Personal Disponible',recruitSub:'Verificado. Capacitado. Listo.',recruitCta:'Solicitar Personal',solH1:'Soluciones',solSub:'Modelos Flexibles',sol1H:'Almacén',sol1P:'Equipos rápidos y precisos.',sol2H:'Etiquetado',sol2P:'Personal detallista.',sol3H:'Montacargas',sol3P:'Operadores certificados y CDL.',sol4H:'Gestión',sol4P:'Supervisores en sitio.',sol5H:'Manufactura',sol5P:'Operarios y ensambladores.',sol6H:'A Medida',sol6P:'Díganos qué necesita.',expH1:'Industrias',expSub:'Experiencia Real',exp1:'Almacenamiento',exp2:'Manufactura',exp3:'Logística',exp4:'Alimentos',exp5:'E-Commerce',exp6:'Industria Ligera',aboutH1:'Sobre Nosotros',aboutSub:'Prime Anchorpoint',aboutHeading:'Somos Diferentes',aboutP1:'Prime Anchorpoint: personal industrial con velocidad y responsabilidad. Equipo trilingüe que elimina barreras.',aboutP2:'Cada trabajador verificado y capacitado. Cada cliente con contacto dedicado.',aboutP3:'5 o 500. Temporal o permanente. Cumplimos.',aboutCta:'Hablemos',faqH1:'Preguntas',faqSub:'Lo Que Necesita Saber',faq1Q:'¿Cómo aplico?',faq1A:'Contacto → Buscador de Empleo → formulario.',faq2Q:'¿Experiencia?',faq2A:'Muchos puestos con capacitación. Montacargas/CDL requieren certificación.',faq3Q:'¿Beneficios?',faq3A:'Seguro, capacitación, horarios estables.',faq4Q:'¿Temporal o permanente?',faq4A:'Ambos.',faq5Q:'¿Idiomas?',faq5A:'Inglés, chino, español.',contactH1:'Contacto',contactSub:'Empecemos',contactIntroH:'Comuníquese',contactIntroP:'Complete el formulario.',contactReq:'"*" obligatorio',fName:'Nombre',fEmail:'Correo',fPhone:'Teléfono',fCompany:'Empresa',fCompanyPh:'Opcional',fIAm:'Soy...',fEmployer:'Empleador',fSeeker:'Buscador',fOther:'Otro',fPositions:'Puestos',fWorkers:'Personal',fLocation:'Ubicación',fStartDate:'Inicio',fStaffNeeds:'Detalles',fStaffPh:'Turnos, requisitos...',fDesiredPos:'Puesto',fAvail:'Disponibilidad',fPrefLoc:'Ubicación',fPrefShift:'Turno',fExp:'Experiencia',fLangs:'Idiomas',fLangsPh:'ej. Español, Inglés',fResume:'CV',fResumeDrop:'Arrastre o',fResumeSelect:'Seleccionar',fSeekerNote:'¿Más?',fSeekerPh:'Certificaciones...',fOtherQ:'¿Cómo ayudar?',fOtherPh:'Díganos...',fSubmit:'Enviar',fImmediate:'Ya',fWeek1:'1 semana',fWeek2:'2 semanas',fMonth1:'1 mes',fShift1:'1er Turno',fShift2:'2do Turno',fShift3:'3er Turno',fShiftFlex:'Flexible',fExpNone:'Ninguna',fExpLess1:'<1 año',fExp1_3:'1–3',fExp3_5:'3–5',fExp5:'5+',thankH:'Recibido.',thankP:'Le contactaremos.',footServices:'Servicios',footCompany:'Empresa',footContact:'Contacto',footAbout:'Nosotros',footCareers:'Empleos',footPrivacy:'Privacidad',footDesc:'Personal industrial. Trilingüe. Nacional.',footSvc1:'Almacén',footSvc2:'Etiquetado',footSvc3:'Montacargas',footSvc4:'Gestión',footSvc5:'Manufactura',stickyJobs:'Empleos',stickyRequest:'Solicitar',stickyAbout:'Nosotros',stickyContact:'Contacto',select:'Seleccionar...'}
+};
+
+function applyLang(l){const t=T[l];if(!t)return;document.querySelectorAll('[data-i18n]').forEach(el=>{const k=el.getAttribute('data-i18n');if(t[k]){if(el.tagName==='INPUT'||el.tagName==='TEXTAREA')el.placeholder=t[k];else if(el.tagName==='OPTION')el.textContent=t[k];else el.innerHTML=t[k]}})}
+let currentLang='en';
+function setLang(l){currentLang=l;document.querySelectorAll('.lang-btn').forEach(b=>b.classList.toggle('active',b.textContent.trim()==={en:'EN',zh:'中文',es:'ES'}[l]));applyLang(l);loadJobs()}
+function go(pg){document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));const el=document.getElementById('pg-'+pg);if(el)el.classList.add('active');window.scrollTo({top:0,behavior:'smooth'})}
+
+let allJobs=[];
+async function loadJobs(){try{const r=await fetch(WP_API+'/jobs?lang=all');if(!r.ok)throw 0;allJobs=await r.json();renderJobs(allJobs)}catch(e){document.getElementById('jobList').innerHTML='<div style="text-align:center;padding:3rem;color:var(--gray-400)"><p style="font-size:1.05rem;margin-bottom:.5rem">Coming Soon</p><p style="font-size:.85rem">Job listings will appear once the backend is connected.</p></div>'}}
+function renderJobs(j){const l=document.getElementById('jobList');if(!j.length){l.innerHTML='<p style="text-align:center;color:var(--gray-400);padding:2rem">No positions right now.</p>';return}l.innerHTML=j.map(j=>`<div class="job-card" onclick="this.querySelector('.job-detail').style.display=this.querySelector('.job-detail').style.display==='block'?'none':'block'"><div><h3>${j.title}</h3><div class="meta"><span>${j.type||''}</span><span>${j.location||''}</span>${j.pay?'<span>'+j.pay+'</span>':''}</div><div class="job-detail"><p>${j.desc||''}</p></div></div><div class="job-badge${j.urgent?' urgent':''}">${j.urgent?'URGENT':j.lang_name||''}</div></div>`).join('')}
+function filterJobs(lang,btn){document.querySelectorAll('.job-filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(lang==='all')renderJobs(allJobs);else renderJobs(allJobs.filter(j=>j.lang===lang))}
+
+async function submitForm(e){e.preventDefault();const f=e.target,b=f.querySelector('.btn-submit');b.textContent='...';b.disabled=true;const role=f.querySelector('[name="type"]:checked')?.value||'Other';const sid=role==='Employer'?'employerFields':role==='Job Seeker'?'seekerFields':'otherFields';const s=document.getElementById(sid);const d={name:f.querySelector('[name="name"]').value,email:f.querySelector('[name="email"]').value,phone:f.querySelector('[name="phone"]').value,company:f.querySelector('[name="company"]')?.value||'',type:role,positions:s.querySelector('[name="positions"]')?.value||'',workers:s.querySelector('[name="workers"]')?.value||'',location:s.querySelector('[name="location"]')?.value||'',start_date:s.querySelector('[name="start_date"]')?.value||'',comments:s.querySelector('[name="comments"]')?.value||''};if(role==='Job Seeker'){d.experience=s.querySelector('[name="experience"]')?.value||'';d.languages=s.querySelector('[name="languages"]')?.value||''}try{const r=await fetch(WP_API+'/inquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});if(r.ok){f.style.display='none';['employerFields','seekerFields','otherFields'].forEach(id=>document.getElementById(id).style.display='none');document.getElementById('formSuccess').style.display='block'}else throw 0}catch(err){const sub=encodeURIComponent('Inquiry from '+d.name);const body=encodeURIComponent(Object.entries(d).filter(([k,v])=>v).map(([k,v])=>k+': '+v).join('\n'));window.location.href='mailto:info@primeanchorpoint.com?subject='+sub+'&body='+body}b.textContent='Submit';b.disabled=false}
+loadJobs();
+</script>
+</body>
+</html>

@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prime Anchorpoint — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--accent:#F5A623;--white:#fff;--off-white:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:8px}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gray-800)}
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center}
+.login-box{background:var(--white);padding:3rem;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.08);width:100%;max-width:360px;text-align:center}
+.login-box h1{font-size:1.3rem;color:var(--blue);margin-bottom:.5rem}.login-box p{font-size:.85rem;color:var(--gray-400);margin-bottom:2rem}
+.login-box input{width:100%;padding:12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.95rem;margin-bottom:1rem;outline:none}
+.login-box input:focus{border-color:var(--sky)}
+.login-box button{width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.95rem}
+.login-box button:hover{background:var(--sky)}
+.login-box .err{color:var(--red);font-size:.82rem;margin-top:.5rem}
+
+.app{display:none}.app.show{display:block}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:var(--blue);color:#fff;padding:1.5rem 0}
+.sidebar h2{font-size:1rem;padding:0 1.5rem;margin-bottom:2rem;color:var(--sky)}
+.sidebar a{display:block;padding:10px 1.5rem;color:rgba(255,255,255,.5);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}
+.sidebar a:hover,.sidebar a.active{color:#fff;background:rgba(255,255,255,.08)}
+.sidebar .logout{position:absolute;bottom:1.5rem;left:0;right:0;padding:10px 1.5rem;color:var(--red);font-size:.82rem}
+.main{margin-left:220px;padding:2rem}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem}
+.top h1{font-size:1.5rem;color:var(--blue)}
+.btn{padding:8px 20px;background:var(--sky);color:#fff;border:none;border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:.82rem;transition:all .2s}
+.btn:hover{background:var(--blue)}.btn-red{background:var(--red)}.btn-red:hover{background:#c5303c}
+.btn-sm{padding:5px 12px;font-size:.75rem}
+.card{background:var(--white);border-radius:var(--radius);padding:1.5rem;box-shadow:0 2px 12px rgba(0,0,0,.04);margin-bottom:1rem}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 12px;font-size:.75rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--gray-200)}
+td{padding:10px 12px;font-size:.85rem;border-bottom:1px solid var(--gray-100);color:var(--gray-600)}
+tr:hover td{background:var(--sky-light)}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700}
+.badge-en{background:#E8F0FE;color:#4A90D9}.badge-zh{background:#FFF3E0;color:#E67E22}.badge-es{background:#E8F5E9;color:#2D9D78}
+.badge-employer{background:#E8F0FE;color:var(--blue)}.badge-seeker{background:#FFF3E0;color:#E67E22}.badge-other{background:var(--gray-200);color:var(--gray-600)}
+.badge-urgent{background:var(--red);color:#fff}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
+.modal-bg.show{display:flex}
+.modal{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
+.modal h2{font-size:1.2rem;color:var(--blue);margin-bottom:1.5rem}
+.field{margin-bottom:1rem}.field label{display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;margin-bottom:4px}
+.field input,.field select,.field textarea{width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.9rem;outline:none;font-family:inherit}
+.field textarea{height:80px;resize:vertical}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--sky)}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2rem}
+.stat-card{background:var(--white);border-radius:var(--radius);padding:1.5rem;box-shadow:0 2px 12px rgba(0,0,0,.04);text-align:center}
+.stat-card h3{font-size:2rem;color:var(--sky)}.stat-card p{font-size:.82rem;color:var(--gray-400)}
+.empty{text-align:center;padding:3rem;color:var(--gray-400)}
+@media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-wrap" id="loginWrap">
+<div class="login-box">
+  <h1>Prime Anchorpoint</h1>
+  <p>Admin Panel</p>
+  <input type="password" id="passInput" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
+  <button onclick="doLogin()">Login</button>
+  <div class="err" id="loginErr"></div>
+</div>
+</div>
+
+<!-- APP -->
+<div class="app" id="app">
+<div class="sidebar">
+  <h2>⚓ Admin</h2>
+  <a class="active" onclick="showTab('dashboard')">Dashboard</a>
+  <a onclick="showTab('jobs')">Jobs</a>
+  <a onclick="showTab('inquiries')">Inquiries</a>
+  <a class="logout" onclick="logout()">Logout</a>
+</div>
+<div class="main">
+
+<!-- Dashboard -->
+<div id="tab-dashboard">
+  <div class="top"><h1>Dashboard</h1></div>
+  <div class="stats-row">
+    <div class="stat-card"><h3 id="statJobs">0</h3><p>Active Jobs</p></div>
+    <div class="stat-card"><h3 id="statInq">0</h3><p>Total Inquiries</p></div>
+    <div class="stat-card"><h3 id="statNew">0</h3><p>This Week</p></div>
+  </div>
+  <div class="card"><h3 style="margin-bottom:1rem;color:var(--blue)">Recent Inquiries</h3><div id="recentInq"></div></div>
+</div>
+
+<!-- Jobs -->
+<div id="tab-jobs" style="display:none">
+  <div class="top"><h1>Jobs</h1><button class="btn" onclick="openJobModal()">+ Add Job</button></div>
+  <div class="card"><table><thead><tr><th>Title</th><th>Type</th><th>Location</th><th>Language</th><th>Status</th><th></th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+</div>
+
+<!-- Inquiries -->
+<div id="tab-inquiries" style="display:none">
+  <div class="top"><h1>Inquiries</h1><button class="btn" onclick="exportCSV()">Export CSV</button></div>
+  <div class="card"><table><thead><tr><th>Date</th><th>Name</th><th>Type</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody id="inqTable"></tbody></table></div>
+</div>
+
+</div></div>
+
+<!-- Job Modal -->
+<div class="modal-bg" id="jobModal"><div class="modal">
+  <h2 id="jobModalTitle">Add Job</h2>
+  <input type="hidden" id="jobId">
+  <div class="field"><label>Job Title *</label><input id="jTitle" placeholder="e.g. Warehouse Sorter"></div>
+  <div class="field-row">
+    <div class="field"><label>Type</label><input id="jType" placeholder="e.g. Full-time, Temp"></div>
+    <div class="field"><label>Location</label><input id="jLocation" placeholder="e.g. Chicago, IL"></div>
+  </div>
+  <div class="field-row">
+    <div class="field"><label>Pay</label><input id="jPay" placeholder="e.g. $18-22/hr"></div>
+    <div class="field"><label>Language</label><select id="jLang"><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select></div>
+  </div>
+  <div class="field"><label>Description</label><textarea id="jDesc" placeholder="Job description..."></textarea></div>
+  <div class="field"><label><input type="checkbox" id="jUrgent"> Urgent Hiring</label></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn" onclick="saveJob()">Save</button>
+    <button class="btn btn-red" onclick="closeJobModal()">Cancel</button>
+  </div>
+</div></div>
+
+<!-- Inquiry Detail Modal -->
+<div class="modal-bg" id="inqModal"><div class="modal">
+  <h2>Inquiry Details</h2>
+  <div id="inqDetail"></div>
+  <div style="margin-top:1.5rem"><button class="btn btn-red" onclick="document.getElementById('inqModal').classList.remove('show')">Close</button></div>
+</div></div>
+
+<script>
+let TOKEN = '';
+const API = '/api';
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}`, ...(opts.headers || {}) }
+  });
+  return res.json();
+}
+
+// Login
+async function doLogin() {
+  const pass = document.getElementById('passInput').value;
+  const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ password: pass }) });
+  if (r.success) {
+    TOKEN = r.token;
+    document.cookie = `pa_auth=${TOKEN};path=/;max-age=86400`;
+    document.getElementById('loginWrap').style.display = 'none';
+    document.getElementById('app').classList.add('show');
+    loadDashboard();
+  } else {
+    document.getElementById('loginErr').textContent = 'Wrong password';
+  }
+}
+
+function logout() {
+  TOKEN = '';
+  document.cookie = 'pa_auth=;path=/;max-age=0';
+  document.getElementById('app').classList.remove('show');
+  document.getElementById('loginWrap').style.display = 'flex';
+}
+
+// Check cookie on load
+(function() {
+  const m = document.cookie.match(/pa_auth=([^;]+)/);
+  if (m) { TOKEN = m[1]; document.getElementById('loginWrap').style.display = 'none'; document.getElementById('app').classList.add('show'); loadDashboard(); }
+})();
+
+// Tabs
+function showTab(t) {
+  document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
+  document.getElementById('tab-' + t).style.display = 'block';
+  document.querySelectorAll('.sidebar a').forEach(a => a.classList.remove('active'));
+  event.target.classList.add('active');
+  if (t === 'dashboard') loadDashboard();
+  if (t === 'jobs') loadJobs();
+  if (t === 'inquiries') loadInquiries();
+}
+
+// Dashboard
+async function loadDashboard() {
+  const [jobs, inqs] = await Promise.all([api('/admin/jobs'), api('/admin/inquiries')]);
+  document.getElementById('statJobs').textContent = jobs.filter(j => j.active).length;
+  document.getElementById('statInq').textContent = inqs.length;
+  const weekAgo = new Date(Date.now() - 7 * 86400000);
+  document.getElementById('statNew').textContent = inqs.filter(i => new Date(i.created_at) > weekAgo).length;
+  const recent = inqs.slice(0, 5);
+  document.getElementById('recentInq').innerHTML = recent.length ? '<table><thead><tr><th>Name</th><th>Type</th><th>Date</th></tr></thead><tbody>' +
+    recent.map(i => `<tr><td>${i.name}</td><td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${i.type}</span></td><td>${new Date(i.created_at).toLocaleDateString()}</td></tr>`).join('') +
+    '</tbody></table>' : '<p class="empty">No inquiries yet</p>';
+}
+
+// Jobs
+async function loadJobs() {
+  const jobs = await api('/admin/jobs');
+  const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
+  document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
+    <td><strong>${j.title}</strong>${j.urgent ? ' <span class="badge badge-urgent">URGENT</span>' : ''}</td>
+    <td>${j.type}</td><td>${j.location}</td>
+    <td><span class="badge ${langBadge(j.lang)}">${j.lang_name || j.lang}</span></td>
+    <td>${j.active ? '✅ Active' : '⏸ Inactive'}</td>
+    <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j)})'>Edit</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">Del</button></td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">No jobs yet. Click "+ Add Job" to create one.</td></tr>';
+}
+
+function openJobModal(job) {
+  document.getElementById('jobModalTitle').textContent = job ? 'Edit Job' : 'Add Job';
+  document.getElementById('jobId').value = job ? job.id : '';
+  document.getElementById('jTitle').value = job ? job.title : '';
+  document.getElementById('jType').value = job ? job.type : '';
+  document.getElementById('jLocation').value = job ? job.location : '';
+  document.getElementById('jPay').value = job ? job.pay : '';
+  document.getElementById('jLang').value = job ? job.lang : 'en';
+  document.getElementById('jDesc').value = job ? job.description : '';
+  document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
+  document.getElementById('jobModal').classList.add('show');
+}
+function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
+function editJob(j) { openJobModal(j); }
+
+async function saveJob() {
+  const id = document.getElementById('jobId').value;
+  const langNames = { en: 'English', zh: '中文', es: 'Español' };
+  const data = {
+    title: document.getElementById('jTitle').value,
+    type: document.getElementById('jType').value,
+    location: document.getElementById('jLocation').value,
+    pay: document.getElementById('jPay').value,
+    lang: document.getElementById('jLang').value,
+    lang_name: langNames[document.getElementById('jLang').value],
+    description: document.getElementById('jDesc').value,
+    urgent: document.getElementById('jUrgent').checked,
+    active: true
+  };
+  if (!data.title) return alert('Title required');
+  if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  else await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
+  closeJobModal();
+  loadJobs();
+}
+
+async function deleteJob(id) {
+  if (!confirm('Delete this job?')) return;
+  await api(`/admin/jobs/${id}`, { method: 'DELETE' });
+  loadJobs();
+}
+
+// Inquiries
+async function loadInquiries() {
+  const inqs = await api('/admin/inquiries');
+  document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i)})'>
+    <td>${new Date(i.created_at).toLocaleDateString()}</td>
+    <td><strong>${i.name}</strong></td>
+    <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${i.type}</span></td>
+    <td>${i.email}</td><td>${i.phone}</td>
+    <td><button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">Del</button></td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">No inquiries yet</td></tr>';
+}
+
+function showInquiry(i) {
+  const fields = [
+    ['Name', i.name], ['Email', i.email], ['Phone', i.phone], ['Company', i.company],
+    ['Type', i.type], ['Positions', i.positions], ['Workers', i.workers],
+    ['Location', i.location], ['Start Date', i.start_date], ['Experience', i.experience],
+    ['Languages', i.languages], ['Comments', i.comments],
+    ['Resume', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank">Download</a>` : ''],
+    ['Date', new Date(i.created_at).toLocaleString()]
+  ].filter(([k, v]) => v);
+  document.getElementById('inqDetail').innerHTML = '<table>' + fields.map(([k, v]) => `<tr><td style="font-weight:700;width:120px;padding:6px 0">${k}</td><td>${v}</td></tr>`).join('') + '</table>';
+  document.getElementById('inqModal').classList.add('show');
+}
+
+async function deleteInq(id) {
+  if (!confirm('Delete?')) return;
+  await api(`/admin/inquiries/${id}`, { method: 'DELETE' });
+  loadInquiries();
+}
+
+function exportCSV() {
+  window.open(API + '/admin/inquiries/export', '_blank');
+}
+</script>
+</body>
+</html>
