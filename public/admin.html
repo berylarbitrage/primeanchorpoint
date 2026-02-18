@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prime Anchorpoint — Admin</title>
+<title>Prime Anchorpoint — 管理后台</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--accent:#F5A623;--white:#fff;--off-white:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:8px}
@@ -24,20 +24,25 @@
 .sidebar a:hover,.sidebar a.active{color:#fff;background:rgba(255,255,255,.08)}
 .sidebar .logout{position:absolute;bottom:1.5rem;left:0;right:0;padding:10px 1.5rem;color:var(--red);font-size:.82rem}
 .main{margin-left:220px;padding:2rem}
-.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:.5rem}
 .top h1{font-size:1.5rem;color:var(--blue)}
+.top-actions{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 .btn{padding:8px 20px;background:var(--sky);color:#fff;border:none;border-radius:var(--radius);font-weight:600;cursor:pointer;font-size:.82rem;transition:all .2s}
 .btn:hover{background:var(--blue)}.btn-red{background:var(--red)}.btn-red:hover{background:#c5303c}
+.btn-green{background:var(--green)}.btn-green:hover{background:#1e7a5c}
+.btn-accent{background:var(--accent);color:#fff}.btn-accent:hover{background:#d9900e}
 .btn-sm{padding:5px 12px;font-size:.75rem}
+.btn-outline{background:transparent;border:1px solid var(--gray-200);color:var(--gray-600)}.btn-outline:hover{background:var(--gray-200);color:var(--gray-800)}
 .card{background:var(--white);border-radius:var(--radius);padding:1.5rem;box-shadow:0 2px 12px rgba(0,0,0,.04);margin-bottom:1rem}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:10px 12px;font-size:.75rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--gray-200)}
-td{padding:10px 12px;font-size:.85rem;border-bottom:1px solid var(--gray-100);color:var(--gray-600)}
+td{padding:10px 12px;font-size:.85rem;border-bottom:1px solid var(--gray-200);color:var(--gray-600)}
 tr:hover td{background:var(--sky-light)}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700}
 .badge-en{background:#E8F0FE;color:#4A90D9}.badge-zh{background:#FFF3E0;color:#E67E22}.badge-es{background:#E8F5E9;color:#2D9D78}
 .badge-employer{background:#E8F0FE;color:var(--blue)}.badge-seeker{background:#FFF3E0;color:#E67E22}.badge-other{background:var(--gray-200);color:var(--gray-600)}
 .badge-urgent{background:var(--red);color:#fff}
+.badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
 .modal{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
@@ -47,11 +52,15 @@ tr:hover td{background:var(--sky-light)}
 .field textarea{height:80px;resize:vertical}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--sky)}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
-.stats-row{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:2rem}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:2rem}
 .stat-card{background:var(--white);border-radius:var(--radius);padding:1.5rem;box-shadow:0 2px 12px rgba(0,0,0,.04);text-align:center}
 .stat-card h3{font-size:2rem;color:var(--sky)}.stat-card p{font-size:.82rem;color:var(--gray-400)}
 .empty{text-align:center;padding:3rem;color:var(--gray-400)}
-@media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}}
+.search-bar{display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap}
+.search-bar input,.search-bar select{padding:8px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem;outline:none;font-family:inherit}
+.search-bar input{flex:1;min-width:200px}
+.search-bar input:focus,.search-bar select:focus{border-color:var(--sky)}
+@media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}.stats-row{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -60,9 +69,10 @@ tr:hover td{background:var(--sky-light)}
 <div class="login-wrap" id="loginWrap">
 <div class="login-box">
   <h1>Prime Anchorpoint</h1>
-  <p>Admin Panel</p>
-  <input type="password" id="passInput" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
-  <button onclick="doLogin()">Login</button>
+  <p>管理后台</p>
+  <input type="text" id="userInput" placeholder="用户名" autocomplete="username">
+  <input type="password" id="passInput" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+  <button onclick="doLogin()">登录</button>
   <div class="err" id="loginErr"></div>
 </div>
 </div>
@@ -70,70 +80,158 @@ tr:hover td{background:var(--sky-light)}
 <!-- APP -->
 <div class="app" id="app">
 <div class="sidebar">
-  <h2>⚓ Admin</h2>
-  <a class="active" onclick="showTab('dashboard')">Dashboard</a>
-  <a onclick="showTab('jobs')">Jobs</a>
-  <a onclick="showTab('inquiries')">Inquiries</a>
-  <a class="logout" onclick="logout()">Logout</a>
+  <h2>⚓ 管理后台</h2>
+  <a class="active" onclick="showTab('dashboard')">仪表盘</a>
+  <a onclick="showTab('inquiries')">问卷管理</a>
+  <a onclick="showTab('assignments')">派工管理</a>
+  <a onclick="showTab('jobs')">职位管理</a>
+  <a onclick="showTab('backups')">备份管理</a>
+  <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
 
 <!-- Dashboard -->
 <div id="tab-dashboard">
-  <div class="top"><h1>Dashboard</h1></div>
+  <div class="top"><h1>仪表盘</h1></div>
   <div class="stats-row">
-    <div class="stat-card"><h3 id="statJobs">0</h3><p>Active Jobs</p></div>
-    <div class="stat-card"><h3 id="statInq">0</h3><p>Total Inquiries</p></div>
-    <div class="stat-card"><h3 id="statNew">0</h3><p>This Week</p></div>
+    <div class="stat-card"><h3 id="statInq">0</h3><p>问卷总数</p></div>
+    <div class="stat-card"><h3 id="statNew">0</h3><p>本周新增</p></div>
+    <div class="stat-card"><h3 id="statAssign">0</h3><p>已派工</p></div>
+    <div class="stat-card"><h3 id="statJobs">0</h3><p>在招职位</p></div>
   </div>
-  <div class="card"><h3 style="margin-bottom:1rem;color:var(--blue)">Recent Inquiries</h3><div id="recentInq"></div></div>
-</div>
-
-<!-- Jobs -->
-<div id="tab-jobs" style="display:none">
-  <div class="top"><h1>Jobs</h1><button class="btn" onclick="openJobModal()">+ Add Job</button></div>
-  <div class="card"><table><thead><tr><th>Title</th><th>Type</th><th>Location</th><th>Language</th><th>Status</th><th></th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div class="card"><h3 style="margin-bottom:1rem;color:var(--blue)">最近提交的问卷</h3><div id="recentInq"></div></div>
 </div>
 
 <!-- Inquiries -->
 <div id="tab-inquiries" style="display:none">
-  <div class="top"><h1>Inquiries</h1><button class="btn" onclick="exportCSV()">Export CSV</button></div>
-  <div class="card"><table><thead><tr><th>Date</th><th>Name</th><th>Type</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody id="inqTable"></tbody></table></div>
+  <div class="top">
+    <h1>问卷管理</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="exportCSV()">导出 CSV</button>
+    </div>
+  </div>
+  <div class="search-bar">
+    <input type="text" id="inqSearch" placeholder="搜索姓名、邮箱、电话..." oninput="filterInquiries()">
+    <select id="inqTypeFilter" onchange="filterInquiries()">
+      <option value="">全部类型</option>
+      <option value="Employer">雇主</option>
+      <option value="Job Seeker">求职者</option>
+      <option value="Other">其他</option>
+    </select>
+  </div>
+  <div class="card"><table><thead><tr><th>日期</th><th>姓名</th><th>类型</th><th>邮箱</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
+</div>
+
+<!-- Assignments -->
+<div id="tab-assignments" style="display:none">
+  <div class="top">
+    <h1>派工管理</h1>
+    <div class="top-actions">
+      <button class="btn btn-green" onclick="openAssignModal()">+ 新建派工</button>
+    </div>
+  </div>
+  <div class="search-bar">
+    <input type="text" id="assignSearch" placeholder="搜索人员、职位..." oninput="filterAssignments()">
+    <select id="assignStatusFilter" onchange="filterAssignments()">
+      <option value="">全部状态</option>
+      <option value="assigned">已分配</option>
+      <option value="working">工作中</option>
+      <option value="completed">已完成</option>
+      <option value="cancelled">已取消</option>
+    </select>
+  </div>
+  <div class="card"><table><thead><tr><th>日期</th><th>人员</th><th>分配职位</th><th>工作地点</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div>
+</div>
+
+<!-- Jobs -->
+<div id="tab-jobs" style="display:none">
+  <div class="top">
+    <h1>职位管理</h1>
+    <div class="top-actions">
+      <button class="btn" onclick="openJobModal()">+ 新增职位</button>
+    </div>
+  </div>
+  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+</div>
+
+<!-- Backups -->
+<div id="tab-backups" style="display:none">
+  <div class="top">
+    <h1>备份管理</h1>
+    <div class="top-actions">
+      <button class="btn btn-accent" id="backupNowBtn" onclick="runBackupNow()">立即备份</button>
+    </div>
+  </div>
+  <div class="stats-row" style="grid-template-columns:repeat(3,1fr)">
+    <div class="stat-card"><h3 id="bkLocations">0</h3><p>备份存储位置</p></div>
+    <div class="stat-card"><h3 id="bkInterval">0</h3><p>自动备份间隔(分钟)</p></div>
+    <div class="stat-card"><h3 id="bkKeep">0</h3><p>每位置保留份数</p></div>
+  </div>
+  <div id="backupLocations"></div>
+  <div class="card" style="margin-top:1rem">
+    <h3 style="margin-bottom:1rem;color:var(--blue)">备份日志</h3>
+    <div id="backupLogTable"></div>
+  </div>
 </div>
 
 </div></div>
 
 <!-- Job Modal -->
 <div class="modal-bg" id="jobModal"><div class="modal">
-  <h2 id="jobModalTitle">Add Job</h2>
+  <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
-  <div class="field"><label>Job Title *</label><input id="jTitle" placeholder="e.g. Warehouse Sorter"></div>
+  <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
   <div class="field-row">
-    <div class="field"><label>Type</label><input id="jType" placeholder="e.g. Full-time, Temp"></div>
-    <div class="field"><label>Location</label><input id="jLocation" placeholder="e.g. Chicago, IL"></div>
+    <div class="field"><label>类型</label><input id="jType" placeholder="例：全职、临时工"></div>
+    <div class="field"><label>工作地点</label><input id="jLocation" placeholder="例：Chicago, IL"></div>
   </div>
   <div class="field-row">
-    <div class="field"><label>Pay</label><input id="jPay" placeholder="e.g. $18-22/hr"></div>
-    <div class="field"><label>Language</label><select id="jLang"><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select></div>
+    <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
+    <div class="field"><label>语言</label><select id="jLang"><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select></div>
   </div>
-  <div class="field"><label>Description</label><textarea id="jDesc" placeholder="Job description..."></textarea></div>
-  <div class="field"><label><input type="checkbox" id="jUrgent"> Urgent Hiring</label></div>
+  <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
+  <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
-    <button class="btn" onclick="saveJob()">Save</button>
-    <button class="btn btn-red" onclick="closeJobModal()">Cancel</button>
+    <button class="btn" onclick="saveJob()">保存</button>
+    <button class="btn btn-red" onclick="closeJobModal()">取消</button>
   </div>
 </div></div>
 
 <!-- Inquiry Detail Modal -->
 <div class="modal-bg" id="inqModal"><div class="modal">
-  <h2>Inquiry Details</h2>
+  <h2>问卷详情</h2>
   <div id="inqDetail"></div>
-  <div style="margin-top:1.5rem"><button class="btn btn-red" onclick="document.getElementById('inqModal').classList.remove('show')">Close</button></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
+    <button class="btn btn-red" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Assignment Modal -->
+<div class="modal-bg" id="assignModal"><div class="modal">
+  <h2 id="assignModalTitle">新建派工</h2>
+  <input type="hidden" id="assignId">
+  <div class="field"><label>选择人员 *</label><select id="aInquiry"><option value="">-- 请选择 --</option></select></div>
+  <div class="field"><label>分配职位 *</label><select id="aJob"><option value="">-- 请选择 --</option></select></div>
+  <div class="field"><label>状态</label><select id="aStatus">
+    <option value="assigned">已分配</option>
+    <option value="working">工作中</option>
+    <option value="completed">已完成</option>
+    <option value="cancelled">已取消</option>
+  </select></div>
+  <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="saveAssignment()">保存</button>
+    <button class="btn btn-red" onclick="closeAssignModal()">取消</button>
+  </div>
 </div></div>
 
 <script>
 let TOKEN = '';
 const API = '/api';
+let allInquiries = [];
+let allAssignments = [];
+let currentInquiry = null;
 
 async function api(path, opts = {}) {
   const res = await fetch(API + path, {
@@ -143,73 +241,105 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-// Login
+// ─── Login ───
 async function doLogin() {
-  const pass = document.getElementById('passInput').value;
-  const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ password: pass }) });
+  const username = document.getElementById('userInput').value;
+  const password = document.getElementById('passInput').value;
+  if (!username || !password) { document.getElementById('loginErr').textContent = '请输入用户名和密码'; return; }
+  const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
   if (r.success) {
     TOKEN = r.token;
-    document.cookie = `pa_auth=${TOKEN};path=/;max-age=86400`;
+    document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
     document.getElementById('loginWrap').style.display = 'none';
     document.getElementById('app').classList.add('show');
     loadDashboard();
   } else {
-    document.getElementById('loginErr').textContent = 'Wrong password';
+    document.getElementById('loginErr').textContent = '用户名或密码错误';
   }
 }
 
 function logout() {
   TOKEN = '';
-  document.cookie = 'pa_auth=;path=/;max-age=0';
+  document.cookie = 'pa_token=;path=/;max-age=0';
   document.getElementById('app').classList.remove('show');
   document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('userInput').value = '';
+  document.getElementById('passInput').value = '';
+  document.getElementById('loginErr').textContent = '';
 }
 
 // Check cookie on load
 (function() {
-  const m = document.cookie.match(/pa_auth=([^;]+)/);
-  if (m) { TOKEN = m[1]; document.getElementById('loginWrap').style.display = 'none'; document.getElementById('app').classList.add('show'); loadDashboard(); }
+  const m = document.cookie.match(/pa_token=([^;]+)/);
+  if (m) {
+    TOKEN = m[1];
+    fetch(API + '/admin/jobs', { headers: { 'Authorization': `Bearer ${TOKEN}` } })
+      .then(r => { if (r.ok) { document.getElementById('loginWrap').style.display = 'none'; document.getElementById('app').classList.add('show'); loadDashboard(); } else { TOKEN = ''; document.cookie = 'pa_token=;path=/;max-age=0'; } });
+  }
 })();
 
-// Tabs
+// ─── Tabs ───
 function showTab(t) {
   document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
   document.getElementById('tab-' + t).style.display = 'block';
-  document.querySelectorAll('.sidebar a').forEach(a => a.classList.remove('active'));
-  event.target.classList.add('active');
+  document.querySelectorAll('.sidebar a:not(.logout)').forEach(a => a.classList.remove('active'));
+  if (event && event.target) event.target.classList.add('active');
   if (t === 'dashboard') loadDashboard();
   if (t === 'jobs') loadJobs();
   if (t === 'inquiries') loadInquiries();
+  if (t === 'assignments') loadAssignments();
+  if (t === 'backups') loadBackups();
 }
 
-// Dashboard
+// ─── Dashboard ───
 async function loadDashboard() {
-  const [jobs, inqs] = await Promise.all([api('/admin/jobs'), api('/admin/inquiries')]);
+  const [jobs, inqs, assigns] = await Promise.all([api('/admin/jobs'), api('/admin/inquiries'), api('/admin/assignments')]);
   document.getElementById('statJobs').textContent = jobs.filter(j => j.active).length;
   document.getElementById('statInq').textContent = inqs.length;
+  document.getElementById('statAssign').textContent = assigns.length;
   const weekAgo = new Date(Date.now() - 7 * 86400000);
   document.getElementById('statNew').textContent = inqs.filter(i => new Date(i.created_at) > weekAgo).length;
   const recent = inqs.slice(0, 5);
-  document.getElementById('recentInq').innerHTML = recent.length ? '<table><thead><tr><th>Name</th><th>Type</th><th>Date</th></tr></thead><tbody>' +
-    recent.map(i => `<tr><td>${i.name}</td><td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${i.type}</span></td><td>${new Date(i.created_at).toLocaleDateString()}</td></tr>`).join('') +
-    '</tbody></table>' : '<p class="empty">No inquiries yet</p>';
+  document.getElementById('recentInq').innerHTML = recent.length ? '<table><thead><tr><th>姓名</th><th>类型</th><th>日期</th></tr></thead><tbody>' +
+    recent.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
+      <td>${esc(i.name)}</td>
+      <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span></td>
+      <td>${new Date(i.created_at).toLocaleDateString()}</td>
+    </tr>`).join('') +
+    '</tbody></table>' : '<p class="empty">暂无问卷提交</p>';
 }
 
-// Jobs
+function typeLabel(t) {
+  if (t === 'Employer') return '雇主';
+  if (t === 'Job Seeker') return '求职者';
+  return '其他';
+}
+function statusLabel(s) {
+  const m = { assigned: '已分配', working: '工作中', completed: '已完成', cancelled: '已取消' };
+  return m[s] || s;
+}
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ─── Jobs ───
 async function loadJobs() {
   const jobs = await api('/admin/jobs');
   const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
   document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
-    <td><strong>${j.title}</strong>${j.urgent ? ' <span class="badge badge-urgent">URGENT</span>' : ''}</td>
-    <td>${j.type}</td><td>${j.location}</td>
-    <td><span class="badge ${langBadge(j.lang)}">${j.lang_name || j.lang}</span></td>
-    <td>${j.active ? '✅ Active' : '⏸ Inactive'}</td>
-    <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j)})'>Edit</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">Del</button></td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">No jobs yet. Click "+ Add Job" to create one.</td></tr>';
+    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}</td>
+    <td>${esc(j.type)}</td><td>${esc(j.location)}</td>
+    <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
+    <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
+    <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button></td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
 }
 
 function openJobModal(job) {
-  document.getElementById('jobModalTitle').textContent = job ? 'Edit Job' : 'Add Job';
+  document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
   document.getElementById('jobId').value = job ? job.id : '';
   document.getElementById('jTitle').value = job ? job.title : '';
   document.getElementById('jType').value = job ? job.type : '';
@@ -237,7 +367,7 @@ async function saveJob() {
     urgent: document.getElementById('jUrgent').checked,
     active: true
   };
-  if (!data.title) return alert('Title required');
+  if (!data.title) return alert('请填写职位名称');
   if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
   closeJobModal();
@@ -245,45 +375,228 @@ async function saveJob() {
 }
 
 async function deleteJob(id) {
-  if (!confirm('Delete this job?')) return;
+  if (!confirm('确定删除此职位？')) return;
   await api(`/admin/jobs/${id}`, { method: 'DELETE' });
   loadJobs();
 }
 
-// Inquiries
+// ─── Inquiries (问卷管理) ───
 async function loadInquiries() {
-  const inqs = await api('/admin/inquiries');
-  document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i)})'>
+  allInquiries = await api('/admin/inquiries');
+  renderInquiries(allInquiries);
+}
+
+function filterInquiries() {
+  const keyword = document.getElementById('inqSearch').value.toLowerCase();
+  const typeFilter = document.getElementById('inqTypeFilter').value;
+  let filtered = allInquiries;
+  if (keyword) {
+    filtered = filtered.filter(i =>
+      (i.name || '').toLowerCase().includes(keyword) ||
+      (i.email || '').toLowerCase().includes(keyword) ||
+      (i.phone || '').toLowerCase().includes(keyword) ||
+      (i.company || '').toLowerCase().includes(keyword)
+    );
+  }
+  if (typeFilter) {
+    filtered = filtered.filter(i => i.type === typeFilter);
+  }
+  renderInquiries(filtered);
+}
+
+function renderInquiries(inqs) {
+  document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
     <td>${new Date(i.created_at).toLocaleDateString()}</td>
-    <td><strong>${i.name}</strong></td>
-    <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${i.type}</span></td>
-    <td>${i.email}</td><td>${i.phone}</td>
-    <td><button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">Del</button></td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">No inquiries yet</td></tr>';
+    <td><strong>${esc(i.name)}</strong></td>
+    <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span></td>
+    <td>${esc(i.email)}</td><td>${esc(i.phone)}</td>
+    <td><button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button> <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button></td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无问卷提交</td></tr>';
 }
 
 function showInquiry(i) {
+  currentInquiry = i;
+  const labels = {
+    name: '姓名', email: '邮箱', phone: '电话', company: '公司',
+    type: '类型', positions: '职位需求', workers: '人数',
+    location: '地点', start_date: '开始日期', experience: '工作经验',
+    languages: '语言能力', comments: '备注'
+  };
   const fields = [
-    ['Name', i.name], ['Email', i.email], ['Phone', i.phone], ['Company', i.company],
-    ['Type', i.type], ['Positions', i.positions], ['Workers', i.workers],
-    ['Location', i.location], ['Start Date', i.start_date], ['Experience', i.experience],
-    ['Languages', i.languages], ['Comments', i.comments],
-    ['Resume', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank">Download</a>` : ''],
-    ['Date', new Date(i.created_at).toLocaleString()]
+    ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
+    ['类型', typeLabel(i.type)], ['职位需求', i.positions], ['人数', i.workers],
+    ['地点', i.location], ['开始日期', i.start_date], ['工作经验', i.experience],
+    ['语言能力', i.languages], ['备注', i.comments],
+    ['简历', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank">下载简历</a>` : ''],
+    ['提交时间', new Date(i.created_at).toLocaleString()]
   ].filter(([k, v]) => v);
-  document.getElementById('inqDetail').innerHTML = '<table>' + fields.map(([k, v]) => `<tr><td style="font-weight:700;width:120px;padding:6px 0">${k}</td><td>${v}</td></tr>`).join('') + '</table>';
+  document.getElementById('inqDetail').innerHTML = '<table>' + fields.map(([k, v]) => `<tr><td style="font-weight:700;width:100px;padding:6px 0">${k}</td><td>${v}</td></tr>`).join('') + '</table>';
   document.getElementById('inqModal').classList.add('show');
 }
 
 async function deleteInq(id) {
-  if (!confirm('Delete?')) return;
+  if (!confirm('确定删除此问卷？')) return;
   await api(`/admin/inquiries/${id}`, { method: 'DELETE' });
   loadInquiries();
 }
 
 function exportCSV() {
-  window.open(API + '/admin/inquiries/export', '_blank');
+  window.open(API + '/admin/inquiries/export?token=' + TOKEN, '_blank');
 }
+
+// Quick assign from inquiry list
+function quickAssign(inquiryId, name) {
+  openAssignModal();
+  document.getElementById('aInquiry').value = inquiryId;
+}
+
+// Assign from inquiry detail modal
+function assignFromInquiry() {
+  if (!currentInquiry) return;
+  document.getElementById('inqModal').classList.remove('show');
+  openAssignModal();
+  setTimeout(() => {
+    document.getElementById('aInquiry').value = currentInquiry.id;
+  }, 100);
+}
+
+// ─── Assignments (派工管理) ───
+async function loadAssignments() {
+  allAssignments = await api('/admin/assignments');
+  renderAssignments(allAssignments);
+}
+
+function filterAssignments() {
+  const keyword = document.getElementById('assignSearch').value.toLowerCase();
+  const statusFilter = document.getElementById('assignStatusFilter').value;
+  let filtered = allAssignments;
+  if (keyword) {
+    filtered = filtered.filter(a =>
+      (a.inquiry_name || '').toLowerCase().includes(keyword) ||
+      (a.job_title || '').toLowerCase().includes(keyword)
+    );
+  }
+  if (statusFilter) {
+    filtered = filtered.filter(a => a.status === statusFilter);
+  }
+  renderAssignments(filtered);
+}
+
+function renderAssignments(assigns) {
+  document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => `<tr>
+    <td>${new Date(a.assigned_at).toLocaleDateString()}</td>
+    <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
+    <td>${esc(a.job_title || '未知职位')}</td>
+    <td>${esc(a.job_location || '')}</td>
+    <td><span class="badge badge-${a.status}">${statusLabel(a.status)}</span></td>
+    <td>
+      <button class="btn btn-sm" onclick='editAssignment(${JSON.stringify(a).replace(/'/g,"&#39;")})'>编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteAssignment(${a.id})">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+}
+
+async function openAssignModal(assignment) {
+  document.getElementById('assignModalTitle').textContent = assignment ? '编辑派工' : '新建派工';
+  document.getElementById('assignId').value = assignment ? assignment.id : '';
+  document.getElementById('aStatus').value = assignment ? assignment.status : 'assigned';
+  document.getElementById('aNotes').value = assignment ? assignment.notes : '';
+
+  // Load options for selects
+  const [inqs, jobs] = await Promise.all([api('/admin/inquiries'), api('/admin/jobs')]);
+  const inqSelect = document.getElementById('aInquiry');
+  inqSelect.innerHTML = '<option value="">-- 请选择人员 --</option>' +
+    inqs.map(i => `<option value="${i.id}">${esc(i.name)} (${typeLabel(i.type)}) - ${esc(i.phone || i.email || '')}</option>`).join('');
+  const jobSelect = document.getElementById('aJob');
+  jobSelect.innerHTML = '<option value="">-- 请选择职位 --</option>' +
+    jobs.filter(j => j.active).map(j => `<option value="${j.id}">${esc(j.title)} - ${esc(j.location)} ${j.pay ? '(' + esc(j.pay) + ')' : ''}</option>`).join('');
+
+  if (assignment) {
+    inqSelect.value = assignment.inquiry_id;
+    jobSelect.value = assignment.job_id;
+  }
+
+  document.getElementById('assignModal').classList.add('show');
+}
+
+function closeAssignModal() { document.getElementById('assignModal').classList.remove('show'); }
+
+function editAssignment(a) { openAssignModal(a); }
+
+async function saveAssignment() {
+  const id = document.getElementById('assignId').value;
+  const data = {
+    inquiry_id: document.getElementById('aInquiry').value,
+    job_id: document.getElementById('aJob').value,
+    status: document.getElementById('aStatus').value,
+    notes: document.getElementById('aNotes').value
+  };
+  if (!data.inquiry_id || !data.job_id) return alert('请选择人员和职位');
+  if (id) await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  else await api('/admin/assignments', { method: 'POST', body: JSON.stringify(data) });
+  closeAssignModal();
+  loadAssignments();
+}
+
+async function deleteAssignment(id) {
+  if (!confirm('确定删除此派工记录？')) return;
+  await api(`/admin/assignments/${id}`, { method: 'DELETE' });
+  loadAssignments();
+}
+
+// ─── Backups (备份管理) ───
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  return (b / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+async function loadBackups() {
+  const data = await api('/admin/backups');
+  document.getElementById('bkLocations').textContent = data.locations.length;
+  document.getElementById('bkInterval').textContent = data.interval_min;
+  document.getElementById('bkKeep').textContent = data.keep;
+
+  // Render each backup location
+  document.getElementById('backupLocations').innerHTML = data.locations.map((loc, idx) => `
+    <div class="card">
+      <h3 style="margin-bottom:.5rem;color:var(--blue)">存储位置 ${idx + 1}: <span style="font-weight:400;font-size:.85rem;color:var(--gray-600)">${esc(loc.dir)}</span></h3>
+      <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">共 ${loc.count} 份备份</p>
+      ${loc.files.length ? '<table><thead><tr><th>备份文件</th><th>大小</th></tr></thead><tbody>' +
+        loc.files.map(f => `<tr><td>${esc(f.name)}</td><td>${formatBytes(f.size)}</td></tr>`).join('') +
+        '</tbody></table>' : '<p class="empty">暂无备份文件</p>'}
+    </div>
+  `).join('');
+
+  // Render backup log
+  document.getElementById('backupLogTable').innerHTML = data.log.length ? '<table><thead><tr><th>时间</th><th>触发方式</th><th>结果</th></tr></thead><tbody>' +
+    data.log.map(l => `<tr>
+      <td>${new Date(l.time).toLocaleString()}</td>
+      <td>${esc(l.trigger)}</td>
+      <td>${l.results.map(r => `<span class="badge ${r.status === 'ok' ? 'badge-completed' : 'badge-urgent'}">${r.status === 'ok' ? '成功' : '失败'}</span> ${esc(r.dir.split('/').pop())}`).join(' &nbsp; ')}</td>
+    </tr>`).join('') +
+    '</tbody></table>' : '<p class="empty">暂无备份日志</p>';
+}
+
+async function runBackupNow() {
+  const btn = document.getElementById('backupNowBtn');
+  btn.disabled = true;
+  btn.textContent = '备份中...';
+  try {
+    const r = await api('/admin/backups/run', { method: 'POST' });
+    if (r.success) {
+      const ok = r.result.results.filter(x => x.status === 'ok').length;
+      const fail = r.result.results.filter(x => x.status === 'error').length;
+      alert(`备份完成！成功: ${ok} 个位置${fail ? ', 失败: ' + fail + ' 个位置' : ''}`);
+    }
+  } catch (e) {
+    alert('备份失败: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = '立即备份';
+  loadBackups();
+}
+
 </script>
 </body>
 </html>

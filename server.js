@@ -48,7 +48,100 @@ db.exec(`
     resume_path TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inquiry_id INTEGER NOT NULL,
+    job_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'assigned',
+    notes TEXT DEFAULT '',
+    assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (inquiry_id) REFERENCES inquiries(id),
+    FOREIGN KEY (job_id) REFERENCES jobs(id)
+  );
 `);
+
+// ─── Backup System ───
+const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
+  .split(',').map(d => d.trim()).filter(Boolean);
+const BACKUP_INTERVAL = parseInt(process.env.BACKUP_INTERVAL_MIN || '60', 10) * 60 * 1000; // default 60 min
+const BACKUP_KEEP = parseInt(process.env.BACKUP_KEEP || '10', 10); // keep last N backups per location
+const backupLog = []; // in-memory log of recent backup results
+
+BACKUP_DIRS.forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+function runBackup(trigger) {
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const results = [];
+  const dbPath = path.join(dataDir, 'prime.db');
+
+  for (const dir of BACKUP_DIRS) {
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+      // Backup database using better-sqlite3 .backup()
+      const dest = path.join(dir, `prime-${ts}.db`);
+      db.backup(dest);
+
+      // Also copy uploads directory
+      const uploadsBackup = path.join(dir, `uploads-${ts}`);
+      if (fs.existsSync(uploadsDir)) {
+        copyDirSync(uploadsDir, uploadsBackup);
+      }
+
+      // Rotate: keep only last N backups
+      rotateBackups(dir);
+
+      results.push({ dir, status: 'ok', file: `prime-${ts}.db` });
+    } catch (e) {
+      results.push({ dir, status: 'error', error: e.message });
+    }
+  }
+
+  const entry = { time: new Date().toISOString(), trigger, results };
+  backupLog.unshift(entry);
+  if (backupLog.length > 50) backupLog.length = 50;
+  console.log(`[Backup] ${trigger}: ${results.map(r => `${r.dir}=${r.status}`).join(', ')}`);
+  return entry;
+}
+
+function copyDirSync(src, dest) {
+  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+  const entries = fs.readdirSync(src);
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry);
+    const destPath = path.join(dest, entry);
+    if (fs.statSync(srcPath).isDirectory()) {
+      copyDirSync(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+function rotateBackups(dir) {
+  try {
+    const files = fs.readdirSync(dir)
+      .filter(f => f.startsWith('prime-') && f.endsWith('.db'))
+      .sort().reverse();
+    // Each db backup has a matching uploads dir
+    const toRemove = files.slice(BACKUP_KEEP);
+    for (const f of toRemove) {
+      fs.unlinkSync(path.join(dir, f));
+      const uploadsDir = path.join(dir, f.replace('prime-', 'uploads-').replace('.db', ''));
+      if (fs.existsSync(uploadsDir)) fs.rmSync(uploadsDir, { recursive: true, force: true });
+    }
+  } catch (e) {
+    console.error('[Backup] Rotate error:', e.message);
+  }
+}
+
+// Startup backup
+setTimeout(() => runBackup('启动备份'), 2000);
+
+// Periodic backup
+setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
 
 // ─── Middleware ───
 app.use(express.json());
@@ -69,14 +162,31 @@ const upload = multer({
   }
 });
 
-// ─── ADMIN AUTH (simple password) ───
+// ─── ADMIN AUTH (username + password with session tokens) ───
+const crypto = require('crypto');
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'prime2026';
+
+// In-memory session store (tokens expire in 24h)
+const sessions = new Map();
+function createSession() {
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { created: Date.now() });
+  return token;
+}
+function validSession(token) {
+  const s = sessions.get(token);
+  if (!s) return false;
+  if (Date.now() - s.created > 24 * 60 * 60 * 1000) { sessions.delete(token); return false; }
+  return true;
+}
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
-  if (auth === `Bearer ${ADMIN_PASS}`) return next();
+  if (auth && auth.startsWith('Bearer ') && validSession(auth.slice(7))) return next();
   // Check cookie
-  if (req.headers.cookie && req.headers.cookie.includes(`pa_auth=${ADMIN_PASS}`)) return next();
+  const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+  if (cookieMatch && validSession(cookieMatch[1])) return next();
   res.status(401).json({ error: 'Unauthorized' });
 }
 
@@ -120,10 +230,12 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
 
 // Admin login
 app.post('/api/admin/login', (req, res) => {
-  if (req.body.password === ADMIN_PASS) {
-    res.json({ success: true, token: ADMIN_PASS });
+  const { username, password } = req.body;
+  if (username === ADMIN_USER && password === ADMIN_PASS) {
+    const token = createSession();
+    res.json({ success: true, token });
   } else {
-    res.status(401).json({ error: 'Wrong password' });
+    res.status(401).json({ error: 'Invalid username or password' });
   }
 });
 
@@ -161,8 +273,60 @@ app.delete('/api/admin/inquiries/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// CSV Export
-app.get('/api/admin/inquiries/export', requireAdmin, (req, res) => {
+// Assignments CRUD
+app.get('/api/admin/assignments', requireAdmin, (req, res) => {
+  res.json(db.prepare(`
+    SELECT a.*, i.name AS inquiry_name, i.phone AS inquiry_phone, i.email AS inquiry_email, i.type AS inquiry_type,
+           j.title AS job_title, j.location AS job_location, j.pay AS job_pay
+    FROM assignments a
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    ORDER BY a.assigned_at DESC
+  `).all());
+});
+
+app.post('/api/admin/assignments', requireAdmin, (req, res) => {
+  const { inquiry_id, job_id, notes } = req.body;
+  if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
+  const r = db.prepare('INSERT INTO assignments (inquiry_id, job_id, notes) VALUES (?, ?, ?)').run(inquiry_id, job_id, notes || '');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/assignments/:id', requireAdmin, (req, res) => {
+  const { status, notes } = req.body;
+  db.prepare('UPDATE assignments SET status=?, notes=? WHERE id=?').run(status || 'assigned', notes || '', req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/assignments/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Backup management
+app.get('/api/admin/backups', requireAdmin, (req, res) => {
+  const locations = BACKUP_DIRS.map(dir => {
+    try {
+      const files = fs.readdirSync(dir).filter(f => f.startsWith('prime-') && f.endsWith('.db')).sort().reverse();
+      const sizes = files.map(f => {
+        try { return { name: f, size: fs.statSync(path.join(dir, f)).size, time: f.replace('prime-', '').replace('.db', '').replace(/-/g, (m, i) => i < 10 ? '-' : i === 10 ? 'T' : ':').replace(/:(\d+):(\d+)$/, ':$1:$2') }; } catch { return { name: f, size: 0 }; }
+      });
+      return { dir, files: sizes, count: files.length };
+    } catch { return { dir, files: [], count: 0 }; }
+  });
+  res.json({ locations, log: backupLog.slice(0, 20), interval_min: BACKUP_INTERVAL / 60000, keep: BACKUP_KEEP });
+});
+
+app.post('/api/admin/backups/run', requireAdmin, (req, res) => {
+  const result = runBackup('手动备份');
+  res.json({ success: true, result });
+});
+
+// CSV Export (also accept token via query param for download links)
+app.get('/api/admin/inquiries/export', (req, res, next) => {
+  if (req.query.token && validSession(req.query.token)) return next();
+  return requireAdmin(req, res, next);
+}, (req, res) => {
   const rows = db.prepare('SELECT * FROM inquiries ORDER BY created_at DESC').all();
   const headers = ['Date', 'Name', 'Email', 'Phone', 'Company', 'Type', 'Positions', 'Workers', 'Location', 'Start Date', 'Experience', 'Languages', 'Comments'];
   let csv = headers.join(',') + '\n';
