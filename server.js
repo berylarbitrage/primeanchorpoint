@@ -69,14 +69,31 @@ const upload = multer({
   }
 });
 
-// ─── ADMIN AUTH (simple password) ───
+// ─── ADMIN AUTH (username + password with session tokens) ───
+const crypto = require('crypto');
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'prime2026';
+
+// In-memory session store (tokens expire in 24h)
+const sessions = new Map();
+function createSession() {
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { created: Date.now() });
+  return token;
+}
+function validSession(token) {
+  const s = sessions.get(token);
+  if (!s) return false;
+  if (Date.now() - s.created > 24 * 60 * 60 * 1000) { sessions.delete(token); return false; }
+  return true;
+}
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
-  if (auth === `Bearer ${ADMIN_PASS}`) return next();
+  if (auth && auth.startsWith('Bearer ') && validSession(auth.slice(7))) return next();
   // Check cookie
-  if (req.headers.cookie && req.headers.cookie.includes(`pa_auth=${ADMIN_PASS}`)) return next();
+  const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+  if (cookieMatch && validSession(cookieMatch[1])) return next();
   res.status(401).json({ error: 'Unauthorized' });
 }
 
@@ -120,10 +137,12 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
 
 // Admin login
 app.post('/api/admin/login', (req, res) => {
-  if (req.body.password === ADMIN_PASS) {
-    res.json({ success: true, token: ADMIN_PASS });
+  const { username, password } = req.body;
+  if (username === ADMIN_USER && password === ADMIN_PASS) {
+    const token = createSession();
+    res.json({ success: true, token });
   } else {
-    res.status(401).json({ error: 'Wrong password' });
+    res.status(401).json({ error: 'Invalid username or password' });
   }
 });
 

@@ -61,7 +61,8 @@ tr:hover td{background:var(--sky-light)}
 <div class="login-box">
   <h1>Prime Anchorpoint</h1>
   <p>Admin Panel</p>
-  <input type="password" id="passInput" placeholder="Password" onkeydown="if(event.key==='Enter')doLogin()">
+  <input type="text" id="userInput" placeholder="Username" autocomplete="username">
+  <input type="password" id="passInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
   <button onclick="doLogin()">Login</button>
   <div class="err" id="loginErr"></div>
 </div>
@@ -97,7 +98,7 @@ tr:hover td{background:var(--sky-light)}
 
 <!-- Inquiries -->
 <div id="tab-inquiries" style="display:none">
-  <div class="top"><h1>Inquiries</h1><button class="btn" onclick="exportCSV()">Export CSV</button></div>
+  <div class="top"><h1>Inquiries</h1></div>
   <div class="card"><table><thead><tr><th>Date</th><th>Name</th><th>Type</th><th>Email</th><th>Phone</th><th></th></tr></thead><tbody id="inqTable"></tbody></table></div>
 </div>
 
@@ -145,30 +146,40 @@ async function api(path, opts = {}) {
 
 // Login
 async function doLogin() {
-  const pass = document.getElementById('passInput').value;
-  const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ password: pass }) });
+  const username = document.getElementById('userInput').value;
+  const password = document.getElementById('passInput').value;
+  if (!username || !password) { document.getElementById('loginErr').textContent = 'Please enter username and password'; return; }
+  const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
   if (r.success) {
     TOKEN = r.token;
-    document.cookie = `pa_auth=${TOKEN};path=/;max-age=86400`;
+    document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
     document.getElementById('loginWrap').style.display = 'none';
     document.getElementById('app').classList.add('show');
     loadDashboard();
   } else {
-    document.getElementById('loginErr').textContent = 'Wrong password';
+    document.getElementById('loginErr').textContent = 'Invalid username or password';
   }
 }
 
 function logout() {
   TOKEN = '';
-  document.cookie = 'pa_auth=;path=/;max-age=0';
+  document.cookie = 'pa_token=;path=/;max-age=0';
   document.getElementById('app').classList.remove('show');
   document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('userInput').value = '';
+  document.getElementById('passInput').value = '';
+  document.getElementById('loginErr').textContent = '';
 }
 
 // Check cookie on load
 (function() {
-  const m = document.cookie.match(/pa_auth=([^;]+)/);
-  if (m) { TOKEN = m[1]; document.getElementById('loginWrap').style.display = 'none'; document.getElementById('app').classList.add('show'); loadDashboard(); }
+  const m = document.cookie.match(/pa_token=([^;]+)/);
+  if (m) {
+    TOKEN = m[1];
+    // Verify token is still valid
+    fetch(API + '/admin/jobs', { headers: { 'Authorization': `Bearer ${TOKEN}` } })
+      .then(r => { if (r.ok) { document.getElementById('loginWrap').style.display = 'none'; document.getElementById('app').classList.add('show'); loadDashboard(); } else { TOKEN = ''; document.cookie = 'pa_token=;path=/;max-age=0'; } });
+  }
 })();
 
 // Tabs
@@ -281,9 +292,6 @@ async function deleteInq(id) {
   loadInquiries();
 }
 
-function exportCSV() {
-  window.open(API + '/admin/inquiries/export', '_blank');
-}
 </script>
 </body>
 </html>
