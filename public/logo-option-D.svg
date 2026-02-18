@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <!-- Option D: Hexagon + Anchor + Arrow — "Precision & Stability" -->
+  <defs>
+    <linearGradient id="gD" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2E5BA0"/>
+      <stop offset="50%" stop-color="#0F2B5B"/>
+      <stop offset="100%" stop-color="#091D40"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="240" rx="40" fill="url(#gD)"/>
+  <!-- Hexagon frame -->
+  <polygon points="120,28 198,60 198,148 120,212 42,148 42,60"
+           fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="3"/>
+  <!-- Stylized anchor: vertical line with diamond ring at top -->
+  <path d="M108 76 L120 64 L132 76 L120 88 Z" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/>
+  <!-- Anchor shaft -->
+  <line x1="120" y1="88" x2="120" y2="172" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <!-- Flukes — angular style -->
+  <path d="M120 172 L96 188" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M120 172 L144 188" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <!-- Small perpendicular ticks on flukes -->
+  <line x1="92" y1="182" x2="100" y2="194" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <line x1="148" y1="182" x2="140" y2="194" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <!-- Crossbar -->
+  <line x1="94" y1="130" x2="146" y2="130" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <!-- Prime arrow shooting up from diamond -->
+  <line x1="120" y1="64" x2="120" y2="38" stroke="#F5A623" stroke-width="6" stroke-linecap="round"/>
+  <polyline points="110,48 120,36 130,48" fill="none" stroke="#F5A623" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <!-- Option B: Shield + Anchor — "Trusted Foundation" -->
+  <defs>
+    <linearGradient id="gB" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A3F7A"/>
+      <stop offset="100%" stop-color="#091D40"/>
+    </linearGradient>
+  </defs>
+  <rect width="240" height="240" rx="40" fill="url(#gB)"/>
+  <!-- Shield outline -->
+  <path d="M120 30 L190 60 L190 130 Q190 185 120 215 Q50 185 50 130 L50 60 Z"
+        fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4"/>
+  <path d="M120 42 L180 68 L180 128 Q180 176 120 204 Q60 176 60 128 L60 68 Z"
+        fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="2"/>
+  <!-- Minimal anchor inside shield -->
+  <circle cx="120" cy="82" r="12" fill="none" stroke="#fff" stroke-width="6"/>
+  <line x1="120" y1="94" x2="120" y2="160" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M120 160 Q120 174 104 180" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <path d="M120 160 Q120 174 136 180" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <line x1="96" y1="126" x2="144" y2="126" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <!-- Prime star accent -->
+  <circle cx="120" cy="82" r="4" fill="#F5A623"/>
+</svg>
