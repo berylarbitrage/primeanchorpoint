@@ -16,6 +16,11 @@
 .login-box button{width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.95rem}
 .login-box button:hover{background:var(--sky)}
 .login-box .err{color:var(--red);font-size:.82rem;margin-top:.5rem}
+.login-box img.logo{width:80px;height:auto;margin-bottom:1rem}
+.pass-wrap{position:relative;margin-bottom:1rem}
+.pass-wrap input{margin-bottom:0;padding-right:40px}
+.pass-wrap .eye{position:absolute;right:12px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--gray-400);background:none;border:none;padding:0;font-size:1rem;line-height:1}
+.pass-wrap .eye:hover{color:var(--gray-600)}
 
 .app{display:none}.app.show{display:block}
 .sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:var(--blue);color:#fff;padding:1.5rem 0}
@@ -68,10 +73,14 @@ tr:hover td{background:var(--sky-light)}
 <!-- LOGIN -->
 <div class="login-wrap" id="loginWrap">
 <div class="login-box">
+  <img src="/logo.svg" alt="Prime Anchorpoint" class="logo">
   <h1>Prime Anchorpoint</h1>
   <p>管理后台</p>
   <input type="text" id="userInput" placeholder="用户名" autocomplete="username">
-  <input type="password" id="passInput" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+  <div class="pass-wrap">
+    <input type="password" id="passInput" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="eye" type="button" onclick="togglePass()" title="显示/隐藏密码">👁</button>
+  </div>
   <button onclick="doLogin()">登录</button>
   <div class="err" id="loginErr"></div>
 </div>
@@ -229,6 +238,13 @@ tr:hover td{background:var(--sky-light)}
 <script>
 let TOKEN = '';
 const API = '/api';
+
+function togglePass() {
+  const inp = document.getElementById('passInput');
+  const btn = inp.nextElementSibling;
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
+  else { inp.type = 'password'; btn.textContent = '👁'; }
+}
 let allInquiries = [];
 let allAssignments = [];
 let currentInquiry = null;
