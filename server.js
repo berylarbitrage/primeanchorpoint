@@ -48,6 +48,18 @@ db.exec(`
     resume_path TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS quotes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    company TEXT DEFAULT '',
+    products TEXT DEFAULT '',
+    quantity TEXT DEFAULT '',
+    location TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
   CREATE TABLE IF NOT EXISTS assignments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     inquiry_id INTEGER NOT NULL,
@@ -226,6 +238,20 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
   }
 });
 
+// POST /api/quote - submit supply quote request
+app.post('/api/quote', (req, res) => {
+  try {
+    const d = req.body;
+    if (!d.name) return res.status(400).json({ error: 'Name required' });
+    if (!d.products) return res.status(400).json({ error: 'Products required' });
+    const stmt = db.prepare('INSERT INTO quotes (name, email, phone, company, products, quantity, location, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const result = stmt.run(d.name, d.email || '', d.phone || '', d.company || '', d.products || '', d.quantity || '', d.location || '', d.notes || '');
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── ADMIN API ───
 
 // Admin login
@@ -270,6 +296,16 @@ app.get('/api/admin/inquiries', requireAdmin, (req, res) => {
 
 app.delete('/api/admin/inquiries/:id', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM inquiries WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Quotes
+app.get('/api/admin/quotes', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM quotes ORDER BY created_at DESC').all());
+});
+
+app.delete('/api/admin/quotes/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM quotes WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
