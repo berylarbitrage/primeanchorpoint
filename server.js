@@ -58,6 +58,12 @@ db.exec(`
     FOREIGN KEY (inquiry_id) REFERENCES inquiries(id),
     FOREIGN KEY (job_id) REFERENCES jobs(id)
   );
+  CREATE TABLE IF NOT EXISTS admin_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL
+  );
 `);
 
 // ─── Backup System ───
@@ -164,8 +170,27 @@ const upload = multer({
 
 // ─── ADMIN AUTH (username + password with session tokens) ───
 const crypto = require('crypto');
-const ADMIN_USER = process.env.ADMIN_USER || 'admin';
-const ADMIN_PASS = process.env.ADMIN_PASS || 'prime2026';
+
+function hashPassword(password, salt) {
+  return crypto.scryptSync(password, salt, 64).toString('hex');
+}
+function verifyPassword(password, salt, hash) {
+  const derived = crypto.scryptSync(password, salt, 64).toString('hex');
+  return crypto.timingSafeEqual(Buffer.from(derived, 'hex'), Buffer.from(hash, 'hex'));
+}
+
+// Seed default admin into admin_users table if empty
+{
+  const count = db.prepare('SELECT COUNT(*) as n FROM admin_users').get().n;
+  if (count === 0) {
+    const defaultUser = process.env.ADMIN_USER || 'admin';
+    const defaultPass = process.env.ADMIN_PASS || 'prime2026';
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = hashPassword(defaultPass, salt);
+    db.prepare('INSERT INTO admin_users (username, password_hash, salt) VALUES (?, ?, ?)').run(defaultUser, hash, salt);
+    console.log(`[Auth] Seeded default admin user: ${defaultUser}`);
+  }
+}
 
 // In-memory session store (tokens expire in 24h)
 const sessions = new Map();
@@ -231,7 +256,9 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
 // Admin login
 app.post('/api/admin/login', (req, res) => {
   const { username, password } = req.body;
-  if (username === ADMIN_USER && password === ADMIN_PASS) {
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
+  if (user && verifyPassword(password, user.salt, user.password_hash)) {
     const token = createSession();
     res.json({ success: true, token });
   } else {
