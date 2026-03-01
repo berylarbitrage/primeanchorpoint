@@ -350,6 +350,19 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 
+db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  job_id INTEGER NOT NULL,
+  company_name TEXT DEFAULT '',
+  job_title TEXT DEFAULT '',
+  status TEXT DEFAULT 'active',
+  assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (employee_id) REFERENCES employees(id),
+  FOREIGN KEY (job_id) REFERENCES jobs(id),
+  UNIQUE(employee_id, job_id)
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sheet_id INTEGER NOT NULL,
@@ -1705,7 +1718,34 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
     params.push(...pids);
   }
   sql += ' ORDER BY e.last_name, e.first_name';
-  res.json(db.prepare(sql).all(...params).map(safeEmp));
+  const rows = db.prepare(sql).all(...params);
+  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets)
+  const explicitJobs = db.prepare(`
+    SELECT ej.employee_id, ej.job_id, ej.company_name, ej.job_title
+    FROM employee_jobs ej WHERE ej.status='active'
+  `).all();
+  const tsJobs = db.prepare(`
+    SELECT s.employee_id, s.job_id, s.company_name, j.title AS job_title
+    FROM timesheet_sheets s
+    LEFT JOIN jobs j ON s.job_id = j.id
+    WHERE s.id IN (
+      SELECT MAX(id) FROM timesheet_sheets GROUP BY employee_id, COALESCE(job_id, company_name)
+    )
+    ORDER BY s.period_end DESC
+  `).all();
+  const jobMap = {};
+  for (const j of explicitJobs) {
+    if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
+    jobMap[j.employee_id].push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
+  }
+  for (const j of tsJobs) {
+    if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
+    const existing = jobMap[j.employee_id];
+    if (!existing.some(e => e.job_id === j.job_id)) {
+      existing.push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
+    }
+  }
+  res.json(rows.map(e => ({ ...safeEmp(e), current_jobs: jobMap[e.id] || [] })));
 });
 
 app.get('/api/admin/employees/export', (req, res, next) => {
@@ -1853,6 +1893,28 @@ app.put('/api/admin/employees/:id/contacts', requireAdmin, (req, res) => {
     JSON.stringify(extra_emails || []),
     req.params.id
   );
+  res.json({ success: true });
+});
+
+// Assign a job to an employee
+app.post('/api/admin/employees/:id/assign-job', requireAdmin, (req, res) => {
+  const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(req.params.id);
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+  const { job_id } = req.body;
+  const job = db.prepare('SELECT id, title, company_name, location FROM jobs WHERE id=?').get(job_id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  try {
+    db.prepare(`INSERT OR REPLACE INTO employee_jobs (employee_id, job_id, company_name, job_title, status) VALUES (?, ?, ?, ?, 'active')`)
+      .run(req.params.id, job.id, job.company_name || '', job.title || '');
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Remove a job assignment from employee
+app.delete('/api/admin/employees/:id/assign-job/:jobId', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM employee_jobs WHERE employee_id=? AND job_id=?').run(req.params.id, req.params.jobId);
   res.json({ success: true });
 });
 
