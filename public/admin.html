@@ -47,6 +47,17 @@ tr:hover td{background:var(--sky-light)}
 .badge-en{background:#E8F0FE;color:#4A90D9}.badge-zh{background:#FFF3E0;color:#E67E22}.badge-es{background:#E8F5E9;color:#2D9D78}
 .badge-employer{background:#E8F0FE;color:var(--blue)}.badge-seeker{background:#FFF3E0;color:#E67E22}.badge-other{background:var(--gray-200);color:var(--gray-600)}
 .badge-urgent{background:var(--red);color:#fff}
+.day-btn,.benefit-btn{padding:4px 10px;border-radius:20px;border:1px solid var(--gray-300);background:var(--gray-100);color:var(--gray-700);font-size:.78rem;cursor:pointer;transition:all .15s}
+.day-btn.active,.benefit-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
+.badge-employment{background:#EDE9FE;color:#5B21B6}
+.badge-w2{background:#D1FAE5;color:#065F46}
+.badge-contract{background:#FEF3C7;color:#92400E}
+.assign-dropdown{display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:200px;overflow-y:auto}
+.assign-dropdown.open{display:block}
+.assign-dropdown .adrop-item{padding:.5rem .75rem;cursor:pointer;font-size:.85rem;border-bottom:1px solid var(--gray-100)}
+.assign-dropdown .adrop-item:last-child{border-bottom:none}
+.assign-dropdown .adrop-item:hover,.assign-dropdown .adrop-item.focused{background:var(--sky-light)}
+.assign-dropdown .adrop-item small{display:block;color:var(--gray-500);font-size:.75rem}
 .badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
@@ -209,15 +220,22 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="search-bar">
-    <input type="text" id="inqSearch" placeholder="搜索姓名、邮箱、电话..." oninput="filterInquiries()">
+    <input type="text" id="inqSearch" placeholder="搜索姓名、邮箱、电话、公司..." oninput="filterInquiries()">
+    <input type="text" id="inqPosSearch" placeholder="按职位筛选..." oninput="filterInquiries()" style="max-width:180px">
     <select id="inqTypeFilter" onchange="filterInquiries()">
       <option value="">全部类型</option>
       <option value="Employer">雇主</option>
       <option value="Job Seeker">求职者</option>
       <option value="Other">其他</option>
     </select>
+    <select id="inqSortSel" onchange="filterInquiries()" style="max-width:160px">
+      <option value="date_desc">日期 ↓ 最新</option>
+      <option value="date_asc">日期 ↑ 最旧</option>
+      <option value="pos_asc">职位 A→Z</option>
+      <option value="pos_desc">职位 Z→A</option>
+    </select>
   </div>
-  <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>邮箱</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>申请职位</th><th>地点</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
 </div>
 
 <!-- Assignments -->
@@ -249,7 +267,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>身份要求</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>地点 / 时间</th><th>薪资</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
 </div>
 
 <!-- Partners -->
@@ -300,6 +318,14 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="exportEmployeeCSV()">导出 CSV</button>
       <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
       <button class="btn btn-green" onclick="openEmpModal()">+ 新增员工</button>
+    </div>
+  </div>
+  <!-- Onboarding submissions sub-section -->
+  <div style="margin-bottom:1.5rem">
+    <h3 style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:.75rem">入职申请 <span id="onboardBadge" style="font-size:.75rem;background:var(--sky);color:#fff;padding:2px 8px;border-radius:10px;vertical-align:middle"></span></h3>
+    <div class="card" style="padding:0">
+      <table><thead><tr><th>提交时间</th><th>姓名</th><th>申请职位</th><th>邮箱</th><th>电话</th><th>状态</th><th>文件</th><th>操作</th></tr></thead>
+      <tbody id="onboardTable"><tr><td colspan="8" class="empty">暂无入职申请</td></tr></tbody></table>
     </div>
   </div>
   <div class="stats-row">
@@ -478,18 +504,51 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Job Modal -->
-<div class="modal-bg" id="jobModal"><div class="modal">
+<div class="modal-bg" id="jobModal"><div class="modal" style="max-width:680px">
   <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
+
   <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
+
   <div class="field-row">
-    <div class="field"><label>类型</label><input id="jType" placeholder="例：全职、临时工"></div>
+    <div class="field"><label>合作公司</label>
+      <select id="jCompany"><option value="">-- 不绑定公司 --</option></select>
+    </div>
     <div class="field"><label>工作地点</label><input id="jLocation" placeholder="例：Chicago, IL"></div>
   </div>
+
+  <div class="field-row">
+    <div class="field"><label>职位类型</label>
+      <select id="jType">
+        <option value="">-- 请选择 --</option>
+        <option value="全职">全职 / Full-Time</option>
+        <option value="兼职">兼职 / Part-Time</option>
+        <option value="临时工">临时工 / Temporary</option>
+        <option value="临时转正">临时转正 / Temp-to-Hire</option>
+      </select>
+    </div>
+    <div class="field"><label>雇佣性质</label>
+      <select id="jEmploymentType">
+        <option value="">-- 请选择 --</option>
+        <option value="W2">W2</option>
+        <option value="Contract">Contract</option>
+        <option value="1099">1099</option>
+        <option value="W2+Contract">W2 + Contract</option>
+      </select>
+    </div>
+  </div>
+
   <div class="field-row">
     <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
-    <div class="field"><label>语言</label><select id="jLang"><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select></div>
+    <div class="field"><label>语言</label>
+      <select id="jLang">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+        <option value="es">Español</option>
+      </select>
+    </div>
   </div>
+
   <div class="field"><label>工作身份要求</label>
     <select id="jWorkAuth">
       <option value="">不限</option>
@@ -498,10 +557,41 @@ tr:hover td{background:var(--sky-light)}
       <option value="citizen">仅限美国公民 / US Citizen Only</option>
     </select>
   </div>
-  <div class="field-row">
-    <div class="field"><label>工作时间</label><input id="jSchedule" placeholder="例：周一至周五 7am-3:30pm"></div>
-    <div class="field"><label>福利</label><input id="jBenefits" placeholder="例：医疗、牙科、带薪假"></div>
+
+  <div class="field">
+    <label>工作日</label>
+    <div id="jWorkDaysWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
+      <button type="button" class="day-btn" data-day="Mon">Mon</button>
+      <button type="button" class="day-btn" data-day="Tue">Tue</button>
+      <button type="button" class="day-btn" data-day="Wed">Wed</button>
+      <button type="button" class="day-btn" data-day="Thu">Thu</button>
+      <button type="button" class="day-btn" data-day="Fri">Fri</button>
+      <button type="button" class="day-btn" data-day="Sat">Sat</button>
+      <button type="button" class="day-btn" data-day="Sun">Sun</button>
+    </div>
   </div>
+
+  <div class="field-row">
+    <div class="field"><label>上班时间</label><input type="time" id="jWorkStart"></div>
+    <div class="field"><label>下班时间</label><input type="time" id="jWorkEnd"></div>
+  </div>
+
+  <div class="field">
+    <label>福利待遇（多选）</label>
+    <div id="jBenefitsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
+      <button type="button" class="benefit-btn" data-val="医疗保险">医疗保险</button>
+      <button type="button" class="benefit-btn" data-val="牙科保险">牙科保险</button>
+      <button type="button" class="benefit-btn" data-val="视力保险">视力保险</button>
+      <button type="button" class="benefit-btn" data-val="401k">401k</button>
+      <button type="button" class="benefit-btn" data-val="带薪休假">带薪休假</button>
+      <button type="button" class="benefit-btn" data-val="加班费">加班费</button>
+      <button type="button" class="benefit-btn" data-val="交通补贴">交通补贴</button>
+      <button type="button" class="benefit-btn" data-val="餐补">餐补</button>
+      <button type="button" class="benefit-btn" data-val="周薪">周薪</button>
+      <button type="button" class="benefit-btn" data-val="节假日奖金">节假日奖金</button>
+    </div>
+  </div>
+
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
   <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
@@ -515,9 +605,20 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="inqModal"><div class="modal">
   <h2>问卷详情</h2>
   <div id="inqDetail"></div>
-  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+  <div id="inqOnboardStatus" style="display:none;margin-top:1rem;padding:.75rem 1rem;background:var(--off-white);border-radius:8px;font-size:.85rem"></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
+    <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
     <button class="btn btn-red" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Onboard Doc Preview Modal -->
+<div class="modal-bg" id="onboardDocModal"><div class="modal">
+  <h2 id="onboardDocTitle">入职材料</h2>
+  <div id="onboardDocContent"></div>
+  <div style="margin-top:1.5rem">
+    <button class="btn btn-red" onclick="document.getElementById('onboardDocModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
 
@@ -525,30 +626,43 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="assignModal"><div class="modal">
   <h2 id="assignModalTitle">新建派工</h2>
   <input type="hidden" id="assignId">
-  <div class="field"><label>选择人员 *</label><select id="aInquiry"><option value="">-- 请选择 --</option></select></div>
-  <div class="field"><label>分配职位 *</label><select id="aJob"><option value="">-- 请选择 --</option></select></div>
+  <input type="hidden" id="aInquiryId">
+  <input type="hidden" id="aJobId">
+
+  <div class="field" style="position:relative">
+    <label>选择人员 *</label>
+    <input id="aInquiry" autocomplete="off" placeholder="搜索姓名 / 电话 / 邮箱…" oninput="filterAssignSearch('inq')">
+    <div class="assign-dropdown" id="aInquiryDrop"></div>
+  </div>
+
+  <div class="field" style="position:relative">
+    <label>分配职位 *</label>
+    <input id="aJob" autocomplete="off" placeholder="搜索职位名称 / 地点…" oninput="filterAssignSearch('job')">
+    <div class="assign-dropdown" id="aJobDrop"></div>
+  </div>
+
+  <div class="field"><label>状态</label><select id="aStatus">
+    <option value="assigned">已分配</option>
+    <option value="working">工作中</option>
+    <option value="completed">已完成</option>
+    <option value="cancelled">已取消</option>
+  </select></div>
   <div class="field-row">
     <div class="field"><label>开始日期</label><input type="date" id="aStartDate"></div>
-    <div class="field"><label>状态</label><select id="aStatus">
-      <option value="assigned">已分配</option>
-      <option value="working">工作中</option>
-      <option value="completed">已完成</option>
-      <option value="cancelled">已取消</option>
-    </select></div>
-  </div>
-  <div class="field-row">
     <div class="field"><label>合同类型</label><select id="aContractType">
       <option value="W2">W2（雇员）</option>
       <option value="1099">1099（独立承包商）</option>
     </select></div>
+  </div>
+  <div class="field-row">
     <div class="field"><label>薪资方式</label><select id="aPayType">
       <option value="hourly">时薪（$/hr）</option>
       <option value="salary">固定月薪</option>
       <option value="annual">年薪</option>
       <option value="per_piece">计件</option>
     </select></div>
+    <div class="field"><label>薪资 / 工资</label><input id="aPayRate" placeholder="例：18.50/hr 或 $3,200/月"></div>
   </div>
-  <div class="field"><label>薪资 / 工资</label><input id="aPayRate" placeholder="例：18.50/hr 或 $3,200/月"></div>
   <div class="field"><label>福利待遇</label><textarea id="aBenefits" rows="2" placeholder="例：医疗保险、带薪假期、401K、免费停车..."></textarea></div>
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
@@ -1016,7 +1130,7 @@ function showTab(t) {
   if (t === 'assignments') loadAssignments();
   if (t === 'partners')   loadPartners();
   if (t === 'backups')    loadBackups();
-  if (t === 'employees')  loadEmployees();
+  if (t === 'employees')  { loadEmployees(); loadOnboardSubmissions(); }
   if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
@@ -1078,87 +1192,168 @@ async function loadJobs() {
   const jobs = await api('/admin/jobs');
   const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
   const authLabel = a => ({any:'合法身份', gc:'绿卡/公民', citizen:'仅公民'})[a] || '不限';
+  const etBadge = et => {
+    if (!et) return '';
+    const cls = et === 'W2' ? 'badge-w2' : et === 'Contract' || et === '1099' ? 'badge-contract' : 'badge-employment';
+    return `<span class="badge ${cls}">${esc(et)}</span>`;
+  };
+  const scheduleStr = j => {
+    const parts = [];
+    if (j.work_days) parts.push(j.work_days);
+    if (j.work_start && j.work_end) parts.push(`${j.work_start}–${j.work_end}`);
+    return parts.join(' ');
+  };
   document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
-    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}</td>
-    <td>${esc(j.type)}</td><td>${esc(j.location)}</td>
-    <td>${esc(authLabel(j.work_auth))}</td>
+    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
+    <td>${esc(j.type)}</td>
+    <td>${etBadge(j.employment_type)}</td>
+    <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
+    <td>${esc(j.pay||'')}</td>
     <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
     <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
     <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
 }
 
-function openJobModal(job) {
+async function openJobModal(job) {
   document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
   document.getElementById('jobId').value = job ? job.id : '';
   document.getElementById('jTitle').value = job ? job.title : '';
-  document.getElementById('jType').value = job ? job.type : '';
+  document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jLocation').value = job ? job.location : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
-  document.getElementById('jSchedule').value = job ? (job.schedule || '') : '';
-  document.getElementById('jBenefits').value = job ? (job.benefits || '') : '';
+  document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
+  document.getElementById('jWorkStart').value = job ? (job.work_start || '') : '';
+  document.getElementById('jWorkEnd').value = job ? (job.work_end || '') : '';
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
+
+  // Load company dropdown
+  await loadJobCompanies(job ? (job.company_id || '') : '');
+
+  // Work days toggle
+  const activeDays = job && job.work_days ? job.work_days.split(',').map(s=>s.trim()) : [];
+  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
+    btn.classList.toggle('active', activeDays.includes(btn.dataset.day));
+  });
+
+  // Benefits toggle
+  const activeBenefits = job && job.benefits ? job.benefits.split(',').map(s=>s.trim()) : [];
+  document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.classList.toggle('active', activeBenefits.includes(btn.dataset.val));
+  });
+
   document.getElementById('jobModal').classList.add('show');
 }
 function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
 function editJob(j) { openJobModal(j); }
 
+async function loadJobCompanies(selectedId) {
+  const sel = document.getElementById('jCompany');
+  try {
+    const partners = await api('/admin/partners');
+    const active = partners.filter(p => p.active !== 0);
+    sel.innerHTML = '<option value="">-- 不绑定公司 --</option>' +
+      active.map(p => `<option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+  } catch { sel.innerHTML = '<option value="">-- 无法加载 --</option>'; }
+}
+
+// Wire up day/benefit toggle buttons (once DOM ready)
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
+    btn.addEventListener('click', () => btn.classList.toggle('active'));
+  });
+  document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.addEventListener('click', () => btn.classList.toggle('active'));
+  });
+});
+
 function randomFillJob() {
   const pool = [
-    { lang: 'zh', title: '仓库分拣员', type: '临时工', location: 'Chicago, IL', pay: '$17-19/hr', work_auth: 'any',
-      schedule: '周一至周五 06:00-14:30', benefits: '每周直接发薪、免费停车',
+    { lang: 'zh', title: '仓库分拣员', type: '临时工', employment_type: 'W2', location: 'Chicago, IL', pay: '$17-19/hr', work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '06:00', work_end: '14:30',
+      benefits: '周薪,交通补贴',
       desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。' },
-    { lang: 'zh', title: '叉车操作员', type: '全职', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true, work_auth: 'any',
-      schedule: '周一至周五 07:00-15:30，可加班', benefits: '医疗保险、牙科保险、带薪假',
+    { lang: 'zh', title: '叉车操作员', type: '全职', employment_type: 'W2', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true, work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '07:00', work_end: '15:30',
+      benefits: '医疗保险,牙科保险,带薪休假,加班费',
       desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁。' },
-    { lang: 'zh', title: '生产线操作工', type: '全职', location: 'Melrose Park, IL', pay: '$18/hr', work_auth: 'gc',
-      schedule: '周一至周五 06:00-14:30 / 夜班可选', benefits: '工服、手套免费提供，90天后享医保',
+    { lang: 'zh', title: '生产线操作工', type: '全职', employment_type: 'W2', location: 'Melrose Park, IL', pay: '$18/hr', work_auth: 'gc',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '06:00', work_end: '14:30',
+      benefits: '医疗保险,加班费',
       desc: '食品加工生产线工作，需遵守卫生规定。每周加班机会多，可双休。' },
-    { lang: 'en', title: 'Warehouse Associate', type: 'Temp-to-Hire', location: 'Schaumburg, IL', pay: '$16-18/hr', work_auth: 'any',
-      schedule: 'Mon–Fri, Day & Night shifts available', benefits: 'Weekly pay, referral bonus',
+    { lang: 'en', title: 'Warehouse Associate', type: '临时转正', employment_type: 'W2', location: 'Schaumburg, IL', pay: '$16-18/hr', work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '07:00', work_end: '15:30',
+      benefits: '周薪,节假日奖金',
       desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs.' },
-    { lang: 'en', title: 'Machine Operator', type: 'Full-Time', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true, work_auth: 'gc',
-      schedule: 'Mon–Fri 6am–2:30pm (overtime available)', benefits: 'Medical, dental & vision after 90 days, PTO',
+    { lang: 'en', title: 'Machine Operator', type: '全职', employment_type: 'W2', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true, work_auth: 'gc',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '06:00', work_end: '14:30',
+      benefits: '医疗保险,牙科保险,视力保险,带薪休假',
       desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred.' },
-    { lang: 'en', title: 'General Labor', type: 'Temporary', location: 'Addison, IL', pay: '$15.50/hr', work_auth: 'any',
-      schedule: 'Mon–Fri 7am–3:30pm, weekend shifts with differential', benefits: 'Weekly pay, free PPE',
+    { lang: 'en', title: 'General Labor', type: '临时工', employment_type: 'Contract', location: 'Addison, IL', pay: '$15.50/hr', work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri,Sat', work_start: '07:00', work_end: '15:30',
+      benefits: '周薪',
       desc: 'Various light industrial tasks including assembly, sorting and quality inspection.' },
-    { lang: 'es', title: 'Trabajador de Almacén', type: 'Tiempo Completo', location: 'Melrose Park, IL', pay: '$16-18/hr', work_auth: 'any',
-      schedule: 'Lunes a viernes 7am–3:30pm', benefits: 'Pago semanal, uniforme incluido',
+    { lang: 'es', title: 'Trabajador de Almacén', type: '全职', employment_type: 'W2', location: 'Melrose Park, IL', pay: '$16-18/hr', work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '07:00', work_end: '15:30',
+      benefits: '周薪,交通补贴',
       desc: 'Clasificar y empacar productos en almacén. No se requiere experiencia previa, se ofrece capacitación.' },
-    { lang: 'es', title: 'Operador de Montacargas', type: 'Temporal', location: 'Cicero, IL', pay: '$20/hr', urgent: true, work_auth: 'gc',
-      schedule: 'Turno nocturno 10pm–6am, lunes a viernes', benefits: 'Pago semanal, horas extras disponibles',
+    { lang: 'es', title: 'Operador de Montacargas', type: '临时工', employment_type: '1099', location: 'Cicero, IL', pay: '$20/hr', urgent: true, work_auth: 'gc',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '22:00', work_end: '06:00',
+      benefits: '周薪,加班费',
       desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía.' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
-  document.getElementById('jTitle').value    = r.title;
-  document.getElementById('jType').value     = r.type;
-  document.getElementById('jLocation').value = r.location;
-  document.getElementById('jPay').value      = r.pay;
-  document.getElementById('jLang').value      = r.lang;
-  document.getElementById('jWorkAuth').value  = r.work_auth || '';
-  document.getElementById('jSchedule').value  = r.schedule || '';
-  document.getElementById('jBenefits').value  = r.benefits || '';
-  document.getElementById('jDesc').value      = r.desc;
-  document.getElementById('jUrgent').checked  = !!r.urgent;
+  document.getElementById('jTitle').value          = r.title;
+  document.getElementById('jType').value           = r.type;
+  document.getElementById('jLocation').value       = r.location;
+  document.getElementById('jPay').value            = r.pay;
+  document.getElementById('jLang').value           = r.lang;
+  document.getElementById('jWorkAuth').value       = r.work_auth || '';
+  document.getElementById('jEmploymentType').value = r.employment_type || '';
+  document.getElementById('jWorkStart').value      = r.work_start || '';
+  document.getElementById('jWorkEnd').value        = r.work_end || '';
+  document.getElementById('jDesc').value           = r.desc;
+  document.getElementById('jUrgent').checked       = !!r.urgent;
+  // Days
+  const days = r.work_days ? r.work_days.split(',') : [];
+  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
+    btn.classList.toggle('active', days.includes(btn.dataset.day));
+  });
+  // Benefits
+  const bens = r.benefits ? r.benefits.split(',') : [];
+  document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.classList.toggle('active', bens.includes(btn.dataset.val));
+  });
 }
 
 async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
+  const langVal = document.getElementById('jLang').value;
+  const companySel = document.getElementById('jCompany');
+  const companyId = companySel.value ? parseInt(companySel.value) : null;
+  const companyName = companyId ? companySel.options[companySel.selectedIndex].text : '';
+  const workDays = [...document.querySelectorAll('#jWorkDaysWrap .day-btn.active')].map(b=>b.dataset.day).join(',');
+  const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const data = {
     title: document.getElementById('jTitle').value,
     type: document.getElementById('jType').value,
     location: document.getElementById('jLocation').value,
     pay: document.getElementById('jPay').value,
-    lang: document.getElementById('jLang').value,
-    lang_name: langNames[document.getElementById('jLang').value],
+    lang: langVal,
+    lang_name: langNames[langVal] || langVal,
     work_auth: document.getElementById('jWorkAuth').value,
-    schedule: document.getElementById('jSchedule').value,
-    benefits: document.getElementById('jBenefits').value,
+    employment_type: document.getElementById('jEmploymentType').value,
+    company_id: companyId,
+    company_name: companyName,
+    work_days: workDays,
+    work_start: document.getElementById('jWorkStart').value,
+    work_end: document.getElementById('jWorkEnd').value,
+    benefits,
+    schedule: '',
     description: document.getElementById('jDesc').value,
     urgent: document.getElementById('jUrgent').checked,
     active: true
@@ -1184,7 +1379,9 @@ async function loadInquiries() {
 
 function filterInquiries() {
   const keyword = document.getElementById('inqSearch').value.toLowerCase();
+  const posKeyword = document.getElementById('inqPosSearch').value.toLowerCase();
   const typeFilter = document.getElementById('inqTypeFilter').value;
+  const sortVal = document.getElementById('inqSortSel').value;
   let filtered = allInquiries;
   if (keyword) {
     filtered = filtered.filter(i =>
@@ -1194,41 +1391,121 @@ function filterInquiries() {
       (i.company || '').toLowerCase().includes(keyword)
     );
   }
-  if (typeFilter) {
-    filtered = filtered.filter(i => i.type === typeFilter);
+  if (posKeyword) {
+    filtered = filtered.filter(i => (i.positions || '').toLowerCase().includes(posKeyword));
   }
+  if (typeFilter) filtered = filtered.filter(i => i.type === typeFilter);
+  if (sortVal === 'date_asc') filtered = [...filtered].sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
+  else if (sortVal === 'date_desc') filtered = [...filtered].sort((a,b) => new Date(b.created_at)-new Date(a.created_at));
+  else if (sortVal === 'pos_asc') filtered = [...filtered].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
+  else if (sortVal === 'pos_desc') filtered = [...filtered].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
   renderInquiries(filtered);
 }
 
 function renderInquiries(inqs) {
   document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
-    <td>${new Date(i.created_at).toLocaleDateString()}</td>
-    <td><span style="font-family:monospace;font-size:.75rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
-    <td><strong>${esc(i.name)}</strong></td>
+    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></td>
+    <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
+    <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
     <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span></td>
-    <td>${esc(i.email)}</td><td>${esc(i.phone)}</td>
-    <td><button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button> <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无问卷提交</td></tr>';
+    <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.82rem">${esc(i.location||'')}</td>
+    <td style="white-space:nowrap">${esc(i.phone)}</td>
+    <td style="white-space:nowrap"><button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button> <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button></td>
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无问卷提交</td></tr>';
 }
 
 function showInquiry(i) {
   currentInquiry = i;
-  const labels = {
-    name: '姓名', email: '邮箱', phone: '电话', company: '公司',
-    type: '类型', positions: '职位需求', workers: '人数',
-    location: '地点', start_date: '开始日期', experience: '工作经验',
-    languages: '语言能力', comments: '备注'
-  };
   const fields = [
-    ['公司编号', i.employer_id], ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
-    ['类型', typeLabel(i.type)], ['职位需求', i.positions], ['人数', i.workers],
+    ['公司编号', i.employer_id],
+    ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
+    ['类型', typeLabel(i.type)], ['申请职位', i.positions], ['需求人数', i.workers],
     ['地点', i.location], ['开始日期', i.start_date], ['工作经验', i.experience],
     ['语言能力', i.languages], ['备注', i.comments],
-    ['简历', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank">下载简历</a>` : ''],
+    ['简历', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank" style="color:var(--sky)">📄 下载简历</a>` : ''],
     ['提交时间', new Date(i.created_at).toLocaleString()]
   ].filter(([k, v]) => v);
-  document.getElementById('inqDetail').innerHTML = '<table>' + fields.map(([k, v]) => `<tr><td style="font-weight:700;width:100px;padding:6px 0">${k}</td><td>${v}</td></tr>`).join('') + '</table>';
+  document.getElementById('inqDetail').innerHTML = '<table style="width:100%">' +
+    fields.map(([k, v]) => `<tr><td style="font-weight:700;width:90px;padding:5px 8px 5px 0;color:var(--gray-500);font-size:.82rem;vertical-align:top">${k}</td><td style="padding:5px 0;font-size:.85rem">${v}</td></tr>`).join('') + '</table>';
+  // Show/hide onboard button for Job Seekers
+  const btnOnboard = document.getElementById('btnSendOnboard');
+  const statusDiv = document.getElementById('inqOnboardStatus');
+  if (i.type === 'Job Seeker') {
+    btnOnboard.style.display = '';
+    // Check if already has a token
+    api(`/admin/onboard-submissions`).then(subs => {
+      const existing = subs.find(s => s.inquiry_id === i.id);
+      if (existing) {
+        btnOnboard.style.display = 'none';
+        const link = `${location.origin}/onboard.html?token=${existing.token}`;
+        statusDiv.style.display = '';
+        statusDiv.innerHTML = existing.status === 'completed'
+          ? `✅ 已完成入职材料提交 <span style="color:var(--gray-400);font-size:.78rem">${new Date(existing.completed_at).toLocaleString()}</span><br><a href="${link}" target="_blank" style="color:var(--sky);word-break:break-all;font-size:.78rem">${link}</a>`
+          : `⏳ 链接已发送，等待填写中<br><span style="color:var(--gray-400);font-size:.78rem;user-select:all">${link}</span>
+             <button class="btn btn-sm" style="margin-left:.5rem" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='✓ 已复制').catch(()=>{})">复制</button>`;
+      } else {
+        statusDiv.style.display = 'none';
+        btnOnboard.style.display = '';
+      }
+    });
+  } else {
+    btnOnboard.style.display = 'none';
+    statusDiv.style.display = 'none';
+  }
   document.getElementById('inqModal').classList.add('show');
+}
+
+async function sendOnboardLink() {
+  if (!currentInquiry) return;
+  const r = await api(`/admin/inquiries/${currentInquiry.id}/onboard-link`, { method: 'POST' });
+  if (r.token) {
+    const link = `${location.origin}/onboard.html?token=${r.token}`;
+    document.getElementById('btnSendOnboard').style.display = 'none';
+    const statusDiv = document.getElementById('inqOnboardStatus');
+    statusDiv.style.display = '';
+    statusDiv.innerHTML = `✅ 入职链接已生成，请复制发送给申请人：<br>
+      <span style="font-size:.82rem;color:var(--sky);word-break:break-all;user-select:all">${link}</span>
+      <button class="btn btn-sm" style="margin-left:.5rem;margin-top:.3rem" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='✓ 已复制').catch(()=>{})">复制链接</button>`;
+  }
+}
+
+async function loadOnboardSubmissions() {
+  const subs = await api('/admin/onboard-submissions');
+  const pending = subs.filter(s => s.status === 'pending').length;
+  const badge = document.getElementById('onboardBadge');
+  if (badge) badge.textContent = subs.length ? `${subs.length} 条` : '';
+  const tbody = document.getElementById('onboardTable');
+  if (!tbody) return;
+  const docLabels = { work_id: '工卡/工作许可', drivers_license: '驾照', ssn: '社安号' };
+  tbody.innerHTML = subs.length ? subs.map(s => {
+    const statusBadge = s.status === 'completed'
+      ? `<span class="badge badge-seeker">已完成</span>`
+      : `<span class="badge badge-other">待填写</span>`;
+    return `<tr>
+      <td style="font-size:.82rem;white-space:nowrap">${new Date(s.created_at).toLocaleDateString()}</td>
+      <td><strong>${esc(s.name)}</strong></td>
+      <td style="font-size:.82rem;max-width:150px">${esc(s.positions||'')}</td>
+      <td style="font-size:.82rem">${esc(s.email||s.inq_email||'')}</td>
+      <td style="font-size:.82rem">${esc(s.phone||s.inq_phone||'')}</td>
+      <td>${statusBadge}</td>
+      <td style="font-size:.82rem">${s.doc_count > 0 ? `<span style="color:var(--sky)">${s.doc_count} 份</span>` : '—'}</td>
+      <td><button class="btn btn-sm btn-outline" onclick="viewOnboardDocs(${s.id},'${esc(s.name)}')">查看</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">暂无入职申请</td></tr>';
+}
+
+async function viewOnboardDocs(subId, name) {
+  const docs = await api(`/admin/onboard-submissions/${subId}/docs`);
+  const docLabels = { work_id: '工卡 / 工作许可', drivers_license: '驾照', ssn: '社安号' };
+  document.getElementById('onboardDocTitle').textContent = `${name} — 入职材料`;
+  document.getElementById('onboardDocContent').innerHTML = docs.length
+    ? docs.map(d => `<div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--gray-200)">
+        <div><strong style="font-size:.88rem">${docLabels[d.doc_type]||d.doc_type}</strong><br><span style="font-size:.78rem;color:var(--gray-400)">${esc(d.file_name)}</span></div>
+        <a class="btn btn-sm btn-outline" href="${API}/admin/onboard-submissions/${subId}/docs/${d.id}/download?token=${TOKEN}" target="_blank">下载</a>
+      </div>`).join('')
+    : '<p style="color:var(--gray-400);font-size:.85rem">暂无上传文件</p>';
+  document.getElementById('onboardDocModal').classList.add('show');
 }
 
 async function deleteInq(id) {
@@ -1242,19 +1519,19 @@ function exportCSV() {
 }
 
 // Quick assign from inquiry list
-function quickAssign(inquiryId, name) {
-  openAssignModal();
-  document.getElementById('aInquiry').value = inquiryId;
+async function quickAssign(inquiryId, name) {
+  await openAssignModal();
+  document.getElementById('aInquiry').value = name || '';
+  document.getElementById('aInquiryId').value = inquiryId;
 }
 
 // Assign from inquiry detail modal
-function assignFromInquiry() {
+async function assignFromInquiry() {
   if (!currentInquiry) return;
   document.getElementById('inqModal').classList.remove('show');
-  openAssignModal();
-  setTimeout(() => {
-    document.getElementById('aInquiry').value = currentInquiry.id;
-  }, 100);
+  await openAssignModal();
+  document.getElementById('aInquiry').value = currentInquiry.name + (currentInquiry.phone ? ' · ' + currentInquiry.phone : '');
+  document.getElementById('aInquiryId').value = currentInquiry.id;
 }
 
 // ─── Assignments (派工管理) ───
@@ -1299,6 +1576,9 @@ function renderAssignments(assigns) {
   </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
 }
 
+// Cache for assignment search
+let _assignInqs = [], _assignJobs = [];
+
 async function openAssignModal(assignment) {
   document.getElementById('assignModalTitle').textContent = assignment ? '编辑派工' : '新建派工';
   document.getElementById('assignId').value = assignment ? assignment.id : '';
@@ -1309,33 +1589,80 @@ async function openAssignModal(assignment) {
   document.getElementById('aPayType').value = assignment ? (assignment.pay_type || 'hourly') : 'hourly';
   document.getElementById('aPayRate').value = assignment ? (assignment.pay_rate || '') : '';
   document.getElementById('aBenefits').value = assignment ? (assignment.benefits || '') : '';
+  document.getElementById('aInquiry').value = '';
+  document.getElementById('aJob').value = '';
+  document.getElementById('aInquiryId').value = '';
+  document.getElementById('aJobId').value = '';
+  closeAssignDropdowns();
 
-  // Load options for selects
   const [inqs, jobs] = await Promise.all([api('/admin/inquiries'), api('/admin/jobs')]);
-  const inqSelect = document.getElementById('aInquiry');
-  inqSelect.innerHTML = '<option value="">-- 请选择人员 --</option>' +
-    inqs.map(i => `<option value="${i.id}">${esc(i.name)} (${typeLabel(i.type)}) - ${esc(i.phone || i.email || '')}</option>`).join('');
-  const jobSelect = document.getElementById('aJob');
-  jobSelect.innerHTML = '<option value="">-- 请选择职位 --</option>' +
-    jobs.filter(j => j.active).map(j => `<option value="${j.id}">${esc(j.title)} - ${esc(j.location)} ${j.pay ? '(' + esc(j.pay) + ')' : ''}</option>`).join('');
+  _assignInqs = inqs;
+  _assignJobs = jobs.filter(j => j.active);
 
   if (assignment) {
-    inqSelect.value = assignment.inquiry_id;
-    jobSelect.value = assignment.job_id;
+    const inq = inqs.find(i => i.id == assignment.inquiry_id);
+    const job = _assignJobs.find(j => j.id == assignment.job_id);
+    if (inq) { document.getElementById('aInquiry').value = inq.name + (inq.phone ? ' · ' + inq.phone : ''); document.getElementById('aInquiryId').value = inq.id; }
+    if (job) { document.getElementById('aJob').value = job.title + ' - ' + job.location; document.getElementById('aJobId').value = job.id; }
   }
 
   document.getElementById('assignModal').classList.add('show');
 }
 
-function closeAssignModal() { document.getElementById('assignModal').classList.remove('show'); }
+function filterAssignSearch(which) {
+  const isInq = which === 'inq';
+  const q = document.getElementById(isInq ? 'aInquiry' : 'aJob').value.toLowerCase();
+  const drop = document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop');
+  // Clear selected id when user edits text
+  document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = '';
+
+  const items = isInq
+    ? _assignInqs.filter(i => !q || (i.name||'').toLowerCase().includes(q) || (i.phone||'').includes(q) || (i.email||'').toLowerCase().includes(q))
+    : _assignJobs.filter(j => !q || (j.title||'').toLowerCase().includes(q) || (j.location||'').toLowerCase().includes(q));
+
+  if (!items.length) { drop.classList.remove('open'); return; }
+
+  drop.innerHTML = items.slice(0, 30).map(item => {
+    if (isInq) {
+      return `<div class="adrop-item" onclick="selectAssignItem('inq',${item.id},${JSON.stringify(item.name + (item.phone ? ' · ' + item.phone : '')).replace(/</g,'&lt;')})">
+        ${esc(item.name)} <small>${esc(typeLabel(item.type))} ${item.phone ? '· ' + esc(item.phone) : ''} ${item.email ? '· ' + esc(item.email) : ''}</small></div>`;
+    } else {
+      return `<div class="adrop-item" onclick="selectAssignItem('job',${item.id},${JSON.stringify(item.title + ' - ' + item.location).replace(/</g,'&lt;')})">
+        ${esc(item.title)} <small>${esc(item.location)} ${item.pay ? '· ' + esc(item.pay) : ''} ${item.employment_type ? '· ' + esc(item.employment_type) : ''}</small></div>`;
+    }
+  }).join('');
+  drop.classList.add('open');
+}
+
+function selectAssignItem(which, id, label) {
+  const isInq = which === 'inq';
+  document.getElementById(isInq ? 'aInquiry' : 'aJob').value = label;
+  document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = id;
+  document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop').classList.remove('open');
+}
+
+function closeAssignDropdowns() {
+  document.getElementById('aInquiryDrop').classList.remove('open');
+  document.getElementById('aJobDrop').classList.remove('open');
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#assignModal')) closeAssignDropdowns();
+});
+
+function closeAssignModal() {
+  closeAssignDropdowns();
+  document.getElementById('assignModal').classList.remove('show');
+}
 
 function editAssignment(a) { openAssignModal(a); }
 
 async function saveAssignment() {
   const id = document.getElementById('assignId').value;
   const data = {
-    inquiry_id: document.getElementById('aInquiry').value,
-    job_id: document.getElementById('aJob').value,
+    inquiry_id: document.getElementById('aInquiryId').value,
+    job_id: document.getElementById('aJobId').value,
     status: document.getElementById('aStatus').value,
     notes: document.getElementById('aNotes').value,
     start_date: document.getElementById('aStartDate').value,
@@ -1344,7 +1671,7 @@ async function saveAssignment() {
     pay_rate: document.getElementById('aPayRate').value,
     benefits: document.getElementById('aBenefits').value
   };
-  if (!data.inquiry_id || !data.job_id) return alert('请选择人员和职位');
+  if (!data.inquiry_id || !data.job_id) return alert('请搜索并选择人员和职位');
   if (id) await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/assignments', { method: 'POST', body: JSON.stringify(data) });
   closeAssignModal();
