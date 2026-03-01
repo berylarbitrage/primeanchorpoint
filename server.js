@@ -46,10 +46,21 @@ async function sendSMSWithDetail(to, body) {
   const formatted = formatPhoneE164(to);
   try {
     const msg = await twilioClient.messages.create({ body, from: TWILIO_FROM, to: formatted });
-    return { ok: true, sid: msg.sid, status: msg.status, to: formatted, from: TWILIO_FROM };
+    // Wait 3s then fetch real delivery status (queued → sent/failed/undelivered)
+    await new Promise(r => setTimeout(r, 3000));
+    const updated = await twilioClient.messages(msg.sid).fetch();
+    return { ok: true, sid: msg.sid, status: updated.status, errorCode: updated.errorCode, errorMessage: updated.errorMessage, to: formatted, from: TWILIO_FROM };
   } catch (e) {
     return { ok: false, error: e.message, code: e.code, to: formatted, from: TWILIO_FROM };
   }
+}
+
+async function getTwilioAccountType() {
+  if (!twilioClient) return null;
+  try {
+    const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID).fetch();
+    return { type: account.type, status: account.status, friendlyName: account.friendlyName };
+  } catch (e) { return { error: e.message }; }
 }
 
 // ─── Email (Nodemailer) ───
@@ -1203,8 +1214,11 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
     phone_number: process.env.TWILIO_PHONE_NUMBER || null,
     client_ready: !!twilioClient,
   };
-  const result = await sendSMSWithDetail(to, '[Prime Anchorpoint] 测试短信 / SMS Test: Twilio is working!');
-  res.json({ configured, result });
+  const [result, accountInfo] = await Promise.all([
+    sendSMSWithDetail(to, '[Prime Anchorpoint] 测试短信 / SMS Test: Twilio is working!'),
+    getTwilioAccountType(),
+  ]);
+  res.json({ configured, result, accountInfo });
 });
 
 // Admin: resend verification codes to unverified worker
