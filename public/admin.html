@@ -3727,10 +3727,6 @@ async function generateEmpDocLink() {
         alert('更新联系方式失败：' + (e.message || '网络错误'));
       }
     }
-  } catch(e) {
-    alert('请求失败：' + (e.message || '网络错误'));
-    btn.disabled = false;
-    btn.textContent = '生成链接';
   }
 
   btn.disabled = true;
