@@ -671,6 +671,49 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════ Employee Doc-Request Link Modal ════ -->
+<div class="modal-bg" id="empDocLinkModal"><div class="modal" style="max-width:500px">
+  <h2>发送材料收集链接</h2>
+  <p id="empDocLinkTarget" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
+  <input type="hidden" id="empDocLinkEmpId">
+
+  <div class="field"><label>选择需要收集的材料（多选）</label>
+    <div style="display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem">
+      <label style="display:flex;align-items:center;gap:.6rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+        <input type="checkbox" id="docReqGovId" value="gov_id" checked style="width:15px;height:15px">
+        🪪 政府身份证件（驾照 / 州ID / 护照）
+      </label>
+      <label style="display:flex;align-items:center;gap:.6rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+        <input type="checkbox" id="docReqSsn" value="ssn" checked style="width:15px;height:15px">
+        📋 社会安全卡（SSN Card）
+      </label>
+      <label style="display:flex;align-items:center;gap:.6rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+        <input type="checkbox" id="docReqWorkCard" value="work_card" checked style="width:15px;height:15px">
+        💼 工卡 / 工作许可证（EAD / Work Permit / 绿卡）
+      </label>
+    </div>
+  </div>
+
+  <div class="field"><label>HR 留言（可选，将显示给员工）</label>
+    <textarea id="empDocAdminNote" rows="2" placeholder="例：请在3天内完成上传，感谢配合。"></textarea>
+  </div>
+
+  <div id="empDocLinkResult" style="display:none;background:var(--sky-light);border:1px solid var(--sky);border-radius:var(--radius);padding:.85rem 1rem;font-size:.83rem;margin-top:.75rem">
+    <div style="font-weight:600;color:var(--blue);margin-bottom:.5rem">✅ 链接已生成，请复制发送给员工：</div>
+    <div id="empDocLinkUrl" style="word-break:break-all;color:var(--sky);user-select:all;margin-bottom:.5rem"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="copyEmpDocLink()">复制链接</button>
+      <button class="btn btn-sm" onclick="openEmpDocLink()">在新窗口打开预览</button>
+    </div>
+    <div id="empDocLinkCopied" style="display:none;color:var(--green);font-size:.78rem;margin-top:.3rem">✓ 已复制到剪贴板</div>
+  </div>
+
+  <div style="display:flex;gap:1rem;margin-top:1.25rem">
+    <button class="btn btn-green" id="btnGenDocLink" onclick="generateEmpDocLink()">生成链接</button>
+    <button class="btn" onclick="document.getElementById('empDocLinkModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
 <!-- Close-Job Modal -->
 <div class="modal-bg" id="closeJobModal"><div class="modal" style="max-width:480px">
   <h2>关闭职位</h2>
@@ -2614,6 +2657,7 @@ function renderEmployees(list) {
     <td>
       <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
       <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
+      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>发送材料链接</button>
       <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
       ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
     </td>
@@ -2811,6 +2855,40 @@ async function viewEmployee(id) {
     </tbody></table>`:'<p class="empty" style="padding:1rem">暂无背景调查记录</p>'}
   </div>`;
 
+  // Doc requests section
+  const docReqs = await api(`/admin/employees/${id}/doc-requests`);
+  const DR_STATUS = { pending:'⏳ 待填写', completed:'✅ 已完成' };
+  html += `<div class="form-section">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h4 style="margin:0">材料收集链接 (${docReqs.length} 条)</h4>
+      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0"
+        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 发送新链接</button>
+    </div>
+    ${docReqs.length ? docReqs.map(r => {
+      const link = location.origin + '/emp-docs.html?token=' + r.token;
+      const docs = JSON.parse(r.requested_docs || '[]');
+      const DOC_SHORT = { gov_id:'身份证', ssn:'社安卡', work_card:'工卡' };
+      return `<div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:.75rem;margin-bottom:.6rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.4rem">
+          <div>
+            <span class="badge" style="background:${r.status==='completed'?'#D1FAE5':'#FEF9C3'};color:${r.status==='completed'?'#065F46':'#92400E'}">${DR_STATUS[r.status]||r.status}</span>
+            <span style="font-size:.78rem;color:var(--gray-400);margin-left:.5rem">${new Date(r.created_at).toLocaleDateString()}</span>
+            ${r.completed_at?`<span style="font-size:.78rem;color:var(--green);margin-left:.3rem">完成于 ${new Date(r.completed_at).toLocaleDateString()}</span>`:''}
+          </div>
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap">
+            ${docs.map(d=>`<span style="background:var(--sky-light);color:var(--blue);font-size:.7rem;padding:2px 7px;border-radius:10px;font-weight:600">${DOC_SHORT[d]||d}</span>`).join('')}
+          </div>
+        </div>
+        ${r.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);margin-top:.35rem;font-style:italic">"${esc(r.admin_note)}"</div>`:''}
+        <div style="margin-top:.55rem;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+          <span style="font-size:.72rem;color:var(--sky);word-break:break-all;flex:1;min-width:0;user-select:all">${link}</span>
+          <button class="btn btn-sm" onclick="navigator.clipboard.writeText('${link}').then(e=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='复制',1800)})">复制</button>
+          <button class="btn btn-sm btn-red" onclick="deleteDocRequest(${r.id},${id})">删除</button>
+        </div>
+      </div>`;
+    }).join('') : '<p class="empty" style="padding:1rem">暂无材料收集链接，点击「+ 发送新链接」创建</p>'}
+  </div>`;
+
   // Ratings section
   const ratings = await api(`/admin/employee-ratings?employee_id=${id}`);
   const SCORE_LABEL = ['', '差', '一般', '良好', '优秀', '出色'];
@@ -2946,6 +3024,55 @@ function editRating(r, empId, empName) {
 async function deleteRating(ratingId, empId) {
   if (!confirm('确定删除此评分记录？')) return;
   await api(`/admin/employee-ratings/${ratingId}`, { method:'DELETE' });
+  viewEmployee(empId);
+}
+
+// ─── Employee Doc Request Links ───
+let _currentDocLinkUrl = '';
+
+function sendEmpDocLink(empId, empName) {
+  document.getElementById('empDocLinkEmpId').value = empId;
+  document.getElementById('empDocLinkTarget').textContent = empName;
+  document.getElementById('empDocLinkResult').style.display = 'none';
+  document.getElementById('empDocAdminNote').value = '';
+  document.getElementById('docReqGovId').checked = true;
+  document.getElementById('docReqSsn').checked = true;
+  document.getElementById('docReqWorkCard').checked = true;
+  document.getElementById('btnGenDocLink').disabled = false;
+  document.getElementById('empDocLinkModal').classList.add('show');
+}
+
+async function generateEmpDocLink() {
+  const empId = document.getElementById('empDocLinkEmpId').value;
+  const note  = document.getElementById('empDocAdminNote').value;
+  const docs  = ['gov_id','ssn','work_card'].filter(k => document.getElementById('docReq'+k.replace(/^\w/,c=>c.toUpperCase()).replace('_','').replace(/^\w/,c=>c.toUpperCase())).checked);
+  const docIds = { gov_id: 'docReqGovId', ssn: 'docReqSsn', work_card: 'docReqWorkCard' };
+  const requestedDocs = Object.entries(docIds).filter(([,id]) => document.getElementById(id).checked).map(([k]) => k);
+  if (!requestedDocs.length) return alert('请至少选择一种材料');
+  const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs }) });
+  if (r.token) {
+    _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token;
+    document.getElementById('empDocLinkUrl').textContent = _currentDocLinkUrl;
+    document.getElementById('empDocLinkResult').style.display = '';
+    document.getElementById('empDocLinkCopied').style.display = 'none';
+    document.getElementById('btnGenDocLink').disabled = true;
+    document.getElementById('btnGenDocLink').textContent = '已生成';
+  }
+}
+
+function copyEmpDocLink() {
+  navigator.clipboard.writeText(_currentDocLinkUrl).then(() => {
+    document.getElementById('empDocLinkCopied').style.display = '';
+  });
+}
+
+function openEmpDocLink() {
+  if (_currentDocLinkUrl) window.open(_currentDocLinkUrl, '_blank');
+}
+
+async function deleteDocRequest(reqId, empId) {
+  if (!confirm('删除此链接后员工将无法再访问，确认删除？')) return;
+  await api(`/admin/employee-doc-requests/${reqId}`, { method:'DELETE' });
   viewEmployee(empId);
 }
 

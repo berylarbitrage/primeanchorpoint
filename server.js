@@ -221,6 +221,17 @@ db.exec(`
     rated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id)
   );
+  CREATE TABLE IF NOT EXISTS employee_doc_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    employee_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    requested_docs TEXT DEFAULT '["gov_id","ssn","work_card"]',
+    admin_note TEXT DEFAULT '',
+    completed_at DATETIME DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  );
   CREATE TABLE IF NOT EXISTS onboarding_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT UNIQUE NOT NULL,
@@ -1030,6 +1041,85 @@ app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('up
 
 app.delete('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('delete', 'assignments'), (req, res) => {
   db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Employee Doc Requests (私密材料链接) ───
+
+// Admin: create / get link for an employee
+app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
+  const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+  const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
+  if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
+  const token = crypto.randomBytes(28).toString('hex');
+  const { admin_note, requested_docs } = req.body;
+  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs) VALUES (?,?,?,?)')
+    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']));
+  res.json({ token, status: 'pending' });
+});
+
+app.get('/api/admin/employees/:id/doc-requests', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id));
+});
+
+app.delete('/api/admin/employee-doc-requests/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM employee_doc_requests WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Public: validate token
+app.get('/api/emp-docs/:token', (req, res) => {
+  const row = db.prepare(`
+    SELECT r.*, e.first_name, e.last_name, e.employee_id AS emp_code
+    FROM employee_doc_requests r JOIN employees e ON r.employee_id = e.id
+    WHERE r.token=?`).get(req.params.token);
+  if (!row) return res.status(404).json({ error: '链接无效或已过期' });
+  res.json({
+    status: row.status,
+    name: `${row.first_name} ${row.last_name}`,
+    emp_code: row.emp_code,
+    requested_docs: JSON.parse(row.requested_docs || '["gov_id","ssn","work_card"]'),
+    admin_note: row.admin_note,
+    completed_at: row.completed_at
+  });
+});
+
+// Public: submit documents
+const empDocReqUpload = multer({
+  storage: multer.diskStorage({
+    destination: docsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `empdoc-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    cb(null, /pdf|jpg|jpeg|png|heic|heif/.test(path.extname(file.originalname).toLowerCase()));
+  }
+});
+
+app.post('/api/emp-docs/:token/submit', empDocReqUpload.fields([
+  { name: 'gov_id', maxCount: 1 },
+  { name: 'ssn', maxCount: 1 },
+  { name: 'work_card', maxCount: 1 }
+]), (req, res) => {
+  const row = db.prepare('SELECT * FROM employee_doc_requests WHERE token=?').get(req.params.token);
+  if (!row) return res.status(404).json({ error: '链接无效或已过期' });
+  if (row.status === 'completed') return res.status(400).json({ error: '已提交，无法重复提交' });
+  const files = req.files || {};
+  if (!Object.keys(files).length) return res.status(400).json({ error: '请至少上传一份文件' });
+  const DOC_LABEL = { gov_id: '政府身份证件', ssn: '社安卡', work_card: '工卡 / 工作许可证' };
+  for (const [docType, fileArr] of Object.entries(files)) {
+    if (fileArr && fileArr[0]) {
+      const f = fileArr[0];
+      db.prepare(`INSERT INTO employee_documents (employee_id,doc_type,doc_label,file_path,file_name)
+        VALUES(?,?,?,?,?)`)
+        .run(row.employee_id, docType, DOC_LABEL[docType] || docType, f.filename, f.originalname);
+    }
+  }
+  db.prepare(`UPDATE employee_doc_requests SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE token=?`).run(row.token);
   res.json({ success: true });
 });
 
