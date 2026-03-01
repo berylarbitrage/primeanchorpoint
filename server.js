@@ -33,6 +33,9 @@ db.exec(`
     description TEXT DEFAULT '',
     urgent INTEGER DEFAULT 0,
     active INTEGER DEFAULT 1,
+    work_auth TEXT DEFAULT '',
+    benefits TEXT DEFAULT '',
+    schedule TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS inquiries (
@@ -107,7 +110,23 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    salt TEXT NOT NULL
+    salt TEXT NOT NULL,
+    role TEXT DEFAULT 'staff',
+    display_name TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS pending_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action_type TEXT NOT NULL,
+    target_table TEXT NOT NULL,
+    target_id INTEGER,
+    payload TEXT DEFAULT '{}',
+    requested_by TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    reviewed_by TEXT DEFAULT '',
+    reviewed_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS employees (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -205,7 +224,17 @@ db.exec(`
 `);
 
 // ─── Migrations for existing databases ───
-try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) { /* column already exists */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN benefits TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule TEXT DEFAULT ''`); } catch(e) {}
+
+try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
+
+// Migrate admin_users table (add role, display_name, active, created_at columns if missing)
+['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
+  try { db.exec(`ALTER TABLE admin_users ADD COLUMN ${col}`); } catch {}
+});
+
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
 partnerMigrations.forEach(col => {
@@ -221,6 +250,30 @@ const jobMigrations = [
   "ALTER TABLE jobs ADD COLUMN schedule_end TEXT DEFAULT ''"
 ];
 jobMigrations.forEach(sql => { try { db.exec(sql); } catch {} });
+
+// timesheet_sheets: one per submitted period, carries the employee-facing confirmation token
+db.exec(`CREATE TABLE IF NOT EXISTS timesheet_sheets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  company_name TEXT DEFAULT '',
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  job_id INTEGER DEFAULT NULL,
+  total_hours REAL DEFAULT 0,
+  regular_hours REAL DEFAULT 0,
+  overtime_hours REAL DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  confirm_token TEXT UNIQUE NOT NULL,
+  employee_action TEXT DEFAULT '',
+  employee_note TEXT DEFAULT '',
+  confirmed_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`);
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_start TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_end TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN sheet_id INTEGER DEFAULT NULL`); } catch(e) {}
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -440,32 +493,68 @@ function verifyPassword(password, salt, hash) {
     const defaultPass = process.env.ADMIN_PASS || 'prime2026';
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(defaultPass, salt);
-    db.prepare('INSERT INTO admin_users (username, password_hash, salt) VALUES (?, ?, ?)').run(defaultUser, hash, salt);
+    db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)').run(defaultUser, hash, salt, 'admin', 'Administrator');
     console.log(`[Auth] Seeded default admin user: ${defaultUser}`);
   }
+  // Ensure the first user (original seeded admin) has admin role
+  try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
 }
 
 // In-memory session store (tokens expire in 24h)
 const sessions = new Map();
-function createSession() {
+function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { created: Date.now() });
+  sessions.set(token, { created: Date.now(), userId: user.id, username: user.username, role: user.role || 'staff' });
   return token;
 }
-function validSession(token) {
+function getSession(token) {
   const s = sessions.get(token);
-  if (!s) return false;
-  if (Date.now() - s.created > 24 * 60 * 60 * 1000) { sessions.delete(token); return false; }
-  return true;
+  if (!s) return null;
+  if (Date.now() - s.created > 24 * 60 * 60 * 1000) { sessions.delete(token); return null; }
+  return s;
 }
+function validSession(token) { return !!getSession(token); }
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
-  if (auth && auth.startsWith('Bearer ') && validSession(auth.slice(7))) return next();
-  // Check cookie
-  const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
-  if (cookieMatch && validSession(cookieMatch[1])) return next();
-  res.status(401).json({ error: 'Unauthorized' });
+  let session = null;
+  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  if (!session) {
+    const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+    if (cookieMatch) session = getSession(cookieMatch[1]);
+  }
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  req.userRole = session.role;
+  req.userName = session.username;
+  req.userId = session.userId;
+  next();
+}
+
+// Role-based middleware helpers
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (roles.includes(req.userRole)) return next();
+    res.status(403).json({ error: 'Permission denied' });
+  };
+}
+
+// For staff: delete/update operations create pending actions instead of executing directly
+function staffGuard(actionType, targetTable) {
+  return (req, res, next) => {
+    if (req.userRole === 'admin') return next();
+    if (req.userRole === 'manager') return res.status(403).json({ error: 'Permission denied' });
+    // staff: create a pending action
+    const payload = { ...req.body, _params: req.params };
+    db.prepare('INSERT INTO pending_actions (action_type, target_table, target_id, payload, requested_by) VALUES (?, ?, ?, ?, ?)')
+      .run(actionType, targetTable, req.params.id || 0, JSON.stringify(payload), req.userName);
+    res.json({ pending: true, message: '操作已提交，等待管理员审批 / Action submitted for admin approval' });
+  };
+}
+
+// Manager access restriction: managers can only access time entries and employee list
+function blockManager(req, res, next) {
+  if (req.userRole === 'manager') return res.status(403).json({ error: 'Permission denied' });
+  next();
 }
 
 // ─── PUBLIC API ───
@@ -481,6 +570,7 @@ app.get('/api/jobs', (req, res) => {
     id: j.id, title: j.title, type: j.type, location: j.location,
     pay: j.pay, lang: j.lang, lang_name: j.lang_name,
     desc: j.description, urgent: !!j.urgent,
+    work_auth: j.work_auth || '',
     partner_name: j.partner_name || '',
     employment_type: j.employment_type || '',
     benefits: j.benefits || '[]',
@@ -535,64 +625,150 @@ app.post('/api/admin/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
+  if (!user || !user.active) return res.status(401).json({ error: 'Invalid username or password' });
   if (user && verifyPassword(password, user.salt, user.password_hash)) {
-    const token = createSession();
-    res.json({ success: true, token });
+    const token = createSession(user);
+    res.json({ success: true, token, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
   } else {
     res.status(401).json({ error: 'Invalid username or password' });
   }
 });
 
+// Get current user info
+app.get('/api/admin/me', requireAdmin, (req, res) => {
+  const user = db.prepare('SELECT id, username, role, display_name FROM admin_users WHERE id = ?').get(req.userId);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json(user);
+});
+
+// ─── Account Management (admin only) ───
+app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
+  res.json(db.prepare('SELECT id, username, role, display_name, active, created_at FROM admin_users ORDER BY id').all());
+});
+
+app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
+  const { username, password, role, display_name } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  const existing = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(username);
+  if (existing) return res.status(400).json({ error: 'Username already exists' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)')
+    .run(username, hash, salt, role, display_name || '');
+  res.json({ success: true, id: result.lastInsertRowid });
+});
+
+app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { username, password, role, display_name, active } = req.body;
+  if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (password) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = hashPassword(password, salt);
+    db.prepare('UPDATE admin_users SET password_hash=?, salt=? WHERE id=?').run(hash, salt, req.params.id);
+  }
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, active=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, active !== undefined ? active : user.active, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  if (parseInt(req.params.id) === req.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
+  db.prepare('DELETE FROM admin_users WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Pending Actions (approval workflow) ───
+app.get('/api/admin/pending-actions', requireAdmin, (req, res) => {
+  if (req.userRole === 'admin') {
+    res.json(db.prepare('SELECT * FROM pending_actions WHERE status = ? ORDER BY created_at DESC').all('pending'));
+  } else {
+    res.json(db.prepare('SELECT * FROM pending_actions WHERE requested_by = ? ORDER BY created_at DESC').all(req.userName));
+  }
+});
+
+app.post('/api/admin/pending-actions/:id/approve', requireAdmin, requireRole('admin'), (req, res) => {
+  const action = db.prepare('SELECT * FROM pending_actions WHERE id = ? AND status = ?').get(req.params.id, 'pending');
+  if (!action) return res.status(404).json({ error: 'Action not found or already processed' });
+  const payload = JSON.parse(action.payload || '{}');
+  const params = payload._params || {};
+  try {
+    if (action.action_type === 'delete') {
+      db.prepare(`DELETE FROM ${action.target_table} WHERE id = ?`).run(action.target_id);
+    } else if (action.action_type === 'update') {
+      delete payload._params;
+      const cols = Object.keys(payload).filter(k => k !== '_params');
+      if (cols.length > 0) {
+        const setClauses = cols.map(c => `${c}=?`).join(',');
+        db.prepare(`UPDATE ${action.target_table} SET ${setClauses} WHERE id=?`).run(...cols.map(c => payload[c]), action.target_id);
+      }
+    }
+    db.prepare('UPDATE pending_actions SET status=?, reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run('approved', req.userName, action.id);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/pending-actions/:id/reject', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('UPDATE pending_actions SET status=?, reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run('rejected', req.userName, req.params.id);
+  res.json({ success: true });
+});
+
 // Jobs CRUD
-app.get('/api/admin/jobs', requireAdmin, (req, res) => {
+app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare(`
     SELECT j.*, p.name as partner_name
     FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id
     ORDER BY j.created_at DESC`).all());
 });
 
-app.post('/api/admin/jobs', requireAdmin, (req, res) => {
+app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   const stmt = db.prepare(`INSERT INTO jobs
     (title, type, location, pay, lang, lang_name, description, urgent,
-     partner_id, employment_type, benefits, schedule_days, schedule_start, schedule_end)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+     work_auth, partner_id, employment_type, benefits, schedule_days, schedule_start, schedule_end)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
     d.title, d.type || '', d.location || '', d.pay || '',
     d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0,
-    d.partner_id || null, d.employment_type || '',
+    d.work_auth || '', d.partner_id || null, d.employment_type || '',
     d.benefits || '[]', d.schedule_days || '[]', d.schedule_start || '', d.schedule_end || ''
   );
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
-app.put('/api/admin/jobs/:id', requireAdmin, (req, res) => {
+app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
   const d = req.body;
   db.prepare(`UPDATE jobs SET
     title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=?,
-    partner_id=?, employment_type=?, benefits=?, schedule_days=?, schedule_start=?, schedule_end=?
+    work_auth=?, partner_id=?, employment_type=?, benefits=?, schedule_days=?, schedule_start=?, schedule_end=?
     WHERE id=?`)
     .run(
       d.title, d.type || '', d.location || '', d.pay || '',
       d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0,
-      d.partner_id || null, d.employment_type || '',
+      d.work_auth || '', d.partner_id || null, d.employment_type || '',
       d.benefits || '[]', d.schedule_days || '[]', d.schedule_start || '', d.schedule_end || '',
       req.params.id
     );
   res.json({ success: true });
 });
 
-app.delete('/api/admin/jobs/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
   db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
 // Inquiries
-app.get('/api/admin/inquiries', requireAdmin, (req, res) => {
+app.get('/api/admin/inquiries', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare('SELECT * FROM inquiries ORDER BY created_at DESC').all());
 });
 
-app.delete('/api/admin/inquiries/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('delete', 'inquiries'), (req, res) => {
   db.prepare('DELETE FROM inquiries WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
@@ -691,22 +867,22 @@ app.get('/api/admin/onboard-submissions/:id/docs/:docId/download', requireAdmin,
 });
 
 // Quotes
-app.get('/api/admin/quotes', requireAdmin, (req, res) => {
+app.get('/api/admin/quotes', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare('SELECT * FROM quotes ORDER BY created_at DESC').all());
 });
 
-app.delete('/api/admin/quotes/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/quotes/:id', requireAdmin, blockManager, staffGuard('delete', 'quotes'), (req, res) => {
   db.prepare('DELETE FROM quotes WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
 // Partners CRUD
-app.get('/api/admin/partners', requireAdmin, (req, res) => {
+app.get('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
   const rows = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id) as file_count FROM partners p ORDER BY p.created_at DESC`).all();
   res.json(rows);
 });
 
-app.post('/api/admin/partners', requireAdmin, (req, res) => {
+app.post('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.name) return res.status(400).json({ error: 'Name required' });
   const r = db.prepare(`INSERT INTO partners (name,contact_person,phone,email,address,industry,services,notes,active,contacts,addresses,social_media,links)
@@ -717,7 +893,7 @@ app.post('/api/admin/partners', requireAdmin, (req, res) => {
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
-app.put('/api/admin/partners/:id', requireAdmin, (req, res) => {
+app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('update', 'partners'), (req, res) => {
   const d = req.body;
   db.prepare(`UPDATE partners SET name=?,contact_person=?,phone=?,email=?,address=?,industry=?,services=?,notes=?,active=?,contacts=?,addresses=?,social_media=?,links=? WHERE id=?`)
     .run(d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
@@ -726,7 +902,7 @@ app.put('/api/admin/partners/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-app.delete('/api/admin/partners/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('delete', 'partners'), (req, res) => {
   // Delete associated files
   const files = db.prepare('SELECT * FROM partner_files WHERE partner_id=?').all(req.params.id);
   files.forEach(f => { if (f.file_path) { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); } });
@@ -736,11 +912,11 @@ app.delete('/api/admin/partners/:id', requireAdmin, (req, res) => {
 });
 
 // Partner files
-app.get('/api/admin/partners/:id/files', requireAdmin, (req, res) => {
+app.get('/api/admin/partners/:id/files', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare('SELECT * FROM partner_files WHERE partner_id=? ORDER BY uploaded_at DESC').all(req.params.id));
 });
 
-app.post('/api/admin/partners/:id/files', requireAdmin, docUpload.single('file'), (req, res) => {
+app.post('/api/admin/partners/:id/files', requireAdmin, blockManager, docUpload.single('file'), (req, res) => {
   const p = db.prepare('SELECT id FROM partners WHERE id=?').get(req.params.id);
   if (!p) return res.status(404).json({ error: 'Partner not found' });
   const r = db.prepare(`INSERT INTO partner_files (partner_id,file_type,file_label,file_path,file_name,notes) VALUES(?,?,?,?,?,?)`).run(
@@ -749,7 +925,7 @@ app.post('/api/admin/partners/:id/files', requireAdmin, docUpload.single('file')
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
-app.delete('/api/admin/partner-files/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/partner-files/:id', requireAdmin, blockManager, staffGuard('delete', 'partner_files'), (req, res) => {
   const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
   if (!f) return res.status(404).json({ error: 'Not found' });
   if (f.file_path) { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
@@ -769,7 +945,7 @@ app.get('/api/admin/partner-files/:id/download', (req, res, next) => {
 });
 
 // Assignments CRUD
-app.get('/api/admin/assignments', requireAdmin, (req, res) => {
+app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare(`
     SELECT a.*, i.name AS inquiry_name, i.phone AS inquiry_phone, i.email AS inquiry_email, i.type AS inquiry_type,
            j.title AS job_title, j.location AS job_location, j.pay AS job_pay
@@ -780,26 +956,26 @@ app.get('/api/admin/assignments', requireAdmin, (req, res) => {
   `).all());
 });
 
-app.post('/api/admin/assignments', requireAdmin, (req, res) => {
+app.post('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
   const { inquiry_id, job_id, notes } = req.body;
   if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
   const r = db.prepare('INSERT INTO assignments (inquiry_id, job_id, notes) VALUES (?, ?, ?)').run(inquiry_id, job_id, notes || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
-app.put('/api/admin/assignments/:id', requireAdmin, (req, res) => {
+app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('update', 'assignments'), (req, res) => {
   const { status, notes } = req.body;
   db.prepare('UPDATE assignments SET status=?, notes=? WHERE id=?').run(status || 'assigned', notes || '', req.params.id);
   res.json({ success: true });
 });
 
-app.delete('/api/admin/assignments/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('delete', 'assignments'), (req, res) => {
   db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
 // Backup management
-app.get('/api/admin/backups', requireAdmin, (req, res) => {
+app.get('/api/admin/backups', requireAdmin, blockManager, (req, res) => {
   const locations = BACKUP_DIRS.map(dir => {
     try {
       const files = fs.readdirSync(dir).filter(f => f.startsWith('prime-') && f.endsWith('.db')).sort().reverse();
@@ -812,7 +988,7 @@ app.get('/api/admin/backups', requireAdmin, (req, res) => {
   res.json({ locations, log: backupLog.slice(0, 20), interval_min: BACKUP_INTERVAL / 60000, keep: BACKUP_KEEP });
 });
 
-app.post('/api/admin/backups/run', requireAdmin, (req, res) => {
+app.post('/api/admin/backups/run', requireAdmin, requireRole('admin'), (req, res) => {
   const result = runBackup('手动备份');
   res.json({ success: true, result });
 });
@@ -874,7 +1050,7 @@ app.get('/api/admin/employees/export', (req, res, next) => {
   res.send(csv);
 });
 
-app.get('/api/admin/employees/:id', requireAdmin, (req, res) => {
+app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
   const docs = db.prepare('SELECT * FROM employee_documents WHERE employee_id=? ORDER BY uploaded_at DESC').all(req.params.id);
@@ -884,7 +1060,7 @@ app.get('/api/admin/employees/:id', requireAdmin, (req, res) => {
   res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime });
 });
 
-app.post('/api/admin/employees', requireAdmin, (req, res) => {
+app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.first_name || !d.last_name) return res.status(400).json({ error: '请填写姓名' });
   const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
@@ -918,7 +1094,7 @@ app.post('/api/admin/employees', requireAdmin, (req, res) => {
   }
 });
 
-app.put('/api/admin/employees/:id', requireAdmin, (req, res) => {
+app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('update', 'employees'), (req, res) => {
   const d = req.body;
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
@@ -949,18 +1125,18 @@ app.put('/api/admin/employees/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-app.delete('/api/admin/employees/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('delete', 'employees'), (req, res) => {
   db.prepare("UPDATE employees SET status='terminated' WHERE id=?").run(req.params.id);
   res.json({ success: true });
 });
 
 // ─── DOCUMENT ROUTES ───
 
-app.get('/api/admin/employees/:id/documents', requireAdmin, (req, res) => {
+app.get('/api/admin/employees/:id/documents', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare('SELECT * FROM employee_documents WHERE employee_id=? ORDER BY uploaded_at DESC').all(req.params.id));
 });
 
-app.post('/api/admin/employees/:id/documents', requireAdmin, docUpload.single('file'), (req, res) => {
+app.post('/api/admin/employees/:id/documents', requireAdmin, blockManager, docUpload.single('file'), (req, res) => {
   const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Employee not found' });
   const { doc_type, doc_label, expiry_date, notes } = req.body;
@@ -972,7 +1148,7 @@ app.post('/api/admin/employees/:id/documents', requireAdmin, docUpload.single('f
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
-app.delete('/api/admin/documents/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/documents/:id', requireAdmin, blockManager, staffGuard('delete', 'employee_documents'), (req, res) => {
   const doc = db.prepare('SELECT * FROM employee_documents WHERE id=?').get(req.params.id);
   if (!doc) return res.status(404).json({ error: 'Not found' });
   if (doc.file_path) { const fp = path.join(docsDir, doc.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
@@ -1061,7 +1237,7 @@ app.get('/api/admin/time-entries/export', (req, res, next) => {
   res.send(csv);
 });
 
-app.post('/api/admin/time-entries', requireAdmin, (req, res) => {
+app.post('/api/admin/time-entries', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.employee_id || !d.clock_in) return res.status(400).json({ error: 'employee_id and clock_in required' });
   const hrs = calcHours(d.clock_in, d.clock_out, parseInt(d.break_minutes)||0);
@@ -1074,34 +1250,68 @@ app.post('/api/admin/time-entries', requireAdmin, (req, res) => {
   res.json({ success: true, id: r.lastInsertRowid, ...hrs });
 });
 
-// Batch time entry (weekly timesheet)
-app.post('/api/admin/time-entries/batch', requireAdmin, (req, res) => {
-  const { employee_id, entries, job_id } = req.body;
+// Batch time entry (weekly timesheet) — also creates a timesheet_sheet with confirmation token
+app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res) => {
+  const { employee_id, entries, job_id, company_name, period_start, period_end } = req.body;
   if (!employee_id || !entries || !entries.length) return res.status(400).json({ error: 'employee_id and entries required' });
-  const stmt = db.prepare(`INSERT INTO time_entries
-    (employee_id,clock_in,clock_out,break_minutes,total_hours,regular_hours,overtime_hours,job_id,notes,status)
+
+  function lunchMin(start, end) {
+    if (!start || !end) return 0;
+    const [sh,sm] = start.split(':').map(Number);
+    const [eh,em] = end.split(':').map(Number);
+    return Math.max(0, (eh*60+em) - (sh*60+sm));
+  }
+
+  const stmtEntry = db.prepare(`INSERT INTO time_entries
+    (employee_id,clock_in,clock_out,break_minutes,lunch_start,lunch_end,company_name,
+     total_hours,regular_hours,overtime_hours,job_id,notes,status,sheet_id)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const stmtSheet = db.prepare(`INSERT INTO timesheet_sheets
+    (employee_id,company_name,period_start,period_end,job_id,
+     total_hours,regular_hours,overtime_hours,status,confirm_token)
     VALUES(?,?,?,?,?,?,?,?,?,?)`);
-  const insert = db.transaction((rows) => {
-    let count = 0;
+  const stmtLink = db.prepare(`UPDATE time_entries SET sheet_id=? WHERE id=?`);
+
+  const doAll = db.transaction((rows) => {
+    // compute totals first pass
+    let totTotal=0, totReg=0, totOT=0;
+    const prepared = [];
     for (const e of rows) {
       if (!e.clock_in || !e.clock_out) continue;
-      const hrs = calcHours(e.clock_in, e.clock_out, parseInt(e.break_minutes)||0);
+      const bMin = lunchMin(e.lunch_start, e.lunch_end) || parseInt(e.break_minutes)||0;
+      const hrs = calcHours(e.clock_in, e.clock_out, bMin);
       if (hrs.total <= 0) continue;
-      stmt.run(employee_id, e.clock_in, e.clock_out, parseInt(e.break_minutes)||0,
-        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed');
-      count++;
+      totTotal += hrs.total; totReg += hrs.regular; totOT += hrs.overtime;
+      prepared.push({ e, bMin, hrs });
     }
-    return count;
+    if (!prepared.length) return { count: 0, token: null };
+    // create the sheet
+    const token = crypto.randomBytes(20).toString('hex');
+    const ps = period_start || prepared[0].e.clock_in.slice(0,10);
+    const pe = period_end || prepared[prepared.length-1].e.clock_in.slice(0,10);
+    const sheetRow = stmtSheet.run(employee_id, company_name||'', ps, pe, job_id||null,
+      Math.round(totTotal*100)/100, Math.round(totReg*100)/100, Math.round(totOT*100)/100,
+      'pending', token);
+    const sheetId = sheetRow.lastInsertRowid;
+    // insert entries linked to sheet
+    for (const { e, bMin, hrs } of prepared) {
+      const r = stmtEntry.run(employee_id, e.clock_in, e.clock_out, bMin,
+        e.lunch_start||'', e.lunch_end||'', company_name||'',
+        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed', sheetId);
+      stmtLink.run(sheetId, r.lastInsertRowid);
+    }
+    return { count: prepared.length, token, sheet_id: sheetId };
   });
+
   try {
-    const count = insert(entries);
-    res.json({ success: true, count });
+    const result = doAll(entries);
+    res.json({ success: true, ...result });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.put('/api/admin/time-entries/:id', requireAdmin, (req, res) => {
+app.put('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('update', 'time_entries'), (req, res) => {
   const d = req.body;
   const hrs = calcHours(d.clock_in, d.clock_out, parseInt(d.break_minutes)||0);
   db.prepare(`UPDATE time_entries SET
@@ -1113,14 +1323,49 @@ app.put('/api/admin/time-entries/:id', requireAdmin, (req, res) => {
   res.json({ success: true, ...hrs });
 });
 
-app.delete('/api/admin/time-entries/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('delete', 'time_entries'), (req, res) => {
   db.prepare('DELETE FROM time_entries WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// List timesheet sheets (admin)
+app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
+    FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
+    ORDER BY ts.created_at DESC LIMIT 300`).all();
+  res.json(rows);
+});
+
+// ─── PUBLIC TIMESHEET CONFIRMATION ───
+
+// Get sheet data (no auth — token is the secret)
+app.get('/api/ts/:token', (req, res) => {
+  const sheet = db.prepare(`
+    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
+    FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
+    WHERE ts.confirm_token=?`).get(req.params.token);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  const entries = db.prepare(
+    `SELECT * FROM time_entries WHERE sheet_id=? ORDER BY clock_in`).all(sheet.id);
+  res.json({ sheet, entries });
+});
+
+// Employee submits confirm or dispute
+app.post('/api/ts/:token/respond', (req, res) => {
+  const { action, note } = req.body; // action: 'confirm' | 'dispute'
+  if (!['confirm','dispute'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+  const sheet = db.prepare('SELECT id,status FROM timesheet_sheets WHERE confirm_token=?').get(req.params.token);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE timesheet_sheets
+    SET status=?, employee_action=?, employee_note=?, confirmed_at=CURRENT_TIMESTAMP
+    WHERE id=?`).run(action === 'confirm' ? 'confirmed' : 'disputed', action, note||'', sheet.id);
   res.json({ success: true });
 });
 
 // ─── BACKGROUND CHECK ROUTES ───
 
-app.get('/api/admin/background-checks', requireAdmin, (req, res) => {
+app.get('/api/admin/background-checks', requireAdmin, blockManager, (req, res) => {
   const { employee_id, status } = req.query;
   let q = `SELECT b.*, e.first_name, e.last_name, e.employee_id as emp_code
     FROM background_checks b LEFT JOIN employees e ON b.employee_id=e.id WHERE 1=1`;
@@ -1131,7 +1376,7 @@ app.get('/api/admin/background-checks', requireAdmin, (req, res) => {
   res.json(db.prepare(q).all(...p));
 });
 
-app.post('/api/admin/background-checks', requireAdmin, docUpload.single('file'), (req, res) => {
+app.post('/api/admin/background-checks', requireAdmin, blockManager, docUpload.single('file'), (req, res) => {
   const d = req.body;
   if (!d.employee_id) return res.status(400).json({ error: 'employee_id required' });
   const r = db.prepare(`INSERT INTO background_checks
@@ -1143,7 +1388,7 @@ app.post('/api/admin/background-checks', requireAdmin, docUpload.single('file'),
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
-app.put('/api/admin/background-checks/:id', requireAdmin, docUpload.single('file'), (req, res) => {
+app.put('/api/admin/background-checks/:id', requireAdmin, blockManager, staffGuard('update', 'background_checks'), docUpload.single('file'), (req, res) => {
   const d = req.body;
   const ex = db.prepare('SELECT * FROM background_checks WHERE id=?').get(req.params.id);
   if (!ex) return res.status(404).json({ error: 'Not found' });
@@ -1158,7 +1403,7 @@ app.put('/api/admin/background-checks/:id', requireAdmin, docUpload.single('file
   res.json({ success: true });
 });
 
-app.delete('/api/admin/background-checks/:id', requireAdmin, (req, res) => {
+app.delete('/api/admin/background-checks/:id', requireAdmin, blockManager, staffGuard('delete', 'background_checks'), (req, res) => {
   const chk = db.prepare('SELECT * FROM background_checks WHERE id=?').get(req.params.id);
   if (!chk) return res.status(404).json({ error: 'Not found' });
   if (chk.file_path) { const fp = path.join(docsDir, chk.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
@@ -1222,6 +1467,11 @@ app.post('/api/timeclock/punch', (req, res) => {
 // Serve timeclock page
 app.get('/timeclock', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'timeclock.html'));
+});
+
+// Serve employee timesheet confirmation page
+app.get('/ts', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'ts.html'));
 });
 
 // ─── Admin Panel Page ───

@@ -72,6 +72,7 @@ tr:hover td{background:var(--sky-light)}
 .badge-ordered{background:#E8F0FE;color:var(--sky)}.badge-in_progress{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-failed{background:#FFEAEA;color:var(--red)}
 .badge-clear{background:#E8F5E9;color:var(--green)}.badge-flagged{background:#FFEAEA;color:var(--red)}
 .badge-ssn{background:#FFEAEA;color:var(--red)}.badge-passport{background:#E8F0FE;color:var(--blue)}.badge-i9{background:#E8F5E9;color:var(--green)}.badge-doc{background:var(--gray-200);color:var(--gray-600)}
+.badge-blue{background:#E8F0FE;color:var(--blue)}.badge-yellow{background:#FFF3E0;color:var(--accent)}.badge-red{background:#FFEAEA;color:var(--red)}
 .ot-text{color:var(--accent);font-weight:700}
 .form-section{margin-bottom:1.5rem}.form-section h4{font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)}
 .modal-lg{max-width:700px}
@@ -85,6 +86,17 @@ tr:hover td{background:var(--sky-light)}
 .detail-row span:first-child{font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase}
 .detail-row span:last-child{font-size:.88rem;color:var(--gray-800);margin-top:2px}
 .field-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
+/* Employee search bar */
+.emp-srch-wrap{position:relative}
+.emp-srch-drop{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:200;max-height:220px;overflow-y:auto;margin-top:2px;display:none}
+.emp-srch-drop .eo{padding:8px 12px;cursor:pointer;font-size:.85rem;border-bottom:1px solid var(--gray-200)}
+.emp-srch-drop .eo:last-child{border-bottom:none}
+.emp-srch-drop .eo:hover{background:var(--sky-light)}
+.emp-srch-drop .eo small{display:block;font-size:.75rem;color:var(--gray-400)}
+.emp-selected{background:var(--sky-light);border-radius:4px;padding:4px 8px;font-size:.82rem;color:var(--blue);font-weight:600;margin-top:4px;display:none}
+/* PDF link modal */
+.ts-link-box{background:var(--sky-light);border:1px solid var(--sky);border-radius:var(--radius);padding:1rem;margin:1rem 0;word-break:break-all;font-size:.82rem;font-family:monospace;color:var(--blue)}
+.ts-send-btns{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
 /* Partner Modal Enhanced */
 .dyn-list{margin-bottom:.5rem}
 .dyn-item{display:flex;gap:.5rem;align-items:flex-start;margin-bottom:.5rem;padding:.6rem;background:var(--off-white);border-radius:6px;border:1px solid var(--gray-200)}
@@ -142,9 +154,12 @@ tr:hover td{background:var(--sky-light)}
 .benefit-chip:hover{border-color:var(--sky);color:var(--sky)}
 .benefit-chip input{display:none}
 .benefit-chip:has(input:checked){background:var(--sky);border-color:var(--sky);color:#fff}
+#toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(120%);background:#1a1a2e;color:#fff;padding:.8rem 1.6rem;border-radius:10px;font-size:.92rem;font-weight:500;box-shadow:0 6px 24px rgba(0,0,0,.28);transition:transform .3s cubic-bezier(.34,1.56,.64,1),opacity .3s;opacity:0;z-index:9999;white-space:nowrap}
+#toast.show{transform:translateX(-50%) translateY(0);opacity:1}
 </style>
 </head>
 <body>
+<div id="toast"></div>
 
 <!-- LOGIN -->
 <div class="login-wrap" id="loginWrap">
@@ -164,19 +179,22 @@ tr:hover td{background:var(--sky-light)}
 
 <!-- APP -->
 <div class="app" id="app">
-<div class="sidebar">
+<div class="sidebar" id="sidebar">
   <h2>⚓ 管理后台</h2>
   <a class="active" onclick="showTab('dashboard')">仪表盘</a>
-  <a onclick="showTab('inquiries')">问卷管理</a>
-  <a onclick="showTab('assignments')">派工管理</a>
-  <a onclick="showTab('jobs')">职位管理</a>
-  <a onclick="showTab('partners')">合作公司</a>
-  <a onclick="showTab('backups')">备份管理</a>
+  <a onclick="showTab('inquiries')" data-role="admin,staff">问卷管理</a>
+  <a onclick="showTab('assignments')" data-role="admin,staff">派工管理</a>
+  <a onclick="showTab('jobs')" data-role="admin,staff">职位管理</a>
+  <a onclick="showTab('partners')" data-role="admin,staff">合作公司</a>
+  <a onclick="showTab('backups')" data-role="admin">备份管理</a>
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem"></div>
-  <a onclick="showTab('employees')">👥 员工管理</a>
+  <a onclick="showTab('employees')" data-role="admin,staff">👥 员工管理</a>
   <a onclick="showTab('time')">⏱ 工时打卡</a>
-  <a onclick="showTab('documents')">📄 HR 文件</a>
-  <a onclick="showTab('bgchecks')">🔍 背景调查</a>
+  <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
+  <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
+  <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
+  <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
+  <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -250,7 +268,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>雇佣性质</th><th>地点 / 时间</th><th>薪资</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>雇佣性质</th><th>地点 / 时间</th><th>薪资</th><th>身份要求</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
 </div>
 
 <!-- Partners -->
@@ -428,6 +446,62 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Approvals Tab -->
+<div id="tab-approvals" style="display:none">
+  <div class="top"><h1>待审批操作</h1></div>
+  <div class="card">
+    <div id="noApprovals" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无待审批操作</div>
+    <table id="approvalsTableEl" style="display:none"><thead><tr><th>操作</th><th>目标</th><th>ID</th><th>申请人</th><th>时间</th><th>审批</th></tr></thead>
+    <tbody id="approvalsBody"></tbody></table>
+  </div>
+</div>
+
+<!-- Accounts Tab -->
+<div id="tab-accounts" style="display:none">
+  <div class="top">
+    <h1>账户管理</h1>
+    <div class="top-actions"><button class="btn btn-green" onclick="openAccountModal()">+ 新建账户</button></div>
+  </div>
+  <div class="card">
+    <table><thead><tr><th>用户名</th><th>显示名称</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+    <tbody id="accountsTable"></tbody></table>
+  </div>
+</div>
+
+</div></div>
+
+<!-- Account Modal -->
+<div class="modal-bg" id="accountModal"><div class="modal">
+  <h2 id="accountModalTitle">新建账户</h2>
+  <input type="hidden" id="accId">
+  <div class="field"><label>用户名 *</label><input id="accUsername" placeholder="登录用户名"></div>
+  <div class="field"><label>密码 <span id="accPassHint" style="font-size:.8rem;color:var(--gray-400)"></span></label><input type="password" id="accPassword" placeholder="登录密码"></div>
+  <div class="field"><label>显示名称</label><input id="accDisplayName" placeholder="可选"></div>
+  <div class="field"><label>角色 *</label>
+    <select id="accRole">
+      <option value="admin">Admin (管理员 - 完全权限)</option>
+      <option value="staff" selected>Staff (员工 - 不可删除/修改需审批)</option>
+      <option value="manager">Manager (经理 - 仅查看工时)</option>
+    </select>
+  </div>
+  <div class="field"><label>状态</label>
+    <select id="accActive"><option value="1">启用</option><option value="0">禁用</option></select>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('accountModal')">取消</button>
+    <button class="btn btn-blue" onclick="saveAccount()">保存</button>
+  </div>
+</div></div>
+
+<!-- Approval Detail Modal -->
+<div class="modal-bg" id="approvalDetailModal"><div class="modal">
+  <h2>操作详情</h2>
+  <div id="approvalDetailContent" style="max-height:400px;overflow:auto"></div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('approvalDetailModal')">关闭</button>
+    <button class="btn btn-red" id="btnRejectAction" onclick="rejectAction()">拒绝</button>
+    <button class="btn btn-green" id="btnApproveAction" onclick="approveAction()">批准</button>
+  </div>
 </div></div>
 
 <!-- Job Modal -->
@@ -473,6 +547,16 @@ tr:hover td{background:var(--sky-light)}
   <div class="field-row">
     <div class="field"><label>工作地点</label><input id="jLocation" placeholder="例：Chicago, IL"></div>
     <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
+  </div>
+  <!-- Work Auth -->
+  <div class="field">
+    <label>工作身份要求</label>
+    <select id="jWorkAuth">
+      <option value="">不限</option>
+      <option value="any">合法工作身份即可 / Any Work Authorization</option>
+      <option value="gc">绿卡或公民 / Green Card or Citizen</option>
+      <option value="citizen">仅限美国公民 / US Citizen Only</option>
+    </select>
   </div>
   <!-- Work Days -->
   <div class="field">
@@ -735,8 +819,20 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="field-row no-print" style="margin-bottom:1rem">
-    <div class="field"><label>员工 *</label><select id="tsEmp" onchange="updateTsEmployeeInfo()"><option value="">-- 请选择员工 --</option></select></div>
+    <div class="field">
+      <label>员工 *</label>
+      <input type="hidden" id="tsEmp">
+      <div class="emp-srch-wrap">
+        <input id="tsEmpSearch" type="text" placeholder="输入姓名或工号搜索..." autocomplete="off"
+          oninput="filterTsEmp()" onfocus="filterTsEmp()" onblur="hideTsEmpDrop()">
+        <div id="tsEmpDrop" class="emp-srch-drop"></div>
+      </div>
+      <div id="tsEmpSelected" class="emp-selected"></div>
+    </div>
+    <div class="field"><label>公司 (客户)</label><input id="tsCompany" type="text" placeholder="例：ABC Logistics"></div>
     <div class="field"><label>起始日期 (周一)</label><input id="tsStartDate" type="date" onchange="buildTsRows()"></div>
+  </div>
+  <div class="field-row no-print" style="margin-bottom:1rem">
     <div class="field"><label>关联职位 (可选)</label><select id="tsJob"><option value="">无</option></select></div>
   </div>
   <!-- Print header (hidden on screen) -->
@@ -750,7 +846,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="tsTableWrap">
     <table class="ts-table">
-      <thead><tr><th>日期</th><th>上班时间</th><th>下班时间</th><th>休息(分钟)</th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
+      <thead><tr><th>日期</th><th>上班时间</th><th>下班时间</th><th>午休开始</th><th>午休结束</th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
       <tbody id="tsBody"></tbody>
     </table>
   </div>
@@ -760,19 +856,31 @@ tr:hover td{background:var(--sky-light)}
     <span>正常: <strong id="tsSumReg">0.00h</strong></span>
     <span>加班: <strong class="ot" id="tsSumOT">0.00h</strong></span>
   </div>
-  <div class="ts-confirm">
-    <h4>员工确认 / Employee Confirmation</h4>
-    <p style="font-size:.8rem;color:var(--gray-400);margin-bottom:.5rem">I certify that the hours recorded above are accurate and complete. / 本人确认以上工时记录准确无误。</p>
-    <label><input type="checkbox" id="tsConfirmCheck"> <span>本人确认上述时间准确 / I confirm the hours above are correct</span></label>
-    <div style="margin-top:.75rem;display:flex;gap:2rem;flex-wrap:wrap">
-      <div style="flex:1;min-width:200px"><label style="font-size:.75rem;font-weight:700;color:var(--gray-400)">员工签名 / Employee Signature</label><div style="border-bottom:1px solid var(--gray-800);height:36px;margin-top:4px" id="tsSigLine"></div></div>
-      <div style="width:150px"><label style="font-size:.75rem;font-weight:700;color:var(--gray-400)">日期 / Date</label><div style="border-bottom:1px solid var(--gray-800);height:36px;margin-top:4px;font-size:.9rem;padding-top:12px" id="tsSigDate"></div></div>
-    </div>
+  <div class="ts-confirm" id="tsConfirmBlock" style="display:none">
+    <h4>员工确认状态 / Confirmation Status</h4>
+    <div id="tsConfirmStatus" style="font-size:.85rem;color:var(--gray-600);margin-top:.5rem"></div>
   </div>
   <div class="ts-actions no-print">
-    <button class="btn btn-green" onclick="saveBatchTimesheet()">保存工时表</button>
-    <button class="btn btn-accent" onclick="printTimesheet()">生成 PDF / 打印</button>
+    <button class="btn btn-green" onclick="saveBatchTimesheet()">保存并生成确认链接</button>
+    <button class="btn btn-accent" onclick="printTimesheet()">打印 / PDF 预览</button>
     <button class="btn btn-outline" onclick="closeTsModal()">取消</button>
+  </div>
+</div></div>
+
+<!-- ════ Timesheet PDF Link Modal ════ -->
+<div class="modal-bg" id="tsLinkModal"><div class="modal">
+  <h2>✅ 工时表已保存</h2>
+  <p style="font-size:.85rem;color:var(--gray-600);margin-bottom:.75rem">
+    以下链接可发给员工确认工时。员工可以点击同意或填写反驳意见。
+  </p>
+  <div id="tsLinkUrl" class="ts-link-box"></div>
+  <div class="ts-send-btns">
+    <button class="btn" onclick="copyTsLink()">📋 复制链接</button>
+    <button class="btn btn-green" id="tsEmailBtn" style="display:none" onclick="openTsEmail()">📧 发邮件</button>
+    <button class="btn btn-accent" id="tsSmsBtn" style="display:none" onclick="openTsSms()">💬 发短信</button>
+  </div>
+  <div style="margin-top:1.5rem;text-align:right">
+    <button class="btn btn-outline" onclick="document.getElementById('tsLinkModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
 
@@ -868,7 +976,18 @@ tr:hover td{background:var(--sky-light)}
 
 <script>
 let TOKEN = '';
+let USER_ROLE = '';
+let USER_NAME = '';
 const API = '/api';
+
+let _toastTimer;
+function showToast(msg, type='success') {
+  const el = document.getElementById('toast');
+  el.textContent = (type==='success' ? '✅ ' : '❌ ') + msg;
+  el.className = 'show';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.className = ''; }, 3200);
+}
 
 function togglePass() {
   const inp = document.getElementById('passInput');
@@ -885,10 +1004,30 @@ async function api(path, opts = {}) {
     ...opts,
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}`, ...(opts.headers || {}) }
   });
-  return res.json();
+  const data = await res.json();
+  if (data.pending) { alert(data.message || '操作已提交审批'); return data; }
+  if (res.status === 403) { alert('权限不足 / Permission denied'); return data; }
+  return data;
 }
 
 // ─── Login ───
+function applyRoleUI() {
+  // Show/hide sidebar items based on role
+  document.querySelectorAll('#sidebar a[data-role]').forEach(a => {
+    const roles = a.getAttribute('data-role').split(',');
+    a.style.display = roles.includes(USER_ROLE) ? '' : 'none';
+  });
+  document.querySelectorAll('#sidebar div[data-role]').forEach(d => {
+    const roles = d.getAttribute('data-role').split(',');
+    d.style.display = roles.includes(USER_ROLE) ? '' : 'none';
+  });
+  // Show/hide action buttons based on role
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    const roles = el.getAttribute('data-perm').split(',');
+    el.style.display = roles.includes(USER_ROLE) ? '' : 'none';
+  });
+}
+
 async function doLogin() {
   const username = document.getElementById('userInput').value;
   const password = document.getElementById('passInput').value;
@@ -896,10 +1035,14 @@ async function doLogin() {
   const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
   if (r.success) {
     TOKEN = r.token;
+    USER_ROLE = r.role || 'staff';
+    USER_NAME = r.username || '';
     document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
     document.getElementById('loginWrap').style.display = 'none';
     document.getElementById('app').classList.add('show');
-    loadDashboard();
+    applyRoleUI();
+    if (USER_ROLE === 'manager') { showTab('time'); }
+    else { loadDashboard(); }
   } else {
     document.getElementById('loginErr').textContent = '用户名或密码错误';
   }
@@ -907,6 +1050,8 @@ async function doLogin() {
 
 function logout() {
   TOKEN = '';
+  USER_ROLE = '';
+  USER_NAME = '';
   document.cookie = 'pa_token=;path=/;max-age=0';
   document.getElementById('app').classList.remove('show');
   document.getElementById('loginWrap').style.display = 'flex';
@@ -920,8 +1065,18 @@ function logout() {
   const m = document.cookie.match(/pa_token=([^;]+)/);
   if (m) {
     TOKEN = m[1];
-    fetch(API + '/admin/jobs', { headers: { 'Authorization': `Bearer ${TOKEN}` } })
-      .then(r => { if (r.ok) { document.getElementById('loginWrap').style.display = 'none'; document.getElementById('app').classList.add('show'); loadDashboard(); } else { TOKEN = ''; document.cookie = 'pa_token=;path=/;max-age=0'; } });
+    fetch(API + '/admin/me', { headers: { 'Authorization': `Bearer ${TOKEN}` } })
+      .then(r => { if (r.ok) return r.json(); throw 0; })
+      .then(u => {
+        USER_ROLE = u.role || 'staff';
+        USER_NAME = u.username || '';
+        document.getElementById('loginWrap').style.display = 'none';
+        document.getElementById('app').classList.add('show');
+        applyRoleUI();
+        if (USER_ROLE === 'manager') { showTab('time'); }
+        else { loadDashboard(); }
+      })
+      .catch(() => { TOKEN = ''; document.cookie = 'pa_token=;path=/;max-age=0'; });
   }
 })();
 
@@ -941,10 +1096,13 @@ function showTab(t) {
   if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
+  if (t === 'accounts')   loadAccounts();
+  if (t === 'approvals')  loadApprovals();
 }
 
 // ─── Dashboard ───
 async function loadDashboard() {
+  if (USER_ROLE === 'manager') return;
   const [jobs, inqs, assigns, partners, emps] = await Promise.all([
     api('/admin/jobs'), api('/admin/inquiries'), api('/admin/assignments'),
     api('/admin/partners').catch(() => []),
@@ -956,6 +1114,15 @@ async function loadDashboard() {
   document.getElementById('statPartners').textContent = partners.filter(p => p.active).length;
   const weekAgo = new Date(Date.now() - 7 * 86400000);
   document.getElementById('statNew').textContent = inqs.filter(i => new Date(i.created_at) > weekAgo).length;
+  // Show pending approvals count for admin
+  if (USER_ROLE === 'admin') {
+    try {
+      const pending = await api('/admin/pending-actions');
+      const pendingCount = Array.isArray(pending) ? pending.filter(p => p.status === 'pending').length : 0;
+      const approvalLink = document.querySelector('#sidebar a[onclick*="approvals"]');
+      if (approvalLink) approvalLink.innerHTML = `📋 待审批${pendingCount > 0 ? ` <span style="background:var(--red);color:#fff;border-radius:10px;padding:1px 7px;font-size:.72rem;margin-left:4px">${pendingCount}</span>` : ''}`;
+    } catch {}
+  }
   const recent = inqs.slice(0, 5);
   document.getElementById('recentInq').innerHTML = recent.length ? '<table><thead><tr><th>姓名</th><th>类型</th><th>日期</th></tr></thead><tbody>' +
     recent.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
@@ -1035,6 +1202,7 @@ async function loadJobs() {
   const jobs = await api('/admin/jobs');
   const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
   const empBadge = t => t ? `<span class="badge" style="background:var(--sky);color:#fff;font-size:.7rem">${esc(t)}</span>` : '';
+  const authLabel = a => ({any:'合法身份', gc:'绿卡/公民', citizen:'仅公民'})[a] || '';
   document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => {
     const days = JSON.parse(j.schedule_days||'[]');
     const sched = days.length ? days.map(d=>d.slice(0,3).toUpperCase()).join(' ') + (j.schedule_start ? ` ${j.schedule_start}–${j.schedule_end||'?'}` : '') : '';
@@ -1047,6 +1215,7 @@ async function loadJobs() {
       <td>${empBadge(j.employment_type)}</td>
       <td>${esc(j.location)}<br><span style="font-size:.75rem;color:var(--gray-400)">${esc(sched)}</span></td>
       <td>${esc(j.pay)}</td>
+      <td style="font-size:.8rem">${esc(authLabel(j.work_auth))}</td>
       <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
       <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
       <td style="white-space:nowrap">
@@ -1054,7 +1223,7 @@ async function loadJobs() {
         <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
       </td>
     </tr>`;
-  }).join('') : '<tr><td colspan="8" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
 }
 
 async function openJobModal(job) {
@@ -1065,6 +1234,7 @@ async function openJobModal(job) {
   document.getElementById('jLocation').value  = job ? job.location : '';
   document.getElementById('jPay').value       = job ? job.pay : '';
   document.getElementById('jLang').value      = job ? (job.lang || 'en') : 'en';
+  document.getElementById('jWorkAuth').value  = job ? (job.work_auth || '') : '';
   document.getElementById('jDesc').value      = job ? (job.description || '') : '';
   document.getElementById('jUrgent').checked  = job ? !!job.urgent : false;
   document.getElementById('jTimeStart').value = job ? (job.schedule_start || '') : '';
@@ -1098,42 +1268,42 @@ function editJob(j) { openJobModal(j); }
 
 function randomFillJob() {
   const pool = [
-    { lang: 'zh', title: '仓库分拣员', type: '临时工 (Temporary)', empType: 'W2',
+    { lang: 'zh', title: '仓库分拣员', type: '临时工 (Temporary)', empType: 'W2', work_auth: 'any',
       location: 'Chicago, IL', pay: '$17-19/hr',
       days: ['mon','tue','wed','thu','fri'], start: '06:00', end: '14:30',
       benefits: ['overtime','weekly_pay'],
       desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。' },
-    { lang: 'zh', title: '叉车操作员', type: '全职 (Full-Time)', empType: 'W2',
+    { lang: 'zh', title: '叉车操作员', type: '全职 (Full-Time)', empType: 'W2', work_auth: 'any',
       location: 'Cicero, IL', pay: '$20-24/hr', urgent: true,
       days: ['mon','tue','wed','thu','fri'], start: '07:00', end: '15:30',
       benefits: ['medical','dental','retirement','pto','overtime'],
       desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁，提供完善福利。' },
-    { lang: 'zh', title: '生产线操作工', type: '全职 (Full-Time)', empType: 'W2',
+    { lang: 'zh', title: '生产线操作工', type: '全职 (Full-Time)', empType: 'W2', work_auth: 'gc',
       location: 'Melrose Park, IL', pay: '$18/hr',
       days: ['mon','tue','wed','thu','fri'], start: '08:00', end: '16:30',
       benefits: ['medical','pto','weekly_pay'],
       desc: '食品加工生产线工作，需遵守卫生规定，提供工服及手套。每周加班机会多，可双休。' },
-    { lang: 'en', title: 'Warehouse Associate', type: '临时转正 (Temp-to-Hire)', empType: 'W2',
+    { lang: 'en', title: 'Warehouse Associate', type: '临时转正 (Temp-to-Hire)', empType: 'W2', work_auth: 'any',
       location: 'Schaumburg, IL', pay: '$16-18/hr',
       days: ['mon','tue','wed','thu','fri'], start: '07:00', end: '15:30',
       benefits: ['medical','dental','pto'],
       desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs. Day and night shifts available.' },
-    { lang: 'en', title: 'Machine Operator', type: '全职 (Full-Time)', empType: 'Contract',
+    { lang: 'en', title: 'Machine Operator', type: '全职 (Full-Time)', empType: 'Contract', work_auth: 'gc',
       location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true,
       days: ['mon','tue','wed','thu','fri','sat'], start: '06:00', end: '14:00',
       benefits: ['overtime','holiday'],
       desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred. Benefits after 90 days.' },
-    { lang: 'en', title: 'General Labor', type: '临时工 (Temporary)', empType: '1099',
+    { lang: 'en', title: 'General Labor', type: '临时工 (Temporary)', empType: '1099', work_auth: 'any',
       location: 'Addison, IL', pay: '$15.50/hr',
       days: ['mon','tue','wed','thu','fri'], start: '08:00', end: '16:30',
       benefits: ['weekly_pay'],
       desc: 'Various light industrial tasks including assembly, sorting and quality inspection. Weekend shifts available with pay differential.' },
-    { lang: 'es', title: 'Trabajador de Almacén', type: '全职 (Full-Time)', empType: 'W2',
+    { lang: 'es', title: 'Trabajador de Almacén', type: '全职 (Full-Time)', empType: 'W2', work_auth: 'any',
       location: 'Melrose Park, IL', pay: '$16-18/hr',
       days: ['mon','tue','wed','thu','fri'], start: '07:00', end: '15:30',
       benefits: ['medical','weekly_pay'],
       desc: 'Clasificar y empacar productos en almacén. No se requiere experiencia previa, se ofrece capacitación.' },
-    { lang: 'es', title: 'Operador de Montacargas', type: '临时工 (Temporary)', empType: 'W2',
+    { lang: 'es', title: 'Operador de Montacargas', type: '临时工 (Temporary)', empType: 'W2', work_auth: 'gc',
       location: 'Cicero, IL', pay: '$20/hr', urgent: true,
       days: ['mon','tue','wed','thu','fri','sat','sun'], start: '22:00', end: '06:00',
       benefits: ['overtime','weekly_pay'],
@@ -1146,6 +1316,7 @@ function randomFillJob() {
   document.getElementById('jLocation').value  = r.location;
   document.getElementById('jPay').value       = r.pay;
   document.getElementById('jLang').value      = r.lang;
+  document.getElementById('jWorkAuth').value  = r.work_auth || '';
   document.getElementById('jDesc').value      = r.desc;
   document.getElementById('jUrgent').checked  = !!r.urgent;
   document.getElementById('jTimeStart').value = r.start || '';
@@ -1165,6 +1336,7 @@ async function saveJob() {
     pay:             document.getElementById('jPay').value,
     lang:            lang,
     lang_name:       langNames[lang] || lang,
+    work_auth:       document.getElementById('jWorkAuth').value,
     description:     document.getElementById('jDesc').value,
     urgent:          document.getElementById('jUrgent').checked,
     active:          true,
@@ -1548,9 +1720,13 @@ function editPartnerFromDetail() {
 function addPartnerContact(c) {
   const div = document.createElement('div');
   div.className = 'dyn-item';
+  // Support both new {first_name, last_name} and legacy {name} formats
+  const fname = c?.first_name || (c?.name && !c.last_name ? c.name : '');
+  const lname = c?.last_name || '';
   div.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.5rem">
-      <div class="field"><label>姓名</label><input class="pc-name" value="${esc(c?.name||'')}" placeholder="张三"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:.5rem">
+      <div class="field"><label>名 (First Name)</label><input class="pc-fname" value="${esc(fname)}" placeholder="John"></div>
+      <div class="field"><label>姓 (Last Name)</label><input class="pc-lname" value="${esc(lname)}" placeholder="Smith"></div>
       <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
       <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
       <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
@@ -1566,14 +1742,20 @@ function addPartnerContact(c) {
 }
 
 function getPartnerContacts() {
-  return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>({
-    name: el.querySelector('.pc-name').value, role: el.querySelector('.pc-role').value,
-    phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
-    whatsapp: el.querySelector('.pc-whatsapp').value,
-    wechat: el.querySelector('.pc-wechat').value,
-    telegram: el.querySelector('.pc-telegram').value,
-    other_comm: el.querySelector('.pc-other_comm').value
-  })).filter(c=>c.name||c.phone||c.email);
+  return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>{
+    const fn = el.querySelector('.pc-fname').value.trim();
+    const ln = el.querySelector('.pc-lname').value.trim();
+    return {
+      first_name: fn, last_name: ln,
+      name: [fn, ln].filter(Boolean).join(' '),
+      role: el.querySelector('.pc-role').value,
+      phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
+      whatsapp: el.querySelector('.pc-whatsapp').value,
+      wechat: el.querySelector('.pc-wechat').value,
+      telegram: el.querySelector('.pc-telegram').value,
+      other_comm: el.querySelector('.pc-other_comm').value
+    };
+  }).filter(c=>c.name||c.phone||c.email);
 }
 
 // ── Dynamic addresses list ──
@@ -1690,10 +1872,14 @@ async function savePartner() {
     })
   };
   if (!data.name) return alert('请填写公司名称');
-  if (id) await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
-  else {
+  if (id) {
+    await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
+  } else {
     const r = await api('/admin/partners', { method:'POST', body:JSON.stringify(data) });
-    if (r.id) document.getElementById('partnerId').value = r.id;
+    if (r.id) {
+      document.getElementById('partnerId').value = r.id;
+      showToast(`公司「${data.name}」创建成功！`);
+    }
   }
   closePartnerModal();
   loadPartners();
@@ -1889,8 +2075,11 @@ async function saveEmployee() {
   const r = id
     ? await api(`/admin/employees/${id}`, { method:'PUT', body: JSON.stringify(data) })
     : await api('/admin/employees', { method:'POST', body: JSON.stringify(data) });
-  if (r.success || r.id) { closeEmpModal(); loadEmployees(); }
-  else alert(r.error || '保存失败');
+  if (r.success || r.id) {
+    closeEmpModal();
+    loadEmployees();
+    if (!id) showToast(`员工 ${data.first_name} ${data.last_name} 创建成功！`);
+  } else alert(r.error || '保存失败');
 }
 
 async function terminateEmployee(id, name) {
@@ -2139,6 +2328,7 @@ async function deleteTimeEntry(id) {
 // ─── Weekly Timesheet Modal ───
 let tsWeeks = 1;
 let tsAllEmps = [];
+let tsSelectedEmp = null; // { id, name, code, email, phone }
 
 function setTsWeeks(n, btn) {
   tsWeeks = n;
@@ -2147,25 +2337,53 @@ function setTsWeeks(n, btn) {
   buildTsRows();
 }
 
+// Employee search for tsModal
+function filterTsEmp() {
+  const q = document.getElementById('tsEmpSearch').value.toLowerCase();
+  const drop = document.getElementById('tsEmpDrop');
+  const matches = tsAllEmps.filter(e => e.status === 'active' &&
+    (`${e.first_name} ${e.last_name}`.toLowerCase().includes(q) ||
+     (e.employee_id||'').toLowerCase().includes(q)));
+  if (!matches.length || !q) { drop.style.display = 'none'; return; }
+  drop.innerHTML = matches.slice(0,8).map(e =>
+    `<div class="eo" onmousedown="selectTsEmp(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}','${esc(e.employee_id||'')}','${esc(e.email||'')}','${esc(e.phone||'')}')">
+      ${esc(e.first_name)} ${esc(e.last_name)}
+      <small>${esc(e.employee_id||'')} ${e.department ? '· '+esc(e.department) : ''}</small>
+    </div>`).join('');
+  drop.style.display = 'block';
+}
+function hideTsEmpDrop() { setTimeout(()=>document.getElementById('tsEmpDrop').style.display='none',150); }
+function selectTsEmp(id, name, code, email, phone) {
+  tsSelectedEmp = { id, name, code, email, phone };
+  document.getElementById('tsEmp').value = id;
+  document.getElementById('tsEmpSearch').value = `${name} (${code})`;
+  document.getElementById('tsEmpDrop').style.display = 'none';
+  const sel = document.getElementById('tsEmpSelected');
+  sel.textContent = `✔ ${name} · ${code}`;
+  sel.style.display = 'block';
+  updateTsEmployeeInfo();
+}
+
 async function openTsModal() {
-  // populate employees
   tsAllEmps = await api('/admin/employees');
-  const sel = document.getElementById('tsEmp');
-  sel.innerHTML = '<option value="">-- 请选择员工 --</option>' +
-    tsAllEmps.filter(e=>e.status==='active').map(e=>`<option value="${e.id}" data-name="${esc(e.first_name)} ${esc(e.last_name)}" data-code="${esc(e.employee_id)}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id)})</option>`).join('');
+  tsSelectedEmp = null;
+  document.getElementById('tsEmp').value = '';
+  document.getElementById('tsEmpSearch').value = '';
+  document.getElementById('tsEmpDrop').style.display = 'none';
+  document.getElementById('tsEmpSelected').style.display = 'none';
+  document.getElementById('tsCompany').value = '';
   // populate jobs
   const jobs = await api('/admin/jobs');
   document.getElementById('tsJob').innerHTML = '<option value="">无</option>' +
     jobs.filter(j=>j.active).map(j=>`<option value="${j.id}">${esc(j.title)} — ${esc(j.location)}</option>`).join('');
   // default start date: this Monday
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0=Sun
   const monday = new Date(today);
-  monday.setDate(today.getDate() - ((dayOfWeek + 6) % 7));
+  monday.setDate(today.getDate() - ((today.getDay()+6)%7));
   document.getElementById('tsStartDate').value = monday.toISOString().slice(0,10);
   tsWeeks = 1;
   document.querySelectorAll('.ts-week-toggle button').forEach((b,i)=>b.classList.toggle('active',i===0));
-  document.getElementById('tsConfirmCheck').checked = false;
+  document.getElementById('tsConfirmBlock').style.display = 'none';
   buildTsRows();
   document.getElementById('tsModal').classList.add('show');
 }
@@ -2193,7 +2411,8 @@ function buildTsRows() {
       <td class="day-label">${label}<small>${dateLabel} ${dateStr}</small></td>
       <td><input type="time" class="ts-in" onchange="calcTsRow(this)"></td>
       <td><input type="time" class="ts-out" onchange="calcTsRow(this)"></td>
-      <td><input type="number" class="ts-break" value="0" min="0" step="5" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-lunch-start" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-lunch-end" onchange="calcTsRow(this)"></td>
       <td class="ts-hours">—</td>
       <td class="ts-hours">—</td>
       <td class="ts-ot">—</td>
@@ -2201,15 +2420,21 @@ function buildTsRows() {
   }
   document.getElementById('tsBody').innerHTML = html;
   updateTsTotals();
-  // set signature date
-  document.getElementById('tsSigDate').textContent = new Date().toLocaleDateString('en-US');
 }
 
 function calcTsRow(el) {
   const tr = el.closest('tr');
   const inVal = tr.querySelector('.ts-in').value;
   const outVal = tr.querySelector('.ts-out').value;
-  const breakMin = parseInt(tr.querySelector('.ts-break').value) || 0;
+  // compute lunch break in minutes from start/end times
+  const lsVal = tr.querySelector('.ts-lunch-start').value;
+  const leVal = tr.querySelector('.ts-lunch-end').value;
+  let breakMin = 0;
+  if (lsVal && leVal) {
+    const [sh,sm] = lsVal.split(':').map(Number);
+    const [eh,em] = leVal.split(':').map(Number);
+    breakMin = Math.max(0, (eh*60+em) - (sh*60+sm));
+  }
   const cells = tr.querySelectorAll('.ts-hours, .ts-ot');
   if (!inVal || !outVal) { cells[0].textContent = '—'; cells[1].textContent = '—'; cells[2].textContent = '—'; updateTsTotals(); return; }
   const dateStr = tr.dataset.date;
@@ -2244,24 +2469,24 @@ function updateTsTotals() {
 }
 
 function updateTsEmployeeInfo() {
-  const sel = document.getElementById('tsEmp');
-  const opt = sel.options[sel.selectedIndex];
-  if (opt && opt.value) {
-    document.getElementById('tsPrintName').textContent = opt.dataset.name || '';
-    document.getElementById('tsPrintId').textContent = opt.dataset.code || '';
+  if (tsSelectedEmp) {
+    document.getElementById('tsPrintName').textContent = tsSelectedEmp.name || '';
+    document.getElementById('tsPrintId').textContent = tsSelectedEmp.code || '';
   }
 }
 
 async function saveBatchTimesheet() {
   const empId = document.getElementById('tsEmp').value;
-  if (!empId) return alert('请选择员工');
+  if (!empId) return alert('请先通过搜索选择员工');
   const entries = [];
+  let periodStart = '', periodEnd = '';
   document.querySelectorAll('#tsBody tr').forEach(tr => {
     const inVal = tr.querySelector('.ts-in').value;
     const outVal = tr.querySelector('.ts-out').value;
     if (!inVal || !outVal) return;
     const dateStr = tr.dataset.date;
-    const breakMin = parseInt(tr.querySelector('.ts-break').value) || 0;
+    const lsVal = tr.querySelector('.ts-lunch-start').value;
+    const leVal = tr.querySelector('.ts-lunch-end').value;
     let clockOut = dateStr + 'T' + outVal;
     const clockIn = dateStr + 'T' + inVal;
     if (new Date(clockOut) <= new Date(clockIn)) {
@@ -2269,21 +2494,64 @@ async function saveBatchTimesheet() {
       nextDay.setDate(nextDay.getDate() + 1);
       clockOut = nextDay.toISOString().slice(0,10) + 'T' + outVal;
     }
-    entries.push({ clock_in: clockIn, clock_out: clockOut, break_minutes: breakMin });
+    if (!periodStart || dateStr < periodStart) periodStart = dateStr;
+    if (!periodEnd || dateStr > periodEnd) periodEnd = dateStr;
+    entries.push({ clock_in: clockIn, clock_out: clockOut, lunch_start: lsVal, lunch_end: leVal });
   });
   if (entries.length === 0) return alert('请至少填写一天的工时');
   const jobId = document.getElementById('tsJob').value || null;
+  const company = document.getElementById('tsCompany').value || '';
   const r = await api('/admin/time-entries/batch', {
     method: 'POST',
-    body: JSON.stringify({ employee_id: parseInt(empId), entries, job_id: jobId ? parseInt(jobId) : null })
+    body: JSON.stringify({
+      employee_id: parseInt(empId), entries,
+      job_id: jobId ? parseInt(jobId) : null,
+      company_name: company,
+      period_start: periodStart,
+      period_end: periodEnd
+    })
   });
   if (r.success) {
-    alert(`成功保存 ${r.count} 条工时记录`);
     closeTsModal();
     loadTimeEntries();
+    showTsLink(r.token, r.count);
   } else {
     alert(r.error || '保存失败');
   }
+}
+
+let _tsLinkToken = '';
+let _tsLinkEmp = null;
+function showTsLink(token, count) {
+  _tsLinkToken = token;
+  _tsLinkEmp = tsSelectedEmp;
+  const url = `${location.origin}/ts?token=${token}`;
+  document.getElementById('tsLinkUrl').textContent = url;
+  // show email/SMS buttons if employee has contact info
+  const emailBtn = document.getElementById('tsEmailBtn');
+  const smsBtn = document.getElementById('tsSmsBtn');
+  emailBtn.style.display = (_tsLinkEmp && _tsLinkEmp.email) ? 'inline-block' : 'none';
+  smsBtn.style.display = (_tsLinkEmp && _tsLinkEmp.phone) ? 'inline-block' : 'none';
+  document.getElementById('tsLinkModal').classList.add('show');
+}
+function copyTsLink() {
+  const url = document.getElementById('tsLinkUrl').textContent;
+  navigator.clipboard.writeText(url).then(() => alert('链接已复制'));
+}
+function openTsEmail() {
+  const url = document.getElementById('tsLinkUrl').textContent;
+  const emp = _tsLinkEmp;
+  const subject = encodeURIComponent('请确认您的工时记录 / Please confirm your timesheet');
+  const body = encodeURIComponent(
+    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchorpoint`
+  );
+  window.open(`mailto:${emp ? emp.email : ''}?subject=${subject}&body=${body}`);
+}
+function openTsSms() {
+  const url = document.getElementById('tsLinkUrl').textContent;
+  const emp = _tsLinkEmp;
+  const msg = encodeURIComponent(`[Prime Anchorpoint] 请确认您的工时记录: ${url}`);
+  window.open(`sms:${emp ? emp.phone : ''}?body=${msg}`);
 }
 
 function printTimesheet() {
@@ -2527,6 +2795,137 @@ async function deleteBgCheck(id) {
   if (!confirm('确定删除此背景调查记录？')) return;
   await api(`/admin/background-checks/${id}`, { method:'DELETE' });
   loadBgChecks();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+// ─── Accounts Management ───
+async function loadAccounts() {
+  const rows = await api('/admin/accounts');
+  if (!Array.isArray(rows)) return;
+  const roleLabels = { admin: 'Admin (管理员)', staff: 'Staff (员工)', manager: 'Manager (经理)' };
+  document.getElementById('accountsTable').innerHTML = rows.map(a => `<tr>
+    <td><strong>${a.username}</strong></td>
+    <td>${a.display_name || '-'}</td>
+    <td><span class="badge ${a.role === 'admin' ? 'badge-blue' : a.role === 'manager' ? 'badge-yellow' : ''}">${roleLabels[a.role] || a.role}</span></td>
+    <td>${a.active ? '<span style="color:var(--green)">启用</span>' : '<span style="color:var(--red)">禁用</span>'}</td>
+    <td>${a.created_at ? a.created_at.slice(0, 10) : '-'}</td>
+    <td>
+      <button class="btn-sm" onclick="editAccount(${a.id})">编辑</button>
+      ${a.id !== 1 ? `<button class="btn-sm btn-red" onclick="deleteAccount(${a.id},'${a.username}')">删除</button>` : ''}
+    </td>
+  </tr>`).join('');
+}
+
+function openAccountModal(data) {
+  document.getElementById('accId').value = data ? data.id : '';
+  document.getElementById('accUsername').value = data ? data.username : '';
+  document.getElementById('accPassword').value = '';
+  document.getElementById('accDisplayName').value = data ? (data.display_name || '') : '';
+  document.getElementById('accRole').value = data ? (data.role || 'staff') : 'staff';
+  document.getElementById('accActive').value = data ? String(data.active) : '1';
+  document.getElementById('accountModalTitle').textContent = data ? '编辑账户' : '新建账户';
+  document.getElementById('accPassHint').textContent = data ? '(留空则不修改)' : '*';
+  document.getElementById('accountModal').classList.add('show');
+}
+
+async function editAccount(id) {
+  const rows = await api('/admin/accounts');
+  const a = rows.find(r => r.id === id);
+  if (a) openAccountModal(a);
+}
+
+async function saveAccount() {
+  const id = document.getElementById('accId').value;
+  const d = {
+    username: document.getElementById('accUsername').value,
+    password: document.getElementById('accPassword').value,
+    display_name: document.getElementById('accDisplayName').value,
+    role: document.getElementById('accRole').value,
+    active: parseInt(document.getElementById('accActive').value)
+  };
+  if (!d.username) return alert('请输入用户名');
+  if (!id && !d.password) return alert('请输入密码');
+  if (!d.password) delete d.password;
+  if (id) {
+    await api(`/admin/accounts/${id}`, { method: 'PUT', body: JSON.stringify(d) });
+  } else {
+    if (!d.password) return alert('请输入密码');
+    await api('/admin/accounts', { method: 'POST', body: JSON.stringify(d) });
+  }
+  closeModal('accountModal');
+  loadAccounts();
+}
+
+async function deleteAccount(id, name) {
+  if (!confirm(`确认删除账户 "${name}" ?`)) return;
+  await api(`/admin/accounts/${id}`, { method: 'DELETE' });
+  loadAccounts();
+}
+
+// ─── Pending Approvals ───
+let currentApprovalId = null;
+async function loadApprovals() {
+  const rows = await api('/admin/pending-actions');
+  if (!Array.isArray(rows)) return;
+  const pending = rows.filter(r => r.status === 'pending');
+  if (pending.length === 0) {
+    document.getElementById('noApprovals').style.display = 'block';
+    document.getElementById('approvalsTableEl').style.display = 'none';
+    return;
+  }
+  document.getElementById('noApprovals').style.display = 'none';
+  document.getElementById('approvalsTableEl').style.display = '';
+  const actionLabels = { delete: '删除', update: '修改' };
+  const tableLabels = { jobs: '职位', inquiries: '问卷', quotes: '报价', partners: '合作公司',
+    partner_files: '合作文件', assignments: '派工', employees: '员工', employee_documents: 'HR文件',
+    time_entries: '工时', background_checks: '背调' };
+  document.getElementById('approvalsBody').innerHTML = pending.map(a => `<tr>
+    <td><span class="badge ${a.action_type === 'delete' ? 'badge-red' : 'badge-yellow'}">${actionLabels[a.action_type] || a.action_type}</span></td>
+    <td>${tableLabels[a.target_table] || a.target_table}</td>
+    <td>${a.target_id || '-'}</td>
+    <td>${a.requested_by}</td>
+    <td>${a.created_at ? a.created_at.slice(0, 16).replace('T', ' ') : ''}</td>
+    <td>
+      <button class="btn-sm btn-green" onclick="reviewApproval(${a.id})">审核</button>
+    </td>
+  </tr>`).join('');
+}
+
+async function reviewApproval(id) {
+  currentApprovalId = id;
+  const rows = await api('/admin/pending-actions');
+  const a = rows.find(r => r.id === id);
+  if (!a) return;
+  const payload = JSON.parse(a.payload || '{}');
+  delete payload._params;
+  const actionLabels = { delete: '删除', update: '修改' };
+  let html = `<p><strong>操作类型：</strong>${actionLabels[a.action_type] || a.action_type}</p>`;
+  html += `<p><strong>目标表：</strong>${a.target_table}</p>`;
+  html += `<p><strong>目标ID：</strong>${a.target_id || '-'}</p>`;
+  html += `<p><strong>申请人：</strong>${a.requested_by}</p>`;
+  html += `<p><strong>申请时间：</strong>${a.created_at}</p>`;
+  if (Object.keys(payload).length > 0) {
+    html += `<p><strong>数据：</strong></p><pre style="background:var(--off-white);padding:1rem;border-radius:8px;font-size:.82rem;max-height:200px;overflow:auto">${JSON.stringify(payload, null, 2)}</pre>`;
+  }
+  document.getElementById('approvalDetailContent').innerHTML = html;
+  document.getElementById('approvalDetailModal').classList.add('show');
+}
+
+async function approveAction() {
+  if (!currentApprovalId) return;
+  await api(`/admin/pending-actions/${currentApprovalId}/approve`, { method: 'POST' });
+  closeModal('approvalDetailModal');
+  currentApprovalId = null;
+  loadApprovals();
+}
+
+async function rejectAction() {
+  if (!currentApprovalId) return;
+  await api(`/admin/pending-actions/${currentApprovalId}/reject`, { method: 'POST' });
+  closeModal('approvalDetailModal');
+  currentApprovalId = null;
+  loadApprovals();
 }
 
 </script>
