@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>员工材料提交 — Prime Anchor Point</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --sky:#0ea5e9;--sky-d:#0284c7;--green:#22c55e;--red:#ef4444;--blue:#0F2B5B;
+    --gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--gray-800:#1f2937;
+    --radius:10px;--tr:all .2s;
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f7ff;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem 1rem}
+  .card{background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(14,165,233,.1);width:100%;max-width:560px;padding:2rem;margin-bottom:1.5rem}
+  .logo{font-size:1.4rem;font-weight:800;color:var(--blue);text-align:center;margin-bottom:.2rem;letter-spacing:-.5px}
+  .logo span{color:var(--sky)}
+  .subtitle{text-align:center;color:var(--gray-400);font-size:.83rem;margin-bottom:1.5rem}
+  h2{font-size:1rem;font-weight:700;color:var(--gray-800);margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid var(--gray-200);display:flex;align-items:center;gap:.4rem}
+  .notice{background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:.75rem 1rem;font-size:.82rem;color:#1E40AF;line-height:1.6;margin-bottom:1.2rem}
+  .notice strong{display:block;margin-bottom:.2rem}
+  .upload-zone{border:2px dashed var(--gray-200);border-radius:10px;padding:1.4rem;text-align:center;cursor:pointer;transition:var(--tr);position:relative;margin-bottom:.5rem}
+  .upload-zone:hover{border-color:var(--sky);background:#f0f9ff}
+  .upload-zone.done{border-color:var(--green);background:#f0fdf4}
+  .upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+  .upload-icon{font-size:2rem;margin-bottom:.4rem}
+  .upload-label{font-size:.88rem;font-weight:600;color:var(--gray-600)}
+  .upload-hint{font-size:.75rem;color:var(--gray-400);margin-top:.25rem}
+  .upload-done{display:none;font-size:.82rem;font-weight:600;color:var(--green);margin-top:.3rem}
+  .upload-zone.done .upload-done{display:block}
+  .upload-zone.done .upload-label{color:var(--green)}
+  .doc-block{margin-bottom:1.4rem}
+  .doc-title{font-size:.88rem;font-weight:700;color:var(--gray-700);margin-bottom:.5rem;display:flex;align-items:center;gap:.4rem}
+  .doc-desc{font-size:.78rem;color:var(--gray-500);margin-bottom:.55rem;line-height:1.5}
+  .btn{display:block;width:100%;padding:12px;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer;transition:var(--tr)}
+  .btn-submit{background:var(--sky);color:#fff}
+  .btn-submit:hover{background:var(--sky-d)}
+  .btn-submit:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
+  .error-msg{color:var(--red);font-size:.85rem;text-align:center;margin-top:.75rem;display:none}
+  .screen{display:none}
+  .screen.active{display:block}
+  #screenLoading{text-align:center;padding:3rem 0;color:var(--gray-400)}
+  .spinner{width:36px;height:36px;border:3px solid var(--gray-200);border-top-color:var(--sky);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 1rem}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .success-icon{font-size:3.5rem;text-align:center;margin:1rem 0 .5rem}
+  .success-title{font-size:1.2rem;font-weight:800;color:var(--green);text-align:center;margin-bottom:.5rem}
+  .success-body{font-size:.88rem;color:var(--gray-500);text-align:center;line-height:1.6}
+  .tag{display:inline-block;padding:2px 9px;border-radius:12px;font-size:.75rem;font-weight:700;background:#EFF6FF;color:var(--sky)}
+  .emp-header{display:flex;align-items:center;gap:.85rem;margin-bottom:1.2rem;padding-bottom:1rem;border-bottom:1px solid var(--gray-200)}
+  .emp-avatar{width:46px;height:46px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:700;flex-shrink:0}
+  .emp-name{font-size:1.05rem;font-weight:700;color:var(--blue)}
+  .emp-code{font-size:.8rem;color:var(--gray-400);margin-top:1px}
+  .admin-note{background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:.7rem .9rem;font-size:.83rem;color:#92400E;line-height:1.6;margin-bottom:1.2rem}
+  .admin-note strong{display:block;margin-bottom:.2rem;font-size:.78rem;text-transform:uppercase;letter-spacing:.3px}
+  .progress-bar{display:flex;gap:.4rem;margin-bottom:1.5rem}
+  .progress-dot{flex:1;height:4px;background:var(--gray-200);border-radius:2px;transition:background .3s}
+  .progress-dot.done{background:var(--green)}
+  .progress-dot.active{background:var(--sky)}
+</style>
+</head>
+<body>
+
+<div style="width:100%;max-width:560px;margin-bottom:.5rem">
+  <div class="logo">Prime <span>Anchor</span>Point</div>
+  <div class="subtitle">员工材料安全提交通道</div>
+</div>
+
+<!-- Loading -->
+<div class="card screen active" id="screenLoading">
+  <div class="spinner"></div>
+  <div style="text-align:center;color:var(--gray-400);font-size:.9rem">验证链接中…</div>
+</div>
+
+<!-- Invalid -->
+<div class="card screen" id="screenInvalid">
+  <div style="text-align:center;padding:1.5rem 0">
+    <div style="font-size:3rem;margin-bottom:.75rem">🔒</div>
+    <div style="font-size:1.1rem;font-weight:700;color:var(--red);margin-bottom:.5rem">链接无效或已过期</div>
+    <div style="font-size:.88rem;color:var(--gray-500)">请联系 HR 重新获取上传链接</div>
+  </div>
+</div>
+
+<!-- Completed -->
+<div class="card screen" id="screenCompleted">
+  <div class="success-icon">✅</div>
+  <div class="success-title">材料已提交</div>
+  <div class="success-body">您的身份文件已安全上传，HR 会进行核实。<br>如有疑问请联系我们。</div>
+</div>
+
+<!-- Main form -->
+<div class="screen" id="screenForm">
+  <div class="card">
+    <div class="emp-header">
+      <div class="emp-avatar" id="empAvatar">?</div>
+      <div>
+        <div class="emp-name" id="empName">—</div>
+        <div class="emp-code" id="empCode"></div>
+      </div>
+    </div>
+    <div class="notice">
+      <strong>🔒 安全提示</strong>
+      您上传的所有文件将通过加密传输，仅限 HR 人员查看，不会用于任何其他用途。
+    </div>
+    <div id="adminNoteBlock" class="admin-note" style="display:none">
+      <strong>HR 留言</strong>
+      <span id="adminNoteText"></span>
+    </div>
+  </div>
+
+  <div class="card" id="docFormCard">
+    <h2>📎 请上传以下材料</h2>
+    <div class="progress-bar" id="progressBar"></div>
+
+    <div id="docList"></div>
+
+    <button class="btn btn-submit" id="btnSubmit" onclick="submitDocs()">提交材料</button>
+    <div class="error-msg" id="errMsg"></div>
+  </div>
+</div>
+
+<!-- Success (after submit) -->
+<div class="card screen" id="screenSuccess">
+  <div class="success-icon">🎉</div>
+  <div class="success-title">提交成功！</div>
+  <div class="success-body">感谢您的配合！<br>您的文件已安全上传至系统，HR 将尽快完成审核。<br><br>
+    <span style="font-size:.8rem;color:var(--gray-400)">您现在可以安全关闭此页面</span>
+  </div>
+</div>
+
+<div style="font-size:.72rem;color:var(--gray-400);text-align:center;margin-top:.5rem;padding-bottom:2rem">
+  © Prime Anchor Point · 所有文件均加密存储 · 仅限授权人员查看
+</div>
+
+<script>
+const DOC_INFO = {
+  gov_id:    { label: '政府颁发的身份证件', eng: 'Government-Issued ID', icon: '🪪',
+               desc: '驾照（Driver\'s License）、州身份证（State ID）、护照（Passport）均可。请确保证件有效且拍摄清晰。',
+               accept: '.pdf,.jpg,.jpeg,.png,.heic,.heif' },
+  ssn:       { label: '社会安全卡', eng: 'Social Security Card', icon: '📋',
+               desc: '请提供 SSN 原卡正面照片。如卡片已破损请联系 HR 说明情况。',
+               accept: '.pdf,.jpg,.jpeg,.png,.heic,.heif' },
+  work_card: { label: '工卡 / 工作许可证', eng: 'Work Authorization Card', icon: '💼',
+               desc: 'EAD 卡、工作签证页、I-94 记录、绿卡等均可。如您是美国公民可上传护照替代。',
+               accept: '.pdf,.jpg,.jpeg,.png,.heic,.heif' },
+};
+
+const TOKEN = new URLSearchParams(location.search).get('token');
+let _requestedDocs = [];
+const _fileMap = {};
+
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+async function init() {
+  if (!TOKEN) { show('screenInvalid'); return; }
+  try {
+    const r = await fetch(`/api/emp-docs/${TOKEN}`);
+    if (!r.ok) { show('screenInvalid'); return; }
+    const d = await r.json();
+    if (d.status === 'completed') { show('screenCompleted'); return; }
+    // Populate header
+    const initials = d.name.split(' ').map(w=>w[0]||'').join('').toUpperCase().slice(0,2);
+    document.getElementById('empAvatar').textContent = initials;
+    document.getElementById('empName').textContent = d.name;
+    document.getElementById('empCode').textContent = d.emp_code ? '员工编号：' + d.emp_code : '';
+    if (d.admin_note) {
+      document.getElementById('adminNoteText').textContent = d.admin_note;
+      document.getElementById('adminNoteBlock').style.display = '';
+    }
+    _requestedDocs = d.requested_docs || ['gov_id','ssn','work_card'];
+    buildDocForm();
+    show('screenForm');
+  } catch(e) { show('screenInvalid'); }
+}
+
+function buildDocForm() {
+  const pb = document.getElementById('progressBar');
+  const dl = document.getElementById('docList');
+  pb.innerHTML = _requestedDocs.map(k => `<div class="progress-dot" id="pd_${k}"></div>`).join('');
+  dl.innerHTML = _requestedDocs.map(key => {
+    const info = DOC_INFO[key] || { label: key, icon: '📄', desc: '', accept: '.pdf,.jpg,.jpeg,.png', eng: key };
+    return `<div class="doc-block" id="block_${key}">
+      <div class="doc-title">${info.icon} ${info.label} <span style="font-size:.72rem;color:var(--gray-400);font-weight:400">${info.eng}</span></div>
+      <div class="doc-desc">${info.desc}</div>
+      <div class="upload-zone" id="zone_${key}" onclick="document.getElementById('file_${key}').click()">
+        <input type="file" id="file_${key}" name="${key}" accept="${info.accept}" style="display:none" onchange="onFileChange('${key}',this)">
+        <div class="upload-icon" id="icon_${key}">⬆️</div>
+        <div class="upload-label" id="lbl_${key}">点击或拖拽上传</div>
+        <div class="upload-hint">支持 PDF / JPG / PNG / HEIC，最大 20MB</div>
+        <div class="upload-done" id="done_${key}"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function onFileChange(key, input) {
+  const file = input.files[0];
+  if (!file) return;
+  _fileMap[key] = file;
+  document.getElementById('zone_' + key).classList.add('done');
+  document.getElementById('icon_' + key).textContent = '✅';
+  document.getElementById('lbl_' + key).textContent = '已选择文件';
+  document.getElementById('done_' + key).textContent = file.name;
+  // update progress dots
+  const filled = _requestedDocs.filter(k => _fileMap[k]).length;
+  _requestedDocs.forEach((k, i) => {
+    const dot = document.getElementById('pd_' + k);
+    if (_fileMap[k]) dot.classList.add('done');
+    else if (i === filled) dot.classList.add('active');
+  });
+}
+
+async function submitDocs() {
+  const missing = _requestedDocs.filter(k => !_fileMap[k]);
+  if (missing.length) {
+    const labels = missing.map(k => (DOC_INFO[k]||{label:k}).label).join('、');
+    showErr(`请上传：${labels}`);
+    return;
+  }
+  const btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  btn.textContent = '上传中…';
+  hideErr();
+  const fd = new FormData();
+  for (const [key, file] of Object.entries(_fileMap)) fd.append(key, file);
+  try {
+    const r = await fetch(`/api/emp-docs/${TOKEN}/submit`, { method:'POST', body: fd });
+    const d = await r.json();
+    if (d.success) { show('screenSuccess'); }
+    else { showErr(d.error || '上传失败，请重试'); btn.disabled=false; btn.textContent='提交材料'; }
+  } catch(e) { showErr('网络错误，请检查连接后重试'); btn.disabled=false; btn.textContent='提交材料'; }
+}
+
+function showErr(msg) { const el=document.getElementById('errMsg'); el.textContent=msg; el.style.display='block'; }
+function hideErr() { document.getElementById('errMsg').style.display='none'; }
+
+init();
+</script>
+</body>
+</html>
