@@ -233,6 +233,14 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN employment_type TEXT DEFAULT ''`); } 
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_days TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_start TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_end TEXT DEFAULT ''`); } catch(e) {}
+// Job status & closure tracking
+try { db.exec(`ALTER TABLE jobs ADD COLUMN job_status TEXT DEFAULT 'open'`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN close_reason TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN close_note TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN headcount INTEGER DEFAULT 1`); } catch(e) {}
+// Backfill job_status from active flag for existing rows
+try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
+try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 
@@ -727,15 +735,38 @@ app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
 
 app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
-  const stmt = db.prepare('INSERT INTO jobs (title, type, location, pay, lang, lang_name, description, urgent, work_auth, benefits, schedule, company_id, company_name, employment_type, work_days, work_start, work_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  const r = stmt.run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '', d.company_id || null, d.company_name || '', d.employment_type || '', d.work_days || '', d.work_start || '', d.work_end || '');
+  const jobStatus = d.job_status || 'open';
+  const stmt = db.prepare(`INSERT INTO jobs
+    (title, type, location, pay, lang, lang_name, description, urgent,
+     work_auth, benefits, schedule, company_id, company_name, employment_type,
+     work_days, work_start, work_end, job_status, active, close_reason, close_note, headcount)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const r = stmt.run(
+    d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+    d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
+    d.company_id||null, d.company_name||'', d.employment_type||'',
+    d.work_days||'', d.work_start||'', d.work_end||'',
+    jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1
+  );
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE jobs SET title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?, company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=? WHERE id=?')
-    .run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '', d.company_id || null, d.company_name || '', d.employment_type || '', d.work_days || '', d.work_start || '', d.work_end || '', req.params.id);
+  const jobStatus = d.job_status || 'open';
+  db.prepare(`UPDATE jobs SET title=?, type=?, location=?, pay=?, lang=?, lang_name=?,
+    description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
+    company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?,
+    job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
+    .run(
+      d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+      d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
+      d.work_auth||'', d.benefits||'', d.schedule||'',
+      d.company_id||null, d.company_name||'', d.employment_type||'',
+      d.work_days||'', d.work_start||'', d.work_end||'',
+      jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
+      req.params.id
+    );
   res.json({ success: true });
 });
 

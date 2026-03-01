@@ -52,6 +52,15 @@ tr:hover td{background:var(--sky-light)}
 .badge-employment{background:#EDE9FE;color:#5B21B6}
 .badge-w2{background:#D1FAE5;color:#065F46}
 .badge-contract{background:#FEF3C7;color:#92400E}
+.badge-open{background:#D1FAE5;color:#065F46}.badge-filled{background:#DBEAFE;color:#1D4ED8}.badge-on_hold{background:#FEF9C3;color:#92400E}.badge-closed{background:#F3F4F6;color:#6B7280}
+/* Close-reason modal radio list */
+.close-reason-group{margin:.4rem 0 .8rem}
+.close-reason-group h4{font-size:.78rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:.4rem}
+.cr-option{display:flex;align-items:center;gap:.6rem;padding:.45rem .6rem;border-radius:6px;cursor:pointer;transition:background .12s}
+.cr-option:hover{background:var(--sky-light)}
+.cr-option input[type=radio]{accent-color:var(--sky);width:15px;height:15px;flex-shrink:0}
+.cr-option label{cursor:pointer;font-size:.88rem;line-height:1.3}
+.cr-option label small{display:block;font-size:.75rem;color:var(--gray-400);font-weight:400}
 .assign-dropdown{display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:200px;overflow-y:auto}
 .assign-dropdown.open{display:block}
 .assign-dropdown .adrop-item{padding:.5rem .75rem;cursor:pointer;font-size:.85rem;border-bottom:1px solid var(--gray-100)}
@@ -267,7 +276,14 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>地点 / 时间</th><th>薪资</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div class="search-bar" style="align-items:center">
+    <div class="ts-week-toggle" style="flex-shrink:0">
+      <button id="jobTabOpen" class="active" onclick="setJobTab('open')">在招职位</button>
+      <button id="jobTabHistory" onclick="setJobTab('history')">历史职位</button>
+    </div>
+    <input type="text" id="jobSearch" placeholder="搜索职位名称、公司、地点..." oninput="renderJobsFiltered()" style="flex:1">
+  </div>
+  <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>人数</th><th>地点 / 时间</th><th>薪资</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
 </div>
 
 <!-- Partners -->
@@ -504,6 +520,42 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Job Modal -->
+<!-- Close-Job Modal -->
+<div class="modal-bg" id="closeJobModal"><div class="modal" style="max-width:480px">
+  <h2>关闭职位</h2>
+  <p id="closeJobTitle" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
+  <input type="hidden" id="closeJobId">
+
+  <div class="close-reason-group">
+    <h4>✅ 招聘完成</h4>
+    <label class="cr-option"><input type="radio" name="closeReason" value="filled_full"> <label>已招齐全部人数 <small>达到职位目标人数，招聘圆满完成</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="filled_partial"> <label>部分完成，客户接受 <small>虽未全额招满，客户已满意当前人数</small></label></label>
+  </div>
+
+  <div class="close-reason-group">
+    <h4>⏸ 暂缓招聘</h4>
+    <label class="cr-option"><input type="radio" name="closeReason" value="on_hold_client"> <label>客户要求暂缓 <small>客户主动通知暂时停止招聘，后续可能恢复</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="on_hold_internal"> <label>公司内部暂缓 <small>公司内部原因暂时搁置，不确定是否继续</small></label></label>
+  </div>
+
+  <div class="close-reason-group">
+    <h4>❌ 职位取消</h4>
+    <label class="cr-option"><input type="radio" name="closeReason" value="client_cancelled"> <label>客户撤单 / 需求取消 <small>客户通知不再需要此职位，正式取消</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="budget_cut"> <label>预算削减 / 项目暂停 <small>因预算问题或项目取消导致职位取消</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="project_end"> <label>项目完成 / 自然结束 <small>临时项目结束，不再需要额外人手</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="position_changed"> <label>岗位需求变更 <small>职位要求或性质改变，原职位作废，将重新发布</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="no_candidates"> <label>长期无合适候选人 <small>经过充分努力仍未找到符合要求的人选</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="other"> <label>其他原因 <small>见下方备注</small></label></label>
+  </div>
+
+  <div class="field"><label>补充说明（选填）</label><textarea id="closeJobNote" rows="2" placeholder="如有需要，可添加更多说明..."></textarea></div>
+
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-red" onclick="confirmCloseJob()">确认关闭</button>
+    <button class="btn" onclick="document.getElementById('closeJobModal').classList.remove('show')">取消</button>
+  </div>
+</div></div>
+
 <div class="modal-bg" id="jobModal"><div class="modal" style="max-width:680px">
   <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
@@ -593,7 +645,10 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
-  <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
+  <div class="field-row">
+    <div class="field"><label>招聘人数</label><input type="number" id="jHeadcount" min="1" value="1" placeholder="1"></div>
+    <div class="field" style="display:flex;align-items:flex-end;padding-bottom:.2rem"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
+  </div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn" onclick="saveJob()">保存</button>
     <button class="btn" onclick="randomFillJob()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
@@ -1188,13 +1243,47 @@ function esc(s) {
 }
 
 // ─── Jobs ───
-async function loadJobs() {
-  const jobs = await api('/admin/jobs');
-  const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
-  const authLabel = a => ({any:'合法身份', gc:'绿卡/公民', citizen:'仅公民'})[a] || '不限';
+let _allJobs = [];
+let _jobTab = 'open'; // 'open' | 'history'
+
+const JOB_STATUS_LABEL = {
+  open:      { text: '在招中',   cls: 'badge-open' },
+  filled_full:    { text: '已招满',   cls: 'badge-filled' },
+  filled_partial: { text: '部分完成', cls: 'badge-filled' },
+  on_hold_client: { text: '暂缓（客户）', cls: 'badge-on_hold' },
+  on_hold_internal:{ text:'暂缓（内部）',cls:'badge-on_hold' },
+  client_cancelled:{ text:'客户撤单',  cls:'badge-closed' },
+  budget_cut:     { text: '预算削减', cls: 'badge-closed' },
+  project_end:    { text: '项目结束', cls: 'badge-closed' },
+  position_changed:{ text:'岗位变更', cls:'badge-closed' },
+  no_candidates:  { text: '无合适人选', cls: 'badge-closed' },
+  closed:         { text: '已关闭',   cls: 'badge-closed' },
+  other:          { text: '其他',     cls: 'badge-closed' },
+};
+
+function setJobTab(tab) {
+  _jobTab = tab;
+  document.getElementById('jobTabOpen').classList.toggle('active', tab === 'open');
+  document.getElementById('jobTabHistory').classList.toggle('active', tab === 'history');
+  renderJobsFiltered();
+}
+
+function renderJobsFiltered() {
+  const q = (document.getElementById('jobSearch')?.value || '').toLowerCase();
+  const isOpen = s => s === 'open';
+  const list = _allJobs.filter(j => {
+    const status = j.job_status || (j.active ? 'open' : 'closed');
+    if (_jobTab === 'open' && !isOpen(status)) return false;
+    if (_jobTab === 'history' && isOpen(status)) return false;
+    if (q && !( (j.title||'').toLowerCase().includes(q) ||
+                (j.company_name||'').toLowerCase().includes(q) ||
+                (j.location||'').toLowerCase().includes(q) )) return false;
+    return true;
+  });
+
   const etBadge = et => {
     if (!et) return '';
-    const cls = et === 'W2' ? 'badge-w2' : et === 'Contract' || et === '1099' ? 'badge-contract' : 'badge-employment';
+    const cls = et === 'W2' ? 'badge-w2' : (et === 'Contract' || et === '1099') ? 'badge-contract' : 'badge-employment';
     return `<span class="badge ${cls}">${esc(et)}</span>`;
   };
   const scheduleStr = j => {
@@ -1203,16 +1292,42 @@ async function loadJobs() {
     if (j.work_start && j.work_end) parts.push(`${j.work_start}–${j.work_end}`);
     return parts.join(' ');
   };
-  document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
-    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
-    <td>${esc(j.type)}</td>
-    <td>${etBadge(j.employment_type)}</td>
-    <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
-    <td>${esc(j.pay||'')}</td>
-    <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
-    <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
-    <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
+  const statusInfo = s => JOB_STATUS_LABEL[s] || JOB_STATUS_LABEL.closed;
+  const CLOSE_REASON_LABEL = {
+    filled_full:'已招齐全部人数', filled_partial:'部分完成客户接受',
+    on_hold_client:'客户要求暂缓', on_hold_internal:'公司内部暂缓',
+    client_cancelled:'客户撤单', budget_cut:'预算削减',
+    project_end:'项目结束', position_changed:'岗位需求变更',
+    no_candidates:'长期无合适候选人', other:'其他原因'
+  };
+
+  const isHistory = _jobTab === 'history';
+  document.getElementById('jobsTable').innerHTML = list.length ? list.map(j => {
+    const st = j.job_status || (j.active ? 'open' : 'closed');
+    const si = statusInfo(st);
+    const reasonTip = j.close_reason ? `<br><small style="color:var(--gray-400)">${CLOSE_REASON_LABEL[j.close_reason]||j.close_reason}${j.close_note?' · '+esc(j.close_note):''}</small>` : '';
+    return `<tr>
+      <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
+      <td>${esc(j.type||'')}</td>
+      <td>${etBadge(j.employment_type)}</td>
+      <td style="text-align:center">${j.headcount||1}</td>
+      <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
+      <td>${esc(j.pay||'')}</td>
+      <td><span class="badge ${si.cls}">${si.text}</span>${reasonTip}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button>
+        ${!isHistory
+          ? `<button class="btn btn-sm" style="background:var(--orange-light,#fff3e0);color:#c05621;border:1px solid #fbd38d" onclick='openCloseJobModal(${JSON.stringify(j).replace(/'/g,"&#39;")})'>关闭</button>`
+          : `<button class="btn btn-sm btn-green" onclick="reopenJob(${j.id})">重新开放</button>`}
+        <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="8" class="empty">${isHistory ? '暂无历史职位' : '暂无在招职位，点击 "+ 新增职位" 添加'}</td></tr>`;
+}
+
+async function loadJobs() {
+  _allJobs = await api('/admin/jobs');
+  renderJobsFiltered();
 }
 
 async function openJobModal(job) {
@@ -1229,6 +1344,7 @@ async function openJobModal(job) {
   document.getElementById('jWorkEnd').value = job ? (job.work_end || '') : '';
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
+  document.getElementById('jHeadcount').value = job ? (job.headcount || 1) : 1;
 
   // Load company dropdown
   await loadJobCompanies(job ? (job.company_id || '') : '');
@@ -1356,6 +1472,8 @@ async function saveJob() {
     schedule: '',
     description: document.getElementById('jDesc').value,
     urgent: document.getElementById('jUrgent').checked,
+    headcount: parseInt(document.getElementById('jHeadcount').value) || 1,
+    job_status: 'open',
     active: true
   };
   if (!data.title) return alert('请填写职位名称');
@@ -1368,6 +1486,46 @@ async function saveJob() {
 async function deleteJob(id) {
   if (!confirm('确定删除此职位？')) return;
   await api(`/admin/jobs/${id}`, { method: 'DELETE' });
+  loadJobs();
+}
+
+function openCloseJobModal(job) {
+  document.getElementById('closeJobId').value = job.id;
+  document.getElementById('closeJobTitle').textContent = job.title + (job.company_name ? '  ·  ' + job.company_name : '');
+  document.getElementById('closeJobNote').value = job.close_note || '';
+  // Pre-select existing reason if any
+  const existing = job.close_reason || '';
+  document.querySelectorAll('#closeJobModal input[name=closeReason]').forEach(r => {
+    r.checked = r.value === existing;
+  });
+  document.getElementById('closeJobModal').classList.add('show');
+}
+
+async function confirmCloseJob() {
+  const id = document.getElementById('closeJobId').value;
+  const reason = document.querySelector('#closeJobModal input[name=closeReason]:checked')?.value || '';
+  if (!reason) return alert('请选择关闭原因');
+  const note = document.getElementById('closeJobNote').value;
+  // Determine job_status from reason
+  const statusMap = {
+    filled_full: 'filled_full', filled_partial: 'filled_partial',
+    on_hold_client: 'on_hold_client', on_hold_internal: 'on_hold_internal',
+    client_cancelled: 'client_cancelled', budget_cut: 'budget_cut',
+    project_end: 'project_end', position_changed: 'position_changed',
+    no_candidates: 'no_candidates', other: 'other'
+  };
+  const job = _allJobs.find(j => j.id == id);
+  if (!job) return;
+  const data = { ...job, job_status: statusMap[reason] || 'closed', close_reason: reason, close_note: note, active: false };
+  await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  document.getElementById('closeJobModal').classList.remove('show');
+  loadJobs();
+}
+
+async function reopenJob(id) {
+  const job = _allJobs.find(j => j.id == id);
+  if (!job) return;
+  await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify({ ...job, job_status: 'open', close_reason: '', close_note: '', active: true }) });
   loadJobs();
 }
 
