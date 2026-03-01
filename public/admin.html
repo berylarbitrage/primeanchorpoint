@@ -649,7 +649,8 @@ tr:hover td{background:var(--sky-light)}
       <button id="accTabWorker" onclick="setAccTab('worker')">工人账户 Worker</button>
       <button id="accTabCustomer" onclick="setAccTab('customer')">客户账户 Customer</button>
     </div>
-    <div style="margin-left:auto">
+    <div style="margin-left:auto;display:flex;gap:.5rem">
+      <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
     </div>
   </div>
@@ -5396,7 +5397,8 @@ async function saveAccount() {
 }
 
 async function deleteAccount(id, name) {
-  if (!confirm(`确认删除账户 "${name}" ?`)) return;
+  const input = prompt(`确认删除账户 "${name}" ?\n请输入 I confirm 确认删除 / Type "I confirm" to delete:`);
+  if (input !== 'I confirm') { if (input !== null) alert('输入不正确，删除已取消'); return; }
   await api(`/admin/accounts/${id}`, { method:'DELETE' });
   loadAccounts();
 }
@@ -5474,7 +5476,8 @@ async function activateWorkerAccount(id) {
 }
 
 async function deleteWorkerAccount(id, name) {
-  if (!confirm(`确认删除工人账户 "${name}" ?`)) return;
+  const input = prompt(`确认删除工人账户 "${name}" ?\n请输入 I confirm 确认删除 / Type "I confirm" to delete:`);
+  if (input !== 'I confirm') { if (input !== null) alert('输入不正确，删除已取消'); return; }
   await api(`/admin/worker-accounts/${id}`, { method:'DELETE' });
   loadWorkerAccounts();
 }
@@ -5570,9 +5573,23 @@ async function saveCustomerAccount() {
 }
 
 async function deleteCustomerAccount(id, name) {
-  if (!confirm(`确认删除客户账户 "${name}" ?`)) return;
+  const input = prompt(`确认删除客户账户 "${name}" ?\n请输入 I confirm 确认删除 / Type "I confirm" to delete:`);
+  if (input !== 'I confirm') { if (input !== null) alert('输入不正确，删除已取消'); return; }
   await api(`/admin/customer-accounts/${id}`, { method:'DELETE' });
   loadCustomerAccounts();
+}
+
+async function clearAllTestData() {
+  const input = prompt('⚠️ 这将删除所有工人账户和客户账户！\nThis will delete ALL worker and customer accounts!\n\n请输入 I confirm 确认 / Type "I confirm" to proceed:');
+  if (input !== 'I confirm') { if (input !== null) alert('输入不正确，操作已取消'); return; }
+  const r = await api('/admin/clear-test-data', { method:'POST', body: JSON.stringify({ confirm_text: 'I confirm' }) });
+  if (r.success) {
+    alert(`已清空：${r.deleted_workers} 个工人账户，${r.deleted_customers} 个客户账户`);
+    loadWorkerAccounts();
+    loadCustomerAccounts();
+  } else {
+    alert(r.error || '清空失败');
+  }
 }
 
 // ── Worker: suspend / resend verification ──
@@ -5671,7 +5688,6 @@ async function rejectEnterpriseFromModal() {
   showToast('❌ 企业注册已拒绝');
   loadCustomerAccounts();
 }
-
 function randomFillWorkerAccount() {
   const phones = ['3125550101','7735550202','8475550303','7085550404','6305550505'];
   const pw = 'Test' + _randInt(1000,9999) + '!';
