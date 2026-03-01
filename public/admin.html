@@ -87,7 +87,7 @@ tr:hover td{background:var(--sky-light)}
 .badge-ordered{background:#E8F0FE;color:var(--sky)}.badge-in_progress{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-failed{background:#FFEAEA;color:var(--red)}
 .badge-clear{background:#E8F5E9;color:var(--green)}.badge-flagged{background:#FFEAEA;color:var(--red)}
 .badge-ssn{background:#FFEAEA;color:var(--red)}.badge-passport{background:#E8F0FE;color:var(--blue)}.badge-i9{background:#E8F5E9;color:var(--green)}.badge-doc{background:var(--gray-200);color:var(--gray-600)}
-.badge-blue{background:#E8F0FE;color:var(--blue)}.badge-yellow{background:#FFF3E0;color:var(--accent)}.badge-red{background:#FFEAEA;color:var(--red)}
+.badge-blue{background:#E8F0FE;color:var(--blue)}.badge-yellow{background:#FFF3E0;color:var(--accent)}.badge-red{background:#FFEAEA;color:var(--red)}.badge-green{background:#E8F5E9;color:#2D9D78}
 .ot-text{color:var(--accent);font-weight:700}
 .form-section{margin-bottom:1.5rem}.form-section h4{font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)}
 .modal-lg{max-width:700px}
@@ -213,6 +213,9 @@ tr:hover td{background:var(--sky-light)}
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem"></div>
   <a onclick="showTab('employees')" data-role="admin,staff">👥 员工管理</a>
   <a onclick="showTab('time')">⏱ 工时打卡</a>
+  <a onclick="showTab('ts-verify')" data-role="admin,staff">📋 工时核对</a>
+  <a onclick="showTab('ts-payment')" data-role="admin,staff">💰 待付款</a>
+  <a onclick="showTab('ts-history')" data-role="admin,staff">📚 工时历史</a>
   <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
   <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
@@ -433,6 +436,57 @@ tr:hover td{background:var(--sky-light)}
   <div class="card">
     <table><thead><tr><th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>合计</th><th>正常</th><th>加班</th><th>状态</th><th>备注</th><th>操作</th></tr></thead>
     <tbody id="timeTable"></tbody></table>
+  </div>
+</div>
+
+<!-- ════════════════════ 工时核对 TAB ════════════════════ -->
+<div id="tab-ts-verify" style="display:none">
+  <div class="top">
+    <h1>工时核对</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadTsVerify()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">显示员工已确认/异议的工时单，Staff 核对后点击「上报客户」进入付款阶段。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>员工状态</th><th>员工备注</th><th>Staff 备注</th><th>操作</th></tr></thead>
+      <tbody id="tsVerifyTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════ 待付款 TAB ════════════════════ -->
+<div id="tab-ts-payment" style="display:none">
+  <div class="top">
+    <h1>待付款</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadTsPayment()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">客户付款 <b>和</b> 劳务付款均完成后，工时单自动进入历史。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>上报时间</th><th>客户付款</th><th>劳务付款</th></tr></thead>
+      <tbody id="tsPaymentTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════ 工时历史 TAB ════════════════════ -->
+<div id="tab-ts-history" style="display:none">
+  <div class="top">
+    <h1>工时历史</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadTsHistory()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">客户付款与劳务付款均已完成的工时单。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>客户付款时间</th><th>劳务付款时间</th><th>Staff 备注</th></tr></thead>
+      <tbody id="tsHistoryTable"></tbody>
+    </table>
   </div>
 </div>
 
@@ -1236,6 +1290,9 @@ function showTab(t) {
   if (t === 'backups')    loadBackups();
   if (t === 'employees')  { loadEmployees(); loadOnboardSubmissions(); }
   if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
+  if (t === 'ts-verify')  loadTsVerify();
+  if (t === 'ts-payment') loadTsPayment();
+  if (t === 'ts-history') loadTsHistory();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')   loadAccounts();
@@ -3106,6 +3163,111 @@ function exportTimeCSV(fromReport) {
   if (to)   url += '&date_to=' + to;
   if (emp)  url += '&employee_id=' + emp;
   window.open(url, '_blank');
+}
+
+// ══════════════════════════════════════════════════════
+// ─── 工时核对 / 待付款 / 工时历史 ───
+// ══════════════════════════════════════════════════════
+
+function fmtPeriod(s, e) {
+  if (!s) return '';
+  const fmt = d => d ? d.slice(5).replace('-','/') : '';
+  return `${fmt(s)} ~ ${fmt(e)}`;
+}
+function fmtDt(dt) {
+  if (!dt) return '—';
+  return new Date(dt).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+// ─── 工时核对 ───
+async function loadTsVerify() {
+  const rows = await api('/admin/timesheet-sheets?stage=verify');
+  const tbody = document.getElementById('tsVerifyTable');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无待核对工时单</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => {
+    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const empStatus = r.status === 'confirmed' ? '<span class="badge badge-green">员工已确认</span>'
+                    : r.status === 'disputed'  ? '<span class="badge badge-red">员工有异议</span>'
+                    : '<span class="badge">待员工确认</span>';
+    const noteCell = `<span style="font-size:.78rem;color:var(--gray-400)">${esc(r.employee_note||'—')}</span>`;
+    const staffNoteInput = `<input id="snote-${r.id}" value="${esc(r.staff_note||'')}" placeholder="核对备注" style="width:110px;font-size:.78rem;padding:2px 6px;border-radius:4px;border:1px solid var(--gray-600);background:var(--gray-800);color:inherit">`;
+    const btn = r.status === 'confirmed' || r.status === 'disputed'
+      ? `<button class="btn btn-sm btn-green" onclick="verifySheet(${r.id})">上报客户</button>`
+      : `<span style="font-size:.78rem;color:var(--gray-500)">等待确认</span>`;
+    return `<tr>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td>${empStatus}</td>
+      <td>${noteCell}</td>
+      <td>${staffNoteInput}</td>
+      <td>${btn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function verifySheet(id) {
+  const note = (document.getElementById('snote-'+id)||{}).value || '';
+  await api(`/admin/timesheet-sheets/${id}/verify`, { method:'PUT', body:JSON.stringify({ staff_note: note }) });
+  showToast('✅ 已上报客户，进入待付款阶段');
+  loadTsVerify();
+}
+
+// ─── 待付款 ───
+async function loadTsPayment() {
+  const rows = await api('/admin/timesheet-sheets?stage=payment');
+  const tbody = document.getElementById('tsPaymentTable');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待付款工时单</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => {
+    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const clientBtn = r.client_paid
+      ? `<span class="badge badge-green">已付 ${fmtDt(r.client_paid_at)}</span>`
+      : `<button class="btn btn-sm btn-accent" onclick="markClientPaid(${r.id})">标记客户已付款</button>`;
+    const laborBtn = r.labor_paid
+      ? `<span class="badge badge-green">已付 ${fmtDt(r.labor_paid_at)}</span>`
+      : `<button class="btn btn-sm btn-blue" onclick="markLaborPaid(${r.id})">标记劳务已付款</button>`;
+    return `<tr>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td style="font-size:.78rem;color:var(--gray-400)">${fmtDt(r.verified_at)}</td>
+      <td>${clientBtn}</td>
+      <td>${laborBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function markClientPaid(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/client-paid`, { method:'PUT', body:'{}' });
+  showToast(r.completed ? '✅ 双方付款完成，已移入历史' : '✅ 已标记客户付款');
+  loadTsPayment();
+}
+
+async function markLaborPaid(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/labor-paid`, { method:'PUT', body:'{}' });
+  showToast(r.completed ? '✅ 双方付款完成，已移入历史' : '✅ 已标记劳务付款');
+  loadTsPayment();
+}
+
+// ─── 工时历史 ───
+async function loadTsHistory() {
+  const rows = await api('/admin/timesheet-sheets?stage=history');
+  const tbody = document.getElementById('tsHistoryTable');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无历史记录</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => {
+    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    return `<tr>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td style="font-size:.78rem">${fmtDt(r.client_paid_at)}</td>
+      <td style="font-size:.78rem">${fmtDt(r.labor_paid_at)}</td>
+      <td style="font-size:.78rem;color:var(--gray-400)">${esc(r.staff_note||'—')}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ══════════════════════════════════════════════════════

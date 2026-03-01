@@ -284,6 +284,12 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_start TEXT DEFAULT ''`)
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_end TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN sheet_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN verified_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT ''`); } catch(e) {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1391,11 +1397,46 @@ app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard
 
 // List timesheet sheets (admin)
 app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
+  const { stage } = req.query; // 'verify' | 'payment' | 'history'
+  let where = '';
+  if (stage === 'verify')  where = `WHERE ts.status IN ('pending','confirmed','disputed')`;
+  if (stage === 'payment') where = `WHERE ts.status = 'verified'`;
+  if (stage === 'history') where = `WHERE ts.status = 'completed'`;
   const rows = db.prepare(`
     SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
     FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
-    ORDER BY ts.created_at DESC LIMIT 300`).all();
+    ${where} ORDER BY ts.created_at DESC LIMIT 300`).all();
   res.json(rows);
+});
+
+// Staff verifies sheet and submits to client
+app.put('/api/admin/timesheet-sheets/:id/verify', requireAdmin, (req, res) => {
+  const { staff_note } = req.body;
+  const sheet = db.prepare('SELECT id FROM timesheet_sheets WHERE id=?').get(req.params.id);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE timesheet_sheets SET status='verified', verified_at=CURRENT_TIMESTAMP, staff_note=? WHERE id=?`)
+    .run(staff_note || '', req.params.id);
+  res.json({ success: true });
+});
+
+// Mark client has paid us
+app.put('/api/admin/timesheet-sheets/:id/client-paid', requireAdmin, (req, res) => {
+  const sheet = db.prepare('SELECT id, labor_paid FROM timesheet_sheets WHERE id=?').get(req.params.id);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  const complete = sheet.labor_paid === 1;
+  db.prepare(`UPDATE timesheet_sheets SET client_paid=1, client_paid_at=CURRENT_TIMESTAMP${complete ? ", status='completed'" : ''} WHERE id=?`)
+    .run(req.params.id);
+  res.json({ success: true, completed: complete });
+});
+
+// Mark we have paid labor
+app.put('/api/admin/timesheet-sheets/:id/labor-paid', requireAdmin, (req, res) => {
+  const sheet = db.prepare('SELECT id, client_paid FROM timesheet_sheets WHERE id=?').get(req.params.id);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  const complete = sheet.client_paid === 1;
+  db.prepare(`UPDATE timesheet_sheets SET labor_paid=1, labor_paid_at=CURRENT_TIMESTAMP${complete ? ", status='completed'" : ''} WHERE id=?`)
+    .run(req.params.id);
+  res.json({ success: true, completed: complete });
 });
 
 // ─── PUBLIC TIMESHEET CONFIRMATION ───
