@@ -2089,7 +2089,7 @@ function renderInquiries(inqs) {
     <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
     <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
     <td><span class="badge badge-${i.type==='Employer'?'employer':i.type==='Job Seeker'?'seeker':'other'}">${typeLabel(i.type)}</span>${i.quote_request ? ' <span class="badge badge-urgent" style="background:#F5A623">报价</span>' : ''}</td>
-    <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="max-width:180px">${i.job_id?`<span style="font-size:.78rem;background:var(--sky-light);color:var(--sky);padding:1px 6px;border-radius:4px">职位申请</span> `:''}${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.82rem">${esc(i.location||'')}</td>
     <td style="white-space:nowrap">${esc(i.phone)}</td>
     <td style="white-space:nowrap">
