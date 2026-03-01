@@ -212,13 +212,41 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <button class="btn btn-submit" onclick="registerEnterprise()">提交注册 / Submit Registration</button>
     </div>
 
+    <!-- Verification step -->
+    <div id="workerVerify" style="display:none">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <div style="font-size:2rem;margin-bottom:.5rem">📱✉️</div>
+        <h2 style="color:var(--blue);margin:0 0 .5rem">验证手机号和邮箱 / Verify Phone & Email</h2>
+        <p style="color:#666;font-size:.9rem">
+          验证码已发送到您的手机和邮箱，请输入收到的6位数验证码。<br>
+          Verification codes have been sent to your phone and email.
+        </p>
+      </div>
+      <div class="field">
+        <label>手机验证码 / Phone Code</label>
+        <input type="text" id="vPhoneCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem">
+      </div>
+      <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
+        <a href="#" onclick="resendCode('phone');return false" style="font-size:.82rem;color:var(--sky)">重新发送手机验证码 / Resend phone code</a>
+      </div>
+      <div class="field">
+        <label>邮箱验证码 / Email Code</label>
+        <input type="text" id="vEmailCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem">
+      </div>
+      <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
+        <a href="#" onclick="resendCode('email');return false" style="font-size:.82rem;color:var(--sky)">重新发送邮箱验证码 / Resend email code</a>
+      </div>
+      <button class="btn btn-submit" onclick="verifyWorker()">确认验证 / Verify & Complete</button>
+      <p id="verifyHint" style="text-align:center;font-size:.82rem;color:#999;margin-top:.75rem">验证码15分钟内有效 / Codes expire in 15 minutes</p>
+    </div>
+
     <!-- Success screens -->
-    <div class="success-screen" id="workerSuccess">
+    <div class="success-screen" id="workerSuccess" style="display:none">
       <div class="success-icon">🎉</div>
       <div class="success-title">注册成功！/ Registration Successful!</div>
       <div class="success-body">
-        您的工人账号已创建，正在跳转到工人门户…<br>
-        Your worker account has been created. Redirecting to Worker Portal...
+        验证通过，正在跳转到工人门户…<br>
+        Verified! Redirecting to Worker Portal...
       </div>
     </div>
 
@@ -364,16 +392,60 @@ async function registerWorker() {
     });
     const d = await r.json();
     if (!r.ok || d.error) return showError(d.error || 'Registration failed');
-    // Auto-login: save token and redirect
-    if (d.token) localStorage.setItem('pa_worker_token', d.token);
+    // Show verification step
+    _pendingAccountId = d.account_id;
     document.getElementById('formWorker').style.display = 'none';
     const ts = document.getElementById('typeSelector');
     if (ts) ts.style.display = 'none';
     document.getElementById('loginLinks').style.display = 'none';
+    document.getElementById('workerVerify').style.display = '';
+  } catch (e) {
+    showError('网络错误，请重试 / Network error, please try again');
+  }
+}
+
+let _pendingAccountId = null;
+
+async function verifyWorker() {
+  hideError();
+  const phoneCode = document.getElementById('vPhoneCode').value.trim();
+  const emailCode = document.getElementById('vEmailCode').value.trim();
+  if (!phoneCode) return showError('请输入手机验证码 / Please enter phone code');
+  if (!emailCode) return showError('请输入邮箱验证码 / Please enter email code');
+  try {
+    const r = await fetch('/api/register/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: _pendingAccountId, phone_code: phoneCode, email_code: emailCode })
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) return showError(d.error || 'Verification failed');
+    if (d.token) localStorage.setItem('pa_worker_token', d.token);
+    document.getElementById('workerVerify').style.display = 'none';
     document.getElementById('workerSuccess').style.display = '';
     setTimeout(() => { window.location.href = '/portal'; }, 2000);
   } catch (e) {
     showError('网络错误，请重试 / Network error, please try again');
+  }
+}
+
+async function resendCode(type) {
+  if (!_pendingAccountId) return;
+  try {
+    const r = await fetch('/api/register/resend-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: _pendingAccountId, type })
+    });
+    const d = await r.json();
+    if (r.ok) {
+      document.getElementById('verifyHint').textContent = (type === 'phone' ? '手机' : '邮箱') + '验证码已重新发送 / Code resent';
+      setTimeout(() => { document.getElementById('verifyHint').textContent = '验证码15分钟内有效 / Codes expire in 15 minutes'; }, 3000);
+    } else {
+      showError(d.error || 'Failed to resend');
+    }
+  } catch (e) {
+    showError('网络错误 / Network error');
   }
 }
 

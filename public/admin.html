@@ -661,7 +661,7 @@ tr:hover td{background:var(--sky-light)}
 
   <!-- Worker -->
   <div id="accPanelWorker" class="card" style="display:none">
-    <table><thead><tr><th>用户名</th><th>绑定员工</th><th>员工工号</th><th>状态</th><th>创建</th><th>操作</th></tr></thead>
+    <table><thead><tr><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份状态</th><th>绑定员工</th><th>验证状态</th><th>创建</th><th>操作</th></tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
 
@@ -4868,17 +4868,21 @@ async function deleteAccount(id, name) {
 async function loadWorkerAccounts() {
   const rows = await api('/admin/worker-accounts');
   if (!Array.isArray(rows)) return;
+  const statusMap = { citizen:'公民', green_card:'绿卡', ead:'EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他' };
   document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w=>`<tr>
-    <td><strong>${esc(w.username)}</strong></td>
+    <td><strong>${esc(w.name||w.username)}</strong></td>
+    <td>${esc(w.phone||'')}</td>
+    <td style="font-size:.82rem">${esc(w.email||'')}</td>
+    <td>${statusMap[w.work_status]||esc(w.work_status||'')}</td>
     <td>${w.first_name?esc(w.first_name+' '+w.last_name):'<span style="color:var(--gray-400)">未绑定</span>'}</td>
-    <td style="font-size:.78rem;color:var(--gray-500)">${esc(w.emp_code||'')}</td>
-    <td>${w.active?'<span style="color:var(--green)">启用</span>':'<span style="color:var(--red)">禁用</span>'}</td>
+    <td>${w.active?'<span style="color:var(--green)">✅ 已验证</span>':'<span style="color:var(--orange)">⏳ 待验证</span>'}</td>
     <td>${(w.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap">
+      ${!w.active?'<button class="btn btn-sm btn-green" onclick="activateWorkerAccount('+w.id+')">手动激活</button>':''}
       <button class="btn btn-sm" onclick="editWorkerAccount(${w.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.username)}')">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无工人账户</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无工人账户</td></tr>';
 }
 
 async function openWorkerAccountModal(data) {
@@ -4916,6 +4920,13 @@ async function saveWorkerAccount() {
   closeModal('workerAccountModal');
   loadWorkerAccounts();
   showToast('✅ 工人账户已保存');
+}
+
+async function activateWorkerAccount(id) {
+  if (!confirm('手动激活该账户？（跳过验证）/ Manually activate this account?')) return;
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ active: 1 }) });
+  loadWorkerAccounts();
+  showToast('✅ 账户已激活');
 }
 
 async function deleteWorkerAccount(id, name) {
