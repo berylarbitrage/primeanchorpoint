@@ -223,6 +223,11 @@
 .pos-tag{padding:6px 14px;background:var(--off-white);color:var(--gray-600);border:1px solid var(--gray-200);border-radius:20px;font-size:.78rem;font-weight:600;cursor:pointer;transition:var(--tr);user-select:none}
 .pos-tag:hover{border-color:var(--sky);color:var(--sky)}
 .pos-tag.selected{background:var(--sky);color:#fff;border-color:var(--sky)}
+.supply-cta-banner{background:var(--blue);border-radius:12px;padding:2.5rem;text-align:center;margin:2rem 0}
+.supply-cta-banner h3{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.4rem;font-weight:800;color:#fff;margin-bottom:.5rem}
+.supply-cta-banner p{color:rgba(255,255,255,.75);margin-bottom:1.5rem;font-size:.95rem}
+.supply-cta-banner .btn-sky{display:inline-block;padding:12px 32px;background:var(--sky);color:#fff;border-radius:8px;font-weight:700;font-size:.9rem;text-decoration:none;cursor:pointer;border:none;transition:var(--tr)}
+.supply-cta-banner .btn-sky:hover{background:#3a80c9}
 .quote-success{display:none;text-align:center;padding:3rem}
 .quote-success .check{width:64px;height:64px;background:var(--sky);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.8rem;color:#fff;margin:0 auto 1rem}
 .quote-success h3{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;color:var(--blue);font-size:1.4rem}
@@ -583,6 +588,13 @@
 
   </div>
 
+  <!-- SUPPLY CTA BANNER -->
+  <div class="supply-cta-banner">
+    <h3 data-i18n="supCtaH">Need Supplies in Bulk?</h3>
+    <p data-i18n="supCtaP">We offer competitive pricing on all consumables. Tell us what you need and we'll get you a quote.</p>
+    <button class="btn-sky" onclick="document.getElementById('quoteSection').scrollIntoView({behavior:'smooth'})" data-i18n="supCtaCta">Request a Quote</button>
+  </div>
+
   <!-- REQUEST QUOTE FORM -->
   <div class="quote-section" id="quoteSection">
     <div class="quote-inner">
@@ -663,32 +675,14 @@
       <div class="form-group full"><label><span data-i18n="fIAm">I am a...</span> <span class="req">*</span></label><div class="radio-group"><label class="radio-label"><input type="radio" name="type" value="Employer" onchange="toggleFormSections()"> <span data-i18n="fEmployer">Employer</span></label><label class="radio-label"><input type="radio" name="type" value="Job Seeker" onchange="toggleFormSections()"> <span data-i18n="fSeeker">Job Seeker</span></label><label class="radio-label"><input type="radio" name="type" value="Other" checked onchange="toggleFormSections()"> <span data-i18n="fOther">Other</span></label></div></div>
     </div>
     <div id="employerFields" style="display:none"><div class="form-grid" style="margin-top:1rem">
-      <div class="form-group full"><label><span data-i18n="fPositions">Positions Needed</span> <span class="req">*</span></label><div class="pos-tags">
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Warehouse / Sorting</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Labeling / Packaging</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Forklift</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Drivers / CDL</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Management</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Manufacturing</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">General Labor</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Other</span>
-      </div></div>
+      <div class="form-group full"><label><span data-i18n="fPositions">Positions Needed</span> <span class="req">*</span></label><div class="pos-tags"><span class="pos-tag" onclick="this.classList.toggle('selected')">Warehouse / Sorting</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Labeling / Packaging</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Forklift</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Drivers / CDL</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Management</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Manufacturing</span><span class="pos-tag" onclick="this.classList.toggle('selected')">General Labor</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Other</span></div></div>
       <div class="form-group"><label><span data-i18n="fWorkers">Workers Needed</span> <span class="req">*</span></label><select name="workers"><option value="" data-i18n="select">Select...</option><option>1–5</option><option>5–20</option><option>20–50</option><option>50–100</option><option>100+</option></select></div>
       <div class="form-group"><label><span data-i18n="fLocation">Location</span> <span class="req">*</span></label><input type="text" name="location" placeholder="City, State"></div>
       <div class="form-group"><label data-i18n="fStartDate">Start Date</label><input type="date" name="start_date"></div>
       <div class="form-group full"><label data-i18n="fStaffNeeds">Staffing Details</label><textarea name="comments" data-i18n="fStaffPh" placeholder="Shifts, special requirements, timeline..."></textarea></div>
     </div></div>
     <div id="seekerFields" style="display:none"><div class="form-grid" style="margin-top:1rem">
-      <div class="form-group full"><label data-i18n="fDesiredPos">Desired Position</label><div class="pos-tags">
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Warehouse / Sorting</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Labeling / Packaging</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Forklift Operator</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Driver / CDL</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Management</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Manufacturing</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">General Labor</span>
-        <span class="pos-tag" onclick="this.classList.toggle('selected')">Other</span>
-      </div></div>
+      <div class="form-group full"><label data-i18n="fDesiredPos">Desired Position</label><div class="pos-tags"><span class="pos-tag" onclick="this.classList.toggle('selected')">Warehouse / Sorting</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Labeling / Packaging</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Forklift Operator</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Driver / CDL</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Management</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Manufacturing</span><span class="pos-tag" onclick="this.classList.toggle('selected')">General Labor</span><span class="pos-tag" onclick="this.classList.toggle('selected')">Other</span></div></div>
       <div class="form-group"><label data-i18n="fAvail">Availability</label><select name="workers"><option value="" data-i18n="select">Select...</option><option data-i18n="fImmediate">Immediately</option><option data-i18n="fWeek1">Within 1 week</option><option data-i18n="fWeek2">Within 2 weeks</option><option data-i18n="fMonth1">Within 1 month</option></select></div>
       <div class="form-group"><label data-i18n="fPrefLoc">Preferred Location</label><input type="text" name="location" placeholder="City, State"></div>
       <div class="form-group"><label data-i18n="fPrefShift">Preferred Shift</label><select name="start_date"><option value="" data-i18n="select">Select...</option><option data-i18n="fShift1">1st Shift (Morning)</option><option data-i18n="fShift2">2nd Shift (Afternoon)</option><option data-i18n="fShift3">3rd Shift (Night)</option><option data-i18n="fShiftFlex">Flexible</option></select></div>

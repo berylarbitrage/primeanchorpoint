@@ -42,6 +42,7 @@ db.exec(`
     phone TEXT DEFAULT '',
     company TEXT DEFAULT '',
     type TEXT DEFAULT '',
+    employer_id TEXT DEFAULT '',
     positions TEXT DEFAULT '',
     workers TEXT DEFAULT '',
     location TEXT DEFAULT '',
@@ -197,6 +198,9 @@ db.exec(`
     FOREIGN KEY (employee_id) REFERENCES employees(id)
   );
 `);
+
+// ─── Migrations for existing databases ───
+try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) { /* column already exists */ }
 
 // Migrate admin_users table (add role, display_name, active, created_at columns if missing)
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
@@ -365,12 +369,40 @@ function verifyPin(pin, salt, hash) {
   } catch { return false; }
 }
 
-// ─── Auto-generate employee ID ───
-function nextEmployeeId() {
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'EMP%' ORDER BY id DESC LIMIT 1").get();
-  if (!last) return 'EMP001';
-  const num = parseInt(last.employee_id.replace('EMP', ''), 10) + 1;
-  return 'EMP' + String(num).padStart(3, '0');
+// ─── Auto-generate employee ID: EMEE-CITY-MMDDYY-000001 ───
+function nextEmployeeId(city, hireDate) {
+  const d = hireDate ? new Date(hireDate) : new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const dateStr = mm + dd + yy;
+  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'EMEE-%' ORDER BY id DESC LIMIT 1").get();
+  let num = 1;
+  if (last) {
+    const parts = last.employee_id.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) num = lastNum + 1;
+  }
+  return `EMEE-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+}
+
+// ─── Auto-generate employer ID: EMER-CITY-MMDDYY-000001 ───
+function nextEmployerId(city) {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const dateStr = mm + dd + yy;
+  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
+  const last = db.prepare("SELECT employer_id FROM inquiries WHERE employer_id LIKE 'EMER-%' ORDER BY id DESC LIMIT 1").get();
+  let num = 1;
+  if (last) {
+    const parts = last.employer_id.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) num = lastNum + 1;
+  }
+  return `EMER-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
 }
 
 // ─── Hours calculation (daily OT > 8h) ───
@@ -486,14 +518,20 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
   try {
     const d = req.body;
     if (!d.name) return res.status(400).json({ error: 'Name required' });
-    const stmt = db.prepare(`INSERT INTO inquiries (name, email, phone, company, type, positions, workers, location, start_date, experience, languages, comments, resume_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    let employerId = '';
+    if (d.type === 'Employer') {
+      const city = (d.location || '').split(',')[0].trim();
+      employerId = nextEmployerId(city);
+    }
+    const stmt = db.prepare(`INSERT INTO inquiries (name, email, phone, company, type, employer_id, positions, workers, location, start_date, experience, languages, comments, resume_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const result = stmt.run(
       d.name, d.email || '', d.phone || '', d.company || '', d.type || '',
+      employerId,
       d.positions || '', d.workers || '', d.location || '', d.start_date || '',
       d.experience || '', d.languages || '', d.comments || '',
       req.file ? req.file.filename : ''
     );
-    res.json({ success: true, id: result.lastInsertRowid });
+    res.json({ success: true, id: result.lastInsertRowid, employer_id: employerId || undefined });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -781,10 +819,10 @@ app.get('/api/admin/inquiries/export', (req, res, next) => {
   return requireAdmin(req, res, next);
 }, (req, res) => {
   const rows = db.prepare('SELECT * FROM inquiries ORDER BY created_at DESC').all();
-  const headers = ['Date', 'Name', 'Email', 'Phone', 'Company', 'Type', 'Positions', 'Workers', 'Location', 'Start Date', 'Experience', 'Languages', 'Comments'];
+  const headers = ['Date', 'Employer ID', 'Name', 'Email', 'Phone', 'Company', 'Type', 'Positions', 'Workers', 'Location', 'Start Date', 'Experience', 'Languages', 'Comments'];
   let csv = headers.join(',') + '\n';
   rows.forEach(r => {
-    csv += [r.created_at, r.name, r.email, r.phone, r.company, r.type, r.positions, r.workers, r.location, r.start_date, r.experience, r.languages, r.comments]
+    csv += [r.created_at, r.employer_id, r.name, r.email, r.phone, r.company, r.type, r.positions, r.workers, r.location, r.start_date, r.experience, r.languages, r.comments]
       .map(v => `"${(v || '').replace(/"/g, '""')}"`)
       .join(',') + '\n';
   });
@@ -845,7 +883,7 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.first_name || !d.last_name) return res.status(400).json({ error: '请填写姓名' });
-  const empId = (d.employee_id || '').trim() || nextEmployeeId();
+  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
   if (d.ssn) {
     const digits = d.ssn.replace(/\D/g, '');
