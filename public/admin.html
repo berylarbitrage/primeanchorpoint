@@ -444,10 +444,10 @@ tr:hover td{background:var(--sky-light)}
       <option value="inactive">停职</option>
       <option value="terminated">已离职</option>
     </select>
-    <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部部门</option></select>
+    <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
   <div class="card">
-    <table><thead><tr><th>员工号</th><th>姓名</th><th>职位</th><th>部门</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
+    <table><thead><tr><th>员工号</th><th>姓名</th><th>当前职位</th><th>所属公司</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
     <tbody id="empTable"></tbody></table>
   </div>
 </div>
@@ -848,6 +848,34 @@ tr:hover td{background:var(--sky-light)}
   <div style="display:flex;gap:1rem;margin-top:1.25rem">
     <button class="btn btn-green" id="btnGenDocLink" onclick="generateEmpDocLink()">生成链接</button>
     <button class="btn" onclick="document.getElementById('empDocLinkModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- ════ Assign Job Modal ════ -->
+<div class="modal-bg" id="assignJobModal"><div class="modal" style="max-width:500px">
+  <h2>安排职位</h2>
+  <p id="assignJobEmpName" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
+  <input type="hidden" id="assignJobEmpId">
+
+  <div id="assignJobCurrentSection" style="margin-bottom:1rem">
+    <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">当前职位</label>
+    <div id="assignJobCurrentList" style="margin-top:.3rem;font-size:.88rem;color:var(--gray-600)">—</div>
+  </div>
+
+  <div class="field"><label>选择职位</label>
+    <select id="assignJobSelect" style="width:100%">
+      <option value="">请选择职位...</option>
+    </select>
+  </div>
+
+  <div id="assignJobCompanyInfo" style="display:none;margin-top:-.3rem;margin-bottom:.8rem;font-size:.82rem;color:var(--gray-600)">
+    <span>公司：</span><strong id="assignJobCompanyName"></strong>
+    <span style="margin-left:1rem">地点：</span><strong id="assignJobLocation"></strong>
+  </div>
+
+  <div style="display:flex;gap:1rem;margin-top:1.25rem">
+    <button class="btn btn-green" onclick="confirmAssignJob()">确认分配</button>
+    <button class="btn" onclick="document.getElementById('assignJobModal').classList.remove('show')">取消</button>
   </div>
 </div></div>
 
@@ -2990,31 +3018,38 @@ function updateEmpStats(list) {
 }
 
 function populateDeptFilter(list) {
-  const depts = [...new Set(list.map(e=>e.department).filter(Boolean))].sort();
+  const companies = [...new Set(list.flatMap(e=>(e.current_jobs||[]).map(j=>j.company_name)).filter(Boolean))].sort();
   const sel = document.getElementById('empDeptFilter');
   const cur = sel.value;
-  sel.innerHTML = '<option value="">全部部门</option>' + depts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  sel.innerHTML = '<option value="">全部公司</option>' + companies.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
   sel.value = cur;
 }
 
 function filterEmployees() {
   const kw   = document.getElementById('empSearch').value.toLowerCase();
   const st   = document.getElementById('empStatusFilter').value;
-  const dept = document.getElementById('empDeptFilter').value;
+  const company = document.getElementById('empDeptFilter').value;
   let f = allEmployees;
-  if (kw)   f = f.filter(e=> `${e.first_name} ${e.last_name} ${e.employee_id||''} ${e.position||''} ${e.department||''}`.toLowerCase().includes(kw));
+  if (kw)   f = f.filter(e=> {
+    const jobStr = (e.current_jobs||[]).map(j=>(j.job_title||'')+' '+(j.company_name||'')).join(' ');
+    return `${e.first_name} ${e.last_name} ${e.employee_id||''} ${jobStr}`.toLowerCase().includes(kw);
+  });
   if (st)   f = f.filter(e=> e.status===st);
-  if (dept) f = f.filter(e=> e.department===dept);
+  if (company) f = f.filter(e=> (e.current_jobs||[]).some(j=>j.company_name===company));
   renderEmployees(f);
 }
 
 function renderEmployees(list) {
-  document.getElementById('empTable').innerHTML = list.length ? list.map(e=>`<tr>
+  document.getElementById('empTable').innerHTML = list.length ? list.map(e=>{
+    const jobs = e.current_jobs || [];
+    const jobNames = jobs.map(j=>j.job_title).filter(Boolean);
+    const companyNames = [...new Set(jobs.map(j=>j.company_name).filter(Boolean))];
+    return `<tr>
     <td><strong>${esc(e.employee_id||'')}</strong></td>
     <td style="cursor:pointer" onclick='viewEmployee(${e.id})'><strong>${esc(e.first_name)} ${esc(e.last_name)}</strong>
       <div class="emp-meta">${esc(e.email||'')} ${e.phone?'· '+esc(e.phone):''}</div></td>
-    <td>${esc(e.position||'—')}</td>
-    <td>${esc(e.department||'—')}</td>
+    <td>${jobNames.length ? jobNames.map(n=>'<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:1px 8px;border-radius:10px;font-size:.78rem;margin:1px 2px">'+esc(n)+'</span>').join('') : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td>${companyNames.length ? companyNames.map(c=>'<span style="font-size:.85rem">'+esc(c)+'</span>').join('<br>') : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td><span class="badge badge-${e.pay_type||'hourly'}">${PAY_TYPE_LABEL[e.pay_type]||e.pay_type}</span>
       ${e.pay_rate?'<br><span style="font-size:.75rem">$'+Number(e.pay_rate).toFixed(2)+'/'+((e.pay_type==='hourly')?'hr':'yr')+'</span>':''}</td>
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
@@ -3022,11 +3057,12 @@ function renderEmployees(list) {
     <td>
       <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
       <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
+      <button class="btn btn-sm" style="background:#FFF7ED;color:#9A3412;border:1px solid #FED7AA" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>安排职位</button>
       <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>发送材料链接</button>
       <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
       ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
     </td>
-  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
+  </tr>`}).join('') : '<tr><td colspan="8" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
 }
 
 function openEmpModal(id) {
@@ -3646,6 +3682,64 @@ function copyEmpDocLink() {
 
 function openEmpDocLink() {
   if (_currentDocLinkUrl) window.open(_currentDocLinkUrl, '_blank');
+}
+
+// ─── Assign Job to Employee ───
+let _allJobsCache = null;
+async function openAssignJobModal(empId, empName) {
+  document.getElementById('assignJobEmpId').value = empId;
+  document.getElementById('assignJobEmpName').textContent = empName;
+  // Show current jobs
+  const emp = allEmployees.find(e => e.id === empId);
+  const currentJobs = (emp && emp.current_jobs) || [];
+  if (currentJobs.length) {
+    document.getElementById('assignJobCurrentList').innerHTML = currentJobs.map(j =>
+      '<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:2px 10px;border-radius:10px;font-size:.82rem;margin:2px">' +
+      esc(j.job_title || '未知职位') + (j.company_name ? ' <span style="color:var(--gray-400)">(' + esc(j.company_name) + ')</span>' : '') + '</span>'
+    ).join('');
+  } else {
+    document.getElementById('assignJobCurrentList').innerHTML = '<span style="color:var(--gray-300)">暂无职位</span>';
+  }
+  // Load available jobs
+  if (!_allJobsCache) {
+    _allJobsCache = await api('/admin/jobs');
+  }
+  const activeJobs = (_allJobsCache || []).filter(j => j.active);
+  const sel = document.getElementById('assignJobSelect');
+  sel.innerHTML = '<option value="">请选择职位...</option>' + activeJobs.map(j =>
+    `<option value="${j.id}" data-company="${esc(j.company_name||'')}" data-location="${esc(j.location||'')}">${esc(j.title)} — ${esc(j.company_name||'未知公司')}</option>`
+  ).join('');
+  sel.onchange = function() {
+    const opt = sel.selectedOptions[0];
+    if (opt && opt.value) {
+      document.getElementById('assignJobCompanyName').textContent = opt.dataset.company || '—';
+      document.getElementById('assignJobLocation').textContent = opt.dataset.location || '—';
+      document.getElementById('assignJobCompanyInfo').style.display = '';
+    } else {
+      document.getElementById('assignJobCompanyInfo').style.display = 'none';
+    }
+  };
+  document.getElementById('assignJobCompanyInfo').style.display = 'none';
+  document.getElementById('assignJobModal').classList.add('show');
+}
+
+async function confirmAssignJob() {
+  const empId = document.getElementById('assignJobEmpId').value;
+  const jobId = document.getElementById('assignJobSelect').value;
+  if (!jobId) return alert('请选择一个职位');
+  try {
+    const r = await api(`/admin/employees/${empId}/assign-job`, {
+      method: 'POST',
+      body: JSON.stringify({ job_id: parseInt(jobId) })
+    });
+    if (r.error) return alert('分配失败：' + r.error);
+    alert('职位分配成功');
+    document.getElementById('assignJobModal').classList.remove('show');
+    _allJobsCache = null;
+    loadEmployees();
+  } catch(e) {
+    alert('请求失败：' + (e.message || '网络错误'));
+  }
 }
 
 async function deleteDocRequest(reqId, empId) {
