@@ -337,6 +337,17 @@ try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid_at TEXT DEFAUL
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'`); } catch(e) {}
 
+db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sheet_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  vote_type TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (sheet_id) REFERENCES timesheet_sheets(id),
+  FOREIGN KEY (user_id) REFERENCES admin_users(id),
+  UNIQUE(sheet_id, user_id, vote_type)
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   inquiry_id INTEGER NOT NULL,
@@ -727,7 +738,7 @@ app.post('/api/admin/login', (req, res) => {
   if (!user || !user.active) return res.status(401).json({ error: 'Invalid username or password' });
   if (user && verifyPassword(password, user.salt, user.password_hash)) {
     const token = createSession(user);
-    res.json({ success: true, token, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
+    res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
   } else {
     res.status(401).json({ error: 'Invalid username or password' });
   }
@@ -1643,9 +1654,10 @@ app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard
 app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
   const { stage } = req.query; // 'verify' | 'payment' | 'history'
   let where = '';
-  if (stage === 'verify')  where = `WHERE ts.status IN ('pending','confirmed','disputed')`;
-  if (stage === 'payment') where = `WHERE ts.status = 'verified'`;
-  if (stage === 'history') where = `WHERE ts.status = 'completed'`;
+  if (stage === 'verify')   where = `WHERE ts.status IN ('pending','confirmed','disputed')`;
+  if (stage === 'payment')  where = `WHERE ts.status = 'verified'`;
+  if (stage === 'dividend') where = `WHERE ts.status = 'dividend_pending'`;
+  if (stage === 'history')  where = `WHERE ts.status = 'completed'`;
   const rows = db.prepare(`
     SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
     FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
@@ -1667,20 +1679,73 @@ app.put('/api/admin/timesheet-sheets/:id/verify', requireAdmin, (req, res) => {
 app.put('/api/admin/timesheet-sheets/:id/client-paid', requireAdmin, (req, res) => {
   const sheet = db.prepare('SELECT id, labor_paid FROM timesheet_sheets WHERE id=?').get(req.params.id);
   if (!sheet) return res.status(404).json({ error: 'Not found' });
-  const complete = sheet.labor_paid === 1;
-  db.prepare(`UPDATE timesheet_sheets SET client_paid=1, client_paid_at=CURRENT_TIMESTAMP${complete ? ", status='completed'" : ''} WHERE id=?`)
+  const bothPaid = sheet.labor_paid === 1;
+  db.prepare(`UPDATE timesheet_sheets SET client_paid=1, client_paid_at=CURRENT_TIMESTAMP${bothPaid ? ", status='dividend_pending'" : ''} WHERE id=?`)
     .run(req.params.id);
-  res.json({ success: true, completed: complete });
+  res.json({ success: true, completed: bothPaid });
 });
 
 // Mark we have paid labor
 app.put('/api/admin/timesheet-sheets/:id/labor-paid', requireAdmin, (req, res) => {
   const sheet = db.prepare('SELECT id, client_paid FROM timesheet_sheets WHERE id=?').get(req.params.id);
   if (!sheet) return res.status(404).json({ error: 'Not found' });
-  const complete = sheet.client_paid === 1;
-  db.prepare(`UPDATE timesheet_sheets SET labor_paid=1, labor_paid_at=CURRENT_TIMESTAMP${complete ? ", status='completed'" : ''} WHERE id=?`)
+  const bothPaid = sheet.client_paid === 1;
+  db.prepare(`UPDATE timesheet_sheets SET labor_paid=1, labor_paid_at=CURRENT_TIMESTAMP${bothPaid ? ", status='dividend_pending'" : ''} WHERE id=?`)
     .run(req.params.id);
-  res.json({ success: true, completed: complete });
+  res.json({ success: true, completed: bothPaid });
+});
+
+// ─── DIVIDEND VOTING (待分红投票) ───
+
+// Get dividend stage sheets
+// stage query already handles 'dividend' in the main endpoint above
+// We just need vote info
+
+// Get votes for a sheet
+app.get('/api/admin/timesheet-sheets/:id/votes', requireAdmin, (req, res) => {
+  const votes = db.prepare(`
+    SELECT dv.*, au.username, au.display_name
+    FROM dividend_votes dv JOIN admin_users au ON dv.user_id = au.id
+    WHERE dv.sheet_id = ? ORDER BY dv.created_at
+  `).all(req.params.id);
+  const staffCount = db.prepare("SELECT COUNT(*) as n FROM admin_users WHERE role='staff' AND active=1").get().n;
+  res.json({ votes, staff_count: staffCount });
+});
+
+// Staff votes "无异议" (approve) on a sheet
+app.post('/api/admin/timesheet-sheets/:id/vote-approve', requireAdmin, (req, res) => {
+  const sheet = db.prepare('SELECT id, status FROM timesheet_sheets WHERE id=?').get(req.params.id);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  if (sheet.status !== 'dividend_pending') return res.status(400).json({ error: '当前状态不允许投票' });
+  try {
+    db.prepare('INSERT OR REPLACE INTO dividend_votes (sheet_id, user_id, vote_type) VALUES (?,?,?)').run(req.params.id, req.userId, 'approve');
+  } catch(e) { /* already voted */ }
+  // Check if all staff approved
+  const staffCount = db.prepare("SELECT COUNT(*) as n FROM admin_users WHERE role='staff' AND active=1").get().n;
+  const approveCount = db.prepare("SELECT COUNT(*) as n FROM dividend_votes WHERE sheet_id=? AND vote_type='approve'").get(req.params.id).n;
+  const allApproved = approveCount >= staffCount && staffCount > 0;
+  res.json({ success: true, all_approved: allApproved, approve_count: approveCount, staff_count: staffCount });
+});
+
+// Staff confirms "已分红" (dividend distributed)
+app.post('/api/admin/timesheet-sheets/:id/vote-distributed', requireAdmin, (req, res) => {
+  const sheet = db.prepare('SELECT id, status FROM timesheet_sheets WHERE id=?').get(req.params.id);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  if (sheet.status !== 'dividend_pending') return res.status(400).json({ error: '当前状态不允许操作' });
+  // Check all staff approved first
+  const staffCount = db.prepare("SELECT COUNT(*) as n FROM admin_users WHERE role='staff' AND active=1").get().n;
+  const approveCount = db.prepare("SELECT COUNT(*) as n FROM dividend_votes WHERE sheet_id=? AND vote_type='approve'").get(req.params.id).n;
+  if (approveCount < staffCount) return res.status(400).json({ error: '尚未全部通过无异议投票' });
+  try {
+    db.prepare('INSERT OR REPLACE INTO dividend_votes (sheet_id, user_id, vote_type) VALUES (?,?,?)').run(req.params.id, req.userId, 'distributed');
+  } catch(e) { /* already voted */ }
+  // Check if all staff confirmed distributed
+  const distCount = db.prepare("SELECT COUNT(*) as n FROM dividend_votes WHERE sheet_id=? AND vote_type='distributed'").get(req.params.id).n;
+  const allDistributed = distCount >= staffCount && staffCount > 0;
+  if (allDistributed) {
+    db.prepare(`UPDATE timesheet_sheets SET status='completed' WHERE id=?`).run(req.params.id);
+  }
+  res.json({ success: true, all_distributed: allDistributed, dist_count: distCount, staff_count: staffCount });
 });
 
 // ─── PUBLIC TIMESHEET CONFIRMATION ───
