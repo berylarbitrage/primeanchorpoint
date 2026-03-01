@@ -2920,7 +2920,7 @@ function closeAssignDropdowns() {
 // Close dropdowns when clicking outside
 document.addEventListener('click', e => {
   if (!e.target.closest('#assignModal')) closeAssignDropdowns();
-  if (!e.target.closest('#jobModal')) document.getElementById('jPartnerDrop').classList.remove('open');
+  if (!e.target.closest('#jPartnerDrop') && !e.target.closest('#jPartnerSearch')) document.getElementById('jPartnerDrop').classList.remove('open');
 });
 
 function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
