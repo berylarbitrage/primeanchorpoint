@@ -72,6 +72,7 @@ tr:hover td{background:var(--sky-light)}
 .badge-ordered{background:#E8F0FE;color:var(--sky)}.badge-in_progress{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-failed{background:#FFEAEA;color:var(--red)}
 .badge-clear{background:#E8F5E9;color:var(--green)}.badge-flagged{background:#FFEAEA;color:var(--red)}
 .badge-ssn{background:#FFEAEA;color:var(--red)}.badge-passport{background:#E8F0FE;color:var(--blue)}.badge-i9{background:#E8F5E9;color:var(--green)}.badge-doc{background:var(--gray-200);color:var(--gray-600)}
+.badge-blue{background:#E8F0FE;color:var(--blue)}.badge-yellow{background:#FFF3E0;color:var(--accent)}.badge-red{background:#FFEAEA;color:var(--red)}
 .ot-text{color:var(--accent);font-weight:700}
 .form-section{margin-bottom:1.5rem}.form-section h4{font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)}
 .modal-lg{max-width:700px}
@@ -96,6 +97,26 @@ tr:hover td{background:var(--sky-light)}
 /* PDF link modal */
 .ts-link-box{background:var(--sky-light);border:1px solid var(--sky);border-radius:var(--radius);padding:1rem;margin:1rem 0;word-break:break-all;font-size:.82rem;font-family:monospace;color:var(--blue)}
 .ts-send-btns{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
+/* Partner Modal Enhanced */
+.dyn-list{margin-bottom:.5rem}
+.dyn-item{display:flex;gap:.5rem;align-items:flex-start;margin-bottom:.5rem;padding:.6rem;background:var(--off-white);border-radius:6px;border:1px solid var(--gray-200)}
+.dyn-item .field{margin:0;flex:1}.dyn-item input{padding:6px 8px;font-size:.82rem}
+.dyn-item .btn-rm{background:none;border:none;color:var(--red);cursor:pointer;font-size:1.1rem;padding:4px;align-self:center;flex-shrink:0}
+.btn-add-sm{background:none;border:1px dashed var(--sky);color:var(--sky);border-radius:6px;padding:6px 14px;font-size:.78rem;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-add-sm:hover{background:var(--sky-light)}
+.svc-tags{display:flex;flex-wrap:wrap;gap:.4rem}
+.svc-tag{padding:5px 12px;background:var(--off-white);color:var(--gray-600);border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;font-weight:600;cursor:pointer;transition:all .2s;user-select:none}
+.svc-tag:hover{border-color:var(--sky);color:var(--sky)}.svc-tag.active{background:var(--sky);color:#fff;border-color:var(--sky)}
+.social-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.social-grid .field label{font-size:.72rem}
+.social-grid .field input{padding:6px 8px;font-size:.82rem}
+.pf-list{margin-top:.5rem}.pf-item{display:flex;align-items:center;gap:.5rem;padding:.4rem .5rem;background:var(--off-white);border-radius:6px;margin-bottom:.4rem;font-size:.82rem}
+.pf-item a{color:var(--sky);font-weight:600}.pf-item .badge{margin-left:auto}
+.detail-section{margin-bottom:1rem}.detail-section h4{font-size:.8rem;font-weight:700;color:var(--sky);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem;border-bottom:1px solid var(--gray-200);padding-bottom:.3rem}
+.detail-tags{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem}
+.detail-tags span{padding:3px 10px;background:var(--sky-light);color:var(--sky);font-size:.72rem;font-weight:600;border-radius:12px}
+.detail-social{display:grid;grid-template-columns:1fr 1fr;gap:.3rem .8rem;font-size:.82rem}
+.detail-social span{color:var(--gray-400)}.detail-social strong{color:var(--gray-800)}
 /* Timesheet Modal */
 .modal-xl{max-width:900px}
 .ts-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem}
@@ -146,19 +167,22 @@ tr:hover td{background:var(--sky-light)}
 
 <!-- APP -->
 <div class="app" id="app">
-<div class="sidebar">
+<div class="sidebar" id="sidebar">
   <h2>⚓ 管理后台</h2>
   <a class="active" onclick="showTab('dashboard')">仪表盘</a>
-  <a onclick="showTab('inquiries')">问卷管理</a>
-  <a onclick="showTab('assignments')">派工管理</a>
-  <a onclick="showTab('jobs')">职位管理</a>
-  <a onclick="showTab('partners')">合作公司</a>
-  <a onclick="showTab('backups')">备份管理</a>
+  <a onclick="showTab('inquiries')" data-role="admin,staff">问卷管理</a>
+  <a onclick="showTab('assignments')" data-role="admin,staff">派工管理</a>
+  <a onclick="showTab('jobs')" data-role="admin,staff">职位管理</a>
+  <a onclick="showTab('partners')" data-role="admin,staff">合作公司</a>
+  <a onclick="showTab('backups')" data-role="admin">备份管理</a>
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem"></div>
-  <a onclick="showTab('employees')">👥 员工管理</a>
+  <a onclick="showTab('employees')" data-role="admin,staff">👥 员工管理</a>
   <a onclick="showTab('time')">⏱ 工时打卡</a>
-  <a onclick="showTab('documents')">📄 HR 文件</a>
-  <a onclick="showTab('bgchecks')">🔍 背景调查</a>
+  <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
+  <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
+  <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
+  <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
+  <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -193,7 +217,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="Other">其他</option>
     </select>
   </div>
-  <div class="card"><table><thead><tr><th>日期</th><th>姓名</th><th>类型</th><th>邮箱</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>邮箱</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
 </div>
 
 <!-- Assignments -->
@@ -395,6 +419,62 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Approvals Tab -->
+<div id="tab-approvals" style="display:none">
+  <div class="top"><h1>待审批操作</h1></div>
+  <div class="card">
+    <div id="noApprovals" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无待审批操作</div>
+    <table id="approvalsTableEl" style="display:none"><thead><tr><th>操作</th><th>目标</th><th>ID</th><th>申请人</th><th>时间</th><th>审批</th></tr></thead>
+    <tbody id="approvalsBody"></tbody></table>
+  </div>
+</div>
+
+<!-- Accounts Tab -->
+<div id="tab-accounts" style="display:none">
+  <div class="top">
+    <h1>账户管理</h1>
+    <div class="top-actions"><button class="btn btn-green" onclick="openAccountModal()">+ 新建账户</button></div>
+  </div>
+  <div class="card">
+    <table><thead><tr><th>用户名</th><th>显示名称</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+    <tbody id="accountsTable"></tbody></table>
+  </div>
+</div>
+
+</div></div>
+
+<!-- Account Modal -->
+<div class="modal-bg" id="accountModal"><div class="modal">
+  <h2 id="accountModalTitle">新建账户</h2>
+  <input type="hidden" id="accId">
+  <div class="field"><label>用户名 *</label><input id="accUsername" placeholder="登录用户名"></div>
+  <div class="field"><label>密码 <span id="accPassHint" style="font-size:.8rem;color:var(--gray-400)"></span></label><input type="password" id="accPassword" placeholder="登录密码"></div>
+  <div class="field"><label>显示名称</label><input id="accDisplayName" placeholder="可选"></div>
+  <div class="field"><label>角色 *</label>
+    <select id="accRole">
+      <option value="admin">Admin (管理员 - 完全权限)</option>
+      <option value="staff" selected>Staff (员工 - 不可删除/修改需审批)</option>
+      <option value="manager">Manager (经理 - 仅查看工时)</option>
+    </select>
+  </div>
+  <div class="field"><label>状态</label>
+    <select id="accActive"><option value="1">启用</option><option value="0">禁用</option></select>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('accountModal')">取消</button>
+    <button class="btn btn-blue" onclick="saveAccount()">保存</button>
+  </div>
+</div></div>
+
+<!-- Approval Detail Modal -->
+<div class="modal-bg" id="approvalDetailModal"><div class="modal">
+  <h2>操作详情</h2>
+  <div id="approvalDetailContent" style="max-height:400px;overflow:auto"></div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('approvalDetailModal')">关闭</button>
+    <button class="btn btn-red" id="btnRejectAction" onclick="rejectAction()">拒绝</button>
+    <button class="btn btn-green" id="btnApproveAction" onclick="approveAction()">批准</button>
+  </div>
 </div></div>
 
 <!-- Job Modal -->
@@ -460,37 +540,89 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
-<!-- Partner Modal -->
-<div class="modal-bg" id="partnerModal"><div class="modal">
+<!-- Partner Modal (enhanced) -->
+<div class="modal-bg" id="partnerModal"><div class="modal modal-xl">
   <h2 id="partnerModalTitle">新增合作公司</h2>
   <input type="hidden" id="partnerId">
-  <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
-  <div class="field-row">
-    <div class="field"><label>联系人</label><input id="pContact" placeholder="例：张三"></div>
-    <div class="field"><label>电话</label><input id="pPhone" placeholder="例：(312) 555-1234"></div>
+
+  <div class="form-section"><h4>基本信息</h4>
+    <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
+    <div class="field-row">
+      <div class="field"><label>行业</label><input id="pIndustry" placeholder="例：物流、制造业、食品加工"></div>
+      <div class="field"><label>合作状态</label><label style="display:flex;align-items:center;gap:.5rem;margin-top:.4rem;cursor:pointer;font-weight:600"><input type="checkbox" id="pActive" checked style="width:16px;height:16px;cursor:pointer"> 合作中</label></div>
+    </div>
   </div>
-  <div class="field-row">
-    <div class="field"><label>邮箱</label><input id="pEmail" placeholder="例：contact@abc.com"></div>
-    <div class="field"><label>行业</label><input id="pIndustry" placeholder="例：物流、制造业、食品加工"></div>
+
+  <div class="form-section"><h4>联系人 (可多个)</h4>
+    <div class="dyn-list" id="pContactsList"></div>
+    <button class="btn-add-sm" onclick="addPartnerContact()">+ 添加联系人</button>
   </div>
-  <div class="field"><label>地址</label><input id="pAddress" placeholder="例：123 Main St, Chicago, IL 60601"></div>
-  <div class="field"><label>合作服务</label><input id="pServices" placeholder="例：临时工派遣、仓库包装、分拣"></div>
-  <div class="field"><label>备注</label><textarea id="pNotes" placeholder="合作细节、合同信息等..."></textarea></div>
-  <div class="field"><label><input type="checkbox" id="pActive" checked> 合作中</label></div>
+
+  <div class="form-section"><h4>地址 (可多个)</h4>
+    <div class="dyn-list" id="pAddrList"></div>
+    <button class="btn-add-sm" onclick="addPartnerAddr()">+ 添加地址</button>
+  </div>
+
+  <div class="form-section"><h4>公司链接</h4>
+    <div class="social-grid">
+      <div class="field"><label>网站 Website</label><input id="pWebsite" placeholder="https://www.example.com"></div>
+      <div class="field"><label>Facebook 主页</label><input id="pFbPage" placeholder="https://facebook.com/..."></div>
+      <div class="field"><label>Instagram 主页</label><input id="pIgPage" placeholder="https://instagram.com/..."></div>
+      <div class="field"><label>LinkedIn</label><input id="pLinkedin" placeholder="https://linkedin.com/company/..."></div>
+    </div>
+  </div>
+
+  <div class="form-section"><h4>合作服务 (多选)</h4>
+    <div class="svc-tags" id="pSvcTags">
+      <span class="svc-tag" data-v="临时工派遣" onclick="this.classList.toggle('active')">临时工派遣</span>
+      <span class="svc-tag" data-v="仓库包装" onclick="this.classList.toggle('active')">仓库包装</span>
+      <span class="svc-tag" data-v="分拣" onclick="this.classList.toggle('active')">分拣</span>
+      <span class="svc-tag" data-v="装卸" onclick="this.classList.toggle('active')">装卸</span>
+      <span class="svc-tag" data-v="质检" onclick="this.classList.toggle('active')">质检</span>
+      <span class="svc-tag" data-v="叉车" onclick="this.classList.toggle('active')">叉车</span>
+      <span class="svc-tag" data-v="清洁" onclick="this.classList.toggle('active')">清洁</span>
+      <span class="svc-tag" data-v="食品加工" onclick="this.classList.toggle('active')">食品加工</span>
+      <span class="svc-tag" data-v="机器操作" onclick="this.classList.toggle('active')">机器操作</span>
+      <span class="svc-tag" data-v="组装" onclick="this.classList.toggle('active')">组装</span>
+      <span class="svc-tag" data-v="耗材供应" onclick="this.classList.toggle('active')">耗材供应</span>
+      <span class="svc-tag" data-v="物流配送" onclick="this.classList.toggle('active')">物流配送</span>
+    </div>
+    <div class="field" style="margin-top:.5rem"><input id="pSvcOther" placeholder="其他服务（手动输入，逗号分隔）"></div>
+  </div>
+
+  <div class="form-section"><h4>上传文件 (合同/图片/文档)</h4>
+    <div id="pFilesList" class="pf-list"></div>
+    <div class="field-row" style="margin-top:.5rem">
+      <div class="field"><label>文件类型</label><select id="pFileType">
+        <option value="contract">合同</option><option value="agreement">协议</option><option value="license">营业执照</option>
+        <option value="photo">照片</option><option value="invoice">发票</option><option value="other">其他</option>
+      </select></div>
+      <div class="field"><label>文件标签</label><input id="pFileLabel" placeholder="例：2026年合同"></div>
+    </div>
+    <div class="field"><input type="file" id="pFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%"></div>
+    <button class="btn-add-sm" style="margin-top:.5rem" onclick="uploadPartnerFile()">上传文件</button>
+  </div>
+
+  <div class="form-section"><h4>备注</h4>
+    <div class="field"><textarea id="pNotes" placeholder="合作细节、合同信息等..."></textarea></div>
+  </div>
+
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
-    <button class="btn" onclick="savePartner()">保存</button>
-    <button class="btn btn-red" onclick="closePartnerModal()">取消</button>
+    <button class="btn btn-green" onclick="savePartner()">保存</button>
+    <button class="btn btn-outline" onclick="closePartnerModal()">取消</button>
   </div>
 </div></div>
 
 <!-- Partner Detail Modal -->
-<div class="modal-bg" id="partnerDetailModal"><div class="modal">
-  <h2>公司详情</h2>
-  <div id="partnerDetail"></div>
-  <div style="display:flex;gap:1rem;margin-top:1.5rem">
-    <button class="btn" onclick="editPartnerFromDetail()">编辑</button>
-    <button class="btn btn-red" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
+<div class="modal-bg" id="partnerDetailModal"><div class="modal modal-xl">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <h2 id="partnerDetailTitle">公司详情</h2>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn btn-sm" onclick="editPartnerFromDetail()">编辑</button>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
+    </div>
   </div>
+  <div id="partnerDetail"></div>
 </div></div>
 
 <!-- ════ Employee Add/Edit Modal ════ -->
@@ -760,6 +892,8 @@ tr:hover td{background:var(--sky-light)}
 
 <script>
 let TOKEN = '';
+let USER_ROLE = '';
+let USER_NAME = '';
 const API = '/api';
 
 function togglePass() {
@@ -777,10 +911,30 @@ async function api(path, opts = {}) {
     ...opts,
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}`, ...(opts.headers || {}) }
   });
-  return res.json();
+  const data = await res.json();
+  if (data.pending) { alert(data.message || '操作已提交审批'); return data; }
+  if (res.status === 403) { alert('权限不足 / Permission denied'); return data; }
+  return data;
 }
 
 // ─── Login ───
+function applyRoleUI() {
+  // Show/hide sidebar items based on role
+  document.querySelectorAll('#sidebar a[data-role]').forEach(a => {
+    const roles = a.getAttribute('data-role').split(',');
+    a.style.display = roles.includes(USER_ROLE) ? '' : 'none';
+  });
+  document.querySelectorAll('#sidebar div[data-role]').forEach(d => {
+    const roles = d.getAttribute('data-role').split(',');
+    d.style.display = roles.includes(USER_ROLE) ? '' : 'none';
+  });
+  // Show/hide action buttons based on role
+  document.querySelectorAll('[data-perm]').forEach(el => {
+    const roles = el.getAttribute('data-perm').split(',');
+    el.style.display = roles.includes(USER_ROLE) ? '' : 'none';
+  });
+}
+
 async function doLogin() {
   const username = document.getElementById('userInput').value;
   const password = document.getElementById('passInput').value;
@@ -788,10 +942,14 @@ async function doLogin() {
   const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
   if (r.success) {
     TOKEN = r.token;
+    USER_ROLE = r.role || 'staff';
+    USER_NAME = r.username || '';
     document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
     document.getElementById('loginWrap').style.display = 'none';
     document.getElementById('app').classList.add('show');
-    loadDashboard();
+    applyRoleUI();
+    if (USER_ROLE === 'manager') { showTab('time'); }
+    else { loadDashboard(); }
   } else {
     document.getElementById('loginErr').textContent = '用户名或密码错误';
   }
@@ -799,6 +957,8 @@ async function doLogin() {
 
 function logout() {
   TOKEN = '';
+  USER_ROLE = '';
+  USER_NAME = '';
   document.cookie = 'pa_token=;path=/;max-age=0';
   document.getElementById('app').classList.remove('show');
   document.getElementById('loginWrap').style.display = 'flex';
@@ -812,8 +972,18 @@ function logout() {
   const m = document.cookie.match(/pa_token=([^;]+)/);
   if (m) {
     TOKEN = m[1];
-    fetch(API + '/admin/jobs', { headers: { 'Authorization': `Bearer ${TOKEN}` } })
-      .then(r => { if (r.ok) { document.getElementById('loginWrap').style.display = 'none'; document.getElementById('app').classList.add('show'); loadDashboard(); } else { TOKEN = ''; document.cookie = 'pa_token=;path=/;max-age=0'; } });
+    fetch(API + '/admin/me', { headers: { 'Authorization': `Bearer ${TOKEN}` } })
+      .then(r => { if (r.ok) return r.json(); throw 0; })
+      .then(u => {
+        USER_ROLE = u.role || 'staff';
+        USER_NAME = u.username || '';
+        document.getElementById('loginWrap').style.display = 'none';
+        document.getElementById('app').classList.add('show');
+        applyRoleUI();
+        if (USER_ROLE === 'manager') { showTab('time'); }
+        else { loadDashboard(); }
+      })
+      .catch(() => { TOKEN = ''; document.cookie = 'pa_token=;path=/;max-age=0'; });
   }
 })();
 
@@ -833,10 +1003,13 @@ function showTab(t) {
   if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
+  if (t === 'accounts')   loadAccounts();
+  if (t === 'approvals')  loadApprovals();
 }
 
 // ─── Dashboard ───
 async function loadDashboard() {
+  if (USER_ROLE === 'manager') return;
   const [jobs, inqs, assigns, partners, emps] = await Promise.all([
     api('/admin/jobs'), api('/admin/inquiries'), api('/admin/assignments'),
     api('/admin/partners').catch(() => []),
@@ -848,6 +1021,15 @@ async function loadDashboard() {
   document.getElementById('statPartners').textContent = partners.filter(p => p.active).length;
   const weekAgo = new Date(Date.now() - 7 * 86400000);
   document.getElementById('statNew').textContent = inqs.filter(i => new Date(i.created_at) > weekAgo).length;
+  // Show pending approvals count for admin
+  if (USER_ROLE === 'admin') {
+    try {
+      const pending = await api('/admin/pending-actions');
+      const pendingCount = Array.isArray(pending) ? pending.filter(p => p.status === 'pending').length : 0;
+      const approvalLink = document.querySelector('#sidebar a[onclick*="approvals"]');
+      if (approvalLink) approvalLink.innerHTML = `📋 待审批${pendingCount > 0 ? ` <span style="background:var(--red);color:#fff;border-radius:10px;padding:1px 7px;font-size:.72rem;margin-left:4px">${pendingCount}</span>` : ''}`;
+    } catch {}
+  }
   const recent = inqs.slice(0, 5);
   document.getElementById('recentInq').innerHTML = recent.length ? '<table><thead><tr><th>姓名</th><th>类型</th><th>日期</th></tr></thead><tbody>' +
     recent.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
@@ -1004,11 +1186,12 @@ function filterInquiries() {
 function renderInquiries(inqs) {
   document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
     <td>${new Date(i.created_at).toLocaleDateString()}</td>
+    <td><span style="font-family:monospace;font-size:.75rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
     <td><strong>${esc(i.name)}</strong></td>
     <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span></td>
     <td>${esc(i.email)}</td><td>${esc(i.phone)}</td>
     <td><button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button> <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无问卷提交</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无问卷提交</td></tr>';
 }
 
 function showInquiry(i) {
@@ -1020,7 +1203,7 @@ function showInquiry(i) {
     languages: '语言能力', comments: '备注'
   };
   const fields = [
-    ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
+    ['公司编号', i.employer_id], ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
     ['类型', typeLabel(i.type)], ['职位需求', i.positions], ['人数', i.workers],
     ['地点', i.location], ['开始日期', i.start_date], ['工作经验', i.experience],
     ['语言能力', i.languages], ['备注', i.comments],
@@ -1155,91 +1338,259 @@ function filterPartners() {
   const statusFilter = document.getElementById('partnerStatusFilter').value;
   let filtered = allPartners;
   if (keyword) {
-    filtered = filtered.filter(p =>
-      (p.name || '').toLowerCase().includes(keyword) ||
-      (p.contact_person || '').toLowerCase().includes(keyword) ||
-      (p.industry || '').toLowerCase().includes(keyword) ||
-      (p.services || '').toLowerCase().includes(keyword)
-    );
+    filtered = filtered.filter(p => {
+      const contacts = safeJSON(p.contacts,[]);
+      const contactStr = contacts.map(c=>`${c.name} ${c.phone} ${c.email}`).join(' ').toLowerCase();
+      return (p.name||'').toLowerCase().includes(keyword) || contactStr.includes(keyword) ||
+        (p.industry||'').toLowerCase().includes(keyword) || (p.services||'').toLowerCase().includes(keyword);
+    });
   }
-  if (statusFilter !== '') {
-    filtered = filtered.filter(p => p.active === parseInt(statusFilter));
-  }
+  if (statusFilter !== '') filtered = filtered.filter(p => p.active === parseInt(statusFilter));
   renderPartners(filtered);
 }
 
+function safeJSON(str, fallback) { try { return JSON.parse(str||''); } catch { return fallback; } }
+
 function renderPartners(partners) {
-  document.getElementById('partnersTable').innerHTML = partners.length ? partners.map(p => `<tr style="cursor:pointer" onclick='showPartner(${JSON.stringify(p).replace(/'/g,"&#39;")})'>
-    <td><strong>${esc(p.name)}</strong></td>
-    <td>${esc(p.contact_person)}</td>
-    <td>${esc(p.phone)}</td>
-    <td>${esc(p.industry)}</td>
-    <td>${p.active ? '<span class="badge badge-completed">合作中</span>' : '<span class="badge badge-cancelled">已停止</span>'}</td>
-    <td>
-      <button class="btn btn-sm" onclick="event.stopPropagation();editPartner(${JSON.stringify(p).replace(/'/g,'&#39;')})">编辑</button>
-      <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>
-    </td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
+  document.getElementById('partnersTable').innerHTML = partners.length ? partners.map(p => {
+    const contacts = safeJSON(p.contacts,[]);
+    const mainContact = contacts.length ? contacts[0].name : (p.contact_person||'');
+    const mainPhone = contacts.length ? contacts[0].phone : (p.phone||'');
+    return `<tr style="cursor:pointer" onclick="showPartnerById(${p.id})">
+      <td><strong>${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}</td>
+      <td>${esc(mainContact)}${contacts.length>1?` <span style="color:var(--gray-400)">(+${contacts.length-1})</span>`:''}</td>
+      <td>${esc(mainPhone)}</td>
+      <td>${esc(p.industry)}</td>
+      <td>${p.active?'<span class="badge badge-completed">合作中</span>':'<span class="badge badge-cancelled">已停止</span>'}</td>
+      <td>
+        <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
+        <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
 }
 
-function showPartner(p) {
+function editPartnerById(id) { const p=allPartners.find(x=>x.id===id); if(p) openPartnerModal(p); }
+
+async function showPartnerById(id) {
+  const p = allPartners.find(x=>x.id===id);
+  if (!p) return;
   currentPartner = p;
-  const fields = [
-    ['公司名称', p.name], ['联系人', p.contact_person], ['电话', p.phone],
-    ['邮箱', p.email], ['地址', p.address], ['行业', p.industry],
-    ['合作服务', p.services], ['备注', p.notes],
-    ['状态', p.active ? '合作中' : '已停止'],
-    ['添加时间', new Date(p.created_at).toLocaleString()]
-  ].filter(([k, v]) => v);
-  document.getElementById('partnerDetail').innerHTML = '<table>' + fields.map(([k, v]) => `<tr><td style="font-weight:700;width:100px;padding:6px 0">${k}</td><td>${esc(String(v))}</td></tr>`).join('') + '</table>';
+  const contacts = safeJSON(p.contacts,[]);
+  const addresses = safeJSON(p.addresses,[]);
+  const links = safeJSON(p.links,{});
+  const svcs = safeJSON(p.services,'');
+  const svcList = typeof svcs==='string'? svcs.split(',').map(s=>s.trim()).filter(Boolean) : (Array.isArray(svcs)?svcs:[]);
+  // load files
+  const files = await api(`/admin/partners/${id}/files`);
+  let html = `<div class="detail-section"><h4>基本信息</h4><div class="detail-grid">
+    <div class="detail-row"><span>公司名称</span><span>${esc(p.name)}</span></div>
+    <div class="detail-row"><span>行业</span><span>${esc(p.industry)}</span></div>
+    <div class="detail-row"><span>状态</span><span>${p.active?'合作中':'已停止'}</span></div>
+    <div class="detail-row"><span>添加时间</span><span>${new Date(p.created_at).toLocaleString()}</span></div>
+  </div></div>`;
+  if (contacts.length) {
+    html += `<div class="detail-section"><h4>联系人 (${contacts.length})</h4>` +
+      contacts.map(c=>{
+        const socials = [
+          c.whatsapp ? `WhatsApp: ${esc(c.whatsapp)}` : '',
+          c.wechat   ? `微信: ${esc(c.wechat)}` : '',
+          c.telegram ? `Telegram: ${esc(c.telegram)}` : '',
+          c.other_comm ? `其他: ${esc(c.other_comm)}` : ''
+        ].filter(Boolean);
+        return `<div style="padding:.4rem 0;border-bottom:1px solid var(--gray-200);font-size:.85rem">
+          <strong>${esc(c.name)}</strong>${c.role?' <span style="color:var(--gray-400)">('+esc(c.role)+')</span>':''}
+          <br>${c.phone?'📞 '+esc(c.phone)+' ':''}${c.email?'✉ '+esc(c.email):''}
+          ${socials.length?`<br><span style="color:var(--gray-400);font-size:.78rem">💬 ${socials.join(' · ')}</span>`:''}
+        </div>`;
+      }).join('')+'</div>';
+  }
+  if (addresses.length) {
+    html += `<div class="detail-section"><h4>地址 (${addresses.length})</h4>` +
+      addresses.map(a=>`<div style="padding:.3rem 0;font-size:.85rem">📍 ${esc(a)}</div>`).join('')+'</div>';
+  }
+  const linkEntries = Object.entries(links).filter(([k,v])=>v);
+  if (linkEntries.length) {
+    html += `<div class="detail-section"><h4>公司链接</h4>` +
+      linkEntries.map(([k,v])=>`<div style="font-size:.85rem;margin-bottom:.3rem"><span style="color:var(--gray-400)">${esc(k)}:</span> <a href="${esc(v)}" target="_blank" style="color:var(--sky)">${esc(v)}</a></div>`).join('')+'</div>';
+  }
+  if (svcList.length) {
+    html += `<div class="detail-section"><h4>合作服务</h4><div class="detail-tags">${svcList.map(s=>'<span>'+esc(s)+'</span>').join('')}</div></div>`;
+  }
+  if (files.length) {
+    const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
+    html += `<div class="detail-section"><h4>文件 (${files.length})</h4>` +
+      files.map(f=>`<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span></div>`).join('')+'</div>';
+  }
+  if (p.notes) html += `<div class="detail-section"><h4>备注</h4><p style="font-size:.85rem;color:var(--gray-600)">${esc(p.notes)}</p></div>`;
+  document.getElementById('partnerDetailTitle').textContent = p.name;
+  document.getElementById('partnerDetail').innerHTML = html;
   document.getElementById('partnerDetailModal').classList.add('show');
 }
 
 function editPartnerFromDetail() {
   document.getElementById('partnerDetailModal').classList.remove('show');
-  if (currentPartner) editPartner(currentPartner);
+  if (currentPartner) openPartnerModal(currentPartner);
+}
+
+// ── Dynamic contacts list ──
+function addPartnerContact(c) {
+  const div = document.createElement('div');
+  div.className = 'dyn-item';
+  div.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.5rem">
+      <div class="field"><label>姓名</label><input class="pc-name" value="${esc(c?.name||'')}" placeholder="张三"></div>
+      <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
+      <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
+      <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.5rem;margin-top:.15rem">
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WeChat 微信</label><input class="pc-wechat" value="${esc(c?.wechat||'')}" placeholder="微信号" style="font-size:.82rem;padding:6px 8px"></div>
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">Telegram</label><input class="pc-telegram" value="${esc(c?.telegram||'')}" placeholder="@username" style="font-size:.82rem;padding:6px 8px"></div>
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">其他通讯</label><input class="pc-other_comm" value="${esc(c?.other_comm||'')}" placeholder="Line / Zalo..." style="font-size:.82rem;padding:6px 8px"></div>
+    </div>
+    <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
+  document.getElementById('pContactsList').appendChild(div);
+}
+
+function getPartnerContacts() {
+  return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>({
+    name: el.querySelector('.pc-name').value, role: el.querySelector('.pc-role').value,
+    phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
+    whatsapp: el.querySelector('.pc-whatsapp').value,
+    wechat: el.querySelector('.pc-wechat').value,
+    telegram: el.querySelector('.pc-telegram').value,
+    other_comm: el.querySelector('.pc-other_comm').value
+  })).filter(c=>c.name||c.phone||c.email);
+}
+
+// ── Dynamic addresses list ──
+function addPartnerAddr(addr) {
+  const div = document.createElement('div');
+  div.className = 'dyn-item';
+  div.innerHTML = `<div class="field" style="flex:1"><input class="pa-addr" value="${esc(addr||'')}" placeholder="123 Main St, Chicago, IL 60601"></div>
+    <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
+  document.getElementById('pAddrList').appendChild(div);
+}
+
+function getPartnerAddrs() {
+  return Array.from(document.querySelectorAll('#pAddrList .pa-addr')).map(el=>el.value.trim()).filter(Boolean);
 }
 
 function openPartnerModal(p) {
   document.getElementById('partnerModalTitle').textContent = p ? '编辑合作公司' : '新增合作公司';
   document.getElementById('partnerId').value = p ? p.id : '';
   document.getElementById('pName').value = p ? p.name : '';
-  document.getElementById('pContact').value = p ? p.contact_person : '';
-  document.getElementById('pPhone').value = p ? p.phone : '';
-  document.getElementById('pEmail').value = p ? p.email : '';
-  document.getElementById('pAddress').value = p ? p.address : '';
   document.getElementById('pIndustry').value = p ? p.industry : '';
-  document.getElementById('pServices').value = p ? p.services : '';
   document.getElementById('pNotes').value = p ? p.notes : '';
   document.getElementById('pActive').checked = p ? !!p.active : true;
+  // Contacts
+  document.getElementById('pContactsList').innerHTML = '';
+  const contacts = p ? safeJSON(p.contacts,[]) : [];
+  if (contacts.length) contacts.forEach(c=>addPartnerContact(c));
+  else if (p && (p.contact_person||p.phone||p.email)) addPartnerContact({name:p.contact_person,phone:p.phone,email:p.email});
+  else addPartnerContact();
+  // Addresses
+  document.getElementById('pAddrList').innerHTML = '';
+  const addresses = p ? safeJSON(p.addresses,[]) : [];
+  if (addresses.length) addresses.forEach(a=>addPartnerAddr(a));
+  else if (p && p.address) addPartnerAddr(p.address);
+  else addPartnerAddr();
+  // Links
+  const links = p ? safeJSON(p.links,{}) : {};
+  document.getElementById('pWebsite').value = links.Website||'';
+  document.getElementById('pFbPage').value = links.Facebook||'';
+  document.getElementById('pIgPage').value = links.Instagram||'';
+  document.getElementById('pLinkedin').value = links.LinkedIn||'';
+  // Services
+  const svcs = p ? safeJSON(p.services,'') : '';
+  const svcList = typeof svcs==='string'? svcs.split(',').map(s=>s.trim()).filter(Boolean) : (Array.isArray(svcs)?svcs:[]);
+  document.querySelectorAll('#pSvcTags .svc-tag').forEach(t=>{
+    t.classList.toggle('active', svcList.includes(t.dataset.v));
+  });
+  document.getElementById('pSvcOther').value = svcList.filter(s=>!document.querySelector(`#pSvcTags .svc-tag[data-v="${s}"]`)).join(', ');
+  // Files
+  if (p && p.id) loadPartnerFiles(p.id);
+  else document.getElementById('pFilesList').innerHTML = '';
   document.getElementById('partnerModal').classList.add('show');
 }
+
 function closePartnerModal() { document.getElementById('partnerModal').classList.remove('show'); }
-function editPartner(p) { openPartnerModal(p); }
+
+async function loadPartnerFiles(pid) {
+  const files = await api(`/admin/partners/${pid}/files`);
+  const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
+  document.getElementById('pFilesList').innerHTML = files.length ? files.map(f=>
+    `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||'文件')}</a>
+      <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span>
+      <span style="font-size:.72rem;color:var(--gray-400)">${esc(f.file_label)}</span>
+      <button class="btn btn-sm btn-red" style="margin-left:auto" onclick="deletePartnerFile(${f.id},${pid})">删除</button>
+    </div>`).join('') : '<p style="font-size:.82rem;color:var(--gray-400)">暂无文件</p>';
+}
+
+async function uploadPartnerFile() {
+  const pid = document.getElementById('partnerId').value;
+  if (!pid) return alert('请先保存公司信息后再上传文件');
+  const fileInput = document.getElementById('pFileInput');
+  if (!fileInput.files.length) return alert('请选择文件');
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  fd.append('file_type', document.getElementById('pFileType').value);
+  fd.append('file_label', document.getElementById('pFileLabel').value);
+  const r = await fetch(`${API}/admin/partners/${pid}/files`, {
+    method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
+  }).then(r=>r.json());
+  if (r.success) { fileInput.value=''; document.getElementById('pFileLabel').value=''; loadPartnerFiles(pid); }
+  else alert(r.error||'上传失败');
+}
+
+async function deletePartnerFile(fid, pid) {
+  if (!confirm('确定删除此文件？')) return;
+  await api(`/admin/partner-files/${fid}`, {method:'DELETE'});
+  loadPartnerFiles(pid);
+}
 
 async function savePartner() {
   const id = document.getElementById('partnerId').value;
+  // Collect services
+  const selectedSvcs = Array.from(document.querySelectorAll('#pSvcTags .svc-tag.active')).map(t=>t.dataset.v);
+  const otherSvcs = document.getElementById('pSvcOther').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const allSvcs = [...selectedSvcs, ...otherSvcs];
+  const contacts = getPartnerContacts();
   const data = {
     name: document.getElementById('pName').value,
-    contact_person: document.getElementById('pContact').value,
-    phone: document.getElementById('pPhone').value,
-    email: document.getElementById('pEmail').value,
-    address: document.getElementById('pAddress').value,
+    contact_person: contacts.length ? contacts[0].name : '',
+    phone: contacts.length ? contacts[0].phone : '',
+    email: contacts.length ? contacts[0].email : '',
+    address: getPartnerAddrs()[0] || '',
     industry: document.getElementById('pIndustry').value,
-    services: document.getElementById('pServices').value,
+    services: JSON.stringify(allSvcs),
     notes: document.getElementById('pNotes').value,
-    active: document.getElementById('pActive').checked
+    active: document.getElementById('pActive').checked,
+    contacts: JSON.stringify(contacts),
+    addresses: JSON.stringify(getPartnerAddrs()),
+    social_media: '{}',
+    links: JSON.stringify({
+      Website: document.getElementById('pWebsite').value,
+      Facebook: document.getElementById('pFbPage').value,
+      Instagram: document.getElementById('pIgPage').value,
+      LinkedIn: document.getElementById('pLinkedin').value
+    })
   };
   if (!data.name) return alert('请填写公司名称');
-  if (id) await api(`/admin/partners/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-  else await api('/admin/partners', { method: 'POST', body: JSON.stringify(data) });
+  if (id) await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
+  else {
+    const r = await api('/admin/partners', { method:'POST', body:JSON.stringify(data) });
+    if (r.id) document.getElementById('partnerId').value = r.id;
+  }
   closePartnerModal();
   loadPartners();
 }
 
 async function deletePartner(id) {
-  if (!confirm('确定删除此合作公司？')) return;
-  await api(`/admin/partners/${id}`, { method: 'DELETE' });
+  if (!confirm('确定删除此合作公司及其所有文件？')) return;
+  await api(`/admin/partners/${id}`, { method:'DELETE' });
   loadPartners();
 }
 
@@ -2144,6 +2495,137 @@ async function deleteBgCheck(id) {
   if (!confirm('确定删除此背景调查记录？')) return;
   await api(`/admin/background-checks/${id}`, { method:'DELETE' });
   loadBgChecks();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+// ─── Accounts Management ───
+async function loadAccounts() {
+  const rows = await api('/admin/accounts');
+  if (!Array.isArray(rows)) return;
+  const roleLabels = { admin: 'Admin (管理员)', staff: 'Staff (员工)', manager: 'Manager (经理)' };
+  document.getElementById('accountsTable').innerHTML = rows.map(a => `<tr>
+    <td><strong>${a.username}</strong></td>
+    <td>${a.display_name || '-'}</td>
+    <td><span class="badge ${a.role === 'admin' ? 'badge-blue' : a.role === 'manager' ? 'badge-yellow' : ''}">${roleLabels[a.role] || a.role}</span></td>
+    <td>${a.active ? '<span style="color:var(--green)">启用</span>' : '<span style="color:var(--red)">禁用</span>'}</td>
+    <td>${a.created_at ? a.created_at.slice(0, 10) : '-'}</td>
+    <td>
+      <button class="btn-sm" onclick="editAccount(${a.id})">编辑</button>
+      ${a.id !== 1 ? `<button class="btn-sm btn-red" onclick="deleteAccount(${a.id},'${a.username}')">删除</button>` : ''}
+    </td>
+  </tr>`).join('');
+}
+
+function openAccountModal(data) {
+  document.getElementById('accId').value = data ? data.id : '';
+  document.getElementById('accUsername').value = data ? data.username : '';
+  document.getElementById('accPassword').value = '';
+  document.getElementById('accDisplayName').value = data ? (data.display_name || '') : '';
+  document.getElementById('accRole').value = data ? (data.role || 'staff') : 'staff';
+  document.getElementById('accActive').value = data ? String(data.active) : '1';
+  document.getElementById('accountModalTitle').textContent = data ? '编辑账户' : '新建账户';
+  document.getElementById('accPassHint').textContent = data ? '(留空则不修改)' : '*';
+  document.getElementById('accountModal').classList.add('show');
+}
+
+async function editAccount(id) {
+  const rows = await api('/admin/accounts');
+  const a = rows.find(r => r.id === id);
+  if (a) openAccountModal(a);
+}
+
+async function saveAccount() {
+  const id = document.getElementById('accId').value;
+  const d = {
+    username: document.getElementById('accUsername').value,
+    password: document.getElementById('accPassword').value,
+    display_name: document.getElementById('accDisplayName').value,
+    role: document.getElementById('accRole').value,
+    active: parseInt(document.getElementById('accActive').value)
+  };
+  if (!d.username) return alert('请输入用户名');
+  if (!id && !d.password) return alert('请输入密码');
+  if (!d.password) delete d.password;
+  if (id) {
+    await api(`/admin/accounts/${id}`, { method: 'PUT', body: JSON.stringify(d) });
+  } else {
+    if (!d.password) return alert('请输入密码');
+    await api('/admin/accounts', { method: 'POST', body: JSON.stringify(d) });
+  }
+  closeModal('accountModal');
+  loadAccounts();
+}
+
+async function deleteAccount(id, name) {
+  if (!confirm(`确认删除账户 "${name}" ?`)) return;
+  await api(`/admin/accounts/${id}`, { method: 'DELETE' });
+  loadAccounts();
+}
+
+// ─── Pending Approvals ───
+let currentApprovalId = null;
+async function loadApprovals() {
+  const rows = await api('/admin/pending-actions');
+  if (!Array.isArray(rows)) return;
+  const pending = rows.filter(r => r.status === 'pending');
+  if (pending.length === 0) {
+    document.getElementById('noApprovals').style.display = 'block';
+    document.getElementById('approvalsTableEl').style.display = 'none';
+    return;
+  }
+  document.getElementById('noApprovals').style.display = 'none';
+  document.getElementById('approvalsTableEl').style.display = '';
+  const actionLabels = { delete: '删除', update: '修改' };
+  const tableLabels = { jobs: '职位', inquiries: '问卷', quotes: '报价', partners: '合作公司',
+    partner_files: '合作文件', assignments: '派工', employees: '员工', employee_documents: 'HR文件',
+    time_entries: '工时', background_checks: '背调' };
+  document.getElementById('approvalsBody').innerHTML = pending.map(a => `<tr>
+    <td><span class="badge ${a.action_type === 'delete' ? 'badge-red' : 'badge-yellow'}">${actionLabels[a.action_type] || a.action_type}</span></td>
+    <td>${tableLabels[a.target_table] || a.target_table}</td>
+    <td>${a.target_id || '-'}</td>
+    <td>${a.requested_by}</td>
+    <td>${a.created_at ? a.created_at.slice(0, 16).replace('T', ' ') : ''}</td>
+    <td>
+      <button class="btn-sm btn-green" onclick="reviewApproval(${a.id})">审核</button>
+    </td>
+  </tr>`).join('');
+}
+
+async function reviewApproval(id) {
+  currentApprovalId = id;
+  const rows = await api('/admin/pending-actions');
+  const a = rows.find(r => r.id === id);
+  if (!a) return;
+  const payload = JSON.parse(a.payload || '{}');
+  delete payload._params;
+  const actionLabels = { delete: '删除', update: '修改' };
+  let html = `<p><strong>操作类型：</strong>${actionLabels[a.action_type] || a.action_type}</p>`;
+  html += `<p><strong>目标表：</strong>${a.target_table}</p>`;
+  html += `<p><strong>目标ID：</strong>${a.target_id || '-'}</p>`;
+  html += `<p><strong>申请人：</strong>${a.requested_by}</p>`;
+  html += `<p><strong>申请时间：</strong>${a.created_at}</p>`;
+  if (Object.keys(payload).length > 0) {
+    html += `<p><strong>数据：</strong></p><pre style="background:var(--off-white);padding:1rem;border-radius:8px;font-size:.82rem;max-height:200px;overflow:auto">${JSON.stringify(payload, null, 2)}</pre>`;
+  }
+  document.getElementById('approvalDetailContent').innerHTML = html;
+  document.getElementById('approvalDetailModal').classList.add('show');
+}
+
+async function approveAction() {
+  if (!currentApprovalId) return;
+  await api(`/admin/pending-actions/${currentApprovalId}/approve`, { method: 'POST' });
+  closeModal('approvalDetailModal');
+  currentApprovalId = null;
+  loadApprovals();
+}
+
+async function rejectAction() {
+  if (!currentApprovalId) return;
+  await api(`/admin/pending-actions/${currentApprovalId}/reject`, { method: 'POST' });
+  closeModal('approvalDetailModal');
+  currentApprovalId = null;
+  loadApprovals();
 }
 
 </script>
