@@ -85,6 +85,26 @@ tr:hover td{background:var(--sky-light)}
 .detail-row span:first-child{font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase}
 .detail-row span:last-child{font-size:.88rem;color:var(--gray-800);margin-top:2px}
 .field-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
+/* Partner Modal Enhanced */
+.dyn-list{margin-bottom:.5rem}
+.dyn-item{display:flex;gap:.5rem;align-items:flex-start;margin-bottom:.5rem;padding:.6rem;background:var(--off-white);border-radius:6px;border:1px solid var(--gray-200)}
+.dyn-item .field{margin:0;flex:1}.dyn-item input{padding:6px 8px;font-size:.82rem}
+.dyn-item .btn-rm{background:none;border:none;color:var(--red);cursor:pointer;font-size:1.1rem;padding:4px;align-self:center;flex-shrink:0}
+.btn-add-sm{background:none;border:1px dashed var(--sky);color:var(--sky);border-radius:6px;padding:6px 14px;font-size:.78rem;font-weight:600;cursor:pointer;transition:all .2s}
+.btn-add-sm:hover{background:var(--sky-light)}
+.svc-tags{display:flex;flex-wrap:wrap;gap:.4rem}
+.svc-tag{padding:5px 12px;background:var(--off-white);color:var(--gray-600);border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;font-weight:600;cursor:pointer;transition:all .2s;user-select:none}
+.svc-tag:hover{border-color:var(--sky);color:var(--sky)}.svc-tag.active{background:var(--sky);color:#fff;border-color:var(--sky)}
+.social-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
+.social-grid .field label{font-size:.72rem}
+.social-grid .field input{padding:6px 8px;font-size:.82rem}
+.pf-list{margin-top:.5rem}.pf-item{display:flex;align-items:center;gap:.5rem;padding:.4rem .5rem;background:var(--off-white);border-radius:6px;margin-bottom:.4rem;font-size:.82rem}
+.pf-item a{color:var(--sky);font-weight:600}.pf-item .badge{margin-left:auto}
+.detail-section{margin-bottom:1rem}.detail-section h4{font-size:.8rem;font-weight:700;color:var(--sky);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem;border-bottom:1px solid var(--gray-200);padding-bottom:.3rem}
+.detail-tags{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem}
+.detail-tags span{padding:3px 10px;background:var(--sky-light);color:var(--sky);font-size:.72rem;font-weight:600;border-radius:12px}
+.detail-social{display:grid;grid-template-columns:1fr 1fr;gap:.3rem .8rem;font-size:.82rem}
+.detail-social span{color:var(--gray-400)}.detail-social strong{color:var(--gray-800)}
 /* Timesheet Modal */
 .modal-xl{max-width:900px}
 .ts-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:1.5rem}
@@ -436,37 +456,100 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
-<!-- Partner Modal -->
-<div class="modal-bg" id="partnerModal"><div class="modal">
+<!-- Partner Modal (enhanced) -->
+<div class="modal-bg" id="partnerModal"><div class="modal modal-xl">
   <h2 id="partnerModalTitle">新增合作公司</h2>
   <input type="hidden" id="partnerId">
-  <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
-  <div class="field-row">
-    <div class="field"><label>联系人</label><input id="pContact" placeholder="例：张三"></div>
-    <div class="field"><label>电话</label><input id="pPhone" placeholder="例：(312) 555-1234"></div>
+
+  <div class="form-section"><h4>基本信息</h4>
+    <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
+    <div class="field-row">
+      <div class="field"><label>行业</label><input id="pIndustry" placeholder="例：物流、制造业、食品加工"></div>
+      <div class="field"><label><input type="checkbox" id="pActive" checked> 合作中</label></div>
+    </div>
   </div>
-  <div class="field-row">
-    <div class="field"><label>邮箱</label><input id="pEmail" placeholder="例：contact@abc.com"></div>
-    <div class="field"><label>行业</label><input id="pIndustry" placeholder="例：物流、制造业、食品加工"></div>
+
+  <div class="form-section"><h4>联系人 (可多个)</h4>
+    <div class="dyn-list" id="pContactsList"></div>
+    <button class="btn-add-sm" onclick="addPartnerContact()">+ 添加联系人</button>
   </div>
-  <div class="field"><label>地址</label><input id="pAddress" placeholder="例：123 Main St, Chicago, IL 60601"></div>
-  <div class="field"><label>合作服务</label><input id="pServices" placeholder="例：临时工派遣、仓库包装、分拣"></div>
-  <div class="field"><label>备注</label><textarea id="pNotes" placeholder="合作细节、合同信息等..."></textarea></div>
-  <div class="field"><label><input type="checkbox" id="pActive" checked> 合作中</label></div>
+
+  <div class="form-section"><h4>地址 (可多个)</h4>
+    <div class="dyn-list" id="pAddrList"></div>
+    <button class="btn-add-sm" onclick="addPartnerAddr()">+ 添加地址</button>
+  </div>
+
+  <div class="form-section"><h4>社交 / 通讯</h4>
+    <div class="social-grid">
+      <div class="field"><label>WhatsApp</label><input id="pWhatsapp" placeholder="+1 312-555-0000"></div>
+      <div class="field"><label>WeChat 微信</label><input id="pWechat" placeholder="微信号"></div>
+      <div class="field"><label>Telegram</label><input id="pTelegram" placeholder="@username"></div>
+      <div class="field"><label>Facebook</label><input id="pFbContact" placeholder="Facebook 联系"></div>
+      <div class="field"><label>Instagram</label><input id="pIgContact" placeholder="@handle"></div>
+      <div class="field"><label>其他</label><input id="pOtherContact" placeholder="Line / Zalo..."></div>
+    </div>
+  </div>
+
+  <div class="form-section"><h4>公司链接</h4>
+    <div class="social-grid">
+      <div class="field"><label>网站 Website</label><input id="pWebsite" placeholder="https://www.example.com"></div>
+      <div class="field"><label>Facebook 主页</label><input id="pFbPage" placeholder="https://facebook.com/..."></div>
+      <div class="field"><label>Instagram 主页</label><input id="pIgPage" placeholder="https://instagram.com/..."></div>
+      <div class="field"><label>LinkedIn</label><input id="pLinkedin" placeholder="https://linkedin.com/company/..."></div>
+    </div>
+  </div>
+
+  <div class="form-section"><h4>合作服务 (多选)</h4>
+    <div class="svc-tags" id="pSvcTags">
+      <span class="svc-tag" data-v="临时工派遣" onclick="this.classList.toggle('active')">临时工派遣</span>
+      <span class="svc-tag" data-v="仓库包装" onclick="this.classList.toggle('active')">仓库包装</span>
+      <span class="svc-tag" data-v="分拣" onclick="this.classList.toggle('active')">分拣</span>
+      <span class="svc-tag" data-v="装卸" onclick="this.classList.toggle('active')">装卸</span>
+      <span class="svc-tag" data-v="质检" onclick="this.classList.toggle('active')">质检</span>
+      <span class="svc-tag" data-v="叉车" onclick="this.classList.toggle('active')">叉车</span>
+      <span class="svc-tag" data-v="清洁" onclick="this.classList.toggle('active')">清洁</span>
+      <span class="svc-tag" data-v="食品加工" onclick="this.classList.toggle('active')">食品加工</span>
+      <span class="svc-tag" data-v="机器操作" onclick="this.classList.toggle('active')">机器操作</span>
+      <span class="svc-tag" data-v="组装" onclick="this.classList.toggle('active')">组装</span>
+      <span class="svc-tag" data-v="耗材供应" onclick="this.classList.toggle('active')">耗材供应</span>
+      <span class="svc-tag" data-v="物流配送" onclick="this.classList.toggle('active')">物流配送</span>
+    </div>
+    <div class="field" style="margin-top:.5rem"><input id="pSvcOther" placeholder="其他服务（手动输入，逗号分隔）"></div>
+  </div>
+
+  <div class="form-section"><h4>上传文件 (合同/图片/文档)</h4>
+    <div id="pFilesList" class="pf-list"></div>
+    <div class="field-row" style="margin-top:.5rem">
+      <div class="field"><label>文件类型</label><select id="pFileType">
+        <option value="contract">合同</option><option value="agreement">协议</option><option value="license">营业执照</option>
+        <option value="photo">照片</option><option value="invoice">发票</option><option value="other">其他</option>
+      </select></div>
+      <div class="field"><label>文件标签</label><input id="pFileLabel" placeholder="例：2026年合同"></div>
+    </div>
+    <div class="field"><input type="file" id="pFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%"></div>
+    <button class="btn-add-sm" style="margin-top:.5rem" onclick="uploadPartnerFile()">上传文件</button>
+  </div>
+
+  <div class="form-section"><h4>备注</h4>
+    <div class="field"><textarea id="pNotes" placeholder="合作细节、合同信息等..."></textarea></div>
+  </div>
+
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
-    <button class="btn" onclick="savePartner()">保存</button>
-    <button class="btn btn-red" onclick="closePartnerModal()">取消</button>
+    <button class="btn btn-green" onclick="savePartner()">保存</button>
+    <button class="btn btn-outline" onclick="closePartnerModal()">取消</button>
   </div>
 </div></div>
 
 <!-- Partner Detail Modal -->
-<div class="modal-bg" id="partnerDetailModal"><div class="modal">
-  <h2>公司详情</h2>
-  <div id="partnerDetail"></div>
-  <div style="display:flex;gap:1rem;margin-top:1.5rem">
-    <button class="btn" onclick="editPartnerFromDetail()">编辑</button>
-    <button class="btn btn-red" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
+<div class="modal-bg" id="partnerDetailModal"><div class="modal modal-xl">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <h2 id="partnerDetailTitle">公司详情</h2>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn btn-sm" onclick="editPartnerFromDetail()">编辑</button>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
+    </div>
   </div>
+  <div id="partnerDetail"></div>
 </div></div>
 
 <!-- ════ Employee Add/Edit Modal ════ -->
@@ -1059,91 +1142,255 @@ function filterPartners() {
   const statusFilter = document.getElementById('partnerStatusFilter').value;
   let filtered = allPartners;
   if (keyword) {
-    filtered = filtered.filter(p =>
-      (p.name || '').toLowerCase().includes(keyword) ||
-      (p.contact_person || '').toLowerCase().includes(keyword) ||
-      (p.industry || '').toLowerCase().includes(keyword) ||
-      (p.services || '').toLowerCase().includes(keyword)
-    );
+    filtered = filtered.filter(p => {
+      const contacts = safeJSON(p.contacts,[]);
+      const contactStr = contacts.map(c=>`${c.name} ${c.phone} ${c.email}`).join(' ').toLowerCase();
+      return (p.name||'').toLowerCase().includes(keyword) || contactStr.includes(keyword) ||
+        (p.industry||'').toLowerCase().includes(keyword) || (p.services||'').toLowerCase().includes(keyword);
+    });
   }
-  if (statusFilter !== '') {
-    filtered = filtered.filter(p => p.active === parseInt(statusFilter));
-  }
+  if (statusFilter !== '') filtered = filtered.filter(p => p.active === parseInt(statusFilter));
   renderPartners(filtered);
 }
 
+function safeJSON(str, fallback) { try { return JSON.parse(str||''); } catch { return fallback; } }
+
 function renderPartners(partners) {
-  document.getElementById('partnersTable').innerHTML = partners.length ? partners.map(p => `<tr style="cursor:pointer" onclick='showPartner(${JSON.stringify(p).replace(/'/g,"&#39;")})'>
-    <td><strong>${esc(p.name)}</strong></td>
-    <td>${esc(p.contact_person)}</td>
-    <td>${esc(p.phone)}</td>
-    <td>${esc(p.industry)}</td>
-    <td>${p.active ? '<span class="badge badge-completed">合作中</span>' : '<span class="badge badge-cancelled">已停止</span>'}</td>
-    <td>
-      <button class="btn btn-sm" onclick="event.stopPropagation();editPartner(${JSON.stringify(p).replace(/'/g,'&#39;')})">编辑</button>
-      <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>
-    </td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
+  document.getElementById('partnersTable').innerHTML = partners.length ? partners.map(p => {
+    const contacts = safeJSON(p.contacts,[]);
+    const mainContact = contacts.length ? contacts[0].name : (p.contact_person||'');
+    const mainPhone = contacts.length ? contacts[0].phone : (p.phone||'');
+    return `<tr style="cursor:pointer" onclick="showPartnerById(${p.id})">
+      <td><strong>${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}</td>
+      <td>${esc(mainContact)}${contacts.length>1?` <span style="color:var(--gray-400)">(+${contacts.length-1})</span>`:''}</td>
+      <td>${esc(mainPhone)}</td>
+      <td>${esc(p.industry)}</td>
+      <td>${p.active?'<span class="badge badge-completed">合作中</span>':'<span class="badge badge-cancelled">已停止</span>'}</td>
+      <td>
+        <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
+        <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="6" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
 }
 
-function showPartner(p) {
+function editPartnerById(id) { const p=allPartners.find(x=>x.id===id); if(p) openPartnerModal(p); }
+
+async function showPartnerById(id) {
+  const p = allPartners.find(x=>x.id===id);
+  if (!p) return;
   currentPartner = p;
-  const fields = [
-    ['公司名称', p.name], ['联系人', p.contact_person], ['电话', p.phone],
-    ['邮箱', p.email], ['地址', p.address], ['行业', p.industry],
-    ['合作服务', p.services], ['备注', p.notes],
-    ['状态', p.active ? '合作中' : '已停止'],
-    ['添加时间', new Date(p.created_at).toLocaleString()]
-  ].filter(([k, v]) => v);
-  document.getElementById('partnerDetail').innerHTML = '<table>' + fields.map(([k, v]) => `<tr><td style="font-weight:700;width:100px;padding:6px 0">${k}</td><td>${esc(String(v))}</td></tr>`).join('') + '</table>';
+  const contacts = safeJSON(p.contacts,[]);
+  const addresses = safeJSON(p.addresses,[]);
+  const social = safeJSON(p.social_media,{});
+  const links = safeJSON(p.links,{});
+  const svcs = safeJSON(p.services,'');
+  const svcList = typeof svcs==='string'? svcs.split(',').map(s=>s.trim()).filter(Boolean) : (Array.isArray(svcs)?svcs:[]);
+  // load files
+  const files = await api(`/admin/partners/${id}/files`);
+  let html = `<div class="detail-section"><h4>基本信息</h4><div class="detail-grid">
+    <div class="detail-row"><span>公司名称</span><span>${esc(p.name)}</span></div>
+    <div class="detail-row"><span>行业</span><span>${esc(p.industry)}</span></div>
+    <div class="detail-row"><span>状态</span><span>${p.active?'合作中':'已停止'}</span></div>
+    <div class="detail-row"><span>添加时间</span><span>${new Date(p.created_at).toLocaleString()}</span></div>
+  </div></div>`;
+  if (contacts.length) {
+    html += `<div class="detail-section"><h4>联系人 (${contacts.length})</h4>` +
+      contacts.map(c=>`<div style="padding:.4rem 0;border-bottom:1px solid var(--gray-200);font-size:.85rem"><strong>${esc(c.name)}</strong>${c.role?' <span style="color:var(--gray-400)">('+esc(c.role)+')</span>':''}<br>${c.phone?'📞 '+esc(c.phone)+' ':''}${c.email?'✉ '+esc(c.email):''}</div>`).join('')+'</div>';
+  }
+  if (addresses.length) {
+    html += `<div class="detail-section"><h4>地址 (${addresses.length})</h4>` +
+      addresses.map(a=>`<div style="padding:.3rem 0;font-size:.85rem">📍 ${esc(a)}</div>`).join('')+'</div>';
+  }
+  const socialEntries = Object.entries(social).filter(([k,v])=>v);
+  if (socialEntries.length) {
+    html += `<div class="detail-section"><h4>社交 / 通讯</h4><div class="detail-social">` +
+      socialEntries.map(([k,v])=>`<span>${esc(k)}</span><strong>${esc(v)}</strong>`).join('')+'</div></div>';
+  }
+  const linkEntries = Object.entries(links).filter(([k,v])=>v);
+  if (linkEntries.length) {
+    html += `<div class="detail-section"><h4>公司链接</h4>` +
+      linkEntries.map(([k,v])=>`<div style="font-size:.85rem;margin-bottom:.3rem"><span style="color:var(--gray-400)">${esc(k)}:</span> <a href="${esc(v)}" target="_blank" style="color:var(--sky)">${esc(v)}</a></div>`).join('')+'</div>';
+  }
+  if (svcList.length) {
+    html += `<div class="detail-section"><h4>合作服务</h4><div class="detail-tags">${svcList.map(s=>'<span>'+esc(s)+'</span>').join('')}</div></div>`;
+  }
+  if (files.length) {
+    const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
+    html += `<div class="detail-section"><h4>文件 (${files.length})</h4>` +
+      files.map(f=>`<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span></div>`).join('')+'</div>';
+  }
+  if (p.notes) html += `<div class="detail-section"><h4>备注</h4><p style="font-size:.85rem;color:var(--gray-600)">${esc(p.notes)}</p></div>`;
+  document.getElementById('partnerDetailTitle').textContent = p.name;
+  document.getElementById('partnerDetail').innerHTML = html;
   document.getElementById('partnerDetailModal').classList.add('show');
 }
 
 function editPartnerFromDetail() {
   document.getElementById('partnerDetailModal').classList.remove('show');
-  if (currentPartner) editPartner(currentPartner);
+  if (currentPartner) openPartnerModal(currentPartner);
+}
+
+// ── Dynamic contacts list ──
+function addPartnerContact(c) {
+  const div = document.createElement('div');
+  div.className = 'dyn-item';
+  div.innerHTML = `<div class="field"><label>姓名</label><input class="pc-name" value="${esc(c?.name||'')}" placeholder="张三"></div>
+    <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
+    <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
+    <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+    <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
+  document.getElementById('pContactsList').appendChild(div);
+}
+
+function getPartnerContacts() {
+  return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>({
+    name: el.querySelector('.pc-name').value, role: el.querySelector('.pc-role').value,
+    phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value
+  })).filter(c=>c.name||c.phone||c.email);
+}
+
+// ── Dynamic addresses list ──
+function addPartnerAddr(addr) {
+  const div = document.createElement('div');
+  div.className = 'dyn-item';
+  div.innerHTML = `<div class="field" style="flex:1"><input class="pa-addr" value="${esc(addr||'')}" placeholder="123 Main St, Chicago, IL 60601"></div>
+    <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
+  document.getElementById('pAddrList').appendChild(div);
+}
+
+function getPartnerAddrs() {
+  return Array.from(document.querySelectorAll('#pAddrList .pa-addr')).map(el=>el.value.trim()).filter(Boolean);
 }
 
 function openPartnerModal(p) {
   document.getElementById('partnerModalTitle').textContent = p ? '编辑合作公司' : '新增合作公司';
   document.getElementById('partnerId').value = p ? p.id : '';
   document.getElementById('pName').value = p ? p.name : '';
-  document.getElementById('pContact').value = p ? p.contact_person : '';
-  document.getElementById('pPhone').value = p ? p.phone : '';
-  document.getElementById('pEmail').value = p ? p.email : '';
-  document.getElementById('pAddress').value = p ? p.address : '';
   document.getElementById('pIndustry').value = p ? p.industry : '';
-  document.getElementById('pServices').value = p ? p.services : '';
   document.getElementById('pNotes').value = p ? p.notes : '';
   document.getElementById('pActive').checked = p ? !!p.active : true;
+  // Contacts
+  document.getElementById('pContactsList').innerHTML = '';
+  const contacts = p ? safeJSON(p.contacts,[]) : [];
+  if (contacts.length) contacts.forEach(c=>addPartnerContact(c));
+  else if (p && (p.contact_person||p.phone||p.email)) addPartnerContact({name:p.contact_person,phone:p.phone,email:p.email});
+  else addPartnerContact();
+  // Addresses
+  document.getElementById('pAddrList').innerHTML = '';
+  const addresses = p ? safeJSON(p.addresses,[]) : [];
+  if (addresses.length) addresses.forEach(a=>addPartnerAddr(a));
+  else if (p && p.address) addPartnerAddr(p.address);
+  else addPartnerAddr();
+  // Social media
+  const social = p ? safeJSON(p.social_media,{}) : {};
+  document.getElementById('pWhatsapp').value = social.WhatsApp||'';
+  document.getElementById('pWechat').value = social.WeChat||'';
+  document.getElementById('pTelegram').value = social.Telegram||'';
+  document.getElementById('pFbContact').value = social.Facebook||'';
+  document.getElementById('pIgContact').value = social.Instagram||'';
+  document.getElementById('pOtherContact').value = social.Other||'';
+  // Links
+  const links = p ? safeJSON(p.links,{}) : {};
+  document.getElementById('pWebsite').value = links.Website||'';
+  document.getElementById('pFbPage').value = links.Facebook||'';
+  document.getElementById('pIgPage').value = links.Instagram||'';
+  document.getElementById('pLinkedin').value = links.LinkedIn||'';
+  // Services
+  const svcs = p ? safeJSON(p.services,'') : '';
+  const svcList = typeof svcs==='string'? svcs.split(',').map(s=>s.trim()).filter(Boolean) : (Array.isArray(svcs)?svcs:[]);
+  document.querySelectorAll('#pSvcTags .svc-tag').forEach(t=>{
+    t.classList.toggle('active', svcList.includes(t.dataset.v));
+  });
+  document.getElementById('pSvcOther').value = svcList.filter(s=>!document.querySelector(`#pSvcTags .svc-tag[data-v="${s}"]`)).join(', ');
+  // Files
+  if (p && p.id) loadPartnerFiles(p.id);
+  else document.getElementById('pFilesList').innerHTML = '';
   document.getElementById('partnerModal').classList.add('show');
 }
+
 function closePartnerModal() { document.getElementById('partnerModal').classList.remove('show'); }
-function editPartner(p) { openPartnerModal(p); }
+
+async function loadPartnerFiles(pid) {
+  const files = await api(`/admin/partners/${pid}/files`);
+  const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
+  document.getElementById('pFilesList').innerHTML = files.length ? files.map(f=>
+    `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||'文件')}</a>
+      <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span>
+      <span style="font-size:.72rem;color:var(--gray-400)">${esc(f.file_label)}</span>
+      <button class="btn btn-sm btn-red" style="margin-left:auto" onclick="deletePartnerFile(${f.id},${pid})">删除</button>
+    </div>`).join('') : '<p style="font-size:.82rem;color:var(--gray-400)">暂无文件</p>';
+}
+
+async function uploadPartnerFile() {
+  const pid = document.getElementById('partnerId').value;
+  if (!pid) return alert('请先保存公司信息后再上传文件');
+  const fileInput = document.getElementById('pFileInput');
+  if (!fileInput.files.length) return alert('请选择文件');
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  fd.append('file_type', document.getElementById('pFileType').value);
+  fd.append('file_label', document.getElementById('pFileLabel').value);
+  const r = await fetch(`${API}/admin/partners/${pid}/files`, {
+    method:'POST', headers:{'Authorization':`Bearer ${TOKEN}`}, body:fd
+  }).then(r=>r.json());
+  if (r.success) { fileInput.value=''; document.getElementById('pFileLabel').value=''; loadPartnerFiles(pid); }
+  else alert(r.error||'上传失败');
+}
+
+async function deletePartnerFile(fid, pid) {
+  if (!confirm('确定删除此文件？')) return;
+  await api(`/admin/partner-files/${fid}`, {method:'DELETE'});
+  loadPartnerFiles(pid);
+}
 
 async function savePartner() {
   const id = document.getElementById('partnerId').value;
+  // Collect services
+  const selectedSvcs = Array.from(document.querySelectorAll('#pSvcTags .svc-tag.active')).map(t=>t.dataset.v);
+  const otherSvcs = document.getElementById('pSvcOther').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const allSvcs = [...selectedSvcs, ...otherSvcs];
+  const contacts = getPartnerContacts();
   const data = {
     name: document.getElementById('pName').value,
-    contact_person: document.getElementById('pContact').value,
-    phone: document.getElementById('pPhone').value,
-    email: document.getElementById('pEmail').value,
-    address: document.getElementById('pAddress').value,
+    contact_person: contacts.length ? contacts[0].name : '',
+    phone: contacts.length ? contacts[0].phone : '',
+    email: contacts.length ? contacts[0].email : '',
+    address: getPartnerAddrs()[0] || '',
     industry: document.getElementById('pIndustry').value,
-    services: document.getElementById('pServices').value,
+    services: JSON.stringify(allSvcs),
     notes: document.getElementById('pNotes').value,
-    active: document.getElementById('pActive').checked
+    active: document.getElementById('pActive').checked,
+    contacts: JSON.stringify(contacts),
+    addresses: JSON.stringify(getPartnerAddrs()),
+    social_media: JSON.stringify({
+      WhatsApp: document.getElementById('pWhatsapp').value,
+      WeChat: document.getElementById('pWechat').value,
+      Telegram: document.getElementById('pTelegram').value,
+      Facebook: document.getElementById('pFbContact').value,
+      Instagram: document.getElementById('pIgContact').value,
+      Other: document.getElementById('pOtherContact').value
+    }),
+    links: JSON.stringify({
+      Website: document.getElementById('pWebsite').value,
+      Facebook: document.getElementById('pFbPage').value,
+      Instagram: document.getElementById('pIgPage').value,
+      LinkedIn: document.getElementById('pLinkedin').value
+    })
   };
   if (!data.name) return alert('请填写公司名称');
-  if (id) await api(`/admin/partners/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-  else await api('/admin/partners', { method: 'POST', body: JSON.stringify(data) });
+  if (id) await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
+  else {
+    const r = await api('/admin/partners', { method:'POST', body:JSON.stringify(data) });
+    if (r.id) document.getElementById('partnerId').value = r.id;
+  }
   closePartnerModal();
   loadPartners();
 }
 
 async function deletePartner(id) {
-  if (!confirm('确定删除此合作公司？')) return;
-  await api(`/admin/partners/${id}`, { method: 'DELETE' });
+  if (!confirm('确定删除此合作公司及其所有文件？')) return;
+  await api(`/admin/partners/${id}`, { method:'DELETE' });
   loadPartners();
 }
 
