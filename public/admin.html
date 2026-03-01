@@ -3146,6 +3146,22 @@ async function viewEmployee(id) {
     }).join('') : '<p class="empty" style="padding:1rem">暂无材料收集链接，点击「+ 发送新链接」创建</p>'}
   </div>`;
 
+  // Work history section (from timesheet_sheets)
+  const jobHist = emp.job_history || [];
+  html += `<div class="form-section">
+    <h4>工作经历 (${jobHist.length} 个职位)</h4>
+    ${jobHist.length ? `<table><thead><tr><th>职位</th><th>公司</th><th>时间范围</th><th>工时单数</th><th>总工时</th><th>加班</th></tr></thead><tbody>
+    ${jobHist.map(j => `<tr>
+      <td style="font-weight:600">${esc(j.job_title||'—')}</td>
+      <td>${esc(j.company_name||'—')}</td>
+      <td>${j.first_period||'—'} ~ ${j.last_period||'—'}</td>
+      <td>${j.sheet_count||0}</td>
+      <td>${(j.total_hours||0).toFixed(1)}h</td>
+      <td>${j.overtime_hours>0?`<span class="ot-text">${(j.overtime_hours||0).toFixed(1)}h</span>`:'—'}</td>
+    </tr>`).join('')}
+    </tbody></table>` : '<p class="empty" style="padding:1rem">暂无工作经历记录</p>'}
+  </div>`;
+
   // Ratings section
   const ratings = await api(`/admin/employee-ratings?employee_id=${id}`);
   const SCORE_LABEL = ['', '差', '一般', '良好', '优秀', '出色'];
@@ -3209,11 +3225,12 @@ async function openRatingModal(empId, empName, existing) {
   document.getElementById('ratingEmpId').value = empId;
   document.getElementById('ratingId').value = existing ? existing.id : '';
 
-  // Populate job select
-  const jobs = await api('/admin/jobs');
+  // Populate job select with employee's actual jobs (from timesheet/work history)
+  const empDetail = await api(`/admin/employees/${empId}`);
+  const empJobs = empDetail.job_history || [];
   const sel = document.getElementById('ratingJob');
   sel.innerHTML = '<option value="">-- 通用评分（不绑定具体职位）--</option>' +
-    jobs.map(j => `<option value="${j.id}">${esc(j.title)}${j.company_name?' — '+esc(j.company_name):''}</option>`).join('');
+    empJobs.filter(j => j.job_id).map(j => `<option value="${j.job_id}">${esc(j.job_title||'')}${j.company_name?' — '+esc(j.company_name):''}</option>`).join('');
 
   if (existing) {
     sel.value = existing.job_id || '';
