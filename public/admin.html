@@ -1925,23 +1925,47 @@ async function runSmsTest() {
     });
     const d = await res.json();
     const cfg = d.configured || {};
+    const acct = d.accountInfo || {};
+    const isTrial = acct.type === 'Trial';
     let out = '── Twilio 配置状态 ──\n';
     out += `Account SID: ${cfg.account_sid || '❌ 未设置'}\n`;
     out += `Auth Token:  ${cfg.auth_token ? '✅ 已设置' : '❌ 未设置'}\n`;
     out += `发送号码:    ${cfg.phone_number || '❌ 未设置'}\n`;
-    out += `Client 就绪: ${cfg.client_ready ? '✅' : '❌'}\n\n`;
-    out += '── 发送结果 ──\n';
+    out += `Client 就绪: ${cfg.client_ready ? '✅' : '❌'}\n`;
+    if (acct.type) {
+      const typeLabel = isTrial ? '⚠️ Trial（试用账号）' : '✅ ' + acct.type;
+      out += `账号类型:    ${typeLabel}\n`;
+      out += `账号名称:    ${acct.friendlyName || '-'}\n`;
+    } else if (acct.error) {
+      out += `账号类型:    ❌ 查询失败: ${acct.error}\n`;
+    }
+    out += '\n── 发送结果 ──\n';
     if (d.result) {
-      if (d.result.ok) {
-        out += `✅ 发送成功！\nSID: ${d.result.sid}\n状态: ${d.result.status}\n发送到: ${d.result.to}`;
+      const st = d.result.status;
+      const isQueued = st === 'queued' || st === 'accepted';
+      const isUndelivered = st === 'undelivered' || st === 'failed';
+      if (d.result.ok && !isQueued && !isUndelivered) {
+        out += `✅ 发送成功！已送达\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}`;
+      } else if (d.result.ok && isQueued && isTrial) {
+        out += `⚠️ 已提交但未送达（Trial 账号限制）\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}\n\n`;
+        out += '【原因】Trial 账号只能发短信给在 Twilio 控制台\n已验证过的号码（Verified Caller IDs）。\n\n';
+        out += '【解决方法】\n';
+        out += '1. 升级到付费账号（推荐），即可向任何号码发短信\n';
+        out += '2. 或在 Twilio 控制台 → Phone Numbers →\n   Verified Caller IDs 中添加并验证目标号码';
+      } else if (d.result.ok && isQueued) {
+        out += `⚠️ 消息已提交，但状态仍为"${st}"（可能延迟）\nSID: ${d.result.sid}\n发送到: ${d.result.to}`;
+      } else if (isUndelivered) {
+        out += `❌ 发送失败（${st}）\n错误码: ${d.result.errorCode || '-'}\n错误信息: ${d.result.errorMessage || d.result.error || '-'}\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
       } else {
         out += `❌ 发送失败\n错误: ${d.result.error}`;
         if (d.result.code) out += `\nTwilio 错误码: ${d.result.code}`;
         out += `\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
       }
     }
-    resultEl.style.background = (d.result && d.result.ok) ? '#f0fff4' : '#fff5f5';
-    resultEl.style.border = `1px solid ${(d.result && d.result.ok) ? '#9ae6b4' : '#feb2b2'}`;
+    const isOk = d.result && d.result.ok && d.result.status === 'delivered';
+    const isWarn = d.result && d.result.ok && d.result.status !== 'delivered';
+    resultEl.style.background = isOk ? '#f0fff4' : isWarn ? '#fffbeb' : '#fff5f5';
+    resultEl.style.border = `1px solid ${isOk ? '#9ae6b4' : isWarn ? '#f6ad55' : '#feb2b2'}`;
     resultEl.textContent = out;
     resultEl.style.display = 'block';
   } catch (e) {
