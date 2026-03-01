@@ -466,7 +466,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
     <div class="field-row">
       <div class="field"><label>行业</label><input id="pIndustry" placeholder="例：物流、制造业、食品加工"></div>
-      <div class="field"><label><input type="checkbox" id="pActive" checked> 合作中</label></div>
+      <div class="field"><label>合作状态</label><label style="display:flex;align-items:center;gap:.5rem;margin-top:.4rem;cursor:pointer;font-weight:600"><input type="checkbox" id="pActive" checked style="width:16px;height:16px;cursor:pointer"> 合作中</label></div>
     </div>
   </div>
 
@@ -478,17 +478,6 @@ tr:hover td{background:var(--sky-light)}
   <div class="form-section"><h4>地址 (可多个)</h4>
     <div class="dyn-list" id="pAddrList"></div>
     <button class="btn-add-sm" onclick="addPartnerAddr()">+ 添加地址</button>
-  </div>
-
-  <div class="form-section"><h4>社交 / 通讯</h4>
-    <div class="social-grid">
-      <div class="field"><label>WhatsApp</label><input id="pWhatsapp" placeholder="+1 312-555-0000"></div>
-      <div class="field"><label>WeChat 微信</label><input id="pWechat" placeholder="微信号"></div>
-      <div class="field"><label>Telegram</label><input id="pTelegram" placeholder="@username"></div>
-      <div class="field"><label>Facebook</label><input id="pFbContact" placeholder="Facebook 联系"></div>
-      <div class="field"><label>Instagram</label><input id="pIgContact" placeholder="@handle"></div>
-      <div class="field"><label>其他</label><input id="pOtherContact" placeholder="Line / Zalo..."></div>
-    </div>
   </div>
 
   <div class="form-section"><h4>公司链接</h4>
@@ -1213,7 +1202,6 @@ async function showPartnerById(id) {
   currentPartner = p;
   const contacts = safeJSON(p.contacts,[]);
   const addresses = safeJSON(p.addresses,[]);
-  const social = safeJSON(p.social_media,{});
   const links = safeJSON(p.links,{});
   const svcs = safeJSON(p.services,'');
   const svcList = typeof svcs==='string'? svcs.split(',').map(s=>s.trim()).filter(Boolean) : (Array.isArray(svcs)?svcs:[]);
@@ -1227,16 +1215,23 @@ async function showPartnerById(id) {
   </div></div>`;
   if (contacts.length) {
     html += `<div class="detail-section"><h4>联系人 (${contacts.length})</h4>` +
-      contacts.map(c=>`<div style="padding:.4rem 0;border-bottom:1px solid var(--gray-200);font-size:.85rem"><strong>${esc(c.name)}</strong>${c.role?' <span style="color:var(--gray-400)">('+esc(c.role)+')</span>':''}<br>${c.phone?'📞 '+esc(c.phone)+' ':''}${c.email?'✉ '+esc(c.email):''}</div>`).join('')+'</div>';
+      contacts.map(c=>{
+        const socials = [
+          c.whatsapp ? `WhatsApp: ${esc(c.whatsapp)}` : '',
+          c.wechat   ? `微信: ${esc(c.wechat)}` : '',
+          c.telegram ? `Telegram: ${esc(c.telegram)}` : '',
+          c.other_comm ? `其他: ${esc(c.other_comm)}` : ''
+        ].filter(Boolean);
+        return `<div style="padding:.4rem 0;border-bottom:1px solid var(--gray-200);font-size:.85rem">
+          <strong>${esc(c.name)}</strong>${c.role?' <span style="color:var(--gray-400)">('+esc(c.role)+')</span>':''}
+          <br>${c.phone?'📞 '+esc(c.phone)+' ':''}${c.email?'✉ '+esc(c.email):''}
+          ${socials.length?`<br><span style="color:var(--gray-400);font-size:.78rem">💬 ${socials.join(' · ')}</span>`:''}
+        </div>`;
+      }).join('')+'</div>';
   }
   if (addresses.length) {
     html += `<div class="detail-section"><h4>地址 (${addresses.length})</h4>` +
       addresses.map(a=>`<div style="padding:.3rem 0;font-size:.85rem">📍 ${esc(a)}</div>`).join('')+'</div>';
-  }
-  const socialEntries = Object.entries(social).filter(([k,v])=>v);
-  if (socialEntries.length) {
-    html += `<div class="detail-section"><h4>社交 / 通讯</h4><div class="detail-social">` +
-      socialEntries.map(([k,v])=>`<span>${esc(k)}</span><strong>${esc(v)}</strong>`).join('')+'</div></div>';
   }
   const linkEntries = Object.entries(links).filter(([k,v])=>v);
   if (linkEntries.length) {
@@ -1266,10 +1261,19 @@ function editPartnerFromDetail() {
 function addPartnerContact(c) {
   const div = document.createElement('div');
   div.className = 'dyn-item';
-  div.innerHTML = `<div class="field"><label>姓名</label><input class="pc-name" value="${esc(c?.name||'')}" placeholder="张三"></div>
-    <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
-    <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
-    <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+  div.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.5rem">
+      <div class="field"><label>姓名</label><input class="pc-name" value="${esc(c?.name||'')}" placeholder="张三"></div>
+      <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
+      <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
+      <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.5rem;margin-top:.15rem">
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WeChat 微信</label><input class="pc-wechat" value="${esc(c?.wechat||'')}" placeholder="微信号" style="font-size:.82rem;padding:6px 8px"></div>
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">Telegram</label><input class="pc-telegram" value="${esc(c?.telegram||'')}" placeholder="@username" style="font-size:.82rem;padding:6px 8px"></div>
+      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">其他通讯</label><input class="pc-other_comm" value="${esc(c?.other_comm||'')}" placeholder="Line / Zalo..." style="font-size:.82rem;padding:6px 8px"></div>
+    </div>
     <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
   document.getElementById('pContactsList').appendChild(div);
 }
@@ -1277,7 +1281,11 @@ function addPartnerContact(c) {
 function getPartnerContacts() {
   return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>({
     name: el.querySelector('.pc-name').value, role: el.querySelector('.pc-role').value,
-    phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value
+    phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
+    whatsapp: el.querySelector('.pc-whatsapp').value,
+    wechat: el.querySelector('.pc-wechat').value,
+    telegram: el.querySelector('.pc-telegram').value,
+    other_comm: el.querySelector('.pc-other_comm').value
   })).filter(c=>c.name||c.phone||c.email);
 }
 
@@ -1313,14 +1321,6 @@ function openPartnerModal(p) {
   if (addresses.length) addresses.forEach(a=>addPartnerAddr(a));
   else if (p && p.address) addPartnerAddr(p.address);
   else addPartnerAddr();
-  // Social media
-  const social = p ? safeJSON(p.social_media,{}) : {};
-  document.getElementById('pWhatsapp').value = social.WhatsApp||'';
-  document.getElementById('pWechat').value = social.WeChat||'';
-  document.getElementById('pTelegram').value = social.Telegram||'';
-  document.getElementById('pFbContact').value = social.Facebook||'';
-  document.getElementById('pIgContact').value = social.Instagram||'';
-  document.getElementById('pOtherContact').value = social.Other||'';
   // Links
   const links = p ? safeJSON(p.links,{}) : {};
   document.getElementById('pWebsite').value = links.Website||'';
@@ -1394,14 +1394,7 @@ async function savePartner() {
     active: document.getElementById('pActive').checked,
     contacts: JSON.stringify(contacts),
     addresses: JSON.stringify(getPartnerAddrs()),
-    social_media: JSON.stringify({
-      WhatsApp: document.getElementById('pWhatsapp').value,
-      WeChat: document.getElementById('pWechat').value,
-      Telegram: document.getElementById('pTelegram').value,
-      Facebook: document.getElementById('pFbContact').value,
-      Instagram: document.getElementById('pIgContact').value,
-      Other: document.getElementById('pOtherContact').value
-    }),
+    social_media: '{}',
     links: JSON.stringify({
       Website: document.getElementById('pWebsite').value,
       Facebook: document.getElementById('pFbPage').value,
