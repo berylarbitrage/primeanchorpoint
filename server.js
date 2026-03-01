@@ -54,7 +54,7 @@ async function sendEmail(to, subject, text) {
 }
 
 // ─── Database Setup ───
-const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
+const dataDir = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const uploadsDir = path.join(dataDir, 'uploads');
