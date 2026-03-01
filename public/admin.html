@@ -65,6 +65,7 @@ tr:hover td{background:var(--sky-light)}
 .modal h2{font-size:1.2rem;color:var(--blue);margin-bottom:1.5rem}
 .field{margin-bottom:1rem}.field label{display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;margin-bottom:4px}
 .field input,.field select,.field textarea{width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.9rem;outline:none;font-family:inherit}
+.field input[type=checkbox]{width:auto;padding:0;border:none;border-radius:0;vertical-align:middle}
 .field textarea{height:80px;resize:vertical}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--sky)}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
@@ -593,7 +594,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
-  <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
+  <div class="field"><label style="display:inline-flex;align-items:center;gap:.4rem;text-transform:none;font-size:.9rem"><input type="checkbox" id="jUrgent"> 急聘（紧急招聘）</label></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn" onclick="saveJob()">保存</button>
     <button class="btn" onclick="randomFillJob()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
