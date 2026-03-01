@@ -1436,8 +1436,23 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   const docs = db.prepare('SELECT * FROM employee_documents WHERE employee_id=? ORDER BY uploaded_at DESC').all(req.params.id);
   const bgChecks = db.prepare('SELECT * FROM background_checks WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id);
   const recentTime = db.prepare('SELECT * FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 20').all(req.params.id);
+  // Job history: distinct jobs from timesheet_sheets with summary
+  const jobHistory = db.prepare(`
+    SELECT s.job_id, s.company_name, j.title AS job_title,
+      COUNT(*) AS sheet_count,
+      SUM(s.total_hours) AS total_hours,
+      SUM(s.regular_hours) AS regular_hours,
+      SUM(s.overtime_hours) AS overtime_hours,
+      MIN(s.period_start) AS first_period,
+      MAX(s.period_end) AS last_period
+    FROM timesheet_sheets s
+    LEFT JOIN jobs j ON s.job_id = j.id
+    WHERE s.employee_id=?
+    GROUP BY COALESCE(s.job_id, s.company_name)
+    ORDER BY MAX(s.period_end) DESC
+  `).all(req.params.id);
   const ssn_full = emp.ssn_encrypted && emp.ssn_iv ? decryptSSN(emp.ssn_encrypted, emp.ssn_iv) : null;
-  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime });
+  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory });
 });
 
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
