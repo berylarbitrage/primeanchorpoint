@@ -1450,6 +1450,7 @@ async function api(path, opts = {}) {
   });
   const data = await res.json();
   if (data.pending) { alert(data.message || '操作已提交审批'); return data; }
+  if (res.status === 401) { alert('登录已过期，请重新登录'); logout(); return data; }
   if (res.status === 403) { alert('权限不足 / Permission denied'); return data; }
   return data;
 }
@@ -2998,16 +2999,36 @@ async function saveEmployee() {
   if (!data.first_name || !data.last_name) return alert('请填写员工姓名');
   const ssn = document.getElementById('eSSN').value.replace(/\D/g,'');
   if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
-  const r = id
-    ? await api(`/admin/employees/${id}`, { method:'PUT', body: JSON.stringify(data) })
-    : await api('/admin/employees', { method:'POST', body: JSON.stringify(data) });
-  if (r.success || r.id) {
-    closeEmpModal();
-    loadEmployees();
-    showToast(id
-      ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
-      : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r.employee_id}`);
-  } else alert(r.error || '保存失败');
+  async function doSave(forceData) {
+    return id
+      ? await api(`/admin/employees/${id}`, { method:'PUT', body: JSON.stringify(forceData) })
+      : await api('/admin/employees', { method:'POST', body: JSON.stringify(forceData) });
+  }
+  async function finishSave(r2) {
+    if (r2.success || r2.id) {
+      closeEmpModal();
+      await loadEmployees();
+      showToast(id
+        ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
+        : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r2.employee_id}`);
+    } else alert(r2.error || '保存失败');
+  }
+  const r = await doSave(data);
+  if (r && r.duplicate) {
+    const fieldLabel = r.field === 'phone' ? '手机号' : '邮箱';
+    const emp = r.existing;
+    const empName = `${emp.first_name} ${emp.last_name}（员工号：${emp.employee_id}）`;
+    const openExisting = confirm(`该${fieldLabel}已登记在员工「${empName}」名下。\n\n点击「确定」打开该员工档案查看，点击「取消」忽略重复继续保存当前信息。`);
+    if (openExisting) {
+      closeEmpModal();
+      await loadEmployees();
+      openEmpModal(emp.id);
+    } else {
+      await finishSave(await doSave({ ...data, force: true }));
+    }
+    return;
+  }
+  await finishSave(r);
 }
 
 async function terminateEmployee(id, name) {
