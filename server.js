@@ -235,6 +235,10 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN work_start TEXT DEFAULT ''`); } catch
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_end TEXT DEFAULT ''`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
+try { db.exec("ALTER TABLE inquiries ADD COLUMN proc_status TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE inquiries ADD COLUMN proc_note TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE inquiries ADD COLUMN processed_at DATETIME DEFAULT NULL"); } catch(e) {}
 
 // Migrate admin_users table (add role, display_name, active, created_at columns if missing)
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
@@ -739,7 +743,24 @@ app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete
 
 // Inquiries
 app.get('/api/admin/inquiries', requireAdmin, blockManager, (req, res) => {
-  res.json(db.prepare('SELECT * FROM inquiries ORDER BY created_at DESC').all());
+  const history = req.query.history === '1';
+  const rows = db.prepare(
+    `SELECT * FROM inquiries WHERE processed=? ORDER BY created_at DESC`
+  ).all(history ? 1 : 0);
+  res.json(rows);
+});
+
+app.put('/api/admin/inquiries/:id/process', requireAdmin, blockManager, (req, res) => {
+  const { status, note, undo } = req.body;
+  if (undo) {
+    db.prepare('UPDATE inquiries SET processed=0, proc_status=\'\', proc_note=\'\', processed_at=NULL WHERE id=?').run(req.params.id);
+  } else {
+    const valid = ['cooperated','rejected','unreachable'];
+    if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    db.prepare('UPDATE inquiries SET processed=1, proc_status=?, proc_note=?, processed_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(status, note || '', req.params.id);
+  }
+  res.json({ success: true });
 });
 
 app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('delete', 'inquiries'), (req, res) => {
