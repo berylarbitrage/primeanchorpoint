@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>入职材料提交 — Prime Anchor Point</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --sky:#0ea5e9;--sky-d:#0284c7;--green:#22c55e;--red:#ef4444;
+    --gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-400:#9ca3af;--gray-600:#4b5563;--gray-800:#1f2937;
+    --radius:10px;--tr:all .2s;
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f7ff;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem 1rem}
+  .card{background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(14,165,233,.1);width:100%;max-width:560px;padding:2rem;margin-bottom:1.5rem}
+  .logo{font-size:1.4rem;font-weight:800;color:var(--sky);text-align:center;margin-bottom:.25rem}
+  .subtitle{text-align:center;color:var(--gray-400);font-size:.85rem;margin-bottom:1.5rem}
+  h2{font-size:1.05rem;font-weight:700;color:var(--gray-800);margin-bottom:1rem;padding-bottom:.5rem;border-bottom:2px solid var(--gray-200)}
+  h3{font-size:.95rem;font-weight:700;color:var(--gray-800);margin-bottom:.75rem}
+  .field{margin-bottom:1rem}
+  .field label{display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem}
+  .field input[type=text],.field input[type=email],.field input[type=tel]{
+    width:100%;padding:9px 12px;border:1.5px solid var(--gray-200);border-radius:8px;
+    font-size:.9rem;outline:none;transition:var(--tr)
+  }
+  .field input:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(14,165,233,.1)}
+  .agreement-item{display:flex;align-items:flex-start;gap:.75rem;padding:.75rem;background:var(--gray-100);border-radius:8px;margin-bottom:.6rem;cursor:pointer}
+  .agreement-item input[type=checkbox]{width:18px;height:18px;min-width:18px;cursor:pointer;margin-top:1px}
+  .agreement-item span{font-size:.85rem;color:var(--gray-600);line-height:1.5}
+  .upload-zone{border:2px dashed var(--gray-200);border-radius:10px;padding:1.2rem;text-align:center;cursor:pointer;transition:var(--tr);position:relative;margin-bottom:.5rem}
+  .upload-zone:hover,.upload-zone.dragover{border-color:var(--sky);background:rgba(14,165,233,.04)}
+  .upload-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+  .upload-zone .icon{font-size:1.8rem;margin-bottom:.3rem}
+  .upload-zone p{font-size:.82rem;color:var(--gray-400)}
+  .upload-zone .filename{font-size:.82rem;color:var(--sky);font-weight:600;margin-top:.3rem;word-break:break-all}
+  .upload-section{margin-bottom:1.25rem}
+  .upload-label{font-size:.85rem;font-weight:700;color:var(--gray-800);margin-bottom:.4rem;display:flex;align-items:center;gap:.4rem}
+  .required-star{color:var(--red);font-size:.9rem}
+  .btn{display:block;width:100%;padding:13px;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer;transition:var(--tr)}
+  .btn-primary{background:var(--sky);color:#fff}
+  .btn-primary:hover:not(:disabled){background:var(--sky-d)}
+  .btn-primary:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
+  .notice{background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:.75rem 1rem;font-size:.82rem;color:#713f12;margin-bottom:1rem}
+  .success-card{text-align:center;padding:3rem 2rem}
+  .success-icon{font-size:4rem;margin-bottom:1rem}
+  .success-card h2{border:none;font-size:1.5rem;color:var(--green);justify-content:center}
+  .success-card p{color:var(--gray-600);margin-top:.5rem;font-size:.9rem}
+  .error-msg{color:var(--red);font-size:.82rem;margin-top:.5rem;display:none}
+  #loadingScreen{position:fixed;inset:0;background:#f0f7ff;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.75rem;z-index:99}
+  #loadingScreen p{color:var(--gray-400);font-size:.9rem}
+  .spinner{width:36px;height:36px;border:4px solid var(--gray-200);border-top-color:var(--sky);border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="loadingScreen">
+  <div class="spinner"></div>
+  <p>验证链接中…</p>
+</div>
+
+<div id="expiredScreen" style="display:none;width:100%;max-width:560px">
+  <div class="card" style="text-align:center;padding:3rem 2rem">
+    <div style="font-size:3rem;margin-bottom:1rem">🔗</div>
+    <h2 style="border:none;color:var(--red)">链接无效</h2>
+    <p style="color:var(--gray-400);margin-top:.5rem;font-size:.9rem">此入职链接无效或已过期，请联系 HR 重新获取。</p>
+  </div>
+</div>
+
+<div id="completedScreen" style="display:none;width:100%;max-width:560px">
+  <div class="card success-card">
+    <div class="success-icon">✅</div>
+    <h2>材料已提交</h2>
+    <p>您的入职材料已成功提交，HR 将尽快审核并与您联系。</p>
+  </div>
+</div>
+
+<div id="mainForm" style="display:none;width:100%;max-width:560px">
+  <div class="logo">⚓ Prime Anchor Point</div>
+  <div class="subtitle">员工入职材料提交</div>
+
+  <!-- Greeting -->
+  <div class="card">
+    <h2>👋 您好，<span id="applicantName">申请人</span></h2>
+    <div class="notice">
+      请仔细阅读以下协议并上传所需文件。所有文件将加密保存，仅 HR 管理人员可查看。
+    </div>
+    <p style="font-size:.85rem;color:var(--gray-600)">申请职位：<strong id="applicantPositions" style="color:var(--sky)">—</strong></p>
+  </div>
+
+  <!-- Contact Confirmation -->
+  <div class="card">
+    <h2>📱 确认联系方式</h2>
+    <div class="field">
+      <label>邮箱地址</label>
+      <input type="email" id="fEmail" placeholder="your@email.com">
+    </div>
+    <div class="field">
+      <label>手机号码（接收短信通知）</label>
+      <input type="tel" id="fPhone" placeholder="(XXX) XXX-XXXX">
+    </div>
+  </div>
+
+  <!-- Agreements -->
+  <div class="card">
+    <h2>📋 协议确认</h2>
+    <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">请阅读并勾选以下所有协议，方可提交材料。</p>
+    <label class="agreement-item">
+      <input type="checkbox" id="ag1">
+      <span>我已阅读并同意遵守公司的工作规章制度及员工行为准则，包括出勤、考核及保密相关规定。</span>
+    </label>
+    <label class="agreement-item">
+      <input type="checkbox" id="ag2">
+      <span>我声明所提交的所有文件及个人信息均真实有效。如存在虚假或伪造，我愿承担相应法律责任。</span>
+    </label>
+    <label class="agreement-item">
+      <input type="checkbox" id="ag3">
+      <span>我同意 Prime Anchor Point 收集、存储及处理我的个人信息，用于入职审核、身份验证及员工管理目的。</span>
+    </label>
+    <div class="error-msg" id="agError">❗ 请勾选所有协议后再提交</div>
+  </div>
+
+  <!-- Document Uploads -->
+  <div class="card">
+    <h2>📂 证件上传</h2>
+    <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1.25rem">支持 PDF、JPG、PNG 格式，单文件最大 20MB。</p>
+
+    <div class="upload-section">
+      <div class="upload-label">工卡 / 工作许可证 <span class="required-star">*</span></div>
+      <div class="upload-zone" id="zone-work_id">
+        <input type="file" id="file-work_id" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" onchange="onFileChange('work_id')">
+        <div class="icon">🪪</div>
+        <p>点击或拖放文件到此处</p>
+        <div class="filename" id="name-work_id"></div>
+      </div>
+    </div>
+
+    <div class="upload-section">
+      <div class="upload-label">驾照 <span class="required-star">*</span></div>
+      <div class="upload-zone" id="zone-drivers_license">
+        <input type="file" id="file-drivers_license" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" onchange="onFileChange('drivers_license')">
+        <div class="icon">🚗</div>
+        <p>点击或拖放文件到此处</p>
+        <div class="filename" id="name-drivers_license"></div>
+      </div>
+    </div>
+
+    <div class="upload-section">
+      <div class="upload-label">社会安全卡 (SSN) <span class="required-star">*</span></div>
+      <div class="upload-zone" id="zone-ssn">
+        <input type="file" id="file-ssn" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" onchange="onFileChange('ssn')">
+        <div class="icon">📋</div>
+        <p>点击或拖放文件到此处</p>
+        <div class="filename" id="name-ssn"></div>
+      </div>
+    </div>
+
+    <div class="error-msg" id="fileError">❗ 请上传所有必填文件（工卡、驾照、社安号）</div>
+  </div>
+
+  <!-- Submit -->
+  <div style="max-width:560px;width:100%;margin-bottom:3rem">
+    <button class="btn btn-primary" id="submitBtn" onclick="submitForm()">提交入职材料</button>
+    <p style="text-align:center;font-size:.78rem;color:var(--gray-400);margin-top:.75rem">⚠️ 提交后无法修改，请确认所有信息无误</p>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('token') || '';
+const API = '/api';
+
+async function init() {
+  if (!TOKEN) { showExpired(); return; }
+  try {
+    const r = await fetch(`${API}/onboard/${TOKEN}`);
+    if (!r.ok) { showExpired(); return; }
+    const data = await r.json();
+    if (data.status === 'completed') { showCompleted(); return; }
+    document.getElementById('applicantName').textContent = data.name || '申请人';
+    document.getElementById('applicantPositions').textContent = data.positions || '—';
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('mainForm').style.display = '';
+  } catch(e) { showExpired(); }
+}
+
+function showExpired() {
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('expiredScreen').style.display = '';
+}
+function showCompleted() {
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('completedScreen').style.display = '';
+}
+
+function onFileChange(field) {
+  const file = document.getElementById('file-' + field).files[0];
+  const nameEl = document.getElementById('name-' + field);
+  const zone = document.getElementById('zone-' + field);
+  if (file) {
+    nameEl.textContent = '✓ ' + file.name;
+    zone.style.borderColor = 'var(--green)';
+    zone.style.background = 'rgba(34,197,94,.04)';
+  } else {
+    nameEl.textContent = '';
+    zone.style.borderColor = '';
+    zone.style.background = '';
+  }
+}
+
+async function submitForm() {
+  // Validate agreements
+  const ag1 = document.getElementById('ag1').checked;
+  const ag2 = document.getElementById('ag2').checked;
+  const ag3 = document.getElementById('ag3').checked;
+  const agError = document.getElementById('agError');
+  if (!ag1 || !ag2 || !ag3) { agError.style.display = ''; agError.scrollIntoView({behavior:'smooth',block:'center'}); return; }
+  agError.style.display = 'none';
+
+  // Validate files
+  const w = document.getElementById('file-work_id').files[0];
+  const d = document.getElementById('file-drivers_license').files[0];
+  const s = document.getElementById('file-ssn').files[0];
+  const fileError = document.getElementById('fileError');
+  if (!w || !d || !s) { fileError.style.display = ''; fileError.scrollIntoView({behavior:'smooth',block:'center'}); return; }
+  fileError.style.display = 'none';
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '提交中…';
+
+  const agreements = JSON.stringify(['工作规章制度','文件真实性声明','个人信息授权']);
+  const form = new FormData();
+  form.append('email', document.getElementById('fEmail').value.trim());
+  form.append('phone', document.getElementById('fPhone').value.trim());
+  form.append('agreements', agreements);
+  form.append('work_id', w);
+  form.append('drivers_license', d);
+  form.append('ssn', s);
+
+  try {
+    const r = await fetch(`${API}/onboard/${TOKEN}/submit`, { method: 'POST', body: form });
+    const data = await r.json();
+    if (data.success) {
+      showCompleted();
+    } else {
+      alert(data.error || '提交失败，请重试');
+      btn.disabled = false;
+      btn.textContent = '提交入职材料';
+    }
+  } catch(e) {
+    alert('网络错误，请检查连接后重试');
+    btn.disabled = false;
+    btn.textContent = '提交入职材料';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

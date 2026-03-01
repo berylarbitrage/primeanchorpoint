@@ -197,6 +197,27 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id)
   );
+  CREATE TABLE IF NOT EXISTS onboarding_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    inquiry_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    email TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    agreements TEXT DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME,
+    FOREIGN KEY (inquiry_id) REFERENCES inquiries(id)
+  );
+  CREATE TABLE IF NOT EXISTS onboarding_docs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_id INTEGER NOT NULL,
+    doc_type TEXT NOT NULL,
+    file_path TEXT DEFAULT '',
+    file_name TEXT DEFAULT '',
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (token_id) REFERENCES onboarding_tokens(id)
+  );
 `);
 
 // ─── Migrations for existing databases ───
@@ -684,6 +705,99 @@ app.get('/api/admin/inquiries', requireAdmin, blockManager, (req, res) => {
 app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('delete', 'inquiries'), (req, res) => {
   db.prepare('DELETE FROM inquiries WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Onboarding ───
+
+// Multer for onboarding doc uploads (reuse docsDir)
+const onboardUpload = multer({
+  storage: multer.diskStorage({
+    destination: docsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `onboard-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /pdf|jpg|jpeg|png|heic|heif/.test(path.extname(file.originalname).toLowerCase());
+    cb(null, ok);
+  }
+});
+
+// POST /api/admin/inquiries/:id/onboard-link — generate onboarding link for a Job Seeker inquiry
+app.post('/api/admin/inquiries/:id/onboard-link', requireAdmin, (req, res) => {
+  const inq = db.prepare('SELECT * FROM inquiries WHERE id=?').get(req.params.id);
+  if (!inq) return res.status(404).json({ error: 'Inquiry not found' });
+  // Check if token already exists
+  const existing = db.prepare('SELECT * FROM onboarding_tokens WHERE inquiry_id=?').get(inq.id);
+  if (existing && existing.status === 'completed') {
+    return res.json({ token: existing.token, status: 'completed', already_sent: true });
+  }
+  if (existing) return res.json({ token: existing.token, status: existing.status, already_sent: true });
+  const token = crypto.randomBytes(24).toString('hex');
+  db.prepare('INSERT INTO onboarding_tokens (token, inquiry_id, email, phone) VALUES (?,?,?,?)')
+    .run(token, inq.id, inq.email || '', inq.phone || '');
+  res.json({ token, status: 'pending' });
+});
+
+// GET /api/onboard/:token — public: validate token and return basic info
+app.get('/api/onboard/:token', (req, res) => {
+  const row = db.prepare(`
+    SELECT t.*, i.name, i.positions, i.type
+    FROM onboarding_tokens t JOIN inquiries i ON t.inquiry_id=i.id
+    WHERE t.token=?`).get(req.params.token);
+  if (!row) return res.status(404).json({ error: 'Invalid or expired link' });
+  res.json({ status: row.status, name: row.name, positions: row.positions, completed_at: row.completed_at });
+});
+
+// POST /api/onboard/:token/submit — public: submit agreements + upload docs
+app.post('/api/onboard/:token/submit', onboardUpload.fields([
+  { name: 'work_id', maxCount: 1 },
+  { name: 'drivers_license', maxCount: 1 },
+  { name: 'ssn', maxCount: 1 }
+]), (req, res) => {
+  const row = db.prepare('SELECT * FROM onboarding_tokens WHERE token=?').get(req.params.token);
+  if (!row) return res.status(404).json({ error: 'Invalid or expired link' });
+  if (row.status === 'completed') return res.status(400).json({ error: '已完成提交，无法重复提交' });
+  const agreements = req.body.agreements ? JSON.parse(req.body.agreements) : [];
+  if (agreements.length < 3) return res.status(400).json({ error: '请阅读并同意所有协议' });
+  db.prepare(`UPDATE onboarding_tokens SET status='completed', email=?, phone=?, agreements=?, completed_at=CURRENT_TIMESTAMP WHERE token=?`)
+    .run(req.body.email || row.email, req.body.phone || row.phone, JSON.stringify(agreements), row.token);
+  // Save uploaded docs
+  const files = req.files || {};
+  for (const [docType, fileArr] of Object.entries(files)) {
+    if (fileArr && fileArr[0]) {
+      const f = fileArr[0];
+      db.prepare('INSERT INTO onboarding_docs (token_id, doc_type, file_path, file_name) VALUES (?,?,?,?)')
+        .run(row.id, docType, f.filename, f.originalname);
+    }
+  }
+  res.json({ success: true });
+});
+
+// GET /api/admin/onboard-submissions — list all onboarding submissions with inquiry info
+app.get('/api/admin/onboard-submissions', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT t.*, i.name, i.positions, i.email as inq_email, i.phone as inq_phone,
+      (SELECT COUNT(*) FROM onboarding_docs d WHERE d.token_id=t.id) as doc_count
+    FROM onboarding_tokens t JOIN inquiries i ON t.inquiry_id=i.id
+    ORDER BY t.created_at DESC`).all();
+  res.json(rows);
+});
+
+// GET /api/admin/onboard-submissions/:id/docs — list docs for a submission
+app.get('/api/admin/onboard-submissions/:id/docs', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM onboarding_docs WHERE token_id=?').all(req.params.id));
+});
+
+// GET /api/admin/onboard-submissions/:id/docs/:docId/download — download a doc
+app.get('/api/admin/onboard-submissions/:id/docs/:docId/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM onboarding_docs WHERE id=? AND token_id=?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  const fp = path.join(docsDir, doc.file_path);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File not found' });
+  res.download(fp, doc.file_name || doc.file_path);
 });
 
 // Quotes

@@ -198,15 +198,22 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="search-bar">
-    <input type="text" id="inqSearch" placeholder="搜索姓名、邮箱、电话..." oninput="filterInquiries()">
+    <input type="text" id="inqSearch" placeholder="搜索姓名、邮箱、电话、公司..." oninput="filterInquiries()">
+    <input type="text" id="inqPosSearch" placeholder="按职位筛选..." oninput="filterInquiries()" style="max-width:180px">
     <select id="inqTypeFilter" onchange="filterInquiries()">
       <option value="">全部类型</option>
       <option value="Employer">雇主</option>
       <option value="Job Seeker">求职者</option>
       <option value="Other">其他</option>
     </select>
+    <select id="inqSortSel" onchange="filterInquiries()" style="max-width:160px">
+      <option value="date_desc">日期 ↓ 最新</option>
+      <option value="date_asc">日期 ↑ 最旧</option>
+      <option value="pos_asc">职位 A→Z</option>
+      <option value="pos_desc">职位 Z→A</option>
+    </select>
   </div>
-  <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>邮箱</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>申请职位</th><th>地点</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
 </div>
 
 <!-- Assignments -->
@@ -289,6 +296,14 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="exportEmployeeCSV()">导出 CSV</button>
       <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
       <button class="btn btn-green" onclick="openEmpModal()">+ 新增员工</button>
+    </div>
+  </div>
+  <!-- Onboarding submissions sub-section -->
+  <div style="margin-bottom:1.5rem">
+    <h3 style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:.75rem">入职申请 <span id="onboardBadge" style="font-size:.75rem;background:var(--sky);color:#fff;padding:2px 8px;border-radius:10px;vertical-align:middle"></span></h3>
+    <div class="card" style="padding:0">
+      <table><thead><tr><th>提交时间</th><th>姓名</th><th>申请职位</th><th>邮箱</th><th>电话</th><th>状态</th><th>文件</th><th>操作</th></tr></thead>
+      <tbody id="onboardTable"><tr><td colspan="8" class="empty">暂无入职申请</td></tr></tbody></table>
     </div>
   </div>
   <div class="stats-row">
@@ -492,9 +507,20 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="inqModal"><div class="modal">
   <h2>问卷详情</h2>
   <div id="inqDetail"></div>
-  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+  <div id="inqOnboardStatus" style="display:none;margin-top:1rem;padding:.75rem 1rem;background:var(--off-white);border-radius:8px;font-size:.85rem"></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
+    <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
     <button class="btn btn-red" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Onboard Doc Preview Modal -->
+<div class="modal-bg" id="onboardDocModal"><div class="modal">
+  <h2 id="onboardDocTitle">入职材料</h2>
+  <div id="onboardDocContent"></div>
+  <div style="margin-top:1.5rem">
+    <button class="btn btn-red" onclick="document.getElementById('onboardDocModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
 
@@ -952,7 +978,7 @@ function showTab(t) {
   if (t === 'assignments') loadAssignments();
   if (t === 'partners')   loadPartners();
   if (t === 'backups')    loadBackups();
-  if (t === 'employees')  loadEmployees();
+  if (t === 'employees')  { loadEmployees(); loadOnboardSubmissions(); }
   if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
@@ -1101,7 +1127,9 @@ async function loadInquiries() {
 
 function filterInquiries() {
   const keyword = document.getElementById('inqSearch').value.toLowerCase();
+  const posKeyword = document.getElementById('inqPosSearch').value.toLowerCase();
   const typeFilter = document.getElementById('inqTypeFilter').value;
+  const sortVal = document.getElementById('inqSortSel').value;
   let filtered = allInquiries;
   if (keyword) {
     filtered = filtered.filter(i =>
@@ -1111,41 +1139,121 @@ function filterInquiries() {
       (i.company || '').toLowerCase().includes(keyword)
     );
   }
-  if (typeFilter) {
-    filtered = filtered.filter(i => i.type === typeFilter);
+  if (posKeyword) {
+    filtered = filtered.filter(i => (i.positions || '').toLowerCase().includes(posKeyword));
   }
+  if (typeFilter) filtered = filtered.filter(i => i.type === typeFilter);
+  if (sortVal === 'date_asc') filtered = [...filtered].sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
+  else if (sortVal === 'date_desc') filtered = [...filtered].sort((a,b) => new Date(b.created_at)-new Date(a.created_at));
+  else if (sortVal === 'pos_asc') filtered = [...filtered].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
+  else if (sortVal === 'pos_desc') filtered = [...filtered].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
   renderInquiries(filtered);
 }
 
 function renderInquiries(inqs) {
   document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
-    <td>${new Date(i.created_at).toLocaleDateString()}</td>
-    <td><span style="font-family:monospace;font-size:.75rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
-    <td><strong>${esc(i.name)}</strong></td>
+    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></td>
+    <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
+    <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
     <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span></td>
-    <td>${esc(i.email)}</td><td>${esc(i.phone)}</td>
-    <td><button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button> <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无问卷提交</td></tr>';
+    <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.82rem">${esc(i.location||'')}</td>
+    <td style="white-space:nowrap">${esc(i.phone)}</td>
+    <td style="white-space:nowrap"><button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button> <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button></td>
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无问卷提交</td></tr>';
 }
 
 function showInquiry(i) {
   currentInquiry = i;
-  const labels = {
-    name: '姓名', email: '邮箱', phone: '电话', company: '公司',
-    type: '类型', positions: '职位需求', workers: '人数',
-    location: '地点', start_date: '开始日期', experience: '工作经验',
-    languages: '语言能力', comments: '备注'
-  };
   const fields = [
-    ['公司编号', i.employer_id], ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
-    ['类型', typeLabel(i.type)], ['职位需求', i.positions], ['人数', i.workers],
+    ['公司编号', i.employer_id],
+    ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
+    ['类型', typeLabel(i.type)], ['申请职位', i.positions], ['需求人数', i.workers],
     ['地点', i.location], ['开始日期', i.start_date], ['工作经验', i.experience],
     ['语言能力', i.languages], ['备注', i.comments],
-    ['简历', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank">下载简历</a>` : ''],
+    ['简历', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank" style="color:var(--sky)">📄 下载简历</a>` : ''],
     ['提交时间', new Date(i.created_at).toLocaleString()]
   ].filter(([k, v]) => v);
-  document.getElementById('inqDetail').innerHTML = '<table>' + fields.map(([k, v]) => `<tr><td style="font-weight:700;width:100px;padding:6px 0">${k}</td><td>${v}</td></tr>`).join('') + '</table>';
+  document.getElementById('inqDetail').innerHTML = '<table style="width:100%">' +
+    fields.map(([k, v]) => `<tr><td style="font-weight:700;width:90px;padding:5px 8px 5px 0;color:var(--gray-500);font-size:.82rem;vertical-align:top">${k}</td><td style="padding:5px 0;font-size:.85rem">${v}</td></tr>`).join('') + '</table>';
+  // Show/hide onboard button for Job Seekers
+  const btnOnboard = document.getElementById('btnSendOnboard');
+  const statusDiv = document.getElementById('inqOnboardStatus');
+  if (i.type === 'Job Seeker') {
+    btnOnboard.style.display = '';
+    // Check if already has a token
+    api(`/admin/onboard-submissions`).then(subs => {
+      const existing = subs.find(s => s.inquiry_id === i.id);
+      if (existing) {
+        btnOnboard.style.display = 'none';
+        const link = `${location.origin}/onboard.html?token=${existing.token}`;
+        statusDiv.style.display = '';
+        statusDiv.innerHTML = existing.status === 'completed'
+          ? `✅ 已完成入职材料提交 <span style="color:var(--gray-400);font-size:.78rem">${new Date(existing.completed_at).toLocaleString()}</span><br><a href="${link}" target="_blank" style="color:var(--sky);word-break:break-all;font-size:.78rem">${link}</a>`
+          : `⏳ 链接已发送，等待填写中<br><span style="color:var(--gray-400);font-size:.78rem;user-select:all">${link}</span>
+             <button class="btn btn-sm" style="margin-left:.5rem" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='✓ 已复制').catch(()=>{})">复制</button>`;
+      } else {
+        statusDiv.style.display = 'none';
+        btnOnboard.style.display = '';
+      }
+    });
+  } else {
+    btnOnboard.style.display = 'none';
+    statusDiv.style.display = 'none';
+  }
   document.getElementById('inqModal').classList.add('show');
+}
+
+async function sendOnboardLink() {
+  if (!currentInquiry) return;
+  const r = await api(`/admin/inquiries/${currentInquiry.id}/onboard-link`, { method: 'POST' });
+  if (r.token) {
+    const link = `${location.origin}/onboard.html?token=${r.token}`;
+    document.getElementById('btnSendOnboard').style.display = 'none';
+    const statusDiv = document.getElementById('inqOnboardStatus');
+    statusDiv.style.display = '';
+    statusDiv.innerHTML = `✅ 入职链接已生成，请复制发送给申请人：<br>
+      <span style="font-size:.82rem;color:var(--sky);word-break:break-all;user-select:all">${link}</span>
+      <button class="btn btn-sm" style="margin-left:.5rem;margin-top:.3rem" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='✓ 已复制').catch(()=>{})">复制链接</button>`;
+  }
+}
+
+async function loadOnboardSubmissions() {
+  const subs = await api('/admin/onboard-submissions');
+  const pending = subs.filter(s => s.status === 'pending').length;
+  const badge = document.getElementById('onboardBadge');
+  if (badge) badge.textContent = subs.length ? `${subs.length} 条` : '';
+  const tbody = document.getElementById('onboardTable');
+  if (!tbody) return;
+  const docLabels = { work_id: '工卡/工作许可', drivers_license: '驾照', ssn: '社安号' };
+  tbody.innerHTML = subs.length ? subs.map(s => {
+    const statusBadge = s.status === 'completed'
+      ? `<span class="badge badge-seeker">已完成</span>`
+      : `<span class="badge badge-other">待填写</span>`;
+    return `<tr>
+      <td style="font-size:.82rem;white-space:nowrap">${new Date(s.created_at).toLocaleDateString()}</td>
+      <td><strong>${esc(s.name)}</strong></td>
+      <td style="font-size:.82rem;max-width:150px">${esc(s.positions||'')}</td>
+      <td style="font-size:.82rem">${esc(s.email||s.inq_email||'')}</td>
+      <td style="font-size:.82rem">${esc(s.phone||s.inq_phone||'')}</td>
+      <td>${statusBadge}</td>
+      <td style="font-size:.82rem">${s.doc_count > 0 ? `<span style="color:var(--sky)">${s.doc_count} 份</span>` : '—'}</td>
+      <td><button class="btn btn-sm btn-outline" onclick="viewOnboardDocs(${s.id},'${esc(s.name)}')">查看</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">暂无入职申请</td></tr>';
+}
+
+async function viewOnboardDocs(subId, name) {
+  const docs = await api(`/admin/onboard-submissions/${subId}/docs`);
+  const docLabels = { work_id: '工卡 / 工作许可', drivers_license: '驾照', ssn: '社安号' };
+  document.getElementById('onboardDocTitle').textContent = `${name} — 入职材料`;
+  document.getElementById('onboardDocContent').innerHTML = docs.length
+    ? docs.map(d => `<div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--gray-200)">
+        <div><strong style="font-size:.88rem">${docLabels[d.doc_type]||d.doc_type}</strong><br><span style="font-size:.78rem;color:var(--gray-400)">${esc(d.file_name)}</span></div>
+        <a class="btn btn-sm btn-outline" href="${API}/admin/onboard-submissions/${subId}/docs/${d.id}/download?token=${TOKEN}" target="_blank">下载</a>
+      </div>`).join('')
+    : '<p style="color:var(--gray-400);font-size:.85rem">暂无上传文件</p>';
+  document.getElementById('onboardDocModal').classList.add('show');
 }
 
 async function deleteInq(id) {
