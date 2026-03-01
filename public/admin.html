@@ -16,6 +16,11 @@
 .login-box button{width:100%;padding:12px;background:var(--blue);color:#fff;border:none;border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.95rem}
 .login-box button:hover{background:var(--sky)}
 .login-box .err{color:var(--red);font-size:.82rem;margin-top:.5rem}
+.login-box img.logo{width:80px;height:auto;margin-bottom:1rem}
+.pass-wrap{position:relative;width:100%;margin-bottom:1rem}
+.pass-wrap input{width:100%;margin-bottom:0;padding-right:44px}
+.pass-wrap .eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--gray-400);background:none;border:none;padding:4px;font-size:1rem;line-height:1;width:auto}
+.pass-wrap .eye:hover{color:var(--gray-600)}
 
 .app{display:none}.app.show{display:block}
 .sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:var(--blue);color:#fff;padding:1.5rem 0}
@@ -60,7 +65,27 @@ tr:hover td{background:var(--sky-light)}
 .search-bar input,.search-bar select{padding:8px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem;outline:none;font-family:inherit}
 .search-bar input{flex:1;min-width:200px}
 .search-bar input:focus,.search-bar select:focus{border-color:var(--sky)}
-@media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}.stats-row{grid-template-columns:repeat(2,1fr)}}
+/* ─ Employee / HR extensions ─ */
+.badge-active{background:#E8F5E9;color:var(--green)}.badge-inactive{background:#FFF3E0;color:var(--accent)}.badge-terminated{background:var(--gray-200);color:var(--gray-600)}
+.badge-hourly{background:#E8F0FE;color:var(--sky)}.badge-salary{background:#F3E8FF;color:#7C3AED}
+.badge-open{background:#FFF3E0;color:var(--accent)}.badge-closed{background:#E8F5E9;color:var(--green)}
+.badge-ordered{background:#E8F0FE;color:var(--sky)}.badge-in_progress{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-failed{background:#FFEAEA;color:var(--red)}
+.badge-clear{background:#E8F5E9;color:var(--green)}.badge-flagged{background:#FFEAEA;color:var(--red)}
+.badge-ssn{background:#FFEAEA;color:var(--red)}.badge-passport{background:#E8F0FE;color:var(--blue)}.badge-i9{background:#E8F5E9;color:var(--green)}.badge-doc{background:var(--gray-200);color:var(--gray-600)}
+.ot-text{color:var(--accent);font-weight:700}
+.form-section{margin-bottom:1.5rem}.form-section h4{font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)}
+.modal-lg{max-width:700px}
+.notice{background:#FFF8E1;border:1px solid #FFD54F;border-radius:var(--radius);padding:.6rem .9rem;font-size:.8rem;color:#7B5800;margin-bottom:1rem}
+.hours-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.5rem}
+.hours-item{background:var(--white);border-radius:var(--radius);padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,.04);text-align:center}
+.hours-item h4{font-size:1.6rem;font-weight:700;color:var(--sky)}.hours-item p{font-size:.72rem;color:var(--gray-400);margin-top:2px}
+.emp-meta{font-size:.75rem;color:var(--gray-400);margin-top:2px}
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:.25rem 1.5rem}
+.detail-row{display:flex;flex-direction:column;padding:.4rem 0;border-bottom:1px solid var(--gray-200)}
+.detail-row span:first-child{font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase}
+.detail-row span:last-child{font-size:.88rem;color:var(--gray-800);margin-top:2px}
+.field-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
+@media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}.stats-row{grid-template-columns:repeat(2,1fr)}.hours-bar{grid-template-columns:repeat(2,1fr)}.field-row3{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -68,10 +93,14 @@ tr:hover td{background:var(--sky-light)}
 <!-- LOGIN -->
 <div class="login-wrap" id="loginWrap">
 <div class="login-box">
+  <img src="/logo.svg" alt="Prime Anchorpoint" class="logo">
   <h1>Prime Anchorpoint</h1>
   <p>管理后台</p>
   <input type="text" id="userInput" placeholder="用户名" autocomplete="username">
-  <input type="password" id="passInput" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+  <div class="pass-wrap">
+    <input type="password" id="passInput" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="eye" type="button" onclick="togglePass()" title="显示/隐藏密码">👁</button>
+  </div>
   <button onclick="doLogin()">登录</button>
   <div class="err" id="loginErr"></div>
 </div>
@@ -87,6 +116,11 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('jobs')">职位管理</a>
   <a onclick="showTab('partners')">合作公司</a>
   <a onclick="showTab('backups')">备份管理</a>
+  <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem"></div>
+  <a onclick="showTab('employees')">👥 员工管理</a>
+  <a onclick="showTab('time')">⏱ 工时打卡</a>
+  <a onclick="showTab('documents')">📄 HR 文件</a>
+  <a onclick="showTab('bgchecks')">🔍 背景调查</a>
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -195,6 +229,134 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+
+<!-- ════════════════════ EMPLOYEES TAB ════════════════════ -->
+<div id="tab-employees" style="display:none">
+  <div class="top">
+    <h1>员工管理</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="exportEmployeeCSV()">导出 CSV</button>
+      <a class="btn btn-outline" href="/timeclock" target="_blank">打卡页面 ↗</a>
+      <button class="btn btn-green" onclick="openEmpModal()">+ 新增员工</button>
+    </div>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card"><h3 id="empStatTotal">0</h3><p>员工总数</p></div>
+    <div class="stat-card"><h3 id="empStatActive">0</h3><p>在职员工</p></div>
+    <div class="stat-card"><h3 id="empStatHourly">0</h3><p>小时工</p></div>
+    <div class="stat-card"><h3 id="empStatMonth">0</h3><p>本月入职</p></div>
+  </div>
+  <div class="search-bar">
+    <input type="text" id="empSearch" placeholder="搜索姓名、员工号、职位、部门..." oninput="filterEmployees()">
+    <select id="empStatusFilter" onchange="filterEmployees()">
+      <option value="">全部状态</option>
+      <option value="active">在职</option>
+      <option value="inactive">停职</option>
+      <option value="terminated">已离职</option>
+    </select>
+    <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部部门</option></select>
+  </div>
+  <div class="card">
+    <table><thead><tr><th>员工号</th><th>姓名</th><th>职位</th><th>部门</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
+    <tbody id="empTable"></tbody></table>
+  </div>
+</div>
+
+<!-- ════════════════════ TIME RECORDS TAB ════════════════════ -->
+<div id="tab-time" style="display:none">
+  <div class="top">
+    <h1>工时打卡记录</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="exportTimeCSV()">导出 CSV</button>
+      <button class="btn btn-accent" onclick="showTimeReport()">工时汇总报表</button>
+      <button class="btn btn-green" onclick="openTimeModal()">+ 手动录入</button>
+    </div>
+  </div>
+  <div class="search-bar">
+    <select id="timeEmpFilter" onchange="loadTimeEntries()"><option value="">全部员工</option></select>
+    <input type="date" id="timeFrom" oninput="loadTimeEntries()">
+    <span style="align-self:center;color:var(--gray-400);font-size:.85rem">至</span>
+    <input type="date" id="timeTo" oninput="loadTimeEntries()">
+    <select id="timeStatusFilter" onchange="loadTimeEntries()">
+      <option value="">全部状态</option>
+      <option value="open">上班中</option>
+      <option value="closed">已完成</option>
+    </select>
+  </div>
+  <div class="hours-bar" id="timeSummary" style="display:none">
+    <div class="hours-item"><h4 id="sumShifts">0</h4><p>班次总数</p></div>
+    <div class="hours-item"><h4 id="sumTotal">0h</h4><p>总工时</p></div>
+    <div class="hours-item"><h4 id="sumRegular">0h</h4><p>正常工时</p></div>
+    <div class="hours-item"><h4 id="sumOT" style="color:var(--accent)">0h</h4><p>加班工时</p></div>
+  </div>
+  <div class="card">
+    <table><thead><tr><th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>合计</th><th>正常</th><th>加班</th><th>状态</th><th>备注</th><th>操作</th></tr></thead>
+    <tbody id="timeTable"></tbody></table>
+  </div>
+</div>
+
+<!-- ════════════════════ HR DOCUMENTS TAB ════════════════════ -->
+<div id="tab-documents" style="display:none">
+  <div class="top">
+    <h1>HR 文件管理</h1>
+    <div class="top-actions">
+      <button class="btn btn-green" onclick="openDocModal()">+ 上传文件</button>
+    </div>
+  </div>
+  <div class="notice">⚠️ 所有上传的身份文件（SSN、护照、工卡等）均加密存储，仅管理员可访问下载链接。</div>
+  <div class="search-bar">
+    <select id="docEmpFilter" onchange="loadDocuments()"><option value="">-- 请选择员工 --</option></select>
+    <select id="docTypeFilter" onchange="loadDocuments()">
+      <option value="">全部文件类型</option>
+      <option value="ssn">社会安全卡 (SSN)</option>
+      <option value="drivers_license">驾照</option>
+      <option value="passport">护照</option>
+      <option value="work_permit">工作许可证 / EAD</option>
+      <option value="i9">I-9 表格</option>
+      <option value="w4">W-4 表格</option>
+      <option value="bg_check">背景调查报告</option>
+      <option value="other">其他</option>
+    </select>
+  </div>
+  <div class="card">
+    <table><thead><tr><th>员工</th><th>文件类型</th><th>标签/描述</th><th>文件名</th><th>到期日</th><th>上传时间</th><th>操作</th></tr></thead>
+    <tbody id="docTable"></tbody></table>
+  </div>
+</div>
+
+<!-- ════════════════════ BACKGROUND CHECKS TAB ════════════════════ -->
+<div id="tab-bgchecks" style="display:none">
+  <div class="top">
+    <h1>背景调查管理</h1>
+    <div class="top-actions">
+      <button class="btn btn-green" onclick="openBgModal()">+ 新建调查</button>
+    </div>
+  </div>
+  <div class="search-bar">
+    <select id="bgEmpFilter" onchange="loadBgChecks()"><option value="">全部员工</option></select>
+    <select id="bgStatusFilter" onchange="loadBgChecks()">
+      <option value="">全部状态</option>
+      <option value="ordered">已下单</option>
+      <option value="in_progress">调查中</option>
+      <option value="completed">已完成</option>
+      <option value="failed">未通过</option>
+    </select>
+    <select id="bgTypeFilter" onchange="loadBgChecks()">
+      <option value="">全部类型</option>
+      <option value="criminal">刑事记录</option>
+      <option value="employment">雇佣核实</option>
+      <option value="education">学历核实</option>
+      <option value="drug">药物检测</option>
+      <option value="credit">信用检查</option>
+      <option value="full">全面调查</option>
+    </select>
+  </div>
+  <div class="card">
+    <table><thead><tr><th>员工</th><th>调查类型</th><th>下单日期</th><th>完成日期</th><th>结果</th><th>状态</th><th>调查机构</th><th>费用</th><th>操作</th></tr></thead>
+    <tbody id="bgTable"></tbody></table>
+  </div>
+</div>
+
 </div></div>
 
 <!-- Job Modal -->
@@ -280,9 +442,206 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════ Employee Add/Edit Modal ════ -->
+<div class="modal-bg" id="empModal"><div class="modal modal-lg">
+  <h2 id="empModalTitle">新增员工</h2>
+  <input type="hidden" id="empId">
+  <div class="form-section">
+    <h4>基本信息</h4>
+    <div class="field-row">
+      <div class="field"><label>名 (First Name) *</label><input id="eFirst" placeholder="例：John"></div>
+      <div class="field"><label>姓 (Last Name) *</label><input id="eLast" placeholder="例：Smith"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>员工编号</label><input id="eEmpId" placeholder="留空自动生成 EMP001..."></div>
+      <div class="field"><label>出生日期</label><input id="eDob" type="date"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>电话</label><input id="ePhone" placeholder="(555) 000-0000"></div>
+      <div class="field"><label>邮箱</label><input id="eEmail" type="email" placeholder="email@example.com"></div>
+    </div>
+    <div class="field"><label>家庭住址</label><input id="eAddr" placeholder="街道地址"></div>
+    <div class="field-row3">
+      <div class="field"><label>城市</label><input id="eCity" placeholder="Chicago"></div>
+      <div class="field"><label>州</label><input id="eState" placeholder="IL"></div>
+      <div class="field"><label>邮编</label><input id="eZip" placeholder="60601"></div>
+    </div>
+  </div>
+  <div class="form-section">
+    <h4>就业信息</h4>
+    <div class="field-row">
+      <div class="field"><label>入职日期</label><input id="eHire" type="date"></div>
+      <div class="field"><label>状态</label><select id="eStatus">
+        <option value="active">在职</option><option value="inactive">停职</option><option value="terminated">已离职</option>
+      </select></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>职位</label><input id="ePos" placeholder="例：仓库分拣员"></div>
+      <div class="field"><label>部门</label><input id="eDept" placeholder="例：Warehouse"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>薪资 ($/hr 或 $/yr)</label><input id="ePayRate" type="number" step="0.01" placeholder="18.50"></div>
+      <div class="field"><label>薪资类型</label><select id="ePayType">
+        <option value="hourly">小时工 (Hourly)</option><option value="salary">固定薪资 (Salary)</option>
+      </select></div>
+    </div>
+  </div>
+  <div class="form-section">
+    <h4>紧急联系人</h4>
+    <div class="field-row3">
+      <div class="field"><label>姓名</label><input id="eEmgName" placeholder="Jane Smith"></div>
+      <div class="field"><label>电话</label><input id="eEmgPhone" placeholder="(555) 000-0001"></div>
+      <div class="field"><label>关系</label><input id="eEmgRel" placeholder="Spouse / Parent..."></div>
+    </div>
+  </div>
+  <div class="form-section">
+    <h4>敏感信息 (安全存储)</h4>
+    <div class="notice">SSN 使用 AES-256-GCM 加密存储，后台只显示末四位。编辑时如不修改请留空。</div>
+    <div class="field-row">
+      <div class="field"><label>SSN (9位数字)</label><input id="eSSN" placeholder="XXX-XX-XXXX 或 XXXXXXXXX" maxlength="11"></div>
+      <div class="field"><label>打卡 PIN (4-6位数字)</label><input id="ePin" type="password" placeholder="员工打卡时使用" maxlength="6"></div>
+    </div>
+  </div>
+  <div class="field"><label>备注</label><textarea id="eNotes" placeholder="其他备注信息..."></textarea></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="saveEmployee()">保存员工</button>
+    <button class="btn btn-outline" onclick="closeEmpModal()">取消</button>
+  </div>
+</div></div>
+
+<!-- ════ Employee Detail Modal ════ -->
+<div class="modal-bg" id="empDetailModal"><div class="modal modal-lg">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem">
+    <h2 id="empDetailTitle">员工详情</h2>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn btn-sm" onclick="editFromDetail()">编辑</button>
+      <button class="btn btn-sm btn-outline" onclick="closeEmpDetailModal()">关闭</button>
+    </div>
+  </div>
+  <div id="empDetailContent"></div>
+</div></div>
+
+<!-- ════ Time Entry Modal ════ -->
+<div class="modal-bg" id="timeModal"><div class="modal">
+  <h2 id="timeModalTitle">手动录入工时</h2>
+  <input type="hidden" id="timeId">
+  <div class="field"><label>员工 *</label><select id="tEmp"><option value="">-- 请选择 --</option></select></div>
+  <div class="field-row">
+    <div class="field"><label>上班时间 *</label><input id="tIn" type="datetime-local"></div>
+    <div class="field"><label>下班时间</label><input id="tOut" type="datetime-local"></div>
+  </div>
+  <div class="field-row">
+    <div class="field"><label>休息时间 (分钟)</label><input id="tBreak" type="number" min="0" value="0" placeholder="30"></div>
+    <div class="field"><label>关联职位 (可选)</label><select id="tJob"><option value="">无</option></select></div>
+  </div>
+  <div class="field"><label>备注</label><input id="tNotes" placeholder="班次备注..."></div>
+  <div id="timeCalcPreview" style="display:none;background:var(--sky-light);border-radius:var(--radius);padding:.75rem 1rem;font-size:.85rem;margin-top:.5rem"></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="saveTimeEntry()">保存</button>
+    <button class="btn btn-outline" onclick="closeTimeModal()">取消</button>
+  </div>
+</div></div>
+
+<!-- ════ Time Report Modal ════ -->
+<div class="modal-bg" id="timeReportModal"><div class="modal modal-lg">
+  <h2>工时汇总报表</h2>
+  <div class="field-row" style="margin-bottom:1rem">
+    <div class="field"><label>起始日期</label><input id="rptFrom" type="date"></div>
+    <div class="field"><label>结束日期</label><input id="rptTo" type="date"></div>
+    <div class="field"><label>员工筛选</label><select id="rptEmp"><option value="">全部员工</option></select></div>
+  </div>
+  <button class="btn" onclick="generateReport()">生成报表</button>
+  <button class="btn btn-outline" style="margin-left:.5rem" onclick="exportTimeCSV(true)">导出 CSV</button>
+  <div id="reportContent" style="margin-top:1.5rem"></div>
+  <div style="margin-top:1.5rem;text-align:right">
+    <button class="btn btn-outline" onclick="closeTimeReportModal()">关闭</button>
+  </div>
+</div></div>
+
+<!-- ════ Document Upload Modal ════ -->
+<div class="modal-bg" id="docModal"><div class="modal">
+  <h2>上传 HR 文件</h2>
+  <div class="field"><label>员工 *</label><select id="docEmpSel"><option value="">-- 请选择员工 --</option></select></div>
+  <div class="field-row">
+    <div class="field"><label>文件类型 *</label><select id="docType">
+      <option value="ssn">社会安全卡 (SSN)</option>
+      <option value="drivers_license">驾照</option>
+      <option value="passport">护照</option>
+      <option value="work_permit">工作许可证 / EAD</option>
+      <option value="i9">I-9 表格</option>
+      <option value="w4">W-4 表格</option>
+      <option value="bg_check">背景调查报告</option>
+      <option value="other">其他</option>
+    </select></div>
+    <div class="field"><label>到期日期 (如适用)</label><input id="docExpiry" type="date"></div>
+  </div>
+  <div class="field"><label>标签/描述</label><input id="docLabel" placeholder="例：驾照 - Illinois"></div>
+  <div class="field"><label>文件 (PDF/JPG/PNG/DOC, 最大 20MB)</label>
+    <input type="file" id="docFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%">
+  </div>
+  <div class="field"><label>备注</label><textarea id="docNotes" placeholder="备注..."></textarea></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="uploadDoc()">上传</button>
+    <button class="btn btn-outline" onclick="closeDocModal()">取消</button>
+  </div>
+</div></div>
+
+<!-- ════ Background Check Modal ════ -->
+<div class="modal-bg" id="bgModal"><div class="modal modal-lg">
+  <h2 id="bgModalTitle">新建背景调查</h2>
+  <input type="hidden" id="bgId">
+  <div class="field-row">
+    <div class="field"><label>员工 *</label><select id="bgEmpSel"><option value="">-- 请选择 --</option></select></div>
+    <div class="field"><label>调查类型 *</label><select id="bgType">
+      <option value="criminal">刑事记录查询</option>
+      <option value="employment">雇佣经历核实</option>
+      <option value="education">学历核实</option>
+      <option value="drug">药物检测</option>
+      <option value="credit">信用检查</option>
+      <option value="full">全面综合调查</option>
+    </select></div>
+  </div>
+  <div class="field-row">
+    <div class="field"><label>下单日期</label><input id="bgOrdered" type="date"></div>
+    <div class="field"><label>完成日期</label><input id="bgCompleted" type="date"></div>
+  </div>
+  <div class="field-row">
+    <div class="field"><label>调查状态</label><select id="bgStatus">
+      <option value="ordered">已下单</option>
+      <option value="in_progress">调查中</option>
+      <option value="completed">已完成</option>
+      <option value="failed">未通过</option>
+    </select></div>
+    <div class="field"><label>调查结果</label><select id="bgResult">
+      <option value="">待定</option>
+      <option value="clear">通过 (Clear)</option>
+      <option value="flagged">有问题 (Flagged)</option>
+    </select></div>
+  </div>
+  <div class="field-row">
+    <div class="field"><label>调查机构/供应商</label><input id="bgVendor" placeholder="例：Sterling, Checkr, HireRight..."></div>
+    <div class="field"><label>费用 ($)</label><input id="bgCost" type="number" step="0.01" placeholder="0.00"></div>
+  </div>
+  <div class="field"><label>上传报告 (PDF/JPG/PNG)</label>
+    <input type="file" id="bgFile" accept=".pdf,.jpg,.jpeg,.png" style="padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%">
+  </div>
+  <div class="field"><label>备注</label><textarea id="bgNotes" placeholder="调查备注..."></textarea></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="saveBgCheck()">保存</button>
+    <button class="btn btn-outline" onclick="closeBgModal()">取消</button>
+  </div>
+</div></div>
+
 <script>
 let TOKEN = '';
 const API = '/api';
+
+function togglePass() {
+  const inp = document.getElementById('passInput');
+  const btn = inp.nextElementSibling;
+  if (inp.type === 'password') { inp.type = 'text'; btn.textContent = '🙈'; }
+  else { inp.type = 'password'; btn.textContent = '👁'; }
+}
 let allInquiries = [];
 let allAssignments = [];
 let currentInquiry = null;
@@ -338,17 +697,25 @@ function showTab(t) {
   document.getElementById('tab-' + t).style.display = 'block';
   document.querySelectorAll('.sidebar a:not(.logout)').forEach(a => a.classList.remove('active'));
   if (event && event.target) event.target.classList.add('active');
-  if (t === 'dashboard') loadDashboard();
-  if (t === 'jobs') loadJobs();
-  if (t === 'inquiries') loadInquiries();
+  if (t === 'dashboard')  loadDashboard();
+  if (t === 'jobs')       loadJobs();
+  if (t === 'inquiries')  loadInquiries();
   if (t === 'assignments') loadAssignments();
-  if (t === 'partners') loadPartners();
-  if (t === 'backups') loadBackups();
+  if (t === 'partners')   loadPartners();
+  if (t === 'backups')    loadBackups();
+  if (t === 'employees')  loadEmployees();
+  if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
+  if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
+  if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
 }
 
 // ─── Dashboard ───
 async function loadDashboard() {
-  const [jobs, inqs, assigns, partners] = await Promise.all([api('/admin/jobs'), api('/admin/inquiries'), api('/admin/assignments'), api('/admin/partners')]);
+  const [jobs, inqs, assigns, partners, emps] = await Promise.all([
+    api('/admin/jobs'), api('/admin/inquiries'), api('/admin/assignments'),
+    api('/admin/partners').catch(() => []),
+    api('/admin/employees').catch(() => [])
+  ]);
   document.getElementById('statJobs').textContent = jobs.filter(j => j.active).length;
   document.getElementById('statInq').textContent = inqs.length;
   document.getElementById('statAssign').textContent = assigns.length;
@@ -753,6 +1120,612 @@ async function runBackupNow() {
   btn.disabled = false;
   btn.textContent = '立即备份';
   loadBackups();
+}
+
+// ══════════════════════════════════════════════════════
+// ─── EMPLOYEES (员工管理) ───
+// ══════════════════════════════════════════════════════
+let allEmployees = [];
+let currentEmpForDetail = null;
+
+const EMP_STATUS_LABEL = { active:'在职', inactive:'停职', terminated:'已离职' };
+const PAY_TYPE_LABEL   = { hourly:'小时工', salary:'固定薪资' };
+
+async function loadEmployees() {
+  allEmployees = await api('/admin/employees');
+  updateEmpStats(allEmployees);
+  populateDeptFilter(allEmployees);
+  renderEmployees(allEmployees);
+}
+
+function updateEmpStats(list) {
+  document.getElementById('empStatTotal').textContent  = list.length;
+  document.getElementById('empStatActive').textContent = list.filter(e=>e.status==='active').length;
+  document.getElementById('empStatHourly').textContent = list.filter(e=>e.pay_type==='hourly').length;
+  const thisMonth = new Date().toISOString().slice(0,7);
+  document.getElementById('empStatMonth').textContent  = list.filter(e=>(e.hire_date||'').startsWith(thisMonth)).length;
+}
+
+function populateDeptFilter(list) {
+  const depts = [...new Set(list.map(e=>e.department).filter(Boolean))].sort();
+  const sel = document.getElementById('empDeptFilter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">全部部门</option>' + depts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  sel.value = cur;
+}
+
+function filterEmployees() {
+  const kw   = document.getElementById('empSearch').value.toLowerCase();
+  const st   = document.getElementById('empStatusFilter').value;
+  const dept = document.getElementById('empDeptFilter').value;
+  let f = allEmployees;
+  if (kw)   f = f.filter(e=> `${e.first_name} ${e.last_name} ${e.employee_id||''} ${e.position||''} ${e.department||''}`.toLowerCase().includes(kw));
+  if (st)   f = f.filter(e=> e.status===st);
+  if (dept) f = f.filter(e=> e.department===dept);
+  renderEmployees(f);
+}
+
+function renderEmployees(list) {
+  document.getElementById('empTable').innerHTML = list.length ? list.map(e=>`<tr>
+    <td><strong>${esc(e.employee_id||'')}</strong></td>
+    <td style="cursor:pointer" onclick='viewEmployee(${e.id})'><strong>${esc(e.first_name)} ${esc(e.last_name)}</strong>
+      <div class="emp-meta">${esc(e.email||'')} ${e.phone?'· '+esc(e.phone):''}</div></td>
+    <td>${esc(e.position||'—')}</td>
+    <td>${esc(e.department||'—')}</td>
+    <td><span class="badge badge-${e.pay_type||'hourly'}">${PAY_TYPE_LABEL[e.pay_type]||e.pay_type}</span>
+      ${e.pay_rate?'<br><span style="font-size:.75rem">$'+Number(e.pay_rate).toFixed(2)+'/'+((e.pay_type==='hourly')?'hr':'yr')+'</span>':''}</td>
+    <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
+    <td>${e.hire_date||'—'}</td>
+    <td>
+      <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
+      <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
+      ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
+    </td>
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
+}
+
+function openEmpModal(id) {
+  document.getElementById('empModalTitle').textContent = id ? '编辑员工' : '新增员工';
+  document.getElementById('empId').value = id || '';
+  if (id) {
+    const e = allEmployees.find(x=>x.id===id) || {};
+    document.getElementById('eFirst').value    = e.first_name||'';
+    document.getElementById('eLast').value     = e.last_name||'';
+    document.getElementById('eEmpId').value    = e.employee_id||'';
+    document.getElementById('eDob').value      = e.dob||'';
+    document.getElementById('ePhone').value    = e.phone||'';
+    document.getElementById('eEmail').value    = e.email||'';
+    document.getElementById('eAddr').value     = e.address||'';
+    document.getElementById('eCity').value     = e.city||'';
+    document.getElementById('eState').value    = e.state||'';
+    document.getElementById('eZip').value      = e.zip||'';
+    document.getElementById('eHire').value     = e.hire_date||'';
+    document.getElementById('eStatus').value   = e.status||'active';
+    document.getElementById('ePos').value      = e.position||'';
+    document.getElementById('eDept').value     = e.department||'';
+    document.getElementById('ePayRate').value  = e.pay_rate||'';
+    document.getElementById('ePayType').value  = e.pay_type||'hourly';
+    document.getElementById('eEmgName').value  = e.emergency_name||'';
+    document.getElementById('eEmgPhone').value = e.emergency_phone||'';
+    document.getElementById('eEmgRel').value   = e.emergency_relation||'';
+    document.getElementById('eNotes').value    = e.notes||'';
+    document.getElementById('eSSN').value      = '';
+    document.getElementById('ePin').value      = '';
+  } else {
+    ['eFirst','eLast','eEmpId','eDob','ePhone','eEmail','eAddr','eCity','eState','eZip',
+     'eHire','ePos','eDept','ePayRate','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('eStatus').value  = 'active';
+    document.getElementById('ePayType').value = 'hourly';
+  }
+  document.getElementById('empModal').classList.add('show');
+}
+function closeEmpModal() { document.getElementById('empModal').classList.remove('show'); }
+
+async function saveEmployee() {
+  const id = document.getElementById('empId').value;
+  const data = {
+    employee_id: document.getElementById('eEmpId').value.trim(),
+    first_name: document.getElementById('eFirst').value.trim(),
+    last_name:  document.getElementById('eLast').value.trim(),
+    dob: document.getElementById('eDob').value,
+    phone: document.getElementById('ePhone').value.trim(),
+    email: document.getElementById('eEmail').value.trim(),
+    address: document.getElementById('eAddr').value.trim(),
+    city: document.getElementById('eCity').value.trim(),
+    state: document.getElementById('eState').value.trim(),
+    zip: document.getElementById('eZip').value.trim(),
+    hire_date: document.getElementById('eHire').value,
+    status: document.getElementById('eStatus').value,
+    position: document.getElementById('ePos').value.trim(),
+    department: document.getElementById('eDept').value.trim(),
+    pay_rate: document.getElementById('ePayRate').value,
+    pay_type: document.getElementById('ePayType').value,
+    emergency_name: document.getElementById('eEmgName').value.trim(),
+    emergency_phone: document.getElementById('eEmgPhone').value.trim(),
+    emergency_relation: document.getElementById('eEmgRel').value.trim(),
+    notes: document.getElementById('eNotes').value.trim(),
+    ssn: document.getElementById('eSSN').value.trim() || (id ? '__KEEP__' : ''),
+    pin: document.getElementById('ePin').value || (id ? '__KEEP__' : ''),
+  };
+  if (!data.first_name || !data.last_name) return alert('请填写员工姓名');
+  const ssn = document.getElementById('eSSN').value.replace(/\D/g,'');
+  if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
+  const r = id
+    ? await api(`/admin/employees/${id}`, { method:'PUT', body: JSON.stringify(data) })
+    : await api('/admin/employees', { method:'POST', body: JSON.stringify(data) });
+  if (r.success || r.id) { closeEmpModal(); loadEmployees(); }
+  else alert(r.error || '保存失败');
+}
+
+async function terminateEmployee(id, name) {
+  if (!confirm(`确定将 ${name} 标记为已离职？`)) return;
+  await api(`/admin/employees/${id}`, { method:'DELETE' });
+  loadEmployees();
+}
+
+async function viewEmployee(id) {
+  const emp = await api(`/admin/employees/${id}`);
+  currentEmpForDetail = emp;
+  const CHK_TYPE = { criminal:'刑事', employment:'雇佣核实', education:'学历', drug:'药测', credit:'信用', full:'全面' };
+  const DOC_TYPE = { ssn:'SSN卡', drivers_license:'驾照', passport:'护照', work_permit:'工作许可证', i9:'I-9', w4:'W-4', bg_check:'背景报告', other:'其他' };
+  const BG_STATUS_LABEL = { ordered:'已下单', in_progress:'调查中', completed:'已完成', failed:'未通过' };
+
+  const cols = (pairs) => `<div class="detail-grid">${pairs.map(([k,v])=>`<div class="detail-row"><span>${k}</span><span>${v||'—'}</span></div>`).join('')}</div>`;
+
+  let html = `
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--gray-200)">
+      <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
+      <div>
+        <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
+        <div class="emp-meta">${esc(emp.employee_id)} · ${esc(emp.position||'')} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+      </div>
+    </div>
+    <div class="form-section">
+      <h4>基本信息</h4>
+      ${cols([
+        ['邮箱',emp.email],['电话',emp.phone],['出生日期',emp.dob],
+        ['地址',[emp.address,emp.city,emp.state,emp.zip].filter(Boolean).join(', ')],
+        ['入职日期',emp.hire_date],['薪资','$'+(emp.pay_rate||0)+'  ('+PAY_TYPE_LABEL[emp.pay_type]+')'],
+        ['部门',emp.department],
+        ['SSN','•••••'+esc(emp.ssn_last4||'????')+(emp.ssn_full?'  <strong style="color:var(--red)">'+esc(emp.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/,'$1-$2-$3'))+'</strong>':'')]
+      ])}
+    </div>
+    <div class="form-section">
+      <h4>紧急联系人</h4>
+      ${cols([['姓名',emp.emergency_name],['电话',emp.emergency_phone],['关系',emp.emergency_relation]])}
+    </div>`;
+
+  // Time summary (recent)
+  const totalHrs = (emp.recent_time||[]).filter(t=>t.status==='closed').reduce((s,t)=>s+(t.total_hours||0),0);
+  const otHrs    = (emp.recent_time||[]).filter(t=>t.status==='closed').reduce((s,t)=>s+(t.overtime_hours||0),0);
+  html += `<div class="form-section"><h4>近期工时 (最近20条)</h4>
+    <div style="display:flex;gap:1rem;margin-bottom:.75rem">
+      <div style="background:var(--sky-light);border-radius:var(--radius);padding:.5rem 1rem;font-size:.85rem">合计 <strong>${totalHrs.toFixed(1)}h</strong></div>
+      <div style="background:#FFF3E0;border-radius:var(--radius);padding:.5rem 1rem;font-size:.85rem">加班 <strong style="color:var(--accent)">${otHrs.toFixed(1)}h</strong></div>
+    </div>
+    ${emp.recent_time&&emp.recent_time.length?`<table><thead><tr><th>上班</th><th>下班</th><th>合计</th><th>加班</th><th>状态</th></tr></thead><tbody>
+    ${emp.recent_time.slice(0,10).map(t=>`<tr>
+      <td>${new Date(t.clock_in).toLocaleString()}</td>
+      <td>${t.clock_out?new Date(t.clock_out).toLocaleString():'<span style="color:var(--accent)">上班中</span>'}</td>
+      <td>${t.total_hours||0}h</td>
+      <td>${t.overtime_hours>0?`<span class="ot-text">${t.overtime_hours}h</span>`:'—'}</td>
+      <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
+    </tr>`).join('')}
+    </tbody></table>`:'<p class="empty" style="padding:1rem">暂无工时记录</p>'}
+  </div>`;
+
+  // Documents
+  html += `<div class="form-section"><h4>HR 文件 (${(emp.documents||[]).length} 份)</h4>
+    ${emp.documents&&emp.documents.length?`<table><thead><tr><th>类型</th><th>标签</th><th>文件</th><th>到期日</th></tr></thead><tbody>
+    ${emp.documents.map(d=>`<tr>
+      <td><span class="badge badge-doc">${DOC_TYPE[d.doc_type]||d.doc_type}</span></td>
+      <td>${esc(d.doc_label||'')}</td>
+      <td>${d.file_path?`<a href="${API}/admin/documents/${d.id}/file?token=${TOKEN}" target="_blank" style="color:var(--sky)">下载 ↗</a>`:'无文件'}</td>
+      <td>${d.expiry_date||'—'}</td>
+    </tr>`).join('')}
+    </tbody></table>`:'<p class="empty" style="padding:1rem">暂无文件</p>'}
+  </div>`;
+
+  // Background checks
+  html += `<div class="form-section"><h4>背景调查 (${(emp.background_checks||[]).length} 条)</h4>
+    ${emp.background_checks&&emp.background_checks.length?`<table><thead><tr><th>类型</th><th>状态</th><th>结果</th><th>机构</th><th>下单日期</th><th>报告</th></tr></thead><tbody>
+    ${emp.background_checks.map(b=>`<tr>
+      <td>${CHK_TYPE[b.check_type]||b.check_type}</td>
+      <td><span class="badge badge-${b.status}">${BG_STATUS_LABEL[b.status]||b.status}</span></td>
+      <td>${b.result?`<span class="badge badge-${b.result==='clear'?'clear':b.result==='flagged'?'flagged':'doc'}">${b.result==='clear'?'通过':b.result==='flagged'?'有问题':'待定'}</span>`:'—'}</td>
+      <td>${esc(b.vendor||'—')}</td>
+      <td>${b.ordered_date||'—'}</td>
+      <td>${b.file_path?`<a href="${API}/admin/background-checks/${b.id}/file?token=${TOKEN}" target="_blank" style="color:var(--sky)">查看 ↗</a>`:'—'}</td>
+    </tr>`).join('')}
+    </tbody></table>`:'<p class="empty" style="padding:1rem">暂无背景调查记录</p>'}
+  </div>`;
+
+  document.getElementById('empDetailTitle').textContent = `${emp.first_name} ${emp.last_name} (${emp.employee_id})`;
+  document.getElementById('empDetailContent').innerHTML = html;
+  document.getElementById('empDetailModal').classList.add('show');
+}
+function closeEmpDetailModal() { document.getElementById('empDetailModal').classList.remove('show'); }
+function editFromDetail() {
+  if (!currentEmpForDetail) return;
+  closeEmpDetailModal();
+  setTimeout(() => openEmpModal(currentEmpForDetail.id), 100);
+}
+function exportEmployeeCSV() {
+  window.open(API + '/admin/employees/export?token=' + TOKEN, '_blank');
+}
+
+// ══════════════════════════════════════════════════════
+// ─── TIME ENTRIES (工时打卡) ───
+// ══════════════════════════════════════════════════════
+let allTimeEntries = [];
+
+function fmtDT(dt) { return dt ? new Date(dt).toLocaleString() : '—'; }
+function fmtD(dt)  { return dt ? new Date(dt).toLocaleDateString() : '—'; }
+function fmtH(h)   { return h != null ? (+h).toFixed(2)+'h' : '—'; }
+
+async function populateTimeEmpFilter() {
+  const emps = await api('/admin/employees');
+  const sel = document.getElementById('timeEmpFilter');
+  sel.innerHTML = '<option value="">全部员工</option>' +
+    emps.filter(e=>e.status==='active').map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id)})</option>`).join('');
+  // Also populate report emp select
+  const rptSel = document.getElementById('rptEmp');
+  rptSel.innerHTML = '<option value="">全部员工</option>' +
+    emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)}</option>`).join('');
+  // Populate time entry modal emp select
+  const tSel = document.getElementById('tEmp');
+  tSel.innerHTML = '<option value="">-- 请选择员工 --</option>' +
+    emps.filter(e=>e.status==='active').map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id)})</option>`).join('');
+  // Populate jobs in time modal
+  const jobs = await api('/admin/jobs');
+  document.getElementById('tJob').innerHTML = '<option value="">无</option>' +
+    jobs.filter(j=>j.active).map(j=>`<option value="${j.id}">${esc(j.title)} — ${esc(j.location)}</option>`).join('');
+}
+
+async function loadTimeEntries() {
+  const emp  = document.getElementById('timeEmpFilter').value;
+  const from = document.getElementById('timeFrom').value;
+  const to   = document.getElementById('timeTo').value;
+  const st   = document.getElementById('timeStatusFilter').value;
+  let q = '/admin/time-entries?';
+  if (emp)  q += `employee_id=${emp}&`;
+  if (from) q += `date_from=${from}&`;
+  if (to)   q += `date_to=${to}&`;
+  if (st)   q += `status=${st}&`;
+  allTimeEntries = await api(q);
+  renderTimeEntries(allTimeEntries);
+  // Update summary bar
+  const closed = allTimeEntries.filter(t=>t.status==='closed');
+  if (closed.length) {
+    document.getElementById('timeSummary').style.display = 'grid';
+    document.getElementById('sumShifts').textContent  = closed.length;
+    document.getElementById('sumTotal').textContent   = closed.reduce((s,t)=>s+(t.total_hours||0),0).toFixed(1)+'h';
+    document.getElementById('sumRegular').textContent = closed.reduce((s,t)=>s+(t.regular_hours||0),0).toFixed(1)+'h';
+    document.getElementById('sumOT').textContent      = closed.reduce((s,t)=>s+(t.overtime_hours||0),0).toFixed(1)+'h';
+  } else {
+    document.getElementById('timeSummary').style.display = 'none';
+  }
+}
+
+function renderTimeEntries(list) {
+  document.getElementById('timeTable').innerHTML = list.length ? list.map(t=>`<tr>
+    <td><strong>${esc(t.first_name||'')} ${esc(t.last_name||'')}</strong><br><span class="emp-meta">${esc(t.emp_code||'')}</span></td>
+    <td>${fmtDT(t.clock_in)}</td>
+    <td>${t.clock_out?fmtDT(t.clock_out):'<span style="color:var(--accent)">进行中</span>'}</td>
+    <td>${t.break_minutes||0}min</td>
+    <td>${fmtH(t.total_hours)}</td>
+    <td>${fmtH(t.regular_hours)}</td>
+    <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
+    <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
+    <td>${esc(t.notes||'')}</td>
+    <td>
+      ${t.status==='open'?`<button class="btn btn-sm btn-accent" onclick="clockOutEntry(${t.id})">打卡下班</button> `:''}
+      <button class="btn btn-sm" onclick='openTimeModal(${JSON.stringify(t).replace(/'/g,"&#39;")})'>编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteTimeEntry(${t.id})">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="10" class="empty">暂无工时记录</td></tr>';
+}
+
+async function openTimeModal(entry) {
+  await populateTimeEmpFilter();
+  document.getElementById('timeModalTitle').textContent = entry && entry.id ? '编辑工时记录' : '手动录入工时';
+  document.getElementById('timeId').value = entry && entry.id ? entry.id : '';
+  if (entry && entry.id) {
+    document.getElementById('tEmp').value   = entry.employee_id||'';
+    document.getElementById('tIn').value    = entry.clock_in ? entry.clock_in.slice(0,16) : '';
+    document.getElementById('tOut').value   = entry.clock_out ? entry.clock_out.slice(0,16) : '';
+    document.getElementById('tBreak').value = entry.break_minutes||0;
+    document.getElementById('tJob').value   = entry.job_id||'';
+    document.getElementById('tNotes').value = entry.notes||'';
+  } else {
+    document.getElementById('tEmp').value = '';
+    document.getElementById('tIn').value  = new Date().toISOString().slice(0,16);
+    document.getElementById('tOut').value = '';
+    document.getElementById('tBreak').value = '0';
+    document.getElementById('tJob').value = '';
+    document.getElementById('tNotes').value = '';
+  }
+  document.getElementById('timeCalcPreview').style.display = 'none';
+  document.getElementById('timeModal').classList.add('show');
+  // Live calc
+  ['tIn','tOut','tBreak'].forEach(id => document.getElementById(id).addEventListener('change', previewHours));
+}
+function closeTimeModal() { document.getElementById('timeModal').classList.remove('show'); }
+
+function previewHours() {
+  const inp = document.getElementById('tIn').value;
+  const out = document.getElementById('tOut').value;
+  const brk = parseInt(document.getElementById('tBreak').value)||0;
+  if (!inp || !out) { document.getElementById('timeCalcPreview').style.display='none'; return; }
+  const totalMin = Math.max(0,(new Date(out)-new Date(inp))/60000 - brk);
+  const total = totalMin/60;
+  const regular = Math.min(total,8);
+  const ot = Math.max(0,total-8);
+  const prev = document.getElementById('timeCalcPreview');
+  prev.style.display = 'block';
+  prev.innerHTML = `📊 预计工时：合计 <strong>${total.toFixed(2)}h</strong>  |  正常 <strong>${regular.toFixed(2)}h</strong>  |  <span class="ot-text">加班 ${ot.toFixed(2)}h</span>`;
+}
+
+async function saveTimeEntry() {
+  const id  = document.getElementById('timeId').value;
+  const data = {
+    employee_id: document.getElementById('tEmp').value,
+    clock_in:    document.getElementById('tIn').value,
+    clock_out:   document.getElementById('tOut').value || null,
+    break_minutes: document.getElementById('tBreak').value||0,
+    job_id:      document.getElementById('tJob').value || null,
+    notes:       document.getElementById('tNotes').value
+  };
+  if (!data.employee_id) return alert('请选择员工');
+  if (!data.clock_in)    return alert('请填写上班时间');
+  const r = id
+    ? await api(`/admin/time-entries/${id}`, { method:'PUT', body: JSON.stringify(data) })
+    : await api('/admin/time-entries', { method:'POST', body: JSON.stringify(data) });
+  if (r.success) { closeTimeModal(); loadTimeEntries(); }
+  else alert(r.error||'保存失败');
+}
+
+async function clockOutEntry(id) {
+  if (!confirm('确认为该员工打卡下班（时间为现在）？')) return;
+  const now = new Date().toISOString().slice(0,16);
+  const entry = allTimeEntries.find(t=>t.id===id);
+  if (!entry) return;
+  await api(`/admin/time-entries/${id}`, { method:'PUT', body: JSON.stringify({ ...entry, clock_out: now }) });
+  loadTimeEntries();
+}
+
+async function deleteTimeEntry(id) {
+  if (!confirm('确定删除此工时记录？')) return;
+  await api(`/admin/time-entries/${id}`, { method:'DELETE' });
+  loadTimeEntries();
+}
+
+function showTimeReport() {
+  const today = new Date().toISOString().slice(0,10);
+  const weekAgo = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+  document.getElementById('rptFrom').value = weekAgo;
+  document.getElementById('rptTo').value   = today;
+  document.getElementById('timeReportModal').classList.add('show');
+  generateReport();
+}
+function closeTimeReportModal() { document.getElementById('timeReportModal').classList.remove('show'); }
+
+async function generateReport() {
+  const from = document.getElementById('rptFrom').value;
+  const to   = document.getElementById('rptTo').value;
+  const emp  = document.getElementById('rptEmp').value;
+  let q = '/admin/time-entries/report?';
+  if (from) q += `date_from=${from}&`;
+  if (to)   q += `date_to=${to}&`;
+  if (emp)  q += `employee_id=${emp}&`;
+  const rows = await api(q);
+  const totalPay = rows.reduce((s,r)=>s+(r.total_pay||0),0);
+  document.getElementById('reportContent').innerHTML = rows.length ? `
+    <table><thead><tr>
+      <th>员工</th><th>班次</th><th>正常工时</th><th>加班工时</th><th>合计工时</th><th>正常薪酬</th><th>加班薪酬</th><th>应付合计</th>
+    </tr></thead><tbody>
+    ${rows.map(r=>`<tr>
+      <td><strong>${esc(r.first_name)} ${esc(r.last_name)}</strong><br><span class="emp-meta">${esc(r.emp_code)}</span></td>
+      <td>${r.shift_count}</td>
+      <td>${(r.regular_hours||0).toFixed(1)}h</td>
+      <td>${(r.overtime_hours||0)>0?`<span class="ot-text">${(r.overtime_hours||0).toFixed(1)}h</span>`:'—'}</td>
+      <td><strong>${(r.total_hours||0).toFixed(1)}h</strong></td>
+      <td>$${(r.regular_pay||0).toFixed(2)}</td>
+      <td>${(r.overtime_pay||0)>0?`<span class="ot-text">$${(r.overtime_pay||0).toFixed(2)}</span>`:'—'}</td>
+      <td><strong>$${(r.total_pay||0).toFixed(2)}</strong></td>
+    </tr>`).join('')}
+    </tbody></table>
+    <div style="text-align:right;margin-top:1rem;font-weight:700;color:var(--blue)">总应付薪酬：$${totalPay.toFixed(2)}</div>
+  ` : '<p class="empty">选定时间段内无已完成工时记录</p>';
+}
+
+function exportTimeCSV(fromReport) {
+  const from = fromReport ? document.getElementById('rptFrom').value : document.getElementById('timeFrom').value;
+  const to   = fromReport ? document.getElementById('rptTo').value   : document.getElementById('timeTo').value;
+  const emp  = fromReport ? document.getElementById('rptEmp').value  : document.getElementById('timeEmpFilter').value;
+  let url = API + '/admin/time-entries/export?token=' + TOKEN;
+  if (from) url += '&date_from=' + from;
+  if (to)   url += '&date_to=' + to;
+  if (emp)  url += '&employee_id=' + emp;
+  window.open(url, '_blank');
+}
+
+// ══════════════════════════════════════════════════════
+// ─── DOCUMENTS (HR 文件) ───
+// ══════════════════════════════════════════════════════
+const DOC_TYPE_LABEL = { ssn:'SSN卡', drivers_license:'驾照', passport:'护照', work_permit:'工作许可证/EAD', i9:'I-9', w4:'W-4', bg_check:'背景报告', other:'其他' };
+
+async function populateDocEmpFilter() {
+  const emps = await api('/admin/employees');
+  const sel  = document.getElementById('docEmpFilter');
+  const sel2 = document.getElementById('docEmpSel');
+  const opts = '<option value="">-- 请选择员工 --</option>' +
+    emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id||'')})</option>`).join('');
+  sel.innerHTML  = opts;
+  sel2.innerHTML = opts;
+}
+
+async function loadDocuments() {
+  const empId = document.getElementById('docEmpFilter').value;
+  const type  = document.getElementById('docTypeFilter').value;
+  if (!empId) { document.getElementById('docTable').innerHTML = '<tr><td colspan="7" class="empty">请先选择员工</td></tr>'; return; }
+  let docs = await api(`/admin/employees/${empId}/documents`);
+  if (type) docs = docs.filter(d=>d.doc_type===type);
+  const empObj = (allEmployees || []).find(e=>e.id===parseInt(empId));
+  const empName = empObj ? `${empObj.first_name} ${empObj.last_name}` : '';
+  document.getElementById('docTable').innerHTML = docs.length ? docs.map(d=>`<tr>
+    <td>${esc(empName)}</td>
+    <td><span class="badge badge-doc">${DOC_TYPE_LABEL[d.doc_type]||d.doc_type}</span></td>
+    <td>${esc(d.doc_label||'')}</td>
+    <td>${d.file_path?`<a href="${API}/admin/documents/${d.id}/file?token=${TOKEN}" target="_blank" style="color:var(--sky)">📥 ${esc(d.file_name||d.file_path)}</a>`:'无文件'}</td>
+    <td>${d.expiry_date ? `<span style="color:${new Date(d.expiry_date)<new Date()?'var(--red)':'inherit'}">${d.expiry_date}</span>` : '—'}</td>
+    <td>${new Date(d.uploaded_at).toLocaleDateString()}</td>
+    <td><button class="btn btn-sm btn-red" onclick="deleteDoc(${d.id})">删除</button></td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">该员工暂无文件</td></tr>';
+}
+
+function openDocModal() {
+  document.getElementById('docEmpSel').value = document.getElementById('docEmpFilter').value || '';
+  document.getElementById('docType').value   = 'ssn';
+  document.getElementById('docExpiry').value = '';
+  document.getElementById('docLabel').value  = '';
+  document.getElementById('docNotes').value  = '';
+  document.getElementById('docFile').value   = '';
+  document.getElementById('docModal').classList.add('show');
+}
+function closeDocModal() { document.getElementById('docModal').classList.remove('show'); }
+
+async function uploadDoc() {
+  const empId = document.getElementById('docEmpSel').value;
+  if (!empId) return alert('请选择员工');
+  const file = document.getElementById('docFile').files[0];
+  const fd = new FormData();
+  fd.append('doc_type',    document.getElementById('docType').value);
+  fd.append('doc_label',   document.getElementById('docLabel').value);
+  fd.append('expiry_date', document.getElementById('docExpiry').value);
+  fd.append('notes',       document.getElementById('docNotes').value);
+  if (file) fd.append('file', file);
+  const res = await fetch(API + `/admin/employees/${empId}/documents`, {
+    method:'POST',
+    headers:{ 'Authorization':`Bearer ${TOKEN}` },
+    body: fd
+  });
+  const r = await res.json();
+  if (r.success || r.id) { closeDocModal(); loadDocuments(); }
+  else alert(r.error||'上传失败');
+}
+
+async function deleteDoc(id) {
+  if (!confirm('确定删除此文件？此操作不可撤销。')) return;
+  await api(`/admin/documents/${id}`, { method:'DELETE' });
+  loadDocuments();
+}
+
+// ══════════════════════════════════════════════════════
+// ─── BACKGROUND CHECKS (背景调查) ───
+// ══════════════════════════════════════════════════════
+let allBgChecks = [];
+const BG_TYPE_LABEL   = { criminal:'刑事记录', employment:'雇佣核实', education:'学历核实', drug:'药物检测', credit:'信用检查', full:'全面调查' };
+const BG_STATUS_LABEL = { ordered:'已下单', in_progress:'调查中', completed:'已完成', failed:'未通过' };
+const BG_RESULT_LABEL = { clear:'通过', flagged:'有问题', '':'待定' };
+
+async function populateBgEmpFilter() {
+  const emps = await api('/admin/employees');
+  const make = (prefix) => '<option value="">全部员工</option>' +
+    emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id||'')})</option>`).join('');
+  document.getElementById('bgEmpFilter').innerHTML = make('全部');
+  document.getElementById('bgEmpSel').innerHTML    = '<option value="">-- 请选择 --</option>' +
+    emps.map(e=>`<option value="${e.id}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id||'')})</option>`).join('');
+}
+
+async function loadBgChecks() {
+  const emp  = document.getElementById('bgEmpFilter').value;
+  const st   = document.getElementById('bgStatusFilter').value;
+  const type = document.getElementById('bgTypeFilter').value;
+  let q = '/admin/background-checks?';
+  if (emp) q += `employee_id=${emp}&`;
+  if (st)  q += `status=${st}&`;
+  allBgChecks = await api(q);
+  let filtered = allBgChecks;
+  if (type) filtered = filtered.filter(b=>b.check_type===type);
+  renderBgChecks(filtered);
+}
+
+function renderBgChecks(list) {
+  document.getElementById('bgTable').innerHTML = list.length ? list.map(b=>`<tr>
+    <td><strong>${esc(b.first_name||'')} ${esc(b.last_name||'')}</strong><br><span class="emp-meta">${esc(b.emp_code||'')}</span></td>
+    <td>${BG_TYPE_LABEL[b.check_type]||b.check_type}</td>
+    <td>${b.ordered_date||'—'}</td>
+    <td>${b.completed_date||'—'}</td>
+    <td>${b.result?`<span class="badge badge-${b.result}">${BG_RESULT_LABEL[b.result]||b.result}</span>`:'<span style="color:var(--gray-400)">待定</span>'}</td>
+    <td><span class="badge badge-${b.status}">${BG_STATUS_LABEL[b.status]||b.status}</span></td>
+    <td>${esc(b.vendor||'—')}</td>
+    <td>${b.cost>0?'$'+Number(b.cost).toFixed(2):'—'}</td>
+    <td>
+      ${b.file_path?`<a href="${API}/admin/background-checks/${b.id}/file?token=${TOKEN}" target="_blank" class="btn btn-sm btn-outline">报告 ↗</a> `:''}
+      <button class="btn btn-sm" onclick='openBgModal(${JSON.stringify(b).replace(/'/g,"&#39;")})'>编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteBgCheck(${b.id})">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="9" class="empty">暂无背景调查记录</td></tr>';
+}
+
+function openBgModal(bg) {
+  document.getElementById('bgModalTitle').textContent = bg && bg.id ? '编辑背景调查' : '新建背景调查';
+  document.getElementById('bgId').value = bg && bg.id ? bg.id : '';
+  if (bg && bg.id) {
+    document.getElementById('bgEmpSel').value    = bg.employee_id||'';
+    document.getElementById('bgType').value      = bg.check_type||'criminal';
+    document.getElementById('bgOrdered').value   = bg.ordered_date||'';
+    document.getElementById('bgCompleted').value = bg.completed_date||'';
+    document.getElementById('bgStatus').value    = bg.status||'ordered';
+    document.getElementById('bgResult').value    = bg.result||'';
+    document.getElementById('bgVendor').value    = bg.vendor||'';
+    document.getElementById('bgCost').value      = bg.cost||'';
+    document.getElementById('bgNotes').value     = bg.notes||'';
+  } else {
+    document.getElementById('bgEmpSel').value    = document.getElementById('bgEmpFilter').value||'';
+    document.getElementById('bgType').value      = 'criminal';
+    document.getElementById('bgOrdered').value   = new Date().toISOString().slice(0,10);
+    document.getElementById('bgCompleted').value = '';
+    document.getElementById('bgStatus').value    = 'ordered';
+    document.getElementById('bgResult').value    = '';
+    document.getElementById('bgVendor').value    = '';
+    document.getElementById('bgCost').value      = '';
+    document.getElementById('bgNotes').value     = '';
+  }
+  document.getElementById('bgFile').value = '';
+  document.getElementById('bgModal').classList.add('show');
+}
+function closeBgModal() { document.getElementById('bgModal').classList.remove('show'); }
+
+async function saveBgCheck() {
+  const id    = document.getElementById('bgId').value;
+  const empId = document.getElementById('bgEmpSel').value;
+  if (!empId) return alert('请选择员工');
+  const file = document.getElementById('bgFile').files[0];
+  const fd = new FormData();
+  fd.append('employee_id',   empId);
+  fd.append('check_type',    document.getElementById('bgType').value);
+  fd.append('ordered_date',  document.getElementById('bgOrdered').value);
+  fd.append('completed_date',document.getElementById('bgCompleted').value);
+  fd.append('status',        document.getElementById('bgStatus').value);
+  fd.append('result',        document.getElementById('bgResult').value);
+  fd.append('vendor',        document.getElementById('bgVendor').value);
+  fd.append('cost',          document.getElementById('bgCost').value||0);
+  fd.append('notes',         document.getElementById('bgNotes').value);
+  if (file) fd.append('file', file);
+  const url    = id ? API+`/admin/background-checks/${id}` : API+'/admin/background-checks';
+  const method = id ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd });
+  const r = await res.json();
+  if (r.success || r.id) { closeBgModal(); loadBgChecks(); }
+  else alert(r.error||'保存失败');
+}
+
+async function deleteBgCheck(id) {
+  if (!confirm('确定删除此背景调查记录？')) return;
+  await api(`/admin/background-checks/${id}`, { method:'DELETE' });
+  loadBgChecks();
 }
 
 </script>

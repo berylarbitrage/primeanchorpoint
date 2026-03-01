@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prime Anchorpoint — 员工打卡</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--accent:#F5A623;--green:#2D9D78;--red:#E63946;--white:#fff;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--radius:12px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1rem}
+.wrap{width:100%;max-width:420px}
+.logo-area{text-align:center;margin-bottom:2rem}
+.logo-area img{width:64px;height:auto;margin-bottom:.75rem}
+.logo-area h1{color:#fff;font-size:1.4rem;font-weight:700}
+.logo-area p{color:rgba(255,255,255,.6);font-size:.85rem}
+.card{background:var(--white);border-radius:var(--radius);padding:2rem;box-shadow:0 8px 40px rgba(0,0,0,.25)}
+.card h2{font-size:1rem;color:var(--blue);margin-bottom:1.5rem;font-weight:700}
+.field{margin-bottom:1rem}
+.field label{display:block;font-size:.75rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.field input{width:100%;padding:14px 16px;border:2px solid var(--gray-200);border-radius:10px;font-size:1.1rem;outline:none;font-family:inherit;letter-spacing:.1em;transition:border .2s}
+.field input:focus{border-color:var(--sky)}
+.btn-big{width:100%;padding:16px;border:none;border-radius:10px;font-size:1.1rem;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit;margin-top:.5rem}
+.btn-lookup{background:var(--sky);color:#fff}.btn-lookup:hover{background:var(--blue)}
+.btn-in{background:var(--green);color:#fff;font-size:1.2rem;padding:20px}.btn-in:hover{background:#1e7a5c}
+.btn-out{background:var(--accent);color:#fff;font-size:1.2rem;padding:20px}.btn-out:hover{background:#d9900e}
+.btn-back{background:transparent;border:2px solid var(--gray-200);color:var(--gray-600);margin-top:.75rem;font-size:.9rem;padding:10px}.btn-back:hover{background:var(--off)}
+.msg{padding:12px 16px;border-radius:10px;font-size:.9rem;font-weight:600;margin-bottom:1rem;text-align:center}
+.msg-err{background:#FFEAEA;color:var(--red);border:1px solid #FFC8C8}
+.msg-ok{background:#E8F5E9;color:var(--green);border:1px solid #A8D5B5}
+.msg-info{background:var(--sky-light);color:var(--blue);border:1px solid #B8D4F8}
+.status-card{background:var(--off);border-radius:10px;padding:1.25rem;margin-bottom:1.5rem}
+.status-card h3{font-size:1.05rem;color:var(--blue);margin-bottom:.75rem}
+.status-row{display:flex;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--gray-200);font-size:.9rem}
+.status-row:last-child{border:none}
+.status-row span:first-child{color:var(--gray-600)}
+.status-row span:last-child{font-weight:700;color:var(--gray-800)}
+.clocked-in-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green);margin-right:6px;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.clocked-out-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--gray-400);margin-right:6px}
+.hours-big{text-align:center;padding:1rem;background:linear-gradient(135deg,var(--blue),var(--sky));border-radius:10px;color:#fff;margin-bottom:1rem}
+.hours-big h2{font-size:2.5rem;font-weight:700}
+.hours-big p{font-size:.82rem;opacity:.8;margin-top:4px}
+.result-card{text-align:center;padding:1.5rem;background:var(--off);border-radius:10px;margin-bottom:1.5rem}
+.result-card .icon{font-size:3rem;margin-bottom:.5rem}
+.result-card h3{font-size:1.1rem;color:var(--blue);margin-bottom:.5rem}
+.result-card .detail{font-size:.88rem;color:var(--gray-600);line-height:1.6}
+.result-card .ot{color:var(--accent);font-weight:700}
+#clock{text-align:center;font-size:.85rem;color:var(--gray-400);margin-top:.75rem}
+.screen{display:none}.screen.active{display:block}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div class="logo-area">
+    <img src="/logo.svg" alt="Prime Anchorpoint">
+    <h1>Prime Anchorpoint</h1>
+    <p>员工打卡系统</p>
+  </div>
+
+  <!-- Screen 1: Enter Employee ID -->
+  <div class="card screen active" id="screenId">
+    <h2>🔍 输入员工编号</h2>
+    <div id="idErr"></div>
+    <div class="field">
+      <label>员工编号 (如 EMP001)</label>
+      <input type="text" id="empIdInput" placeholder="EMP001" maxlength="10" autocomplete="off"
+        style="text-transform:uppercase" onkeydown="if(event.key==='Enter')lookupEmployee()">
+    </div>
+    <button class="btn-big btn-lookup" onclick="lookupEmployee()">查询状态</button>
+    <div id="clock"></div>
+  </div>
+
+  <!-- Screen 2: Enter PIN + Status -->
+  <div class="card screen" id="screenPin">
+    <h2 id="pinTitle">👋 欢迎，<span id="empNameDisplay"></span></h2>
+    <div id="pinErr"></div>
+
+    <div class="status-card" id="statusCard">
+      <h3>今日工时状态</h3>
+      <div class="status-row">
+        <span>状态</span>
+        <span id="statusText"></span>
+      </div>
+      <div class="status-row" id="clockInRow" style="display:none">
+        <span>上班打卡</span>
+        <span id="clockInDisplay"></span>
+      </div>
+      <div class="status-row">
+        <span>今日工时</span>
+        <span id="todayHours"></span>
+      </div>
+      <div class="status-row">
+        <span>本周工时</span>
+        <span id="weekHours"></span>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>输入 PIN 确认打卡</label>
+      <input type="password" id="pinInput" placeholder="••••" maxlength="6" inputmode="numeric"
+        autocomplete="off" onkeydown="if(event.key==='Enter')doPunch()">
+    </div>
+    <button class="btn-big btn-in" id="punchBtn" onclick="doPunch()">上班打卡 ▶</button>
+    <button class="btn-big btn-back" onclick="goBack()">← 返回</button>
+  </div>
+
+  <!-- Screen 3: Punch Result -->
+  <div class="card screen" id="screenResult">
+    <div class="result-card" id="resultCard"></div>
+    <button class="btn-big btn-lookup" onclick="goHome()">完成 ✓</button>
+  </div>
+</div>
+
+<script>
+const API = '/api';
+let currentEmp = null;
+let isClockedIn = false;
+
+// Live clock
+function updateClock() {
+  const el = document.getElementById('clock');
+  if (el) el.textContent = new Date().toLocaleString('zh-CN', { hour12: false });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen' + name).classList.add('active');
+}
+
+function showMsg(elId, msg, type) {
+  const el = document.getElementById(elId);
+  el.className = 'msg msg-' + type;
+  el.textContent = msg;
+}
+function clearMsg(elId) { const el = document.getElementById(elId); el.className=''; el.textContent=''; }
+
+async function lookupEmployee() {
+  const raw = document.getElementById('empIdInput').value.trim().toUpperCase();
+  if (!raw) { showMsg('idErr','请输入员工编号','err'); return; }
+  clearMsg('idErr');
+  try {
+    const r = await fetch(`${API}/timeclock/status/${encodeURIComponent(raw)}`);
+    const data = await r.json();
+    if (!r.ok) { showMsg('idErr', data.error || '未找到员工', 'err'); return; }
+    currentEmp = data;
+    isClockedIn = data.clocked_in;
+
+    // Fill status screen
+    document.getElementById('empNameDisplay').textContent = data.employee.name;
+    document.getElementById('statusText').innerHTML = isClockedIn
+      ? '<span class="clocked-in-dot"></span><strong style="color:var(--green)">上班中</strong>'
+      : '<span class="clocked-out-dot"></span>未打卡';
+
+    if (isClockedIn && data.clock_in_time) {
+      document.getElementById('clockInRow').style.display = 'flex';
+      document.getElementById('clockInDisplay').textContent = new Date(data.clock_in_time).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+    } else {
+      document.getElementById('clockInRow').style.display = 'none';
+    }
+    document.getElementById('todayHours').textContent = (data.today_hours || 0).toFixed(2) + ' h';
+    document.getElementById('weekHours').textContent  = (data.week_hours  || 0).toFixed(2) + ' h';
+
+    const btn = document.getElementById('punchBtn');
+    if (isClockedIn) {
+      btn.textContent = '下班打卡 ◼';
+      btn.className = 'btn-big btn-out';
+    } else {
+      btn.textContent = '上班打卡 ▶';
+      btn.className = 'btn-big btn-in';
+    }
+    document.getElementById('pinInput').value = '';
+    clearMsg('pinErr');
+    showScreen('Pin');
+    setTimeout(() => document.getElementById('pinInput').focus(), 200);
+  } catch (e) {
+    showMsg('idErr', '网络错误，请重试', 'err');
+  }
+}
+
+async function doPunch() {
+  const pin = document.getElementById('pinInput').value.trim();
+  if (!pin) { showMsg('pinErr','请输入 PIN','err'); return; }
+  clearMsg('pinErr');
+  const btn = document.getElementById('punchBtn');
+  btn.disabled = true; btn.textContent = '处理中...';
+  try {
+    const res = await fetch(`${API}/timeclock/punch`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ employee_id: currentEmp.employee.employee_id, pin })
+    });
+    const r = await res.json();
+    if (!res.ok) {
+      showMsg('pinErr', r.error || 'PIN 错误', 'err');
+      btn.disabled = false;
+      btn.textContent = isClockedIn ? '下班打卡 ◼' : '上班打卡 ▶';
+      return;
+    }
+    // Show result
+    const rc = document.getElementById('resultCard');
+    if (r.action === 'in') {
+      rc.innerHTML = `
+        <div class="icon">✅</div>
+        <h3>上班打卡成功！</h3>
+        <div class="detail">
+          员工：<strong>${currentEmp.employee.name}</strong><br>
+          打卡时间：<strong>${new Date(r.clock_in).toLocaleString('zh-CN', {hour12:false})}</strong><br>
+          祝工作顺利！
+        </div>`;
+    } else {
+      const totalH = (r.total_hours || 0).toFixed(2);
+      const regH   = (r.regular_hours || 0).toFixed(2);
+      const otH    = (r.overtime_hours || 0).toFixed(2);
+      const otTxt  = parseFloat(otH) > 0 ? `<br>加班工时：<span class="ot">${otH}h ⚡</span>` : '';
+      rc.innerHTML = `
+        <div class="icon">👋</div>
+        <h3>下班打卡成功！辛苦了！</h3>
+        <div class="detail">
+          员工：<strong>${currentEmp.employee.name}</strong><br>
+          上班：${new Date(r.clock_in).toLocaleString('zh-CN', {hour12:false})}<br>
+          下班：${new Date(r.clock_out).toLocaleString('zh-CN', {hour12:false})}<br>
+          <br>
+          正常工时：<strong>${regH}h</strong>${otTxt}<br>
+          本班合计：<strong>${totalH}h</strong>
+        </div>`;
+    }
+    showScreen('Result');
+  } catch (e) {
+    showMsg('pinErr', '网络错误，请重试', 'err');
+    btn.disabled = false;
+  }
+}
+
+function goBack() {
+  currentEmp = null;
+  document.getElementById('empIdInput').value = '';
+  clearMsg('idErr');
+  showScreen('Id');
+  setTimeout(() => document.getElementById('empIdInput').focus(), 200);
+}
+
+function goHome() {
+  goBack();
+}
+
+// Auto-focus on load
+window.onload = () => {
+  document.getElementById('empIdInput').focus();
+};
+</script>
+</body>
+</html>
