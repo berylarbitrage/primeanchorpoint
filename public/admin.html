@@ -244,6 +244,7 @@ tr:hover td{background:var(--sky-light)}
   <h2>⚓ 管理后台</h2>
   <a class="active" onclick="showTab('dashboard')">仪表盘</a>
   <a onclick="showTab('inquiries')" data-role="admin,staff">问卷管理</a>
+  <a onclick="showTab('quotes')" data-role="admin,staff">📋 报价请求</a>
   <a onclick="showTab('assignments')" data-role="admin,staff">派工管理</a>
   <a onclick="showTab('jobs')" data-role="admin,staff">职位管理</a>
   <a onclick="showTab('partners')" data-role="admin,staff">合作公司</a>
@@ -333,6 +334,17 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Quotes -->
+<div id="tab-quotes" style="display:none">
+  <div class="top">
+    <h1>报价请求</h1>
+  </div>
+  <div class="search-bar">
+    <input type="text" id="quoteSearch" placeholder="搜索姓名、邮箱、公司、产品..." oninput="filterQuotes()">
+  </div>
+  <div class="card"><table><thead><tr><th>日期</th><th>姓名</th><th>公司</th><th>邮箱</th><th>电话</th><th>产品</th><th>数量</th><th>地点</th><th>备注</th><th>操作</th></tr></thead><tbody id="quoteTable"></tbody></table></div>
+</div>
+
 <!-- Assignments -->
 <div id="tab-assignments" style="display:none">
   <div class="top">
@@ -359,6 +371,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="top">
     <h1>职位管理</h1>
     <div class="top-actions">
+      <button class="btn" data-perm="admin" onclick="openAutoGenJobModal()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 批量生成</button>
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
@@ -636,7 +649,8 @@ tr:hover td{background:var(--sky-light)}
       <button id="accTabWorker" onclick="setAccTab('worker')">工人账户 Worker</button>
       <button id="accTabCustomer" onclick="setAccTab('customer')">客户账户 Customer</button>
     </div>
-    <div style="margin-left:auto">
+    <div style="margin-left:auto;display:flex;gap:.5rem">
+      <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
     </div>
   </div>
@@ -649,7 +663,7 @@ tr:hover td{background:var(--sky-light)}
 
   <!-- Worker -->
   <div id="accPanelWorker" class="card" style="display:none">
-    <table><thead><tr><th>用户名</th><th>绑定员工</th><th>员工工号</th><th>状态</th><th>创建</th><th>操作</th></tr></thead>
+    <table><thead><tr><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份状态</th><th>绑定员工</th><th>验证状态</th><th>创建</th><th>操作</th></tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
 
@@ -743,6 +757,44 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" onclick="closeModal('approvalDetailModal')">关闭</button>
     <button class="btn btn-red" id="btnRejectAction" onclick="rejectAction()">拒绝</button>
     <button class="btn btn-green" id="btnApproveAction" onclick="approveAction()">批准</button>
+  </div>
+</div></div>
+
+<!-- Enterprise Approval Modal -->
+<div class="modal-bg" id="entApprovalModal"><div class="modal" style="max-width:580px">
+  <h2>企业注册审核</h2>
+  <input type="hidden" id="entApprovalId">
+  <div id="entApprovalDetails" style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:1rem;margin-bottom:1.25rem;font-size:.875rem;line-height:2"></div>
+  <div class="field">
+    <label>关联合作公司档案 * <span style="color:var(--red);font-size:.78rem;font-weight:400">（审核通过必须选择）</span></label>
+    <select id="entApprovalPartner">
+      <option value="">— 请选择关联公司 —</option>
+    </select>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('entApprovalModal')">取消</button>
+    <button class="btn btn-red" onclick="rejectEnterpriseFromModal()">拒绝注册</button>
+    <button class="btn btn-green" onclick="confirmApproveEnterprise()">通过并关联</button>
+  </div>
+</div></div>
+
+<!-- Reset Password Modal -->
+<div class="modal-bg" id="resetPwdModal"><div class="modal" style="max-width:400px">
+  <h2>重置密码</h2>
+  <input type="hidden" id="resetPwdType">
+  <input type="hidden" id="resetPwdId">
+  <p id="resetPwdTarget" style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem"></p>
+  <div class="field">
+    <label>新密码 *</label>
+    <input type="password" id="resetPwdNew" placeholder="至少6位">
+  </div>
+  <div class="field">
+    <label>确认密码 *</label>
+    <input type="password" id="resetPwdConfirm" placeholder="再次输入新密码">
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('resetPwdModal')">取消</button>
+    <button class="btn btn-blue" onclick="saveResetPassword()">保存新密码</button>
   </div>
 </div></div>
 
@@ -1167,6 +1219,35 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Auto-Generate Jobs Modal -->
+<div class="modal-bg" id="autoGenJobModal"><div class="modal" style="max-width:460px">
+  <h2>🎲 批量生成职位</h2>
+  <p style="color:var(--gray-500);margin:.5rem 0 1.5rem;font-size:.9rem">随机生成职位并自动保存，将从现有合作公司中随机分配。</p>
+  <div class="field">
+    <label>生成数量</label>
+    <div style="display:flex;align-items:center;gap:1rem;margin-top:.4rem">
+      <input type="range" id="autoGenCount" min="1" max="20" value="5"
+        oninput="document.getElementById('autoGenCountLabel').textContent=this.value"
+        style="flex:1;cursor:pointer">
+      <span id="autoGenCountLabel" style="font-size:1.4rem;font-weight:700;min-width:2.5rem;text-align:center">5</span>
+    </div>
+  </div>
+  <div class="field" style="margin-top:.75rem">
+    <label>语言分布</label>
+    <select id="autoGenLang" style="width:100%">
+      <option value="mixed">混合（中 / 英 / 西）</option>
+      <option value="zh">仅中文</option>
+      <option value="en">仅英文</option>
+      <option value="es">仅西班牙语</option>
+    </select>
+  </div>
+  <div id="autoGenResult" style="display:none;margin-top:1rem;padding:.75rem 1rem;background:#f0fdf4;border-radius:8px;color:#166534;font-size:.92rem;font-weight:600"></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" id="autoGenBtn" onclick="autoGenerateJobs()">开始生成</button>
+    <button class="btn btn-outline" onclick="document.getElementById('autoGenJobModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
 <!-- Inquiry Detail Modal -->
 <div class="modal-bg" id="inqModal"><div class="modal" style="max-width:640px;display:flex;flex-direction:column">
   <h2>问卷详情</h2>
@@ -1369,6 +1450,7 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn btn-green" onclick="savePartner()">保存</button>
     <button class="btn" onclick="randomFillPartner()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-outline" onclick="closePartnerModal()">取消</button>
+    <button class="btn" onclick="randomFillPartner()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300);margin-left:auto">🎲 随机填充</button>
   </div>
 </div></div>
 
@@ -1799,6 +1881,7 @@ function showTab(t) {
   if (t === 'dashboard')  loadDashboard();
   if (t === 'jobs')       loadJobs();
   if (t === 'inquiries')  loadInquiries();
+  if (t === 'quotes')     loadQuotes();
   if (t === 'assignments') loadAssignments();
   if (t === 'partners')   loadPartners();
   if (t === 'backups')    loadBackups();
@@ -2111,6 +2194,185 @@ function randomFillJob() {
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
     btn.classList.toggle('active', bens.includes(btn.dataset.val));
   });
+}
+
+function openAutoGenJobModal() {
+  document.getElementById('autoGenCount').value = '5';
+  document.getElementById('autoGenCountLabel').textContent = '5';
+  document.getElementById('autoGenLang').value = 'mixed';
+  document.getElementById('autoGenResult').style.display = 'none';
+  document.getElementById('autoGenBtn').disabled = false;
+  document.getElementById('autoGenBtn').textContent = '开始生成';
+  document.getElementById('autoGenJobModal').classList.add('show');
+}
+
+async function autoGenerateJobs() {
+  if (USER_ROLE !== 'admin') return;
+  const count = parseInt(document.getElementById('autoGenCount').value) || 5;
+  const langFilter = document.getElementById('autoGenLang').value;
+  const btn = document.getElementById('autoGenBtn');
+  const resultEl = document.getElementById('autoGenResult');
+  btn.disabled = true;
+  btn.textContent = '生成中...';
+  resultEl.style.display = 'none';
+
+  const partnersResp = await api('/admin/partners');
+  const allPartners = Array.isArray(partnersResp) ? partnersResp : (partnersResp?.partners || []);
+  const partners = allPartners.filter(p => p.active);
+  if (!partners.length) {
+    alert('没有找到合作中的公司，请先添加合作公司');
+    btn.disabled = false; btn.textContent = '开始生成'; return;
+  }
+
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const rnd  = (lo, hi) => Math.floor(Math.random() * (hi - lo + 1)) + lo;
+  const langNames = { en: 'English', zh: '中文', es: 'Español' };
+
+  const fullPool = [
+    // ── 中文职位 ──
+    { lang:'zh', title:'仓库分拣员',     type:'临时工',    employment_type:'W2',
+      pay:'$17-19/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'周薪,交通补贴', headcount_max:8,
+      desc:'负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。' },
+    { lang:'zh', title:'叉车操作员',     type:'全职',      employment_type:'W2',
+      pay:'$20-24/hr',  work_auth:'any',  urgent:true,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'07:00', work_end:'15:30',
+      benefits:'医疗保险,牙科保险,带薪休假,加班费', headcount_max:3,
+      desc:'需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁安全。' },
+    { lang:'zh', title:'生产线操作工',   type:'全职',      employment_type:'W2',
+      pay:'$18/hr',     work_auth:'gc',   urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'医疗保险,加班费', headcount_max:10,
+      desc:'食品加工生产线工作，需遵守卫生规定。每周加班机会多，可双休。' },
+    { lang:'zh', title:'食品加工工人',   type:'临时转正',  employment_type:'W2',
+      pay:'$16-18/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri,Sat', work_start:'05:00', work_end:'13:30',
+      benefits:'周薪,餐补,加班费', headcount_max:15,
+      desc:'负责食品预处理、切割及包装工序，需穿戴卫生防护设备，提供培训。' },
+    { lang:'zh', title:'清洁工',         type:'兼职',      employment_type:'W2',
+      pay:'$15-17/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Wed,Fri', work_start:'18:00', work_end:'22:00',
+      benefits:'周薪', headcount_max:5,
+      desc:'负责办公楼或仓库清洁工作，包括拖地、清理垃圾及消毒。有经验者优先。' },
+    { lang:'zh', title:'装卸工',         type:'临时工',    employment_type:'W2',
+      pay:'$17/hr',     work_auth:'any',  urgent:true,
+      work_days:'Tue,Wed,Thu,Fri,Sat', work_start:'22:00', work_end:'06:00',
+      benefits:'周薪,加班费', headcount_max:6,
+      desc:'负责货车装卸作业，体力要求较高，可搬运50磅以上货物，夜班时间。' },
+    { lang:'zh', title:'质检员',         type:'全职',      employment_type:'W2',
+      pay:'$19-22/hr',  work_auth:'gc',   urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'07:00', work_end:'15:30',
+      benefits:'医疗保险,带薪休假,节假日奖金', headcount_max:2,
+      desc:'负责产品质量检测，填写质检报告，发现问题及时上报。有质检经验者优先。' },
+    { lang:'zh', title:'包装工',         type:'临时工',    employment_type:'W2',
+      pay:'$16/hr',     work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'08:00', work_end:'16:30',
+      benefits:'周薪,交通补贴', headcount_max:12,
+      desc:'负责产品包装、贴标及装箱工作，需长时间站立，无需经验，当天可上岗。' },
+    { lang:'zh', title:'冷库工',         type:'全职',      employment_type:'W2',
+      pay:'$18-20/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri,Sat', work_start:'06:00', work_end:'14:00',
+      benefits:'医疗保险,加班费,节假日奖金', headcount_max:4,
+      desc:'在0°C以下冷库环境操作，负责货物出入库管理，提供保暖服装。' },
+    { lang:'zh', title:'仓库管理员',     type:'全职',      employment_type:'W2',
+      pay:'$22-26/hr',  work_auth:'gc',   urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'08:00', work_end:'17:00',
+      benefits:'医疗保险,牙科保险,带薪休假,401k', headcount_max:2,
+      desc:'负责仓库日常管理、库存盘点及人员调度，需2年以上仓储管理经验。' },
+    // ── English jobs ──
+    { lang:'en', title:'Warehouse Associate',      type:'临时转正',  employment_type:'W2',
+      pay:'$16-18/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'07:00', work_end:'15:30',
+      benefits:'周薪,节假日奖金', headcount_max:10,
+      desc:'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs.' },
+    { lang:'en', title:'Machine Operator',         type:'全职',      employment_type:'W2',
+      pay:'$19-22/hr',  work_auth:'gc',   urgent:true,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'医疗保险,牙科保险,视力保险,带薪休假', headcount_max:3,
+      desc:'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred.' },
+    { lang:'en', title:'General Labor',            type:'临时工',    employment_type:'Contract',
+      pay:'$15.50/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri,Sat', work_start:'07:00', work_end:'15:30',
+      benefits:'周薪', headcount_max:20,
+      desc:'Various light industrial tasks including assembly, sorting and quality inspection. No experience required.' },
+    { lang:'en', title:'Forklift Operator',        type:'全职',      employment_type:'W2',
+      pay:'$21-25/hr',  work_auth:'any',  urgent:true,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'医疗保险,加班费,带薪休假', headcount_max:3,
+      desc:'Operate sit-down and stand-up forklifts in a busy distribution center. Valid forklift certification required.' },
+    { lang:'en', title:'Shipping & Receiving Clerk', type:'全职',    employment_type:'W2',
+      pay:'$18-20/hr',  work_auth:'gc',   urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'08:00', work_end:'16:30',
+      benefits:'医疗保险,带薪休假,401k', headcount_max:2,
+      desc:'Process inbound and outbound shipments, verify orders, maintain shipping records. Proficiency in WMS preferred.' },
+    { lang:'en', title:'Assembly Line Worker',     type:'临时工',    employment_type:'W2',
+      pay:'$16-17/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'周薪,交通补贴', headcount_max:8,
+      desc:'Perform repetitive assembly tasks on a manufacturing line. Must be able to stand for extended periods.' },
+    { lang:'en', title:'Inventory Associate',      type:'兼职',      employment_type:'W2',
+      pay:'$17/hr',     work_auth:'any',  urgent:false,
+      work_days:'Sat,Sun', work_start:'06:00', work_end:'14:00',
+      benefits:'周薪', headcount_max:4,
+      desc:'Conduct physical inventory counts during weekend cycle counts. Attention to detail required.' },
+    { lang:'en', title:'Production Worker',        type:'临时转正',  employment_type:'W2',
+      pay:'$17-19/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'14:30', work_end:'23:00',
+      benefits:'周薪,加班费', headcount_max:6,
+      desc:'Afternoon shift production position. Duties include operating machinery, quality checks, and keeping work area clean.' },
+    // ── Español ──
+    { lang:'es', title:'Trabajador de Almacén',    type:'全职',      employment_type:'W2',
+      pay:'$16-18/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'07:00', work_end:'15:30',
+      benefits:'周薪,交通补贴', headcount_max:8,
+      desc:'Clasificar y empacar productos en almacén. No se requiere experiencia previa, se ofrece capacitación en el trabajo.' },
+    { lang:'es', title:'Operador de Montacargas',  type:'临时工',    employment_type:'1099',
+      pay:'$20/hr',     work_auth:'gc',   urgent:true,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'22:00', work_end:'06:00',
+      benefits:'周薪,加班费', headcount_max:3,
+      desc:'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía en turno nocturno.' },
+    { lang:'es', title:'Trabajador de Producción', type:'全职',      employment_type:'W2',
+      pay:'$17/hr',     work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri,Sat', work_start:'06:00', work_end:'14:00',
+      benefits:'医疗保险,周薪', headcount_max:10,
+      desc:'Trabajo en línea de producción de alimentos. Se requiere seguir normas de higiene. Turno matutino disponible.' },
+    { lang:'es', title:'Empacador',                type:'临时工',    employment_type:'W2',
+      pay:'$15.50-17/hr', work_auth:'any', urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'08:00', work_end:'16:30',
+      benefits:'周薪', headcount_max:12,
+      desc:'Empacar y etiquetar productos en entorno de almacén. No se necesita experiencia, capacitación incluida.' },
+  ];
+
+  const pool = langFilter === 'mixed' ? fullPool : fullPool.filter(j => j.lang === langFilter);
+  if (!pool.length) { alert('该语言暂无职位模板'); btn.disabled = false; btn.textContent = '开始生成'; return; }
+
+  const locations = ['Chicago, IL','Cicero, IL','Melrose Park, IL','Elk Grove Village, IL','Addison, IL','Schaumburg, IL','Bolingbrook, IL','Aurora, IL','Berwyn, IL','Lyons, IL'];
+
+  let successCount = 0;
+  for (let i = 0; i < count; i++) {
+    const j = pick(pool);
+    const partner = pick(partners);
+    const data = {
+      partner_id: partner.id, company_id: partner.id, company_name: partner.name,
+      title: j.title, type: j.type, location: pick(locations),
+      pay: j.pay, lang: j.lang, lang_name: langNames[j.lang] || 'English',
+      work_auth: j.work_auth || '', employment_type: j.employment_type || 'W2',
+      work_days: j.work_days || 'Mon,Tue,Wed,Thu,Fri',
+      work_start: j.work_start || '08:00', work_end: j.work_end || '16:30',
+      benefits: j.benefits || '', schedule: '',
+      description: j.desc, urgent: !!j.urgent,
+      headcount: rnd(1, j.headcount_max || 5),
+      job_status: 'open', active: true,
+    };
+    const res = await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
+    if (res && (res.id || res.success)) successCount++;
+  }
+
+  btn.disabled = false; btn.textContent = '开始生成';
+  resultEl.style.display = '';
+  resultEl.textContent = `成功生成 ${successCount} / ${count} 个职位！`;
+  loadJobs();
 }
 
 async function saveJob() {
@@ -2571,6 +2833,36 @@ async function assignFromInquiry() {
   document.getElementById('aInquiryId').value = currentInquiry.id;
 }
 
+// ─── Quotes (报价请求) ───
+let allQuotes = [];
+async function loadQuotes() {
+  allQuotes = await api('/admin/quotes');
+  filterQuotes();
+}
+function filterQuotes() {
+  const q = (document.getElementById('quoteSearch').value || '').toLowerCase();
+  const rows = allQuotes.filter(r =>
+    !q || [r.name, r.email, r.company, r.products, r.phone, r.location].some(f => (f || '').toLowerCase().includes(q))
+  );
+  document.getElementById('quoteTable').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td>${(r.created_at || '').slice(0, 10)}</td>
+    <td><strong>${esc(r.name)}</strong></td>
+    <td>${esc(r.company)}</td>
+    <td>${esc(r.email)}</td>
+    <td>${esc(r.phone)}</td>
+    <td>${esc(r.products)}</td>
+    <td>${esc(r.quantity)}</td>
+    <td>${esc(r.location)}</td>
+    <td>${esc(r.notes)}</td>
+    <td><button class="btn btn-xs btn-danger" onclick="deleteQuote(${r.id})">删除</button></td>
+  </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无报价请求</td></tr>';
+}
+async function deleteQuote(id) {
+  if (!confirm('确定删除该报价请求？')) return;
+  await api('/admin/quotes/' + id, { method: 'DELETE' });
+  loadQuotes();
+}
+
 // ─── Assignments (派工管理) ───
 async function loadAssignments() {
   allAssignments = await api('/admin/assignments');
@@ -2666,7 +2958,7 @@ function filterPartnerSearch() {
   const items = _jobPartners.filter(p => !q || (p.name||'').toLowerCase().includes(q));
   if (!items.length) { drop.classList.remove('open'); return; }
   drop.innerHTML = items.slice(0, 30).map(p =>
-    `<div class="adrop-item" onclick="selectPartnerItem(${p.id},${JSON.stringify(p.name).replace(/</g,'&lt;')})">${esc(p.name)}<small>${esc(p.industry||'')}</small></div>`
+    `<div class="adrop-item" onclick="selectPartnerItem(${p.id},${JSON.stringify(p.name).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">${esc(p.name)}<small>${esc(p.industry||'')}</small></div>`
   ).join('');
   drop.classList.add('open');
 }
@@ -2692,10 +2984,10 @@ function filterAssignSearch(which) {
 
   drop.innerHTML = items.slice(0, 30).map(item => {
     if (isInq) {
-      return `<div class="adrop-item" onclick="selectAssignItem('inq',${item.id},${JSON.stringify(item.name + (item.phone ? ' · ' + item.phone : '')).replace(/</g,'&lt;')})">
+      return `<div class="adrop-item" onclick="selectAssignItem('inq',${item.id},${JSON.stringify(item.name + (item.phone ? ' · ' + item.phone : '')).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">
         ${esc(item.name)} <small>${esc(typeLabel(item.type))} ${item.phone ? '· ' + esc(item.phone) : ''} ${item.email ? '· ' + esc(item.email) : ''}</small></div>`;
     } else {
-      return `<div class="adrop-item" onclick="selectAssignItem('job',${item.id},${JSON.stringify(item.title + ' - ' + item.location).replace(/</g,'&lt;')})">
+      return `<div class="adrop-item" onclick="selectAssignItem('job',${item.id},${JSON.stringify(item.title + ' - ' + item.location).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">
         ${esc(item.title)} <small>${esc(item.location)} ${item.pay ? '· ' + esc(item.pay) : ''} ${item.employment_type ? '· ' + esc(item.employment_type) : ''}</small></div>`;
     }
   }).join('');
@@ -2717,7 +3009,7 @@ function closeAssignDropdowns() {
 // Close dropdowns when clicking outside
 document.addEventListener('click', e => {
   if (!e.target.closest('#assignModal')) closeAssignDropdowns();
-  if (!e.target.closest('#jobModal')) document.getElementById('jPartnerDrop').classList.remove('open');
+  if (!e.target.closest('#jPartnerDrop') && !e.target.closest('#jPartnerSearch')) document.getElementById('jPartnerDrop').classList.remove('open');
 });
 
 function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
@@ -3334,6 +3626,106 @@ function randomFillEmployee() {
   document.getElementById('eEmgRel').value = pick(rels);
 }
 
+function randomFillPartner() {
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const rnd  = (lo, hi) => Math.floor(Math.random() * (hi - lo + 1)) + lo;
+  const area = pick(['312','773','847','630','708','224','331','872']);
+
+  const companies = [
+    {name:'Allied Freight Solutions Inc.',    industry:'物流 Logistics'},
+    {name:'Pacific Star Warehousing LLC',     industry:'仓储 Warehousing'},
+    {name:'Midwest Fresh Foods Co.',          industry:'食品加工 Food Processing'},
+    {name:'Summit Manufacturing Group',       industry:'制造业 Manufacturing'},
+    {name:'BrightLine Distribution Corp.',    industry:'运输 Transportation'},
+    {name:'GoldenGate Packaging LLC',         industry:'制造业 Manufacturing'},
+    {name:'Delta Cold Chain Logistics',       industry:'物流 Logistics'},
+    {name:'Premier Industrial Services',      industry:'仓储 Warehousing'},
+    {name:'Horizon Food Processing Inc.',     industry:'食品加工 Food Processing'},
+    {name:'Tristar Staffing Partners',        industry:'其他 Other'},
+  ];
+  const company = pick(companies);
+  const slug = company.name.split(' ')[0].toLowerCase().replace(/[^a-z]/g,'');
+
+  // ── 基本信息 ──
+  document.getElementById('pName').value = company.name;
+  document.getElementById('pIndustry').value = company.industry;
+  document.getElementById('pActive').checked = Math.random() > 0.15;
+
+  // ── 联系人：清空旧的，添加1~2个 ──
+  document.getElementById('pContactsList').innerHTML = '';
+  const firstNames = ['Michael','Jennifer','David','Lisa','Robert','Sandra','Kevin','Jessica','Brian','Monica','Wei','Carlos','Mei','Jose','Anna'];
+  const lastNames  = ['Thompson','Williams','Garcia','Chen','Johnson','Martinez','Lee','Davis','Brown','Wang','Smith','Nguyen','Lopez','Kim','Patel'];
+  const roles      = ['Operations Manager','Warehouse Manager','HR Director','Logistics Coordinator','Plant Manager','Purchasing Manager','Site Supervisor','Director of Operations'];
+  const otherComms = ['Line: line_biz88','Zalo: +84909123456','KakaoTalk: biz_korea','Signal: +13125550000','Viber: +17085550000'];
+  const count = rnd(1, 2);
+  for (let i = 0; i < count; i++) {
+    addPartnerContact();
+    const items = document.querySelectorAll('#pContactsList .dyn-item');
+    const el = items[items.length - 1];
+    const fn = pick(firstNames), ln = pick(lastNames);
+    el.querySelector('.pc-first').value      = fn;
+    el.querySelector('.pc-last').value       = ln;
+    el.querySelector('.pc-role').value       = pick(roles);
+    el.querySelector('.pc-phone').value      = `(${area}) ${rnd(200,999)}-${rnd(1000,9999)}`;
+    el.querySelector('.pc-email').value      = `${fn.toLowerCase()}.${ln.toLowerCase()}@${slug}.com`;
+    el.querySelector('.pc-whatsapp').value   = `+1 ${area}-${rnd(200,999)}-${rnd(1000,9999)}`;
+    if (Math.random() > 0.5) el.querySelector('.pc-wechat').value    = `${fn.toLowerCase()}${rnd(100,999)}`;
+    if (Math.random() > 0.6) el.querySelector('.pc-telegram').value  = `@${fn.toLowerCase()}${rnd(10,99)}`;
+    if (Math.random() > 0.7) el.querySelector('.pc-other_comm').value = pick(otherComms);
+  }
+
+  // ── 地址：清空旧的，添加1个 ──
+  document.getElementById('pAddrList').innerHTML = '';
+  const streetNames = ['Industrial Pkwy','W. Commerce Dr','N. Logistics Blvd','S. Distribution Way','E. Warehouse Rd','Corporate Center Dr','Freight Ave','W. Factory Ln','Business Park Blvd','Technology Dr'];
+  const cities = [
+    {c:'Chicago',           s:'IL', z:'606'},
+    {c:'Cicero',            s:'IL', z:'60804'},
+    {c:'Melrose Park',      s:'IL', z:'60160'},
+    {c:'Elk Grove Village', s:'IL', z:'60007'},
+    {c:'Addison',           s:'IL', z:'60101'},
+    {c:'Schaumburg',        s:'IL', z:'60173'},
+    {c:'Bolingbrook',       s:'IL', z:'60440'},
+    {c:'Aurora',            s:'IL', z:'60505'},
+  ];
+  const city = pick(cities);
+  const zip = city.z.length === 5 ? city.z : city.z + String(rnd(10, 99));
+  addPartnerAddr();
+  const addrRow = document.querySelector('#pAddrList .pa-addr-row');
+  if (addrRow) {
+    addrRow.querySelector('.pa-street').value = `${rnd(100,9999)} ${pick(streetNames)}`;
+    const street2opts = [`Ste ${rnd(100,999)}`, `Unit ${rnd(1,20)}`, `Floor ${rnd(2,10)}`, `Bldg ${pick(['A','B','C'])}`];
+    if (Math.random() > 0.4) addrRow.querySelector('.pa-street2').value = pick(street2opts);
+    addrRow.querySelector('.pa-city').value = city.c;
+    const stateEl = addrRow.querySelector('.pa-state');
+    if (stateEl) { for (const opt of stateEl.options) { if (opt.value === city.s) { opt.selected = true; break; } } }
+    addrRow.querySelector('.pa-zip').value = zip;
+  }
+
+  // ── 公司链接 ──
+  document.getElementById('pWebsite').value  = `https://www.${slug}.com`;
+  document.getElementById('pFbPage').value   = `https://facebook.com/${slug}`;
+  document.getElementById('pIgPage').value   = `https://instagram.com/${slug}`;
+  document.getElementById('pLinkedin').value = `https://linkedin.com/company/${slug}`;
+
+  // ── 合作服务：随机激活2~4个 ──
+  const tags = document.querySelectorAll('#pSvcTags .svc-tag');
+  tags.forEach(t => t.classList.remove('active'));
+  const shuffled = [...tags].sort(() => Math.random() - 0.5);
+  shuffled.slice(0, rnd(2, 4)).forEach(t => t.classList.add('active'));
+  const extraSvcs = ['驾驶员派遣','安保人员','餐饮外包','行政助理','IT外包'];
+  if (Math.random() > 0.5) document.getElementById('pSvcOther').value = pick(extraSvcs);
+  else document.getElementById('pSvcOther').value = '';
+
+  // ── 备注 ──
+  const notes = [
+    `长期合作伙伴，主要负责${company.industry.split(' ')[0]}板块的人员需求。结算周期：双周。`,
+    `通过推荐引入，${rnd(2020,2025)}年开始合作。目前每周稳定需要${rnd(5,30)}名工人。`,
+    `季节性需求较高，${pick(['Q1','Q2','Q3','Q4'])}旺季用工量翻倍。付款准时，信誉良好。`,
+    `对接人为人事主管，需提前48小时通知。工人需穿工装，公司提供安全鞋补贴。`,
+  ];
+  document.getElementById('pNotes').value = pick(notes);
+}
+
 async function saveEmployee() {
   const id = document.getElementById('empId').value;
   const data = {
@@ -3895,6 +4287,11 @@ async function generateEmpDocLink() {
       document.getElementById('empDocLinkResult').style.display = '';
       document.getElementById('empDocLinkCopied').style.display = 'none';
       btn.textContent = '已生成';
+      // Show expiry info
+      if (r.expires_at) {
+        const exp = new Date(r.expires_at).toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric' });
+        document.getElementById('empDocLinkUrl').textContent += '\n⏰ 有效期至 ' + exp + '（3天）';
+      }
       // Show send-to summary
       const targets = [];
       if (phoneChecked && phones.length) targets.push('短信: ' + phones.join(', '));
@@ -5062,17 +5459,28 @@ async function deleteAccount(id, name) {
 async function loadWorkerAccounts() {
   const rows = await api('/admin/worker-accounts');
   if (!Array.isArray(rows)) return;
+  const statusMap = { citizen:'公民', green_card:'绿卡', ead:'EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他' };
+  const workerStatus = w => {
+    if (!w.active) return '<span style="color:var(--orange);font-weight:600">⏳ 待验证</span>';
+    if (w.suspended) return '<span style="color:var(--red);font-weight:600">⛔ 已暂停</span>';
+    return '<span style="color:var(--green);font-weight:600">✅ 正常</span>';
+  };
   document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w=>`<tr>
-    <td><strong>${esc(w.username)}</strong></td>
+    <td><strong>${esc(w.name||w.username)}</strong></td>
+    <td>${esc(w.phone||'')}</td>
+    <td style="font-size:.82rem">${esc(w.email||'')}</td>
+    <td>${statusMap[w.work_status]||esc(w.work_status||'')}</td>
     <td>${w.first_name?esc(w.first_name+' '+w.last_name):'<span style="color:var(--gray-400)">未绑定</span>'}</td>
-    <td style="font-size:.78rem;color:var(--gray-500)">${esc(w.emp_code||'')}</td>
-    <td>${w.active?'<span style="color:var(--green)">启用</span>':'<span style="color:var(--red)">禁用</span>'}</td>
+    <td>${workerStatus(w)}</td>
     <td>${(w.created_at||'').slice(0,10)}</td>
-    <td style="white-space:nowrap">
+    <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
+      ${!w.active?`<button class="btn btn-sm btn-green" onclick="activateWorkerAccount(${w.id})">激活</button><button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="resendWorkerVerify(${w.id})">重发验证</button>`:''}
+      ${w.active?(w.suspended?`<button class="btn btn-sm btn-green" onclick="suspendWorkerAccount(${w.id},0)">恢复</button>`:`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendWorkerAccount(${w.id},1)">暂停</button>`):''}
+      <button class="btn btn-sm btn-blue" onclick="openResetPwdModal('worker',${w.id},'${esc(w.name||w.username)}')">改密码</button>
       <button class="btn btn-sm" onclick="editWorkerAccount(${w.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.username)}')">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无工人账户</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无工人账户</td></tr>';
 }
 
 async function openWorkerAccountModal(data) {
@@ -5112,6 +5520,13 @@ async function saveWorkerAccount() {
   showToast('✅ 工人账户已保存');
 }
 
+async function activateWorkerAccount(id) {
+  if (!confirm('手动激活该账户？（跳过验证）/ Manually activate this account?')) return;
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ active: 1 }) });
+  loadWorkerAccounts();
+  showToast('✅ 账户已激活');
+}
+
 async function deleteWorkerAccount(id, name) {
   showDeleteConfirm(name, `删除后该工人账户将无法登录，相关记录将一并清除。`, async () => {
     const r = await api(`/admin/worker-accounts/${id}`, { method:'DELETE' });
@@ -5144,8 +5559,10 @@ async function loadCustomerAccounts() {
     <td style="font-size:.82rem">${esc(c.ein||'—')}</td>
     <td>${statusBadge(c)}</td>
     <td>${(c.created_at||'').slice(0,10)}</td>
-    <td style="white-space:nowrap">
-      ${c.approval_status==='pending'?`<button class="btn btn-sm btn-green" onclick="approveEnterprise(${c.id})">通过</button> <button class="btn btn-sm btn-red" onclick="rejectEnterprise(${c.id})">拒绝</button> `:''}
+    <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
+      ${c.approval_status==='pending'?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
+      ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
+      ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
       <button class="btn btn-sm" onclick="editCustomerAccount(${c.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteCustomerAccount(${c.id},'${esc(c.company_name)}')">删除</button>
     </td>
@@ -5210,11 +5627,121 @@ async function saveCustomerAccount() {
 }
 
 async function deleteCustomerAccount(id, name) {
-  if (!confirm(`确认删除客户账户 "${name}" ?`)) return;
+  const input = prompt(`确认删除客户账户 "${name}" ?\n请输入 I confirm 确认删除 / Type "I confirm" to delete:`);
+  if (input !== 'I confirm') { if (input !== null) alert('输入不正确，删除已取消'); return; }
   await api(`/admin/customer-accounts/${id}`, { method:'DELETE' });
   loadCustomerAccounts();
 }
 
+async function clearAllTestData() {
+  const input = prompt('⚠️ 这将删除所有工人账户和客户账户！\nThis will delete ALL worker and customer accounts!\n\n请输入 I confirm 确认 / Type "I confirm" to proceed:');
+  if (input !== 'I confirm') { if (input !== null) alert('输入不正确，操作已取消'); return; }
+  const r = await api('/admin/clear-test-data', { method:'POST', body: JSON.stringify({ confirm_text: 'I confirm' }) });
+  if (r.success) {
+    alert(`已清空：${r.deleted_workers} 个工人账户，${r.deleted_customers} 个客户账户`);
+    loadWorkerAccounts();
+    loadCustomerAccounts();
+  } else {
+    alert(r.error || '清空失败');
+  }
+}
+
+// ── Worker: suspend / resend verification ──
+async function suspendWorkerAccount(id, doSuspend) {
+  const label = doSuspend ? '暂停' : '恢复';
+  if (!confirm(`确认${label}该工人账户？`)) return;
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ suspended: doSuspend ? 1 : 0 }) });
+  loadWorkerAccounts();
+  showToast(`✅ 账户已${label}`);
+}
+
+async function resendWorkerVerify(id) {
+  const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
+  if (r && r.success) {
+    showToast('✅ 验证码已重新生成');
+    if (r.phone_code || r.email_code) {
+      alert(`验证码已生成（系统会发送短信/邮件通知用户）\n手机验证码: ${r.phone_code||'—'}\n邮箱验证码: ${r.email_code||'—'}`);
+    }
+  }
+}
+
+// ── Customer: suspend / restore ──
+async function suspendCustomerAccount(id, doEnable) {
+  const label = doEnable ? '恢复' : '暂停';
+  if (!confirm(`确认${label}该客户账户？`)) return;
+  await api(`/admin/customer-accounts/${id}`, { method:'PUT', body:JSON.stringify({ active: doEnable ? 1 : 0 }) });
+  loadCustomerAccounts();
+  showToast(`✅ 客户账户已${label}`);
+}
+
+// ── Reset password (worker or customer) ──
+function openResetPwdModal(type, id, name) {
+  document.getElementById('resetPwdType').value = type;
+  document.getElementById('resetPwdId').value = id;
+  document.getElementById('resetPwdTarget').textContent = `账户：${name}`;
+  document.getElementById('resetPwdNew').value = '';
+  document.getElementById('resetPwdConfirm').value = '';
+  document.getElementById('resetPwdModal').classList.add('show');
+}
+
+async function saveResetPassword() {
+  const type = document.getElementById('resetPwdType').value;
+  const id = document.getElementById('resetPwdId').value;
+  const pwd = document.getElementById('resetPwdNew').value;
+  const pwd2 = document.getElementById('resetPwdConfirm').value;
+  if (!pwd || pwd.length < 6) return alert('密码至少6位');
+  if (pwd !== pwd2) return alert('两次密码不一致');
+  const endpoint = type === 'worker' ? `/admin/worker-accounts/${id}` : `/admin/customer-accounts/${id}`;
+  const r = await api(endpoint, { method:'PUT', body:JSON.stringify({ password: pwd }) });
+  if (r && r.success !== false) {
+    closeModal('resetPwdModal');
+    showToast('✅ 密码已重置');
+  }
+}
+
+// ── Enterprise approval modal ──
+async function openEntApprovalModal(id) {
+  const rows = await api('/admin/customer-accounts');
+  const c = rows.find(r => r.id === id);
+  if (!c) return;
+  document.getElementById('entApprovalId').value = id;
+  document.getElementById('entApprovalDetails').innerHTML = `
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:.25rem .75rem;align-items:baseline">
+      <span style="color:var(--gray-500);font-weight:600">公司名称</span><span>${esc(c.company_name)}</span>
+      <span style="color:var(--gray-500);font-weight:600">联系人</span><span>${esc(c.contact_name||'—')}</span>
+      <span style="color:var(--gray-500);font-weight:600">邮箱</span><span>${esc(c.email)}</span>
+      <span style="color:var(--gray-500);font-weight:600">电话</span><span>${esc(c.phone||'—')}</span>
+      <span style="color:var(--gray-500);font-weight:600">EIN</span><span>${esc(c.ein||'—')}</span>
+      <span style="color:var(--gray-500);font-weight:600">人力需求</span><span style="white-space:pre-wrap">${esc(c.staffing_needs||'—')}</span>
+      <span style="color:var(--gray-500);font-weight:600">注册时间</span><span>${(c.created_at||'').slice(0,10)}</span>
+    </div>`;
+  const partners = _allPartners.length ? _allPartners : await api('/admin/partners').catch(()=>[]);
+  _allPartners = partners;
+  document.getElementById('entApprovalPartner').innerHTML = '<option value="">— 请选择关联公司 —</option>' +
+    partners.map(p=>`<option value="${p.id}"${c.partner_id==p.id?' selected':''}>${esc(p.name)}${p.industry?' · '+esc(p.industry):''}</option>`).join('');
+  document.getElementById('entApprovalModal').classList.add('show');
+}
+
+async function confirmApproveEnterprise() {
+  const id = document.getElementById('entApprovalId').value;
+  const partner_id = document.getElementById('entApprovalPartner').value;
+  if (!partner_id) return alert('请先选择关联的合作公司档案（必须）');
+  const r = await api(`/admin/approve-enterprise/${id}`, { method:'PUT', body:JSON.stringify({ partner_id }) });
+  if (r && r.success !== false) {
+    closeModal('entApprovalModal');
+    showToast('✅ 企业已审核通过并关联');
+    loadCustomerAccounts();
+  }
+}
+
+async function rejectEnterpriseFromModal() {
+  const id = document.getElementById('entApprovalId').value;
+  if (!confirm('确认拒绝此企业注册？')) return;
+  await api(`/admin/reject-enterprise/${id}`, { method:'PUT' });
+  closeModal('entApprovalModal');
+  showToast('❌ 企业注册已拒绝');
+  loadCustomerAccounts();
+}
 function randomFillWorkerAccount() {
   const phones = ['3125550101','7735550202','8475550303','7085550404','6305550505'];
   const pw = 'Test' + _randInt(1000,9999) + '!';

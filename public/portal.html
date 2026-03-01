@@ -18,6 +18,30 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .login-box input:focus{outline:2px solid var(--sky);border-color:transparent}
 .btn-login{width:100%;padding:.85rem;background:var(--sky);color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer}
 .btn-login:hover{background:#0284c7}
+.login-extra{display:flex;justify-content:space-between;align-items:center;margin-top:.85rem;font-size:.8rem}
+.login-extra a{color:var(--sky);font-weight:600;text-decoration:none}
+.login-extra a:hover{text-decoration:underline}
+/* Forgot password modal */
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal-box{background:#fff;border-radius:16px;padding:2rem;width:90%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.modal-box h2{font-size:1.1rem;font-weight:700;color:var(--blue);margin-bottom:.5rem}
+.modal-box p{font-size:.85rem;color:var(--gray-500);margin-bottom:1rem}
+.modal-box input{width:100%;padding:.7rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.92rem;margin-bottom:.75rem}
+.modal-box input:focus{outline:2px solid var(--sky);border-color:transparent}
+.modal-btn{width:100%;padding:.75rem;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;margin-bottom:.5rem}
+.modal-btn-primary{background:var(--sky);color:#fff}
+.modal-btn-primary:hover{background:#0284c7}
+.modal-btn-secondary{background:var(--gray-100);color:var(--gray-500)}
+.modal-msg{padding:.6rem .8rem;border-radius:6px;font-size:.82rem;margin-bottom:.75rem;display:none}
+.modal-msg.show{display:block}
+.modal-msg.error{background:#fef2f2;border:1px solid #fecaca;color:#dc2626}
+.modal-msg.success{background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a}
+.code-row{display:flex;gap:.5rem;align-items:center}
+.code-row input{flex:1}
+.code-row button{flex-shrink:0;padding:.7rem 1rem;border:none;border-radius:8px;background:var(--sky);color:#fff;font-size:.85rem;font-weight:600;cursor:pointer;white-space:nowrap}
+.code-row button:hover{background:#0284c7}
+.code-row button:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
 /* App shell */
 #app{display:none}
 .header{background:var(--blue);color:#fff;padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between}
@@ -77,10 +101,47 @@ tr:last-child td{border-bottom:none}
     <img src="/logo.svg" alt="Prime Anchorpoint">
     <h1>工人门户</h1>
     <p>Worker Self-Service Portal</p>
-    <input type="text" id="wUsername" placeholder="用户名 / Username" autocomplete="username">
+    <input type="text" id="wLogin" placeholder="邮箱或手机号 / Email or Phone" autocomplete="username">
     <input type="password" id="wPassword" placeholder="密码 / Password" autocomplete="current-password">
     <button class="btn-login" onclick="workerLogin()">登录 / Login</button>
-    <p style="margin-top:1rem;font-size:.8rem;color:var(--gray-400);text-align:center">没有账号？<a href="/register" style="color:#0ea5e9;font-weight:600;text-decoration:none">立即注册 / Register</a></p>
+    <div class="login-extra">
+      <a href="javascript:void(0)" onclick="showForgotPassword()">忘记密码？</a>
+      <a href="/register?type=worker">注册 / Register</a>
+    </div>
+  </div>
+</div>
+
+<!-- Forgot Password Modal -->
+<div class="modal-overlay" id="forgotModal">
+  <div class="modal-box">
+    <h2>忘记密码 / Forgot Password</h2>
+    <div class="modal-msg" id="forgotMsg"></div>
+
+    <!-- Step 1: Enter email/phone -->
+    <div id="forgotStep1">
+      <p>请输入您注册时使用的邮箱或手机号<br>Enter your registered email or phone</p>
+      <input type="text" id="forgotLogin" placeholder="邮箱或手机号 / Email or Phone">
+      <button class="modal-btn modal-btn-primary" onclick="sendResetCode()">发送验证码 / Send Code</button>
+    </div>
+
+    <!-- Step 2: Enter code + new password -->
+    <div id="forgotStep2" style="display:none">
+      <p>验证码已发送，请查收<br>Verification code has been sent</p>
+      <div class="code-row">
+        <input type="text" id="resetCode" placeholder="验证码 / Code" maxlength="6">
+        <button onclick="sendResetCode()" id="resendBtn">重新发送</button>
+      </div>
+      <input type="password" id="newPassword" placeholder="新密码（至少6位）/ New password (min 6)">
+      <input type="password" id="newPassword2" placeholder="确认新密码 / Confirm new password">
+      <button class="modal-btn modal-btn-primary" onclick="resetPassword()">重置密码 / Reset Password</button>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div id="forgotStep3" style="display:none">
+      <p style="color:var(--green);font-weight:600;text-align:center;font-size:1rem">密码重置成功！<br>Password reset successful!</p>
+    </div>
+
+    <button class="modal-btn modal-btn-secondary" onclick="closeForgotPassword()">关闭 / Close</button>
   </div>
 </div>
 
@@ -157,6 +218,7 @@ tr:last-child td{border-bottom:none}
 <script>
 let WORKER_TOKEN = localStorage.getItem('pa_worker_token') || '';
 let _allJobs = [];
+let _forgotLogin = '';
 
 function showToast(msg, type='success') {
   const wrap = document.getElementById('toast-wrap');
@@ -178,13 +240,13 @@ async function wApi(path, opts={}) {
 }
 
 async function workerLogin() {
-  const username = document.getElementById('wUsername').value.trim();
+  const login = document.getElementById('wLogin').value.trim();
   const password = document.getElementById('wPassword').value;
-  if (!username || !password) return alert('请输入用户名和密码');
+  if (!login || !password) return alert('请输入邮箱/手机号和密码');
   const r = await fetch('/api/worker/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ login, password })
   });
   if (!r.ok) { const e = await r.json(); return alert(e.error || '登录失败'); }
   const data = await r.json();
@@ -198,6 +260,82 @@ function workerLogout() {
   localStorage.removeItem('pa_worker_token');
   document.getElementById('loginWrap').style.display = '';
   document.getElementById('app').style.display = 'none';
+}
+
+// ─── Forgot Password ───
+function showForgotPassword() {
+  document.getElementById('forgotModal').classList.add('show');
+  document.getElementById('forgotStep1').style.display = '';
+  document.getElementById('forgotStep2').style.display = 'none';
+  document.getElementById('forgotStep3').style.display = 'none';
+  hideForgotMsg();
+}
+
+function closeForgotPassword() {
+  document.getElementById('forgotModal').classList.remove('show');
+}
+
+function showForgotMsg(msg, type) {
+  const el = document.getElementById('forgotMsg');
+  el.textContent = msg;
+  el.className = 'modal-msg show ' + type;
+}
+function hideForgotMsg() {
+  document.getElementById('forgotMsg').className = 'modal-msg';
+}
+
+async function sendResetCode() {
+  hideForgotMsg();
+  const login = document.getElementById('forgotLogin').value.trim();
+  if (!login) return showForgotMsg('请输入邮箱或手机号', 'error');
+  _forgotLogin = login;
+  try {
+    const r = await fetch('/api/worker/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login })
+    });
+    const d = await r.json();
+    if (!r.ok) return showForgotMsg(d.error || '发送失败', 'error');
+    document.getElementById('forgotStep1').style.display = 'none';
+    document.getElementById('forgotStep2').style.display = '';
+    showForgotMsg('验证码已发送 / Code sent', 'success');
+    // Countdown on resend button
+    const btn = document.getElementById('resendBtn');
+    btn.disabled = true;
+    let sec = 60;
+    const iv = setInterval(() => {
+      sec--;
+      btn.textContent = `重新发送(${sec}s)`;
+      if (sec <= 0) { clearInterval(iv); btn.disabled = false; btn.textContent = '重新发送'; }
+    }, 1000);
+  } catch {
+    showForgotMsg('网络错误', 'error');
+  }
+}
+
+async function resetPassword() {
+  hideForgotMsg();
+  const code = document.getElementById('resetCode').value.trim();
+  const pw = document.getElementById('newPassword').value;
+  const pw2 = document.getElementById('newPassword2').value;
+  if (!code) return showForgotMsg('请输入验证码', 'error');
+  if (!pw || pw.length < 6) return showForgotMsg('密码至少6位', 'error');
+  if (pw !== pw2) return showForgotMsg('两次密码不一致', 'error');
+  try {
+    const r = await fetch('/api/worker/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login: _forgotLogin, code, new_password: pw })
+    });
+    const d = await r.json();
+    if (!r.ok) return showForgotMsg(d.error || '重置失败', 'error');
+    document.getElementById('forgotStep2').style.display = 'none';
+    document.getElementById('forgotStep3').style.display = '';
+    setTimeout(() => closeForgotPassword(), 2000);
+  } catch {
+    showForgotMsg('网络错误', 'error');
+  }
 }
 
 async function showApp() {

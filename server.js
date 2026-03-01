@@ -1,14 +1,72 @@
+require('dotenv').config();
 const express = require('express');
 const Database = require('better-sqlite3');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+const nodemailer = require('nodemailer');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ─── Twilio SMS ───
+const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+  ? require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+  : null;
+const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER || '';
+
+function formatPhoneE164(phone) {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('1') && digits.length === 11) return '+' + digits;
+  if (digits.length === 10) return '+1' + digits;
+  return '+' + digits; // fallback: prepend + and hope for the best
+}
+
+async function sendSMS(to, body) {
+  if (!twilioClient || !TWILIO_FROM) {
+    console.log(`[SMS-SKIP] Twilio not configured. To: ${to}, Body: ${body}`);
+    return false;
+  }
+  const formatted = formatPhoneE164(to);
+  try {
+    await twilioClient.messages.create({ body, from: TWILIO_FROM, to: formatted });
+    console.log(`[SMS] Sent to ${formatted}`);
+    return true;
+  } catch (e) {
+    console.error(`[SMS-ERR] Failed to send to ${formatted}:`, e.message);
+    return false;
+  }
+}
+
+// ─── Email (Nodemailer) ───
+const emailTransporter = process.env.SMTP_HOST
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+    })
+  : null;
+const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
+
+async function sendEmail(to, subject, text) {
+  if (!emailTransporter) {
+    console.log(`[EMAIL-SKIP] SMTP not configured. To: ${to}, Subject: ${subject}, Body: ${text}`);
+    return false;
+  }
+  try {
+    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text });
+    console.log(`[EMAIL] Sent to ${to}`);
+    return true;
+  } catch (e) {
+    console.error(`[EMAIL-ERR] Failed to send to ${to}:`, e.message);
+    return false;
+  }
+}
+
 // ─── Database Setup ───
-const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
+const dataDir = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const uploadsDir = path.join(dataDir, 'uploads');
@@ -475,6 +533,7 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFA
 // Migrate: add lang/positions to employee_doc_requests
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
+try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN expires_at DATETIME DEFAULT NULL"); } catch {}
 // Migrate: add GPS fields to time_entries
 try { db.exec("ALTER TABLE time_entries ADD COLUMN latitude REAL DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN longitude REAL DEFAULT NULL"); } catch {}
@@ -499,6 +558,8 @@ try { db.exec("ALTER TABLE worker_accounts ADD COLUMN position_interests TEXT DE
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN ein TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
+// Migrate: suspended flag for worker accounts (distinct from unverified)
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
 
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
@@ -524,6 +585,18 @@ const WORKER_POSITIONS = [
 ];
 // Add quote_request column to inquiries if not already present (migration)
 try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
+
+// Verification codes table for registration
+db.exec(`CREATE TABLE IF NOT EXISTS verification_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  verified INTEGER DEFAULT 0,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id)
+)`);
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -830,6 +903,7 @@ function managerPartnerIds(req) {
 // ─── Worker / Customer portal auth ───
 const workerSessions = new Map();
 const customerSessions = new Map();
+const resetCodes = new Map(); // key: "worker:login" or "customer:login", value: { code, expires }
 
 function requireWorker(req, res, next) {
   let token = null;
@@ -1037,21 +1111,36 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active } = req.body;
+  const { password, employee_id, active, suspended } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   if (password) {
     const salt = crypto.randomBytes(16).toString('hex');
     db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hashPassword(password, salt), salt, req.params.id);
   }
-  db.prepare('UPDATE worker_accounts SET employee_id=?, active=? WHERE id=?')
-    .run(employee_id !== undefined ? employee_id : w.employee_id, active !== undefined ? active : w.active, req.params.id);
+  db.prepare('UPDATE worker_accounts SET employee_id=?, active=?, suspended=? WHERE id=?')
+    .run(employee_id !== undefined ? employee_id : w.employee_id, active !== undefined ? active : w.active, suspended !== undefined ? suspended : (w.suspended||0), req.params.id);
   res.json({ success: true });
 });
 
 app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM worker_accounts WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Admin: resend verification codes to unverified worker
+app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  if (w.active) return res.status(400).json({ error: 'Account already verified' });
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(w.id);
+  const phoneCode = String(Math.floor(100000 + Math.random() * 900000));
+  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
+  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
+  console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${phoneCode} email=${emailCode}`);
+  res.json({ success: true, phone_code: phoneCode, email_code: emailCode });
 });
 
 // ─── Customer Accounts (admin manages) ───
@@ -1087,6 +1176,19 @@ app.put('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), 
 app.delete('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM customer_accounts WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Clear all test data (worker accounts, customer accounts, verification codes, job applications)
+app.post('/api/admin/clear-test-data', requireAdmin, requireRole('admin'), (req, res) => {
+  const { confirm_text } = req.body;
+  if (confirm_text !== 'I confirm') return res.status(400).json({ error: 'Please type "I confirm" to proceed' });
+  const wDel = db.prepare('DELETE FROM worker_accounts').run();
+  const cDel = db.prepare('DELETE FROM customer_accounts').run();
+  db.prepare('DELETE FROM verification_codes').run();
+  db.prepare('DELETE FROM job_applications').run();
+  db.prepare('DELETE FROM customer_job_posts').run();
+  console.log(`[Admin] Cleared test data: ${wDel.changes} worker accounts, ${cDel.changes} customer accounts`);
+  res.json({ success: true, deleted_workers: wDel.changes, deleted_customers: cDel.changes });
 });
 
 // ─── Job Applications (admin view) ───
@@ -1542,16 +1644,15 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
   try {
     const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
     if (!emp) return res.status(404).json({ error: 'Employee not found' });
-    const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
-    if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
+    const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending" AND (expires_at IS NULL OR expires_at > datetime("now"))').get(emp.id);
+    if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true, expires_at: existing.expires_at });
     const token = crypto.randomBytes(28).toString('hex');
-    const { admin_note, requested_docs, lang } = req.body;
-    // Ensure positions column exists (idempotent)
-    try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
-    db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions) VALUES (?,?,?,?,?,?)')
+    const { admin_note, requested_docs, lang, positions } = req.body;
+    const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions, expires_at) VALUES (?,?,?,?,?,?,?)')
       .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']),
-          lang || 'zh', '[]');
-    res.json({ token, status: 'pending' });
+          lang || 'zh', JSON.stringify(positions || []), expiresAt);
+    res.json({ token, status: 'pending', expires_at: expiresAt });
   } catch(e) {
     console.error('doc-request error:', e.message);
     res.status(500).json({ error: e.message });
@@ -1574,6 +1675,9 @@ app.get('/api/emp-docs/:token', (req, res) => {
     FROM employee_doc_requests r JOIN employees e ON r.employee_id = e.id
     WHERE r.token=?`).get(req.params.token);
   if (!row) return res.status(404).json({ error: '链接无效或已过期' });
+  if (row.expires_at && new Date(row.expires_at) < new Date()) {
+    return res.status(410).json({ error: '链接已过期（有效期3天）/ Link expired (valid for 3 days)' });
+  }
   res.json({
     status: row.status,
     name: `${row.first_name} ${row.last_name}`,
@@ -2438,10 +2542,17 @@ app.get('/admin', (req, res) => {
 
 // ─── Worker Portal API ───
 app.post('/api/worker/login', (req, res) => {
-  const { username, password } = req.body;
-  const w = db.prepare('SELECT * FROM worker_accounts WHERE username=? AND active=1').get(username);
+  const { login, username, password } = req.body;
+  const identifier = (login || username || '').trim();
+  if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
+  // Try matching by email, phone, or username
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(identifier, identifier, identifier);
   if (!w || !verifyPassword(password, w.salt, w.password_hash))
-    return res.status(401).json({ error: 'Invalid username or password' });
+    return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
+  if (!w.active)
+    return res.status(403).json({ error: '账号尚未验证，请先完成手机和邮箱验证 / Account not verified. Please complete phone and email verification first.' });
+  if (w.suspended)
+    return res.status(403).json({ error: '账号已被暂停，请联系管理员 / Account suspended. Please contact admin.' });
   const token = crypto.randomBytes(32).toString('hex');
   workerSessions.set(token, { created: Date.now(), workerId: w.id, employeeId: w.employee_id });
   res.json({ token, employee_id: w.employee_id });
@@ -2506,17 +2617,45 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
   res.json(apps);
 });
 
+// ─── Worker Forgot / Reset Password ───
+app.post('/api/worker/forgot-password', (req, res) => {
+  const { login } = req.body;
+  if (!login) return res.status(400).json({ error: '请输入邮箱或手机号' });
+  const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(login, login, login);
+  if (!w) return res.status(404).json({ error: '未找到该账号 / Account not found' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  resetCodes.set('worker:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
+  console.log(`[Reset Code] Worker account ${login}: ${code}`);
+  res.json({ success: true, message: '验证码已发送 / Code sent' });
+});
+
+app.post('/api/worker/reset-password', (req, res) => {
+  const { login, code, new_password } = req.body;
+  if (!login || !code || !new_password) return res.status(400).json({ error: '请填写完整信息' });
+  if (new_password.length < 6) return res.status(400).json({ error: '密码至少6位' });
+  const entry = resetCodes.get('worker:' + login);
+  if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
+  if (Date.now() > entry.expires) { resetCodes.delete('worker:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
+  const { hash, salt } = hashPassword(new_password);
+  db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  resetCodes.delete('worker:' + login);
+  res.json({ success: true });
+});
+
 // ─── Customer Portal API ───
 app.post('/api/customer/login', (req, res) => {
-  const { email, password } = req.body;
-  const cAny = db.prepare('SELECT * FROM customer_accounts WHERE email=?').get(email);
+  const { login, email, password } = req.body;
+  const identifier = (login || email || '').trim();
+  if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
+  // Try matching by email or phone
+  const cAny = db.prepare('SELECT * FROM customer_accounts WHERE email=? OR phone=?').get(identifier, identifier);
   if (cAny && cAny.approval_status === 'pending')
     return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
   if (cAny && cAny.approval_status === 'rejected')
     return res.status(403).json({ error: '您的企业注册已被拒绝，请联系管理员 / Your registration was rejected. Please contact admin' });
-  const c = db.prepare('SELECT * FROM customer_accounts WHERE email=? AND active=1').get(email);
+  const c = db.prepare('SELECT * FROM customer_accounts WHERE (email=? OR phone=?) AND active=1').get(identifier, identifier);
   if (!c || !verifyPassword(password, c.salt, c.password_hash))
-    return res.status(401).json({ error: 'Invalid email or password' });
+    return res.status(401).json({ error: '邮箱/电话或密码错误 / Invalid email/phone or password' });
   const token = crypto.randomBytes(32).toString('hex');
   customerSessions.set(token, { created: Date.now(), customerId: c.id, partnerId: c.partner_id });
   res.json({ token, company_name: c.company_name });
@@ -2555,34 +2694,149 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
   res.json(rows);
 });
 
+// ─── Customer Forgot / Reset Password ───
+app.post('/api/customer/forgot-password', (req, res) => {
+  const { login } = req.body;
+  if (!login) return res.status(400).json({ error: '请输入邮箱或电话' });
+  const c = db.prepare('SELECT id, email, phone FROM customer_accounts WHERE email=? OR phone=?').get(login, login);
+  if (!c) return res.status(404).json({ error: '未找到该账号 / Account not found' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  resetCodes.set('customer:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: c.id });
+  console.log(`[Reset Code] Customer account ${login}: ${code}`);
+  res.json({ success: true, message: '验证码已发送 / Code sent' });
+});
+
+app.post('/api/customer/reset-password', (req, res) => {
+  const { login, code, new_password } = req.body;
+  if (!login || !code || !new_password) return res.status(400).json({ error: '请填写完整信息' });
+  if (new_password.length < 6) return res.status(400).json({ error: '密码至少6位' });
+  const entry = resetCodes.get('customer:' + login);
+  if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
+  if (Date.now() > entry.expires) { resetCodes.delete('customer:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
+  const { hash, salt } = hashPassword(new_password);
+  db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  resetCodes.delete('customer:' + login);
+  res.json({ success: true });
+});
+
 // ─── Public Registration ───
-app.post('/api/register/worker', (req, res) => {
+app.post('/api/register/worker', async (req, res) => {
   const { name, phone, email, dob, work_status, position_interests, password } = req.body;
   if (!name || !phone || !email || !password)
     return res.status(400).json({ error: 'Name, phone, email, and password are required' });
   // Check phone or email uniqueness
   const existing = db.prepare('SELECT id FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
   if (existing) return res.status(400).json({ error: 'An account with this phone or email already exists' });
-  const { hash, salt } = hashPassword(password);
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+
+  // Determine which verification channels are available
+  const canSMS = !!(twilioClient && TWILIO_FROM);
+  const canEmail = !!emailTransporter;
+  const needsVerification = canSMS || canEmail;
+
   const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
-    VALUES (?,?,?,?,?,?,?,?,?,1)`)
-    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), );
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), needsVerification ? 0 : 1);
+  const accountId = r.lastInsertRowid;
+
+  if (!needsVerification) {
+    // No verification channels configured — activate immediately and auto-login
+    const token = crypto.randomBytes(32).toString('hex');
+    workerSessions.set(token, { created: Date.now(), workerId: accountId, employeeId: null });
+    console.log(`[Register] Worker #${accountId} activated immediately (no verification channels configured)`);
+    return res.json({ success: true, account_id: accountId, needs_verification: false, token });
+  }
+
+  // Generate verification codes only for configured channels
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(accountId);
+
+  let phoneCode = null, emailCode = null;
+  let smsSent = false, emailSent = false;
+  if (canSMS) {
+    phoneCode = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
+    smsSent = await sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+  }
+  if (canEmail) {
+    emailCode = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
+    emailSent = await sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+  }
+  console.log(`[Verify] Worker #${accountId} phone code: ${phoneCode || 'N/A'} (sent:${smsSent}), email code: ${emailCode || 'N/A'} (sent:${emailSent})`);
+  res.json({ success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, sms_sent: smsSent, email_sent: emailSent, message: 'Verification codes sent' });
+});
+
+// Resend verification code
+app.post('/api/register/resend-code', async (req, res) => {
+  const { account_id, type } = req.body;
+  if (!account_id || !['phone', 'email'].includes(type))
+    return res.status(400).json({ error: 'account_id and type (phone/email) required' });
+  const acc = db.prepare('SELECT id, active, phone, email FROM worker_accounts WHERE id=?').get(account_id);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  if (acc.active) return res.status(400).json({ error: 'Account already verified' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
+  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, type, code, expires);
+  console.log(`[Verify] Resend ${type} code for Worker #${account_id}: ${code}`);
+  // Send code
+  let sent = false;
+  if (type === 'phone') {
+    sent = await sendSMS(acc.phone, `[Prime Anchorpoint] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+  } else {
+    sent = await sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+  }
+  res.json({ success: true, sent });
+});
+
+// Verify codes and activate account
+app.post('/api/register/verify', (req, res) => {
+  const { account_id, phone_code, email_code } = req.body;
+  if (!account_id) return res.status(400).json({ error: 'account_id required' });
+  const acc = db.prepare('SELECT id, active, employee_id FROM worker_accounts WHERE id=?').get(account_id);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  if (acc.active) return res.status(400).json({ error: 'Account already verified' });
+  const now = new Date().toISOString();
+  // Check which verification codes exist for this account
+  const pendingPhone = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND type=?').get(account_id, 'phone');
+  const pendingEmail = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND type=?').get(account_id, 'email');
+  // Validate phone code if one was issued
+  if (pendingPhone) {
+    if (!phone_code) return res.status(400).json({ error: '请输入手机验证码 / Phone verification code required' });
+    const pv = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'phone', phone_code, now);
+    if (!pv) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+  }
+  // Validate email code if one was issued
+  if (pendingEmail) {
+    if (!email_code) return res.status(400).json({ error: '请输入邮箱验证码 / Email verification code required' });
+    const ev = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'email', email_code, now);
+    if (!ev) return res.status(400).json({ error: '邮箱验证码错误或已过期 / Invalid or expired email code' });
+  }
+  // Activate account
+  db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(account_id);
   // Auto-login
   const token = crypto.randomBytes(32).toString('hex');
-  workerSessions.set(token, { created: Date.now(), workerId: r.lastInsertRowid, employeeId: null });
-  res.json({ success: true, token, message: 'Registration successful' });
+  workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+  res.json({ success: true, token, message: 'Verification successful' });
 });
 
 app.post('/api/register/enterprise', (req, res) => {
-  const { company_name, contact_name, email, phone, ein, staffing_needs, password } = req.body;
+  const { company_name, contact_name, email, phone, ein, staffing_needs, password, partner_id } = req.body;
   if (!company_name || !contact_name || !email || !password)
     return res.status(400).json({ error: 'Company name, contact name, email, and password are required' });
+  if (!partner_id) return res.status(400).json({ error: '请选择您所在的合作公司 / Please select your company' });
   const existing = db.prepare('SELECT id FROM customer_accounts WHERE email=?').get(email);
   if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
-  const { hash, salt } = hashPassword(password);
-  db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status)
-    VALUES (?,?,?,?,?,?,?,?,0,'pending')`)
-    .run(company_name, contact_name, email, phone || '', hash, salt, ein || '', staffing_needs || '');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status, partner_id)
+    VALUES (?,?,?,?,?,?,?,?,0,'pending',?)`)
+    .run(company_name, contact_name, email, phone || '', hash, salt, ein || '', staffing_needs || '', partner_id);
   res.json({ success: true, message: 'Registration submitted. Your account will be activated after admin approval.' });
 });
 
@@ -2593,13 +2847,20 @@ app.get('/api/admin/pending-enterprises', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/approve-enterprise/:id', requireAdmin, (req, res) => {
-  db.prepare("UPDATE customer_accounts SET active=1, approval_status='approved' WHERE id=?").run(req.params.id);
+  const { partner_id } = req.body || {};
+  if (!partner_id) return res.status(400).json({ error: '请选择关联的合作公司档案 / Partner is required for approval' });
+  db.prepare("UPDATE customer_accounts SET active=1, approval_status='approved', partner_id=? WHERE id=?").run(partner_id, req.params.id);
   res.json({ success: true });
 });
 
 app.put('/api/admin/reject-enterprise/:id', requireAdmin, (req, res) => {
   db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected' WHERE id=?").run(req.params.id);
   res.json({ success: true });
+});
+
+// Public: active partner list for enterprise registration
+app.get('/api/public/partners', (req, res) => {
+  res.json(db.prepare('SELECT id, name, industry FROM partners WHERE active=1 ORDER BY name').all());
 });
 
 // ─── Portal & Customer & Register pages ───
