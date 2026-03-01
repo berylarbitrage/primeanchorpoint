@@ -1539,16 +1539,23 @@ app.get('/api/admin/assignments/:id/contract', (req, res, next) => {
 
 // Admin: create / get link for an employee
 app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
-  const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
-  if (!emp) return res.status(404).json({ error: 'Employee not found' });
-  const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
-  if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
-  const token = crypto.randomBytes(28).toString('hex');
-  const { admin_note, requested_docs, lang, positions } = req.body;
-  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions) VALUES (?,?,?,?,?,?)')
-    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']),
-        lang || 'zh', JSON.stringify(positions || []));
-  res.json({ token, status: 'pending' });
+  try {
+    const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+    const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
+    if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
+    const token = crypto.randomBytes(28).toString('hex');
+    const { admin_note, requested_docs, lang } = req.body;
+    // Ensure positions column exists (idempotent)
+    try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
+    db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions) VALUES (?,?,?,?,?,?)')
+      .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']),
+          lang || 'zh', '[]');
+    res.json({ token, status: 'pending' });
+  } catch(e) {
+    console.error('doc-request error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/admin/employees/:id/doc-requests', requireAdmin, (req, res) => {

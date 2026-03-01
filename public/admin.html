@@ -3914,34 +3914,47 @@ async function openAssignJobModal(empId, empName) {
     document.getElementById(id).value = '0';
   });
   calcJobFinancials();
-  // Show current job records
-  const records = await api(`/admin/employees/${empId}/job-records`);
-  if (records && records.length) {
-    document.getElementById('assignJobCurrentList').innerHTML = records.map(j =>
-      `<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:2px 10px;border-radius:10px;font-size:.82rem;margin:2px;cursor:pointer" onclick="prefillJobRecord(${JSON.stringify(j).replace(/"/g,'&quot;')})">${esc(j.job_title||'未知职位')}${j.company_name?' <span style="color:var(--gray-400)">('+esc(j.company_name)+')</span>':''} <span style="font-size:.7rem;opacity:.6">点击编辑</span></span>`
-    ).join('');
-  } else {
-    document.getElementById('assignJobCurrentList').innerHTML = '<span style="color:var(--gray-300)">暂无记录</span>';
-  }
-  // Load available jobs
-  if (!_allJobsCache) _allJobsCache = await api('/admin/jobs');
-  const activeJobs = (_allJobsCache || []).filter(j => j.active);
-  const sel = document.getElementById('assignJobSelect');
-  sel.innerHTML = '<option value="">请选择职位...</option>' + activeJobs.map(j =>
-    `<option value="${j.id}" data-company="${esc(j.company_name||'')}" data-location="${esc(j.location||'')}">${esc(j.title)} — ${esc(j.company_name||'未知公司')}</option>`
-  ).join('');
-  sel.onchange = function() {
-    const opt = sel.selectedOptions[0];
-    if (opt && opt.value) {
-      document.getElementById('assignJobCompanyName').textContent = opt.dataset.company || '—';
-      document.getElementById('assignJobLocation').textContent = opt.dataset.location || '—';
-      document.getElementById('assignJobCompanyInfo').style.display = '';
-    } else {
-      document.getElementById('assignJobCompanyInfo').style.display = 'none';
-    }
-  };
+  document.getElementById('assignJobCurrentList').innerHTML = '<span style="color:var(--gray-400);font-size:.82rem">加载中…</span>';
+  document.getElementById('assignJobSelect').innerHTML = '<option value="">加载中…</option>';
   document.getElementById('assignJobCompanyInfo').style.display = 'none';
+  // Show modal immediately so user gets feedback
   document.getElementById('assignJobModal').classList.add('show');
+
+  try {
+    // Load job records and available jobs in parallel
+    const [records, jobs] = await Promise.all([
+      api(`/admin/employees/${empId}/job-records`),
+      _allJobsCache ? Promise.resolve(_allJobsCache) : api('/admin/jobs')
+    ]);
+
+    // Populate existing records list
+    const recList = Array.isArray(records) ? records : [];
+    document.getElementById('assignJobCurrentList').innerHTML = recList.length
+      ? recList.map(j =>
+          `<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:2px 10px;border-radius:10px;font-size:.82rem;margin:2px;cursor:pointer" onclick="prefillJobRecord(${JSON.stringify(j).replace(/"/g,'&quot;')})">${esc(j.job_title||'未知职位')}${j.company_name?' <span style="color:var(--gray-400)">('+esc(j.company_name)+')</span>':''} <span style="font-size:.7rem;opacity:.6">点击编辑</span></span>`
+        ).join('')
+      : '<span style="color:var(--gray-300)">暂无记录</span>';
+
+    // Populate job dropdown
+    if (Array.isArray(jobs)) _allJobsCache = jobs;
+    const activeJobs = Array.isArray(_allJobsCache) ? _allJobsCache.filter(j => j.active) : [];
+    const sel = document.getElementById('assignJobSelect');
+    sel.innerHTML = '<option value="">请选择职位...</option>' + activeJobs.map(j =>
+      `<option value="${j.id}" data-company="${esc(j.company_name||'')}" data-location="${esc(j.location||'')}">${esc(j.title)} — ${esc(j.company_name||'未知公司')}</option>`
+    ).join('');
+    sel.onchange = function() {
+      const opt = sel.selectedOptions[0];
+      if (opt && opt.value) {
+        document.getElementById('assignJobCompanyName').textContent = opt.dataset.company || '—';
+        document.getElementById('assignJobLocation').textContent = opt.dataset.location || '—';
+        document.getElementById('assignJobCompanyInfo').style.display = '';
+      } else {
+        document.getElementById('assignJobCompanyInfo').style.display = 'none';
+      }
+    };
+  } catch(e) {
+    document.getElementById('assignJobCurrentList').innerHTML = '<span style="color:var(--red);font-size:.82rem">加载失败，请关闭重试</span>';
+  }
   captureModalState('assignJobModal');
 }
 
