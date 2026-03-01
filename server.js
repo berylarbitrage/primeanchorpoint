@@ -825,6 +825,33 @@ app.post('/api/admin/time-entries', requireAdmin, (req, res) => {
   res.json({ success: true, id: r.lastInsertRowid, ...hrs });
 });
 
+// Batch time entry (weekly timesheet)
+app.post('/api/admin/time-entries/batch', requireAdmin, (req, res) => {
+  const { employee_id, entries, job_id } = req.body;
+  if (!employee_id || !entries || !entries.length) return res.status(400).json({ error: 'employee_id and entries required' });
+  const stmt = db.prepare(`INSERT INTO time_entries
+    (employee_id,clock_in,clock_out,break_minutes,total_hours,regular_hours,overtime_hours,job_id,notes,status)
+    VALUES(?,?,?,?,?,?,?,?,?,?)`);
+  const insert = db.transaction((rows) => {
+    let count = 0;
+    for (const e of rows) {
+      if (!e.clock_in || !e.clock_out) continue;
+      const hrs = calcHours(e.clock_in, e.clock_out, parseInt(e.break_minutes)||0);
+      if (hrs.total <= 0) continue;
+      stmt.run(employee_id, e.clock_in, e.clock_out, parseInt(e.break_minutes)||0,
+        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed');
+      count++;
+    }
+    return count;
+  });
+  try {
+    const count = insert(entries);
+    res.json({ success: true, count });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.put('/api/admin/time-entries/:id', requireAdmin, (req, res) => {
   const d = req.body;
   const hrs = calcHours(d.clock_in, d.clock_out, parseInt(d.break_minutes)||0);
