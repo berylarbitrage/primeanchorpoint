@@ -358,6 +358,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="top">
     <h1>职位管理</h1>
     <div class="top-actions">
+      <button class="btn" data-perm="admin" onclick="openAutoGenJobModal()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 批量生成</button>
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
@@ -962,6 +963,35 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" onclick="saveJob()">保存</button>
     <button class="btn" onclick="randomFillJob()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-red" onclick="closeJobModal()">取消</button>
+  </div>
+</div></div>
+
+<!-- Auto-Generate Jobs Modal -->
+<div class="modal-bg" id="autoGenJobModal"><div class="modal" style="max-width:460px">
+  <h2>🎲 批量生成职位</h2>
+  <p style="color:var(--gray-500);margin:.5rem 0 1.5rem;font-size:.9rem">随机生成职位并自动保存，将从现有合作公司中随机分配。</p>
+  <div class="field">
+    <label>生成数量</label>
+    <div style="display:flex;align-items:center;gap:1rem;margin-top:.4rem">
+      <input type="range" id="autoGenCount" min="1" max="20" value="5"
+        oninput="document.getElementById('autoGenCountLabel').textContent=this.value"
+        style="flex:1;cursor:pointer">
+      <span id="autoGenCountLabel" style="font-size:1.4rem;font-weight:700;min-width:2.5rem;text-align:center">5</span>
+    </div>
+  </div>
+  <div class="field" style="margin-top:.75rem">
+    <label>语言分布</label>
+    <select id="autoGenLang" style="width:100%">
+      <option value="mixed">混合（中 / 英 / 西）</option>
+      <option value="zh">仅中文</option>
+      <option value="en">仅英文</option>
+      <option value="es">仅西班牙语</option>
+    </select>
+  </div>
+  <div id="autoGenResult" style="display:none;margin-top:1rem;padding:.75rem 1rem;background:#f0fdf4;border-radius:8px;color:#166534;font-size:.92rem;font-weight:600"></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" id="autoGenBtn" onclick="autoGenerateJobs()">开始生成</button>
+    <button class="btn btn-outline" onclick="document.getElementById('autoGenJobModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
 
@@ -1846,6 +1876,185 @@ function randomFillJob() {
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
     btn.classList.toggle('active', bens.includes(btn.dataset.val));
   });
+}
+
+function openAutoGenJobModal() {
+  document.getElementById('autoGenCount').value = '5';
+  document.getElementById('autoGenCountLabel').textContent = '5';
+  document.getElementById('autoGenLang').value = 'mixed';
+  document.getElementById('autoGenResult').style.display = 'none';
+  document.getElementById('autoGenBtn').disabled = false;
+  document.getElementById('autoGenBtn').textContent = '开始生成';
+  document.getElementById('autoGenJobModal').classList.add('show');
+}
+
+async function autoGenerateJobs() {
+  if (USER_ROLE !== 'admin') return;
+  const count = parseInt(document.getElementById('autoGenCount').value) || 5;
+  const langFilter = document.getElementById('autoGenLang').value;
+  const btn = document.getElementById('autoGenBtn');
+  const resultEl = document.getElementById('autoGenResult');
+  btn.disabled = true;
+  btn.textContent = '生成中...';
+  resultEl.style.display = 'none';
+
+  const partnersResp = await api('/admin/partners');
+  const allPartners = Array.isArray(partnersResp) ? partnersResp : (partnersResp?.partners || []);
+  const partners = allPartners.filter(p => p.active);
+  if (!partners.length) {
+    alert('没有找到合作中的公司，请先添加合作公司');
+    btn.disabled = false; btn.textContent = '开始生成'; return;
+  }
+
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const rnd  = (lo, hi) => Math.floor(Math.random() * (hi - lo + 1)) + lo;
+  const langNames = { en: 'English', zh: '中文', es: 'Español' };
+
+  const fullPool = [
+    // ── 中文职位 ──
+    { lang:'zh', title:'仓库分拣员',     type:'临时工',    employment_type:'W2',
+      pay:'$17-19/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'周薪,交通补贴', headcount_max:8,
+      desc:'负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。' },
+    { lang:'zh', title:'叉车操作员',     type:'全职',      employment_type:'W2',
+      pay:'$20-24/hr',  work_auth:'any',  urgent:true,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'07:00', work_end:'15:30',
+      benefits:'医疗保险,牙科保险,带薪休假,加班费', headcount_max:3,
+      desc:'需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁安全。' },
+    { lang:'zh', title:'生产线操作工',   type:'全职',      employment_type:'W2',
+      pay:'$18/hr',     work_auth:'gc',   urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'医疗保险,加班费', headcount_max:10,
+      desc:'食品加工生产线工作，需遵守卫生规定。每周加班机会多，可双休。' },
+    { lang:'zh', title:'食品加工工人',   type:'临时转正',  employment_type:'W2',
+      pay:'$16-18/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri,Sat', work_start:'05:00', work_end:'13:30',
+      benefits:'周薪,餐补,加班费', headcount_max:15,
+      desc:'负责食品预处理、切割及包装工序，需穿戴卫生防护设备，提供培训。' },
+    { lang:'zh', title:'清洁工',         type:'兼职',      employment_type:'W2',
+      pay:'$15-17/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Wed,Fri', work_start:'18:00', work_end:'22:00',
+      benefits:'周薪', headcount_max:5,
+      desc:'负责办公楼或仓库清洁工作，包括拖地、清理垃圾及消毒。有经验者优先。' },
+    { lang:'zh', title:'装卸工',         type:'临时工',    employment_type:'W2',
+      pay:'$17/hr',     work_auth:'any',  urgent:true,
+      work_days:'Tue,Wed,Thu,Fri,Sat', work_start:'22:00', work_end:'06:00',
+      benefits:'周薪,加班费', headcount_max:6,
+      desc:'负责货车装卸作业，体力要求较高，可搬运50磅以上货物，夜班时间。' },
+    { lang:'zh', title:'质检员',         type:'全职',      employment_type:'W2',
+      pay:'$19-22/hr',  work_auth:'gc',   urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'07:00', work_end:'15:30',
+      benefits:'医疗保险,带薪休假,节假日奖金', headcount_max:2,
+      desc:'负责产品质量检测，填写质检报告，发现问题及时上报。有质检经验者优先。' },
+    { lang:'zh', title:'包装工',         type:'临时工',    employment_type:'W2',
+      pay:'$16/hr',     work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'08:00', work_end:'16:30',
+      benefits:'周薪,交通补贴', headcount_max:12,
+      desc:'负责产品包装、贴标及装箱工作，需长时间站立，无需经验，当天可上岗。' },
+    { lang:'zh', title:'冷库工',         type:'全职',      employment_type:'W2',
+      pay:'$18-20/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri,Sat', work_start:'06:00', work_end:'14:00',
+      benefits:'医疗保险,加班费,节假日奖金', headcount_max:4,
+      desc:'在0°C以下冷库环境操作，负责货物出入库管理，提供保暖服装。' },
+    { lang:'zh', title:'仓库管理员',     type:'全职',      employment_type:'W2',
+      pay:'$22-26/hr',  work_auth:'gc',   urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'08:00', work_end:'17:00',
+      benefits:'医疗保险,牙科保险,带薪休假,401k', headcount_max:2,
+      desc:'负责仓库日常管理、库存盘点及人员调度，需2年以上仓储管理经验。' },
+    // ── English jobs ──
+    { lang:'en', title:'Warehouse Associate',      type:'临时转正',  employment_type:'W2',
+      pay:'$16-18/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'07:00', work_end:'15:30',
+      benefits:'周薪,节假日奖金', headcount_max:10,
+      desc:'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs.' },
+    { lang:'en', title:'Machine Operator',         type:'全职',      employment_type:'W2',
+      pay:'$19-22/hr',  work_auth:'gc',   urgent:true,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'医疗保险,牙科保险,视力保险,带薪休假', headcount_max:3,
+      desc:'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred.' },
+    { lang:'en', title:'General Labor',            type:'临时工',    employment_type:'Contract',
+      pay:'$15.50/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri,Sat', work_start:'07:00', work_end:'15:30',
+      benefits:'周薪', headcount_max:20,
+      desc:'Various light industrial tasks including assembly, sorting and quality inspection. No experience required.' },
+    { lang:'en', title:'Forklift Operator',        type:'全职',      employment_type:'W2',
+      pay:'$21-25/hr',  work_auth:'any',  urgent:true,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'医疗保险,加班费,带薪休假', headcount_max:3,
+      desc:'Operate sit-down and stand-up forklifts in a busy distribution center. Valid forklift certification required.' },
+    { lang:'en', title:'Shipping & Receiving Clerk', type:'全职',    employment_type:'W2',
+      pay:'$18-20/hr',  work_auth:'gc',   urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'08:00', work_end:'16:30',
+      benefits:'医疗保险,带薪休假,401k', headcount_max:2,
+      desc:'Process inbound and outbound shipments, verify orders, maintain shipping records. Proficiency in WMS preferred.' },
+    { lang:'en', title:'Assembly Line Worker',     type:'临时工',    employment_type:'W2',
+      pay:'$16-17/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'06:00', work_end:'14:30',
+      benefits:'周薪,交通补贴', headcount_max:8,
+      desc:'Perform repetitive assembly tasks on a manufacturing line. Must be able to stand for extended periods.' },
+    { lang:'en', title:'Inventory Associate',      type:'兼职',      employment_type:'W2',
+      pay:'$17/hr',     work_auth:'any',  urgent:false,
+      work_days:'Sat,Sun', work_start:'06:00', work_end:'14:00',
+      benefits:'周薪', headcount_max:4,
+      desc:'Conduct physical inventory counts during weekend cycle counts. Attention to detail required.' },
+    { lang:'en', title:'Production Worker',        type:'临时转正',  employment_type:'W2',
+      pay:'$17-19/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'14:30', work_end:'23:00',
+      benefits:'周薪,加班费', headcount_max:6,
+      desc:'Afternoon shift production position. Duties include operating machinery, quality checks, and keeping work area clean.' },
+    // ── Español ──
+    { lang:'es', title:'Trabajador de Almacén',    type:'全职',      employment_type:'W2',
+      pay:'$16-18/hr',  work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'07:00', work_end:'15:30',
+      benefits:'周薪,交通补贴', headcount_max:8,
+      desc:'Clasificar y empacar productos en almacén. No se requiere experiencia previa, se ofrece capacitación en el trabajo.' },
+    { lang:'es', title:'Operador de Montacargas',  type:'临时工',    employment_type:'1099',
+      pay:'$20/hr',     work_auth:'gc',   urgent:true,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'22:00', work_end:'06:00',
+      benefits:'周薪,加班费', headcount_max:3,
+      desc:'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía en turno nocturno.' },
+    { lang:'es', title:'Trabajador de Producción', type:'全职',      employment_type:'W2',
+      pay:'$17/hr',     work_auth:'any',  urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri,Sat', work_start:'06:00', work_end:'14:00',
+      benefits:'医疗保险,周薪', headcount_max:10,
+      desc:'Trabajo en línea de producción de alimentos. Se requiere seguir normas de higiene. Turno matutino disponible.' },
+    { lang:'es', title:'Empacador',                type:'临时工',    employment_type:'W2',
+      pay:'$15.50-17/hr', work_auth:'any', urgent:false,
+      work_days:'Mon,Tue,Wed,Thu,Fri', work_start:'08:00', work_end:'16:30',
+      benefits:'周薪', headcount_max:12,
+      desc:'Empacar y etiquetar productos en entorno de almacén. No se necesita experiencia, capacitación incluida.' },
+  ];
+
+  const pool = langFilter === 'mixed' ? fullPool : fullPool.filter(j => j.lang === langFilter);
+  if (!pool.length) { alert('该语言暂无职位模板'); btn.disabled = false; btn.textContent = '开始生成'; return; }
+
+  const locations = ['Chicago, IL','Cicero, IL','Melrose Park, IL','Elk Grove Village, IL','Addison, IL','Schaumburg, IL','Bolingbrook, IL','Aurora, IL','Berwyn, IL','Lyons, IL'];
+
+  let successCount = 0;
+  for (let i = 0; i < count; i++) {
+    const j = pick(pool);
+    const partner = pick(partners);
+    const data = {
+      partner_id: partner.id, company_id: partner.id, company_name: partner.name,
+      title: j.title, type: j.type, location: pick(locations),
+      pay: j.pay, lang: j.lang, lang_name: langNames[j.lang] || 'English',
+      work_auth: j.work_auth || '', employment_type: j.employment_type || 'W2',
+      work_days: j.work_days || 'Mon,Tue,Wed,Thu,Fri',
+      work_start: j.work_start || '08:00', work_end: j.work_end || '16:30',
+      benefits: j.benefits || '', schedule: '',
+      description: j.desc, urgent: !!j.urgent,
+      headcount: rnd(1, j.headcount_max || 5),
+      job_status: 'open', active: true,
+    };
+    const res = await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
+    if (res && (res.id || res.success)) successCount++;
+  }
+
+  btn.disabled = false; btn.textContent = '开始生成';
+  resultEl.style.display = '';
+  resultEl.textContent = `成功生成 ${successCount} / ${count} 个职位！`;
+  loadJobs();
 }
 
 async function saveJob() {
