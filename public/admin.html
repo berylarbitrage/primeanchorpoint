@@ -139,6 +139,20 @@ tr:hover td{background:var(--sky-light)}
 /* PDF link modal */
 .ts-link-box{background:var(--sky-light);border:1px solid var(--sky);border-radius:var(--radius);padding:1rem;margin:1rem 0;word-break:break-all;font-size:.82rem;font-family:monospace;color:var(--blue)}
 .ts-send-btns{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
+/* Job ratings */
+.job-rating-card{border:1px solid var(--gray-200);border-radius:10px;padding:.85rem 1rem;margin-bottom:.65rem;background:#fff}
+.job-rating-card .jr-title{font-weight:700;font-size:.9rem;color:var(--blue);margin-bottom:.1rem}
+.job-rating-card .jr-sub{font-size:.75rem;color:var(--gray-500);margin-bottom:.6rem}
+.star-row{display:flex;gap:3px;cursor:pointer;margin-bottom:.5rem}
+.star-row .star{font-size:1.3rem;color:var(--gray-300);transition:color .1s;line-height:1}
+.star-row .star.on{color:#f59e0b}
+.jr-recommend-row{display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem}
+.rec-btn{padding:4px 14px;border-radius:20px;border:1px solid var(--gray-300);background:var(--gray-100);color:var(--gray-600);font-size:.8rem;cursor:pointer;transition:all .15s}
+.rec-btn.yes.active{background:#D1FAE5;color:#065F46;border-color:#6EE7B7;font-weight:700}
+.rec-btn.no.active{background:#FEE2E2;color:#991B1B;border-color:#FCA5A5;font-weight:700}
+.jr-pay-row{display:flex;align-items:center;gap:.5rem}
+.jr-pay-row input{flex:1;padding:6px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem;outline:none}
+.jr-pay-row input:focus{border-color:var(--sky)}
 /* Partner Modal Enhanced */
 .dyn-list{margin-bottom:.5rem}
 .dyn-item{display:flex;gap:.5rem;align-items:flex-start;margin-bottom:.5rem;padding:.6rem;background:var(--off-white);border-radius:6px;border:1px solid var(--gray-200)}
@@ -852,10 +866,20 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Inquiry Detail Modal -->
-<div class="modal-bg" id="inqModal"><div class="modal">
+<div class="modal-bg" id="inqModal"><div class="modal" style="max-width:640px">
   <h2>问卷详情</h2>
   <div id="inqDetail"></div>
   <div id="inqOnboardStatus" style="display:none;margin-top:1rem;padding:.75rem 1rem;background:var(--off-white);border-radius:8px;font-size:.85rem"></div>
+
+  <!-- Per-job ratings -->
+  <div id="inqJobRatings" style="display:none;margin-top:1.5rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h3 style="font-size:.95rem;font-weight:700;color:var(--blue);margin:0">📋 岗位匹配评估</h3>
+      <button class="btn btn-sm btn-green" onclick="saveJobRatings()">保存评估</button>
+    </div>
+    <div id="inqJobRatingsList"></div>
+  </div>
+
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
@@ -1894,6 +1918,8 @@ async function undoProcessInquiry(id) {
   loadInquiries();
 }
 
+let _inqJobRatings = []; // [{ job_id, title, location, pay, employment_type, work_start, work_end, company_name, rating:{...} }]
+
 function showInquiry(i) {
   currentInquiry = i;
   const fields = [
@@ -1932,7 +1958,81 @@ function showInquiry(i) {
     btnOnboard.style.display = 'none';
     statusDiv.style.display = 'none';
   }
+  // Load job ratings
+  loadJobRatings(i.id);
   document.getElementById('inqModal').classList.add('show');
+}
+
+async function loadJobRatings(inqId) {
+  const section = document.getElementById('inqJobRatings');
+  const list = document.getElementById('inqJobRatingsList');
+  const data = await api(`/admin/inquiries/${inqId}/job-ratings`);
+  _inqJobRatings = data;
+  if (!data.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  list.innerHTML = data.map(j => {
+    const r = j.rating || {};
+    const score = r.skill_score || 0;
+    const rec = r.recommend || 0;
+    const stars = [1,2,3,4,5].map(n =>
+      `<span class="star${n <= score ? ' on' : ''}" data-jid="${j.id}" data-n="${n}" onclick="setJobStar(${j.id},${n})">★</span>`
+    ).join('');
+    const pay = r.suggest_pay || '';
+    const timeStr = (j.work_start && j.work_end) ? ` · ${j.work_start}–${j.work_end}` : '';
+    const empType = j.employment_type ? ` · ${j.employment_type}` : '';
+    return `<div class="job-rating-card" id="jrc-${j.id}">
+      <div class="jr-title">${esc(j.title)}</div>
+      <div class="jr-sub">${esc(j.location||'')}${j.company_name?' · '+esc(j.company_name):''}${empType}${timeStr}${j.pay?' · '+esc(j.pay):''}</div>
+      <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:3px">能力评分</div>
+      <div class="star-row" id="stars-${j.id}">${stars}</div>
+      <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:4px">是否推荐</div>
+      <div class="jr-recommend-row">
+        <button class="rec-btn yes${rec===1?' active':''}" onclick="setJobRec(${j.id},1)">✅ 推荐</button>
+        <button class="rec-btn no${rec===0&&r.id?' active':''}" onclick="setJobRec(${j.id},0)">❌ 不推荐</button>
+      </div>
+      <div id="jpay-wrap-${j.id}" style="${rec===1?'':'display:none'}">
+        <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:4px">建议薪资</div>
+        <div class="jr-pay-row">
+          <input id="jpay-${j.id}" value="${esc(pay)}" placeholder="例：$18/hr 或 $3,200/月">
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setJobStar(jobId, n) {
+  const row = document.getElementById(`stars-${jobId}`);
+  row.querySelectorAll('.star').forEach(s => {
+    s.classList.toggle('on', parseInt(s.dataset.n) <= n);
+  });
+  const entry = _inqJobRatings.find(j => j.id === jobId);
+  if (entry) { if (!entry.rating) entry.rating = {}; entry.rating.skill_score = n; }
+}
+
+function setJobRec(jobId, val) {
+  const card = document.getElementById(`jrc-${jobId}`);
+  card.querySelectorAll('.rec-btn').forEach(b => b.classList.remove('active'));
+  card.querySelector(val===1 ? '.rec-btn.yes' : '.rec-btn.no').classList.add('active');
+  document.getElementById(`jpay-wrap-${jobId}`).style.display = val===1 ? '' : 'none';
+  const entry = _inqJobRatings.find(j => j.id === jobId);
+  if (entry) { if (!entry.rating) entry.rating = {}; entry.rating.recommend = val; }
+}
+
+async function saveJobRatings() {
+  if (!currentInquiry) return;
+  const ratings = _inqJobRatings.map(j => {
+    const stars = document.getElementById(`stars-${j.id}`);
+    const score = stars ? [...stars.querySelectorAll('.star.on')].length : (j.rating?.skill_score || 0);
+    const card = document.getElementById(`jrc-${j.id}`);
+    const recActive = card ? card.querySelector('.rec-btn.yes.active') : null;
+    const recommend = recActive ? 1 : (card?.querySelector('.rec-btn.no.active') ? 0 : (j.rating?.recommend ?? -1));
+    const payInp = document.getElementById(`jpay-${j.id}`);
+    return { job_id: j.id, skill_score: score, recommend: recommend === 1 ? 1 : 0, suggest_pay: payInp ? payInp.value.trim() : (j.rating?.suggest_pay || '') };
+  });
+  await api(`/admin/inquiries/${currentInquiry.id}/job-ratings`, { method: 'PUT', body: JSON.stringify({ ratings }) });
+  // Reload to reflect saved state
+  loadJobRatings(currentInquiry.id);
+  alert('评估已保存');
 }
 
 async function sendOnboardLink() {
