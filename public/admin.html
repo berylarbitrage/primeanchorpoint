@@ -4189,7 +4189,9 @@ function sendEmpDocLink(empId, empName) {
   document.getElementById('docReqWorkCard').checked = true;
   document.getElementById('docReqLang').value = 'zh';
   document.getElementById('docReqViaPhone').checked = true;
-  document.getElementById('docReqViaEmail').checked = false;
+  // Auto-enable email if employee has one pre-filled
+  const hasEmail = emails.some(e => e && e.trim());
+  document.getElementById('docReqViaEmail').checked = hasEmail;
   // Populate contact fields
   renderDocContactFields('phone', phones);
   renderDocContactFields('email', emails);

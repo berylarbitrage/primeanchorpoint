@@ -1671,7 +1671,7 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
   try {
     const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
     if (!emp) return res.status(404).json({ error: 'Employee not found' });
-    const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending" AND (expires_at IS NULL OR expires_at > datetime("now"))').get(emp.id);
+    const existing = db.prepare("SELECT * FROM employee_doc_requests WHERE employee_id=? AND status='pending' AND (expires_at IS NULL OR expires_at > datetime('now'))").get(emp.id);
     if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true, expires_at: existing.expires_at });
     const token = crypto.randomBytes(28).toString('hex');
     const { admin_note, requested_docs, lang, positions } = req.body;
