@@ -16,16 +16,26 @@ const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_T
   : null;
 const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER || '';
 
+function formatPhoneE164(phone) {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('1') && digits.length === 11) return '+' + digits;
+  if (digits.length === 10) return '+1' + digits;
+  return '+' + digits; // fallback: prepend + and hope for the best
+}
+
 async function sendSMS(to, body) {
   if (!twilioClient || !TWILIO_FROM) {
     console.log(`[SMS-SKIP] Twilio not configured. To: ${to}, Body: ${body}`);
-    return;
+    return false;
   }
+  const formatted = formatPhoneE164(to);
   try {
-    await twilioClient.messages.create({ body, from: TWILIO_FROM, to });
-    console.log(`[SMS] Sent to ${to}`);
+    await twilioClient.messages.create({ body, from: TWILIO_FROM, to: formatted });
+    console.log(`[SMS] Sent to ${formatted}`);
+    return true;
   } catch (e) {
-    console.error(`[SMS-ERR] Failed to send to ${to}:`, e.message);
+    console.error(`[SMS-ERR] Failed to send to ${formatted}:`, e.message);
+    return false;
   }
 }
 
@@ -43,18 +53,20 @@ const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
 async function sendEmail(to, subject, text) {
   if (!emailTransporter) {
     console.log(`[EMAIL-SKIP] SMTP not configured. To: ${to}, Subject: ${subject}, Body: ${text}`);
-    return;
+    return false;
   }
   try {
     await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text });
     console.log(`[EMAIL] Sent to ${to}`);
+    return true;
   } catch (e) {
     console.error(`[EMAIL-ERR] Failed to send to ${to}:`, e.message);
+    return false;
   }
 }
 
 // ─── Database Setup ───
-const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
+const dataDir = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const uploadsDir = path.join(dataDir, 'uploads');
@@ -2695,7 +2707,7 @@ app.post('/api/customer/reset-password', (req, res) => {
 });
 
 // ─── Public Registration ───
-app.post('/api/register/worker', (req, res) => {
+app.post('/api/register/worker', async (req, res) => {
   const { name, phone, email, dob, work_status, position_interests, password } = req.body;
   if (!name || !phone || !email || !password)
     return res.status(400).json({ error: 'Name, phone, email, and password are required' });
@@ -2728,23 +2740,24 @@ app.post('/api/register/worker', (req, res) => {
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(accountId);
 
   let phoneCode = null, emailCode = null;
+  let smsSent = false, emailSent = false;
   if (canSMS) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
-    sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+    smsSent = await sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
   }
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
-    sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    emailSent = await sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
   }
-  console.log(`[Verify] Worker #${accountId} phone code: ${phoneCode || 'N/A'}, email code: ${emailCode || 'N/A'}`);
-  res.json({ success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, message: 'Verification codes sent' });
+  console.log(`[Verify] Worker #${accountId} phone code: ${phoneCode || 'N/A'} (sent:${smsSent}), email code: ${emailCode || 'N/A'} (sent:${emailSent})`);
+  res.json({ success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, sms_sent: smsSent, email_sent: emailSent, message: 'Verification codes sent' });
 });
 
 // Resend verification code
-app.post('/api/register/resend-code', (req, res) => {
+app.post('/api/register/resend-code', async (req, res) => {
   const { account_id, type } = req.body;
   if (!account_id || !['phone', 'email'].includes(type))
     return res.status(400).json({ error: 'account_id and type (phone/email) required' });
@@ -2757,13 +2770,14 @@ app.post('/api/register/resend-code', (req, res) => {
   db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, type, code, expires);
   console.log(`[Verify] Resend ${type} code for Worker #${account_id}: ${code}`);
   // Send code
+  let sent = false;
   if (type === 'phone') {
-    sendSMS(acc.phone, `[Prime Anchorpoint] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+    sent = await sendSMS(acc.phone, `[Prime Anchorpoint] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
   } else {
-    sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    sent = await sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
   }
-  res.json({ success: true });
+  res.json({ success: true, sent });
 });
 
 // Verify codes and activate account
