@@ -2601,7 +2601,7 @@ function filterPartnerSearch() {
   const items = _jobPartners.filter(p => !q || (p.name||'').toLowerCase().includes(q));
   if (!items.length) { drop.classList.remove('open'); return; }
   drop.innerHTML = items.slice(0, 30).map(p =>
-    `<div class="adrop-item" onclick="selectPartnerItem(${p.id},${JSON.stringify(p.name).replace(/</g,'&lt;')})">${esc(p.name)}<small>${esc(p.industry||'')}</small></div>`
+    `<div class="adrop-item" onclick="selectPartnerItem(${p.id},${JSON.stringify(p.name).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">${esc(p.name)}<small>${esc(p.industry||'')}</small></div>`
   ).join('');
   drop.classList.add('open');
 }
@@ -2627,10 +2627,10 @@ function filterAssignSearch(which) {
 
   drop.innerHTML = items.slice(0, 30).map(item => {
     if (isInq) {
-      return `<div class="adrop-item" onclick="selectAssignItem('inq',${item.id},${JSON.stringify(item.name + (item.phone ? ' · ' + item.phone : '')).replace(/</g,'&lt;')})">
+      return `<div class="adrop-item" onclick="selectAssignItem('inq',${item.id},${JSON.stringify(item.name + (item.phone ? ' · ' + item.phone : '')).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">
         ${esc(item.name)} <small>${esc(typeLabel(item.type))} ${item.phone ? '· ' + esc(item.phone) : ''} ${item.email ? '· ' + esc(item.email) : ''}</small></div>`;
     } else {
-      return `<div class="adrop-item" onclick="selectAssignItem('job',${item.id},${JSON.stringify(item.title + ' - ' + item.location).replace(/</g,'&lt;')})">
+      return `<div class="adrop-item" onclick="selectAssignItem('job',${item.id},${JSON.stringify(item.title + ' - ' + item.location).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">
         ${esc(item.title)} <small>${esc(item.location)} ${item.pay ? '· ' + esc(item.pay) : ''} ${item.employment_type ? '· ' + esc(item.employment_type) : ''}</small></div>`;
     }
   }).join('');
