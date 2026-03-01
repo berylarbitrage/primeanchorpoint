@@ -156,6 +156,7 @@ tr:last-child td{border-bottom:none}
   </div>
   <div class="nav">
     <button class="nav-btn active" onclick="showTab('jobs')">职位浏览</button>
+    <button class="nav-btn" onclick="showTab('interview')">预约面试</button>
     <button class="nav-btn" onclick="showTab('applications')">我的申请</button>
     <button class="nav-btn" onclick="showTab('timeclock')">我的打卡记录</button>
     <button class="nav-btn" onclick="showTab('profile')">我的信息</button>
@@ -175,6 +176,19 @@ tr:last-child td{border-bottom:none}
         </select>
       </div>
       <div id="jobsList"></div>
+    </div>
+
+    <!-- Interview -->
+    <div id="tabInterview" style="display:none">
+      <div class="card" id="interviewStatusCard" style="display:none">
+        <h2>📋 我的面试预约</h2>
+        <div id="interviewStatusContent"></div>
+      </div>
+      <div class="card" id="interviewSlotsCard">
+        <h2>🗓️ 选择面试时间</h2>
+        <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1rem">请选择一个方便您的时间段进行面试。面试通过后将收到文件提交链接。</p>
+        <div id="interviewSlotsList"></div>
+      </div>
     </div>
 
     <!-- My Applications -->
@@ -349,14 +363,101 @@ async function showApp() {
 }
 
 function showTab(tab) {
-  ['jobs','applications','timeclock','profile'].forEach(t => {
+  ['jobs','interview','applications','timeclock','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
-  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', ['jobs','applications','timeclock','profile'][i]===tab));
+  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', ['jobs','interview','applications','timeclock','profile'][i]===tab));
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
   else if (tab === 'profile') loadProfile();
+  else if (tab === 'interview') loadInterview();
   else loadJobs();
+}
+
+async function loadInterview() {
+  const [interview, slots] = await Promise.all([
+    wApi('/interview'),
+    wApi('/interview-slots')
+  ]);
+
+  // Status card
+  const statusCard = document.getElementById('interviewStatusCard');
+  const statusContent = document.getElementById('interviewStatusContent');
+  const slotsCard = document.getElementById('interviewSlotsCard');
+
+  if (interview && interview.status !== 'cancelled') {
+    statusCard.style.display = '';
+    const dt = new Date(interview.slot_datetime);
+    const dtStr = dt.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const statusMap = {
+      scheduled: '<span style="color:#d97706;font-weight:700">⏳ 已预约</span>',
+      completed: '<span style="color:#6366f1;font-weight:700">✔ 面试完成</span>',
+      passed:    '<span style="color:#16a34a;font-weight:700">✅ 面试通过</span>',
+      failed:    '<span style="color:#dc2626;font-weight:700">❌ 未通过</span>',
+      cancelled: '<span style="color:#9ca3af;font-weight:700">已取消</span>',
+    };
+    let extra = '';
+    if (interview.status === 'passed' && interview.doc_request_token) {
+      extra = `<div style="margin-top:1rem;padding:1rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px">
+        <div style="font-weight:700;color:#15803d;margin-bottom:.5rem">🎉 恭喜通过面试！</div>
+        <div style="font-size:.85rem;color:#166534;margin-bottom:.75rem">请点击下方链接提交您的工作材料（SSN、工卡、驾照、W-9 税表）。</div>
+        <a href="/emp-docs?token=${interview.doc_request_token}" target="_blank"
+          style="display:inline-block;padding:.6rem 1.2rem;background:#16a34a;color:#fff;border-radius:8px;font-weight:700;font-size:.9rem;text-decoration:none">
+          📎 提交工作材料 →
+        </a>
+      </div>`;
+    } else if (interview.status === 'failed') {
+      extra = `<div style="margin-top:.75rem;font-size:.83rem;color:#dc2626">如有疑问请联系 HR。</div>`;
+    }
+    statusContent.innerHTML = `
+      <div style="display:grid;gap:.5rem;font-size:.9rem">
+        <div><span style="color:var(--gray-500)">状态：</span>${statusMap[interview.status] || interview.status}</div>
+        <div><span style="color:var(--gray-500)">时间：</span><strong>${dtStr}</strong></div>
+        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span>${interview.location}</div>` : ''}
+        ${interview.duration_min ? `<div><span style="color:var(--gray-500)">时长：</span>${interview.duration_min} 分钟</div>` : ''}
+      </div>${extra}`;
+    // Hide slot selection if already booked (not passed/failed/cancelled)
+    slotsCard.style.display = (interview.status === 'scheduled') ? 'none' : '';
+  } else {
+    statusCard.style.display = 'none';
+    slotsCard.style.display = '';
+  }
+
+  // Slots list
+  const list = document.getElementById('interviewSlotsList');
+  if (!slots || !slots.length) {
+    list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无可用面试时间，请稍后再查看或联系 HR。</div>';
+    return;
+  }
+  list.innerHTML = slots.map(s => {
+    const dt = new Date(s.slot_datetime);
+    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
+    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+    const remaining = s.max_bookings - s.booked_count;
+    return `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:1rem;margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+      <div>
+        <div style="font-weight:700;font-size:.95rem">${dateStr} ${timeStr}</div>
+        <div style="font-size:.82rem;color:var(--gray-500);margin-top:.2rem">
+          时长 ${s.duration_min} 分钟${s.location ? ' · ' + s.location : ''}
+          <span style="margin-left:.5rem;color:#d97706">剩余 ${remaining} 个名额</span>
+        </div>
+      </div>
+      <button onclick="bookSlot(${s.id})" style="padding:.5rem 1.1rem;background:var(--sky);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;font-size:.88rem">
+        预约此时间
+      </button>
+    </div>`;
+  }).join('');
+}
+
+async function bookSlot(slotId) {
+  const r = await wApi('/interviews', { method:'POST', body: JSON.stringify({ slot_id: slotId }) });
+  if (!r) return;
+  if (r.success) {
+    showToast('✅ 面试已预约！请准时参加');
+    loadInterview();
+  } else {
+    showToast('❌ ' + (r.error || '预约失败'), 'error');
+  }
 }
 
 async function loadJobs() {

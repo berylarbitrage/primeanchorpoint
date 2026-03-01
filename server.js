@@ -561,6 +561,31 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEF
 // Migrate: suspended flag for worker accounts (distinct from unverified)
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
 
+// ─── Interview system ───
+db.exec(`CREATE TABLE IF NOT EXISTS interview_slots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot_datetime TEXT NOT NULL,
+  duration_min INTEGER DEFAULT 30,
+  max_bookings INTEGER DEFAULT 1,
+  booked_count INTEGER DEFAULT 0,
+  location TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS interviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id),
+  slot_id INTEGER NOT NULL REFERENCES interview_slots(id),
+  status TEXT DEFAULT 'scheduled',
+  admin_notes TEXT DEFAULT '',
+  doc_request_token TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(worker_account_id)
+)`);
+
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
   { key:'labeler',            zh:'贴标员',       en:'Labeler' },
@@ -1735,14 +1760,15 @@ const empDocReqUpload = multer({
 app.post('/api/emp-docs/:token/submit', empDocReqUpload.fields([
   { name: 'gov_id', maxCount: 1 },
   { name: 'ssn', maxCount: 1 },
-  { name: 'work_card', maxCount: 1 }
+  { name: 'work_card', maxCount: 1 },
+  { name: 'w9', maxCount: 1 }
 ]), (req, res) => {
   const row = db.prepare('SELECT * FROM employee_doc_requests WHERE token=?').get(req.params.token);
   if (!row) return res.status(404).json({ error: '链接无效或已过期' });
   if (row.status === 'completed') return res.status(400).json({ error: '已提交，无法重复提交' });
   const files = req.files || {};
   if (!Object.keys(files).length) return res.status(400).json({ error: '请至少上传一份文件' });
-  const DOC_LABEL = { gov_id: '政府身份证件', ssn: '社安卡', work_card: '工卡 / 工作许可证' };
+  const DOC_LABEL = { gov_id: '政府身份证件', ssn: '社安卡', work_card: '工卡 / 工作许可证', w9: 'W-9 税表' };
   for (const [docType, fileArr] of Object.entries(files)) {
     if (fileArr && fileArr[0]) {
       const f = fileArr[0];
@@ -2912,6 +2938,134 @@ app.get('/customer', (req, res) => {
 });
 app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+
+// ─── Interview System ───
+
+// Admin: list all slots
+app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
+  const slots = db.prepare(`
+    SELECT s.*, COUNT(i.id) AS total_booked
+    FROM interview_slots s
+    LEFT JOIN interviews i ON i.slot_id = s.id AND i.status != 'cancelled'
+    GROUP BY s.id ORDER BY s.slot_datetime ASC
+  `).all();
+  res.json(slots);
+});
+
+// Admin: create a slot
+app.post('/api/admin/interview-slots', requireAdmin, (req, res) => {
+  const { slot_datetime, duration_min, max_bookings, location, notes } = req.body;
+  if (!slot_datetime) return res.status(400).json({ error: 'slot_datetime required' });
+  const r = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes)
+    VALUES (?,?,?,?,?)`).run(slot_datetime, duration_min || 30, max_bookings || 1, location || '', notes || '');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+// Admin: delete a slot
+app.delete('/api/admin/interview-slots/:id', requireAdmin, (req, res) => {
+  const booked = db.prepare(`SELECT id FROM interviews WHERE slot_id=? AND status='scheduled'`).get(req.params.id);
+  if (booked) return res.status(400).json({ error: '该时间槽已有预约，请先取消面试再删除' });
+  db.prepare('DELETE FROM interview_slots WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Admin: list all interviews
+app.get('/api/admin/interviews', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT i.*, s.slot_datetime, s.duration_min, s.location,
+      w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.work_status, w.position_interests
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+    ORDER BY s.slot_datetime DESC
+  `).all();
+  res.json(rows);
+});
+
+// Admin: update interview status / notes
+app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
+  const { status, admin_notes } = req.body;
+  const row = db.prepare('SELECT * FROM interviews WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE interviews SET status=?, admin_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(status ?? row.status, admin_notes ?? row.admin_notes, req.params.id);
+  // If cancelled, free the slot count
+  if (status === 'cancelled' && row.status !== 'cancelled') {
+    db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
+  }
+  res.json({ success: true });
+});
+
+// Admin: mark passed + generate doc-request link
+app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
+  const interview = db.prepare(`
+    SELECT i.*, w.employee_id FROM interviews i JOIN worker_accounts w ON i.worker_account_id=w.id WHERE i.id=?
+  `).get(req.params.id);
+  if (!interview) return res.status(404).json({ error: 'Interview not found' });
+  if (!interview.employee_id) return res.status(400).json({ error: '该工人账号尚未关联员工档案，请先在员工管理中关联' });
+
+  // Check for existing pending doc request
+  const existing = db.prepare(`SELECT token FROM employee_doc_requests WHERE employee_id=? AND status='pending' AND (expires_at IS NULL OR expires_at > datetime('now'))`).get(interview.employee_id);
+  if (existing) {
+    db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(existing.token, req.params.id);
+    return res.json({ token: existing.token, already_exists: true });
+  }
+
+  const token = crypto.randomBytes(28).toString('hex');
+  const { admin_note, lang } = req.body;
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare(`INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions, expires_at)
+    VALUES (?,?,?,?,?,?,?)`).run(token, interview.employee_id, admin_note || '', JSON.stringify(['gov_id','ssn','work_card','w9']), lang || 'zh', '[]', expiresAt);
+  db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(token, req.params.id);
+  res.json({ token, expires_at: expiresAt });
+});
+
+// Worker: list available slots
+app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
+  const slots = db.prepare(`
+    SELECT id, slot_datetime, duration_min, location, notes, max_bookings, booked_count
+    FROM interview_slots
+    WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+    ORDER BY slot_datetime ASC
+  `).all();
+  res.json(slots);
+});
+
+// Worker: get my interview
+app.get('/api/worker/interview', requireWorker, (req, res) => {
+  const row = db.prepare(`
+    SELECT i.*, s.slot_datetime, s.duration_min, s.location
+    FROM interviews i JOIN interview_slots s ON i.slot_id=s.id
+    WHERE i.worker_account_id=?
+  `).get(req.workerId);
+  res.json(row || null);
+});
+
+// Worker: book a slot
+app.post('/api/worker/interviews', requireWorker, (req, res) => {
+  const { slot_id } = req.body;
+  if (!slot_id) return res.status(400).json({ error: 'slot_id required' });
+  // Check not already booked
+  const existing = db.prepare(`SELECT id, status FROM interviews WHERE worker_account_id=?`).get(req.workerId);
+  if (existing && existing.status !== 'cancelled') return res.status(400).json({ error: '您已有面试预约，如需更改请联系HR' });
+  const slot = db.prepare(`SELECT * FROM interview_slots WHERE id=? AND active=1`).get(slot_id);
+  if (!slot) return res.status(404).json({ error: '时间槽不存在' });
+  if (slot.booked_count >= slot.max_bookings) return res.status(400).json({ error: '该时间槽已满，请选择其他时间' });
+  if (new Date(slot.slot_datetime) <= new Date()) return res.status(400).json({ error: '该时间槽已过期' });
+
+  try {
+    if (existing && existing.status === 'cancelled') {
+      db.prepare(`UPDATE interviews SET slot_id=?, status='scheduled', admin_notes='', doc_request_token='', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(slot_id, existing.id);
+    } else {
+      db.prepare(`INSERT INTO interviews (worker_account_id, slot_id) VALUES (?,?)`).run(req.workerId, slot_id);
+    }
+    db.prepare(`UPDATE interview_slots SET booked_count = booked_count+1 WHERE id=?`).run(slot_id);
+    res.json({ success: true });
+  } catch(e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // Global error handler — return JSON instead of Express's default HTML error page
