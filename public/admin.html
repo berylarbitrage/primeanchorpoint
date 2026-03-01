@@ -751,7 +751,7 @@ tr:hover td{background:var(--sky-light)}
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveRating()">保存评分</button>
-    <button class="btn" onclick="document.getElementById('ratingModal').classList.remove('show')">取消</button>
+    <button class="btn" onclick="guardClose('ratingModal')">取消</button>
   </div>
 </div></div>
 
@@ -830,7 +830,7 @@ tr:hover td{background:var(--sky-light)}
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-red" onclick="confirmCloseJob()">确认关闭</button>
-    <button class="btn" onclick="document.getElementById('closeJobModal').classList.remove('show')">取消</button>
+    <button class="btn" onclick="guardClose('closeJobModal')">取消</button>
   </div>
 </div></div>
 
@@ -979,7 +979,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveProcessInquiry()">确认</button>
-    <button class="btn btn-red" onclick="document.getElementById('procModal').classList.remove('show')">取消</button>
+    <button class="btn btn-red" onclick="guardClose('procModal')">取消</button>
   </div>
 </div></div>
 
@@ -1739,8 +1739,9 @@ async function openJobModal(job) {
   });
 
   document.getElementById('jobModal').classList.add('show');
+  captureModalState('jobModal');
 }
-function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
+function closeJobModal() { guardClose('jobModal'); }
 function editJob(j) { openJobModal(j); }
 
 // Wire up day/benefit toggle buttons (once DOM ready)
@@ -1850,6 +1851,7 @@ async function saveJob() {
   if (!data.title) return alert('请填写职位名称');
   if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
+  clearModalState('jobModal');
   closeJobModal();
   loadJobs();
 }
@@ -1870,6 +1872,7 @@ function openCloseJobModal(job) {
     r.checked = r.value === existing;
   });
   document.getElementById('closeJobModal').classList.add('show');
+  captureModalState('closeJobModal');
 }
 
 async function confirmCloseJob() {
@@ -1889,6 +1892,7 @@ async function confirmCloseJob() {
   if (!job) return;
   const data = { ...job, job_status: statusMap[reason] || 'closed', close_reason: reason, close_note: note, active: false };
   await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  clearModalState('closeJobModal');
   document.getElementById('closeJobModal').classList.remove('show');
   loadJobs();
 }
@@ -2000,6 +2004,7 @@ function openProcessModal() {
   document.getElementById('procStatus').value = '';
   document.getElementById('procNote').value = '';
   document.getElementById('procModal').classList.add('show');
+  captureModalState('procModal');
 }
 
 function openProcessModalDirect(inq) {
@@ -2014,6 +2019,7 @@ async function saveProcessInquiry() {
   const note = document.getElementById('procNote').value.trim();
   if (!note) return alert('请填写备注');
   await api(`/admin/inquiries/${currentInquiry.id}/process`, { method: 'PUT', body: JSON.stringify({ status, note }) });
+  clearModalState('procModal');
   document.getElementById('procModal').classList.remove('show');
   document.getElementById('inqModal').classList.remove('show');
   // refresh both lists
@@ -2308,6 +2314,7 @@ async function openAssignModal(assignment) {
   }
 
   document.getElementById('assignModal').classList.add('show');
+  captureModalState('assignModal');
 }
 
 let _jobPartners = [];
@@ -2373,10 +2380,7 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#jobModal')) document.getElementById('jPartnerDrop').classList.remove('open');
 });
 
-function closeAssignModal() {
-  closeAssignDropdowns();
-  document.getElementById('assignModal').classList.remove('show');
-}
+function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
 
 function editAssignment(a) { openAssignModal(a); }
 
@@ -2412,6 +2416,7 @@ async function saveAssignment() {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd
     });
   }
+  clearModalState('assignModal');
   closeAssignModal();
   loadAssignments();
 }
@@ -2695,9 +2700,10 @@ function openPartnerModal(p) {
   if (p && p.id) loadPartnerFiles(p.id);
   else document.getElementById('pFilesList').innerHTML = '';
   document.getElementById('partnerModal').classList.add('show');
+  captureModalState('partnerModal');
 }
 
-function closePartnerModal() { document.getElementById('partnerModal').classList.remove('show'); }
+function closePartnerModal() { guardClose('partnerModal'); }
 
 async function loadPartnerFiles(pid) {
   const files = await api(`/admin/partners/${pid}/files`);
@@ -2771,6 +2777,7 @@ async function savePartner() {
       showToast(`✅ 公司「${data.name}」创建成功，公司编号：#${r.id}`);
     }
   }
+  clearModalState('partnerModal');
   closePartnerModal();
   loadPartners();
 }
@@ -2932,8 +2939,9 @@ function openEmpModal(id) {
     document.getElementById('ePayType').value = 'hourly';
   }
   document.getElementById('empModal').classList.add('show');
+  captureModalState('empModal');
 }
-function closeEmpModal() { document.getElementById('empModal').classList.remove('show'); }
+function closeEmpModal() { guardClose('empModal'); }
 
 function randomFillEmployee() {
   const firsts = ['John','Maria','Wei','Carlos','Anna','David','Linh','Ahmed','Sofia','James','Yuki','Jose','Emily','Marco','Mei'];
@@ -3006,6 +3014,7 @@ async function saveEmployee() {
   }
   async function finishSave(r2) {
     if (r2.success || r2.id) {
+      clearModalState('empModal');
       closeEmpModal();
       await loadEmployees();
       showToast(id
@@ -3020,6 +3029,7 @@ async function saveEmployee() {
     const empName = `${emp.first_name} ${emp.last_name}（员工号：${emp.employee_id}）`;
     const openExisting = confirm(`该${fieldLabel}已登记在员工「${empName}」名下。\n\n点击「确定」打开该员工档案查看，点击「取消」忽略重复继续保存当前信息。`);
     if (openExisting) {
+      clearModalState('empModal');
       closeEmpModal();
       await loadEmployees();
       openEmpModal(emp.id);
@@ -3241,6 +3251,7 @@ async function openRatingModal(empId, empName, existing) {
     document.getElementById('rNotes').value   = '';
   }
   document.getElementById('ratingModal').classList.add('show');
+  captureModalState('ratingModal');
 }
 
 function onRatingJobChange() { /* placeholder for future autofill */ }
@@ -3272,6 +3283,7 @@ async function saveRating() {
   if (allZero) return alert('请至少为一个维度打分');
   if (id) await api(`/admin/employee-ratings/${id}`, { method:'PUT', body:JSON.stringify(data) });
   else    await api('/admin/employee-ratings', { method:'POST', body:JSON.stringify(data) });
+  clearModalState('ratingModal');
   document.getElementById('ratingModal').classList.remove('show');
   viewEmployee(empId); // refresh detail
 }
@@ -3437,10 +3449,11 @@ async function openTimeModal(entry) {
   }
   document.getElementById('timeCalcPreview').style.display = 'none';
   document.getElementById('timeModal').classList.add('show');
+  captureModalState('timeModal');
   // Live calc
   ['tIn','tOut','tBreak'].forEach(id => document.getElementById(id).addEventListener('change', previewHours));
 }
-function closeTimeModal() { document.getElementById('timeModal').classList.remove('show'); }
+function closeTimeModal() { guardClose('timeModal'); }
 
 function previewHours() {
   const inp = document.getElementById('tIn').value;
@@ -3471,7 +3484,7 @@ async function saveTimeEntry() {
   const r = id
     ? await api(`/admin/time-entries/${id}`, { method:'PUT', body: JSON.stringify(data) })
     : await api('/admin/time-entries', { method:'POST', body: JSON.stringify(data) });
-  if (r.success) { closeTimeModal(); loadTimeEntries(); }
+  if (r.success) { clearModalState('timeModal'); closeTimeModal(); loadTimeEntries(); }
   else alert(r.error||'保存失败');
 }
 
@@ -3551,9 +3564,10 @@ async function openTsModal() {
   document.getElementById('tsConfirmBlock').style.display = 'none';
   buildTsRows();
   document.getElementById('tsModal').classList.add('show');
+  captureModalState('tsModal');
 }
 
-function closeTsModal() { document.getElementById('tsModal').classList.remove('show'); }
+function closeTsModal() { guardClose('tsModal'); }
 
 const WEEKDAYS_ZH = ['周一','周二','周三','周四','周五','周六','周日'];
 const WEEKDAYS_EN = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -3684,6 +3698,7 @@ async function saveBatchTimesheet() {
       })
     });
     if (r.success) {
+      clearModalState('tsModal');
       closeTsModal();
       loadTimeEntries();
       showTsLink(r.token, r.count);
@@ -3941,8 +3956,9 @@ function openDocModal() {
   document.getElementById('docNotes').value  = '';
   document.getElementById('docFile').value   = '';
   document.getElementById('docModal').classList.add('show');
+  captureModalState('docModal');
 }
-function closeDocModal() { document.getElementById('docModal').classList.remove('show'); }
+function closeDocModal() { guardClose('docModal'); }
 
 async function uploadDoc() {
   const empId = document.getElementById('docEmpSel').value;
@@ -3960,7 +3976,7 @@ async function uploadDoc() {
     body: fd
   });
   const r = await res.json();
-  if (r.success || r.id) { closeDocModal(); loadDocuments(); }
+  if (r.success || r.id) { clearModalState('docModal'); closeDocModal(); loadDocuments(); }
   else alert(r.error||'上传失败');
 }
 
@@ -4044,8 +4060,9 @@ function openBgModal(bg) {
   }
   document.getElementById('bgFile').value = '';
   document.getElementById('bgModal').classList.add('show');
+  captureModalState('bgModal');
 }
-function closeBgModal() { document.getElementById('bgModal').classList.remove('show'); }
+function closeBgModal() { guardClose('bgModal'); }
 
 async function saveBgCheck() {
   const id    = document.getElementById('bgId').value;
@@ -4067,7 +4084,7 @@ async function saveBgCheck() {
   const method = id ? 'PUT' : 'POST';
   const res = await fetch(url, { method, headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd });
   const r = await res.json();
-  if (r.success || r.id) { closeBgModal(); loadBgChecks(); }
+  if (r.success || r.id) { clearModalState('bgModal'); closeBgModal(); loadBgChecks(); }
   else alert(r.error||'保存失败');
 }
 
@@ -4077,7 +4094,56 @@ async function deleteBgCheck(id) {
   loadBgChecks();
 }
 
-function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+// ─── Unsaved-changes guard ───
+const _modalSnap = {};
+function captureModalState(modalId) {
+  const m = document.getElementById(modalId);
+  if (!m) return;
+  setTimeout(() => {
+    const snap = {};
+    m.querySelectorAll('input,select,textarea').forEach(el => {
+      const k = el.id || el.name;
+      if (!k || el.type === 'file') return;
+      if (el.type === 'radio') { if (el.checked) snap['r:'+el.name] = el.value; }
+      else if (el.type === 'checkbox') snap[k] = String(el.checked);
+      else snap[k] = el.value;
+    });
+    // capture toggle-button states (day-btn, benefit-btn, svc-tag)
+    m.querySelectorAll('.day-btn,.benefit-btn,.svc-tag').forEach(b => {
+      snap['btn:'+( b.dataset.day||b.dataset.val||b.dataset.v||b.textContent.trim())] = String(b.classList.contains('active'));
+    });
+    _modalSnap[modalId] = snap;
+  }, 0);
+}
+function isModalDirty(modalId) {
+  const old = _modalSnap[modalId];
+  if (!old) return false;
+  const m = document.getElementById(modalId);
+  const cur = {};
+  m.querySelectorAll('input,select,textarea').forEach(el => {
+    const k = el.id || el.name;
+    if (!k || el.type === 'file') return;
+    if (el.type === 'radio') { if (el.checked) cur['r:'+el.name] = el.value; }
+    else if (el.type === 'checkbox') cur[k] = String(el.checked);
+    else cur[k] = el.value;
+  });
+  m.querySelectorAll('.day-btn,.benefit-btn,.svc-tag').forEach(b => {
+    cur['btn:'+(b.dataset.day||b.dataset.val||b.dataset.v||b.textContent.trim())] = String(b.classList.contains('active'));
+  });
+  const allKeys = new Set([...Object.keys(old), ...Object.keys(cur)]);
+  for (const k of allKeys) { if ((old[k]??'') !== (cur[k]??'')) return true; }
+  return false;
+}
+function clearModalState(modalId) { delete _modalSnap[modalId]; }
+function guardClose(modalId, extraFn) {
+  if (isModalDirty(modalId)) {
+    if (!confirm('你有未保存的修改，确定要离开吗？')) return;
+  }
+  clearModalState(modalId);
+  if (extraFn) extraFn();
+  document.getElementById(modalId).classList.remove('show');
+}
+function closeModal(id) { guardClose(id); }
 
 // ─── Accounts Management ───
 async function loadAccounts() {
@@ -4107,6 +4173,7 @@ function openAccountModal(data) {
   document.getElementById('accountModalTitle').textContent = data ? '编辑账户' : '新建账户';
   document.getElementById('accPassHint').textContent = data ? '(留空则不修改)' : '*';
   document.getElementById('accountModal').classList.add('show');
+  captureModalState('accountModal');
 }
 
 async function editAccount(id) {
@@ -4133,6 +4200,7 @@ async function saveAccount() {
     if (!d.password) return alert('请输入密码');
     await api('/admin/accounts', { method: 'POST', body: JSON.stringify(d) });
   }
+  clearModalState('accountModal');
   closeModal('accountModal');
   loadAccounts();
 }
