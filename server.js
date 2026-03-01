@@ -406,6 +406,82 @@ db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   UNIQUE(inquiry_id, position_key)
 )`);
 
+// ─── New tables for worker / customer / job-application portals ───
+db.exec(`
+  CREATE TABLE IF NOT EXISTS worker_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER REFERENCES employees(id),
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS customer_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name TEXT NOT NULL,
+    contact_name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    phone TEXT DEFAULT '',
+    password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    active INTEGER DEFAULT 1,
+    partner_id INTEGER REFERENCES partners(id),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS job_applications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL REFERENCES jobs(id),
+    worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id),
+    status TEXT DEFAULT 'pending',
+    notes TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(job_id, worker_account_id)
+  );
+  CREATE TABLE IF NOT EXISTS customer_job_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_account_id INTEGER NOT NULL REFERENCES customer_accounts(id),
+    title TEXT NOT NULL,
+    location TEXT DEFAULT '',
+    headcount INTEGER DEFAULT 1,
+    start_date TEXT DEFAULT '',
+    work_type TEXT DEFAULT '',
+    requirements TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+// Migrate: add assigned_partner_ids to admin_users (for manager role)
+try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFAULT ''"); } catch {}
+// Migrate: add lang/positions to employee_doc_requests
+try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
+try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
+// Migrate: add GPS fields to time_entries
+try { db.exec("ALTER TABLE time_entries ADD COLUMN latitude REAL DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN longitude REAL DEFAULT NULL"); } catch {}
+// Table for position self-ratings from doc requests
+db.exec(`CREATE TABLE IF NOT EXISTS doc_request_position_ratings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_request_id INTEGER NOT NULL REFERENCES employee_doc_requests(id),
+  position_key TEXT NOT NULL,
+  interest INTEGER DEFAULT 0,
+  skill_score INTEGER DEFAULT 0,
+  UNIQUE(doc_request_id, position_key)
+)`);
+
+// Migrate: worker self-registration fields
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN email TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dob TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN work_status TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN position_interests TEXT DEFAULT '[]'"); } catch {}
+// Migrate: enterprise self-registration fields
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN ein TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
+
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
   { key:'labeler',            zh:'贴标员',       en:'Labeler' },
@@ -697,6 +773,7 @@ function requireAdmin(req, res, next) {
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
+  req.assignedPartnerIds = session.assigned_partner_ids || '';
   next();
 }
 
@@ -724,6 +801,51 @@ function staffGuard(actionType, targetTable) {
 // Manager access restriction: managers can only access time entries and employee list
 function blockManager(req, res, next) {
   if (req.userRole === 'manager') return res.status(403).json({ error: 'Permission denied' });
+  next();
+}
+
+// Helper: parse manager's assigned partner IDs into array of ints
+function managerPartnerIds(req) {
+  return (req.assignedPartnerIds || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+}
+
+// ─── Worker / Customer portal auth ───
+const workerSessions = new Map();
+const customerSessions = new Map();
+
+function requireWorker(req, res, next) {
+  let token = null;
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) token = auth.slice(7);
+  if (!token) {
+    const m = (req.headers.cookie || '').match(/pa_worker=([^;]+)/);
+    if (m) token = m[1];
+  }
+  const s = workerSessions.get(token);
+  if (!s || Date.now() - s.created > 24 * 60 * 60 * 1000) {
+    if (token) workerSessions.delete(token);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  req.workerId = s.workerId;
+  req.workerEmployeeId = s.employeeId;
+  next();
+}
+
+function requireCustomer(req, res, next) {
+  let token = null;
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) token = auth.slice(7);
+  if (!token) {
+    const m = (req.headers.cookie || '').match(/pa_customer=([^;]+)/);
+    if (m) token = m[1];
+  }
+  const s = customerSessions.get(token);
+  if (!s || Date.now() - s.created > 24 * 60 * 60 * 1000) {
+    if (token) customerSessions.delete(token);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  req.customerId = s.customerId;
+  req.customerPartnerId = s.partnerId;
   next();
 }
 
@@ -839,24 +961,24 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
 
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, display_name, active, created_at FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(username);
   if (existing) return res.status(400).json({ error: 'Username already exists' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)')
-    .run(username, hash, salt, role, display_name || '');
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '');
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, active } = req.body;
+  const { username, password, role, display_name, active, assigned_partner_ids } = req.body;
   if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -865,14 +987,121 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
     const hash = hashPassword(password, salt);
     db.prepare('UPDATE admin_users SET password_hash=?, salt=? WHERE id=?').run(hash, salt, req.params.id);
   }
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, active=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, active !== undefined ? active : user.active, req.params.id);
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, active=?, assigned_partner_ids=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, active !== undefined ? active : user.active, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), req.params.id);
   res.json({ success: true });
 });
 
 app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   if (parseInt(req.params.id) === req.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
   db.prepare('DELETE FROM admin_users WHERE id = ?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Worker Accounts (admin manages) ───
+app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  res.json(db.prepare(`
+    SELECT w.*, e.first_name, e.last_name, e.employee_id as emp_code
+    FROM worker_accounts w LEFT JOIN employees e ON w.employee_id=e.id ORDER BY w.id DESC
+  `).all());
+});
+
+app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req, res) => {
+  const { username, password, employee_id } = req.body;
+  if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+  if (db.prepare('SELECT id FROM worker_accounts WHERE username=?').get(username))
+    return res.status(400).json({ error: 'Username already exists' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const r = db.prepare('INSERT INTO worker_accounts (username, password_hash, salt, employee_id) VALUES (?,?,?,?)')
+    .run(username, hash, salt, employee_id || null);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { password, employee_id, active } = req.body;
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  if (password) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hashPassword(password, salt), salt, req.params.id);
+  }
+  db.prepare('UPDATE worker_accounts SET employee_id=?, active=? WHERE id=?')
+    .run(employee_id !== undefined ? employee_id : w.employee_id, active !== undefined ? active : w.active, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM worker_accounts WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Customer Accounts (admin manages) ───
+app.get('/api/admin/customer-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  res.json(db.prepare('SELECT id, company_name, contact_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at FROM customer_accounts ORDER BY id DESC').all());
+});
+
+app.post('/api/admin/customer-accounts', requireAdmin, requireRole('admin'), (req, res) => {
+  const { company_name, contact_name, email, phone, password, partner_id } = req.body;
+  if (!email || !password || !company_name) return res.status(400).json({ error: 'Email, company and password required' });
+  if (db.prepare('SELECT id FROM customer_accounts WHERE email=?').get(email))
+    return res.status(400).json({ error: 'Email already registered' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const r = db.prepare('INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, partner_id) VALUES (?,?,?,?,?,?,?)')
+    .run(company_name, contact_name || '', email, phone || '', hash, salt, partner_id || null);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { company_name, contact_name, email, phone, password, partner_id, active } = req.body;
+  const c = db.prepare('SELECT * FROM customer_accounts WHERE id=?').get(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Not found' });
+  if (password) {
+    const salt = crypto.randomBytes(16).toString('hex');
+    db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(hashPassword(password, salt), salt, req.params.id);
+  }
+  db.prepare('UPDATE customer_accounts SET company_name=?, contact_name=?, email=?, phone=?, partner_id=?, active=? WHERE id=?')
+    .run(company_name||c.company_name, contact_name||c.contact_name, email||c.email, phone||c.phone, partner_id!==undefined?partner_id:c.partner_id, active!==undefined?active:c.active, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM customer_accounts WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Job Applications (admin view) ───
+app.get('/api/admin/job-applications', requireAdmin, blockManager, (req, res) => {
+  res.json(db.prepare(`
+    SELECT a.*, j.title as job_title, j.location as job_location,
+      w.username, e.first_name, e.last_name
+    FROM job_applications a
+    LEFT JOIN jobs j ON a.job_id=j.id
+    LEFT JOIN worker_accounts w ON a.worker_account_id=w.id
+    LEFT JOIN employees e ON w.employee_id=e.id
+    ORDER BY a.created_at DESC
+  `).all());
+});
+
+app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, (req, res) => {
+  const { status, notes } = req.body;
+  db.prepare('UPDATE job_applications SET status=?, notes=? WHERE id=?').run(status, notes||'', req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Customer Job Posts (admin view) ───
+app.get('/api/admin/customer-job-posts', requireAdmin, blockManager, (req, res) => {
+  res.json(db.prepare(`
+    SELECT p.*, c.company_name as customer_company, c.contact_name, c.email as customer_email
+    FROM customer_job_posts p LEFT JOIN customer_accounts c ON p.customer_account_id=c.id
+    ORDER BY p.created_at DESC
+  `).all());
+});
+
+app.put('/api/admin/customer-job-posts/:id', requireAdmin, blockManager, (req, res) => {
+  const { status } = req.body;
+  db.prepare('UPDATE customer_job_posts SET status=? WHERE id=?').run(status, req.params.id);
   res.json({ success: true });
 });
 
@@ -1017,6 +1246,11 @@ app.put('/api/admin/inquiries/:id/process', requireAdmin, blockManager, (req, re
 app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('delete', 'inquiries'), (req, res) => {
   db.prepare('DELETE FROM inquiries WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Worker positions list
+app.get('/api/admin/worker-positions', requireAdmin, (req, res) => {
+  res.json(WORKER_POSITIONS);
 });
 
 // Inquiry × Worker Position ratings (static list from website)
@@ -1292,9 +1526,10 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
   if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
   const token = crypto.randomBytes(28).toString('hex');
-  const { admin_note, requested_docs, lang } = req.body;
-  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang) VALUES (?,?,?,?,?)')
-    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']), lang || 'zh');
+  const { admin_note, requested_docs, lang, positions } = req.body;
+  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions) VALUES (?,?,?,?,?,?)')
+    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']),
+        lang || 'zh', JSON.stringify(positions || []));
   res.json({ token, status: 'pending' });
 });
 
@@ -1321,6 +1556,7 @@ app.get('/api/emp-docs/:token', (req, res) => {
     requested_docs: JSON.parse(row.requested_docs || '["gov_id","ssn","work_card"]'),
     admin_note: row.admin_note,
     lang: row.lang || 'zh',
+    positions: JSON.parse(row.positions || '[]'),
     completed_at: row.completed_at
   });
 });
@@ -1358,6 +1594,17 @@ app.post('/api/emp-docs/:token/submit', empDocReqUpload.fields([
         VALUES(?,?,?,?,?)`)
         .run(row.employee_id, docType, DOC_LABEL[docType] || docType, f.filename, f.originalname);
     }
+  }
+  // Save position self-ratings if provided
+  if (req.body.position_ratings) {
+    try {
+      const ratings = JSON.parse(req.body.position_ratings);
+      const stmt = db.prepare(`INSERT OR REPLACE INTO doc_request_position_ratings
+        (doc_request_id, position_key, interest, skill_score) VALUES (?,?,?,?)`);
+      for (const r of ratings) {
+        stmt.run(row.id, r.key, r.interest ? 1 : 0, parseInt(r.skill) || 0);
+      }
+    } catch {}
   }
   db.prepare(`UPDATE employee_doc_requests SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE token=?`).run(row.token);
   res.json({ success: true });
@@ -1457,13 +1704,21 @@ function safeEmp(e) {
 }
 
 app.get('/api/admin/employees', requireAdmin, (req, res) => {
-  const rows = db.prepare(`
+  const pids = managerPartnerIds(req);
+  let sql = `
     SELECT e.*,
       (SELECT COUNT(*) FROM time_entries t WHERE t.employee_id = e.id) as time_count,
       (SELECT COUNT(*) FROM employee_documents d WHERE d.employee_id = e.id) as doc_count,
       (SELECT COUNT(*) FROM background_checks b WHERE b.employee_id = e.id) as bg_count
-    FROM employees e ORDER BY e.last_name, e.first_name
-  `).all();
+    FROM employees e`;
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    sql += ` WHERE e.id IN (SELECT DISTINCT t.employee_id FROM time_entries t
+      JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(()=>'?').join(',')}))`;
+    params.push(...pids);
+  }
+  sql += ' ORDER BY e.last_name, e.first_name';
+  const rows = db.prepare(sql).all(...params);
   // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets)
   const explicitJobs = db.prepare(`
     SELECT ej.employee_id, ej.job_id, ej.company_name, ej.job_title
@@ -1479,12 +1734,10 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
     ORDER BY s.period_end DESC
   `).all();
   const jobMap = {};
-  // Explicit assignments take priority
   for (const j of explicitJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     jobMap[j.employee_id].push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
   }
-  // Add timesheet-derived jobs that aren't already in explicit assignments
   for (const j of tsJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     const existing = jobMap[j.employee_id];
@@ -1719,6 +1972,13 @@ app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
   if (date_from)   { q += ' AND DATE(t.clock_in)>=?'; p.push(date_from); }
   if (date_to)     { q += ' AND DATE(t.clock_in)<=?'; p.push(date_to); }
   if (status)      { q += ' AND t.status=?'; p.push(status); }
+  // Manager: only see time entries for their assigned partners
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && pids.length) {
+    q += ` AND (t.job_id IN (SELECT id FROM jobs WHERE partner_id IN (${pids.map(()=>'?').join(',')}))
+           OR t.company_name IN (SELECT name FROM partners WHERE id IN (${pids.map(()=>'?').join(',')})))`;
+    p.push(...pids, ...pids);
+  }
   q += ' ORDER BY t.clock_in DESC LIMIT 1000';
   res.json(db.prepare(q).all(...p));
 });
@@ -2112,6 +2372,183 @@ app.get('/ts', (req, res) => {
 // ─── Admin Panel Page ───
 app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// ─── Worker Portal API ───
+app.post('/api/worker/login', (req, res) => {
+  const { username, password } = req.body;
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE username=? AND active=1').get(username);
+  if (!w || !verifyPassword(password, w.salt, w.password_hash))
+    return res.status(401).json({ error: 'Invalid username or password' });
+  const token = crypto.randomBytes(32).toString('hex');
+  workerSessions.set(token, { created: Date.now(), workerId: w.id, employeeId: w.employee_id });
+  res.json({ token, employee_id: w.employee_id });
+});
+
+app.get('/api/worker/me', requireWorker, (req, res) => {
+  const w = db.prepare('SELECT id, username, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
+  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
+  res.json({ account: w, employee: emp });
+});
+
+app.get('/api/worker/jobs', requireWorker, (req, res) => {
+  const jobs = db.prepare('SELECT id, title, type, location, pay, work_auth, benefits, work_days, work_start, work_end, employment_type, company_name, description, urgent FROM jobs WHERE active=1 ORDER BY created_at DESC').all();
+  const applied = db.prepare('SELECT job_id FROM job_applications WHERE worker_account_id=?').all(req.workerId).map(r => r.job_id);
+  res.json(jobs.map(j => ({ ...j, applied: applied.includes(j.id) })));
+});
+
+app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
+  const job = db.prepare('SELECT id FROM jobs WHERE id=? AND active=1').get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found or no longer active' });
+  try {
+    db.prepare('INSERT INTO job_applications (job_id, worker_account_id, notes) VALUES (?,?,?)').run(req.params.jobId, req.workerId, req.body.notes || '');
+    res.json({ success: true });
+  } catch { res.status(400).json({ error: 'Already applied to this job' }); }
+});
+
+app.get('/api/worker/timeclock', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json([]);
+  const entries = db.prepare('SELECT * FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 60').all(req.workerEmployeeId);
+  res.json(entries);
+});
+
+app.post('/api/worker/punch', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '账号未关联员工档案，请联系HR' });
+  const { latitude, longitude } = req.body;
+  const now = new Date().toISOString();
+  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
+  if (open) {
+    const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, ...hrs });
+  } else {
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude) VALUES(?,?,'open',?,?)")
+      .run(req.workerEmployeeId, now, latitude || null, longitude || null);
+    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+  }
+});
+
+app.get('/api/worker/punch/status', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json({ clocked_in: false });
+  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
+  res.json({ clocked_in: !!open, open_entry: open || null });
+});
+
+app.get('/api/worker/assignments', requireWorker, (req, res) => {
+  const apps = db.prepare(`
+    SELECT a.*, j.title, j.location, j.pay, j.company_name
+    FROM job_applications a LEFT JOIN jobs j ON a.job_id=j.id
+    WHERE a.worker_account_id=? ORDER BY a.created_at DESC
+  `).all(req.workerId);
+  res.json(apps);
+});
+
+// ─── Customer Portal API ───
+app.post('/api/customer/login', (req, res) => {
+  const { email, password } = req.body;
+  const cAny = db.prepare('SELECT * FROM customer_accounts WHERE email=?').get(email);
+  if (cAny && cAny.approval_status === 'pending')
+    return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
+  if (cAny && cAny.approval_status === 'rejected')
+    return res.status(403).json({ error: '您的企业注册已被拒绝，请联系管理员 / Your registration was rejected. Please contact admin' });
+  const c = db.prepare('SELECT * FROM customer_accounts WHERE email=? AND active=1').get(email);
+  if (!c || !verifyPassword(password, c.salt, c.password_hash))
+    return res.status(401).json({ error: 'Invalid email or password' });
+  const token = crypto.randomBytes(32).toString('hex');
+  customerSessions.set(token, { created: Date.now(), customerId: c.id, partnerId: c.partner_id });
+  res.json({ token, company_name: c.company_name });
+});
+
+app.get('/api/customer/me', requireCustomer, (req, res) => {
+  const c = db.prepare('SELECT id, company_name, contact_name, email, phone, partner_id, active FROM customer_accounts WHERE id=?').get(req.customerId);
+  res.json(c);
+});
+
+app.post('/api/customer/post-job', requireCustomer, (req, res) => {
+  const { title, location, headcount, start_date, work_type, requirements, notes } = req.body;
+  if (!title) return res.status(400).json({ error: 'Job title required' });
+  const r = db.prepare('INSERT INTO customer_job_posts (customer_account_id, title, location, headcount, start_date, work_type, requirements, notes) VALUES (?,?,?,?,?,?,?,?)')
+    .run(req.customerId, title, location||'', headcount||1, start_date||'', work_type||'', requirements||'', notes||'');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.get('/api/customer/my-posts', requireCustomer, (req, res) => {
+  res.json(db.prepare('SELECT * FROM customer_job_posts WHERE customer_account_id=? ORDER BY created_at DESC').all(req.customerId));
+});
+
+app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
+  if (!req.customerPartnerId) return res.json([]);
+  const rows = db.prepare(`
+    SELECT a.id as assign_id, a.status as assign_status, a.assigned_at,
+      e.first_name, e.last_name, e.position, e.phone,
+      j.title as job_title, j.location
+    FROM assignments a
+    LEFT JOIN inquiries i ON a.inquiry_id=i.id
+    LEFT JOIN jobs j ON a.job_id=j.id
+    LEFT JOIN employees e ON e.id=(SELECT id FROM employees WHERE phone=i.phone LIMIT 1)
+    WHERE j.partner_id=?
+    ORDER BY a.assigned_at DESC
+  `).all(req.customerPartnerId);
+  res.json(rows);
+});
+
+// ─── Public Registration ───
+app.post('/api/register/worker', (req, res) => {
+  const { name, phone, email, dob, work_status, position_interests, password } = req.body;
+  if (!name || !phone || !email || !password)
+    return res.status(400).json({ error: 'Name, phone, email, and password are required' });
+  // Check phone or email uniqueness
+  const existing = db.prepare('SELECT id FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
+  if (existing) return res.status(400).json({ error: 'An account with this phone or email already exists' });
+  const { hash, salt } = hashPassword(password);
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
+    VALUES (?,?,?,?,?,?,?,?,?,1)`)
+    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), );
+  // Auto-login
+  const token = crypto.randomBytes(32).toString('hex');
+  workerSessions.set(token, { created: Date.now(), workerId: r.lastInsertRowid, employeeId: null });
+  res.json({ success: true, token, message: 'Registration successful' });
+});
+
+app.post('/api/register/enterprise', (req, res) => {
+  const { company_name, contact_name, email, phone, ein, staffing_needs, password } = req.body;
+  if (!company_name || !contact_name || !email || !password)
+    return res.status(400).json({ error: 'Company name, contact name, email, and password are required' });
+  const existing = db.prepare('SELECT id FROM customer_accounts WHERE email=?').get(email);
+  if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
+  const { hash, salt } = hashPassword(password);
+  db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status)
+    VALUES (?,?,?,?,?,?,?,?,0,'pending')`)
+    .run(company_name, contact_name, email, phone || '', hash, salt, ein || '', staffing_needs || '');
+  res.json({ success: true, message: 'Registration submitted. Your account will be activated after admin approval.' });
+});
+
+// Admin: pending enterprise approvals
+app.get('/api/admin/pending-enterprises', requireAdmin, (req, res) => {
+  const list = db.prepare("SELECT id, company_name, contact_name, email, phone, ein, staffing_needs, created_at FROM customer_accounts WHERE approval_status='pending' ORDER BY created_at DESC").all();
+  res.json(list);
+});
+
+app.put('/api/admin/approve-enterprise/:id', requireAdmin, (req, res) => {
+  db.prepare("UPDATE customer_accounts SET active=1, approval_status='approved' WHERE id=?").run(req.params.id);
+  res.json({ success: true });
+});
+
+app.put('/api/admin/reject-enterprise/:id', requireAdmin, (req, res) => {
+  db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected' WHERE id=?").run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Portal & Customer & Register pages ───
+app.get('/portal', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'portal.html'));
+});
+app.get('/customer', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'customer.html'));
+});
+app.get('/register', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'register.html'));
 });
 
 // ─── Start ───
