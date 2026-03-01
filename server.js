@@ -443,6 +443,18 @@ db.exec(`CREATE TABLE IF NOT EXISTS doc_request_position_ratings (
   UNIQUE(doc_request_id, position_key)
 )`);
 
+// Migrate: worker self-registration fields
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN email TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dob TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN work_status TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN position_interests TEXT DEFAULT '[]'"); } catch {}
+// Migrate: enterprise self-registration fields
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN ein TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
+
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
   { key:'labeler',            zh:'贴标员',       en:'Labeler' },
@@ -982,7 +994,7 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
 
 // ─── Customer Accounts (admin manages) ───
 app.get('/api/admin/customer-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  res.json(db.prepare('SELECT id, company_name, contact_name, email, phone, active, partner_id, created_at FROM customer_accounts ORDER BY id DESC').all());
+  res.json(db.prepare('SELECT id, company_name, contact_name, email, phone, active, partner_id, ein, staffing_needs, approval_status, created_at FROM customer_accounts ORDER BY id DESC').all());
 });
 
 app.post('/api/admin/customer-accounts', requireAdmin, requireRole('admin'), (req, res) => {
@@ -2270,6 +2282,11 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
 // ─── Customer Portal API ───
 app.post('/api/customer/login', (req, res) => {
   const { email, password } = req.body;
+  const cAny = db.prepare('SELECT * FROM customer_accounts WHERE email=?').get(email);
+  if (cAny && cAny.approval_status === 'pending')
+    return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
+  if (cAny && cAny.approval_status === 'rejected')
+    return res.status(403).json({ error: '您的企业注册已被拒绝，请联系管理员 / Your registration was rejected. Please contact admin' });
   const c = db.prepare('SELECT * FROM customer_accounts WHERE email=? AND active=1').get(email);
   if (!c || !verifyPassword(password, c.salt, c.password_hash))
     return res.status(401).json({ error: 'Invalid email or password' });
@@ -2311,12 +2328,62 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
   res.json(rows);
 });
 
-// ─── Portal & Customer pages ───
+// ─── Public Registration ───
+app.post('/api/register/worker', (req, res) => {
+  const { name, phone, email, dob, work_status, position_interests, password } = req.body;
+  if (!name || !phone || !email || !password)
+    return res.status(400).json({ error: 'Name, phone, email, and password are required' });
+  // Check phone or email uniqueness
+  const existing = db.prepare('SELECT id FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
+  if (existing) return res.status(400).json({ error: 'An account with this phone or email already exists' });
+  const { hash, salt } = hashPassword(password);
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
+    VALUES (?,?,?,?,?,?,?,?,?,1)`)
+    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), );
+  // Auto-login
+  const token = crypto.randomBytes(32).toString('hex');
+  workerSessions.set(token, { created: Date.now(), workerId: r.lastInsertRowid, employeeId: null });
+  res.json({ success: true, token, message: 'Registration successful' });
+});
+
+app.post('/api/register/enterprise', (req, res) => {
+  const { company_name, contact_name, email, phone, ein, staffing_needs, password } = req.body;
+  if (!company_name || !contact_name || !email || !password)
+    return res.status(400).json({ error: 'Company name, contact name, email, and password are required' });
+  const existing = db.prepare('SELECT id FROM customer_accounts WHERE email=?').get(email);
+  if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
+  const { hash, salt } = hashPassword(password);
+  db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status)
+    VALUES (?,?,?,?,?,?,?,?,0,'pending')`)
+    .run(company_name, contact_name, email, phone || '', hash, salt, ein || '', staffing_needs || '');
+  res.json({ success: true, message: 'Registration submitted. Your account will be activated after admin approval.' });
+});
+
+// Admin: pending enterprise approvals
+app.get('/api/admin/pending-enterprises', requireAdmin, (req, res) => {
+  const list = db.prepare("SELECT id, company_name, contact_name, email, phone, ein, staffing_needs, created_at FROM customer_accounts WHERE approval_status='pending' ORDER BY created_at DESC").all();
+  res.json(list);
+});
+
+app.put('/api/admin/approve-enterprise/:id', requireAdmin, (req, res) => {
+  db.prepare("UPDATE customer_accounts SET active=1, approval_status='approved' WHERE id=?").run(req.params.id);
+  res.json({ success: true });
+});
+
+app.put('/api/admin/reject-enterprise/:id', requireAdmin, (req, res) => {
+  db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected' WHERE id=?").run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Portal & Customer & Register pages ───
 app.get('/portal', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'portal.html'));
 });
 app.get('/customer', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'customer.html'));
+});
+app.get('/register', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'register.html'));
 });
 
 // ─── Start ───
