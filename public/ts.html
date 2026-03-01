@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工时确认 / Timesheet Confirmation — Prime Anchorpoint</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--accent:#F5A623;--green:#2D9D78;--red:#E63946;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--off-white:#F7F8FA;--white:#fff;--radius:8px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--off-white);color:var(--gray-800);min-height:100vh}
+.page{max-width:860px;margin:0 auto;padding:2rem 1.5rem}
+.logo-row{display:flex;align-items:center;gap:.75rem;margin-bottom:2rem}
+.logo-row img{width:48px;height:auto}
+.logo-row h1{font-size:1.1rem;color:var(--blue);font-weight:700}
+.card{background:var(--white);border-radius:var(--radius);padding:1.5rem;box-shadow:0 2px 12px rgba(0,0,0,.05);margin-bottom:1.25rem}
+.card h2{font-size:1rem;color:var(--blue);margin-bottom:1rem;border-bottom:2px solid var(--sky-light);padding-bottom:.5rem}
+.meta-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.75rem;margin-bottom:.5rem}
+.meta-item label{font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--gray-400);display:block;margin-bottom:2px}
+.meta-item span{font-size:.9rem;color:var(--gray-800);font-weight:600}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{background:var(--blue);color:#fff;padding:9px 10px;text-align:left;font-size:.75rem;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--gray-200);color:var(--gray-600)}
+tr.weekend td{opacity:.45}
+.total-row td{font-weight:700;color:var(--blue);background:var(--sky-light)}
+.hours{font-weight:700;color:var(--sky)}
+.ot{font-weight:700;color:var(--accent)}
+.totals-bar{display:flex;gap:2rem;flex-wrap:wrap;background:var(--sky-light);border-radius:var(--radius);padding:1rem 1.25rem;font-size:.9rem;margin-top:.75rem}
+.totals-bar strong{color:var(--blue)}
+.confirm-section{background:var(--white);border-radius:var(--radius);padding:1.5rem;box-shadow:0 2px 12px rgba(0,0,0,.05);margin-bottom:1.25rem}
+.confirm-section h2{font-size:1rem;color:var(--blue);margin-bottom:1rem}
+.confirm-section p{font-size:.85rem;color:var(--gray-600);margin-bottom:1rem;line-height:1.6}
+.action-btns{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem}
+.btn{padding:11px 24px;border:none;border-radius:var(--radius);font-weight:700;cursor:pointer;font-size:.9rem;transition:all .2s}
+.btn-confirm{background:var(--green);color:#fff}.btn-confirm:hover{background:#1e7a5c}
+.btn-dispute{background:var(--off-white);color:var(--gray-800);border:1px solid var(--gray-200)}.btn-dispute:hover{background:var(--gray-200)}
+.dispute-box{display:none;margin-top:.75rem}
+.dispute-box textarea{width:100%;padding:10px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-family:inherit;font-size:.88rem;resize:vertical;min-height:100px;outline:none}
+.dispute-box textarea:focus{border-color:var(--sky)}
+.dispute-box .hint{font-size:.78rem;color:var(--gray-400);margin-top:.35rem;margin-bottom:.75rem}
+.status-banner{border-radius:var(--radius);padding:1rem 1.25rem;font-weight:700;font-size:.95rem;display:none}
+.status-confirmed{background:#E8F5E9;color:var(--green);border:1px solid #A5D6A7}
+.status-disputed{background:#FFF3E0;color:#E67E22;border:1px solid #FFCC80}
+.loading{text-align:center;padding:4rem;color:var(--gray-400);font-size:.9rem}
+.error-msg{text-align:center;padding:4rem;color:var(--red)}
+.thankyou{background:var(--sky-light);border:1px solid var(--sky);border-radius:var(--radius);padding:1.5rem;text-align:center;display:none}
+.thankyou h3{color:var(--blue);margin-bottom:.5rem}
+.thankyou p{font-size:.85rem;color:var(--gray-600)}
+@media print{.confirm-section,.action-btns{display:none!important}.page{padding:0}}
+@media(max-width:600px){.meta-grid{grid-template-columns:1fr 1fr}.action-btns{flex-direction:column}.btn{width:100%}}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="logo-row">
+    <img src="/logo.svg" alt="Prime Anchorpoint">
+    <h1>Prime Anchorpoint — 工时确认 / Timesheet Confirmation</h1>
+  </div>
+
+  <div id="loadingMsg" class="loading">正在加载工时记录… / Loading timesheet…</div>
+  <div id="errorMsg" class="error-msg" style="display:none"></div>
+
+  <div id="mainContent" style="display:none">
+    <!-- Header Info -->
+    <div class="card">
+      <h2>工时记录信息 / Timesheet Details</h2>
+      <div class="meta-grid">
+        <div class="meta-item"><label>员工 / Employee</label><span id="mEmpName"></span></div>
+        <div class="meta-item"><label>工号 / ID</label><span id="mEmpCode"></span></div>
+        <div class="meta-item"><label>公司 / Company</label><span id="mCompany"></span></div>
+        <div class="meta-item"><label>周期 / Period</label><span id="mPeriod"></span></div>
+        <div class="meta-item"><label>提交日期 / Submitted</label><span id="mCreated"></span></div>
+      </div>
+    </div>
+
+    <!-- Timesheet Table -->
+    <div class="card">
+      <h2>工时明细 / Hours Breakdown</h2>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>日期 / Date</th>
+            <th>上班 / In</th>
+            <th>下班 / Out</th>
+            <th>午休 / Lunch</th>
+            <th>小计 / Total</th>
+            <th>正常 / Regular</th>
+            <th>加班 / OT</th>
+          </tr></thead>
+          <tbody id="tsRows"></tbody>
+        </table>
+      </div>
+      <div class="totals-bar">
+        <span>班次 / Shifts: <strong id="sumShifts">0</strong></span>
+        <span>总工时 / Total: <strong id="sumTotal">0.00h</strong></span>
+        <span>正常 / Regular: <strong id="sumReg">0.00h</strong></span>
+        <span>加班 / OT: <strong class="ot" id="sumOT">0.00h</strong></span>
+      </div>
+    </div>
+
+    <!-- Already-responded banner -->
+    <div id="statusBanner" class="status-banner"></div>
+
+    <!-- Confirm / Dispute Section -->
+    <div class="confirm-section" id="actionSection">
+      <h2>员工确认 / Employee Confirmation</h2>
+      <p>
+        请仔细核对上方工时记录。如果准确，请点击「确认无误」；如有异议，请点击「提出反驳」并说明情况。<br>
+        Please review the hours above carefully. Click "Confirm" if they are correct, or "Dispute" to explain any discrepancies.
+      </p>
+      <div class="action-btns">
+        <button class="btn btn-confirm" onclick="submitResponse('confirm')">✅ 确认无误 / I Confirm</button>
+        <button class="btn btn-dispute" onclick="toggleDispute()">✏️ 提出反驳 / Dispute</button>
+      </div>
+      <div class="dispute-box" id="disputeBox">
+        <textarea id="disputeNote" placeholder="请说明您的反驳意见（例：XX日工时有误，实际为 9:00–17:30）…&#10;Please describe the discrepancy (e.g., the hours on [date] are incorrect — I actually worked 9:00–17:30)…"></textarea>
+        <div class="hint">填写完成后点击下方提交按钮。/ Fill in the details above, then click Submit.</div>
+        <button class="btn btn-dispute" onclick="submitResponse('dispute')">📤 提交反驳 / Submit Dispute</button>
+      </div>
+    </div>
+
+    <div class="thankyou" id="thankyou">
+      <h3 id="tyHeading"></h3>
+      <p id="tyBody"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+const DAYS_ZH = ['周日','周一','周二','周三','周四','周五','周六'];
+const DAYS_EN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function esc(s){ const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML; }
+
+function fmt12(dt) {
+  if (!dt) return '—';
+  const d = new Date(dt);
+  return d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true});
+}
+function fmtDate(str) {
+  if (!str) return '—';
+  const d = new Date(str+'T00:00:00');
+  const dow = d.getDay();
+  return `${DAYS_ZH[dow]} ${DAYS_EN[dow]}  ${d.getMonth()+1}/${d.getDate()}`;
+}
+function lunchLabel(ls, le) {
+  if (!ls && !le) return '—';
+  return `${ls||'?'} – ${le||'?'}`;
+}
+
+const token = new URLSearchParams(location.search).get('token');
+
+async function load() {
+  if (!token) { showError('链接无效，缺少确认码。/ Invalid link — missing token.'); return; }
+  try {
+    const res = await fetch(`/api/ts/${token}`);
+    if (!res.ok) { showError('链接无效或已过期。/ Link not found or expired.'); return; }
+    const { sheet, entries } = await res.json();
+    render(sheet, entries);
+  } catch(e) {
+    showError('加载失败，请稍后重试。/ Failed to load. Please try again.');
+  }
+}
+
+function render(sheet, entries) {
+  document.getElementById('loadingMsg').style.display = 'none';
+  document.getElementById('mainContent').style.display = 'block';
+
+  document.getElementById('mEmpName').textContent = `${sheet.first_name||''} ${sheet.last_name||''}`.trim() || '—';
+  document.getElementById('mEmpCode').textContent = sheet.emp_code || '—';
+  document.getElementById('mCompany').textContent = sheet.company_name || '—';
+  document.getElementById('mPeriod').textContent = `${sheet.period_start} ~ ${sheet.period_end}`;
+  document.getElementById('mCreated').textContent = sheet.created_at ? new Date(sheet.created_at).toLocaleDateString('en-US') : '—';
+
+  // Table rows
+  let shifts=0, totTotal=0, totReg=0, totOT=0;
+  const tbody = document.getElementById('tsRows');
+  tbody.innerHTML = entries.map(e => {
+    const d = new Date(e.clock_in);
+    const isWeekend = d.getDay()===0||d.getDay()===6;
+    const dateStr = e.clock_in.slice(0,10);
+    const lunch = lunchLabel(e.lunch_start, e.lunch_end);
+    shifts++; totTotal+=e.total_hours||0; totReg+=e.regular_hours||0; totOT+=e.overtime_hours||0;
+    return `<tr class="${isWeekend?'weekend':''}">
+      <td>${fmtDate(dateStr)}</td>
+      <td>${fmt12(e.clock_in)}</td>
+      <td>${fmt12(e.clock_out)}</td>
+      <td>${esc(lunch)}</td>
+      <td class="hours">${(e.total_hours||0).toFixed(2)}</td>
+      <td>${(e.regular_hours||0).toFixed(2)}</td>
+      <td class="${(e.overtime_hours||0)>0?'ot':''}">${(e.overtime_hours||0)>0?(e.overtime_hours).toFixed(2):'—'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('sumShifts').textContent = shifts;
+  document.getElementById('sumTotal').textContent = totTotal.toFixed(2)+'h';
+  document.getElementById('sumReg').textContent = totReg.toFixed(2)+'h';
+  document.getElementById('sumOT').textContent = totOT.toFixed(2)+'h';
+
+  // Show existing status
+  if (sheet.status === 'confirmed') {
+    showBanner('confirmed', sheet.employee_note);
+    hideActionSection();
+  } else if (sheet.status === 'disputed') {
+    showBanner('disputed', sheet.employee_note);
+    hideActionSection();
+  }
+}
+
+function showBanner(type, note) {
+  const banner = document.getElementById('statusBanner');
+  if (type === 'confirmed') {
+    banner.className = 'status-banner status-confirmed';
+    banner.innerHTML = `✅ 员工已确认此工时记录。/ Employee confirmed these hours.${note ? '<br><small>备注: '+esc(note)+'</small>' : ''}`;
+  } else {
+    banner.className = 'status-banner status-disputed';
+    banner.innerHTML = `⚠️ 员工已提出异议。/ Employee disputed these hours.${note ? '<br><small>反驳意见: '+esc(note)+'</small>' : ''}`;
+  }
+  banner.style.display = 'block';
+}
+function hideActionSection() {
+  document.getElementById('actionSection').style.display = 'none';
+}
+
+function toggleDispute() {
+  const box = document.getElementById('disputeBox');
+  box.style.display = box.style.display === 'block' ? 'none' : 'block';
+  if (box.style.display === 'block') box.querySelector('textarea').focus();
+}
+
+async function submitResponse(action) {
+  const note = action === 'dispute' ? document.getElementById('disputeNote').value.trim() : '';
+  if (action === 'dispute' && !note) {
+    alert('请填写反驳意见后再提交。/ Please describe the dispute before submitting.');
+    return;
+  }
+  try {
+    const res = await fetch(`/api/ts/${token}/respond`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, note })
+    });
+    if (!res.ok) { alert('提交失败，请重试。/ Submission failed. Please try again.'); return; }
+    document.getElementById('actionSection').style.display = 'none';
+    const ty = document.getElementById('thankyou');
+    const heading = document.getElementById('tyHeading');
+    const body = document.getElementById('tyBody');
+    if (action === 'confirm') {
+      heading.textContent = '✅ 已确认 / Confirmed';
+      body.textContent = '您已成功确认本期工时记录。如有疑问请联系 HR。/ You have confirmed this timesheet. Contact HR if you have any questions.';
+    } else {
+      heading.textContent = '📬 反驳已提交 / Dispute Submitted';
+      body.textContent = '您的反驳意见已提交，HR 将尽快跟进处理。/ Your dispute has been submitted. HR will follow up shortly.';
+    }
+    ty.style.display = 'block';
+  } catch(e) {
+    alert('提交出错，请稍后重试。/ Error submitting. Please try again later.');
+  }
+}
+
+function showError(msg) {
+  document.getElementById('loadingMsg').style.display = 'none';
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+load();
+</script>
+</body>
+</html>
