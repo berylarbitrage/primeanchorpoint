@@ -285,17 +285,39 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_end TEXT DEFAULT ''`); 
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN sheet_id INTEGER DEFAULT NULL`); } catch(e) {}
 
-db.exec(`CREATE TABLE IF NOT EXISTS inquiry_job_ratings (
+db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   inquiry_id INTEGER NOT NULL,
-  job_id INTEGER NOT NULL,
+  position_key TEXT NOT NULL,
   skill_score INTEGER DEFAULT 0,
   recommend INTEGER DEFAULT 0,
   suggest_pay TEXT DEFAULT '',
-  notes TEXT DEFAULT '',
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(inquiry_id, job_id)
+  UNIQUE(inquiry_id, position_key)
 )`);
+
+const WORKER_POSITIONS = [
+  { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
+  { key:'labeler',            zh:'贴标员',       en:'Labeler' },
+  { key:'packer',             zh:'打包员',       en:'Packer' },
+  { key:'forklift_operator',  zh:'叉车操作员',   en:'Forklift Operator' },
+  { key:'cdl_driver',         zh:'CDL卡车司机',  en:'CDL Truck Driver' },
+  { key:'delivery_driver',    zh:'送货司机',     en:'Delivery Driver' },
+  { key:'shift_supervisor',   zh:'班组长',       en:'Shift Supervisor' },
+  { key:'site_manager',       zh:'现场主管',     en:'Site Manager' },
+  { key:'quality_inspector',  zh:'质检员',       en:'Quality Inspector' },
+  { key:'machine_operator',   zh:'机器操作员',   en:'Machine Operator' },
+  { key:'assembly_line',      zh:'装配线工人',   en:'Assembly Line' },
+  { key:'material_handler',   zh:'物料搬运工',   en:'Material Handler' },
+  { key:'inventory_clerk',    zh:'库存文员',     en:'Inventory Clerk' },
+  { key:'general_labor',      zh:'普工',         en:'General Labor' },
+  { key:'janitorial',         zh:'清洁工',       en:'Janitorial' },
+  { key:'food_processing',    zh:'食品加工',     en:'Food Processing' },
+  { key:'warehouse_lead',     zh:'仓库领班',     en:'Warehouse Lead' },
+  { key:'loading_unloading',  zh:'装卸工',       en:'Loading / Unloading' },
+  { key:'order_picker',       zh:'拣货员',       en:'Order Picker' },
+  { key:'welder',             zh:'焊接工',       en:'Welder' },
+];
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -790,21 +812,20 @@ app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('d
   res.json({ success: true });
 });
 
-// Inquiry × Job ratings
-app.get('/api/admin/inquiries/:id/job-ratings', requireAdmin, blockManager, (req, res) => {
-  const jobs = db.prepare('SELECT id, title, location, pay, employment_type, work_start, work_end, company_name, partner_id FROM jobs WHERE active=1 ORDER BY created_at DESC').all();
-  const ratings = db.prepare('SELECT * FROM inquiry_job_ratings WHERE inquiry_id=?').all(req.params.id);
+// Inquiry × Worker Position ratings (static list from website)
+app.get('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
+  const saved = db.prepare('SELECT * FROM inquiry_position_ratings WHERE inquiry_id=?').all(req.params.id);
   const rMap = {};
-  ratings.forEach(r => { rMap[r.job_id] = r; });
-  res.json(jobs.map(j => ({ ...j, rating: rMap[j.id] || null })));
+  saved.forEach(r => { rMap[r.position_key] = r; });
+  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
 });
 
-app.put('/api/admin/inquiries/:id/job-ratings', requireAdmin, blockManager, (req, res) => {
-  const { ratings } = req.body; // [{ job_id, skill_score, recommend, suggest_pay, notes }]
-  const upsert = db.prepare(`INSERT INTO inquiry_job_ratings (inquiry_id, job_id, skill_score, recommend, suggest_pay, notes, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(inquiry_id, job_id) DO UPDATE SET skill_score=excluded.skill_score, recommend=excluded.recommend, suggest_pay=excluded.suggest_pay, notes=excluded.notes, updated_at=CURRENT_TIMESTAMP`);
-  const txn = db.transaction(() => ratings.forEach(r => upsert.run(req.params.id, r.job_id, r.skill_score || 0, r.recommend ? 1 : 0, r.suggest_pay || '', r.notes || '')));
+app.put('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
+  const { ratings } = req.body; // [{ position_key, skill_score, recommend, suggest_pay }]
+  const upsert = db.prepare(`INSERT INTO inquiry_position_ratings (inquiry_id, position_key, skill_score, recommend, suggest_pay, updated_at)
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(inquiry_id, position_key) DO UPDATE SET skill_score=excluded.skill_score, recommend=excluded.recommend, suggest_pay=excluded.suggest_pay, updated_at=CURRENT_TIMESTAMP`);
+  const txn = db.transaction(() => ratings.forEach(r => upsert.run(req.params.id, r.position_key, r.skill_score || 0, r.recommend ? 1 : 0, r.suggest_pay || '')));
   txn();
   res.json({ success: true });
 });
