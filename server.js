@@ -34,6 +34,9 @@ db.exec(`
     description TEXT DEFAULT '',
     urgent INTEGER DEFAULT 0,
     active INTEGER DEFAULT 1,
+    work_auth TEXT DEFAULT '',
+    benefits TEXT DEFAULT '',
+    schedule TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (partner_id) REFERENCES partners(id)
   );
@@ -199,11 +202,48 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id)
   );
+  CREATE TABLE IF NOT EXISTS onboarding_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    inquiry_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    email TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    agreements TEXT DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at DATETIME,
+    FOREIGN KEY (inquiry_id) REFERENCES inquiries(id)
+  );
+  CREATE TABLE IF NOT EXISTS onboarding_docs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_id INTEGER NOT NULL,
+    doc_type TEXT NOT NULL,
+    file_path TEXT DEFAULT '',
+    file_name TEXT DEFAULT '',
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (token_id) REFERENCES onboarding_tokens(id)
+  );
 `);
 
 // ─── Migrations for existing databases ───
-try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) { /* column already exists */ }
-try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) { /* column already exists */ }
+try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN benefits TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN company_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN employment_type TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN work_days TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN work_start TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN work_end TEXT DEFAULT ''`); } catch(e) {}
+
+// Assignment detail fields
+try { db.exec(`ALTER TABLE assignments ADD COLUMN pay_rate TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN pay_type TEXT DEFAULT 'hourly'`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_type TEXT DEFAULT 'W2'`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN benefits TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN start_date TEXT DEFAULT ''`); } catch(e) {}
 
 // Migrate admin_users table (add role, display_name, active, created_at columns if missing)
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
@@ -215,6 +255,30 @@ const partnerMigrations = ['contacts','addresses','social_media','links'];
 partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
+
+// timesheet_sheets: one per submitted period, carries the employee-facing confirmation token
+db.exec(`CREATE TABLE IF NOT EXISTS timesheet_sheets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  company_name TEXT DEFAULT '',
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  job_id INTEGER DEFAULT NULL,
+  total_hours REAL DEFAULT 0,
+  regular_hours REAL DEFAULT 0,
+  overtime_hours REAL DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  confirm_token TEXT UNIQUE NOT NULL,
+  employee_action TEXT DEFAULT '',
+  employee_note TEXT DEFAULT '',
+  confirmed_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`);
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_start TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_end TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN sheet_id INTEGER DEFAULT NULL`); } catch(e) {}
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -512,7 +576,10 @@ app.get('/api/jobs', (req, res) => {
   res.json(jobs.map(j => ({
     id: j.id, title: j.title, type: j.type, location: j.location,
     pay: j.pay, lang: j.lang, lang_name: j.lang_name,
-    desc: j.description, urgent: !!j.urgent
+    desc: j.description, urgent: !!j.urgent, work_auth: j.work_auth || '',
+    benefits: j.benefits || '', schedule: j.schedule || '',
+    company_name: j.company_name || '', employment_type: j.employment_type || '',
+    work_days: j.work_days || '', work_start: j.work_start || '', work_end: j.work_end || ''
   })));
 });
 
@@ -662,15 +729,15 @@ app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
 
 app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
-  const stmt = db.prepare('INSERT INTO jobs (partner_id, title, type, location, pay, lang, lang_name, description, urgent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  const r = stmt.run(d.partner_id || null, d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0);
+  const stmt = db.prepare('INSERT INTO jobs (partner_id, title, type, location, pay, lang, lang_name, description, urgent, work_auth, benefits, schedule, company_id, company_name, employment_type, work_days, work_start, work_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const r = stmt.run(d.partner_id || null, d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '', d.company_id || null, d.company_name || '', d.employment_type || '', d.work_days || '', d.work_start || '', d.work_end || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=? WHERE id=?')
-    .run(d.partner_id || null, d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, req.params.id);
+  db.prepare('UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?, company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=? WHERE id=?')
+    .run(d.partner_id || null, d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '', d.company_id || null, d.company_name || '', d.employment_type || '', d.work_days || '', d.work_start || '', d.work_end || '', req.params.id);
   res.json({ success: true });
 });
 
@@ -687,6 +754,99 @@ app.get('/api/admin/inquiries', requireAdmin, blockManager, (req, res) => {
 app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('delete', 'inquiries'), (req, res) => {
   db.prepare('DELETE FROM inquiries WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Onboarding ───
+
+// Multer for onboarding doc uploads (reuse docsDir)
+const onboardUpload = multer({
+  storage: multer.diskStorage({
+    destination: docsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `onboard-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /pdf|jpg|jpeg|png|heic|heif/.test(path.extname(file.originalname).toLowerCase());
+    cb(null, ok);
+  }
+});
+
+// POST /api/admin/inquiries/:id/onboard-link — generate onboarding link for a Job Seeker inquiry
+app.post('/api/admin/inquiries/:id/onboard-link', requireAdmin, (req, res) => {
+  const inq = db.prepare('SELECT * FROM inquiries WHERE id=?').get(req.params.id);
+  if (!inq) return res.status(404).json({ error: 'Inquiry not found' });
+  // Check if token already exists
+  const existing = db.prepare('SELECT * FROM onboarding_tokens WHERE inquiry_id=?').get(inq.id);
+  if (existing && existing.status === 'completed') {
+    return res.json({ token: existing.token, status: 'completed', already_sent: true });
+  }
+  if (existing) return res.json({ token: existing.token, status: existing.status, already_sent: true });
+  const token = crypto.randomBytes(24).toString('hex');
+  db.prepare('INSERT INTO onboarding_tokens (token, inquiry_id, email, phone) VALUES (?,?,?,?)')
+    .run(token, inq.id, inq.email || '', inq.phone || '');
+  res.json({ token, status: 'pending' });
+});
+
+// GET /api/onboard/:token — public: validate token and return basic info
+app.get('/api/onboard/:token', (req, res) => {
+  const row = db.prepare(`
+    SELECT t.*, i.name, i.positions, i.type
+    FROM onboarding_tokens t JOIN inquiries i ON t.inquiry_id=i.id
+    WHERE t.token=?`).get(req.params.token);
+  if (!row) return res.status(404).json({ error: 'Invalid or expired link' });
+  res.json({ status: row.status, name: row.name, positions: row.positions, completed_at: row.completed_at });
+});
+
+// POST /api/onboard/:token/submit — public: submit agreements + upload docs
+app.post('/api/onboard/:token/submit', onboardUpload.fields([
+  { name: 'work_id', maxCount: 1 },
+  { name: 'drivers_license', maxCount: 1 },
+  { name: 'ssn', maxCount: 1 }
+]), (req, res) => {
+  const row = db.prepare('SELECT * FROM onboarding_tokens WHERE token=?').get(req.params.token);
+  if (!row) return res.status(404).json({ error: 'Invalid or expired link' });
+  if (row.status === 'completed') return res.status(400).json({ error: '已完成提交，无法重复提交' });
+  const agreements = req.body.agreements ? JSON.parse(req.body.agreements) : [];
+  if (agreements.length < 3) return res.status(400).json({ error: '请阅读并同意所有协议' });
+  db.prepare(`UPDATE onboarding_tokens SET status='completed', email=?, phone=?, agreements=?, completed_at=CURRENT_TIMESTAMP WHERE token=?`)
+    .run(req.body.email || row.email, req.body.phone || row.phone, JSON.stringify(agreements), row.token);
+  // Save uploaded docs
+  const files = req.files || {};
+  for (const [docType, fileArr] of Object.entries(files)) {
+    if (fileArr && fileArr[0]) {
+      const f = fileArr[0];
+      db.prepare('INSERT INTO onboarding_docs (token_id, doc_type, file_path, file_name) VALUES (?,?,?,?)')
+        .run(row.id, docType, f.filename, f.originalname);
+    }
+  }
+  res.json({ success: true });
+});
+
+// GET /api/admin/onboard-submissions — list all onboarding submissions with inquiry info
+app.get('/api/admin/onboard-submissions', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT t.*, i.name, i.positions, i.email as inq_email, i.phone as inq_phone,
+      (SELECT COUNT(*) FROM onboarding_docs d WHERE d.token_id=t.id) as doc_count
+    FROM onboarding_tokens t JOIN inquiries i ON t.inquiry_id=i.id
+    ORDER BY t.created_at DESC`).all();
+  res.json(rows);
+});
+
+// GET /api/admin/onboard-submissions/:id/docs — list docs for a submission
+app.get('/api/admin/onboard-submissions/:id/docs', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM onboarding_docs WHERE token_id=?').all(req.params.id));
+});
+
+// GET /api/admin/onboard-submissions/:id/docs/:docId/download — download a doc
+app.get('/api/admin/onboard-submissions/:id/docs/:docId/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM onboarding_docs WHERE id=? AND token_id=?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  const fp = path.join(docsDir, doc.file_path);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File not found' });
+  res.download(fp, doc.file_name || doc.file_path);
 });
 
 // Quotes
@@ -780,15 +940,19 @@ app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
 });
 
 app.post('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
-  const { inquiry_id, job_id, notes } = req.body;
+  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date } = req.body;
   if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
-  const r = db.prepare('INSERT INTO assignments (inquiry_id, job_id, notes) VALUES (?, ?, ?)').run(inquiry_id, job_id, notes || '');
+  const r = db.prepare(`INSERT INTO assignments
+    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('update', 'assignments'), (req, res) => {
-  const { status, notes } = req.body;
-  db.prepare('UPDATE assignments SET status=?, notes=? WHERE id=?').run(status || 'assigned', notes || '', req.params.id);
+  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date } = req.body;
+  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=? WHERE id=?`)
+    .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', req.params.id);
   res.json({ success: true });
 });
 
@@ -1073,28 +1237,62 @@ app.post('/api/admin/time-entries', requireAdmin, blockManager, (req, res) => {
   res.json({ success: true, id: r.lastInsertRowid, ...hrs });
 });
 
-// Batch time entry (weekly timesheet)
+// Batch time entry (weekly timesheet) — also creates a timesheet_sheet with confirmation token
 app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res) => {
-  const { employee_id, entries, job_id } = req.body;
+  const { employee_id, entries, job_id, company_name, period_start, period_end } = req.body;
   if (!employee_id || !entries || !entries.length) return res.status(400).json({ error: 'employee_id and entries required' });
-  const stmt = db.prepare(`INSERT INTO time_entries
-    (employee_id,clock_in,clock_out,break_minutes,total_hours,regular_hours,overtime_hours,job_id,notes,status)
+
+  function lunchMin(start, end) {
+    if (!start || !end) return 0;
+    const [sh,sm] = start.split(':').map(Number);
+    const [eh,em] = end.split(':').map(Number);
+    return Math.max(0, (eh*60+em) - (sh*60+sm));
+  }
+
+  const stmtEntry = db.prepare(`INSERT INTO time_entries
+    (employee_id,clock_in,clock_out,break_minutes,lunch_start,lunch_end,company_name,
+     total_hours,regular_hours,overtime_hours,job_id,notes,status,sheet_id)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const stmtSheet = db.prepare(`INSERT INTO timesheet_sheets
+    (employee_id,company_name,period_start,period_end,job_id,
+     total_hours,regular_hours,overtime_hours,status,confirm_token)
     VALUES(?,?,?,?,?,?,?,?,?,?)`);
-  const insert = db.transaction((rows) => {
-    let count = 0;
+  const stmtLink = db.prepare(`UPDATE time_entries SET sheet_id=? WHERE id=?`);
+
+  const doAll = db.transaction((rows) => {
+    // compute totals first pass
+    let totTotal=0, totReg=0, totOT=0;
+    const prepared = [];
     for (const e of rows) {
       if (!e.clock_in || !e.clock_out) continue;
-      const hrs = calcHours(e.clock_in, e.clock_out, parseInt(e.break_minutes)||0);
+      const bMin = lunchMin(e.lunch_start, e.lunch_end) || parseInt(e.break_minutes)||0;
+      const hrs = calcHours(e.clock_in, e.clock_out, bMin);
       if (hrs.total <= 0) continue;
-      stmt.run(employee_id, e.clock_in, e.clock_out, parseInt(e.break_minutes)||0,
-        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed');
-      count++;
+      totTotal += hrs.total; totReg += hrs.regular; totOT += hrs.overtime;
+      prepared.push({ e, bMin, hrs });
     }
-    return count;
+    if (!prepared.length) return { count: 0, token: null };
+    // create the sheet
+    const token = crypto.randomBytes(20).toString('hex');
+    const ps = period_start || prepared[0].e.clock_in.slice(0,10);
+    const pe = period_end || prepared[prepared.length-1].e.clock_in.slice(0,10);
+    const sheetRow = stmtSheet.run(employee_id, company_name||'', ps, pe, job_id||null,
+      Math.round(totTotal*100)/100, Math.round(totReg*100)/100, Math.round(totOT*100)/100,
+      'pending', token);
+    const sheetId = sheetRow.lastInsertRowid;
+    // insert entries linked to sheet
+    for (const { e, bMin, hrs } of prepared) {
+      const r = stmtEntry.run(employee_id, e.clock_in, e.clock_out, bMin,
+        e.lunch_start||'', e.lunch_end||'', company_name||'',
+        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed', sheetId);
+      stmtLink.run(sheetId, r.lastInsertRowid);
+    }
+    return { count: prepared.length, token, sheet_id: sheetId };
   });
+
   try {
-    const count = insert(entries);
-    res.json({ success: true, count });
+    const result = doAll(entries);
+    res.json({ success: true, ...result });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
@@ -1114,6 +1312,41 @@ app.put('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('u
 
 app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('delete', 'time_entries'), (req, res) => {
   db.prepare('DELETE FROM time_entries WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// List timesheet sheets (admin)
+app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
+    FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
+    ORDER BY ts.created_at DESC LIMIT 300`).all();
+  res.json(rows);
+});
+
+// ─── PUBLIC TIMESHEET CONFIRMATION ───
+
+// Get sheet data (no auth — token is the secret)
+app.get('/api/ts/:token', (req, res) => {
+  const sheet = db.prepare(`
+    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
+    FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
+    WHERE ts.confirm_token=?`).get(req.params.token);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  const entries = db.prepare(
+    `SELECT * FROM time_entries WHERE sheet_id=? ORDER BY clock_in`).all(sheet.id);
+  res.json({ sheet, entries });
+});
+
+// Employee submits confirm or dispute
+app.post('/api/ts/:token/respond', (req, res) => {
+  const { action, note } = req.body; // action: 'confirm' | 'dispute'
+  if (!['confirm','dispute'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+  const sheet = db.prepare('SELECT id,status FROM timesheet_sheets WHERE confirm_token=?').get(req.params.token);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE timesheet_sheets
+    SET status=?, employee_action=?, employee_note=?, confirmed_at=CURRENT_TIMESTAMP
+    WHERE id=?`).run(action === 'confirm' ? 'confirmed' : 'disputed', action, note||'', sheet.id);
   res.json({ success: true });
 });
 
@@ -1221,6 +1454,11 @@ app.post('/api/timeclock/punch', (req, res) => {
 // Serve timeclock page
 app.get('/timeclock', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'timeclock.html'));
+});
+
+// Serve employee timesheet confirmation page
+app.get('/ts', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'ts.html'));
 });
 
 // ─── Admin Panel Page ───
