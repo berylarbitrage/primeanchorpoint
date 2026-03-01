@@ -24,6 +24,7 @@ db.pragma('journal_mode = WAL');
 db.exec(`
   CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    partner_id INTEGER DEFAULT NULL,
     title TEXT NOT NULL,
     type TEXT DEFAULT '',
     location TEXT DEFAULT '',
@@ -36,7 +37,8 @@ db.exec(`
     work_auth TEXT DEFAULT '',
     benefits TEXT DEFAULT '',
     schedule TEXT DEFAULT '',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (partner_id) REFERENCES partners(id)
   );
   CREATE TABLE IF NOT EXISTS inquiries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,6 +245,8 @@ db.exec(`
 `);
 
 // ─── Migrations for existing databases ───
+try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL"); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN benefits TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule TEXT DEFAULT ''`); } catch(e) {}
@@ -262,7 +266,10 @@ try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status 
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
-
+try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
+try { db.exec("ALTER TABLE inquiries ADD COLUMN proc_status TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE inquiries ADD COLUMN proc_note TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE inquiries ADD COLUMN processed_at DATETIME DEFAULT NULL"); } catch(e) {}
 // Assignment detail fields
 try { db.exec(`ALTER TABLE assignments ADD COLUMN pay_rate TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN pay_type TEXT DEFAULT 'hourly'`); } catch(e) {}
@@ -749,19 +756,19 @@ app.post('/api/admin/pending-actions/:id/reject', requireAdmin, requireRole('adm
 
 // Jobs CRUD
 app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
-  res.json(db.prepare('SELECT * FROM jobs ORDER BY created_at DESC').all());
+  res.json(db.prepare('SELECT j.*, p.name AS partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id ORDER BY j.created_at DESC').all());
 });
 
 app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   const jobStatus = d.job_status || 'open';
   const stmt = db.prepare(`INSERT INTO jobs
-    (title, type, location, pay, lang, lang_name, description, urgent,
+    (partner_id, title, type, location, pay, lang, lang_name, description, urgent,
      work_auth, benefits, schedule, company_id, company_name, employment_type,
      work_days, work_start, work_end, job_status, active, close_reason, close_note, headcount)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
-    d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+    d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
     d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
     d.company_id||null, d.company_name||'', d.employment_type||'',
     d.work_days||'', d.work_start||'', d.work_end||'',
@@ -773,12 +780,12 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
   const d = req.body;
   const jobStatus = d.job_status || 'open';
-  db.prepare(`UPDATE jobs SET title=?, type=?, location=?, pay=?, lang=?, lang_name=?,
+  db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?,
     description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
     company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?,
     job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
     .run(
-      d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+      d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
       d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
       d.work_auth||'', d.benefits||'', d.schedule||'',
       d.company_id||null, d.company_name||'', d.employment_type||'',
@@ -796,7 +803,24 @@ app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete
 
 // Inquiries
 app.get('/api/admin/inquiries', requireAdmin, blockManager, (req, res) => {
-  res.json(db.prepare('SELECT * FROM inquiries ORDER BY created_at DESC').all());
+  const history = req.query.history === '1';
+  const rows = db.prepare(
+    `SELECT * FROM inquiries WHERE processed=? ORDER BY created_at DESC`
+  ).all(history ? 1 : 0);
+  res.json(rows);
+});
+
+app.put('/api/admin/inquiries/:id/process', requireAdmin, blockManager, (req, res) => {
+  const { status, note, undo } = req.body;
+  if (undo) {
+    db.prepare('UPDATE inquiries SET processed=0, proc_status=\'\', proc_note=\'\', processed_at=NULL WHERE id=?').run(req.params.id);
+  } else {
+    const valid = ['cooperated','rejected','unreachable'];
+    if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+    db.prepare('UPDATE inquiries SET processed=1, proc_status=?, proc_note=?, processed_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(status, note || '', req.params.id);
+  }
+  res.json({ success: true });
 });
 
 app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('delete', 'inquiries'), (req, res) => {

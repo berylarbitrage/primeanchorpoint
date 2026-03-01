@@ -50,6 +50,9 @@ tr:hover td{background:var(--sky-light)}
 .day-btn,.benefit-btn{padding:4px 10px;border-radius:20px;border:1px solid var(--gray-300);background:var(--gray-100);color:var(--gray-700);font-size:.78rem;cursor:pointer;transition:all .15s}
 .day-btn.active,.benefit-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
 .badge-employment{background:#EDE9FE;color:#5B21B6}
+.badge-cooperated{background:#D1FAE5;color:#065F46}
+.badge-rejected{background:#FEE2E2;color:#991B1B}
+.badge-unreachable{background:#F3F4F6;color:#6B7280}
 .badge-w2{background:#D1FAE5;color:#065F46}
 .badge-contract{background:#FEF3C7;color:#92400E}
 .badge-open{background:#D1FAE5;color:#065F46}.badge-filled{background:#DBEAFE;color:#1D4ED8}.badge-on_hold{background:#FEF9C3;color:#92400E}.badge-closed{background:#F3F4F6;color:#6B7280}
@@ -92,6 +95,7 @@ tr:hover td{background:var(--sky-light)}
 .modal h2{font-size:1.2rem;color:var(--blue);margin-bottom:1.5rem}
 .field{margin-bottom:1rem}.field label{display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;margin-bottom:4px}
 .field input,.field select,.field textarea{width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.9rem;outline:none;font-family:inherit}
+.field input[type=checkbox]{width:auto;padding:0;border:none;border-radius:0;vertical-align:middle}
 .field textarea{height:80px;resize:vertical}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--sky)}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
@@ -246,23 +250,52 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="exportCSV()">导出 CSV</button>
     </div>
   </div>
-  <div class="search-bar">
-    <input type="text" id="inqSearch" placeholder="搜索姓名、邮箱、电话、公司..." oninput="filterInquiries()">
-    <input type="text" id="inqPosSearch" placeholder="按职位筛选..." oninput="filterInquiries()" style="max-width:180px">
-    <select id="inqTypeFilter" onchange="filterInquiries()">
-      <option value="">全部类型</option>
-      <option value="Employer">雇主</option>
-      <option value="Job Seeker">求职者</option>
-      <option value="Other">其他</option>
-    </select>
-    <select id="inqSortSel" onchange="filterInquiries()" style="max-width:160px">
-      <option value="date_desc">日期 ↓ 最新</option>
-      <option value="date_asc">日期 ↑ 最旧</option>
-      <option value="pos_asc">职位 A→Z</option>
-      <option value="pos_desc">职位 Z→A</option>
-    </select>
+  <!-- sub-tab toggle -->
+  <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:1rem">
+    <button id="inqTabPending" onclick="switchInqTab('pending')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)">
+      待处理
+    </button>
+    <button id="inqTabHistory" onclick="switchInqTab('history')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
+      历史问卷
+    </button>
   </div>
-  <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>申请职位</th><th>地点</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
+
+  <!-- pending pane -->
+  <div id="inqPanePending">
+    <div class="search-bar">
+      <input type="text" id="inqSearch" placeholder="搜索姓名、邮箱、电话、公司..." oninput="filterInquiries()">
+      <input type="text" id="inqPosSearch" placeholder="按职位筛选..." oninput="filterInquiries()" style="max-width:180px">
+      <select id="inqTypeFilter" onchange="filterInquiries()">
+        <option value="">全部类型</option>
+        <option value="Employer">雇主</option>
+        <option value="Job Seeker">求职者</option>
+        <option value="Other">其他</option>
+      </select>
+      <select id="inqSortSel" onchange="filterInquiries()" style="max-width:160px">
+        <option value="date_desc">日期 ↓ 最新</option>
+        <option value="date_asc">日期 ↑ 最旧</option>
+        <option value="pos_asc">职位 A→Z</option>
+        <option value="pos_desc">职位 Z→A</option>
+      </select>
+    </div>
+    <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>申请职位</th><th>地点</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
+  </div>
+
+  <!-- history pane -->
+  <div id="inqPaneHistory" style="display:none">
+    <div class="search-bar">
+      <input type="text" id="inqHistSearch" placeholder="搜索姓名、电话、公司..." oninput="filterInquiryHistory()">
+      <select id="inqHistStatus" onchange="filterInquiryHistory()">
+        <option value="">全部结果</option>
+        <option value="cooperated">✅ 已合作</option>
+        <option value="rejected">❌ 已拒绝</option>
+        <option value="unreachable">📵 联系不上</option>
+      </select>
+    </div>
+    <div class="card"><table><thead><tr><th>处理日期</th><th>姓名</th><th>类型</th><th>申请职位</th><th>处理结果</th><th>备注</th><th>操作</th></tr></thead><tbody id="inqHistTable"></tbody></table></div>
+  </div>
 </div>
 
 <!-- Assignments -->
@@ -677,17 +710,11 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="jobModal"><div class="modal" style="max-width:680px">
   <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
-
+  <div class="field"><label>合作公司 *</label><select id="jPartner"><option value="">-- 请选择公司 --</option></select></div>
   <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
 
   <div class="field-row">
-    <div class="field"><label>合作公司</label>
-      <select id="jCompany"><option value="">-- 不绑定公司 --</option></select>
-    </div>
     <div class="field"><label>工作地点</label><input id="jLocation" placeholder="例：Chicago, IL"></div>
-  </div>
-
-  <div class="field-row">
     <div class="field"><label>职位类型</label>
       <select id="jType">
         <option value="">-- 请选择 --</option>
@@ -697,6 +724,9 @@ tr:hover td{background:var(--sky-light)}
         <option value="临时转正">临时转正 / Temp-to-Hire</option>
       </select>
     </div>
+  </div>
+
+  <div class="field-row">
     <div class="field"><label>雇佣性质</label>
       <select id="jEmploymentType">
         <option value="">-- 请选择 --</option>
@@ -765,7 +795,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
   <div class="field-row">
     <div class="field"><label>招聘人数</label><input type="number" id="jHeadcount" min="1" value="1" placeholder="1"></div>
-    <div class="field" style="display:flex;align-items:flex-end;padding-bottom:.2rem"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
+    <div class="field" style="display:flex;align-items:flex-end;padding-bottom:.2rem"><label style="display:inline-flex;align-items:center;gap:.4rem;text-transform:none;font-size:.9rem"><input type="checkbox" id="jUrgent"> 急聘（紧急招聘）</label></div>
   </div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn" onclick="saveJob()">保存</button>
@@ -782,7 +812,30 @@ tr:hover td{background:var(--sky-light)}
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
+    <button class="btn" style="background:var(--gray-200);color:var(--gray-700)" onclick="openProcessModal()">✅ 标记已处理</button>
     <button class="btn btn-red" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Inquiry Process Modal -->
+<div class="modal-bg" id="procModal"><div class="modal" style="max-width:420px">
+  <h2>标记处理结果</h2>
+  <div class="field">
+    <label>处理结果 *</label>
+    <select id="procStatus">
+      <option value="">-- 请选择 --</option>
+      <option value="cooperated">✅ 已合作</option>
+      <option value="rejected">❌ 已拒绝</option>
+      <option value="unreachable">📵 联系不上</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>备注（选填）</label>
+    <textarea id="procNote" placeholder="例：已入职XX公司，或沟通后不符合需求..." style="height:90px"></textarea>
+  </div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="saveProcessInquiry()">确认</button>
+    <button class="btn btn-red" onclick="document.getElementById('procModal').classList.remove('show')">取消</button>
   </div>
 </div></div>
 
@@ -852,7 +905,22 @@ tr:hover td{background:var(--sky-light)}
   <div class="form-section"><h4>基本信息</h4>
     <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
     <div class="field-row">
-      <div class="field"><label>行业</label><input id="pIndustry" placeholder="例：物流、制造业、食品加工"></div>
+      <div class="field"><label>行业</label><select id="pIndustry">
+        <option value="">-- 请选择 --</option>
+        <option value="物流 Logistics">物流 Logistics</option>
+        <option value="制造业 Manufacturing">制造业 Manufacturing</option>
+        <option value="食品加工 Food Processing">食品加工 Food Processing</option>
+        <option value="餐饮 Restaurant">餐饮 Restaurant</option>
+        <option value="零售 Retail">零售 Retail</option>
+        <option value="建筑 Construction">建筑 Construction</option>
+        <option value="农业 Agriculture">农业 Agriculture</option>
+        <option value="仓储 Warehousing">仓储 Warehousing</option>
+        <option value="清洁 Cleaning">清洁 Cleaning</option>
+        <option value="酒店 Hospitality">酒店 Hospitality</option>
+        <option value="医疗 Healthcare">医疗 Healthcare</option>
+        <option value="运输 Transportation">运输 Transportation</option>
+        <option value="其他 Other">其他 Other</option>
+      </select></div>
       <div class="field"><label>合作状态</label><label style="display:flex;align-items:center;gap:.5rem;margin-top:.4rem;cursor:pointer;font-weight:600"><input type="checkbox" id="pActive" checked style="width:16px;height:16px;cursor:pointer"> 合作中</label></div>
     </div>
   </div>
@@ -990,8 +1058,9 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="field"><label>备注</label><textarea id="eNotes" placeholder="其他备注信息..."></textarea></div>
-  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+  <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn btn-green" onclick="saveEmployee()">保存员工</button>
+    <button class="btn" onclick="randomFillEmployee()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-outline" onclick="closeEmpModal()">取消</button>
   </div>
 </div></div>
@@ -1451,6 +1520,12 @@ async function loadJobs() {
 async function openJobModal(job) {
   document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
   document.getElementById('jobId').value = job ? job.id : '';
+  // Populate partner dropdown
+  const partners = await api('/admin/partners');
+  const pSel = document.getElementById('jPartner');
+  pSel.innerHTML = '<option value="">-- 请选择公司 --</option>' +
+    partners.filter(p=>p.active).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  pSel.value = job ? (job.partner_id||'') : '';
   document.getElementById('jTitle').value = job ? job.title : '';
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jLocation').value = job ? job.location : '';
@@ -1463,9 +1538,6 @@ async function openJobModal(job) {
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
   document.getElementById('jHeadcount').value = job ? (job.headcount || 1) : 1;
-
-  // Load company dropdown
-  await loadJobCompanies(job ? (job.company_id || '') : '');
 
   // Work days toggle
   const activeDays = job && job.work_days ? job.work_days.split(',').map(s=>s.trim()) : [];
@@ -1483,16 +1555,6 @@ async function openJobModal(job) {
 }
 function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
 function editJob(j) { openJobModal(j); }
-
-async function loadJobCompanies(selectedId) {
-  const sel = document.getElementById('jCompany');
-  try {
-    const partners = await api('/admin/partners');
-    const active = partners.filter(p => p.active !== 0);
-    sel.innerHTML = '<option value="">-- 不绑定公司 --</option>' +
-      active.map(p => `<option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
-  } catch { sel.innerHTML = '<option value="">-- 无法加载 --</option>'; }
-}
 
 // Wire up day/benefit toggle buttons (once DOM ready)
 document.addEventListener('DOMContentLoaded', () => {
@@ -1567,12 +1629,13 @@ async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
   const langVal = document.getElementById('jLang').value;
-  const companySel = document.getElementById('jCompany');
-  const companyId = companySel.value ? parseInt(companySel.value) : null;
-  const companyName = companyId ? companySel.options[companySel.selectedIndex].text : '';
+  const partnerSel = document.getElementById('jPartner');
+  const partnerId = partnerSel.value || null;
+  const partnerName = partnerId ? partnerSel.options[partnerSel.selectedIndex].text : '';
   const workDays = [...document.querySelectorAll('#jWorkDaysWrap .day-btn.active')].map(b=>b.dataset.day).join(',');
   const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const data = {
+    partner_id: partnerId,
     title: document.getElementById('jTitle').value,
     type: document.getElementById('jType').value,
     location: document.getElementById('jLocation').value,
@@ -1581,8 +1644,8 @@ async function saveJob() {
     lang_name: langNames[langVal] || langVal,
     work_auth: document.getElementById('jWorkAuth').value,
     employment_type: document.getElementById('jEmploymentType').value,
-    company_id: companyId,
-    company_name: companyName,
+    company_id: partnerId,
+    company_name: partnerName,
     work_days: workDays,
     work_start: document.getElementById('jWorkStart').value,
     work_end: document.getElementById('jWorkEnd').value,
@@ -1594,6 +1657,7 @@ async function saveJob() {
     job_status: 'open',
     active: true
   };
+  if (!data.partner_id) return alert('请选择合作公司');
   if (!data.title) return alert('请填写职位名称');
   if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
@@ -1648,9 +1712,30 @@ async function reopenJob(id) {
 }
 
 // ─── Inquiries (问卷管理) ───
+let allInqHistory = [];
+let currentInqTab = 'pending';
+
+function switchInqTab(tab) {
+  currentInqTab = tab;
+  document.getElementById('inqPanePending').style.display = tab === 'pending' ? '' : 'none';
+  document.getElementById('inqPaneHistory').style.display = tab === 'history'  ? '' : 'none';
+  const btnP = document.getElementById('inqTabPending');
+  const btnH = document.getElementById('inqTabHistory');
+  btnP.style.borderBottomColor = tab === 'pending' ? 'var(--sky)' : 'transparent';
+  btnP.style.color = tab === 'pending' ? 'var(--sky)' : 'var(--gray-500)';
+  btnH.style.borderBottomColor = tab === 'history'  ? 'var(--sky)' : 'transparent';
+  btnH.style.color = tab === 'history'  ? 'var(--sky)' : 'var(--gray-500)';
+  if (tab === 'history' && !allInqHistory.length) loadInquiryHistory();
+}
+
 async function loadInquiries() {
   allInquiries = await api('/admin/inquiries');
   renderInquiries(allInquiries);
+}
+
+async function loadInquiryHistory() {
+  allInqHistory = await api('/admin/inquiries?history=1');
+  renderInquiryHistory(allInqHistory);
 }
 
 function filterInquiries() {
@@ -1659,36 +1744,100 @@ function filterInquiries() {
   const typeFilter = document.getElementById('inqTypeFilter').value;
   const sortVal = document.getElementById('inqSortSel').value;
   let filtered = allInquiries;
-  if (keyword) {
-    filtered = filtered.filter(i =>
-      (i.name || '').toLowerCase().includes(keyword) ||
-      (i.email || '').toLowerCase().includes(keyword) ||
-      (i.phone || '').toLowerCase().includes(keyword) ||
-      (i.company || '').toLowerCase().includes(keyword)
-    );
-  }
-  if (posKeyword) {
-    filtered = filtered.filter(i => (i.positions || '').toLowerCase().includes(posKeyword));
-  }
+  if (keyword) filtered = filtered.filter(i =>
+    (i.name||'').toLowerCase().includes(keyword) ||
+    (i.email||'').toLowerCase().includes(keyword) ||
+    (i.phone||'').toLowerCase().includes(keyword) ||
+    (i.company||'').toLowerCase().includes(keyword));
+  if (posKeyword) filtered = filtered.filter(i => (i.positions||'').toLowerCase().includes(posKeyword));
   if (typeFilter) filtered = filtered.filter(i => i.type === typeFilter);
-  if (sortVal === 'date_asc') filtered = [...filtered].sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
+  if (sortVal === 'date_asc')  filtered = [...filtered].sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
   else if (sortVal === 'date_desc') filtered = [...filtered].sort((a,b) => new Date(b.created_at)-new Date(a.created_at));
-  else if (sortVal === 'pos_asc') filtered = [...filtered].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
-  else if (sortVal === 'pos_desc') filtered = [...filtered].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
+  else if (sortVal === 'pos_asc')   filtered = [...filtered].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
+  else if (sortVal === 'pos_desc')  filtered = [...filtered].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
   renderInquiries(filtered);
 }
 
+function filterInquiryHistory() {
+  const keyword = document.getElementById('inqHistSearch').value.toLowerCase();
+  const statusFilter = document.getElementById('inqHistStatus').value;
+  let filtered = allInqHistory;
+  if (keyword) filtered = filtered.filter(i =>
+    (i.name||'').toLowerCase().includes(keyword) ||
+    (i.phone||'').toLowerCase().includes(keyword) ||
+    (i.company||'').toLowerCase().includes(keyword));
+  if (statusFilter) filtered = filtered.filter(i => i.proc_status === statusFilter);
+  renderInquiryHistory(filtered);
+}
+
+const procStatusLabel = s => ({ cooperated:'已合作', rejected:'已拒绝', unreachable:'联系不上' })[s] || s;
+const procStatusIcon  = s => ({ cooperated:'✅', rejected:'❌', unreachable:'📵' })[s] || '';
+
 function renderInquiries(inqs) {
   document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
-    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></td>
+    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></td>
     <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
     <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
-    <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span></td>
+    <td><span class="badge badge-${i.type==='Employer'?'employer':i.type==='Job Seeker'?'seeker':'other'}">${typeLabel(i.type)}</span></td>
     <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.82rem">${esc(i.location||'')}</td>
     <td style="white-space:nowrap">${esc(i.phone)}</td>
-    <td style="white-space:nowrap"><button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button> <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无问卷提交</td></tr>';
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button>
+      <button class="btn btn-sm" style="background:var(--gray-200);color:var(--gray-700)" onclick="event.stopPropagation();openProcessModalDirect(${JSON.stringify(i).replace(/'/g,'&#39;')})">处理</button>
+      <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无待处理问卷</td></tr>';
+}
+
+function renderInquiryHistory(inqs) {
+  document.getElementById('inqHistTable').innerHTML = inqs.length ? inqs.map(i => `<tr>
+    <td style="white-space:nowrap;font-size:.82rem">${i.processed_at ? new Date(i.processed_at).toLocaleDateString() : '—'}</td>
+    <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.75rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
+    <td><span class="badge badge-${i.type==='Employer'?'employer':i.type==='Job Seeker'?'seeker':'other'}">${typeLabel(i.type)}</span></td>
+    <td style="font-size:.82rem;max-width:160px">${esc(i.positions||'—')}</td>
+    <td><span class="badge badge-${i.proc_status}">${procStatusIcon(i.proc_status)} ${procStatusLabel(i.proc_status)}</span></td>
+    <td style="font-size:.82rem;max-width:200px;color:var(--gray-600)">${esc(i.proc_note||'—')}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm btn-outline" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>查看</button>
+      <button class="btn btn-sm" style="background:var(--gray-200);color:var(--gray-700)" onclick="undoProcessInquiry(${i.id})">撤销</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无历史记录</td></tr>';
+}
+
+// ── Process modal ──
+function openProcessModal() {
+  // called from detail modal
+  document.getElementById('procStatus').value = '';
+  document.getElementById('procNote').value = '';
+  document.getElementById('procModal').classList.add('show');
+}
+
+function openProcessModalDirect(inq) {
+  currentInquiry = inq;
+  openProcessModal();
+}
+
+async function saveProcessInquiry() {
+  if (!currentInquiry) return;
+  const status = document.getElementById('procStatus').value;
+  if (!status) return alert('请选择处理结果');
+  const note = document.getElementById('procNote').value.trim();
+  await api(`/admin/inquiries/${currentInquiry.id}/process`, { method: 'PUT', body: JSON.stringify({ status, note }) });
+  document.getElementById('procModal').classList.remove('show');
+  document.getElementById('inqModal').classList.remove('show');
+  // refresh both lists
+  allInqHistory = [];
+  await loadInquiries();
+  if (currentInqTab === 'history') loadInquiryHistory();
+}
+
+async function undoProcessInquiry(id) {
+  if (!confirm('撤销处理，将此问卷移回待处理？')) return;
+  await api(`/admin/inquiries/${id}/process`, { method: 'PUT', body: JSON.stringify({ undo: true }) });
+  allInqHistory = [];
+  loadInquiryHistory();
+  loadInquiries();
 }
 
 function showInquiry(i) {
@@ -1976,7 +2125,7 @@ function filterPartners() {
   if (keyword) {
     filtered = filtered.filter(p => {
       const contacts = safeJSON(p.contacts,[]);
-      const contactStr = contacts.map(c=>`${c.name} ${c.phone} ${c.email}`).join(' ').toLowerCase();
+      const contactStr = contacts.map(c=>`${c.first_name||''} ${c.last_name||''} ${c.name||''} ${c.phone} ${c.email}`).join(' ').toLowerCase();
       return (p.name||'').toLowerCase().includes(keyword) || contactStr.includes(keyword) ||
         (p.industry||'').toLowerCase().includes(keyword) || (p.services||'').toLowerCase().includes(keyword);
     });
@@ -1990,7 +2139,7 @@ function safeJSON(str, fallback) { try { return JSON.parse(str||''); } catch { r
 function renderPartners(partners) {
   document.getElementById('partnersTable').innerHTML = partners.length ? partners.map(p => {
     const contacts = safeJSON(p.contacts,[]);
-    const mainContact = contacts.length ? contacts[0].name : (p.contact_person||'');
+    const mainContact = contacts.length ? (contacts[0].first_name||contacts[0].last_name ? `${contacts[0].first_name||''} ${contacts[0].last_name||''}`.trim() : (contacts[0].name||'')) : (p.contact_person||'');
     const mainPhone = contacts.length ? contacts[0].phone : (p.phone||'');
     return `<tr style="cursor:pointer" onclick="showPartnerById(${p.id})">
       <td><strong>${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}</td>
@@ -2034,8 +2183,9 @@ async function showPartnerById(id) {
           c.telegram ? `Telegram: ${esc(c.telegram)}` : '',
           c.other_comm ? `其他: ${esc(c.other_comm)}` : ''
         ].filter(Boolean);
+        const cFullName = (c.first_name||c.last_name) ? `${c.first_name||''} ${c.last_name||''}`.trim() : (c.name||'');
         return `<div style="padding:.4rem 0;border-bottom:1px solid var(--gray-200);font-size:.85rem">
-          <strong>${esc(c.name)}</strong>${c.role?' <span style="color:var(--gray-400)">('+esc(c.role)+')</span>':''}
+          <strong>${esc(cFullName)}</strong>${c.role?' <span style="color:var(--gray-400)">('+esc(c.role)+')</span>':''}
           <br>${c.phone?'📞 '+esc(c.phone)+' ':''}${c.email?'✉ '+esc(c.email):''}
           ${socials.length?`<br><span style="color:var(--gray-400);font-size:.78rem">💬 ${socials.join(' · ')}</span>`:''}
         </div>`;
@@ -2074,8 +2224,9 @@ function addPartnerContact(c) {
   const div = document.createElement('div');
   div.className = 'dyn-item';
   div.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.5rem">
-      <div class="field"><label>姓名</label><input class="pc-name" value="${esc(c?.name||'')}" placeholder="张三"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:.5rem">
+      <div class="field"><label>名 First</label><input class="pc-first" value="${esc(c?.first_name||c?.name||'')}" placeholder="三"></div>
+      <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(c?.last_name||'')}" placeholder="张"></div>
       <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
       <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
       <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
@@ -2092,40 +2243,121 @@ function addPartnerContact(c) {
 
 function getPartnerContacts() {
   return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>({
-    name: el.querySelector('.pc-name').value, role: el.querySelector('.pc-role').value,
+    first_name: el.querySelector('.pc-first').value, last_name: el.querySelector('.pc-last').value,
+    role: el.querySelector('.pc-role').value,
     phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
     whatsapp: el.querySelector('.pc-whatsapp').value,
     wechat: el.querySelector('.pc-wechat').value,
     telegram: el.querySelector('.pc-telegram').value,
     other_comm: el.querySelector('.pc-other_comm').value
-  })).filter(c=>c.name||c.phone||c.email);
+  })).filter(c=>c.first_name||c.last_name||c.phone||c.email);
 }
 
 // ── Dynamic addresses list ──
+const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
+
 function addPartnerAddr(addr) {
+  // Parse existing "123 Main St, Ste 200, Chicago, IL 60601" string
+  let street='', street2='', city='', state='', zip='';
+  if (addr && typeof addr === 'string') {
+    // Try: Street, [Street2,] City, ST ZIP
+    const m5 = addr.match(/^(.*?),\s*(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    const m4 = addr.match(/^(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    if (m5) { street=m5[1].trim(); street2=m5[2].trim(); city=m5[3].trim(); state=m5[4]; zip=m5[5]; }
+    else if (m4) { street=m4[1].trim(); city=m4[2].trim(); state=m4[3]; zip=m4[4]; }
+    else { street = addr; }
+  }
+
+  const inp = (cls, ph, val, extra='') =>
+    `<input class="${cls}" placeholder="${ph}" value="${esc(val)}" ${extra}
+      style="width:100%;padding:9px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;box-sizing:border-box">`;
+
+  const stateOptions = US_STATES.map(s=>`<option value="${s}" ${s===state?'selected':''}>${s}</option>`).join('');
+
   const div = document.createElement('div');
-  div.className = 'dyn-item';
-  div.innerHTML = `<div class="field" style="flex:1"><input class="pa-addr" value="${esc(addr||'')}" placeholder="123 Main St, Chicago, IL 60601"></div>
-    <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
+  div.className = 'dyn-item pa-addr-row';
+  div.style.cssText = 'flex-direction:column;align-items:stretch;gap:.5rem;background:var(--off-white);padding:.75rem;border-radius:8px;border:1px solid var(--gray-200);margin-bottom:.5rem';
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em">地址</span>
+      <button class="btn-rm" onclick="this.closest('.pa-addr-row').remove()" title="删除">✕</button>
+    </div>
+    ${inp('pa-street','街道地址 *  e.g. 123 Main St',street)}
+    ${inp('pa-street2','单元 / 楼层  e.g. Ste 200（选填）',street2)}
+    <div style="display:grid;grid-template-columns:1fr 72px 100px;gap:.5rem">
+      ${inp('pa-city','城市 *  e.g. Chicago',city)}
+      <select class="pa-state" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
+        <option value="">州 *</option>${stateOptions}
+      </select>
+      ${inp('pa-zip','ZIP *',zip,'maxlength="10" oninput="this.value=this.value.replace(/[^\\d-]/g,\'\')"')}
+    </div>
+    <div class="pa-err" style="color:var(--red);font-size:.78rem;display:none"></div>`;
   document.getElementById('pAddrList').appendChild(div);
 }
 
+function validatePartnerAddrs() {
+  let valid = true;
+  document.querySelectorAll('#pAddrList .pa-addr-row').forEach(row => {
+    const errEl  = row.querySelector('.pa-err');
+    const street = row.querySelector('.pa-street').value.trim();
+    const city   = row.querySelector('.pa-city').value.trim();
+    const state  = row.querySelector('.pa-state').value;
+    const zip    = row.querySelector('.pa-zip').value.trim();
+    const errs   = [];
+    if (!street)                             errs.push('请填写街道地址');
+    if (!city)                               errs.push('请填写城市');
+    if (!state)                              errs.push('请选择州');
+    if (!zip)                                errs.push('请填写 ZIP');
+    else if (!/^\d{5}(-\d{4})?$/.test(zip)) errs.push('ZIP 格式有误（5位 或 ZIP+4）');
+    // Highlight invalid fields
+    const mark = (el, bad) => { if (el) el.style.borderColor = bad ? 'var(--red)' : 'var(--gray-200)'; };
+    mark(row.querySelector('.pa-street'), !street);
+    mark(row.querySelector('.pa-city'),   !city);
+    mark(row.querySelector('.pa-state'),  !state);
+    mark(row.querySelector('.pa-zip'),    !zip || !/^\d{5}(-\d{4})?$/.test(zip));
+    if (errs.length) {
+      errEl.textContent = errs.join('  ·  ');
+      errEl.style.display = 'block';
+      valid = false;
+    } else {
+      errEl.style.display = 'none';
+    }
+  });
+  return valid;
+}
+
 function getPartnerAddrs() {
-  return Array.from(document.querySelectorAll('#pAddrList .pa-addr')).map(el=>el.value.trim()).filter(Boolean);
+  return Array.from(document.querySelectorAll('#pAddrList .pa-addr-row')).map(row => {
+    const street  = row.querySelector('.pa-street').value.trim();
+    const street2 = row.querySelector('.pa-street2').value.trim();
+    const city    = row.querySelector('.pa-city').value.trim();
+    const state   = row.querySelector('.pa-state').value;
+    const zip     = row.querySelector('.pa-zip').value.trim();
+    if (!street && !city && !state && !zip) return null;
+    const parts = [street];
+    if (street2) parts.push(street2);
+    parts.push(city, state + (zip ? ' ' + zip : ''));
+    return parts.filter(Boolean).join(', ');
+  }).filter(Boolean);
 }
 
 function openPartnerModal(p) {
   document.getElementById('partnerModalTitle').textContent = p ? '编辑合作公司' : '新增合作公司';
   document.getElementById('partnerId').value = p ? p.id : '';
   document.getElementById('pName').value = p ? p.name : '';
-  document.getElementById('pIndustry').value = p ? p.industry : '';
+  const pIndSel = document.getElementById('pIndustry');
+  const indVal = p ? (p.industry||'') : '';
+  if (indVal && !Array.from(pIndSel.options).some(o=>o.value===indVal)) {
+    const opt = document.createElement('option'); opt.value = indVal; opt.textContent = indVal; pIndSel.appendChild(opt);
+  }
+  pIndSel.value = indVal;
   document.getElementById('pNotes').value = p ? p.notes : '';
   document.getElementById('pActive').checked = p ? !!p.active : true;
   // Contacts
   document.getElementById('pContactsList').innerHTML = '';
   const contacts = p ? safeJSON(p.contacts,[]) : [];
   if (contacts.length) contacts.forEach(c=>addPartnerContact(c));
-  else if (p && (p.contact_person||p.phone||p.email)) addPartnerContact({name:p.contact_person,phone:p.phone,email:p.email});
+  else if (p && (p.contact_person||p.phone||p.email)) addPartnerContact({first_name:p.contact_person,phone:p.phone,email:p.email});
   else addPartnerContact();
   // Addresses
   document.getElementById('pAddrList').innerHTML = '';
@@ -2188,6 +2420,7 @@ async function deletePartnerFile(fid, pid) {
 }
 
 async function savePartner() {
+  if (!validatePartnerAddrs()) return;
   const id = document.getElementById('partnerId').value;
   // Collect services
   const selectedSvcs = Array.from(document.querySelectorAll('#pSvcTags .svc-tag.active')).map(t=>t.dataset.v);
@@ -2196,7 +2429,7 @@ async function savePartner() {
   const contacts = getPartnerContacts();
   const data = {
     name: document.getElementById('pName').value,
-    contact_person: contacts.length ? contacts[0].name : '',
+    contact_person: contacts.length ? `${contacts[0].first_name||''} ${contacts[0].last_name||''}`.trim() : '',
     phone: contacts.length ? contacts[0].phone : '',
     email: contacts.length ? contacts[0].email : '',
     address: getPartnerAddrs()[0] || '',
@@ -2382,6 +2615,41 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
 }
 function closeEmpModal() { document.getElementById('empModal').classList.remove('show'); }
+
+function randomFillEmployee() {
+  const firsts = ['John','Maria','Wei','Carlos','Anna','David','Linh','Ahmed','Sofia','James','Yuki','Jose','Emily','Marco','Mei'];
+  const lasts = ['Smith','Garcia','Chen','Nguyen','Johnson','Lopez','Kim','Patel','Williams','Martinez','Wang','Brown','Lee','Davis','Zhang'];
+  const positions = ['仓库分拣员','叉车操作员','生产线操作工','包装工','清洁工','质检员','搬运工','厨房帮工','洗碗工','装配工'];
+  const depts = ['Warehouse','Production','Kitchen','Cleaning','Assembly','Shipping','QC'];
+  const streets = ['123 Main St','456 Oak Ave','789 Elm Blvd','321 Pine Rd','654 Maple Dr','987 Cedar Ln','111 Lake St','222 River Rd'];
+  const cities = ['Chicago','Cicero','Melrose Park','Elk Grove Village','Schaumburg','Addison','Des Plaines','Niles'];
+  const rels = ['Spouse','Parent','Sibling','Friend','Child'];
+  const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+  const rnd = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+  const pad = n => String(n).padStart(2,'0');
+  const dob = `${rnd(1970,2000)}-${pad(rnd(1,12))}-${pad(rnd(1,28))}`;
+  const hire = `${rnd(2022,2026)}-${pad(rnd(1,12))}-${pad(rnd(1,28))}`;
+  const phone = `(${rnd(312,847)}) ${rnd(100,999)}-${rnd(1000,9999)}`;
+  const fn = pick(firsts), ln = pick(lasts);
+  document.getElementById('eFirst').value = fn;
+  document.getElementById('eLast').value = ln;
+  document.getElementById('eDob').value = dob;
+  document.getElementById('ePhone').value = phone;
+  document.getElementById('eEmail').value = `${fn.toLowerCase()}.${ln.toLowerCase()}@email.com`;
+  document.getElementById('eAddr').value = pick(streets);
+  document.getElementById('eCity').value = pick(cities);
+  document.getElementById('eState').value = 'IL';
+  document.getElementById('eZip').value = String(rnd(60601,60699));
+  document.getElementById('eHire').value = hire;
+  document.getElementById('ePos').value = pick(positions);
+  document.getElementById('eDept').value = pick(depts);
+  document.getElementById('ePayRate').value = (rnd(1550,2800)/100).toFixed(2);
+  document.getElementById('ePayType').value = 'hourly';
+  const efn2 = pick(firsts), eln2 = pick(lasts);
+  document.getElementById('eEmgName').value = `${efn2} ${eln2}`;
+  document.getElementById('eEmgPhone').value = `(${rnd(312,847)}) ${rnd(100,999)}-${rnd(1000,9999)}`;
+  document.getElementById('eEmgRel').value = pick(rels);
+}
 
 async function saveEmployee() {
   const id = document.getElementById('empId').value;
