@@ -1939,17 +1939,17 @@ function statusLabel(s) {
   const m = { assigned: '已分配', working: '工作中', completed: '已完成', cancelled: '已取消' };
   return m[s] || s;
 }
-function showToast(msg, type = 'success') {
+function showToast(msg, type = 'success', duration = 3000) {
   const wrap = document.getElementById('toast-wrap');
   const t = document.createElement('div');
   t.className = `toast ${type}`;
-  t.textContent = msg;
+  t.innerHTML = msg;
   wrap.appendChild(t);
   requestAnimationFrame(() => { requestAnimationFrame(() => t.classList.add('in')); });
   setTimeout(() => {
     t.classList.remove('in');
     setTimeout(() => t.remove(), 300);
-  }, 3000);
+  }, duration);
 }
 
 function esc(s) {
@@ -5658,10 +5658,10 @@ async function suspendWorkerAccount(id, doSuspend) {
 async function resendWorkerVerify(id) {
   const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
   if (r && r.success) {
-    showToast('✅ 验证码已重新生成');
-    if (r.phone_code || r.email_code) {
-      alert(`验证码已生成（系统会发送短信/邮件通知用户）\n手机验证码: ${r.phone_code||'—'}\n邮箱验证码: ${r.email_code||'—'}`);
-    }
+    const lines = ['✅ 验证码已重新生成（系统会发送通知）'];
+    if (r.phone_code) lines.push(`手机验证码: ${esc(String(r.phone_code))}`);
+    if (r.email_code) lines.push(`邮箱验证码: ${esc(String(r.email_code))}`);
+    showToast(lines.join('<br>'), 'success', 6000);
   }
 }
 
