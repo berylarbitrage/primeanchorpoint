@@ -1143,8 +1143,16 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
 });
 
 app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  db.prepare('DELETE FROM worker_accounts WHERE id=?').run(req.params.id);
-  res.json({ success: true });
+  try {
+    const id = req.params.id;
+    db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(id);
+    db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(id);
+    db.prepare('DELETE FROM worker_accounts WHERE id=?').run(id);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[DELETE worker-account]', e.message);
+    res.status(500).json({ error: '删除失败：' + e.message });
+  }
 });
 
 // Admin: resend verification codes to unverified worker
@@ -2743,9 +2751,15 @@ app.post('/api/register/worker', async (req, res) => {
   const { name, phone, email, dob, work_status, position_interests, password } = req.body;
   if (!name || !phone || !email || !password)
     return res.status(400).json({ error: 'Name, phone, email, and password are required' });
-  // Check phone or email uniqueness
-  const existing = db.prepare('SELECT id FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
-  if (existing) return res.status(400).json({ error: 'An account with this phone or email already exists' });
+  // Check phone or email uniqueness; allow re-registration if previous account was never verified
+  const existing = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
+  if (existing && existing.active) return res.status(400).json({ error: 'An account with this phone or email already exists' });
+  if (existing && !existing.active) {
+    // Unverified account — clean up and allow fresh registration
+    db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_accounts WHERE id=?').run(existing.id);
+  }
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
 
@@ -2891,6 +2905,12 @@ app.get('/customer', (req, res) => {
 });
 app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+
+// Global error handler — return JSON instead of Express's default HTML error page
+app.use((err, req, res, next) => {
+  console.error('[Unhandled Error]', err.message);
+  res.status(500).json({ error: '服务器内部错误：' + err.message });
 });
 
 // ─── Start ───
