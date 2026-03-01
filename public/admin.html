@@ -65,6 +65,7 @@ tr:hover td{background:var(--sky-light)}
 .modal h2{font-size:1.2rem;color:var(--blue);margin-bottom:1.5rem}
 .field{margin-bottom:1rem}.field label{display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;margin-bottom:4px}
 .field input,.field select,.field textarea{width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.9rem;outline:none;font-family:inherit}
+.field input[type=checkbox]{width:auto;padding:0;border:none;border-radius:0;vertical-align:middle}
 .field textarea{height:80px;resize:vertical}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--sky)}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
@@ -593,7 +594,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
-  <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
+  <div class="field"><label style="display:inline-flex;align-items:center;gap:.4rem;text-transform:none;font-size:.9rem"><input type="checkbox" id="jUrgent"> 急聘（紧急招聘）</label></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn" onclick="saveJob()">保存</button>
     <button class="btn" onclick="randomFillJob()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
@@ -1826,16 +1827,91 @@ function getPartnerContacts() {
 }
 
 // ── Dynamic addresses list ──
+const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
+
 function addPartnerAddr(addr) {
+  // Parse existing "123 Main St, Ste 200, Chicago, IL 60601" string
+  let street='', street2='', city='', state='', zip='';
+  if (addr && typeof addr === 'string') {
+    // Try: Street, [Street2,] City, ST ZIP
+    const m5 = addr.match(/^(.*?),\s*(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    const m4 = addr.match(/^(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    if (m5) { street=m5[1].trim(); street2=m5[2].trim(); city=m5[3].trim(); state=m5[4]; zip=m5[5]; }
+    else if (m4) { street=m4[1].trim(); city=m4[2].trim(); state=m4[3]; zip=m4[4]; }
+    else { street = addr; }
+  }
+
+  const inp = (cls, ph, val, extra='') =>
+    `<input class="${cls}" placeholder="${ph}" value="${esc(val)}" ${extra}
+      style="width:100%;padding:9px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;box-sizing:border-box">`;
+
+  const stateOptions = US_STATES.map(s=>`<option value="${s}" ${s===state?'selected':''}>${s}</option>`).join('');
+
   const div = document.createElement('div');
-  div.className = 'dyn-item';
-  div.innerHTML = `<div class="field" style="flex:1"><input class="pa-addr" value="${esc(addr||'')}" placeholder="123 Main St, Chicago, IL 60601"></div>
-    <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
+  div.className = 'dyn-item pa-addr-row';
+  div.style.cssText = 'flex-direction:column;align-items:stretch;gap:.5rem;background:var(--off-white);padding:.75rem;border-radius:8px;border:1px solid var(--gray-200);margin-bottom:.5rem';
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em">地址</span>
+      <button class="btn-rm" onclick="this.closest('.pa-addr-row').remove()" title="删除">✕</button>
+    </div>
+    ${inp('pa-street','街道地址 *  e.g. 123 Main St',street)}
+    ${inp('pa-street2','单元 / 楼层  e.g. Ste 200（选填）',street2)}
+    <div style="display:grid;grid-template-columns:1fr 72px 100px;gap:.5rem">
+      ${inp('pa-city','城市 *  e.g. Chicago',city)}
+      <select class="pa-state" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
+        <option value="">州 *</option>${stateOptions}
+      </select>
+      ${inp('pa-zip','ZIP *',zip,'maxlength="10" oninput="this.value=this.value.replace(/[^\\d-]/g,\'\')"')}
+    </div>
+    <div class="pa-err" style="color:var(--red);font-size:.78rem;display:none"></div>`;
   document.getElementById('pAddrList').appendChild(div);
 }
 
+function validatePartnerAddrs() {
+  let valid = true;
+  document.querySelectorAll('#pAddrList .pa-addr-row').forEach(row => {
+    const errEl  = row.querySelector('.pa-err');
+    const street = row.querySelector('.pa-street').value.trim();
+    const city   = row.querySelector('.pa-city').value.trim();
+    const state  = row.querySelector('.pa-state').value;
+    const zip    = row.querySelector('.pa-zip').value.trim();
+    const errs   = [];
+    if (!street)                             errs.push('请填写街道地址');
+    if (!city)                               errs.push('请填写城市');
+    if (!state)                              errs.push('请选择州');
+    if (!zip)                                errs.push('请填写 ZIP');
+    else if (!/^\d{5}(-\d{4})?$/.test(zip)) errs.push('ZIP 格式有误（5位 或 ZIP+4）');
+    // Highlight invalid fields
+    const mark = (el, bad) => { if (el) el.style.borderColor = bad ? 'var(--red)' : 'var(--gray-200)'; };
+    mark(row.querySelector('.pa-street'), !street);
+    mark(row.querySelector('.pa-city'),   !city);
+    mark(row.querySelector('.pa-state'),  !state);
+    mark(row.querySelector('.pa-zip'),    !zip || !/^\d{5}(-\d{4})?$/.test(zip));
+    if (errs.length) {
+      errEl.textContent = errs.join('  ·  ');
+      errEl.style.display = 'block';
+      valid = false;
+    } else {
+      errEl.style.display = 'none';
+    }
+  });
+  return valid;
+}
+
 function getPartnerAddrs() {
-  return Array.from(document.querySelectorAll('#pAddrList .pa-addr')).map(el=>el.value.trim()).filter(Boolean);
+  return Array.from(document.querySelectorAll('#pAddrList .pa-addr-row')).map(row => {
+    const street  = row.querySelector('.pa-street').value.trim();
+    const street2 = row.querySelector('.pa-street2').value.trim();
+    const city    = row.querySelector('.pa-city').value.trim();
+    const state   = row.querySelector('.pa-state').value;
+    const zip     = row.querySelector('.pa-zip').value.trim();
+    if (!street && !city && !state && !zip) return null;
+    const parts = [street];
+    if (street2) parts.push(street2);
+    parts.push(city, state + (zip ? ' ' + zip : ''));
+    return parts.filter(Boolean).join(', ');
+  }).filter(Boolean);
 }
 
 function openPartnerModal(p) {
@@ -1912,6 +1988,7 @@ async function deletePartnerFile(fid, pid) {
 }
 
 async function savePartner() {
+  if (!validatePartnerAddrs()) return;
   const id = document.getElementById('partnerId').value;
   // Collect services
   const selectedSvcs = Array.from(document.querySelectorAll('#pSvcTags .svc-tag.active')).map(t=>t.dataset.v);
