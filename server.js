@@ -287,6 +287,8 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN pay_type TEXT DEFAULT 'hourly'
 try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_type TEXT DEFAULT 'W2'`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN benefits TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN start_date TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_file TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT ''`); } catch(e) {}
 
 // Migrate admin_users table (add role, display_name, active, created_at columns if missing)
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
@@ -1092,8 +1094,31 @@ app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('up
 });
 
 app.delete('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('delete', 'assignments'), (req, res) => {
+  const a = db.prepare('SELECT contract_file FROM assignments WHERE id=?').get(req.params.id);
+  if (a && a.contract_file) { const fp = path.join(docsDir, a.contract_file); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
   db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Assignment contract file upload/download
+app.post('/api/admin/assignments/:id/contract', requireAdmin, blockManager, docUpload.single('file'), (req, res) => {
+  const a = db.prepare('SELECT id, contract_file FROM assignments WHERE id=?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Assignment not found' });
+  if (a.contract_file) { const old = path.join(docsDir, a.contract_file); if (fs.existsSync(old)) fs.unlinkSync(old); }
+  db.prepare('UPDATE assignments SET contract_file=?, contract_filename=? WHERE id=?')
+    .run(req.file ? req.file.filename : '', req.file ? req.file.originalname : '', req.params.id);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/assignments/:id/contract', (req, res, next) => {
+  if (req.query.token && validSession(req.query.token)) return next();
+  return requireAdmin(req, res, next);
+}, (req, res) => {
+  const a = db.prepare('SELECT contract_file, contract_filename FROM assignments WHERE id=?').get(req.params.id);
+  if (!a || !a.contract_file) return res.status(404).json({ error: 'No contract file' });
+  const fp = path.join(docsDir, a.contract_file);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File not found' });
+  res.download(fp, a.contract_filename || a.contract_file);
 });
 
 // ─── Employee Doc Requests (私密材料链接) ───
