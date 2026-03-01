@@ -33,6 +33,7 @@ db.exec(`
     description TEXT DEFAULT '',
     urgent INTEGER DEFAULT 0,
     active INTEGER DEFAULT 1,
+    work_auth TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS inquiries (
@@ -166,6 +167,9 @@ db.exec(`
     FOREIGN KEY (employee_id) REFERENCES employees(id)
   );
 `);
+
+// Migration: add work_auth column if not present (for existing databases)
+try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) { /* column already exists */ }
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -399,7 +403,7 @@ app.get('/api/jobs', (req, res) => {
   res.json(jobs.map(j => ({
     id: j.id, title: j.title, type: j.type, location: j.location,
     pay: j.pay, lang: j.lang, lang_name: j.lang_name,
-    desc: j.description, urgent: !!j.urgent
+    desc: j.description, urgent: !!j.urgent, work_auth: j.work_auth || ''
   })));
 });
 
@@ -457,15 +461,15 @@ app.get('/api/admin/jobs', requireAdmin, (req, res) => {
 
 app.post('/api/admin/jobs', requireAdmin, (req, res) => {
   const d = req.body;
-  const stmt = db.prepare('INSERT INTO jobs (title, type, location, pay, lang, lang_name, description, urgent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const r = stmt.run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0);
+  const stmt = db.prepare('INSERT INTO jobs (title, type, location, pay, lang, lang_name, description, urgent, work_auth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const r = stmt.run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.work_auth || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE jobs SET title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=? WHERE id=?')
-    .run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, req.params.id);
+  db.prepare('UPDATE jobs SET title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=?, work_auth=? WHERE id=?')
+    .run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, d.work_auth || '', req.params.id);
   res.json({ success: true });
 });
 

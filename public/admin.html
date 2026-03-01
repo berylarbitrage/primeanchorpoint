@@ -214,7 +214,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>身份要求</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
 </div>
 
 <!-- Partners -->
@@ -398,6 +398,14 @@ tr:hover td{background:var(--sky-light)}
   <div class="field-row">
     <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
     <div class="field"><label>语言</label><select id="jLang"><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select></div>
+  </div>
+  <div class="field"><label>工作身份要求</label>
+    <select id="jWorkAuth">
+      <option value="">不限</option>
+      <option value="any">合法工作身份即可 / Any Work Authorization</option>
+      <option value="gc">绿卡或公民 / Green Card or Citizen</option>
+      <option value="citizen">仅限美国公民 / US Citizen Only</option>
+    </select>
   </div>
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
   <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
@@ -831,13 +839,15 @@ function esc(s) {
 async function loadJobs() {
   const jobs = await api('/admin/jobs');
   const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
+  const authLabel = a => ({any:'合法身份', gc:'绿卡/公民', citizen:'仅公民'})[a] || '不限';
   document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
     <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}</td>
     <td>${esc(j.type)}</td><td>${esc(j.location)}</td>
+    <td>${esc(authLabel(j.work_auth))}</td>
     <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
     <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
     <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
 }
 
 function openJobModal(job) {
@@ -848,6 +858,7 @@ function openJobModal(job) {
   document.getElementById('jLocation').value = job ? job.location : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jLang').value = job ? job.lang : 'en';
+  document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
   document.getElementById('jobModal').classList.add('show');
@@ -857,21 +868,21 @@ function editJob(j) { openJobModal(j); }
 
 function randomFillJob() {
   const pool = [
-    { lang: 'zh', title: '仓库分拣员', type: '临时工', location: 'Chicago, IL', pay: '$17-19/hr',
+    { lang: 'zh', title: '仓库分拣员', type: '临时工', location: 'Chicago, IL', pay: '$17-19/hr', work_auth: 'any',
       desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。工作时间：周一至周五 06:00-14:30。' },
-    { lang: 'zh', title: '叉车操作员', type: '全职', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true,
+    { lang: 'zh', title: '叉车操作员', type: '全职', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true, work_auth: 'any',
       desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁，提供完善福利（医疗+牙科）。' },
-    { lang: 'zh', title: '生产线操作工', type: '全职', location: 'Melrose Park, IL', pay: '$18/hr',
+    { lang: 'zh', title: '生产线操作工', type: '全职', location: 'Melrose Park, IL', pay: '$18/hr', work_auth: 'gc',
       desc: '食品加工生产线工作，需遵守卫生规定，提供工服及手套。每周加班机会多，可双休。' },
-    { lang: 'en', title: 'Warehouse Associate', type: 'Temp-to-Hire', location: 'Schaumburg, IL', pay: '$16-18/hr',
+    { lang: 'en', title: 'Warehouse Associate', type: 'Temp-to-Hire', location: 'Schaumburg, IL', pay: '$16-18/hr', work_auth: 'any',
       desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs. Day and night shifts available.' },
-    { lang: 'en', title: 'Machine Operator', type: 'Full-Time', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true,
+    { lang: 'en', title: 'Machine Operator', type: 'Full-Time', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true, work_auth: 'gc',
       desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred. Benefits after 90 days.' },
-    { lang: 'en', title: 'General Labor', type: 'Temporary', location: 'Addison, IL', pay: '$15.50/hr',
+    { lang: 'en', title: 'General Labor', type: 'Temporary', location: 'Addison, IL', pay: '$15.50/hr', work_auth: 'any',
       desc: 'Various light industrial tasks including assembly, sorting and quality inspection. Weekend shifts available with a pay differential.' },
-    { lang: 'es', title: 'Trabajador de Almacén', type: 'Tiempo Completo', location: 'Melrose Park, IL', pay: '$16-18/hr',
+    { lang: 'es', title: 'Trabajador de Almacén', type: 'Tiempo Completo', location: 'Melrose Park, IL', pay: '$16-18/hr', work_auth: 'any',
       desc: 'Clasificar y empacar productos en almacén. Horario de lunes a viernes, 7am-3:30pm. No se requiere experiencia previa, se ofrece capacitación.' },
-    { lang: 'es', title: 'Operador de Montacargas', type: 'Temporal', location: 'Cicero, IL', pay: '$20/hr', urgent: true,
+    { lang: 'es', title: 'Operador de Montacargas', type: 'Temporal', location: 'Cicero, IL', pay: '$20/hr', urgent: true, work_auth: 'gc',
       desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía en turno nocturno (10pm-6am). Pago semanal.' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
@@ -879,9 +890,10 @@ function randomFillJob() {
   document.getElementById('jType').value     = r.type;
   document.getElementById('jLocation').value = r.location;
   document.getElementById('jPay').value      = r.pay;
-  document.getElementById('jLang').value     = r.lang;
-  document.getElementById('jDesc').value     = r.desc;
-  document.getElementById('jUrgent').checked = !!r.urgent;
+  document.getElementById('jLang').value      = r.lang;
+  document.getElementById('jWorkAuth').value  = r.work_auth || '';
+  document.getElementById('jDesc').value      = r.desc;
+  document.getElementById('jUrgent').checked  = !!r.urgent;
 }
 
 async function saveJob() {
@@ -894,6 +906,7 @@ async function saveJob() {
     pay: document.getElementById('jPay').value,
     lang: document.getElementById('jLang').value,
     lang_name: langNames[document.getElementById('jLang').value],
+    work_auth: document.getElementById('jWorkAuth').value,
     description: document.getElementById('jDesc').value,
     urgent: document.getElementById('jUrgent').checked,
     active: true
