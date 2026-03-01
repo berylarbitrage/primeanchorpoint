@@ -211,6 +211,16 @@ const partnerMigrations = ['contacts','addresses','social_media','links'];
 partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
+// Migrate jobs table (add new columns if missing)
+const jobMigrations = [
+  "ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL",
+  "ALTER TABLE jobs ADD COLUMN employment_type TEXT DEFAULT ''",
+  "ALTER TABLE jobs ADD COLUMN benefits TEXT DEFAULT '[]'",
+  "ALTER TABLE jobs ADD COLUMN schedule_days TEXT DEFAULT '[]'",
+  "ALTER TABLE jobs ADD COLUMN schedule_start TEXT DEFAULT ''",
+  "ALTER TABLE jobs ADD COLUMN schedule_end TEXT DEFAULT ''"
+];
+jobMigrations.forEach(sql => { try { db.exec(sql); } catch {} });
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -463,16 +473,20 @@ function requireAdmin(req, res, next) {
 // GET /api/jobs - public job listings
 app.get('/api/jobs', (req, res) => {
   const lang = req.query.lang;
-  let jobs;
-  if (lang && lang !== 'all') {
-    jobs = db.prepare('SELECT * FROM jobs WHERE active=1 AND lang=? ORDER BY created_at DESC').all(lang);
-  } else {
-    jobs = db.prepare('SELECT * FROM jobs WHERE active=1 ORDER BY created_at DESC').all();
-  }
+  const base = `SELECT j.*, p.name as partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id WHERE j.active=1`;
+  const jobs = (lang && lang !== 'all')
+    ? db.prepare(base + ' AND j.lang=? ORDER BY j.created_at DESC').all(lang)
+    : db.prepare(base + ' ORDER BY j.created_at DESC').all();
   res.json(jobs.map(j => ({
     id: j.id, title: j.title, type: j.type, location: j.location,
     pay: j.pay, lang: j.lang, lang_name: j.lang_name,
-    desc: j.description, urgent: !!j.urgent
+    desc: j.description, urgent: !!j.urgent,
+    partner_name: j.partner_name || '',
+    employment_type: j.employment_type || '',
+    benefits: j.benefits || '[]',
+    schedule_days: j.schedule_days || '[]',
+    schedule_start: j.schedule_start || '',
+    schedule_end: j.schedule_end || ''
   })));
 });
 
@@ -531,20 +545,40 @@ app.post('/api/admin/login', (req, res) => {
 
 // Jobs CRUD
 app.get('/api/admin/jobs', requireAdmin, (req, res) => {
-  res.json(db.prepare('SELECT * FROM jobs ORDER BY created_at DESC').all());
+  res.json(db.prepare(`
+    SELECT j.*, p.name as partner_name
+    FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id
+    ORDER BY j.created_at DESC`).all());
 });
 
 app.post('/api/admin/jobs', requireAdmin, (req, res) => {
   const d = req.body;
-  const stmt = db.prepare('INSERT INTO jobs (title, type, location, pay, lang, lang_name, description, urgent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const r = stmt.run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0);
+  const stmt = db.prepare(`INSERT INTO jobs
+    (title, type, location, pay, lang, lang_name, description, urgent,
+     partner_id, employment_type, benefits, schedule_days, schedule_start, schedule_end)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const r = stmt.run(
+    d.title, d.type || '', d.location || '', d.pay || '',
+    d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0,
+    d.partner_id || null, d.employment_type || '',
+    d.benefits || '[]', d.schedule_days || '[]', d.schedule_start || '', d.schedule_end || ''
+  );
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE jobs SET title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=? WHERE id=?')
-    .run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, req.params.id);
+  db.prepare(`UPDATE jobs SET
+    title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=?,
+    partner_id=?, employment_type=?, benefits=?, schedule_days=?, schedule_start=?, schedule_end=?
+    WHERE id=?`)
+    .run(
+      d.title, d.type || '', d.location || '', d.pay || '',
+      d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0,
+      d.partner_id || null, d.employment_type || '',
+      d.benefits || '[]', d.schedule_days || '[]', d.schedule_start || '', d.schedule_end || '',
+      req.params.id
+    );
   res.json({ success: true });
 });
 

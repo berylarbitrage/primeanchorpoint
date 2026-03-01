@@ -133,6 +133,15 @@ tr:hover td{background:var(--sky-light)}
 .ts-actions{display:flex;gap:.75rem;flex-wrap:wrap}
 @media print{body *{visibility:hidden}#tsPrintArea,#tsPrintArea *{visibility:visible}#tsPrintArea{position:absolute;left:0;top:0;width:100%;padding:20px}#tsPrintArea .no-print{display:none!important}}
 @media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}.stats-row{grid-template-columns:repeat(2,1fr)}.hours-bar{grid-template-columns:repeat(2,1fr)}.field-row3{grid-template-columns:1fr}}
+/* Day toggle buttons */
+.day-btn{padding:5px 9px;border:1.5px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-600);font-size:.78rem;cursor:pointer;transition:all .15s;font-weight:600;white-space:nowrap}
+.day-btn:hover{border-color:var(--sky);color:var(--sky)}
+.day-selected{background:var(--sky)!important;border-color:var(--sky)!important;color:#fff!important}
+/* Benefit chip checkboxes */
+.benefit-chip{display:inline-flex;align-items:center;gap:.3rem;padding:5px 10px;border:1.5px solid var(--gray-200);border-radius:20px;cursor:pointer;font-size:.78rem;color:var(--gray-600);transition:all .15s;font-weight:500}
+.benefit-chip:hover{border-color:var(--sky);color:var(--sky)}
+.benefit-chip input{display:none}
+.benefit-chip:has(input:checked){background:var(--sky);border-color:var(--sky);color:#fff}
 </style>
 </head>
 <body>
@@ -241,7 +250,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>雇佣性质</th><th>地点 / 时间</th><th>薪资</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
 </div>
 
 <!-- Partners -->
@@ -422,20 +431,68 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Job Modal -->
-<div class="modal-bg" id="jobModal"><div class="modal">
+<div class="modal-bg" id="jobModal"><div class="modal" style="max-width:640px">
   <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
-  <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
+  <!-- Row 1: Company + Language -->
   <div class="field-row">
-    <div class="field"><label>类型</label><input id="jType" placeholder="例：全职、临时工"></div>
+    <div class="field" style="flex:2">
+      <label>合作公司</label>
+      <select id="jPartner"><option value="">— 不指定公司 —</option></select>
+    </div>
+    <div class="field">
+      <label>语言</label>
+      <select id="jLang"><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select>
+    </div>
+  </div>
+  <!-- Title -->
+  <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员 / Warehouse Associate"></div>
+  <!-- Row 2: Job type + Employment type -->
+  <div class="field-row">
+    <div class="field">
+      <label>职位类型</label>
+      <select id="jType">
+        <option value="全职 (Full-Time)">全职 (Full-Time)</option>
+        <option value="兼职 (Part-Time)">兼职 (Part-Time)</option>
+        <option value="临时工 (Temporary)">临时工 (Temporary)</option>
+        <option value="临时转正 (Temp-to-Hire)">临时转正 (Temp-to-Hire)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>雇佣性质</label>
+      <select id="jEmpType">
+        <option value="">— 不指定 —</option>
+        <option value="W2">W2</option>
+        <option value="Contract">Contract</option>
+        <option value="1099">1099</option>
+        <option value="W2 / Contract">W2 / Contract</option>
+      </select>
+    </div>
+  </div>
+  <!-- Row 3: Location + Pay -->
+  <div class="field-row">
     <div class="field"><label>工作地点</label><input id="jLocation" placeholder="例：Chicago, IL"></div>
-  </div>
-  <div class="field-row">
     <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
-    <div class="field"><label>语言</label><select id="jLang"><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select></div>
   </div>
-  <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
-  <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
+  <!-- Work Days -->
+  <div class="field">
+    <label>工作日期（可多选）</label>
+    <div id="jDaysWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.3rem"></div>
+  </div>
+  <!-- Work Time -->
+  <div class="field-row">
+    <div class="field"><label>上班时间</label><input type="time" id="jTimeStart"></div>
+    <div class="field"><label>下班时间</label><input type="time" id="jTimeEnd"></div>
+  </div>
+  <!-- Benefits -->
+  <div class="field">
+    <label>福利待遇（多选）</label>
+    <div id="jBenefitsWrap" style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.4rem"></div>
+  </div>
+  <!-- Description -->
+  <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容、要求等..."></textarea></div>
+  <!-- Urgent -->
+  <div class="field"><label style="display:flex;align-items:center;gap:.5rem;cursor:pointer"><input type="checkbox" id="jUrgent"> 急聘</label></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn" onclick="saveJob()">保存</button>
     <button class="btn" onclick="randomFillJob()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
@@ -926,28 +983,114 @@ function esc(s) {
 }
 
 // ─── Jobs ───
+
+// Benefit definitions
+const BENEFITS = [
+  { id: 'medical',    zh: '医疗保险',      en: 'Medical' },
+  { id: 'dental',     zh: '牙科保险',      en: 'Dental' },
+  { id: 'vision',     zh: '视力保险',      en: 'Vision' },
+  { id: 'retirement', zh: '401(k)',         en: '401(k)' },
+  { id: 'pto',        zh: '带薪休假',      en: 'PTO' },
+  { id: 'overtime',   zh: '加班费',        en: 'OT Pay' },
+  { id: 'transport',  zh: '交通补贴',      en: 'Transport' },
+  { id: 'meals',      zh: '餐补',          en: 'Meals' },
+  { id: 'weekly_pay', zh: '周薪',          en: 'Weekly Pay' },
+  { id: 'holiday',    zh: '节假日奖金',    en: 'Holiday Bonus' },
+];
+const DAYS = ['一(Mon)','二(Tue)','三(Wed)','四(Thu)','五(Fri)','六(Sat)','日(Sun)'];
+const DAY_IDS = ['mon','tue','wed','thu','fri','sat','sun'];
+
+function buildJobModalControls() {
+  // Day toggles
+  const daysWrap = document.getElementById('jDaysWrap');
+  daysWrap.innerHTML = DAY_IDS.map((d,i) => `
+    <button type="button" class="day-btn" data-day="${d}" onclick="toggleDay(this)">${DAYS[i]}</button>`).join('');
+  // Benefit chips
+  const bWrap = document.getElementById('jBenefitsWrap');
+  bWrap.innerHTML = BENEFITS.map(b => `
+    <label class="benefit-chip">
+      <input type="checkbox" name="benefit" value="${b.id}">
+      <span>${b.zh}</span>
+    </label>`).join('');
+}
+function toggleDay(btn) { btn.classList.toggle('day-selected'); }
+function getSelectedDays() {
+  return [...document.querySelectorAll('#jDaysWrap .day-selected')].map(b => b.dataset.day);
+}
+function setSelectedDays(days) {
+  document.querySelectorAll('#jDaysWrap .day-btn').forEach(b => {
+    b.classList.toggle('day-selected', days.includes(b.dataset.day));
+  });
+}
+function getSelectedBenefits() {
+  return [...document.querySelectorAll('#jBenefitsWrap input[name=benefit]:checked')].map(c => c.value);
+}
+function setSelectedBenefits(benefits) {
+  document.querySelectorAll('#jBenefitsWrap input[name=benefit]').forEach(c => {
+    c.checked = benefits.includes(c.value);
+  });
+}
+
 async function loadJobs() {
   const jobs = await api('/admin/jobs');
   const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
-  document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
-    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}</td>
-    <td>${esc(j.type)}</td><td>${esc(j.location)}</td>
-    <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
-    <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
-    <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
+  const empBadge = t => t ? `<span class="badge" style="background:var(--sky);color:#fff;font-size:.7rem">${esc(t)}</span>` : '';
+  document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => {
+    const days = JSON.parse(j.schedule_days||'[]');
+    const sched = days.length ? days.map(d=>d.slice(0,3).toUpperCase()).join(' ') + (j.schedule_start ? ` ${j.schedule_start}–${j.schedule_end||'?'}` : '') : '';
+    return `<tr>
+      <td>
+        <strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}
+        ${j.partner_name ? `<br><span style="font-size:.75rem;color:var(--gray-400)">${esc(j.partner_name)}</span>` : ''}
+      </td>
+      <td>${esc(j.type)}</td>
+      <td>${empBadge(j.employment_type)}</td>
+      <td>${esc(j.location)}<br><span style="font-size:.75rem;color:var(--gray-400)">${esc(sched)}</span></td>
+      <td>${esc(j.pay)}</td>
+      <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
+      <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button>
+        <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
 }
 
-function openJobModal(job) {
+async function openJobModal(job) {
+  buildJobModalControls();
   document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
-  document.getElementById('jobId').value = job ? job.id : '';
-  document.getElementById('jTitle').value = job ? job.title : '';
-  document.getElementById('jType').value = job ? job.type : '';
-  document.getElementById('jLocation').value = job ? job.location : '';
-  document.getElementById('jPay').value = job ? job.pay : '';
-  document.getElementById('jLang').value = job ? job.lang : 'en';
-  document.getElementById('jDesc').value = job ? job.description : '';
-  document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
+  document.getElementById('jobId').value      = job ? job.id : '';
+  document.getElementById('jTitle').value     = job ? job.title : '';
+  document.getElementById('jLocation').value  = job ? job.location : '';
+  document.getElementById('jPay').value       = job ? job.pay : '';
+  document.getElementById('jLang').value      = job ? (job.lang || 'en') : 'en';
+  document.getElementById('jDesc').value      = job ? (job.description || '') : '';
+  document.getElementById('jUrgent').checked  = job ? !!job.urgent : false;
+  document.getElementById('jTimeStart').value = job ? (job.schedule_start || '') : '';
+  document.getElementById('jTimeEnd').value   = job ? (job.schedule_end || '') : '';
+  // Job type dropdown
+  const jType = document.getElementById('jType');
+  jType.value = job ? (job.type || '全职 (Full-Time)') : '全职 (Full-Time)';
+  if (!jType.value) jType.selectedIndex = 0;
+  // Employment type
+  document.getElementById('jEmpType').value = job ? (job.employment_type || '') : '';
+  // Days
+  setSelectedDays(job ? JSON.parse(job.schedule_days || '[]') : []);
+  // Benefits
+  setSelectedBenefits(job ? JSON.parse(job.benefits || '[]') : []);
+  // Partner dropdown
+  const sel = document.getElementById('jPartner');
+  sel.innerHTML = '<option value="">— 不指定公司 —</option>';
+  try {
+    const partners = await api('/admin/partners');
+    partners.filter(p => p.active).forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id; opt.textContent = p.name;
+      if (job && job.partner_id == p.id) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch {}
   document.getElementById('jobModal').classList.add('show');
 }
 function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
@@ -955,46 +1098,82 @@ function editJob(j) { openJobModal(j); }
 
 function randomFillJob() {
   const pool = [
-    { lang: 'zh', title: '仓库分拣员', type: '临时工', location: 'Chicago, IL', pay: '$17-19/hr',
-      desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。工作时间：周一至周五 06:00-14:30。' },
-    { lang: 'zh', title: '叉车操作员', type: '全职', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true,
-      desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁，提供完善福利（医疗+牙科）。' },
-    { lang: 'zh', title: '生产线操作工', type: '全职', location: 'Melrose Park, IL', pay: '$18/hr',
+    { lang: 'zh', title: '仓库分拣员', type: '临时工 (Temporary)', empType: 'W2',
+      location: 'Chicago, IL', pay: '$17-19/hr',
+      days: ['mon','tue','wed','thu','fri'], start: '06:00', end: '14:30',
+      benefits: ['overtime','weekly_pay'],
+      desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。' },
+    { lang: 'zh', title: '叉车操作员', type: '全职 (Full-Time)', empType: 'W2',
+      location: 'Cicero, IL', pay: '$20-24/hr', urgent: true,
+      days: ['mon','tue','wed','thu','fri'], start: '07:00', end: '15:30',
+      benefits: ['medical','dental','retirement','pto','overtime'],
+      desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁，提供完善福利。' },
+    { lang: 'zh', title: '生产线操作工', type: '全职 (Full-Time)', empType: 'W2',
+      location: 'Melrose Park, IL', pay: '$18/hr',
+      days: ['mon','tue','wed','thu','fri'], start: '08:00', end: '16:30',
+      benefits: ['medical','pto','weekly_pay'],
       desc: '食品加工生产线工作，需遵守卫生规定，提供工服及手套。每周加班机会多，可双休。' },
-    { lang: 'en', title: 'Warehouse Associate', type: 'Temp-to-Hire', location: 'Schaumburg, IL', pay: '$16-18/hr',
+    { lang: 'en', title: 'Warehouse Associate', type: '临时转正 (Temp-to-Hire)', empType: 'W2',
+      location: 'Schaumburg, IL', pay: '$16-18/hr',
+      days: ['mon','tue','wed','thu','fri'], start: '07:00', end: '15:30',
+      benefits: ['medical','dental','pto'],
       desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs. Day and night shifts available.' },
-    { lang: 'en', title: 'Machine Operator', type: 'Full-Time', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true,
+    { lang: 'en', title: 'Machine Operator', type: '全职 (Full-Time)', empType: 'Contract',
+      location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true,
+      days: ['mon','tue','wed','thu','fri','sat'], start: '06:00', end: '14:00',
+      benefits: ['overtime','holiday'],
       desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred. Benefits after 90 days.' },
-    { lang: 'en', title: 'General Labor', type: 'Temporary', location: 'Addison, IL', pay: '$15.50/hr',
-      desc: 'Various light industrial tasks including assembly, sorting and quality inspection. Weekend shifts available with a pay differential.' },
-    { lang: 'es', title: 'Trabajador de Almacén', type: 'Tiempo Completo', location: 'Melrose Park, IL', pay: '$16-18/hr',
-      desc: 'Clasificar y empacar productos en almacén. Horario de lunes a viernes, 7am-3:30pm. No se requiere experiencia previa, se ofrece capacitación.' },
-    { lang: 'es', title: 'Operador de Montacargas', type: 'Temporal', location: 'Cicero, IL', pay: '$20/hr', urgent: true,
-      desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía en turno nocturno (10pm-6am). Pago semanal.' },
+    { lang: 'en', title: 'General Labor', type: '临时工 (Temporary)', empType: '1099',
+      location: 'Addison, IL', pay: '$15.50/hr',
+      days: ['mon','tue','wed','thu','fri'], start: '08:00', end: '16:30',
+      benefits: ['weekly_pay'],
+      desc: 'Various light industrial tasks including assembly, sorting and quality inspection. Weekend shifts available with pay differential.' },
+    { lang: 'es', title: 'Trabajador de Almacén', type: '全职 (Full-Time)', empType: 'W2',
+      location: 'Melrose Park, IL', pay: '$16-18/hr',
+      days: ['mon','tue','wed','thu','fri'], start: '07:00', end: '15:30',
+      benefits: ['medical','weekly_pay'],
+      desc: 'Clasificar y empacar productos en almacén. No se requiere experiencia previa, se ofrece capacitación.' },
+    { lang: 'es', title: 'Operador de Montacargas', type: '临时工 (Temporary)', empType: 'W2',
+      location: 'Cicero, IL', pay: '$20/hr', urgent: true,
+      days: ['mon','tue','wed','thu','fri','sat','sun'], start: '22:00', end: '06:00',
+      benefits: ['overtime','weekly_pay'],
+      desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía en turno nocturno. Pago semanal.' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
-  document.getElementById('jTitle').value    = r.title;
-  document.getElementById('jType').value     = r.type;
-  document.getElementById('jLocation').value = r.location;
-  document.getElementById('jPay').value      = r.pay;
-  document.getElementById('jLang').value     = r.lang;
-  document.getElementById('jDesc').value     = r.desc;
-  document.getElementById('jUrgent').checked = !!r.urgent;
+  document.getElementById('jTitle').value     = r.title;
+  document.getElementById('jType').value      = r.type;
+  document.getElementById('jEmpType').value   = r.empType || '';
+  document.getElementById('jLocation').value  = r.location;
+  document.getElementById('jPay').value       = r.pay;
+  document.getElementById('jLang').value      = r.lang;
+  document.getElementById('jDesc').value      = r.desc;
+  document.getElementById('jUrgent').checked  = !!r.urgent;
+  document.getElementById('jTimeStart').value = r.start || '';
+  document.getElementById('jTimeEnd').value   = r.end || '';
+  setSelectedDays(r.days || []);
+  setSelectedBenefits(r.benefits || []);
 }
 
 async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
+  const lang = document.getElementById('jLang').value;
   const data = {
-    title: document.getElementById('jTitle').value,
-    type: document.getElementById('jType').value,
-    location: document.getElementById('jLocation').value,
-    pay: document.getElementById('jPay').value,
-    lang: document.getElementById('jLang').value,
-    lang_name: langNames[document.getElementById('jLang').value],
-    description: document.getElementById('jDesc').value,
-    urgent: document.getElementById('jUrgent').checked,
-    active: true
+    title:           document.getElementById('jTitle').value,
+    type:            document.getElementById('jType').value,
+    location:        document.getElementById('jLocation').value,
+    pay:             document.getElementById('jPay').value,
+    lang:            lang,
+    lang_name:       langNames[lang] || lang,
+    description:     document.getElementById('jDesc').value,
+    urgent:          document.getElementById('jUrgent').checked,
+    active:          true,
+    partner_id:      document.getElementById('jPartner').value || null,
+    employment_type: document.getElementById('jEmpType').value,
+    schedule_start:  document.getElementById('jTimeStart').value,
+    schedule_end:    document.getElementById('jTimeEnd').value,
+    schedule_days:   JSON.stringify(getSelectedDays()),
+    benefits:        JSON.stringify(getSelectedBenefits()),
   };
   if (!data.title) return alert('请填写职位名称');
   if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
