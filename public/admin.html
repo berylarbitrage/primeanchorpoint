@@ -421,8 +421,9 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
   <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
-  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+  <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn" onclick="saveJob()">保存</button>
+    <button class="btn" onclick="randomFillJob()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-red" onclick="closeJobModal()">取消</button>
   </div>
 </div></div>
@@ -936,6 +937,35 @@ function openJobModal(job) {
 }
 function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
 function editJob(j) { openJobModal(j); }
+
+function randomFillJob() {
+  const pool = [
+    { lang: 'zh', title: '仓库分拣员', type: '临时工', location: 'Chicago, IL', pay: '$17-19/hr',
+      desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。工作时间：周一至周五 06:00-14:30。' },
+    { lang: 'zh', title: '叉车操作员', type: '全职', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true,
+      desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁，提供完善福利（医疗+牙科）。' },
+    { lang: 'zh', title: '生产线操作工', type: '全职', location: 'Melrose Park, IL', pay: '$18/hr',
+      desc: '食品加工生产线工作，需遵守卫生规定，提供工服及手套。每周加班机会多，可双休。' },
+    { lang: 'en', title: 'Warehouse Associate', type: 'Temp-to-Hire', location: 'Schaumburg, IL', pay: '$16-18/hr',
+      desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs. Day and night shifts available.' },
+    { lang: 'en', title: 'Machine Operator', type: 'Full-Time', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true,
+      desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred. Benefits after 90 days.' },
+    { lang: 'en', title: 'General Labor', type: 'Temporary', location: 'Addison, IL', pay: '$15.50/hr',
+      desc: 'Various light industrial tasks including assembly, sorting and quality inspection. Weekend shifts available with a pay differential.' },
+    { lang: 'es', title: 'Trabajador de Almacén', type: 'Tiempo Completo', location: 'Melrose Park, IL', pay: '$16-18/hr',
+      desc: 'Clasificar y empacar productos en almacén. Horario de lunes a viernes, 7am-3:30pm. No se requiere experiencia previa, se ofrece capacitación.' },
+    { lang: 'es', title: 'Operador de Montacargas', type: 'Temporal', location: 'Cicero, IL', pay: '$20/hr', urgent: true,
+      desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía en turno nocturno (10pm-6am). Pago semanal.' },
+  ];
+  const r = pool[Math.floor(Math.random() * pool.length)];
+  document.getElementById('jTitle').value    = r.title;
+  document.getElementById('jType').value     = r.type;
+  document.getElementById('jLocation').value = r.location;
+  document.getElementById('jPay').value      = r.pay;
+  document.getElementById('jLang').value     = r.lang;
+  document.getElementById('jDesc').value     = r.desc;
+  document.getElementById('jUrgent').checked = !!r.urgent;
+}
 
 async function saveJob() {
   const id = document.getElementById('jobId').value;
