@@ -23,11 +23,11 @@
 .pass-wrap .eye:hover{color:var(--gray-600)}
 
 .app{display:none}.app.show{display:block}
-.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:var(--blue);color:#fff;padding:1.5rem 0}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:var(--blue);color:#fff;padding:1.5rem 0;overflow-y:auto;display:flex;flex-direction:column}
 .sidebar h2{font-size:1rem;padding:0 1.5rem;margin-bottom:2rem;color:var(--sky)}
 .sidebar a{display:block;padding:10px 1.5rem;color:rgba(255,255,255,.5);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}
 .sidebar a:hover,.sidebar a.active{color:#fff;background:rgba(255,255,255,.08)}
-.sidebar .logout{position:absolute;bottom:1.5rem;left:0;right:0;padding:10px 1.5rem;color:var(--red);font-size:.82rem}
+.sidebar .logout{margin-top:auto;padding:10px 1.5rem;color:var(--red);font-size:.82rem}
 .main{margin-left:220px;padding:2rem}
 .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:.5rem}
 .top h1{font-size:1.5rem;color:var(--blue)}
