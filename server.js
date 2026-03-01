@@ -1401,6 +1401,16 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.first_name || !d.last_name) return res.status(400).json({ error: '请填写姓名' });
+  if (!d.force) {
+    if (d.phone && d.phone.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE phone=?').get(d.phone.trim());
+      if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
+    }
+    if (d.email && d.email.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE email=?').get(d.email.trim());
+      if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
+    }
+  }
   const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
   if (d.ssn) {
@@ -1436,6 +1446,16 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
   const d = req.body;
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
+  if (!d.force) {
+    if (d.phone && d.phone.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE phone=? AND id!=?').get(d.phone.trim(), req.params.id);
+      if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
+    }
+    if (d.email && d.email.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE email=? AND id!=?').get(d.email.trim(), req.params.id);
+      if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
+    }
+  }
   let ssn_encrypted = emp.ssn_encrypted, ssn_iv = emp.ssn_iv, ssn_last4 = emp.ssn_last4;
   if (d.ssn && d.ssn !== '__KEEP__') {
     const digits = d.ssn.replace(/\D/g, '');
