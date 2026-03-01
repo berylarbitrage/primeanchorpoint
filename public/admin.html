@@ -50,6 +50,9 @@ tr:hover td{background:var(--sky-light)}
 .day-btn,.benefit-btn{padding:4px 10px;border-radius:20px;border:1px solid var(--gray-300);background:var(--gray-100);color:var(--gray-700);font-size:.78rem;cursor:pointer;transition:all .15s}
 .day-btn.active,.benefit-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
 .badge-employment{background:#EDE9FE;color:#5B21B6}
+.badge-cooperated{background:#D1FAE5;color:#065F46}
+.badge-rejected{background:#FEE2E2;color:#991B1B}
+.badge-unreachable{background:#F3F4F6;color:#6B7280}
 .badge-w2{background:#D1FAE5;color:#065F46}
 .badge-contract{background:#FEF3C7;color:#92400E}
 .assign-dropdown{display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:200px;overflow-y:auto}
@@ -220,23 +223,52 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="exportCSV()">导出 CSV</button>
     </div>
   </div>
-  <div class="search-bar">
-    <input type="text" id="inqSearch" placeholder="搜索姓名、邮箱、电话、公司..." oninput="filterInquiries()">
-    <input type="text" id="inqPosSearch" placeholder="按职位筛选..." oninput="filterInquiries()" style="max-width:180px">
-    <select id="inqTypeFilter" onchange="filterInquiries()">
-      <option value="">全部类型</option>
-      <option value="Employer">雇主</option>
-      <option value="Job Seeker">求职者</option>
-      <option value="Other">其他</option>
-    </select>
-    <select id="inqSortSel" onchange="filterInquiries()" style="max-width:160px">
-      <option value="date_desc">日期 ↓ 最新</option>
-      <option value="date_asc">日期 ↑ 最旧</option>
-      <option value="pos_asc">职位 A→Z</option>
-      <option value="pos_desc">职位 Z→A</option>
-    </select>
+  <!-- sub-tab toggle -->
+  <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:1rem">
+    <button id="inqTabPending" onclick="switchInqTab('pending')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)">
+      待处理
+    </button>
+    <button id="inqTabHistory" onclick="switchInqTab('history')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
+      历史问卷
+    </button>
   </div>
-  <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>申请职位</th><th>地点</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
+
+  <!-- pending pane -->
+  <div id="inqPanePending">
+    <div class="search-bar">
+      <input type="text" id="inqSearch" placeholder="搜索姓名、邮箱、电话、公司..." oninput="filterInquiries()">
+      <input type="text" id="inqPosSearch" placeholder="按职位筛选..." oninput="filterInquiries()" style="max-width:180px">
+      <select id="inqTypeFilter" onchange="filterInquiries()">
+        <option value="">全部类型</option>
+        <option value="Employer">雇主</option>
+        <option value="Job Seeker">求职者</option>
+        <option value="Other">其他</option>
+      </select>
+      <select id="inqSortSel" onchange="filterInquiries()" style="max-width:160px">
+        <option value="date_desc">日期 ↓ 最新</option>
+        <option value="date_asc">日期 ↑ 最旧</option>
+        <option value="pos_asc">职位 A→Z</option>
+        <option value="pos_desc">职位 Z→A</option>
+      </select>
+    </div>
+    <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>申请职位</th><th>地点</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
+  </div>
+
+  <!-- history pane -->
+  <div id="inqPaneHistory" style="display:none">
+    <div class="search-bar">
+      <input type="text" id="inqHistSearch" placeholder="搜索姓名、电话、公司..." oninput="filterInquiryHistory()">
+      <select id="inqHistStatus" onchange="filterInquiryHistory()">
+        <option value="">全部结果</option>
+        <option value="cooperated">✅ 已合作</option>
+        <option value="rejected">❌ 已拒绝</option>
+        <option value="unreachable">📵 联系不上</option>
+      </select>
+    </div>
+    <div class="card"><table><thead><tr><th>处理日期</th><th>姓名</th><th>类型</th><th>申请职位</th><th>处理结果</th><th>备注</th><th>操作</th></tr></thead><tbody id="inqHistTable"></tbody></table></div>
+  </div>
 </div>
 
 <!-- Assignments -->
@@ -607,7 +639,30 @@ tr:hover td{background:var(--sky-light)}
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
+    <button class="btn" style="background:var(--gray-200);color:var(--gray-700)" onclick="openProcessModal()">✅ 标记已处理</button>
     <button class="btn btn-red" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Inquiry Process Modal -->
+<div class="modal-bg" id="procModal"><div class="modal" style="max-width:420px">
+  <h2>标记处理结果</h2>
+  <div class="field">
+    <label>处理结果 *</label>
+    <select id="procStatus">
+      <option value="">-- 请选择 --</option>
+      <option value="cooperated">✅ 已合作</option>
+      <option value="rejected">❌ 已拒绝</option>
+      <option value="unreachable">📵 联系不上</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>备注（选填）</label>
+    <textarea id="procNote" placeholder="例：已入职XX公司，或沟通后不符合需求..." style="height:90px"></textarea>
+  </div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="saveProcessInquiry()">确认</button>
+    <button class="btn btn-red" onclick="document.getElementById('procModal').classList.remove('show')">取消</button>
   </div>
 </div></div>
 
@@ -1381,9 +1436,30 @@ async function deleteJob(id) {
 }
 
 // ─── Inquiries (问卷管理) ───
+let allInqHistory = [];
+let currentInqTab = 'pending';
+
+function switchInqTab(tab) {
+  currentInqTab = tab;
+  document.getElementById('inqPanePending').style.display = tab === 'pending' ? '' : 'none';
+  document.getElementById('inqPaneHistory').style.display = tab === 'history'  ? '' : 'none';
+  const btnP = document.getElementById('inqTabPending');
+  const btnH = document.getElementById('inqTabHistory');
+  btnP.style.borderBottomColor = tab === 'pending' ? 'var(--sky)' : 'transparent';
+  btnP.style.color = tab === 'pending' ? 'var(--sky)' : 'var(--gray-500)';
+  btnH.style.borderBottomColor = tab === 'history'  ? 'var(--sky)' : 'transparent';
+  btnH.style.color = tab === 'history'  ? 'var(--sky)' : 'var(--gray-500)';
+  if (tab === 'history' && !allInqHistory.length) loadInquiryHistory();
+}
+
 async function loadInquiries() {
   allInquiries = await api('/admin/inquiries');
   renderInquiries(allInquiries);
+}
+
+async function loadInquiryHistory() {
+  allInqHistory = await api('/admin/inquiries?history=1');
+  renderInquiryHistory(allInqHistory);
 }
 
 function filterInquiries() {
@@ -1392,36 +1468,100 @@ function filterInquiries() {
   const typeFilter = document.getElementById('inqTypeFilter').value;
   const sortVal = document.getElementById('inqSortSel').value;
   let filtered = allInquiries;
-  if (keyword) {
-    filtered = filtered.filter(i =>
-      (i.name || '').toLowerCase().includes(keyword) ||
-      (i.email || '').toLowerCase().includes(keyword) ||
-      (i.phone || '').toLowerCase().includes(keyword) ||
-      (i.company || '').toLowerCase().includes(keyword)
-    );
-  }
-  if (posKeyword) {
-    filtered = filtered.filter(i => (i.positions || '').toLowerCase().includes(posKeyword));
-  }
+  if (keyword) filtered = filtered.filter(i =>
+    (i.name||'').toLowerCase().includes(keyword) ||
+    (i.email||'').toLowerCase().includes(keyword) ||
+    (i.phone||'').toLowerCase().includes(keyword) ||
+    (i.company||'').toLowerCase().includes(keyword));
+  if (posKeyword) filtered = filtered.filter(i => (i.positions||'').toLowerCase().includes(posKeyword));
   if (typeFilter) filtered = filtered.filter(i => i.type === typeFilter);
-  if (sortVal === 'date_asc') filtered = [...filtered].sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
+  if (sortVal === 'date_asc')  filtered = [...filtered].sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
   else if (sortVal === 'date_desc') filtered = [...filtered].sort((a,b) => new Date(b.created_at)-new Date(a.created_at));
-  else if (sortVal === 'pos_asc') filtered = [...filtered].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
-  else if (sortVal === 'pos_desc') filtered = [...filtered].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
+  else if (sortVal === 'pos_asc')   filtered = [...filtered].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
+  else if (sortVal === 'pos_desc')  filtered = [...filtered].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
   renderInquiries(filtered);
 }
 
+function filterInquiryHistory() {
+  const keyword = document.getElementById('inqHistSearch').value.toLowerCase();
+  const statusFilter = document.getElementById('inqHistStatus').value;
+  let filtered = allInqHistory;
+  if (keyword) filtered = filtered.filter(i =>
+    (i.name||'').toLowerCase().includes(keyword) ||
+    (i.phone||'').toLowerCase().includes(keyword) ||
+    (i.company||'').toLowerCase().includes(keyword));
+  if (statusFilter) filtered = filtered.filter(i => i.proc_status === statusFilter);
+  renderInquiryHistory(filtered);
+}
+
+const procStatusLabel = s => ({ cooperated:'已合作', rejected:'已拒绝', unreachable:'联系不上' })[s] || s;
+const procStatusIcon  = s => ({ cooperated:'✅', rejected:'❌', unreachable:'📵' })[s] || '';
+
 function renderInquiries(inqs) {
   document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
-    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span></td>
+    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></td>
     <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
     <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
-    <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span></td>
+    <td><span class="badge badge-${i.type==='Employer'?'employer':i.type==='Job Seeker'?'seeker':'other'}">${typeLabel(i.type)}</span></td>
     <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.82rem">${esc(i.location||'')}</td>
     <td style="white-space:nowrap">${esc(i.phone)}</td>
-    <td style="white-space:nowrap"><button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button> <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无问卷提交</td></tr>';
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button>
+      <button class="btn btn-sm" style="background:var(--gray-200);color:var(--gray-700)" onclick="event.stopPropagation();openProcessModalDirect(${JSON.stringify(i).replace(/'/g,'&#39;')})">处理</button>
+      <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无待处理问卷</td></tr>';
+}
+
+function renderInquiryHistory(inqs) {
+  document.getElementById('inqHistTable').innerHTML = inqs.length ? inqs.map(i => `<tr>
+    <td style="white-space:nowrap;font-size:.82rem">${i.processed_at ? new Date(i.processed_at).toLocaleDateString() : '—'}</td>
+    <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.75rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
+    <td><span class="badge badge-${i.type==='Employer'?'employer':i.type==='Job Seeker'?'seeker':'other'}">${typeLabel(i.type)}</span></td>
+    <td style="font-size:.82rem;max-width:160px">${esc(i.positions||'—')}</td>
+    <td><span class="badge badge-${i.proc_status}">${procStatusIcon(i.proc_status)} ${procStatusLabel(i.proc_status)}</span></td>
+    <td style="font-size:.82rem;max-width:200px;color:var(--gray-600)">${esc(i.proc_note||'—')}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm btn-outline" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>查看</button>
+      <button class="btn btn-sm" style="background:var(--gray-200);color:var(--gray-700)" onclick="undoProcessInquiry(${i.id})">撤销</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无历史记录</td></tr>';
+}
+
+// ── Process modal ──
+function openProcessModal() {
+  // called from detail modal
+  document.getElementById('procStatus').value = '';
+  document.getElementById('procNote').value = '';
+  document.getElementById('procModal').classList.add('show');
+}
+
+function openProcessModalDirect(inq) {
+  currentInquiry = inq;
+  openProcessModal();
+}
+
+async function saveProcessInquiry() {
+  if (!currentInquiry) return;
+  const status = document.getElementById('procStatus').value;
+  if (!status) return alert('请选择处理结果');
+  const note = document.getElementById('procNote').value.trim();
+  await api(`/admin/inquiries/${currentInquiry.id}/process`, { method: 'PUT', body: JSON.stringify({ status, note }) });
+  document.getElementById('procModal').classList.remove('show');
+  document.getElementById('inqModal').classList.remove('show');
+  // refresh both lists
+  allInqHistory = [];
+  await loadInquiries();
+  if (currentInqTab === 'history') loadInquiryHistory();
+}
+
+async function undoProcessInquiry(id) {
+  if (!confirm('撤销处理，将此问卷移回待处理？')) return;
+  await api(`/admin/inquiries/${id}/process`, { method: 'PUT', body: JSON.stringify({ undo: true }) });
+  allInqHistory = [];
+  loadInquiryHistory();
+  loadInquiries();
 }
 
 function showInquiry(i) {
