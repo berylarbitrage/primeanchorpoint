@@ -20,6 +20,7 @@ if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
 
 const db = new Database(path.join(dataDir, 'prime.db'));
 db.pragma('journal_mode = WAL');
+db.pragma('wal_autocheckpoint = 100');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS jobs (
@@ -383,6 +384,9 @@ function runBackup(trigger) {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const results = [];
   const dbPath = path.join(dataDir, 'prime.db');
+
+  // Checkpoint WAL before backup to ensure all data is in the main db file
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
 
   for (const dir of BACKUP_DIRS) {
     try {
@@ -1804,6 +1808,26 @@ app.get('/admin', (req, res) => {
 });
 
 // ─── Start ───
+// Periodic WAL checkpoint every 5 minutes
+setInterval(() => {
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) { console.error('[WAL] checkpoint error:', e.message); }
+}, 5 * 60 * 1000);
+
+// Graceful shutdown: checkpoint WAL and close database
+function gracefulShutdown(signal) {
+  console.log(`[Shutdown] ${signal} received, checkpointing WAL...`);
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    db.close();
+    console.log('[Shutdown] Database closed cleanly');
+  } catch(e) { console.error('[Shutdown] Error:', e.message); }
+  process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 app.listen(PORT, () => {
+  // Initial checkpoint on startup to flush any pending WAL data
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
 });
