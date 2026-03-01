@@ -941,6 +941,7 @@ tr:hover td{background:var(--sky-light)}
   <div style="flex:1;overflow-y:auto;min-height:0">
   <div id="inqDetail"></div>
   <div id="inqOnboardStatus" style="display:none;margin-top:1rem;padding:.75rem 1rem;background:var(--off-white);border-radius:8px;font-size:.85rem"></div>
+  </div>
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;flex-shrink:0">
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
@@ -1270,15 +1271,14 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="field-row no-print" style="margin-bottom:1rem">
-    <div class="field">
-      <label>员工 *</label>
-      <input type="hidden" id="tsEmp">
+    <div class="field" style="flex:2">
+      <label>员工 * <span style="font-weight:400;color:var(--gray-400);font-size:.78rem">（可选多人，相同工时将批量提交）</span></label>
       <div class="emp-srch-wrap">
-        <input id="tsEmpSearch" type="text" placeholder="输入姓名或工号搜索..." autocomplete="off"
+        <input id="tsEmpSearch" type="text" placeholder="输入姓名或工号搜索并添加..." autocomplete="off"
           oninput="filterTsEmp()" onfocus="filterTsEmp()" onblur="hideTsEmpDrop()">
         <div id="tsEmpDrop" class="emp-srch-drop"></div>
       </div>
-      <div id="tsEmpSelected" class="emp-selected"></div>
+      <div id="tsEmpTags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px"></div>
     </div>
     <div class="field"><label>公司 (客户)</label><input id="tsCompany" type="text" placeholder="例：ABC Logistics"></div>
     <div class="field"><label>起始日期 (周一)</label><input id="tsStartDate" type="date" onchange="buildTsRows()"></div>
@@ -3496,7 +3496,7 @@ async function deleteTimeEntry(id) {
 // ─── Weekly Timesheet Modal ───
 let tsWeeks = 1;
 let tsAllEmps = [];
-let tsSelectedEmp = null; // { id, name, code, email, phone }
+let tsSelectedEmps = []; // [{ id, name, code, email, phone }, ...]
 
 function setTsWeeks(n, btn) {
   tsWeeks = n;
@@ -3509,36 +3509,45 @@ function setTsWeeks(n, btn) {
 function filterTsEmp() {
   const q = document.getElementById('tsEmpSearch').value.toLowerCase();
   const drop = document.getElementById('tsEmpDrop');
-  const matches = tsAllEmps.filter(e => e.status === 'active' &&
+  const selectedIds = new Set(tsSelectedEmps.map(e => e.id));
+  const matches = tsAllEmps.filter(e => e.status === 'active' && !selectedIds.has(e.id) &&
     (`${e.first_name} ${e.last_name}`.toLowerCase().includes(q) ||
      (e.employee_id||'').toLowerCase().includes(q)));
   if (!matches.length || !q) { drop.style.display = 'none'; return; }
   drop.innerHTML = matches.slice(0,8).map(e =>
-    `<div class="eo" onmousedown="selectTsEmp(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}','${esc(e.employee_id||'')}','${esc(e.email||'')}','${esc(e.phone||'')}')">
+    `<div class="eo" onmousedown="addTsEmp(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}','${esc(e.employee_id||'')}','${esc(e.email||'')}','${esc(e.phone||'')}')">
       ${esc(e.first_name)} ${esc(e.last_name)}
       <small>${esc(e.employee_id||'')} ${e.department ? '· '+esc(e.department) : ''}</small>
     </div>`).join('');
   drop.style.display = 'block';
 }
 function hideTsEmpDrop() { setTimeout(()=>document.getElementById('tsEmpDrop').style.display='none',150); }
-function selectTsEmp(id, name, code, email, phone) {
-  tsSelectedEmp = { id, name, code, email, phone };
-  document.getElementById('tsEmp').value = id;
-  document.getElementById('tsEmpSearch').value = `${name} (${code})`;
+function addTsEmp(id, name, code, email, phone) {
+  if (tsSelectedEmps.find(e => e.id === id)) return;
+  tsSelectedEmps.push({ id, name, code, email, phone });
+  document.getElementById('tsEmpSearch').value = '';
   document.getElementById('tsEmpDrop').style.display = 'none';
-  const sel = document.getElementById('tsEmpSelected');
-  sel.textContent = `✔ ${name} · ${code}`;
-  sel.style.display = 'block';
-  updateTsEmployeeInfo();
+  renderTsEmpTags();
+}
+function removeTsEmp(id) {
+  tsSelectedEmps = tsSelectedEmps.filter(e => e.id !== id);
+  renderTsEmpTags();
+}
+function renderTsEmpTags() {
+  const tags = document.getElementById('tsEmpTags');
+  tags.innerHTML = tsSelectedEmps.map(e =>
+    `<span style="display:inline-flex;align-items:center;gap:4px;background:var(--sky-light);color:var(--blue);border-radius:20px;padding:3px 10px;font-size:.78rem;font-weight:600">
+      ${esc(e.name)} <span style="color:var(--gray-400);font-weight:400">${esc(e.code)}</span>
+      <span style="cursor:pointer;color:var(--gray-500);margin-left:2px" onmousedown="removeTsEmp(${e.id})">✕</span>
+    </span>`).join('');
 }
 
 async function openTsModal() {
   tsAllEmps = await api('/admin/employees');
-  tsSelectedEmp = null;
-  document.getElementById('tsEmp').value = '';
+  tsSelectedEmps = [];
   document.getElementById('tsEmpSearch').value = '';
   document.getElementById('tsEmpDrop').style.display = 'none';
-  document.getElementById('tsEmpSelected').style.display = 'none';
+  document.getElementById('tsEmpTags').innerHTML = '';
   document.getElementById('tsCompany').value = '';
   // populate jobs
   const jobs = await api('/admin/jobs');
@@ -3637,15 +3646,14 @@ function updateTsTotals() {
 }
 
 function updateTsEmployeeInfo() {
-  if (tsSelectedEmp) {
-    document.getElementById('tsPrintName').textContent = tsSelectedEmp.name || '';
-    document.getElementById('tsPrintId').textContent = tsSelectedEmp.code || '';
+  if (tsSelectedEmps.length === 1) {
+    document.getElementById('tsPrintName').textContent = tsSelectedEmps[0].name || '';
+    document.getElementById('tsPrintId').textContent = tsSelectedEmps[0].code || '';
   }
 }
 
 async function saveBatchTimesheet() {
-  const empId = document.getElementById('tsEmp').value;
-  if (!empId) return alert('请先通过搜索选择员工，点击下拉列表中的员工名称');
+  if (!tsSelectedEmps.length) return alert('请先搜索并添加至少一名员工');
   const entries = [];
   let periodStart = '', periodEnd = '';
   let totalRows = 0, skippedRows = 0;
@@ -3676,22 +3684,29 @@ async function saveBatchTimesheet() {
   const jobId = document.getElementById('tsJob').value || null;
   const company = document.getElementById('tsCompany').value || '';
   try {
-    const r = await api('/admin/time-entries/batch', {
-      method: 'POST',
-      body: JSON.stringify({
-        employee_id: parseInt(empId), entries,
-        job_id: jobId ? parseInt(jobId) : null,
-        company_name: company,
-        period_start: periodStart,
-        period_end: periodEnd
-      })
-    });
-    if (r.success) {
+    const results = [];
+    for (const emp of tsSelectedEmps) {
+      const r = await api('/admin/time-entries/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          employee_id: parseInt(emp.id), entries,
+          job_id: jobId ? parseInt(jobId) : null,
+          company_name: company,
+          period_start: periodStart,
+          period_end: periodEnd
+        })
+      });
+      if (r.success) results.push({ emp, token: r.token, count: r.count });
+      else alert(`${emp.name} 保存失败: ${r.error || '未知错误'}`);
+    }
+    if (results.length) {
       closeTsModal();
       loadTimeEntries();
-      showTsLink(r.token, r.count);
-    } else {
-      alert(r.error || '保存失败，请重试');
+      if (results.length === 1) {
+        showTsLink(results[0].token, results[0].count, results[0].emp);
+      } else {
+        showToast(`✅ 已为 ${results.length} 名员工保存工时并生成确认链接`);
+      }
     }
   } catch(e) {
     alert('网络错误，请检查连接后重试：' + e.message);
@@ -3700,9 +3715,9 @@ async function saveBatchTimesheet() {
 
 let _tsLinkToken = '';
 let _tsLinkEmp = null;
-function showTsLink(token, count) {
+function showTsLink(token, count, emp) {
   _tsLinkToken = token;
-  _tsLinkEmp = tsSelectedEmp;
+  _tsLinkEmp = emp || (tsSelectedEmps.length === 1 ? tsSelectedEmps[0] : null);
   const url = `${location.origin}/ts?token=${token}`;
   document.getElementById('tsLinkUrl').textContent = url;
   // show email/SMS buttons if employee has contact info
