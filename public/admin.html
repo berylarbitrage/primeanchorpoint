@@ -640,7 +640,8 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
     <button class="btn" style="background:var(--gray-200);color:var(--gray-700)" onclick="openProcessModal()">✅ 标记已处理</button>
-    <button class="btn btn-red" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
+    <button class="btn btn-red" onclick="deleteInqFromModal()">🗑 删除</button>
+    <button class="btn" style="background:var(--gray-100);color:var(--gray-600)" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
 
@@ -657,7 +658,7 @@ tr:hover td{background:var(--sky-light)}
     </select>
   </div>
   <div class="field">
-    <label>备注（选填）</label>
+    <label>备注 *（必填）</label>
     <textarea id="procNote" placeholder="例：已入职XX公司，或沟通后不符合需求..." style="height:90px"></textarea>
   </div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
@@ -1547,6 +1548,7 @@ async function saveProcessInquiry() {
   const status = document.getElementById('procStatus').value;
   if (!status) return alert('请选择处理结果');
   const note = document.getElementById('procNote').value.trim();
+  if (!note) return alert('请填写备注');
   await api(`/admin/inquiries/${currentInquiry.id}/process`, { method: 'PUT', body: JSON.stringify({ status, note }) });
   document.getElementById('procModal').classList.remove('show');
   document.getElementById('inqModal').classList.remove('show');
@@ -1655,6 +1657,15 @@ async function viewOnboardDocs(subId, name) {
       </div>`).join('')
     : '<p style="color:var(--gray-400);font-size:.85rem">暂无上传文件</p>';
   document.getElementById('onboardDocModal').classList.add('show');
+}
+
+async function deleteInqFromModal() {
+  if (!currentInquiry) return;
+  if (!confirm('确定删除此问卷？')) return;
+  await api(`/admin/inquiries/${currentInquiry.id}`, { method: 'DELETE' });
+  document.getElementById('inqModal').classList.remove('show');
+  allInqHistory = [];
+  loadInquiries();
 }
 
 async function deleteInq(id) {
