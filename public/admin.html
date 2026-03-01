@@ -3282,7 +3282,6 @@ function sendEmpDocLink(empId, empName) {
 async function generateEmpDocLink() {
   const empId = document.getElementById('empDocLinkEmpId').value;
   const note  = document.getElementById('empDocAdminNote').value;
-  const docs  = ['gov_id','ssn','work_card'].filter(k => document.getElementById('docReq'+k.replace(/^\w/,c=>c.toUpperCase()).replace('_','').replace(/^\w/,c=>c.toUpperCase())).checked);
   const docIds = { gov_id: 'docReqGovId', ssn: 'docReqSsn', work_card: 'docReqWorkCard' };
   const requestedDocs = Object.entries(docIds).filter(([,id]) => document.getElementById(id).checked).map(([k]) => k);
   if (!requestedDocs.length) return alert('请至少选择一种材料');
