@@ -525,6 +525,18 @@ const WORKER_POSITIONS = [
 // Add quote_request column to inquiries if not already present (migration)
 try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
 
+// Verification codes table for registration
+db.exec(`CREATE TABLE IF NOT EXISTS verification_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  verified INTEGER DEFAULT 0,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id)
+)`);
+
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
   .split(',').map(d => d.trim()).filter(Boolean);
@@ -2443,9 +2455,11 @@ app.post('/api/worker/login', (req, res) => {
   const identifier = (login || username || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
   // Try matching by email, phone, or username
-  const w = db.prepare('SELECT * FROM worker_accounts WHERE (email=? OR phone=? OR username=?) AND active=1').get(identifier, identifier, identifier);
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(identifier, identifier, identifier);
   if (!w || !verifyPassword(password, w.salt, w.password_hash))
     return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
+  if (!w.active)
+    return res.status(403).json({ error: '账号尚未验证，请先完成手机和邮箱验证 / Account not verified. Please complete phone and email verification first.' });
   const token = crypto.randomBytes(32).toString('hex');
   workerSessions.set(token, { created: Date.now(), workerId: w.id, employeeId: w.employee_id });
   res.json({ token, employee_id: w.employee_id });
@@ -2623,12 +2637,56 @@ app.post('/api/register/worker', (req, res) => {
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
   const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
-    VALUES (?,?,?,?,?,?,?,?,?,1)`)
+    VALUES (?,?,?,?,?,?,?,?,?,0)`)
     .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []));
+  const accountId = r.lastInsertRowid;
+  // Generate 6-digit verification codes
+  const phoneCode = String(Math.floor(100000 + Math.random() * 900000));
+  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(accountId);
+  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
+  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
+  console.log(`[Verify] Worker #${accountId} phone code: ${phoneCode}, email code: ${emailCode}`);
+  res.json({ success: true, account_id: accountId, needs_verification: true, message: 'Verification codes sent' });
+});
+
+// Resend verification code
+app.post('/api/register/resend-code', (req, res) => {
+  const { account_id, type } = req.body;
+  if (!account_id || !['phone', 'email'].includes(type))
+    return res.status(400).json({ error: 'account_id and type (phone/email) required' });
+  const acc = db.prepare('SELECT id, active FROM worker_accounts WHERE id=?').get(account_id);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  if (acc.active) return res.status(400).json({ error: 'Account already verified' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
+  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, type, code, expires);
+  console.log(`[Verify] Resend ${type} code for Worker #${account_id}: ${code}`);
+  res.json({ success: true });
+});
+
+// Verify codes and activate account
+app.post('/api/register/verify', (req, res) => {
+  const { account_id, phone_code, email_code } = req.body;
+  if (!account_id || !phone_code || !email_code)
+    return res.status(400).json({ error: 'account_id, phone_code, and email_code required' });
+  const acc = db.prepare('SELECT id, active, employee_id FROM worker_accounts WHERE id=?').get(account_id);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  if (acc.active) return res.status(400).json({ error: 'Account already verified' });
+  const now = new Date().toISOString();
+  const pv = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'phone', phone_code, now);
+  if (!pv) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+  const ev = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'email', email_code, now);
+  if (!ev) return res.status(400).json({ error: '邮箱验证码错误或已过期 / Invalid or expired email code' });
+  // Activate account
+  db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(account_id);
   // Auto-login
   const token = crypto.randomBytes(32).toString('hex');
-  workerSessions.set(token, { created: Date.now(), workerId: r.lastInsertRowid, employeeId: null });
-  res.json({ success: true, token, message: 'Registration successful' });
+  workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+  res.json({ success: true, token, message: 'Verification successful' });
 });
 
 app.post('/api/register/enterprise', (req, res) => {
