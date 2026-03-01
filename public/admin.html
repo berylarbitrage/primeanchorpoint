@@ -202,7 +202,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="Other">其他</option>
     </select>
   </div>
-  <div class="card"><table><thead><tr><th>日期</th><th>姓名</th><th>类型</th><th>邮箱</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>日期</th><th>编号</th><th>姓名</th><th>类型</th><th>邮箱</th><th>电话</th><th>操作</th></tr></thead><tbody id="inqTable"></tbody></table></div>
 </div>
 
 <!-- Assignments -->
@@ -1021,11 +1021,12 @@ function filterInquiries() {
 function renderInquiries(inqs) {
   document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
     <td>${new Date(i.created_at).toLocaleDateString()}</td>
+    <td><span style="font-family:monospace;font-size:.75rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
     <td><strong>${esc(i.name)}</strong></td>
     <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span></td>
     <td>${esc(i.email)}</td><td>${esc(i.phone)}</td>
     <td><button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button> <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无问卷提交</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无问卷提交</td></tr>';
 }
 
 function showInquiry(i) {
@@ -1037,7 +1038,7 @@ function showInquiry(i) {
     languages: '语言能力', comments: '备注'
   };
   const fields = [
-    ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
+    ['公司编号', i.employer_id], ['姓名', i.name], ['邮箱', i.email], ['电话', i.phone], ['公司', i.company],
     ['类型', typeLabel(i.type)], ['职位需求', i.positions], ['人数', i.workers],
     ['地点', i.location], ['开始日期', i.start_date], ['工作经验', i.experience],
     ['语言能力', i.languages], ['备注', i.comments],
