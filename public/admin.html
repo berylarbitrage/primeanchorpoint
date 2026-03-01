@@ -53,6 +53,24 @@ tr:hover td{background:var(--sky-light)}
 .badge-w2{background:#D1FAE5;color:#065F46}
 .badge-contract{background:#FEF3C7;color:#92400E}
 .badge-open{background:#D1FAE5;color:#065F46}.badge-filled{background:#DBEAFE;color:#1D4ED8}.badge-on_hold{background:#FEF9C3;color:#92400E}.badge-closed{background:#F3F4F6;color:#6B7280}
+/* ── Star ratings ── */
+.star-row{display:flex;align-items:center;gap:.5rem;margin:.35rem 0}
+.star-row label{width:90px;font-size:.82rem;color:var(--gray-600);flex-shrink:0}
+.stars{display:inline-flex;gap:2px;direction:rtl}
+.stars input{display:none}
+.stars label{font-size:1.35rem;color:#D1D5DB;cursor:pointer;transition:color .1s;direction:ltr}
+.stars input:checked~label,.stars label:hover,.stars label:hover~label{color:#FBBF24}
+.rating-card{background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:.85rem 1rem;margin-bottom:.75rem}
+.rating-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.6rem}
+.rating-card-title{font-weight:700;color:var(--blue);font-size:.92rem}
+.rating-card-meta{font-size:.75rem;color:var(--gray-400)}
+.rating-mini-stars{display:inline-flex;gap:1px;font-size:.85rem}
+.rating-score-bar{display:flex;align-items:center;gap:.5rem;margin:.2rem 0;font-size:.78rem}
+.rating-score-bar span:first-child{width:72px;color:var(--gray-500);flex-shrink:0}
+.score-pip{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--gray-200);margin:0 1px}
+.score-pip.filled{background:#FBBF24}
+.pay-range-badge{display:inline-block;background:#EFF6FF;color:#1D4ED8;border-radius:20px;padding:3px 10px;font-size:.78rem;font-weight:700;margin-top:.4rem}
+.avg-star-badge{display:inline-flex;align-items:center;gap:3px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:2px 8px;font-size:.78rem;font-weight:700;color:#92400E}
 /* Close-reason modal radio list */
 .close-reason-group{margin:.4rem 0 .8rem}
 .close-reason-group h4{font-size:.78rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:.4rem}
@@ -520,6 +538,106 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Job Modal -->
+<!-- ════ Employee Rating Modal ════ -->
+<div class="modal-bg" id="ratingModal"><div class="modal" style="max-width:560px">
+  <h2 id="ratingModalTitle">职位能力评分</h2>
+  <input type="hidden" id="ratingId">
+  <input type="hidden" id="ratingEmpId">
+
+  <div class="field" style="position:relative">
+    <label>评分职位 *</label>
+    <select id="ratingJob" onchange="onRatingJobChange()"><option value="">-- 通用评分（不绑定具体职位）--</option></select>
+  </div>
+
+  <div style="margin:.8rem 0 .4rem;font-weight:600;color:var(--blue);font-size:.88rem">能力维度评分（1–5 ★）</div>
+
+  <div class="star-row">
+    <label>工作效率</label>
+    <div class="stars" id="starsEfficiency">
+      <input type="radio" name="s_efficiency" id="e5" value="5"><label for="e5">★</label>
+      <input type="radio" name="s_efficiency" id="e4" value="4"><label for="e4">★</label>
+      <input type="radio" name="s_efficiency" id="e3" value="3"><label for="e3">★</label>
+      <input type="radio" name="s_efficiency" id="e2" value="2"><label for="e2">★</label>
+      <input type="radio" name="s_efficiency" id="e1" value="1"><label for="e1">★</label>
+    </div>
+    <span id="lblEfficiency" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>工作质量</label>
+    <div class="stars" id="starsQuality">
+      <input type="radio" name="s_quality" id="q5" value="5"><label for="q5">★</label>
+      <input type="radio" name="s_quality" id="q4" value="4"><label for="q4">★</label>
+      <input type="radio" name="s_quality" id="q3" value="3"><label for="q3">★</label>
+      <input type="radio" name="s_quality" id="q2" value="2"><label for="q2">★</label>
+      <input type="radio" name="s_quality" id="q1" value="1"><label for="q1">★</label>
+    </div>
+    <span id="lblQuality" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>出勤情况</label>
+    <div class="stars" id="starsAttendance">
+      <input type="radio" name="s_attendance" id="a5" value="5"><label for="a5">★</label>
+      <input type="radio" name="s_attendance" id="a4" value="4"><label for="a4">★</label>
+      <input type="radio" name="s_attendance" id="a3" value="3"><label for="a3">★</label>
+      <input type="radio" name="s_attendance" id="a2" value="2"><label for="a2">★</label>
+      <input type="radio" name="s_attendance" id="a1" value="1"><label for="a1">★</label>
+    </div>
+    <span id="lblAttendance" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>安全意识</label>
+    <div class="stars" id="starsSafety">
+      <input type="radio" name="s_safety" id="sf5" value="5"><label for="sf5">★</label>
+      <input type="radio" name="s_safety" id="sf4" value="4"><label for="sf4">★</label>
+      <input type="radio" name="s_safety" id="sf3" value="3"><label for="sf3">★</label>
+      <input type="radio" name="s_safety" id="sf2" value="2"><label for="sf2">★</label>
+      <input type="radio" name="s_safety" id="sf1" value="1"><label for="sf1">★</label>
+    </div>
+    <span id="lblSafety" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>团队协作</label>
+    <div class="stars" id="starsTeamwork">
+      <input type="radio" name="s_teamwork" id="t5" value="5"><label for="t5">★</label>
+      <input type="radio" name="s_teamwork" id="t4" value="4"><label for="t4">★</label>
+      <input type="radio" name="s_teamwork" id="t3" value="3"><label for="t3">★</label>
+      <input type="radio" name="s_teamwork" id="t2" value="2"><label for="t2">★</label>
+      <input type="radio" name="s_teamwork" id="t1" value="1"><label for="t1">★</label>
+    </div>
+    <span id="lblTeamwork" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>技能掌握</label>
+    <div class="stars" id="starsSkills">
+      <input type="radio" name="s_skills" id="sk5" value="5"><label for="sk5">★</label>
+      <input type="radio" name="s_skills" id="sk4" value="4"><label for="sk4">★</label>
+      <input type="radio" name="s_skills" id="sk3" value="3"><label for="sk3">★</label>
+      <input type="radio" name="s_skills" id="sk2" value="2"><label for="sk2">★</label>
+      <input type="radio" name="s_skills" id="sk1" value="1"><label for="sk1">★</label>
+    </div>
+    <span id="lblSkills" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+
+  <div style="margin:.9rem 0 .4rem;font-weight:600;color:var(--blue);font-size:.88rem">薪资预估（该工人在此职位的合理区间）</div>
+  <div class="field-row">
+    <div class="field"><label>最低 $</label><input type="number" id="rPayMin" min="0" step="0.5" placeholder="15.00"></div>
+    <div class="field"><label>最高 $</label><input type="number" id="rPayMax" min="0" step="0.5" placeholder="20.00"></div>
+    <div class="field"><label>方式</label><select id="rPayType">
+      <option value="hourly">时薪 /hr</option>
+      <option value="salary">月薪 /mo</option>
+      <option value="annual">年薪 /yr</option>
+    </select></div>
+  </div>
+
+  <div class="field"><label>评分人</label><input id="rRatedBy" placeholder="评分人姓名或工号"></div>
+  <div class="field"><label>备注 / 评语</label><textarea id="rNotes" rows="2" placeholder="对该工人在此职位的综合评价..."></textarea></div>
+
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="saveRating()">保存评分</button>
+    <button class="btn" onclick="document.getElementById('ratingModal').classList.remove('show')">取消</button>
+  </div>
+</div></div>
+
 <!-- Close-Job Modal -->
 <div class="modal-bg" id="closeJobModal"><div class="modal" style="max-width:480px">
   <h2>关闭职位</h2>
@@ -2221,6 +2339,7 @@ function renderEmployees(list) {
     <td>${e.hire_date||'—'}</td>
     <td>
       <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
+      <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
       <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
       ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
     </td>
@@ -2383,11 +2502,144 @@ async function viewEmployee(id) {
     </tbody></table>`:'<p class="empty" style="padding:1rem">暂无背景调查记录</p>'}
   </div>`;
 
+  // Ratings section
+  const ratings = await api(`/admin/employee-ratings?employee_id=${id}`);
+  const SCORE_LABEL = ['', '差', '一般', '良好', '优秀', '出色'];
+  const PAY_EST_UNIT = { hourly:'/hr', salary:'/mo', annual:'/yr' };
+  const starStr = n => '★'.repeat(n||0) + '☆'.repeat(5-(n||0));
+  const avgScore = r => {
+    const vals = [r.score_efficiency,r.score_quality,r.score_attendance,r.score_safety,r.score_teamwork,r.score_skills].filter(v=>v>0);
+    return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : '—';
+  };
+  html += `<div class="form-section">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h4 style="margin:0">职位能力评分 (${ratings.length} 条)</h4>
+      <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 新增评分</button>
+    </div>
+    ${ratings.length ? ratings.map(r=>`
+    <div class="rating-card">
+      <div class="rating-card-header">
+        <div>
+          <div class="rating-card-title">${r.job_title||r.job_title_current||'通用评分'}</div>
+          <div class="rating-card-meta">${r.rated_by?'评分人：'+esc(r.rated_by)+' · ':''} ${new Date(r.rated_at).toLocaleDateString()}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="avg-star-badge">★ ${avgScore(r)}</div>
+          ${r.pay_est_min||r.pay_est_max?`<div class="pay-range-badge">$${r.pay_est_min}–$${r.pay_est_max} ${PAY_EST_UNIT[r.pay_est_type]||'/hr'}</div>`:''}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.1rem .5rem">
+        ${[['工作效率',r.score_efficiency],['工作质量',r.score_quality],['出勤情况',r.score_attendance],['安全意识',r.score_safety],['团队协作',r.score_teamwork],['技能掌握',r.score_skills]].map(([lbl,sc])=>`
+        <div class="rating-score-bar"><span>${lbl}</span>
+          ${[1,2,3,4,5].map(i=>`<span class="score-pip${i<=(sc||0)?' filled':''}"></span>`).join('')}
+          <span style="color:var(--gray-500);font-size:.72rem">${SCORE_LABEL[sc||0]||''}</span>
+        </div>`).join('')}
+      </div>
+      ${r.notes?`<div style="font-size:.8rem;color:var(--gray-600);margin-top:.5rem;font-style:italic">"${esc(r.notes)}"</div>`:''}
+      <div style="margin-top:.6rem;display:flex;gap:.5rem">
+        <button class="btn btn-sm" onclick='editRating(${JSON.stringify(r).replace(/'/g,"&#39;")},${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>编辑</button>
+        <button class="btn btn-sm btn-red" onclick="deleteRating(${r.id},${id})">删除</button>
+      </div>
+    </div>`).join('') : '<p class="empty" style="padding:1rem">暂无评分记录，点击「+ 新增评分」开始评分</p>'}
+  </div>`;
+
   document.getElementById('empDetailTitle').textContent = `${emp.first_name} ${emp.last_name} (${emp.employee_id})`;
   document.getElementById('empDetailContent').innerHTML = html;
   document.getElementById('empDetailModal').classList.add('show');
 }
 function closeEmpDetailModal() { document.getElementById('empDetailModal').classList.remove('show'); }
+
+// ─── Employee Ratings ───
+const STAR_LABEL = ['','差','一般','良好','优秀','出色'];
+
+function setStarValue(name, val) {
+  document.querySelectorAll(`input[name="${name}"]`).forEach(r => { r.checked = (parseInt(r.value) === val); });
+}
+function getStarValue(name) {
+  const checked = document.querySelector(`input[name="${name}"]:checked`);
+  return checked ? parseInt(checked.value) : 0;
+}
+
+async function openRatingModal(empId, empName, existing) {
+  document.getElementById('ratingModalTitle').textContent = `评分 — ${empName}`;
+  document.getElementById('ratingEmpId').value = empId;
+  document.getElementById('ratingId').value = existing ? existing.id : '';
+
+  // Populate job select
+  const jobs = await api('/admin/jobs');
+  const sel = document.getElementById('ratingJob');
+  sel.innerHTML = '<option value="">-- 通用评分（不绑定具体职位）--</option>' +
+    jobs.map(j => `<option value="${j.id}">${esc(j.title)}${j.company_name?' — '+esc(j.company_name):''}</option>`).join('');
+
+  if (existing) {
+    sel.value = existing.job_id || '';
+    setStarValue('s_efficiency', existing.score_efficiency||0);
+    setStarValue('s_quality',    existing.score_quality||0);
+    setStarValue('s_attendance', existing.score_attendance||0);
+    setStarValue('s_safety',     existing.score_safety||0);
+    setStarValue('s_teamwork',   existing.score_teamwork||0);
+    setStarValue('s_skills',     existing.score_skills||0);
+    document.getElementById('rPayMin').value  = existing.pay_est_min||'';
+    document.getElementById('rPayMax').value  = existing.pay_est_max||'';
+    document.getElementById('rPayType').value = existing.pay_est_type||'hourly';
+    document.getElementById('rRatedBy').value = existing.rated_by||'';
+    document.getElementById('rNotes').value   = existing.notes||'';
+  } else {
+    sel.value = '';
+    ['s_efficiency','s_quality','s_attendance','s_safety','s_teamwork','s_skills']
+      .forEach(n => document.querySelectorAll(`input[name="${n}"]`).forEach(r => r.checked=false));
+    document.getElementById('rPayMin').value  = '';
+    document.getElementById('rPayMax').value  = '';
+    document.getElementById('rPayType').value = 'hourly';
+    document.getElementById('rRatedBy').value = '';
+    document.getElementById('rNotes').value   = '';
+  }
+  document.getElementById('ratingModal').classList.add('show');
+}
+
+function onRatingJobChange() { /* placeholder for future autofill */ }
+
+async function saveRating() {
+  const empId = document.getElementById('ratingEmpId').value;
+  const id    = document.getElementById('ratingId').value;
+  const jobSel = document.getElementById('ratingJob');
+  const jobId  = jobSel.value ? parseInt(jobSel.value) : null;
+  const jobTitle = jobId ? jobSel.options[jobSel.selectedIndex].text : '';
+  const data = {
+    employee_id:     empId,
+    job_id:          jobId,
+    job_title:       jobTitle,
+    score_efficiency: getStarValue('s_efficiency'),
+    score_quality:    getStarValue('s_quality'),
+    score_attendance: getStarValue('s_attendance'),
+    score_safety:     getStarValue('s_safety'),
+    score_teamwork:   getStarValue('s_teamwork'),
+    score_skills:     getStarValue('s_skills'),
+    pay_est_min:  parseFloat(document.getElementById('rPayMin').value)||0,
+    pay_est_max:  parseFloat(document.getElementById('rPayMax').value)||0,
+    pay_est_type: document.getElementById('rPayType').value,
+    rated_by: document.getElementById('rRatedBy').value,
+    notes:    document.getElementById('rNotes').value,
+  };
+  const allZero = !data.score_efficiency && !data.score_quality && !data.score_attendance &&
+                  !data.score_safety && !data.score_teamwork && !data.score_skills;
+  if (allZero) return alert('请至少为一个维度打分');
+  if (id) await api(`/admin/employee-ratings/${id}`, { method:'PUT', body:JSON.stringify(data) });
+  else    await api('/admin/employee-ratings', { method:'POST', body:JSON.stringify(data) });
+  document.getElementById('ratingModal').classList.remove('show');
+  viewEmployee(empId); // refresh detail
+}
+
+function editRating(r, empId, empName) {
+  openRatingModal(empId, empName, r);
+}
+
+async function deleteRating(ratingId, empId) {
+  if (!confirm('确定删除此评分记录？')) return;
+  await api(`/admin/employee-ratings/${ratingId}`, { method:'DELETE' });
+  viewEmployee(empId);
+}
+
 function editFromDetail() {
   if (!currentEmpForDetail) return;
   closeEmpDetailModal();

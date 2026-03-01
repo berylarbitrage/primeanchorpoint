@@ -200,6 +200,25 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id)
   );
+  CREATE TABLE IF NOT EXISTS employee_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    job_id INTEGER DEFAULT NULL,
+    job_title TEXT DEFAULT '',
+    score_efficiency INTEGER DEFAULT 0,
+    score_quality INTEGER DEFAULT 0,
+    score_attendance INTEGER DEFAULT 0,
+    score_safety INTEGER DEFAULT 0,
+    score_teamwork INTEGER DEFAULT 0,
+    score_skills INTEGER DEFAULT 0,
+    pay_est_min REAL DEFAULT 0,
+    pay_est_max REAL DEFAULT 0,
+    pay_est_type TEXT DEFAULT 'hourly',
+    notes TEXT DEFAULT '',
+    rated_by TEXT DEFAULT '',
+    rated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  );
   CREATE TABLE IF NOT EXISTS onboarding_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT UNIQUE NOT NULL,
@@ -987,6 +1006,54 @@ app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('up
 
 app.delete('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('delete', 'assignments'), (req, res) => {
   db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Employee Ratings ───
+app.get('/api/admin/employee-ratings', requireAdmin, (req, res) => {
+  const { employee_id } = req.query;
+  if (!employee_id) return res.status(400).json({ error: 'employee_id required' });
+  const rows = db.prepare(`
+    SELECT r.*, j.title AS job_title_current
+    FROM employee_ratings r
+    LEFT JOIN jobs j ON r.job_id = j.id
+    WHERE r.employee_id = ?
+    ORDER BY r.rated_at DESC
+  `).all(employee_id);
+  res.json(rows);
+});
+
+app.post('/api/admin/employee-ratings', requireAdmin, (req, res) => {
+  const d = req.body;
+  if (!d.employee_id) return res.status(400).json({ error: 'employee_id required' });
+  const r = db.prepare(`INSERT INTO employee_ratings
+    (employee_id, job_id, job_title, score_efficiency, score_quality, score_attendance,
+     score_safety, score_teamwork, score_skills, pay_est_min, pay_est_max, pay_est_type, notes, rated_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(d.employee_id, d.job_id||null, d.job_title||'',
+      d.score_efficiency||0, d.score_quality||0, d.score_attendance||0,
+      d.score_safety||0, d.score_teamwork||0, d.score_skills||0,
+      d.pay_est_min||0, d.pay_est_max||0, d.pay_est_type||'hourly',
+      d.notes||'', d.rated_by||'');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/employee-ratings/:id', requireAdmin, (req, res) => {
+  const d = req.body;
+  db.prepare(`UPDATE employee_ratings SET
+    job_id=?, job_title=?, score_efficiency=?, score_quality=?, score_attendance=?,
+    score_safety=?, score_teamwork=?, score_skills=?, pay_est_min=?, pay_est_max=?,
+    pay_est_type=?, notes=?, rated_by=? WHERE id=?`)
+    .run(d.job_id||null, d.job_title||'',
+      d.score_efficiency||0, d.score_quality||0, d.score_attendance||0,
+      d.score_safety||0, d.score_teamwork||0, d.score_skills||0,
+      d.pay_est_min||0, d.pay_est_max||0, d.pay_est_type||'hourly',
+      d.notes||'', d.rated_by||'', req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/employee-ratings/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM employee_ratings WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
