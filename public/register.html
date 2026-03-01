@@ -223,25 +223,25 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
     <!-- Verification step -->
     <div id="workerVerify" style="display:none">
       <div style="text-align:center;margin-bottom:1.5rem">
-        <div style="font-size:2rem;margin-bottom:.5rem">📱✉️</div>
-        <h2 style="color:var(--blue);margin:0 0 .5rem">验证手机号和邮箱 / Verify Phone & Email</h2>
-        <p style="color:#666;font-size:.9rem">
-          验证码已发送到您的手机和邮箱，请输入收到的6位数验证码。<br>
-          Verification codes have been sent to your phone and email.
+        <div style="font-size:2rem;margin-bottom:.5rem" id="verifyIcon">📱✉️</div>
+        <h2 style="color:var(--blue);margin:0 0 .5rem" id="verifyTitle">验证账号 / Verify Account</h2>
+        <p style="color:#666;font-size:.9rem" id="verifyDesc">
+          验证码已发送，请输入收到的6位数验证码。<br>
+          Verification code(s) have been sent. Please enter the 6-digit code(s).
         </p>
       </div>
-      <div class="field">
+      <div class="field" id="phoneCodeSection" style="display:none">
         <label>手机验证码 / Phone Code</label>
         <input type="text" id="vPhoneCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem">
       </div>
-      <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
+      <div id="phoneResendSection" style="text-align:right;margin-top:-.5rem;margin-bottom:1rem;display:none">
         <a href="#" onclick="resendCode('phone');return false" style="font-size:.82rem;color:var(--sky)">重新发送手机验证码 / Resend phone code</a>
       </div>
-      <div class="field">
+      <div class="field" id="emailCodeSection" style="display:none">
         <label>邮箱验证码 / Email Code</label>
         <input type="text" id="vEmailCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem">
       </div>
-      <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
+      <div id="emailResendSection" style="text-align:right;margin-top:-.5rem;margin-bottom:1rem;display:none">
         <a href="#" onclick="resendCode('email');return false" style="font-size:.82rem;color:var(--sky)">重新发送邮箱验证码 / Resend email code</a>
       </div>
       <button class="btn btn-submit" onclick="verifyWorker()">确认验证 / Verify & Complete</button>
@@ -413,8 +413,49 @@ async function registerWorker() {
     });
     const d = await r.json();
     if (!r.ok || d.error) return showError(d.error || 'Registration failed');
-    // Show verification step
+
+    // If no verification needed, go directly to portal
+    if (!d.needs_verification) {
+      if (d.token) localStorage.setItem('pa_worker_token', d.token);
+      document.getElementById('formWorker').style.display = 'none';
+      const ts = document.getElementById('typeSelector');
+      if (ts) ts.style.display = 'none';
+      document.getElementById('loginLinks').style.display = 'none';
+      document.getElementById('workerSuccess').style.display = '';
+      setTimeout(() => { window.location.href = '/portal'; }, 2000);
+      return;
+    }
+
+    // Show verification step with only the needed fields
     _pendingAccountId = d.account_id;
+    _needsPhone = !!d.needs_phone;
+    _needsEmail = !!d.needs_email;
+
+    // Show/hide phone code section
+    if (_needsPhone) {
+      document.getElementById('phoneCodeSection').style.display = '';
+      document.getElementById('phoneResendSection').style.display = '';
+    }
+    // Show/hide email code section
+    if (_needsEmail) {
+      document.getElementById('emailCodeSection').style.display = '';
+      document.getElementById('emailResendSection').style.display = '';
+    }
+    // Update header text based on what's needed
+    if (_needsPhone && _needsEmail) {
+      document.getElementById('verifyIcon').textContent = '📱✉️';
+      document.getElementById('verifyTitle').textContent = '验证手机号和邮箱 / Verify Phone & Email';
+      document.getElementById('verifyDesc').innerHTML = '验证码已发送到您的手机和邮箱，请输入收到的6位数验证码。<br>Verification codes have been sent to your phone and email.';
+    } else if (_needsPhone) {
+      document.getElementById('verifyIcon').textContent = '📱';
+      document.getElementById('verifyTitle').textContent = '验证手机号 / Verify Phone';
+      document.getElementById('verifyDesc').innerHTML = '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
+    } else if (_needsEmail) {
+      document.getElementById('verifyIcon').textContent = '✉️';
+      document.getElementById('verifyTitle').textContent = '验证邮箱 / Verify Email';
+      document.getElementById('verifyDesc').innerHTML = '验证码已发送到您的邮箱，请输入收到的6位数验证码。<br>A verification code has been sent to your email.';
+    }
+
     document.getElementById('formWorker').style.display = 'none';
     const ts = document.getElementById('typeSelector');
     if (ts) ts.style.display = 'none';
@@ -426,18 +467,23 @@ async function registerWorker() {
 }
 
 let _pendingAccountId = null;
+let _needsPhone = false;
+let _needsEmail = false;
 
 async function verifyWorker() {
   hideError();
   const phoneCode = document.getElementById('vPhoneCode').value.trim();
   const emailCode = document.getElementById('vEmailCode').value.trim();
-  if (!phoneCode) return showError('请输入手机验证码 / Please enter phone code');
-  if (!emailCode) return showError('请输入邮箱验证码 / Please enter email code');
+  if (_needsPhone && !phoneCode) return showError('请输入手机验证码 / Please enter phone code');
+  if (_needsEmail && !emailCode) return showError('请输入邮箱验证码 / Please enter email code');
   try {
+    const payload = { account_id: _pendingAccountId };
+    if (_needsPhone) payload.phone_code = phoneCode;
+    if (_needsEmail) payload.email_code = emailCode;
     const r = await fetch('/api/register/verify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: _pendingAccountId, phone_code: phoneCode, email_code: emailCode })
+      body: JSON.stringify(payload)
     });
     const d = await r.json();
     if (!r.ok || d.error) return showError(d.error || 'Verification failed');

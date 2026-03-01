@@ -2704,23 +2704,43 @@ app.post('/api/register/worker', (req, res) => {
   if (existing) return res.status(400).json({ error: 'An account with this phone or email already exists' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
+
+  // Determine which verification channels are available
+  const canSMS = !!(twilioClient && TWILIO_FROM);
+  const canEmail = !!emailTransporter;
+  const needsVerification = canSMS || canEmail;
+
   const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
-    VALUES (?,?,?,?,?,?,?,?,?,0)`)
-    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []));
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), needsVerification ? 0 : 1);
   const accountId = r.lastInsertRowid;
-  // Generate 6-digit verification codes
-  const phoneCode = String(Math.floor(100000 + Math.random() * 900000));
-  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+
+  if (!needsVerification) {
+    // No verification channels configured — activate immediately and auto-login
+    const token = crypto.randomBytes(32).toString('hex');
+    workerSessions.set(token, { created: Date.now(), workerId: accountId, employeeId: null });
+    console.log(`[Register] Worker #${accountId} activated immediately (no verification channels configured)`);
+    return res.json({ success: true, account_id: accountId, needs_verification: false, token });
+  }
+
+  // Generate verification codes only for configured channels
   const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(accountId);
-  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
-  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
-  console.log(`[Verify] Worker #${accountId} phone code: ${phoneCode}, email code: ${emailCode}`);
-  // Send verification codes (non-blocking)
-  sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
-  sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
-    `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
-  res.json({ success: true, account_id: accountId, needs_verification: true, message: 'Verification codes sent' });
+
+  let phoneCode = null, emailCode = null;
+  if (canSMS) {
+    phoneCode = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
+    sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+  }
+  if (canEmail) {
+    emailCode = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
+    sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+  }
+  console.log(`[Verify] Worker #${accountId} phone code: ${phoneCode || 'N/A'}, email code: ${emailCode || 'N/A'}`);
+  res.json({ success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, message: 'Verification codes sent' });
 });
 
 // Resend verification code
@@ -2749,16 +2769,26 @@ app.post('/api/register/resend-code', (req, res) => {
 // Verify codes and activate account
 app.post('/api/register/verify', (req, res) => {
   const { account_id, phone_code, email_code } = req.body;
-  if (!account_id || !phone_code || !email_code)
-    return res.status(400).json({ error: 'account_id, phone_code, and email_code required' });
+  if (!account_id) return res.status(400).json({ error: 'account_id required' });
   const acc = db.prepare('SELECT id, active, employee_id FROM worker_accounts WHERE id=?').get(account_id);
   if (!acc) return res.status(404).json({ error: 'Account not found' });
   if (acc.active) return res.status(400).json({ error: 'Account already verified' });
   const now = new Date().toISOString();
-  const pv = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'phone', phone_code, now);
-  if (!pv) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
-  const ev = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'email', email_code, now);
-  if (!ev) return res.status(400).json({ error: '邮箱验证码错误或已过期 / Invalid or expired email code' });
+  // Check which verification codes exist for this account
+  const pendingPhone = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND type=?').get(account_id, 'phone');
+  const pendingEmail = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND type=?').get(account_id, 'email');
+  // Validate phone code if one was issued
+  if (pendingPhone) {
+    if (!phone_code) return res.status(400).json({ error: '请输入手机验证码 / Phone verification code required' });
+    const pv = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'phone', phone_code, now);
+    if (!pv) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+  }
+  // Validate email code if one was issued
+  if (pendingEmail) {
+    if (!email_code) return res.status(400).json({ error: '请输入邮箱验证码 / Email verification code required' });
+    const ev = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'email', email_code, now);
+    if (!ev) return res.status(400).json({ error: '邮箱验证码错误或已过期 / Invalid or expired email code' });
+  }
   // Activate account
   db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(account_id);
