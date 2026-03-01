@@ -39,6 +39,19 @@ async function sendSMS(to, body) {
   }
 }
 
+// Returns detailed Twilio status for diagnostics (used by admin test endpoint)
+async function sendSMSWithDetail(to, body) {
+  if (!twilioClient) return { ok: false, error: 'TWILIO_ACCOUNT_SID 或 TWILIO_AUTH_TOKEN 未配置' };
+  if (!TWILIO_FROM) return { ok: false, error: 'TWILIO_PHONE_NUMBER 未配置' };
+  const formatted = formatPhoneE164(to);
+  try {
+    const msg = await twilioClient.messages.create({ body, from: TWILIO_FROM, to: formatted });
+    return { ok: true, sid: msg.sid, status: msg.status, to: formatted, from: TWILIO_FROM };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code, to: formatted, from: TWILIO_FROM };
+  }
+}
+
 // ─── Email (Nodemailer) ───
 const emailTransporter = process.env.SMTP_HOST
   ? nodemailer.createTransport({
@@ -1153,6 +1166,20 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
     console.error('[DELETE worker-account]', e.message);
     res.status(500).json({ error: '删除失败：' + e.message });
   }
+});
+
+// Admin: test Twilio SMS configuration
+app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, res) => {
+  const { to } = req.body;
+  if (!to) return res.status(400).json({ error: 'Missing phone number' });
+  const configured = {
+    account_sid: process.env.TWILIO_ACCOUNT_SID ? process.env.TWILIO_ACCOUNT_SID.slice(0, 8) + '...' : null,
+    auth_token: !!process.env.TWILIO_AUTH_TOKEN,
+    phone_number: process.env.TWILIO_PHONE_NUMBER || null,
+    client_ready: !!twilioClient,
+  };
+  const result = await sendSMSWithDetail(to, '[Prime Anchorpoint] 测试短信 / SMS Test: Twilio is working!');
+  res.json({ configured, result });
 });
 
 // Admin: resend verification codes to unverified worker
