@@ -114,6 +114,7 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('inquiries')">问卷管理</a>
   <a onclick="showTab('assignments')">派工管理</a>
   <a onclick="showTab('jobs')">职位管理</a>
+  <a onclick="showTab('partners')">合作公司</a>
   <a onclick="showTab('backups')">备份管理</a>
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem"></div>
   <a onclick="showTab('employees')">👥 员工管理</a>
@@ -127,11 +128,12 @@ tr:hover td{background:var(--sky-light)}
 <!-- Dashboard -->
 <div id="tab-dashboard">
   <div class="top"><h1>仪表盘</h1></div>
-  <div class="stats-row">
+  <div class="stats-row" style="grid-template-columns:repeat(5,1fr)">
     <div class="stat-card"><h3 id="statInq">0</h3><p>问卷总数</p></div>
     <div class="stat-card"><h3 id="statNew">0</h3><p>本周新增</p></div>
     <div class="stat-card"><h3 id="statAssign">0</h3><p>已派工</p></div>
     <div class="stat-card"><h3 id="statJobs">0</h3><p>在招职位</p></div>
+    <div class="stat-card"><h3 id="statPartners">0</h3><p>合作公司</p></div>
   </div>
   <div class="card"><h3 style="margin-bottom:1rem;color:var(--blue)">最近提交的问卷</h3><div id="recentInq"></div></div>
 </div>
@@ -186,6 +188,25 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+</div>
+
+<!-- Partners -->
+<div id="tab-partners" style="display:none">
+  <div class="top">
+    <h1>合作公司管理</h1>
+    <div class="top-actions">
+      <button class="btn" onclick="openPartnerModal()">+ 新增公司</button>
+    </div>
+  </div>
+  <div class="search-bar">
+    <input type="text" id="partnerSearch" placeholder="搜索公司名称、联系人、行业..." oninput="filterPartners()">
+    <select id="partnerStatusFilter" onchange="filterPartners()">
+      <option value="">全部状态</option>
+      <option value="1">合作中</option>
+      <option value="0">已停止</option>
+    </select>
+  </div>
+  <div class="card"><table><thead><tr><th>公司名称</th><th>联系人</th><th>电话</th><th>行业</th><th>状态</th><th>操作</th></tr></thead><tbody id="partnersTable"></tbody></table></div>
 </div>
 
 <!-- Backups -->
@@ -385,6 +406,39 @@ tr:hover td{background:var(--sky-light)}
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveAssignment()">保存</button>
     <button class="btn btn-red" onclick="closeAssignModal()">取消</button>
+  </div>
+</div></div>
+
+<!-- Partner Modal -->
+<div class="modal-bg" id="partnerModal"><div class="modal">
+  <h2 id="partnerModalTitle">新增合作公司</h2>
+  <input type="hidden" id="partnerId">
+  <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
+  <div class="field-row">
+    <div class="field"><label>联系人</label><input id="pContact" placeholder="例：张三"></div>
+    <div class="field"><label>电话</label><input id="pPhone" placeholder="例：(312) 555-1234"></div>
+  </div>
+  <div class="field-row">
+    <div class="field"><label>邮箱</label><input id="pEmail" placeholder="例：contact@abc.com"></div>
+    <div class="field"><label>行业</label><input id="pIndustry" placeholder="例：物流、制造业、食品加工"></div>
+  </div>
+  <div class="field"><label>地址</label><input id="pAddress" placeholder="例：123 Main St, Chicago, IL 60601"></div>
+  <div class="field"><label>合作服务</label><input id="pServices" placeholder="例：临时工派遣、仓库包装、分拣"></div>
+  <div class="field"><label>备注</label><textarea id="pNotes" placeholder="合作细节、合同信息等..."></textarea></div>
+  <div class="field"><label><input type="checkbox" id="pActive" checked> 合作中</label></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn" onclick="savePartner()">保存</button>
+    <button class="btn btn-red" onclick="closePartnerModal()">取消</button>
+  </div>
+</div></div>
+
+<!-- Partner Detail Modal -->
+<div class="modal-bg" id="partnerDetailModal"><div class="modal">
+  <h2>公司详情</h2>
+  <div id="partnerDetail"></div>
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn" onclick="editPartnerFromDetail()">编辑</button>
+    <button class="btn btn-red" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
 
@@ -647,6 +701,7 @@ function showTab(t) {
   if (t === 'jobs')       loadJobs();
   if (t === 'inquiries')  loadInquiries();
   if (t === 'assignments') loadAssignments();
+  if (t === 'partners')   loadPartners();
   if (t === 'backups')    loadBackups();
   if (t === 'employees')  loadEmployees();
   if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
@@ -656,13 +711,15 @@ function showTab(t) {
 
 // ─── Dashboard ───
 async function loadDashboard() {
-  const [jobs, inqs, assigns, emps] = await Promise.all([
+  const [jobs, inqs, assigns, partners, emps] = await Promise.all([
     api('/admin/jobs'), api('/admin/inquiries'), api('/admin/assignments'),
+    api('/admin/partners').catch(() => []),
     api('/admin/employees').catch(() => [])
   ]);
   document.getElementById('statJobs').textContent = jobs.filter(j => j.active).length;
   document.getElementById('statInq').textContent = inqs.length;
   document.getElementById('statAssign').textContent = assigns.length;
+  document.getElementById('statPartners').textContent = partners.filter(p => p.active).length;
   const weekAgo = new Date(Date.now() - 7 * 86400000);
   document.getElementById('statNew').textContent = inqs.filter(i => new Date(i.created_at) > weekAgo).length;
   const recent = inqs.slice(0, 5);
@@ -908,6 +965,108 @@ async function deleteAssignment(id) {
   if (!confirm('确定删除此派工记录？')) return;
   await api(`/admin/assignments/${id}`, { method: 'DELETE' });
   loadAssignments();
+}
+
+// ─── Partners (合作公司管理) ───
+let allPartners = [];
+let currentPartner = null;
+
+async function loadPartners() {
+  allPartners = await api('/admin/partners');
+  renderPartners(allPartners);
+}
+
+function filterPartners() {
+  const keyword = document.getElementById('partnerSearch').value.toLowerCase();
+  const statusFilter = document.getElementById('partnerStatusFilter').value;
+  let filtered = allPartners;
+  if (keyword) {
+    filtered = filtered.filter(p =>
+      (p.name || '').toLowerCase().includes(keyword) ||
+      (p.contact_person || '').toLowerCase().includes(keyword) ||
+      (p.industry || '').toLowerCase().includes(keyword) ||
+      (p.services || '').toLowerCase().includes(keyword)
+    );
+  }
+  if (statusFilter !== '') {
+    filtered = filtered.filter(p => p.active === parseInt(statusFilter));
+  }
+  renderPartners(filtered);
+}
+
+function renderPartners(partners) {
+  document.getElementById('partnersTable').innerHTML = partners.length ? partners.map(p => `<tr style="cursor:pointer" onclick='showPartner(${JSON.stringify(p).replace(/'/g,"&#39;")})'>
+    <td><strong>${esc(p.name)}</strong></td>
+    <td>${esc(p.contact_person)}</td>
+    <td>${esc(p.phone)}</td>
+    <td>${esc(p.industry)}</td>
+    <td>${p.active ? '<span class="badge badge-completed">合作中</span>' : '<span class="badge badge-cancelled">已停止</span>'}</td>
+    <td>
+      <button class="btn btn-sm" onclick="event.stopPropagation();editPartner(${JSON.stringify(p).replace(/'/g,'&#39;')})">编辑</button>
+      <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
+}
+
+function showPartner(p) {
+  currentPartner = p;
+  const fields = [
+    ['公司名称', p.name], ['联系人', p.contact_person], ['电话', p.phone],
+    ['邮箱', p.email], ['地址', p.address], ['行业', p.industry],
+    ['合作服务', p.services], ['备注', p.notes],
+    ['状态', p.active ? '合作中' : '已停止'],
+    ['添加时间', new Date(p.created_at).toLocaleString()]
+  ].filter(([k, v]) => v);
+  document.getElementById('partnerDetail').innerHTML = '<table>' + fields.map(([k, v]) => `<tr><td style="font-weight:700;width:100px;padding:6px 0">${k}</td><td>${esc(String(v))}</td></tr>`).join('') + '</table>';
+  document.getElementById('partnerDetailModal').classList.add('show');
+}
+
+function editPartnerFromDetail() {
+  document.getElementById('partnerDetailModal').classList.remove('show');
+  if (currentPartner) editPartner(currentPartner);
+}
+
+function openPartnerModal(p) {
+  document.getElementById('partnerModalTitle').textContent = p ? '编辑合作公司' : '新增合作公司';
+  document.getElementById('partnerId').value = p ? p.id : '';
+  document.getElementById('pName').value = p ? p.name : '';
+  document.getElementById('pContact').value = p ? p.contact_person : '';
+  document.getElementById('pPhone').value = p ? p.phone : '';
+  document.getElementById('pEmail').value = p ? p.email : '';
+  document.getElementById('pAddress').value = p ? p.address : '';
+  document.getElementById('pIndustry').value = p ? p.industry : '';
+  document.getElementById('pServices').value = p ? p.services : '';
+  document.getElementById('pNotes').value = p ? p.notes : '';
+  document.getElementById('pActive').checked = p ? !!p.active : true;
+  document.getElementById('partnerModal').classList.add('show');
+}
+function closePartnerModal() { document.getElementById('partnerModal').classList.remove('show'); }
+function editPartner(p) { openPartnerModal(p); }
+
+async function savePartner() {
+  const id = document.getElementById('partnerId').value;
+  const data = {
+    name: document.getElementById('pName').value,
+    contact_person: document.getElementById('pContact').value,
+    phone: document.getElementById('pPhone').value,
+    email: document.getElementById('pEmail').value,
+    address: document.getElementById('pAddress').value,
+    industry: document.getElementById('pIndustry').value,
+    services: document.getElementById('pServices').value,
+    notes: document.getElementById('pNotes').value,
+    active: document.getElementById('pActive').checked
+  };
+  if (!data.name) return alert('请填写公司名称');
+  if (id) await api(`/admin/partners/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  else await api('/admin/partners', { method: 'POST', body: JSON.stringify(data) });
+  closePartnerModal();
+  loadPartners();
+}
+
+async function deletePartner(id) {
+  if (!confirm('确定删除此合作公司？')) return;
+  await api(`/admin/partners/${id}`, { method: 'DELETE' });
+  loadPartners();
 }
 
 // ─── Backups (备份管理) ───

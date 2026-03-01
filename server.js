@@ -64,6 +64,19 @@ db.exec(`
     notes TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+  CREATE TABLE IF NOT EXISTS partners (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    contact_person TEXT DEFAULT '',
+    phone TEXT DEFAULT '',
+    email TEXT DEFAULT '',
+    address TEXT DEFAULT '',
+    industry TEXT DEFAULT '',
+    services TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
   CREATE TABLE IF NOT EXISTS assignments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     inquiry_id INTEGER NOT NULL,
@@ -478,6 +491,31 @@ app.get('/api/admin/quotes', requireAdmin, (req, res) => {
 
 app.delete('/api/admin/quotes/:id', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM quotes WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Partners CRUD
+app.get('/api/admin/partners', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM partners ORDER BY created_at DESC').all());
+});
+
+app.post('/api/admin/partners', requireAdmin, (req, res) => {
+  const d = req.body;
+  if (!d.name) return res.status(400).json({ error: 'Name required' });
+  const stmt = db.prepare('INSERT INTO partners (name, contact_person, phone, email, address, industry, services, notes, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const r = stmt.run(d.name, d.contact_person || '', d.phone || '', d.email || '', d.address || '', d.industry || '', d.services || '', d.notes || '', d.active !== false ? 1 : 0);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/partners/:id', requireAdmin, (req, res) => {
+  const d = req.body;
+  db.prepare('UPDATE partners SET name=?, contact_person=?, phone=?, email=?, address=?, industry=?, services=?, notes=?, active=? WHERE id=?')
+    .run(d.name, d.contact_person || '', d.phone || '', d.email || '', d.address || '', d.industry || '', d.services || '', d.notes || '', d.active !== false ? 1 : 0, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/partners/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM partners WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
