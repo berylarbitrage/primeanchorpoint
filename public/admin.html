@@ -1693,16 +1693,18 @@ function renderJobsFiltered() {
 }
 
 async function loadJobs() {
-  _allJobs = await api('/admin/jobs');
+  const res = await api('/admin/jobs');
+  _allJobs = Array.isArray(res) ? res : [];
   renderJobsFiltered();
 }
 
 async function openJobModal(job) {
+  try {
   document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
   document.getElementById('jobId').value = job ? job.id : '';
   // Load partners for search
-  _jobPartners = await api('/admin/partners');
-  _jobPartners = _jobPartners.filter(p => p.active);
+  const partnerRes = await api('/admin/partners');
+  _jobPartners = Array.isArray(partnerRes) ? partnerRes.filter(p => p.active) : [];
   document.getElementById('jPartnerDrop').classList.remove('open');
   if (job && job.partner_id) {
     const p = _jobPartners.find(x => x.id == job.partner_id);
@@ -1738,6 +1740,7 @@ async function openJobModal(job) {
   });
 
   document.getElementById('jobModal').classList.add('show');
+  } catch(e) { console.error('openJobModal error:', e); document.getElementById('jobModal').classList.add('show'); }
 }
 function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
 function editJob(j) { openJobModal(j); }
