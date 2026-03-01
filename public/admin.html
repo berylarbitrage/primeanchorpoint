@@ -407,6 +407,10 @@ tr:hover td{background:var(--sky-light)}
       <option value="citizen">仅限美国公民 / US Citizen Only</option>
     </select>
   </div>
+  <div class="field-row">
+    <div class="field"><label>工作时间</label><input id="jSchedule" placeholder="例：周一至周五 7am-3:30pm"></div>
+    <div class="field"><label>福利</label><input id="jBenefits" placeholder="例：医疗、牙科、带薪假"></div>
+  </div>
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
   <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
@@ -859,6 +863,8 @@ function openJobModal(job) {
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
+  document.getElementById('jSchedule').value = job ? (job.schedule || '') : '';
+  document.getElementById('jBenefits').value = job ? (job.benefits || '') : '';
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
   document.getElementById('jobModal').classList.add('show');
@@ -869,21 +875,29 @@ function editJob(j) { openJobModal(j); }
 function randomFillJob() {
   const pool = [
     { lang: 'zh', title: '仓库分拣员', type: '临时工', location: 'Chicago, IL', pay: '$17-19/hr', work_auth: 'any',
-      desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。工作时间：周一至周五 06:00-14:30。' },
+      schedule: '周一至周五 06:00-14:30', benefits: '每周直接发薪、免费停车',
+      desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。' },
     { lang: 'zh', title: '叉车操作员', type: '全职', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true, work_auth: 'any',
-      desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁，提供完善福利（医疗+牙科）。' },
+      schedule: '周一至周五 07:00-15:30，可加班', benefits: '医疗保险、牙科保险、带薪假',
+      desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁。' },
     { lang: 'zh', title: '生产线操作工', type: '全职', location: 'Melrose Park, IL', pay: '$18/hr', work_auth: 'gc',
-      desc: '食品加工生产线工作，需遵守卫生规定，提供工服及手套。每周加班机会多，可双休。' },
+      schedule: '周一至周五 06:00-14:30 / 夜班可选', benefits: '工服、手套免费提供，90天后享医保',
+      desc: '食品加工生产线工作，需遵守卫生规定。每周加班机会多，可双休。' },
     { lang: 'en', title: 'Warehouse Associate', type: 'Temp-to-Hire', location: 'Schaumburg, IL', pay: '$16-18/hr', work_auth: 'any',
-      desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs. Day and night shifts available.' },
+      schedule: 'Mon–Fri, Day & Night shifts available', benefits: 'Weekly pay, referral bonus',
+      desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs.' },
     { lang: 'en', title: 'Machine Operator', type: 'Full-Time', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true, work_auth: 'gc',
-      desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred. Benefits after 90 days.' },
+      schedule: 'Mon–Fri 6am–2:30pm (overtime available)', benefits: 'Medical, dental & vision after 90 days, PTO',
+      desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred.' },
     { lang: 'en', title: 'General Labor', type: 'Temporary', location: 'Addison, IL', pay: '$15.50/hr', work_auth: 'any',
-      desc: 'Various light industrial tasks including assembly, sorting and quality inspection. Weekend shifts available with a pay differential.' },
+      schedule: 'Mon–Fri 7am–3:30pm, weekend shifts with differential', benefits: 'Weekly pay, free PPE',
+      desc: 'Various light industrial tasks including assembly, sorting and quality inspection.' },
     { lang: 'es', title: 'Trabajador de Almacén', type: 'Tiempo Completo', location: 'Melrose Park, IL', pay: '$16-18/hr', work_auth: 'any',
-      desc: 'Clasificar y empacar productos en almacén. Horario de lunes a viernes, 7am-3:30pm. No se requiere experiencia previa, se ofrece capacitación.' },
+      schedule: 'Lunes a viernes 7am–3:30pm', benefits: 'Pago semanal, uniforme incluido',
+      desc: 'Clasificar y empacar productos en almacén. No se requiere experiencia previa, se ofrece capacitación.' },
     { lang: 'es', title: 'Operador de Montacargas', type: 'Temporal', location: 'Cicero, IL', pay: '$20/hr', urgent: true, work_auth: 'gc',
-      desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía en turno nocturno (10pm-6am). Pago semanal.' },
+      schedule: 'Turno nocturno 10pm–6am, lunes a viernes', benefits: 'Pago semanal, horas extras disponibles',
+      desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía.' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
   document.getElementById('jTitle').value    = r.title;
@@ -892,6 +906,8 @@ function randomFillJob() {
   document.getElementById('jPay').value      = r.pay;
   document.getElementById('jLang').value      = r.lang;
   document.getElementById('jWorkAuth').value  = r.work_auth || '';
+  document.getElementById('jSchedule').value  = r.schedule || '';
+  document.getElementById('jBenefits').value  = r.benefits || '';
   document.getElementById('jDesc').value      = r.desc;
   document.getElementById('jUrgent').checked  = !!r.urgent;
 }
@@ -907,6 +923,8 @@ async function saveJob() {
     lang: document.getElementById('jLang').value,
     lang_name: langNames[document.getElementById('jLang').value],
     work_auth: document.getElementById('jWorkAuth').value,
+    schedule: document.getElementById('jSchedule').value,
+    benefits: document.getElementById('jBenefits').value,
     description: document.getElementById('jDesc').value,
     urgent: document.getElementById('jUrgent').checked,
     active: true
