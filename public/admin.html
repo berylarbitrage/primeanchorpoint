@@ -661,7 +661,27 @@ tr:hover td{background:var(--sky-light)}
     </select></div>
     <div class="field"><label>薪资 / 工资</label><input id="aPayRate" placeholder="例：18.50/hr 或 $3,200/月"></div>
   </div>
-  <div class="field"><label>福利待遇</label><textarea id="aBenefits" rows="2" placeholder="例：医疗保险、带薪假期、401K、免费停车..."></textarea></div>
+  <div class="field">
+    <label>福利待遇（多选）</label>
+    <div id="aBenefitsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
+      <button type="button" class="benefit-btn" data-val="医疗保险">医疗保险</button>
+      <button type="button" class="benefit-btn" data-val="牙科保险">牙科保险</button>
+      <button type="button" class="benefit-btn" data-val="视力保险">视力保险</button>
+      <button type="button" class="benefit-btn" data-val="401k">401k</button>
+      <button type="button" class="benefit-btn" data-val="带薪休假">带薪休假</button>
+      <button type="button" class="benefit-btn" data-val="加班费">加班费</button>
+      <button type="button" class="benefit-btn" data-val="交通补贴">交通补贴</button>
+      <button type="button" class="benefit-btn" data-val="餐补">餐补</button>
+      <button type="button" class="benefit-btn" data-val="周薪">周薪</button>
+      <button type="button" class="benefit-btn" data-val="节假日奖金">节假日奖金</button>
+      <button type="button" class="benefit-btn" data-val="免费停车">免费停车</button>
+    </div>
+  </div>
+  <div class="form-section" style="margin-top:.5rem">
+    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">劳务合同上传</label>
+    <div id="aContractFileInfo" style="font-size:.82rem;color:var(--gray-500);margin:.3rem 0"></div>
+    <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%;margin-top:.3rem">
+  </div>
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveAssignment()">保存</button>
@@ -1275,6 +1295,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
     btn.addEventListener('click', () => btn.classList.toggle('active'));
   });
+  document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.addEventListener('click', () => btn.classList.toggle('active'));
+  });
 });
 
 function randomFillJob() {
@@ -1597,7 +1620,17 @@ async function openAssignModal(assignment) {
   document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
   document.getElementById('aPayType').value = assignment ? (assignment.pay_type || 'hourly') : 'hourly';
   document.getElementById('aPayRate').value = assignment ? (assignment.pay_rate || '') : '';
-  document.getElementById('aBenefits').value = assignment ? (assignment.benefits || '') : '';
+  // Benefits toggle
+  const activeBens = assignment && assignment.benefits ? assignment.benefits.split(',').map(s=>s.trim()) : [];
+  document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.classList.toggle('active', activeBens.includes(btn.dataset.val));
+  });
+  // Contract file info
+  document.getElementById('aContractFile').value = '';
+  const fileInfo = document.getElementById('aContractFileInfo');
+  if (assignment && assignment.contract_filename) {
+    fileInfo.innerHTML = `已上传: <a href="/api/admin/assignments/${assignment.id}/contract?token=${TOKEN}" target="_blank">${esc(assignment.contract_filename)}</a>`;
+  } else { fileInfo.textContent = ''; }
   document.getElementById('aInquiry').value = '';
   document.getElementById('aJob').value = '';
   document.getElementById('aInquiryId').value = '';
@@ -1669,6 +1702,7 @@ function editAssignment(a) { openAssignModal(a); }
 
 async function saveAssignment() {
   const id = document.getElementById('assignId').value;
+  const benefits = [...document.querySelectorAll('#aBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const data = {
     inquiry_id: document.getElementById('aInquiryId').value,
     job_id: document.getElementById('aJobId').value,
@@ -1678,11 +1712,26 @@ async function saveAssignment() {
     contract_type: document.getElementById('aContractType').value,
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
-    benefits: document.getElementById('aBenefits').value
+    benefits
   };
   if (!data.inquiry_id || !data.job_id) return alert('请搜索并选择人员和职位');
-  if (id) await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-  else await api('/admin/assignments', { method: 'POST', body: JSON.stringify(data) });
+  let assignId;
+  if (id) {
+    await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    assignId = id;
+  } else {
+    const r = await api('/admin/assignments', { method: 'POST', body: JSON.stringify(data) });
+    assignId = r.id;
+  }
+  // Upload contract file if selected
+  const fileInput = document.getElementById('aContractFile');
+  if (fileInput.files.length && assignId) {
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+    await fetch(API + `/admin/assignments/${assignId}/contract`, {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd
+    });
+  }
   closeAssignModal();
   loadAssignments();
 }
