@@ -834,6 +834,15 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Job History Modal -->
+<div class="modal-bg" id="jobHistoryModal"><div class="modal modal-lg">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <h2 id="jobHistoryTitle" style="margin:0">职位变更记录</h2>
+    <button class="btn btn-sm btn-outline" onclick="document.getElementById('jobHistoryModal').classList.remove('show')">关闭</button>
+  </div>
+  <div id="jobHistoryContent"></div>
+</div></div>
+
 <div class="modal-bg" id="jobModal"><div class="modal" style="max-width:680px">
   <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
@@ -1687,6 +1696,7 @@ function renderJobsFiltered() {
           ? `<button class="btn btn-sm" style="background:var(--orange-light,#fff3e0);color:#c05621;border:1px solid #fbd38d" onclick='openCloseJobModal(${JSON.stringify(j).replace(/'/g,"&#39;")})'>关闭</button>`
           : `<button class="btn btn-sm btn-green" onclick="reopenJob(${j.id})">重新开放</button>`}
         <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
+        <button class="btn btn-sm btn-outline" onclick="showJobHistory(${j.id},'${esc(j.title)}')">历史</button>
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="8" class="empty">${isHistory ? '暂无历史职位' : '暂无在招职位，点击 "+ 新增职位" 添加'}</td></tr>`;
@@ -1897,6 +1907,50 @@ async function reopenJob(id) {
   if (!job) return;
   await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify({ ...job, job_status: 'open', close_reason: '', close_note: '', active: true }) });
   loadJobs();
+}
+
+async function showJobHistory(jobId, title) {
+  document.getElementById('jobHistoryTitle').textContent = `变更记录 — ${title}`;
+  document.getElementById('jobHistoryContent').innerHTML = '<p class="empty" style="padding:1rem">加载中...</p>';
+  document.getElementById('jobHistoryModal').classList.add('show');
+  const logs = await api(`/admin/jobs/${jobId}/history`);
+  const ACTION_LABEL = { created:'新建', updated:'编辑', closed:'关闭', reopened:'重新开放', deleted:'删除' };
+  const FIELD_LABEL = {
+    title:'职位名称', type:'职位类型', location:'地点', pay:'薪资', job_status:'状态',
+    close_reason:'关闭原因', close_note:'关闭备注', active:'在招', headcount:'人数',
+    employment_type:'雇佣性质', work_days:'工作日', work_start:'上班时间', work_end:'下班时间',
+    benefits:'福利', description:'描述', urgent:'急聘', company_name:'公司', work_auth:'身份要求'
+  };
+  if (!logs.length) {
+    document.getElementById('jobHistoryContent').innerHTML = '<p class="empty" style="padding:1rem">暂无变更记录</p>';
+    return;
+  }
+  document.getElementById('jobHistoryContent').innerHTML = `<table><thead><tr><th>时间</th><th>操作</th><th>操作人</th><th>变更内容</th></tr></thead><tbody>` +
+    logs.map(l => {
+      const changes = JSON.parse(l.changes || '{}');
+      const keys = Object.keys(changes);
+      let detail = '';
+      if (l.action === 'created') {
+        detail = `<span style="color:var(--green)">创建职位: ${esc(changes.title||'')}${changes.company_name?' · '+esc(changes.company_name):''}</span>`;
+      } else if (l.action === 'deleted') {
+        detail = `<span style="color:var(--red)">删除: ${esc(changes.title||'')}${changes.company_name?' · '+esc(changes.company_name):''}</span>`;
+      } else if (keys.length) {
+        detail = keys.map(k => {
+          const c = changes[k];
+          return `<div style="margin-bottom:2px"><strong>${FIELD_LABEL[k]||k}</strong>: <span style="text-decoration:line-through;color:var(--gray-400)">${esc(String(c.from??''))}</span> → <span style="color:var(--blue)">${esc(String(c.to??''))}</span></div>`;
+        }).join('');
+      } else {
+        detail = '<span style="color:var(--gray-400)">无字段变更</span>';
+      }
+      const dt = new Date(l.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+      const actionBadge = l.action === 'deleted' ? 'badge-red' : l.action === 'created' ? 'badge-green' : l.action === 'closed' ? 'badge-yellow' : 'badge-blue';
+      return `<tr>
+        <td style="white-space:nowrap;font-size:.78rem">${dt}</td>
+        <td><span class="badge ${actionBadge}">${ACTION_LABEL[l.action]||l.action}</span></td>
+        <td style="font-size:.82rem">${esc(l.performed_by||'—')}</td>
+        <td style="font-size:.78rem">${detail}</td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
 }
 
 // ─── Inquiries (问卷管理) ───
