@@ -546,6 +546,8 @@ try { db.exec("ALTER TABLE worker_accounts ADD COLUMN position_interests TEXT DE
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN ein TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
+// Migrate: suspended flag for worker accounts (distinct from unverified)
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
 
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
@@ -1097,21 +1099,36 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active } = req.body;
+  const { password, employee_id, active, suspended } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   if (password) {
     const salt = crypto.randomBytes(16).toString('hex');
     db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hashPassword(password, salt), salt, req.params.id);
   }
-  db.prepare('UPDATE worker_accounts SET employee_id=?, active=? WHERE id=?')
-    .run(employee_id !== undefined ? employee_id : w.employee_id, active !== undefined ? active : w.active, req.params.id);
+  db.prepare('UPDATE worker_accounts SET employee_id=?, active=?, suspended=? WHERE id=?')
+    .run(employee_id !== undefined ? employee_id : w.employee_id, active !== undefined ? active : w.active, suspended !== undefined ? suspended : (w.suspended||0), req.params.id);
   res.json({ success: true });
 });
 
 app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM worker_accounts WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Admin: resend verification codes to unverified worker
+app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  if (w.active) return res.status(400).json({ error: 'Account already verified' });
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(w.id);
+  const phoneCode = String(Math.floor(100000 + Math.random() * 900000));
+  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
+  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
+  console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${phoneCode} email=${emailCode}`);
+  res.json({ success: true, phone_code: phoneCode, email_code: emailCode });
 });
 
 // ─── Customer Accounts (admin manages) ───
@@ -2509,6 +2526,8 @@ app.post('/api/worker/login', (req, res) => {
     return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
   if (!w.active)
     return res.status(403).json({ error: '账号尚未验证，请先完成手机和邮箱验证 / Account not verified. Please complete phone and email verification first.' });
+  if (w.suspended)
+    return res.status(403).json({ error: '账号已被暂停，请联系管理员 / Account suspended. Please contact admin.' });
   const token = crypto.randomBytes(32).toString('hex');
   workerSessions.set(token, { created: Date.now(), workerId: w.id, employeeId: w.employee_id });
   res.json({ token, employee_id: w.employee_id });
@@ -2750,16 +2769,17 @@ app.post('/api/register/verify', (req, res) => {
 });
 
 app.post('/api/register/enterprise', (req, res) => {
-  const { company_name, contact_name, email, phone, ein, staffing_needs, password } = req.body;
+  const { company_name, contact_name, email, phone, ein, staffing_needs, password, partner_id } = req.body;
   if (!company_name || !contact_name || !email || !password)
     return res.status(400).json({ error: 'Company name, contact name, email, and password are required' });
+  if (!partner_id) return res.status(400).json({ error: '请选择您所在的合作公司 / Please select your company' });
   const existing = db.prepare('SELECT id FROM customer_accounts WHERE email=?').get(email);
   if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status)
-    VALUES (?,?,?,?,?,?,?,?,0,'pending')`)
-    .run(company_name, contact_name, email, phone || '', hash, salt, ein || '', staffing_needs || '');
+  db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status, partner_id)
+    VALUES (?,?,?,?,?,?,?,?,0,'pending',?)`)
+    .run(company_name, contact_name, email, phone || '', hash, salt, ein || '', staffing_needs || '', partner_id);
   res.json({ success: true, message: 'Registration submitted. Your account will be activated after admin approval.' });
 });
 
@@ -2770,13 +2790,20 @@ app.get('/api/admin/pending-enterprises', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/approve-enterprise/:id', requireAdmin, (req, res) => {
-  db.prepare("UPDATE customer_accounts SET active=1, approval_status='approved' WHERE id=?").run(req.params.id);
+  const { partner_id } = req.body || {};
+  if (!partner_id) return res.status(400).json({ error: '请选择关联的合作公司档案 / Partner is required for approval' });
+  db.prepare("UPDATE customer_accounts SET active=1, approval_status='approved', partner_id=? WHERE id=?").run(partner_id, req.params.id);
   res.json({ success: true });
 });
 
 app.put('/api/admin/reject-enterprise/:id', requireAdmin, (req, res) => {
   db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected' WHERE id=?").run(req.params.id);
   res.json({ success: true });
+});
+
+// Public: active partner list for enterprise registration
+app.get('/api/public/partners', (req, res) => {
+  res.json(db.prepare('SELECT id, name, industry FROM partners WHERE active=1 ORDER BY name').all());
 });
 
 // ─── Portal & Customer & Register pages ───
