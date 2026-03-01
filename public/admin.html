@@ -3076,7 +3076,7 @@ async function viewEmployee(id) {
       <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
       <div>
         <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
-        <div class="emp-meta">${esc(emp.employee_id)} · ${esc(emp.position||'')} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+        <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
       </div>
     </div>
     <div class="form-section">
@@ -3084,8 +3084,7 @@ async function viewEmployee(id) {
       ${cols([
         ['邮箱',emp.email],['电话',emp.phone],['出生日期',emp.dob],
         ['地址',[emp.address,emp.city,emp.state,emp.zip].filter(Boolean).join(', ')],
-        ['入职日期',emp.hire_date],['薪资','$'+(emp.pay_rate||0)+'  ('+PAY_TYPE_LABEL[emp.pay_type]+')'],
-        ['部门',emp.department],
+        ['注册时间',emp.created_at ? new Date(emp.created_at).toLocaleDateString() : '—'],
         ['SSN','•••••'+esc(emp.ssn_last4||'????')+(emp.ssn_full?'  <strong style="color:var(--red)">'+esc(emp.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/,'$1-$2-$3'))+'</strong>':'')]
       ])}
     </div>
