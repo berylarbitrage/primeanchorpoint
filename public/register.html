@@ -346,7 +346,9 @@ async function registerWorker() {
 
   if (!name) return showError('请输入姓名 / Name is required');
   if (!phone) return showError('请输入手机号 / Phone is required');
+  if (!/^\d{10,11}$/.test(phone.replace(/[\s\-()]+/g, ''))) return showError('手机号格式不正确，请输入10-11位数字 / Please enter a valid phone number (10-11 digits)');
   if (!email) return showError('请输入邮箱 / Email is required');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError('邮箱格式不正确 / Please enter a valid email address');
   if (!dob) return showError('请选择出生日期 / Date of birth is required');
   if (!_selectedStatus) return showError('请选择身份状态 / Work status is required');
   if (!password || password.length < 6) return showError('密码至少6位 / Password must be at least 6 characters');
@@ -391,6 +393,8 @@ async function registerEnterprise() {
   if (!company_name) return showError('请输入企业名称 / Company name is required');
   if (!contact_name) return showError('请输入联系人 / Contact name is required');
   if (!email) return showError('请输入邮箱 / Email is required');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError('邮箱格式不正确 / Please enter a valid email address');
+  if (phone && !/^\d{10,11}$/.test(phone.replace(/[\s\-()]+/g, ''))) return showError('手机号格式不正确，请输入10-11位数字 / Please enter a valid phone number (10-11 digits)');
   if (ein && !/^\d{2}-\d{7}$/.test(ein)) return showError('EIN 格式应为 XX-XXXXXXX（9位数字）/ EIN must be in XX-XXXXXXX format');
   if (!password || password.length < 6) return showError('密码至少6位 / Password must be at least 6 characters');
   if (password !== password2) return showError('两次密码不一致 / Passwords do not match');
