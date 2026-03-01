@@ -715,15 +715,6 @@ tr:hover td{background:var(--sky-light)}
   <div id="inqDetail"></div>
   <div id="inqOnboardStatus" style="display:none;margin-top:1rem;padding:.75rem 1rem;background:var(--off-white);border-radius:8px;font-size:.85rem"></div>
 
-  <!-- Per-job ratings -->
-  <div id="inqJobRatings" style="display:none;margin-top:1.5rem">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-      <h3 style="font-size:.95rem;font-weight:700;color:var(--blue);margin:0">📋 岗位匹配评估</h3>
-      <button class="btn btn-sm btn-green" onclick="saveJobRatings()">保存评估</button>
-    </div>
-    <div id="inqJobRatingsList"></div>
-  </div>
-
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
@@ -991,6 +982,14 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div id="empDetailContent"></div>
+  <!-- 岗位匹配评估 -->
+  <div id="empJobRatings" style="display:none;margin-top:1.5rem;border-top:1px solid var(--gray-200);padding-top:1.25rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h3 style="font-size:.95rem;font-weight:700;color:var(--blue);margin:0">📋 岗位匹配评估</h3>
+      <button class="btn btn-sm btn-green" onclick="saveEmpRatings()">保存评估</button>
+    </div>
+    <div id="empJobRatingsList"></div>
+  </div>
 </div></div>
 
 <!-- ════ Time Entry Modal (single entry for editing) ════ -->
@@ -1675,7 +1674,6 @@ async function undoProcessInquiry(id) {
   loadInquiries();
 }
 
-let _inqJobRatings = []; // [{ key, zh, en, rating:{...} }]
 
 function showInquiry(i) {
   currentInquiry = i;
@@ -1715,72 +1713,73 @@ function showInquiry(i) {
     btnOnboard.style.display = 'none';
     statusDiv.style.display = 'none';
   }
-  // Load position ratings
-  loadJobRatings(i.id);
   document.getElementById('inqModal').classList.add('show');
 }
 
-async function loadJobRatings(inqId) {
-  const section = document.getElementById('inqJobRatings');
-  const list = document.getElementById('inqJobRatingsList');
-  const data = await api(`/admin/inquiries/${inqId}/position-ratings`);
-  _inqJobRatings = data;
+let _empRatingsData = [];
+let _empRatingEmpId = null;
+
+async function loadEmpRatings(empId) {
+  _empRatingEmpId = empId;
+  const section = document.getElementById('empJobRatings');
+  const list = document.getElementById('empJobRatingsList');
+  const data = await api(`/admin/employees/${empId}/position-ratings`);
+  _empRatingsData = data;
   section.style.display = '';
   list.innerHTML = data.map(p => {
     const r = p.rating || {};
     const score = r.skill_score || 0;
-    const rec = r.recommend;
+    const rec = r.recommend != null && r.recommend !== -1 ? r.recommend : null;
     const hasRating = !!p.rating;
     const stars = [1,2,3,4,5].map(n =>
-      `<span class="star${n <= score ? ' on' : ''}" data-n="${n}" onclick="setJobStar('${p.key}',${n})">★</span>`
+      `<span class="star${n <= score ? ' on' : ''}" data-n="${n}" onclick="setEmpStar('${p.key}',${n})">★</span>`
     ).join('');
     const pay = r.suggest_pay || '';
-    return `<div class="job-rating-card" id="jrc-${p.key}">
+    return `<div class="job-rating-card" id="empJrc-${p.key}">
       <div class="jr-title">${esc(p.zh)} <span style="font-size:.75rem;color:var(--gray-400);font-weight:400">${esc(p.en)}</span></div>
       <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:3px;margin-top:.4rem">能力评分</div>
-      <div class="star-row" id="stars-${p.key}">${stars}</div>
+      <div class="star-row" id="empStars-${p.key}">${stars}</div>
       <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:4px">是否推荐</div>
       <div class="jr-recommend-row">
-        <button class="rec-btn yes${hasRating&&rec===1?' active':''}" onclick="setJobRec('${p.key}',1)">✅ 推荐</button>
-        <button class="rec-btn no${hasRating&&rec===0?' active':''}" onclick="setJobRec('${p.key}',0)">❌ 不推荐</button>
+        <button class="rec-btn yes${hasRating&&rec===1?' active':''}" onclick="setEmpRec('${p.key}',1)">✅ 推荐</button>
+        <button class="rec-btn no${hasRating&&rec===0?' active':''}" onclick="setEmpRec('${p.key}',0)">❌ 不推荐</button>
       </div>
-      <div id="jpay-wrap-${p.key}" style="${hasRating&&rec===1?'':'display:none'}">
+      <div id="empJpayWrap-${p.key}" style="${hasRating&&rec===1?'':'display:none'}">
         <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:4px">建议薪资</div>
         <div class="jr-pay-row">
-          <input id="jpay-${p.key}" value="${esc(pay)}" placeholder="例：$18/hr 或 $3,200/月">
+          <input id="empJpay-${p.key}" value="${esc(pay)}" placeholder="例：$18/hr 或 $3,200/月">
         </div>
       </div>
     </div>`;
   }).join('');
 }
 
-function setJobStar(posKey, n) {
-  const row = document.getElementById(`stars-${posKey}`);
+function setEmpStar(posKey, n) {
+  const row = document.getElementById(`empStars-${posKey}`);
   row.querySelectorAll('.star').forEach(s => {
     s.classList.toggle('on', parseInt(s.dataset.n) <= n);
   });
 }
 
-function setJobRec(posKey, val) {
-  const card = document.getElementById(`jrc-${posKey}`);
+function setEmpRec(posKey, val) {
+  const card = document.getElementById(`empJrc-${posKey}`);
   card.querySelectorAll('.rec-btn').forEach(b => b.classList.remove('active'));
   card.querySelector(val===1 ? '.rec-btn.yes' : '.rec-btn.no').classList.add('active');
-  document.getElementById(`jpay-wrap-${posKey}`).style.display = val===1 ? '' : 'none';
+  document.getElementById(`empJpayWrap-${posKey}`).style.display = val===1 ? '' : 'none';
 }
 
-async function saveJobRatings() {
-  if (!currentInquiry) return;
-  const ratings = _inqJobRatings.map(p => {
-    const stars = document.getElementById(`stars-${p.key}`);
+async function saveEmpRatings() {
+  if (!_empRatingEmpId) return;
+  const ratings = _empRatingsData.map(p => {
+    const stars = document.getElementById(`empStars-${p.key}`);
     const score = stars ? [...stars.querySelectorAll('.star.on')].length : 0;
-    const card = document.getElementById(`jrc-${p.key}`);
-    const recommend = card?.querySelector('.rec-btn.yes.active') ? 1 : (card?.querySelector('.rec-btn.no.active') ? 0 : null);
-    const payInp = document.getElementById(`jpay-${p.key}`);
-    return { position_key: p.key, skill_score: score, recommend: recommend ?? 0, suggest_pay: payInp ? payInp.value.trim() : '' };
+    const card = document.getElementById(`empJrc-${p.key}`);
+    const recommend = card?.querySelector('.rec-btn.yes.active') ? 1 : (card?.querySelector('.rec-btn.no.active') ? 0 : -1);
+    const payInp = document.getElementById(`empJpay-${p.key}`);
+    return { position_key: p.key, skill_score: score, recommend, suggest_pay: payInp ? payInp.value.trim() : '' };
   });
-  await api(`/admin/inquiries/${currentInquiry.id}/position-ratings`, { method: 'PUT', body: JSON.stringify({ ratings }) });
-  loadJobRatings(currentInquiry.id);
-  alert('评估已保存');
+  await api(`/admin/employees/${_empRatingEmpId}/position-ratings`, { method: 'PUT', body: JSON.stringify({ ratings }) });
+  showToast('✅ 岗位评估已保存');
 }
 
 async function sendOnboardLink() {
@@ -2714,6 +2713,7 @@ async function viewEmployee(id) {
   document.getElementById('empDetailTitle').textContent = `${emp.first_name} ${emp.last_name} (${emp.employee_id})`;
   document.getElementById('empDetailContent').innerHTML = html;
   document.getElementById('empDetailModal').classList.add('show');
+  loadEmpRatings(emp.id);
 }
 function closeEmpDetailModal() { document.getElementById('empDetailModal').classList.remove('show'); }
 function editFromDetail() {

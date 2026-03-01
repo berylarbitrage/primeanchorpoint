@@ -291,6 +291,18 @@ try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid_at TEXT DEFAU
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT ''`); } catch(e) {}
 
+db.exec(`CREATE TABLE IF NOT EXISTS employee_position_ratings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  position_key TEXT NOT NULL,
+  skill_score INTEGER DEFAULT 0,
+  recommend INTEGER DEFAULT -1,
+  suggest_pay TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(employee_id, position_key),
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   inquiry_id INTEGER NOT NULL,
@@ -832,6 +844,24 @@ app.put('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager,
     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(inquiry_id, position_key) DO UPDATE SET skill_score=excluded.skill_score, recommend=excluded.recommend, suggest_pay=excluded.suggest_pay, updated_at=CURRENT_TIMESTAMP`);
   const txn = db.transaction(() => ratings.forEach(r => upsert.run(req.params.id, r.position_key, r.skill_score || 0, r.recommend ? 1 : 0, r.suggest_pay || '')));
+  txn();
+  res.json({ success: true });
+});
+
+// Employee position ratings
+app.get('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
+  const saved = db.prepare('SELECT * FROM employee_position_ratings WHERE employee_id=?').all(req.params.id);
+  const rMap = {};
+  saved.forEach(r => { rMap[r.position_key] = r; });
+  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
+});
+
+app.put('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
+  const { ratings } = req.body;
+  const upsert = db.prepare(`INSERT INTO employee_position_ratings (employee_id, position_key, skill_score, recommend, suggest_pay, updated_at)
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(employee_id, position_key) DO UPDATE SET skill_score=excluded.skill_score, recommend=excluded.recommend, suggest_pay=excluded.suggest_pay, updated_at=CURRENT_TIMESTAMP`);
+  const txn = db.transaction(() => ratings.forEach(r => upsert.run(req.params.id, r.position_key, r.skill_score || 0, r.recommend != null ? r.recommend : -1, r.suggest_pay || '')));
   txn();
   res.json({ success: true });
 });
