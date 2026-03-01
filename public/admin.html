@@ -244,6 +244,7 @@ tr:hover td{background:var(--sky-light)}
   <h2>⚓ 管理后台</h2>
   <a class="active" onclick="showTab('dashboard')">仪表盘</a>
   <a onclick="showTab('inquiries')" data-role="admin,staff">问卷管理</a>
+  <a onclick="showTab('quotes')" data-role="admin,staff">📋 报价请求</a>
   <a onclick="showTab('assignments')" data-role="admin,staff">派工管理</a>
   <a onclick="showTab('jobs')" data-role="admin,staff">职位管理</a>
   <a onclick="showTab('partners')" data-role="admin,staff">合作公司</a>
@@ -253,6 +254,7 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('time')">⏱ 工时打卡</a>
   <a onclick="showTab('ts-verify')" data-role="admin,staff">📋 工时核对</a>
   <a onclick="showTab('ts-payment')" data-role="admin,staff">💰 待付款</a>
+  <a onclick="showTab('ts-dividend')" data-role="staff">🎯 待分红</a>
   <a onclick="showTab('ts-history')" data-role="admin,staff">📚 工时历史</a>
   <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
   <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
@@ -330,6 +332,17 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="card"><table><thead><tr><th>处理日期</th><th>姓名</th><th>类型</th><th>申请职位</th><th>处理结果</th><th>备注</th><th>操作</th></tr></thead><tbody id="inqHistTable"></tbody></table></div>
   </div>
+</div>
+
+<!-- Quotes -->
+<div id="tab-quotes" style="display:none">
+  <div class="top">
+    <h1>报价请求</h1>
+  </div>
+  <div class="search-bar">
+    <input type="text" id="quoteSearch" placeholder="搜索姓名、邮箱、公司、产品..." oninput="filterQuotes()">
+  </div>
+  <div class="card"><table><thead><tr><th>日期</th><th>姓名</th><th>公司</th><th>邮箱</th><th>电话</th><th>产品</th><th>数量</th><th>地点</th><th>备注</th><th>操作</th></tr></thead><tbody id="quoteTable"></tbody></table></div>
 </div>
 
 <!-- Assignments -->
@@ -444,10 +457,10 @@ tr:hover td{background:var(--sky-light)}
       <option value="inactive">停职</option>
       <option value="terminated">已离职</option>
     </select>
-    <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部部门</option></select>
+    <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
   <div class="card">
-    <table><thead><tr><th>员工号</th><th>姓名</th><th>职位</th><th>部门</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
+    <table><thead><tr><th>员工号</th><th>姓名</th><th>当前职位</th><th>所属公司</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
     <tbody id="empTable"></tbody></table>
   </div>
 </div>
@@ -515,6 +528,23 @@ tr:hover td{background:var(--sky-light)}
     <table>
       <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>上报时间</th><th>客户付款</th><th>劳务付款</th></tr></thead>
       <tbody id="tsPaymentTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════ 待分红 TAB ════════════════════ -->
+<div id="tab-ts-dividend" style="display:none">
+  <div class="top">
+    <h1>待分红</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadTsDividend()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">客户与劳务均已付款的工时单。全部 Staff 投票「无异议」后，再各自确认「已分红」即可归档至工时历史。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>无异议投票</th><th>已分红确认</th><th>操作</th></tr></thead>
+      <tbody id="tsDividendTable"></tbody>
     </table>
   </div>
 </div>
@@ -610,31 +640,59 @@ tr:hover td{background:var(--sky-light)}
 
 <!-- Accounts Tab -->
 <div id="tab-accounts" style="display:none">
-  <div class="top">
-    <h1>账户管理</h1>
-    <div class="top-actions"><button class="btn btn-green" onclick="openAccountModal()">+ 新建账户</button></div>
+  <div class="top"><h1>账户管理</h1></div>
+
+  <!-- sub-tabs -->
+  <div class="search-bar" style="align-items:center;margin-bottom:.75rem">
+    <div class="ts-week-toggle" style="flex-shrink:0">
+      <button id="accTabAdmin" class="active" onclick="setAccTab('admin')">内部账户 (Admin/Staff/Manager)</button>
+      <button id="accTabWorker" onclick="setAccTab('worker')">工人账户 Worker</button>
+      <button id="accTabCustomer" onclick="setAccTab('customer')">客户账户 Customer</button>
+    </div>
+    <div style="margin-left:auto">
+      <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
+    </div>
   </div>
-  <div class="card">
-    <table><thead><tr><th>用户名</th><th>显示名称</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+
+  <!-- Admin/Staff/Manager -->
+  <div id="accPanelAdmin" class="card">
+    <table><thead><tr><th>用户名</th><th>显示名称</th><th>角色</th><th>指定公司 (Manager)</th><th>状态</th><th>创建</th><th>操作</th></tr></thead>
     <tbody id="accountsTable"></tbody></table>
+  </div>
+
+  <!-- Worker -->
+  <div id="accPanelWorker" class="card" style="display:none">
+    <table><thead><tr><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份状态</th><th>绑定员工</th><th>验证状态</th><th>创建</th><th>操作</th></tr></thead>
+    <tbody id="workerAccountsTable"></tbody></table>
+  </div>
+
+  <!-- Customer -->
+  <div id="accPanelCustomer" class="card" style="display:none">
+    <div id="pendingEntBanner" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#92400e;font-weight:600"></div>
+    <table><thead><tr><th>公司名</th><th>联系人</th><th>邮箱</th><th>电话</th><th>EIN</th><th>审核状态</th><th>创建</th><th>操作</th></tr></thead>
+    <tbody id="customerAccountsTable"></tbody></table>
   </div>
 </div>
 
 </div></div>
 
-<!-- Account Modal -->
-<div class="modal-bg" id="accountModal"><div class="modal">
+<!-- Admin/Staff/Manager Account Modal -->
+<div class="modal-bg" id="accountModal"><div class="modal" style="max-width:560px">
   <h2 id="accountModalTitle">新建账户</h2>
   <input type="hidden" id="accId">
   <div class="field"><label>用户名 *</label><input id="accUsername" placeholder="登录用户名"></div>
   <div class="field"><label>密码 <span id="accPassHint" style="font-size:.8rem;color:var(--gray-400)"></span></label><input type="password" id="accPassword" placeholder="登录密码"></div>
   <div class="field"><label>显示名称</label><input id="accDisplayName" placeholder="可选"></div>
   <div class="field"><label>角色 *</label>
-    <select id="accRole">
-      <option value="admin">Admin (管理员 - 完全权限)</option>
-      <option value="staff" selected>Staff (员工 - 不可删除/修改需审批)</option>
-      <option value="manager">Manager (经理 - 仅查看工时)</option>
+    <select id="accRole" onchange="onAccRoleChange()">
+      <option value="admin">Admin — 管理员（完全权限）</option>
+      <option value="staff" selected>Staff — 员工（删除须审批）</option>
+      <option value="manager">Manager — 经理（仅管理指定公司工时）</option>
     </select>
+  </div>
+  <div class="field" id="accPartnerField" style="display:none">
+    <label>指定管理的公司（多选，Manager 专用）</label>
+    <div id="accPartnerCheckboxes" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem;max-height:140px;overflow:auto;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px"></div>
   </div>
   <div class="field"><label>状态</label>
     <select id="accActive"><option value="1">启用</option><option value="0">禁用</option></select>
@@ -642,6 +700,51 @@ tr:hover td{background:var(--sky-light)}
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('accountModal')">取消</button>
     <button class="btn btn-blue" onclick="saveAccount()">保存</button>
+  </div>
+</div></div>
+
+<!-- Worker Account Modal -->
+<div class="modal-bg" id="workerAccountModal"><div class="modal" style="max-width:480px">
+  <h2 id="workerAccModalTitle">新建工人账户</h2>
+  <input type="hidden" id="wAccId">
+  <div class="field"><label>用户名 *（建议用手机号）</label><input id="wAccUsername" placeholder="例：3125550001"></div>
+  <div class="field"><label>密码 * <span id="wAccPassHint" style="font-size:.8rem;color:var(--gray-400)"></span></label><input type="password" id="wAccPassword"></div>
+  <div class="field"><label>绑定员工档案</label>
+    <select id="wAccEmployee"><option value="">— 不绑定 —</option></select>
+  </div>
+  <div class="field"><label>状态</label>
+    <select id="wAccActive"><option value="1">启用</option><option value="0">禁用</option></select>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('workerAccountModal')">取消</button>
+    <button class="btn" onclick="randomFillWorkerAccount()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
+    <button class="btn btn-blue" onclick="saveWorkerAccount()">保存</button>
+  </div>
+</div></div>
+
+<!-- Customer Account Modal -->
+<div class="modal-bg" id="customerAccountModal"><div class="modal" style="max-width:520px">
+  <h2 id="customerAccModalTitle">新建客户账户</h2>
+  <input type="hidden" id="cAccId">
+  <div class="field-row">
+    <div class="field"><label>公司名 *</label><input id="cAccCompany" placeholder="ABC Manufacturing"></div>
+    <div class="field"><label>联系人</label><input id="cAccContact" placeholder="张经理"></div>
+  </div>
+  <div class="field-row">
+    <div class="field"><label>邮箱 *（登录账号）</label><input id="cAccEmail" placeholder="contact@company.com"></div>
+    <div class="field"><label>电话</label><input id="cAccPhone" placeholder="(312) 555-0000"></div>
+  </div>
+  <div class="field"><label>密码 * <span id="cAccPassHint" style="font-size:.8rem;color:var(--gray-400)"></span></label><input type="password" id="cAccPassword"></div>
+  <div class="field"><label>关联合作公司档案（可选）</label>
+    <select id="cAccPartner"><option value="">— 不关联 —</option></select>
+  </div>
+  <div class="field"><label>状态</label>
+    <select id="cAccActive"><option value="1">启用</option><option value="0">禁用</option></select>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('customerAccountModal')">取消</button>
+    <button class="btn" onclick="randomFillCustomerAccount()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
+    <button class="btn btn-blue" onclick="saveCustomerAccount()">保存</button>
   </div>
 </div></div>
 
@@ -758,12 +861,12 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- ════ Employee Doc-Request Link Modal ════ -->
-<div class="modal-bg" id="empDocLinkModal"><div class="modal" style="max-width:500px">
+<div class="modal-bg" id="empDocLinkModal"><div class="modal" style="max-width:540px">
   <h2>发送材料收集链接</h2>
   <p id="empDocLinkTarget" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
   <input type="hidden" id="empDocLinkEmpId">
 
-  <div style="display:flex;gap:1rem;flex-wrap:wrap">
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
     <div class="field" style="flex:1;min-width:140px"><label>语言 / Language</label>
       <select id="docReqLang">
         <option value="zh">中文</option>
@@ -771,16 +874,30 @@ tr:hover td{background:var(--sky-light)}
         <option value="es">Español</option>
       </select>
     </div>
-    <div class="field" style="flex:1;min-width:180px"><label>发送方式</label>
-      <select id="docReqSendVia" onchange="updateDocReqSendTarget()">
-        <option value="phone">手机短信 (SMS)</option>
-        <option value="email">邮箱 (Email)</option>
-      </select>
+    <div class="field" style="flex:1;min-width:180px"><label>发送方式（可多选）</label>
+      <div style="display:flex;gap:1rem;margin-top:.3rem">
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+          <input type="checkbox" id="docReqViaPhone" checked onchange="toggleDocContactSection()" style="width:15px;height:15px"> 手机短信
+        </label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+          <input type="checkbox" id="docReqViaEmail" onchange="toggleDocContactSection()" style="width:15px;height:15px"> 邮箱
+        </label>
+      </div>
     </div>
   </div>
-  <div class="field" id="docReqSendTarget" style="margin-top:-.2rem">
-    <label id="docReqSendLabel">发送至手机</label>
-    <input type="text" id="docReqSendValue" readonly style="background:var(--gray-100);color:var(--gray-600)">
+
+  <!-- Phone numbers section -->
+  <div class="field" id="docReqPhoneSection" style="margin-top:-.2rem">
+    <label>手机号码</label>
+    <div id="docReqPhoneList" style="display:flex;flex-direction:column;gap:.35rem"></div>
+    <button type="button" class="btn btn-sm" onclick="addDocContactField('phone')" style="margin-top:.35rem;font-size:.76rem">+ 添加手机号</button>
+  </div>
+
+  <!-- Email section -->
+  <div class="field" id="docReqEmailSection" style="display:none;margin-top:-.2rem">
+    <label>邮箱地址</label>
+    <div id="docReqEmailList" style="display:flex;flex-direction:column;gap:.35rem"></div>
+    <button type="button" class="btn btn-sm" onclick="addDocContactField('email')" style="margin-top:.35rem;font-size:.76rem">+ 添加邮箱</button>
   </div>
 
   <div class="field"><label>选择需要收集的材料（多选）</label>
@@ -800,13 +917,24 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
+  <div class="field">
+    <label>
+      <input type="checkbox" id="docReqIncludePositions" onchange="toggleDocPositions()" style="width:15px;height:15px;vertical-align:middle;margin-right:.4rem">
+      包含工种兴趣自评（让员工对每个工种评分）
+    </label>
+    <div id="docReqPositionsBlock" style="display:none;margin-top:.6rem;border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .8rem;max-height:220px;overflow-y:auto">
+      <div style="font-size:.75rem;color:var(--gray-400);margin-bottom:.4rem">选择要包含的工种（员工将对每项评分 1–5 并标记是否感兴趣）</div>
+      <div id="docPositionCheckList" style="display:grid;grid-template-columns:1fr 1fr;gap:.25rem .75rem"></div>
+    </div>
+  </div>
+
   <div class="field"><label>HR 留言（可选，将显示给员工）</label>
     <textarea id="empDocAdminNote" rows="2" placeholder="例：请在3天内完成上传，感谢配合。"></textarea>
   </div>
 
   <div id="empDocLinkResult" style="display:none;background:var(--sky-light);border:1px solid var(--sky);border-radius:var(--radius);padding:.85rem 1rem;font-size:.83rem;margin-top:.75rem">
     <div style="font-weight:600;color:var(--blue);margin-bottom:.5rem">✅ 链接已生成，请复制发送给员工：</div>
-    <div id="empDocLinkUrl" style="word-break:break-all;color:var(--sky);user-select:all;margin-bottom:.5rem"></div>
+    <a id="empDocLinkUrl" href="#" target="_blank" style="word-break:break-all;color:var(--sky);display:block;margin-bottom:.5rem"></a>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="copyEmpDocLink()">复制链接</button>
       <button class="btn btn-sm" onclick="openEmpDocLink()">在新窗口打开预览</button>
@@ -817,6 +945,92 @@ tr:hover td{background:var(--sky-light)}
   <div style="display:flex;gap:1rem;margin-top:1.25rem">
     <button class="btn btn-green" id="btnGenDocLink" onclick="generateEmpDocLink()">生成链接</button>
     <button class="btn" onclick="document.getElementById('empDocLinkModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- ════ Assign Job Modal ════ -->
+<div class="modal-bg" id="assignJobModal"><div class="modal" style="max-width:620px">
+  <h2 id="assignJobModalTitle">工作记录</h2>
+  <p id="assignJobEmpName" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
+  <input type="hidden" id="assignJobEmpId">
+
+  <div id="assignJobCurrentSection" style="margin-bottom:1rem">
+    <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">已有职位</label>
+    <div id="assignJobCurrentList" style="margin-top:.3rem;font-size:.88rem;color:var(--gray-600)">—</div>
+  </div>
+
+  <!-- 职位选择 & 起止时间 -->
+  <div class="form-section">
+    <h4>职位信息</h4>
+    <div class="field"><label>选择职位 *</label>
+      <select id="assignJobSelect" style="width:100%">
+        <option value="">请选择职位...</option>
+      </select>
+    </div>
+    <div id="assignJobCompanyInfo" style="display:none;margin-top:-.3rem;margin-bottom:.8rem;font-size:.82rem;color:var(--gray-600)">
+      <span>公司：</span><strong id="assignJobCompanyName"></strong>
+      <span style="margin-left:1rem">地点：</span><strong id="assignJobLocation"></strong>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field"><label>开始日期</label><input type="date" id="assignJobStartDate"></div>
+      <div class="field"><label>结束日期</label><input type="date" id="assignJobEndDate"></div>
+    </div>
+  </div>
+
+  <!-- 绩效评估 -->
+  <div class="form-section">
+    <h4>绩效评估 <span style="font-size:.78rem;font-weight:400;color:var(--gray-400)">(1–5分，0=未评)</span></h4>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem .75rem">
+      <div class="field" style="margin-bottom:.5rem"><label>⚡ 效率</label>
+        <select id="ajPerfEff" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>✅ 质量</label>
+        <select id="ajPerfQual" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>📅 出勤</label>
+        <select id="ajPerfAtt" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>🦺 安全</label>
+        <select id="ajPerfSafe" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>🤝 团队</label>
+        <select id="ajPerfTeam" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>🔧 技能</label>
+        <select id="ajPerfSkill" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+    </div>
+    <div class="field" style="margin-bottom:0"><label>评价备注</label>
+      <textarea id="assignJobNotes" rows="2" style="width:100%;resize:vertical;padding:.5rem;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem" placeholder="工作表现、优缺点…"></textarea></div>
+  </div>
+
+  <!-- 财务记录 -->
+  <div class="form-section">
+    <h4>财务记录</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem .75rem;align-items:end">
+      <div class="field" style="margin-bottom:.5rem"><label>员工时薪 ($/h)</label>
+        <input type="number" id="ajEmpRate" step="0.01" min="0" placeholder="0.00" oninput="calcJobFinancials()" style="width:100%"></div>
+      <div class="field" style="margin-bottom:.5rem"><label>工时 (h)</label>
+        <input type="number" id="ajEmpHours" step="0.5" min="0" placeholder="0" oninput="calcJobFinancials()" style="width:100%"></div>
+      <div class="field" style="margin-bottom:.5rem"><label>员工总收入 ($) <span style="font-weight:400;font-size:.75rem;color:var(--gray-400)">可手动覆盖</span></label>
+        <input type="number" id="ajEmpPay" step="0.01" min="0" placeholder="自动" style="width:100%" oninput="this.dataset.manual=this.value?'1':'';calcJobFinancials()"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem .75rem;align-items:end">
+      <div class="field" style="margin-bottom:.5rem"><label>客户账单率 ($/h)</label>
+        <input type="number" id="ajClientRate" step="0.01" min="0" placeholder="0.00" oninput="calcJobFinancials()" style="width:100%"></div>
+      <div class="field" style="margin-bottom:.5rem"><label>计费工时 (h)</label>
+        <input type="number" id="ajClientHours" step="0.5" min="0" placeholder="0" oninput="calcJobFinancials()" style="width:100%"></div>
+      <div class="field" style="margin-bottom:.5rem"><label>客户总账单 ($) <span style="font-weight:400;font-size:.75rem;color:var(--gray-400)">可手动覆盖</span></label>
+        <input type="number" id="ajClientBilled" step="0.01" min="0" placeholder="自动" style="width:100%" oninput="this.dataset.manual=this.value?'1':'';calcJobFinancials()"></div>
+    </div>
+    <div style="background:var(--sky-light);border-radius:8px;padding:.65rem 1rem;display:flex;justify-content:space-between;align-items:center;margin-top:.25rem">
+      <div style="font-size:.85rem;color:var(--gray-600)">
+        客户账单 <strong id="ajSumBilled">$0</strong> &nbsp;—&nbsp; 员工收入 <strong id="ajSumPay">$0</strong>
+      </div>
+      <div>
+        <span style="font-size:.82rem;color:var(--gray-500);margin-right:.5rem">公司利润</span>
+        <span id="ajProfit" style="font-weight:700;font-size:1.1rem;color:var(--green)">$0.00</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:1rem;margin-top:1.25rem">
+    <button class="btn btn-green" onclick="confirmAssignJob()">保存记录</button>
+    <button class="btn btn-outline" onclick="guardClose('assignJobModal')">取消</button>
   </div>
 </div></div>
 
@@ -1106,6 +1320,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveAssignment()">保存</button>
+    <button class="btn" onclick="randomFillAssignment()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-red" onclick="closeAssignModal()">取消</button>
   </div>
 </div></div>
@@ -1194,6 +1409,7 @@ tr:hover td{background:var(--sky-light)}
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="savePartner()">保存</button>
+    <button class="btn" onclick="randomFillPartner()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-outline" onclick="closePartnerModal()">取消</button>
     <button class="btn" onclick="randomFillPartner()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300);margin-left:auto">🎲 随机填充</button>
   </div>
@@ -1316,6 +1532,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="timeCalcPreview" style="display:none;background:var(--sky-light);border-radius:var(--radius);padding:.75rem 1rem;font-size:.85rem;margin-top:.5rem"></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveTimeEntry()">保存</button>
+    <button class="btn" onclick="randomFillTimeEntry()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-outline" onclick="closeTimeModal()">取消</button>
   </div>
 </div></div>
@@ -1480,6 +1697,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="field"><label>备注</label><textarea id="bgNotes" placeholder="调查备注..."></textarea></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveBgCheck()">保存</button>
+    <button class="btn" onclick="randomFillBgCheck()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-outline" onclick="closeBgModal()">取消</button>
   </div>
 </div></div>
@@ -1488,7 +1706,9 @@ tr:hover td{background:var(--sky-light)}
 let TOKEN = '';
 let USER_ROLE = '';
 let USER_NAME = '';
+let _currentUserId = 0;
 const API = '/api';
+
 
 function togglePass() {
   const inp = document.getElementById('passInput');
@@ -1505,6 +1725,11 @@ async function api(path, opts = {}) {
     ...opts,
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}`, ...(opts.headers || {}) }
   });
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    console.error('API returned non-JSON:', res.status, ct);
+    return { error: '服务器返回异常，请刷新页面或联系管理员重启服务器' };
+  }
   const data = await res.json();
   if (data.pending) { alert(data.message || '操作已提交审批'); return data; }
   if (res.status === 401) { alert('登录已过期，请重新登录'); logout(); return data; }
@@ -1539,6 +1764,7 @@ async function doLogin() {
     TOKEN = r.token;
     USER_ROLE = r.role || 'staff';
     USER_NAME = r.username || '';
+    _currentUserId = r.user_id || 0;
     document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
     document.getElementById('loginWrap').style.display = 'none';
     document.getElementById('app').classList.add('show');
@@ -1573,6 +1799,7 @@ function logout() {
       .then(u => {
         USER_ROLE = u.role || 'staff';
         USER_NAME = u.username || '';
+        _currentUserId = u.id || 0;
         document.getElementById('loginWrap').style.display = 'none';
         document.getElementById('app').classList.add('show');
         applyRoleUI();
@@ -1592,14 +1819,16 @@ function showTab(t) {
   if (t === 'dashboard')  loadDashboard();
   if (t === 'jobs')       loadJobs();
   if (t === 'inquiries')  loadInquiries();
+  if (t === 'quotes')     loadQuotes();
   if (t === 'assignments') loadAssignments();
   if (t === 'partners')   loadPartners();
   if (t === 'backups')    loadBackups();
   if (t === 'employees')  { loadEmployees(); loadOnboardSubmissions(); }
   if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
   if (t === 'ts-verify')  loadTsVerify();
-  if (t === 'ts-payment') loadTsPayment();
-  if (t === 'ts-history') loadTsHistory();
+  if (t === 'ts-payment')  loadTsPayment();
+  if (t === 'ts-dividend') loadTsDividend();
+  if (t === 'ts-history')  loadTsHistory();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')   loadAccounts();
@@ -2257,7 +2486,7 @@ function renderInquiries(inqs) {
     <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
     <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
     <td><span class="badge badge-${i.type==='Employer'?'employer':i.type==='Job Seeker'?'seeker':'other'}">${typeLabel(i.type)}</span>${i.quote_request ? ' <span class="badge badge-urgent" style="background:#F5A623">报价</span>' : ''}</td>
-    <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="max-width:180px">${i.job_id?`<span style="font-size:.78rem;background:var(--sky-light);color:var(--sky);padding:1px 6px;border-radius:4px">职位申请</span> `:''}${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.82rem">${esc(i.location||'')}</td>
     <td style="white-space:nowrap">${esc(i.phone)}</td>
     <td style="white-space:nowrap">
@@ -2515,6 +2744,36 @@ async function assignFromInquiry() {
   document.getElementById('aInquiryId').value = currentInquiry.id;
 }
 
+// ─── Quotes (报价请求) ───
+let allQuotes = [];
+async function loadQuotes() {
+  allQuotes = await api('/admin/quotes');
+  filterQuotes();
+}
+function filterQuotes() {
+  const q = (document.getElementById('quoteSearch').value || '').toLowerCase();
+  const rows = allQuotes.filter(r =>
+    !q || [r.name, r.email, r.company, r.products, r.phone, r.location].some(f => (f || '').toLowerCase().includes(q))
+  );
+  document.getElementById('quoteTable').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td>${(r.created_at || '').slice(0, 10)}</td>
+    <td><strong>${esc(r.name)}</strong></td>
+    <td>${esc(r.company)}</td>
+    <td>${esc(r.email)}</td>
+    <td>${esc(r.phone)}</td>
+    <td>${esc(r.products)}</td>
+    <td>${esc(r.quantity)}</td>
+    <td>${esc(r.location)}</td>
+    <td>${esc(r.notes)}</td>
+    <td><button class="btn btn-xs btn-danger" onclick="deleteQuote(${r.id})">删除</button></td>
+  </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无报价请求</td></tr>';
+}
+async function deleteQuote(id) {
+  if (!confirm('确定删除该报价请求？')) return;
+  await api('/admin/quotes/' + id, { method: 'DELETE' });
+  loadQuotes();
+}
+
 // ─── Assignments (派工管理) ───
 async function loadAssignments() {
   allAssignments = await api('/admin/assignments');
@@ -2610,7 +2869,7 @@ function filterPartnerSearch() {
   const items = _jobPartners.filter(p => !q || (p.name||'').toLowerCase().includes(q));
   if (!items.length) { drop.classList.remove('open'); return; }
   drop.innerHTML = items.slice(0, 30).map(p =>
-    `<div class="adrop-item" onclick="selectPartnerItem(${p.id},${JSON.stringify(p.name).replace(/</g,'&lt;')})">${esc(p.name)}<small>${esc(p.industry||'')}</small></div>`
+    `<div class="adrop-item" onclick="selectPartnerItem(${p.id},${JSON.stringify(p.name).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">${esc(p.name)}<small>${esc(p.industry||'')}</small></div>`
   ).join('');
   drop.classList.add('open');
 }
@@ -2636,10 +2895,10 @@ function filterAssignSearch(which) {
 
   drop.innerHTML = items.slice(0, 30).map(item => {
     if (isInq) {
-      return `<div class="adrop-item" onclick="selectAssignItem('inq',${item.id},${JSON.stringify(item.name + (item.phone ? ' · ' + item.phone : '')).replace(/</g,'&lt;')})">
+      return `<div class="adrop-item" onclick="selectAssignItem('inq',${item.id},${JSON.stringify(item.name + (item.phone ? ' · ' + item.phone : '')).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">
         ${esc(item.name)} <small>${esc(typeLabel(item.type))} ${item.phone ? '· ' + esc(item.phone) : ''} ${item.email ? '· ' + esc(item.email) : ''}</small></div>`;
     } else {
-      return `<div class="adrop-item" onclick="selectAssignItem('job',${item.id},${JSON.stringify(item.title + ' - ' + item.location).replace(/</g,'&lt;')})">
+      return `<div class="adrop-item" onclick="selectAssignItem('job',${item.id},${JSON.stringify(item.title + ' - ' + item.location).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">
         ${esc(item.title)} <small>${esc(item.location)} ${item.pay ? '· ' + esc(item.pay) : ''} ${item.employment_type ? '· ' + esc(item.employment_type) : ''}</small></div>`;
     }
   }).join('');
@@ -2825,10 +3084,13 @@ function editPartnerFromDetail() {
 function addPartnerContact(c) {
   const div = document.createElement('div');
   div.className = 'dyn-item';
+  // Support both new {first_name, last_name} and legacy {name} formats
+  const fname = c?.first_name || (c?.name && !c.last_name ? c.name : '');
+  const lname = c?.last_name || '';
   div.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:.5rem">
-      <div class="field"><label>名 First</label><input class="pc-first" value="${esc(c?.first_name||c?.name||'')}" placeholder="三"></div>
-      <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(c?.last_name||'')}" placeholder="张"></div>
+      <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
+      <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
       <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
       <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
       <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
@@ -2844,15 +3106,20 @@ function addPartnerContact(c) {
 }
 
 function getPartnerContacts() {
-  return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>({
-    first_name: el.querySelector('.pc-first').value, last_name: el.querySelector('.pc-last').value,
-    role: el.querySelector('.pc-role').value,
-    phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
-    whatsapp: el.querySelector('.pc-whatsapp').value,
-    wechat: el.querySelector('.pc-wechat').value,
-    telegram: el.querySelector('.pc-telegram').value,
-    other_comm: el.querySelector('.pc-other_comm').value
-  })).filter(c=>c.first_name||c.last_name||c.phone||c.email);
+  return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>{
+    const fn = (el.querySelector('.pc-first')?.value || '').trim();
+    const ln = (el.querySelector('.pc-last')?.value || '').trim();
+    return {
+      first_name: fn, last_name: ln,
+      name: [fn, ln].filter(Boolean).join(' '),
+      role: el.querySelector('.pc-role').value,
+      phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
+      whatsapp: el.querySelector('.pc-whatsapp').value,
+      wechat: el.querySelector('.pc-wechat').value,
+      telegram: el.querySelector('.pc-telegram').value,
+      other_comm: el.querySelector('.pc-other_comm').value
+    };
+  }).filter(c=>c.name||c.phone||c.email);
 }
 
 // ── Dynamic addresses list ──
@@ -3150,31 +3417,38 @@ function updateEmpStats(list) {
 }
 
 function populateDeptFilter(list) {
-  const depts = [...new Set(list.map(e=>e.department).filter(Boolean))].sort();
+  const companies = [...new Set(list.flatMap(e=>(e.current_jobs||[]).map(j=>j.company_name)).filter(Boolean))].sort();
   const sel = document.getElementById('empDeptFilter');
   const cur = sel.value;
-  sel.innerHTML = '<option value="">全部部门</option>' + depts.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  sel.innerHTML = '<option value="">全部公司</option>' + companies.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
   sel.value = cur;
 }
 
 function filterEmployees() {
   const kw   = document.getElementById('empSearch').value.toLowerCase();
   const st   = document.getElementById('empStatusFilter').value;
-  const dept = document.getElementById('empDeptFilter').value;
+  const company = document.getElementById('empDeptFilter').value;
   let f = allEmployees;
-  if (kw)   f = f.filter(e=> `${e.first_name} ${e.last_name} ${e.employee_id||''} ${e.position||''} ${e.department||''}`.toLowerCase().includes(kw));
+  if (kw)   f = f.filter(e=> {
+    const jobStr = (e.current_jobs||[]).map(j=>(j.job_title||'')+' '+(j.company_name||'')).join(' ');
+    return `${e.first_name} ${e.last_name} ${e.employee_id||''} ${jobStr}`.toLowerCase().includes(kw);
+  });
   if (st)   f = f.filter(e=> e.status===st);
-  if (dept) f = f.filter(e=> e.department===dept);
+  if (company) f = f.filter(e=> (e.current_jobs||[]).some(j=>j.company_name===company));
   renderEmployees(f);
 }
 
 function renderEmployees(list) {
-  document.getElementById('empTable').innerHTML = list.length ? list.map(e=>`<tr>
+  document.getElementById('empTable').innerHTML = list.length ? list.map(e=>{
+    const jobs = e.current_jobs || [];
+    const jobNames = jobs.map(j=>j.job_title).filter(Boolean);
+    const companyNames = [...new Set(jobs.map(j=>j.company_name).filter(Boolean))];
+    return `<tr>
     <td><strong>${esc(e.employee_id||'')}</strong></td>
     <td style="cursor:pointer" onclick='viewEmployee(${e.id})'><strong>${esc(e.first_name)} ${esc(e.last_name)}</strong>
       <div class="emp-meta">${esc(e.email||'')} ${e.phone?'· '+esc(e.phone):''}</div></td>
-    <td>${esc(e.position||'—')}</td>
-    <td>${esc(e.department||'—')}</td>
+    <td>${jobNames.length ? jobNames.map(n=>'<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:1px 8px;border-radius:10px;font-size:.78rem;margin:1px 2px">'+esc(n)+'</span>').join('') : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td>${companyNames.length ? companyNames.map(c=>'<span style="font-size:.85rem">'+esc(c)+'</span>').join('<br>') : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td><span class="badge badge-${e.pay_type||'hourly'}">${PAY_TYPE_LABEL[e.pay_type]||e.pay_type}</span>
       ${e.pay_rate?'<br><span style="font-size:.75rem">$'+Number(e.pay_rate).toFixed(2)+'/'+((e.pay_type==='hourly')?'hr':'yr')+'</span>':''}</td>
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
@@ -3182,11 +3456,12 @@ function renderEmployees(list) {
     <td>
       <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
       <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
-      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}","${esc(e.phone||"")}","${esc(e.email||"")}")'>发送材料链接</button>
+      <button class="btn btn-sm" style="background:#FFF7ED;color:#9A3412;border:1px solid #FED7AA" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>安排职位</button>
+      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>发送材料链接</button>
       <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
       ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
     </td>
-  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
+  </tr>`}).join('') : '<tr><td colspan="8" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
 }
 
 function openEmpModal(id) {
@@ -3446,7 +3721,7 @@ async function viewEmployee(id) {
       <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
       <div>
         <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
-        <div class="emp-meta">${esc(emp.employee_id)} · ${esc(emp.position||'')} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+        <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
       </div>
     </div>
     <div class="form-section">
@@ -3454,8 +3729,7 @@ async function viewEmployee(id) {
       ${cols([
         ['邮箱',emp.email],['电话',emp.phone],['出生日期',emp.dob],
         ['地址',[emp.address,emp.city,emp.state,emp.zip].filter(Boolean).join(', ')],
-        ['入职日期',emp.hire_date],['薪资','$'+(emp.pay_rate||0)+'  ('+PAY_TYPE_LABEL[emp.pay_type]+')'],
-        ['部门',emp.department],
+        ['注册时间',emp.created_at ? new Date(emp.created_at).toLocaleDateString() : '—'],
         ['SSN','•••••'+esc(emp.ssn_last4||'????')+(emp.ssn_full?'  <strong style="color:var(--red)">'+esc(emp.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/,'$1-$2-$3'))+'</strong>':'')]
       ])}
     </div>
@@ -3516,7 +3790,7 @@ async function viewEmployee(id) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h4 style="margin:0">材料收集链接 (${docReqs.length} 条)</h4>
       <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0"
-        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}","${esc(emp.phone||"")}","${esc(emp.email||"")}")'>+ 发送新链接</button>
+        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 发送新链接</button>
     </div>
     ${docReqs.length ? docReqs.map(r => {
       const link = location.origin + '/emp-docs.html?token=' + r.token;
@@ -3543,10 +3817,56 @@ async function viewEmployee(id) {
     }).join('') : '<p class="empty" style="padding:1rem">暂无材料收集链接，点击「+ 发送新链接」创建</p>'}
   </div>`;
 
+  // Job records (from employee_jobs — with financial + performance data)
+  const jobRecords = await api(`/admin/employees/${id}/job-records`);
+  const perfScore = v => v > 0 ? '★'.repeat(v) + '☆'.repeat(5-v) : '—';
+  const fmtUSD = v => v > 0 ? '$' + parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+  const avgPerf = r => {
+    const vals = [r.perf_efficiency,r.perf_quality,r.perf_attendance,r.perf_safety,r.perf_teamwork,r.perf_skills].filter(v=>v>0);
+    return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : null;
+  };
+  html += `<div class="form-section">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h4 style="margin:0">职位记录 (${jobRecords.length} 条)</h4>
+      <button class="btn btn-sm btn-green" onclick='openAssignJobModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 添加记录</button>
+    </div>
+    ${jobRecords.length ? jobRecords.map(r => {
+      const profit = (r.client_total_billed||0) - (r.emp_total_pay||0);
+      const avg = avgPerf(r);
+      return `<div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:.85rem 1rem;margin-bottom:.6rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem">
+          <div>
+            <strong style="font-size:.95rem">${esc(r.job_title||'未知职位')}</strong>
+            ${r.company_name ? `<span style="color:var(--gray-500);margin-left:.5rem;font-size:.85rem">${esc(r.company_name)}</span>` : ''}
+            ${avg ? `<span style="margin-left:.6rem;background:var(--sky-light);color:var(--sky);border-radius:20px;padding:1px 8px;font-size:.78rem;font-weight:700">综合 ${avg}/5</span>` : ''}
+          </div>
+          <button class="btn btn-sm btn-outline" onclick='openAssignJobModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}");setTimeout(()=>prefillJobRecord(${JSON.stringify(r).replace(/'/g,"&#39;")}),300)' style="font-size:.78rem">编辑</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.3rem .75rem;font-size:.82rem">
+          <div><span style="color:var(--gray-400)">时间：</span>${r.start_date||'—'} ~ ${r.end_date||'—'}</div>
+          <div><span style="color:var(--gray-400)">员工时薪：</span>${r.emp_hourly_rate>0?'$'+r.emp_hourly_rate+'/h':'—'}</div>
+          <div><span style="color:var(--gray-400)">工时：</span>${r.emp_total_hours>0?r.emp_total_hours+'h':'—'}</div>
+        </div>
+        ${(r.emp_total_pay||r.client_total_billed) ? `
+        <div style="display:flex;gap:1.5rem;margin-top:.45rem;padding:.4rem .6rem;background:#fff;border-radius:6px;font-size:.83rem;flex-wrap:wrap">
+          <span>员工收入：<strong style="color:var(--blue)">${fmtUSD(r.emp_total_pay)}</strong></span>
+          <span>客户账单：<strong style="color:var(--gray-700)">${fmtUSD(r.client_total_billed)}</strong></span>
+          <span>公司利润：<strong style="color:${profit>=0?'var(--green)':'var(--red)'}">${profit>=0?'':'-'}${fmtUSD(Math.abs(profit))}</strong></span>
+        </div>` : ''}
+        ${avg ? `<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:.2rem;margin-top:.45rem;font-size:.75rem;text-align:center">
+          ${[['效率',r.perf_efficiency],['质量',r.perf_quality],['出勤',r.perf_attendance],['安全',r.perf_safety],['团队',r.perf_teamwork],['技能',r.perf_skills]].map(([label,v])=>
+            `<div style="background:#fff;border-radius:4px;padding:.2rem .3rem"><div style="color:var(--gray-400)">${label}</div><div style="color:var(--sky);font-size:.9rem">${v>0?v:'—'}</div></div>`
+          ).join('')}
+        </div>` : ''}
+        ${r.notes ? `<div style="margin-top:.4rem;font-size:.82rem;color:var(--gray-600);font-style:italic">${esc(r.notes)}</div>` : ''}
+      </div>`;
+    }).join('') : '<p class="empty" style="padding:1rem">暂无职位记录，点击「+ 添加记录」</p>'}
+  </div>`;
+
   // Work history section (from timesheet_sheets)
   const jobHist = emp.job_history || [];
   html += `<div class="form-section">
-    <h4>工作经历 (${jobHist.length} 个职位)</h4>
+    <h4>工时记录摘要 (${jobHist.length} 个职位)</h4>
     ${jobHist.length ? `<table><thead><tr><th>职位</th><th>公司</th><th>时间范围</th><th>工时单数</th><th>总工时</th><th>加班</th></tr></thead><tbody>
     ${jobHist.map(j => `<tr>
       <td style="font-weight:600">${esc(j.job_title||'—')}</td>
@@ -3556,7 +3876,7 @@ async function viewEmployee(id) {
       <td>${(j.total_hours||0).toFixed(1)}h</td>
       <td>${j.overtime_hours>0?`<span class="ot-text">${(j.overtime_hours||0).toFixed(1)}h</span>`:'—'}</td>
     </tr>`).join('')}
-    </tbody></table>` : '<p class="empty" style="padding:1rem">暂无工作经历记录</p>'}
+    </tbody></table>` : '<p class="empty" style="padding:1rem">暂无工时记录</p>'}
   </div>`;
 
   // Ratings section
@@ -3704,55 +4024,198 @@ async function deleteRating(ratingId, empId) {
 // ─── Employee Doc Request Links ───
 let _currentDocLinkUrl = '';
 
-let _empDocPhone = '', _empDocEmail = '';
-function sendEmpDocLink(empId, empName, phone, email) {
-  _empDocPhone = phone || '';
-  _empDocEmail = email || '';
+let _empDocOrigPhones = [], _empDocOrigEmails = [];
+let _empDocCurrentEmpId = null;
+
+function sendEmpDocLink(empId, empName) {
+  const empObj = allEmployees.find(e => e.id === empId);
+  _empDocCurrentEmpId = empId;
+  // Build phone list: primary + extras
+  const phones = [];
+  if (empObj && empObj.phone) phones.push(empObj.phone);
+  try { const ex = JSON.parse((empObj && empObj.extra_phones) || '[]'); phones.push(...ex); } catch(e) {}
+  if (!phones.length) phones.push('');
+  // Build email list: primary + extras
+  const emails = [];
+  if (empObj && empObj.email) emails.push(empObj.email);
+  try { const ex = JSON.parse((empObj && empObj.extra_emails) || '[]'); emails.push(...ex); } catch(e) {}
+  if (!emails.length) emails.push('');
+  _empDocOrigPhones = [...phones];
+  _empDocOrigEmails = [...emails];
+
   document.getElementById('empDocLinkEmpId').value = empId;
-  document.getElementById('empDocLinkTarget').textContent = empName;
+  document.getElementById('empDocLinkTarget').textContent = empName || ((empObj && empObj.first_name + ' ' + empObj.last_name) || '');
   document.getElementById('empDocLinkResult').style.display = 'none';
   document.getElementById('empDocAdminNote').value = '';
   document.getElementById('docReqGovId').checked = true;
   document.getElementById('docReqSsn').checked = true;
   document.getElementById('docReqWorkCard').checked = true;
   document.getElementById('docReqLang').value = 'zh';
-  document.getElementById('docReqSendVia').value = 'phone';
-  updateDocReqSendTarget();
+  document.getElementById('docReqViaPhone').checked = true;
+  document.getElementById('docReqViaEmail').checked = false;
+  // Populate contact fields
+  renderDocContactFields('phone', phones);
+  renderDocContactFields('email', emails);
+  toggleDocContactSection();
   document.getElementById('btnGenDocLink').disabled = false;
   document.getElementById('btnGenDocLink').textContent = '生成链接';
   document.getElementById('empDocLinkModal').classList.add('show');
 }
-function updateDocReqSendTarget() {
-  const via = document.getElementById('docReqSendVia').value;
-  const label = document.getElementById('docReqSendLabel');
-  const input = document.getElementById('docReqSendValue');
-  if (via === 'phone') { label.textContent = '发送至手机'; input.value = _empDocPhone || '（未填写手机号）'; }
-  else { label.textContent = '发送至邮箱'; input.value = _empDocEmail || '（未填写邮箱）'; }
+
+function renderDocContactFields(type, values) {
+  const container = document.getElementById(type === 'phone' ? 'docReqPhoneList' : 'docReqEmailList');
+  container.innerHTML = '';
+  values.forEach((val, idx) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:.4rem;align-items:center';
+    const inp = document.createElement('input');
+    inp.type = type === 'phone' ? 'tel' : 'email';
+    inp.value = val;
+    inp.placeholder = type === 'phone' ? '输入手机号码' : '输入邮箱地址';
+    inp.className = 'doc-contact-input';
+    inp.dataset.contactType = type;
+    inp.style.cssText = 'flex:1;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem';
+    row.appendChild(inp);
+    if (values.length > 1) {
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.textContent = '×';
+      delBtn.title = '移除';
+      delBtn.style.cssText = 'background:var(--red);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:.9rem;line-height:1;display:flex;align-items:center;justify-content:center';
+      delBtn.onclick = () => { row.remove(); };
+      row.appendChild(delBtn);
+    }
+    container.appendChild(row);
+  });
+}
+
+function addDocContactField(type) {
+  const container = document.getElementById(type === 'phone' ? 'docReqPhoneList' : 'docReqEmailList');
+  const allRows = container.querySelectorAll('div');
+  // Add delete buttons to existing single row if needed
+  if (allRows.length === 1 && !allRows[0].querySelector('button')) {
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.textContent = '×';
+    delBtn.title = '移除';
+    delBtn.style.cssText = 'background:var(--red);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:.9rem;line-height:1;display:flex;align-items:center;justify-content:center';
+    delBtn.onclick = () => { delBtn.parentElement.remove(); };
+    allRows[0].appendChild(delBtn);
+  }
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:.4rem;align-items:center';
+  const inp = document.createElement('input');
+  inp.type = type === 'phone' ? 'tel' : 'email';
+  inp.placeholder = type === 'phone' ? '输入手机号码' : '输入邮箱地址';
+  inp.className = 'doc-contact-input';
+  inp.dataset.contactType = type;
+  inp.style.cssText = 'flex:1;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem';
+  row.appendChild(inp);
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.textContent = '×';
+  delBtn.title = '移除';
+  delBtn.style.cssText = 'background:var(--red);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:.9rem;line-height:1;display:flex;align-items:center;justify-content:center';
+  delBtn.onclick = () => { row.remove(); };
+  row.appendChild(delBtn);
+  container.appendChild(row);
+  inp.focus();
+}
+
+function toggleDocContactSection() {
+  const phoneChecked = document.getElementById('docReqViaPhone').checked;
+  const emailChecked = document.getElementById('docReqViaEmail').checked;
+  document.getElementById('docReqPhoneSection').style.display = phoneChecked ? '' : 'none';
+  document.getElementById('docReqEmailSection').style.display = emailChecked ? '' : 'none';
+}
+
+function getDocContactValues(type) {
+  const container = document.getElementById(type === 'phone' ? 'docReqPhoneList' : 'docReqEmailList');
+  return Array.from(container.querySelectorAll('input')).map(i => i.value.trim()).filter(Boolean);
 }
 
 async function generateEmpDocLink() {
+  const btn = document.getElementById('btnGenDocLink');
   const empId = document.getElementById('empDocLinkEmpId').value;
-  const note  = document.getElementById('empDocAdminNote').value;
-  const lang  = document.getElementById('docReqLang').value;
-  const sendVia = document.getElementById('docReqSendVia').value;
+  if (!empId) return alert('员工信息缺失，请关闭后重试');
+
+  const phoneChecked = document.getElementById('docReqViaPhone').checked;
+  const emailChecked = document.getElementById('docReqViaEmail').checked;
+  if (!phoneChecked && !emailChecked) return alert('请至少选择一种发送方式');
+
+  const phones = phoneChecked ? getDocContactValues('phone') : [];
+  const emails = emailChecked ? getDocContactValues('email') : [];
+  if (phoneChecked && !phones.length) return alert('请填写至少一个手机号码');
+  if (emailChecked && !emails.length) return alert('请填写至少一个邮箱地址');
+
+  const note = document.getElementById('empDocAdminNote').value;
+  const lang = document.getElementById('docReqLang').value;
   const docIds = { gov_id: 'docReqGovId', ssn: 'docReqSsn', work_card: 'docReqWorkCard' };
   const requestedDocs = Object.entries(docIds).filter(([,id]) => document.getElementById(id).checked).map(([k]) => k);
   if (!requestedDocs.length) return alert('请至少选择一种材料');
-  const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs, lang }) });
-  if (r.token) {
-    _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token + '&lang=' + lang;
-    document.getElementById('empDocLinkUrl').textContent = _currentDocLinkUrl;
-    document.getElementById('empDocLinkResult').style.display = '';
-    document.getElementById('empDocLinkCopied').style.display = 'none';
-    document.getElementById('btnGenDocLink').disabled = true;
-    document.getElementById('btnGenDocLink').textContent = '已生成';
-    // Show send instruction
-    const target = sendVia === 'phone' ? _empDocPhone : _empDocEmail;
-    if (target) {
-      document.getElementById('empDocLinkCopied').textContent = sendVia === 'phone' ? '请复制链接通过短信发送至 ' + target : '请复制链接通过邮件发送至 ' + target;
-      document.getElementById('empDocLinkCopied').style.display = '';
-      document.getElementById('empDocLinkCopied').style.color = 'var(--blue)';
+
+  // Check if contact info was modified
+  const phonesChanged = JSON.stringify(phones) !== JSON.stringify(_empDocOrigPhones.filter(Boolean));
+  const emailsChanged = JSON.stringify(emails) !== JSON.stringify(_empDocOrigEmails.filter(Boolean));
+  if (phonesChanged || emailsChanged) {
+    const choice = confirm('联系方式已修改。\n\n点击「确定」将更新员工档案中的电话/邮箱。\n点击「取消」仅本次使用，不更新员工信息。');
+    if (choice) {
+      try {
+        await api(`/admin/employees/${empId}/contacts`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            phone: phones[0] || '',
+            extra_phones: phones.slice(1),
+            email: emails[0] || '',
+            extra_emails: emails.slice(1)
+          })
+        });
+        // Update local cache
+        const empObj = allEmployees.find(e => e.id == empId);
+        if (empObj) {
+          empObj.phone = phones[0] || '';
+          empObj.extra_phones = JSON.stringify(phones.slice(1));
+          empObj.email = emails[0] || '';
+          empObj.extra_emails = JSON.stringify(emails.slice(1));
+        }
+        _empDocOrigPhones = [...phones];
+        _empDocOrigEmails = [...emails];
+      } catch(e) {
+        alert('更新联系方式失败：' + (e.message || '网络错误'));
+      }
     }
+  }
+
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  try {
+    const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs, lang }) });
+    if (r.error) { alert('生成失败：' + r.error); btn.disabled = false; btn.textContent = '生成链接'; return; }
+    if (r.token) {
+      _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token + '&lang=' + lang;
+      document.getElementById('empDocLinkUrl').textContent = _currentDocLinkUrl;
+      document.getElementById('empDocLinkUrl').href = _currentDocLinkUrl;
+      document.getElementById('empDocLinkResult').style.display = '';
+      document.getElementById('empDocLinkCopied').style.display = 'none';
+      btn.textContent = '已生成';
+      // Show send-to summary
+      const targets = [];
+      if (phoneChecked && phones.length) targets.push('短信: ' + phones.join(', '));
+      if (emailChecked && emails.length) targets.push('邮箱: ' + emails.join(', '));
+      if (targets.length) {
+        document.getElementById('empDocLinkCopied').textContent = '请复制链接发送至 ' + targets.join(' / ');
+        document.getElementById('empDocLinkCopied').style.display = '';
+        document.getElementById('empDocLinkCopied').style.color = 'var(--blue)';
+      }
+    } else {
+      alert('生成失败，请重试');
+      btn.disabled = false;
+      btn.textContent = '生成链接';
+    }
+  } catch(e) {
+    alert('请求失败：' + (e.message || '网络错误'));
+    btn.disabled = false;
+    btn.textContent = '生成链接';
   }
 }
 
@@ -3764,6 +4227,148 @@ function copyEmpDocLink() {
 
 function openEmpDocLink() {
   if (_currentDocLinkUrl) window.open(_currentDocLinkUrl, '_blank');
+}
+
+// ─── Assign Job to Employee ───
+let _allJobsCache = null;
+function calcJobFinancials() {
+  const empRate = parseFloat(document.getElementById('ajEmpRate').value) || 0;
+  const empHours = parseFloat(document.getElementById('ajEmpHours').value) || 0;
+  const clientRate = parseFloat(document.getElementById('ajClientRate').value) || 0;
+  const clientHours = parseFloat(document.getElementById('ajClientHours').value) || 0;
+  // Auto-fill pay fields only if user hasn't manually entered them
+  const payField = document.getElementById('ajEmpPay');
+  if (empRate && empHours && !payField.dataset.manual) payField.value = (empRate * empHours).toFixed(2);
+  const billedField = document.getElementById('ajClientBilled');
+  if (clientRate && clientHours && !billedField.dataset.manual) billedField.value = (clientRate * clientHours).toFixed(2);
+  // Compute profit from current field values
+  const pay = parseFloat(payField.value) || 0;
+  const billed = parseFloat(billedField.value) || 0;
+  const profit = billed - pay;
+  document.getElementById('ajSumPay').textContent = '$' + pay.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('ajSumBilled').textContent = '$' + billed.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const profitEl = document.getElementById('ajProfit');
+  profitEl.textContent = (profit >= 0 ? '' : '-') + '$' + Math.abs(profit).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  profitEl.style.color = profit >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+async function openAssignJobModal(empId, empName) {
+  document.getElementById('assignJobEmpId').value = empId;
+  document.getElementById('assignJobEmpName').textContent = empName;
+  document.getElementById('assignJobModalTitle').textContent = '工作记录';
+  // Reset form
+  ['assignJobStartDate','assignJobEndDate','assignJobNotes',
+   'ajEmpRate','ajEmpHours','ajEmpPay','ajClientRate','ajClientHours','ajClientBilled'].forEach(id => {
+    const el = document.getElementById(id);
+    el.value = '';
+    if (el.dataset) delete el.dataset.manual;
+  });
+  ['ajPerfEff','ajPerfQual','ajPerfAtt','ajPerfSafe','ajPerfTeam','ajPerfSkill'].forEach(id => {
+    document.getElementById(id).value = '0';
+  });
+  calcJobFinancials();
+  document.getElementById('assignJobCurrentList').innerHTML = '<span style="color:var(--gray-400);font-size:.82rem">加载中…</span>';
+  document.getElementById('assignJobSelect').innerHTML = '<option value="">加载中…</option>';
+  document.getElementById('assignJobCompanyInfo').style.display = 'none';
+  // Show modal immediately so user gets feedback
+  document.getElementById('assignJobModal').classList.add('show');
+
+  try {
+    // Load job records and available jobs in parallel
+    const [records, jobs] = await Promise.all([
+      api(`/admin/employees/${empId}/job-records`),
+      _allJobsCache ? Promise.resolve(_allJobsCache) : api('/admin/jobs')
+    ]);
+
+    // Populate existing records list
+    const recList = Array.isArray(records) ? records : [];
+    document.getElementById('assignJobCurrentList').innerHTML = recList.length
+      ? recList.map(j =>
+          `<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:2px 10px;border-radius:10px;font-size:.82rem;margin:2px;cursor:pointer" onclick="prefillJobRecord(${JSON.stringify(j).replace(/"/g,'&quot;')})">${esc(j.job_title||'未知职位')}${j.company_name?' <span style="color:var(--gray-400)">('+esc(j.company_name)+')</span>':''} <span style="font-size:.7rem;opacity:.6">点击编辑</span></span>`
+        ).join('')
+      : '<span style="color:var(--gray-300)">暂无记录</span>';
+
+    // Populate job dropdown
+    if (Array.isArray(jobs)) _allJobsCache = jobs;
+    const activeJobs = Array.isArray(_allJobsCache) ? _allJobsCache.filter(j => j.active) : [];
+    const sel = document.getElementById('assignJobSelect');
+    sel.innerHTML = '<option value="">请选择职位...</option>' + activeJobs.map(j =>
+      `<option value="${j.id}" data-company="${esc(j.company_name||'')}" data-location="${esc(j.location||'')}">${esc(j.title)} — ${esc(j.company_name||'未知公司')}</option>`
+    ).join('');
+    sel.onchange = function() {
+      const opt = sel.selectedOptions[0];
+      if (opt && opt.value) {
+        document.getElementById('assignJobCompanyName').textContent = opt.dataset.company || '—';
+        document.getElementById('assignJobLocation').textContent = opt.dataset.location || '—';
+        document.getElementById('assignJobCompanyInfo').style.display = '';
+      } else {
+        document.getElementById('assignJobCompanyInfo').style.display = 'none';
+      }
+    };
+  } catch(e) {
+    document.getElementById('assignJobCurrentList').innerHTML = '<span style="color:var(--red);font-size:.82rem">加载失败，请关闭重试</span>';
+  }
+  captureModalState('assignJobModal');
+}
+
+function prefillJobRecord(record) {
+  // Select the job in the dropdown
+  const sel = document.getElementById('assignJobSelect');
+  for (const opt of sel.options) {
+    if (opt.value == record.job_id) { sel.value = opt.value; sel.onchange && sel.onchange(); break; }
+  }
+  document.getElementById('assignJobStartDate').value = record.start_date || '';
+  document.getElementById('assignJobEndDate').value = record.end_date || '';
+  document.getElementById('ajPerfEff').value = record.perf_efficiency || 0;
+  document.getElementById('ajPerfQual').value = record.perf_quality || 0;
+  document.getElementById('ajPerfAtt').value = record.perf_attendance || 0;
+  document.getElementById('ajPerfSafe').value = record.perf_safety || 0;
+  document.getElementById('ajPerfTeam').value = record.perf_teamwork || 0;
+  document.getElementById('ajPerfSkill').value = record.perf_skills || 0;
+  document.getElementById('assignJobNotes').value = record.notes || '';
+  document.getElementById('ajEmpRate').value = record.emp_hourly_rate || '';
+  document.getElementById('ajEmpHours').value = record.emp_total_hours || '';
+  document.getElementById('ajEmpPay').value = record.emp_total_pay || '';
+  document.getElementById('ajClientRate').value = record.client_hourly_rate || '';
+  document.getElementById('ajClientHours').value = '';
+  document.getElementById('ajClientBilled').value = record.client_total_billed || '';
+  calcJobFinancials();
+}
+
+async function confirmAssignJob() {
+  const empId = document.getElementById('assignJobEmpId').value;
+  const jobId = document.getElementById('assignJobSelect').value;
+  if (!jobId) return alert('请选择一个职位');
+  const pay = parseFloat(document.getElementById('ajEmpPay').value) || 0;
+  const billed = parseFloat(document.getElementById('ajClientBilled').value) || 0;
+  const body = {
+    job_id: parseInt(jobId),
+    start_date: document.getElementById('assignJobStartDate').value,
+    end_date: document.getElementById('assignJobEndDate').value,
+    emp_hourly_rate: parseFloat(document.getElementById('ajEmpRate').value) || 0,
+    emp_total_hours: parseFloat(document.getElementById('ajEmpHours').value) || 0,
+    emp_total_pay: pay,
+    client_hourly_rate: parseFloat(document.getElementById('ajClientRate').value) || 0,
+    client_total_billed: billed,
+    perf_efficiency: parseInt(document.getElementById('ajPerfEff').value) || 0,
+    perf_quality: parseInt(document.getElementById('ajPerfQual').value) || 0,
+    perf_attendance: parseInt(document.getElementById('ajPerfAtt').value) || 0,
+    perf_safety: parseInt(document.getElementById('ajPerfSafe').value) || 0,
+    perf_teamwork: parseInt(document.getElementById('ajPerfTeam').value) || 0,
+    perf_skills: parseInt(document.getElementById('ajPerfSkill').value) || 0,
+    notes: document.getElementById('assignJobNotes').value
+  };
+  try {
+    const r = await api(`/admin/employees/${empId}/assign-job`, { method:'POST', body: JSON.stringify(body) });
+    if (r.error) return alert('保存失败：' + r.error);
+    clearModalState('assignJobModal');
+    document.getElementById('assignJobModal').classList.remove('show');
+    _allJobsCache = null;
+    loadEmployees();
+    if (currentEmpForDetail && currentEmpForDetail.id == empId) viewEmployee(empId);
+  } catch(e) {
+    alert('请求失败：' + (e.message || '网络错误'));
+  }
 }
 
 async function deleteDocRequest(reqId, empId) {
@@ -3844,7 +4449,7 @@ function renderTimeEntries(list) {
     <td>${fmtH(t.regular_hours)}</td>
     <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
     <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
-    <td>${esc(t.notes||'')}</td>
+    <td>${esc(t.notes||'')}${t.latitude?` <a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="查看打卡位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})">📍</a>`:''}</td>
     <td>
       ${t.status==='open'?`<button class="btn btn-sm btn-accent" onclick="clockOutEntry(${t.id})">打卡下班</button> `:''}
       <button class="btn btn-sm" onclick='openTimeModal(${JSON.stringify(t).replace(/'/g,"&#39;")})'>编辑</button>
@@ -4017,10 +4622,9 @@ function buildTsRows() {
     d.setDate(start.getDate() + i);
     const dow = (d.getDay() + 6) % 7; // 0=Mon
     const dateStr = d.toISOString().slice(0,10);
-    const isWeekend = dow >= 5;
     const label = `${WEEKDAYS_ZH[dow]} ${WEEKDAYS_EN[dow]}`;
     const dateLabel = `${d.getMonth()+1}/${d.getDate()}`;
-    html += `<tr class="${isWeekend?'ts-off':''}" data-date="${dateStr}">
+    html += `<tr data-date="${dateStr}">
       <td class="day-label">${label}<small>${dateLabel} ${dateStr}</small></td>
       <td><input type="time" class="ts-in" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
       <td><input type="time" class="ts-out" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
@@ -4327,14 +4931,72 @@ async function loadTsPayment() {
 
 async function markClientPaid(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/client-paid`, { method:'PUT', body:'{}' });
-  showToast(r.completed ? '✅ 双方付款完成，已移入历史' : '✅ 已标记客户付款');
+  showToast(r.completed ? '✅ 双方付款完成，已进入待分红' : '✅ 已标记客户付款');
   loadTsPayment();
 }
 
 async function markLaborPaid(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/labor-paid`, { method:'PUT', body:'{}' });
-  showToast(r.completed ? '✅ 双方付款完成，已移入历史' : '✅ 已标记劳务付款');
+  showToast(r.completed ? '✅ 双方付款完成，已进入待分红' : '✅ 已标记劳务付款');
   loadTsPayment();
+}
+
+// ─── 待分红 ───
+async function loadTsDividend() {
+  const rows = await api('/admin/timesheet-sheets?stage=dividend');
+  const tbody = document.getElementById('tsDividendTable');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待分红工时单</td></tr>'; return; }
+  // Fetch votes for each sheet in parallel
+  const votesMap = {};
+  await Promise.all(rows.map(async r => { votesMap[r.id] = await api(`/admin/timesheet-sheets/${r.id}/votes`); }));
+  tbody.innerHTML = rows.map(r => {
+    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const vi = votesMap[r.id] || { votes: [], staff_count: 0 };
+    const approves = vi.votes.filter(v => v.vote_type === 'approve');
+    const dists = vi.votes.filter(v => v.vote_type === 'distributed');
+    const allApproved = approves.length >= vi.staff_count && vi.staff_count > 0;
+    const myApproved = approves.some(v => v.user_id === _currentUserId);
+    const myDistributed = dists.some(v => v.user_id === _currentUserId);
+    const approveCell = `<span class="badge ${allApproved?'badge-green':'badge-yellow'}">${approves.length}/${vi.staff_count}</span>`
+      + (approves.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${approves.map(v=>v.display_name||v.username).join(', ')}</div>` : '');
+    const distCell = allApproved
+      ? `<span class="badge ${dists.length>=vi.staff_count?'badge-green':'badge-yellow'}">${dists.length}/${vi.staff_count}</span>`
+        + (dists.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${dists.map(v=>v.display_name||v.username).join(', ')}</div>` : '')
+      : '<span style="font-size:.78rem;color:var(--gray-500)">等待全部无异议</span>';
+    let actionBtn = '';
+    if (!myApproved) {
+      actionBtn = `<button class="btn btn-sm btn-green" onclick="voteDividendApprove(${r.id})">无异议</button>`;
+    } else if (allApproved && !myDistributed) {
+      actionBtn = `<button class="btn btn-sm btn-accent" onclick="voteDividendDistributed(${r.id})">已分红</button>`;
+    } else if (myApproved && !allApproved) {
+      actionBtn = '<span class="badge badge-green">已投票</span>';
+    } else {
+      actionBtn = '<span class="badge badge-green">已确认</span>';
+    }
+    return `<tr>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td>${approveCell}</td>
+      <td>${distCell}</td>
+      <td>${actionBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function voteDividendApprove(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/vote-approve`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
+  loadTsDividend();
+}
+
+async function voteDividendDistributed(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/vote-distributed`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_distributed ? '✅ 全部确认分红，已归档至工时历史' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
+  loadTsDividend();
 }
 
 // ─── 工时历史 ───
@@ -4588,32 +5250,72 @@ function guardClose(modalId, extraFn) {
 function closeModal(id) { guardClose(id); }
 
 // ─── Accounts Management ───
+let _accTab = 'admin';
+let _allPartners = [];
+
+function setAccTab(tab) {
+  _accTab = tab;
+  ['admin','worker','customer'].forEach(t => {
+    document.getElementById(`accTab${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t === tab);
+    document.getElementById(`accPanel${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t === tab ? '' : 'none';
+  });
+  if (tab === 'admin') loadAccounts();
+  else if (tab === 'worker') loadWorkerAccounts();
+  else loadCustomerAccounts();
+}
+
+function openAccModalForTab() {
+  if (_accTab === 'admin') openAccountModal();
+  else if (_accTab === 'worker') openWorkerAccountModal();
+  else openCustomerAccountModal();
+}
+
 async function loadAccounts() {
   const rows = await api('/admin/accounts');
   if (!Array.isArray(rows)) return;
-  const roleLabels = { admin: 'Admin (管理员)', staff: 'Staff (员工)', manager: 'Manager (经理)' };
+  const partners = await api('/admin/partners').catch(()=>[]);
+  _allPartners = partners;
+  const roleBadge = r => r==='admin'?'badge-blue':r==='manager'?'badge-yellow':'';
+  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理' };
+  const partnerName = ids => (ids||'').split(',').filter(Boolean).map(id=>{const p=partners.find(p=>p.id==id);return p?p.name:'#'+id;}).join(', ') || '—';
   document.getElementById('accountsTable').innerHTML = rows.map(a => `<tr>
-    <td><strong>${a.username}</strong></td>
-    <td>${a.display_name || '-'}</td>
-    <td><span class="badge ${a.role === 'admin' ? 'badge-blue' : a.role === 'manager' ? 'badge-yellow' : ''}">${roleLabels[a.role] || a.role}</span></td>
-    <td>${a.active ? '<span style="color:var(--green)">启用</span>' : '<span style="color:var(--red)">禁用</span>'}</td>
-    <td>${a.created_at ? a.created_at.slice(0, 10) : '-'}</td>
-    <td>
-      <button class="btn-sm" onclick="editAccount(${a.id})">编辑</button>
-      ${a.id !== 1 ? `<button class="btn-sm btn-red" onclick="deleteAccount(${a.id},'${a.username}')">删除</button>` : ''}
+    <td><strong>${esc(a.username)}</strong></td>
+    <td>${esc(a.display_name||'')}</td>
+    <td><span class="badge ${roleBadge(a.role)}">${roleLabel[a.role]||a.role}</span></td>
+    <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>
+    <td>${a.active?'<span style="color:var(--green)">启用</span>':'<span style="color:var(--red)">禁用</span>'}</td>
+    <td>${(a.created_at||'').slice(0,10)}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editAccount(${a.id})">编辑</button>
+      ${a.id!==1?`<button class="btn btn-sm btn-red" onclick="deleteAccount(${a.id},'${esc(a.username)}')">删除</button>`:''}
     </td>
   </tr>`).join('');
 }
 
-function openAccountModal(data) {
+function onAccRoleChange() {
+  const isManager = document.getElementById('accRole').value === 'manager';
+  document.getElementById('accPartnerField').style.display = isManager ? '' : 'none';
+}
+
+async function openAccountModal(data) {
   document.getElementById('accId').value = data ? data.id : '';
   document.getElementById('accUsername').value = data ? data.username : '';
   document.getElementById('accPassword').value = '';
-  document.getElementById('accDisplayName').value = data ? (data.display_name || '') : '';
-  document.getElementById('accRole').value = data ? (data.role || 'staff') : 'staff';
+  document.getElementById('accDisplayName').value = data ? (data.display_name||'') : '';
+  document.getElementById('accRole').value = data ? (data.role||'staff') : 'staff';
   document.getElementById('accActive').value = data ? String(data.active) : '1';
-  document.getElementById('accountModalTitle').textContent = data ? '编辑账户' : '新建账户';
+  document.getElementById('accountModalTitle').textContent = data ? '编辑内部账户' : '新建内部账户';
   document.getElementById('accPassHint').textContent = data ? '(留空则不修改)' : '*';
+  // Partner checkboxes for manager
+  const partners = _allPartners.length ? _allPartners : await api('/admin/partners').catch(()=>[]);
+  _allPartners = partners;
+  const assignedIds = (data?.assigned_partner_ids || '').split(',').map(s=>s.trim()).filter(Boolean);
+  document.getElementById('accPartnerCheckboxes').innerHTML = partners.map(p => `
+    <label style="display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border:1px solid var(--gray-200);border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:500;${assignedIds.includes(String(p.id))?'background:var(--sky);color:#fff;border-color:var(--sky)':''}">
+      <input type="checkbox" name="accPartner" value="${p.id}" ${assignedIds.includes(String(p.id))?'checked':''} style="display:none" onchange="this.parentElement.style.cssText=this.checked?'display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:500;background:var(--sky);color:#fff;border-color:var(--sky);border:1px solid var(--sky)':'display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border:1px solid var(--gray-200);border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:500;'">
+      ${esc(p.name)}
+    </label>`).join('');
+  onAccRoleChange();
   document.getElementById('accountModal').classList.add('show');
   captureModalState('accountModal');
 }
@@ -4626,12 +5328,14 @@ async function editAccount(id) {
 
 async function saveAccount() {
   const id = document.getElementById('accId').value;
+  const selectedPartners = [...document.querySelectorAll('#accPartnerCheckboxes input[name=accPartner]:checked')].map(c=>c.value).join(',');
   const d = {
     username: document.getElementById('accUsername').value,
     password: document.getElementById('accPassword').value,
     display_name: document.getElementById('accDisplayName').value,
     role: document.getElementById('accRole').value,
-    active: parseInt(document.getElementById('accActive').value)
+    active: parseInt(document.getElementById('accActive').value),
+    assigned_partner_ids: selectedPartners
   };
   if (!d.username) return alert('请输入用户名');
   if (!id && !d.password) return alert('请输入密码');
@@ -4645,12 +5349,291 @@ async function saveAccount() {
   clearModalState('accountModal');
   closeModal('accountModal');
   loadAccounts();
+  showToast('✅ 账户已保存');
 }
 
 async function deleteAccount(id, name) {
   if (!confirm(`确认删除账户 "${name}" ?`)) return;
-  await api(`/admin/accounts/${id}`, { method: 'DELETE' });
+  await api(`/admin/accounts/${id}`, { method:'DELETE' });
   loadAccounts();
+}
+
+// ── Worker accounts ──
+async function loadWorkerAccounts() {
+  const rows = await api('/admin/worker-accounts');
+  if (!Array.isArray(rows)) return;
+  const statusMap = { citizen:'公民', green_card:'绿卡', ead:'EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他' };
+  document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w=>`<tr>
+    <td><strong>${esc(w.name||w.username)}</strong></td>
+    <td>${esc(w.phone||'')}</td>
+    <td style="font-size:.82rem">${esc(w.email||'')}</td>
+    <td>${statusMap[w.work_status]||esc(w.work_status||'')}</td>
+    <td>${w.first_name?esc(w.first_name+' '+w.last_name):'<span style="color:var(--gray-400)">未绑定</span>'}</td>
+    <td>${w.active?'<span style="color:var(--green)">✅ 已验证</span>':'<span style="color:var(--orange)">⏳ 待验证</span>'}</td>
+    <td>${(w.created_at||'').slice(0,10)}</td>
+    <td style="white-space:nowrap">
+      ${!w.active?'<button class="btn btn-sm btn-green" onclick="activateWorkerAccount('+w.id+')">手动激活</button>':''}
+      <button class="btn btn-sm" onclick="editWorkerAccount(${w.id})">编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.username)}')">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无工人账户</td></tr>';
+}
+
+async function openWorkerAccountModal(data) {
+  document.getElementById('wAccId').value = data ? data.id : '';
+  document.getElementById('wAccUsername').value = data ? data.username : '';
+  document.getElementById('wAccPassword').value = '';
+  document.getElementById('wAccActive').value = data ? String(data.active) : '1';
+  document.getElementById('workerAccModalTitle').textContent = data ? '编辑工人账户' : '新建工人账户';
+  document.getElementById('wAccPassHint').textContent = data ? '(留空则不修改)' : '*';
+  const emps = await api('/admin/employees').catch(()=>[]);
+  const sel = document.getElementById('wAccEmployee');
+  sel.innerHTML = '<option value="">— 不绑定 —</option>' + emps.map(e=>`<option value="${e.id}" ${data&&data.employee_id==e.id?'selected':''}>${esc(e.first_name+' '+e.last_name)} (${esc(e.employee_id||'')})</option>`).join('');
+  document.getElementById('workerAccountModal').classList.add('show');
+}
+
+async function editWorkerAccount(id) {
+  const rows = await api('/admin/worker-accounts');
+  const w = rows.find(r=>r.id===id);
+  if (w) openWorkerAccountModal(w);
+}
+
+async function saveWorkerAccount() {
+  const id = document.getElementById('wAccId').value;
+  const d = {
+    username: document.getElementById('wAccUsername').value,
+    password: document.getElementById('wAccPassword').value,
+    employee_id: document.getElementById('wAccEmployee').value || null,
+    active: parseInt(document.getElementById('wAccActive').value)
+  };
+  if (!d.username) return alert('请输入用户名');
+  if (!id && !d.password) return alert('请输入密码');
+  if (!d.password) delete d.password;
+  if (id) await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify(d) });
+  else await api('/admin/worker-accounts', { method:'POST', body:JSON.stringify(d) });
+  closeModal('workerAccountModal');
+  loadWorkerAccounts();
+  showToast('✅ 工人账户已保存');
+}
+
+async function activateWorkerAccount(id) {
+  if (!confirm('手动激活该账户？（跳过验证）/ Manually activate this account?')) return;
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ active: 1 }) });
+  loadWorkerAccounts();
+  showToast('✅ 账户已激活');
+}
+
+async function deleteWorkerAccount(id, name) {
+  if (!confirm(`确认删除工人账户 "${name}" ?`)) return;
+  await api(`/admin/worker-accounts/${id}`, { method:'DELETE' });
+  loadWorkerAccounts();
+}
+
+// ── Customer accounts ──
+async function loadCustomerAccounts() {
+  const rows = await api('/admin/customer-accounts');
+  if (!Array.isArray(rows)) return;
+  const pending = rows.filter(c => c.approval_status === 'pending');
+  const banner = document.getElementById('pendingEntBanner');
+  if (pending.length) {
+    banner.style.display = '';
+    banner.textContent = `📨 有 ${pending.length} 个企业注册申请等待审核`;
+  } else { banner.style.display = 'none'; }
+  const statusBadge = (c) => {
+    if (c.approval_status === 'pending') return '<span style="color:var(--orange);font-weight:600">⏳ 待审核</span>';
+    if (c.approval_status === 'rejected') return '<span style="color:var(--red);font-weight:600">❌ 已拒绝</span>';
+    return c.active ? '<span style="color:var(--green)">✅ 已通过</span>' : '<span style="color:var(--red)">禁用</span>';
+  };
+  document.getElementById('customerAccountsTable').innerHTML = rows.length ? rows.map(c=>`<tr style="${c.approval_status==='pending'?'background:#fffef5':''}">
+    <td><strong>${esc(c.company_name)}</strong>${c.staffing_needs?`<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(c.staffing_needs).slice(0,60)}</span>`:''}</td>
+    <td>${esc(c.contact_name||'')}</td>
+    <td>${esc(c.email)}</td>
+    <td>${esc(c.phone||'')}</td>
+    <td style="font-size:.82rem">${esc(c.ein||'—')}</td>
+    <td>${statusBadge(c)}</td>
+    <td>${(c.created_at||'').slice(0,10)}</td>
+    <td style="white-space:nowrap">
+      ${c.approval_status==='pending'?`<button class="btn btn-sm btn-green" onclick="approveEnterprise(${c.id})">通过</button> <button class="btn btn-sm btn-red" onclick="rejectEnterprise(${c.id})">拒绝</button> `:''}
+      <button class="btn btn-sm" onclick="editCustomerAccount(${c.id})">编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteCustomerAccount(${c.id},'${esc(c.company_name)}')">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无客户账户</td></tr>';
+}
+
+async function approveEnterprise(id) {
+  if (!confirm('确认通过此企业注册？')) return;
+  await api(`/admin/approve-enterprise/${id}`, { method:'PUT' });
+  showToast('✅ 企业已审核通过');
+  loadCustomerAccounts();
+}
+async function rejectEnterprise(id) {
+  if (!confirm('确认拒绝此企业注册？')) return;
+  await api(`/admin/reject-enterprise/${id}`, { method:'PUT' });
+  showToast('❌ 企业注册已拒绝');
+  loadCustomerAccounts();
+}
+
+async function openCustomerAccountModal(data) {
+  document.getElementById('cAccId').value = data ? data.id : '';
+  document.getElementById('cAccCompany').value = data ? data.company_name : '';
+  document.getElementById('cAccContact').value = data ? (data.contact_name||'') : '';
+  document.getElementById('cAccEmail').value = data ? data.email : '';
+  document.getElementById('cAccPhone').value = data ? (data.phone||'') : '';
+  document.getElementById('cAccPassword').value = '';
+  document.getElementById('cAccActive').value = data ? String(data.active) : '1';
+  document.getElementById('customerAccModalTitle').textContent = data ? '编辑客户账户' : '新建客户账户';
+  document.getElementById('cAccPassHint').textContent = data ? '(留空则不修改)' : '*';
+  const partners = _allPartners.length ? _allPartners : await api('/admin/partners').catch(()=>[]);
+  _allPartners = partners;
+  document.getElementById('cAccPartner').innerHTML = '<option value="">— 不关联 —</option>' +
+    partners.map(p=>`<option value="${p.id}" ${data&&data.partner_id==p.id?'selected':''}>${esc(p.name)}</option>`).join('');
+  document.getElementById('customerAccountModal').classList.add('show');
+}
+
+async function editCustomerAccount(id) {
+  const rows = await api('/admin/customer-accounts');
+  const c = rows.find(r=>r.id===id);
+  if (c) openCustomerAccountModal(c);
+}
+
+async function saveCustomerAccount() {
+  const id = document.getElementById('cAccId').value;
+  const d = {
+    company_name: document.getElementById('cAccCompany').value,
+    contact_name: document.getElementById('cAccContact').value,
+    email: document.getElementById('cAccEmail').value,
+    phone: document.getElementById('cAccPhone').value,
+    password: document.getElementById('cAccPassword').value,
+    partner_id: document.getElementById('cAccPartner').value || null,
+    active: parseInt(document.getElementById('cAccActive').value)
+  };
+  if (!d.company_name || !d.email) return alert('请填写公司名和邮箱');
+  if (!id && !d.password) return alert('请输入密码');
+  if (!d.password) delete d.password;
+  if (id) await api(`/admin/customer-accounts/${id}`, { method:'PUT', body:JSON.stringify(d) });
+  else await api('/admin/customer-accounts', { method:'POST', body:JSON.stringify(d) });
+  closeModal('customerAccountModal');
+  loadCustomerAccounts();
+  showToast('✅ 客户账户已保存');
+}
+
+async function deleteCustomerAccount(id, name) {
+  if (!confirm(`确认删除客户账户 "${name}" ?`)) return;
+  await api(`/admin/customer-accounts/${id}`, { method:'DELETE' });
+  loadCustomerAccounts();
+}
+
+function randomFillWorkerAccount() {
+  const phones = ['3125550101','7735550202','8475550303','7085550404','6305550505'];
+  const pw = 'Test' + _randInt(1000,9999) + '!';
+  document.getElementById('wAccUsername').value = _randItem(phones);
+  document.getElementById('wAccPassword').value = pw;
+}
+
+function randomFillCustomerAccount() {
+  const companies = [
+    { company:'Chicago Fresh Foods Inc.', contact:'李建国', email:'hr'+_randInt(10,99)+'@chicagofresh.com', phone:'(312) 555-0101' },
+    { company:'Midwest Logistics LLC', contact:'David Chen', email:'ops'+_randInt(10,99)+'@midwestlogistics.com', phone:'(847) 555-0202' },
+    { company:'Alpha Manufacturing Co.', contact:'Maria Garcia', email:'hr'+_randInt(10,99)+'@alphamfg.com', phone:'(708) 555-0303' },
+    { company:'Great Lakes Packaging', contact:'张秀英', email:'gl'+_randInt(10,99)+'@glpackaging.com', phone:'(630) 555-0404' },
+  ];
+  const c = _randItem(companies);
+  document.getElementById('cAccCompany').value = c.company;
+  document.getElementById('cAccContact').value = c.contact;
+  document.getElementById('cAccEmail').value = c.email;
+  document.getElementById('cAccPhone').value = c.phone;
+  document.getElementById('cAccPassword').value = 'Customer' + _randInt(100,999) + '!';
+}
+
+// ─── Random Fill Helpers ───
+function _randItem(arr) { return arr[Math.floor(Math.random()*arr.length)]; }
+function _randInt(min, max) { return Math.floor(Math.random()*(max-min+1))+min; }
+function _randDate(daysAgo=30, daysAhead=0) {
+  const d = new Date();
+  d.setDate(d.getDate() - _randInt(daysAhead, daysAgo));
+  return d.toISOString().slice(0,10);
+}
+
+function randomFillPartner() {
+  const companies = [
+    { name:'Chicago Fresh Foods Inc.', industry:'食品加工', contact:'李建国', phone:'(312) 555-0101', email:'hr@chicagofresh.com', notes:'主要生产冷冻食品，长期合作伙伴' },
+    { name:'Midwest Logistics LLC', industry:'物流仓储', contact:'David Chen', phone:'(847) 555-0202', email:'ops@midwestlogistics.com', notes:'大型第三方物流，多仓库运营' },
+    { name:'Alpha Manufacturing Co.', industry:'制造业', contact:'Maria Garcia', phone:'(708) 555-0303', email:'hr@alphamfg.com', notes:'汽车零部件制造，周六加班多' },
+    { name:'Great Lakes Packaging', industry:'包装', contact:'张秀英', phone:'(630) 555-0404', email:'staffing@glpackaging.com', notes:'食品和消费品包装，需要快速上岗人员' },
+    { name:'Prairie Distribution Center', industry:'物流仓储', contact:'Robert Kim', phone:'(847) 555-0505', email:'rkim@prairiedistr.com', notes:'大型电商配送中心，旺季需求大' },
+  ];
+  const c = _randItem(companies);
+  document.getElementById('pName').value = c.name;
+  document.getElementById('pIndustry').value = c.industry;
+  document.getElementById('pNotes').value = c.notes;
+  // Try to fill contact fields if they exist
+  try { document.getElementById('pContactPerson').value = c.contact; } catch {}
+  try { document.getElementById('pPhone').value = c.phone; } catch {}
+  try { document.getElementById('pEmail').value = c.email; } catch {}
+}
+
+function randomFillAssignment() {
+  const types = ['W2','Contract','1099'];
+  const payTypes = ['hourly','salary'];
+  const benefits = [
+    '医疗保险、带薪休假',
+    '医疗保险、牙科、401K',
+    '周薪、加班费',
+    '节假日加班费、免费停车',
+    '无'
+  ];
+  const rate = (_randInt(15,28)).toFixed(2);
+  const type = _randItem(types);
+  const pType = _randItem(payTypes);
+  try { document.getElementById('aPayRate').value = rate; } catch {}
+  try { document.getElementById('aPayType').value = pType; } catch {}
+  try { document.getElementById('aContractType').value = type; } catch {}
+  try { document.getElementById('aBenefits').value = _randItem(benefits); } catch {}
+  try { document.getElementById('aStartDate').value = _randDate(0, -7); } catch {}
+  try { document.getElementById('aStatus').value = _randItem(['assigned','working']); } catch {}
+  try { document.getElementById('aNotes').value = '随机测试数据 — 按实际情况更新'; } catch {}
+}
+
+function randomFillTimeEntry() {
+  const now = new Date();
+  const shiftStart = new Date(now);
+  shiftStart.setDate(shiftStart.getDate() - _randInt(0,7));
+  const hour = _randItem([6,7,8,14,22]);
+  shiftStart.setHours(hour, _randItem([0,30]), 0, 0);
+  const duration = _randInt(7,10);
+  const shiftEnd = new Date(shiftStart.getTime() + duration * 3600000);
+  const fmt = d => d.toISOString().slice(0,16);
+  try { document.getElementById('tClockIn').value = fmt(shiftStart); } catch {}
+  try { document.getElementById('tClockOut').value = fmt(shiftEnd); } catch {}
+  try { document.getElementById('tBreak').value = _randItem([0,15,30]); } catch {}
+  try { document.getElementById('tNotes').value = _randItem(['正常班次','延迟下班','客户现场','随机测试数据']); } catch {}
+  // Trigger preview recalculation if it exists
+  try { document.getElementById('tClockOut').dispatchEvent(new Event('change')); } catch {}
+}
+
+function randomFillBgCheck() {
+  const checks = [
+    { type:'criminal', vendor:'Checkr', cost:'29.99' },
+    { type:'employment', vendor:'HireRight', cost:'49.99' },
+    { type:'drug', vendor:'LabCorp', cost:'35.00' },
+    { type:'full', vendor:'Sterling', cost:'89.99' },
+    { type:'education', vendor:'Verifi', cost:'19.99' },
+  ];
+  const statuses = ['ordered','in_progress','completed'];
+  const c = _randItem(checks);
+  const st = _randItem(statuses);
+  const ordered = _randDate(20);
+  try { document.getElementById('bgType').value = c.type; } catch {}
+  try { document.getElementById('bgVendor').value = c.vendor; } catch {}
+  try { document.getElementById('bgCost').value = c.cost; } catch {}
+  try { document.getElementById('bgOrdered').value = ordered; } catch {}
+  try { document.getElementById('bgStatus').value = st; } catch {}
+  if (st === 'completed') {
+    const comp = new Date(ordered); comp.setDate(comp.getDate()+_randInt(3,14));
+    try { document.getElementById('bgCompleted').value = comp.toISOString().slice(0,10); } catch {}
+    try { document.getElementById('bgResult').value = _randItem(['pass','pass','pass','fail']); } catch {}
+  }
+  try { document.getElementById('bgNotes').value = '随机测试数据'; } catch {}
 }
 
 // ─── Pending Approvals ───
