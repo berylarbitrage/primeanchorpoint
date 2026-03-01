@@ -761,6 +761,26 @@ tr:hover td{background:var(--sky-light)}
   <p id="empDocLinkTarget" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
   <input type="hidden" id="empDocLinkEmpId">
 
+  <div style="display:flex;gap:1rem;flex-wrap:wrap">
+    <div class="field" style="flex:1;min-width:140px"><label>语言 / Language</label>
+      <select id="docReqLang">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+      </select>
+    </div>
+    <div class="field" style="flex:1;min-width:180px"><label>发送方式</label>
+      <select id="docReqSendVia" onchange="updateDocReqSendTarget()">
+        <option value="phone">手机短信 (SMS)</option>
+        <option value="email">邮箱 (Email)</option>
+      </select>
+    </div>
+  </div>
+  <div class="field" id="docReqSendTarget" style="margin-top:-.2rem">
+    <label id="docReqSendLabel">发送至手机</label>
+    <input type="text" id="docReqSendValue" readonly style="background:var(--gray-100);color:var(--gray-600)">
+  </div>
+
   <div class="field"><label>选择需要收集的材料（多选）</label>
     <div style="display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem">
       <label style="display:flex;align-items:center;gap:.6rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
@@ -2889,7 +2909,7 @@ function renderEmployees(list) {
     <td>
       <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
       <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
-      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>发送材料链接</button>
+      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}","${esc(e.phone||"")}","${esc(e.email||"")}")'>发送材料链接</button>
       <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
       ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
     </td>
@@ -3099,7 +3119,7 @@ async function viewEmployee(id) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h4 style="margin:0">材料收集链接 (${docReqs.length} 条)</h4>
       <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0"
-        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 发送新链接</button>
+        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}","${esc(emp.phone||"")}","${esc(emp.email||"")}")'>+ 发送新链接</button>
     </div>
     ${docReqs.length ? docReqs.map(r => {
       const link = location.origin + '/emp-docs.html?token=' + r.token;
@@ -3267,7 +3287,10 @@ async function deleteRating(ratingId, empId) {
 // ─── Employee Doc Request Links ───
 let _currentDocLinkUrl = '';
 
-function sendEmpDocLink(empId, empName) {
+let _empDocPhone = '', _empDocEmail = '';
+function sendEmpDocLink(empId, empName, phone, email) {
+  _empDocPhone = phone || '';
+  _empDocEmail = email || '';
   document.getElementById('empDocLinkEmpId').value = empId;
   document.getElementById('empDocLinkTarget').textContent = empName;
   document.getElementById('empDocLinkResult').style.display = 'none';
@@ -3275,24 +3298,44 @@ function sendEmpDocLink(empId, empName) {
   document.getElementById('docReqGovId').checked = true;
   document.getElementById('docReqSsn').checked = true;
   document.getElementById('docReqWorkCard').checked = true;
+  document.getElementById('docReqLang').value = 'zh';
+  document.getElementById('docReqSendVia').value = 'phone';
+  updateDocReqSendTarget();
   document.getElementById('btnGenDocLink').disabled = false;
+  document.getElementById('btnGenDocLink').textContent = '生成链接';
   document.getElementById('empDocLinkModal').classList.add('show');
+}
+function updateDocReqSendTarget() {
+  const via = document.getElementById('docReqSendVia').value;
+  const label = document.getElementById('docReqSendLabel');
+  const input = document.getElementById('docReqSendValue');
+  if (via === 'phone') { label.textContent = '发送至手机'; input.value = _empDocPhone || '（未填写手机号）'; }
+  else { label.textContent = '发送至邮箱'; input.value = _empDocEmail || '（未填写邮箱）'; }
 }
 
 async function generateEmpDocLink() {
   const empId = document.getElementById('empDocLinkEmpId').value;
   const note  = document.getElementById('empDocAdminNote').value;
+  const lang  = document.getElementById('docReqLang').value;
+  const sendVia = document.getElementById('docReqSendVia').value;
   const docIds = { gov_id: 'docReqGovId', ssn: 'docReqSsn', work_card: 'docReqWorkCard' };
   const requestedDocs = Object.entries(docIds).filter(([,id]) => document.getElementById(id).checked).map(([k]) => k);
   if (!requestedDocs.length) return alert('请至少选择一种材料');
-  const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs }) });
+  const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs, lang }) });
   if (r.token) {
-    _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token;
+    _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token + '&lang=' + lang;
     document.getElementById('empDocLinkUrl').textContent = _currentDocLinkUrl;
     document.getElementById('empDocLinkResult').style.display = '';
     document.getElementById('empDocLinkCopied').style.display = 'none';
     document.getElementById('btnGenDocLink').disabled = true;
     document.getElementById('btnGenDocLink').textContent = '已生成';
+    // Show send instruction
+    const target = sendVia === 'phone' ? _empDocPhone : _empDocEmail;
+    if (target) {
+      document.getElementById('empDocLinkCopied').textContent = sendVia === 'phone' ? '请复制链接通过短信发送至 ' + target : '请复制链接通过邮件发送至 ' + target;
+      document.getElementById('empDocLinkCopied').style.display = '';
+      document.getElementById('empDocLinkCopied').style.color = 'var(--blue)';
+    }
   }
 }
 

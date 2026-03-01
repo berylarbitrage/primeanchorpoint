@@ -229,6 +229,7 @@ db.exec(`
     status TEXT DEFAULT 'pending',
     requested_docs TEXT DEFAULT '["gov_id","ssn","work_card"]',
     admin_note TEXT DEFAULT '',
+    lang TEXT DEFAULT 'zh',
     completed_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id)
@@ -334,6 +335,7 @@ try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN verified_at TEXT DEFAULT 
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'`); } catch(e) {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1149,9 +1151,9 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
   if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
   const token = crypto.randomBytes(28).toString('hex');
-  const { admin_note, requested_docs } = req.body;
-  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs) VALUES (?,?,?,?)')
-    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']));
+  const { admin_note, requested_docs, lang } = req.body;
+  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang) VALUES (?,?,?,?,?)')
+    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']), lang || 'zh');
   res.json({ token, status: 'pending' });
 });
 
@@ -1177,6 +1179,7 @@ app.get('/api/emp-docs/:token', (req, res) => {
     emp_code: row.emp_code,
     requested_docs: JSON.parse(row.requested_docs || '["gov_id","ssn","work_card"]'),
     admin_note: row.admin_note,
+    lang: row.lang || 'zh',
     completed_at: row.completed_at
   });
 });
