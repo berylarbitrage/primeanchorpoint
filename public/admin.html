@@ -508,17 +508,11 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="jobModal"><div class="modal" style="max-width:680px">
   <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
-
+  <div class="field"><label>合作公司 *</label><select id="jPartner"><option value="">-- 请选择公司 --</option></select></div>
   <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
 
   <div class="field-row">
-    <div class="field"><label>合作公司</label>
-      <select id="jCompany"><option value="">-- 不绑定公司 --</option></select>
-    </div>
     <div class="field"><label>工作地点</label><input id="jLocation" placeholder="例：Chicago, IL"></div>
-  </div>
-
-  <div class="field-row">
     <div class="field"><label>职位类型</label>
       <select id="jType">
         <option value="">-- 请选择 --</option>
@@ -528,6 +522,9 @@ tr:hover td{background:var(--sky-light)}
         <option value="临时转正">临时转正 / Temp-to-Hire</option>
       </select>
     </div>
+  </div>
+
+  <div class="field-row">
     <div class="field"><label>雇佣性质</label>
       <select id="jEmploymentType">
         <option value="">-- 请选择 --</option>
@@ -680,7 +677,22 @@ tr:hover td{background:var(--sky-light)}
   <div class="form-section"><h4>基本信息</h4>
     <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
     <div class="field-row">
-      <div class="field"><label>行业</label><input id="pIndustry" placeholder="例：物流、制造业、食品加工"></div>
+      <div class="field"><label>行业</label><select id="pIndustry">
+        <option value="">-- 请选择 --</option>
+        <option value="物流 Logistics">物流 Logistics</option>
+        <option value="制造业 Manufacturing">制造业 Manufacturing</option>
+        <option value="食品加工 Food Processing">食品加工 Food Processing</option>
+        <option value="餐饮 Restaurant">餐饮 Restaurant</option>
+        <option value="零售 Retail">零售 Retail</option>
+        <option value="建筑 Construction">建筑 Construction</option>
+        <option value="农业 Agriculture">农业 Agriculture</option>
+        <option value="仓储 Warehousing">仓储 Warehousing</option>
+        <option value="清洁 Cleaning">清洁 Cleaning</option>
+        <option value="酒店 Hospitality">酒店 Hospitality</option>
+        <option value="医疗 Healthcare">医疗 Healthcare</option>
+        <option value="运输 Transportation">运输 Transportation</option>
+        <option value="其他 Other">其他 Other</option>
+      </select></div>
       <div class="field"><label>合作状态</label><label style="display:flex;align-items:center;gap:.5rem;margin-top:.4rem;cursor:pointer;font-weight:600"><input type="checkbox" id="pActive" checked style="width:16px;height:16px;cursor:pointer"> 合作中</label></div>
     </div>
   </div>
@@ -818,8 +830,9 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="field"><label>备注</label><textarea id="eNotes" placeholder="其他备注信息..."></textarea></div>
-  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+  <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn btn-green" onclick="saveEmployee()">保存员工</button>
+    <button class="btn" onclick="randomFillEmployee()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-outline" onclick="closeEmpModal()">取消</button>
   </div>
 </div></div>
@@ -1205,7 +1218,7 @@ async function loadJobs() {
     return parts.join(' ');
   };
   document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
-    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
+    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}</td>
     <td>${esc(j.type)}</td>
     <td>${etBadge(j.employment_type)}</td>
     <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
@@ -1219,6 +1232,12 @@ async function loadJobs() {
 async function openJobModal(job) {
   document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
   document.getElementById('jobId').value = job ? job.id : '';
+  // Populate partner dropdown
+  const partners = await api('/admin/partners');
+  const pSel = document.getElementById('jPartner');
+  pSel.innerHTML = '<option value="">-- 请选择公司 --</option>' +
+    partners.filter(p=>p.active).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  pSel.value = job ? (job.partner_id||'') : '';
   document.getElementById('jTitle').value = job ? job.title : '';
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jLocation').value = job ? job.location : '';
@@ -1230,9 +1249,6 @@ async function openJobModal(job) {
   document.getElementById('jWorkEnd').value = job ? (job.work_end || '') : '';
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
-
-  // Load company dropdown
-  await loadJobCompanies(job ? (job.company_id || '') : '');
 
   // Work days toggle
   const activeDays = job && job.work_days ? job.work_days.split(',').map(s=>s.trim()) : [];
@@ -1250,16 +1266,6 @@ async function openJobModal(job) {
 }
 function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
 function editJob(j) { openJobModal(j); }
-
-async function loadJobCompanies(selectedId) {
-  const sel = document.getElementById('jCompany');
-  try {
-    const partners = await api('/admin/partners');
-    const active = partners.filter(p => p.active !== 0);
-    sel.innerHTML = '<option value="">-- 不绑定公司 --</option>' +
-      active.map(p => `<option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
-  } catch { sel.innerHTML = '<option value="">-- 无法加载 --</option>'; }
-}
 
 // Wire up day/benefit toggle buttons (once DOM ready)
 document.addEventListener('DOMContentLoaded', () => {
@@ -1334,12 +1340,13 @@ async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
   const langVal = document.getElementById('jLang').value;
-  const companySel = document.getElementById('jCompany');
-  const companyId = companySel.value ? parseInt(companySel.value) : null;
-  const companyName = companyId ? companySel.options[companySel.selectedIndex].text : '';
+  const partnerSel = document.getElementById('jPartner');
+  const partnerId = partnerSel.value || null;
+  const partnerName = partnerId ? partnerSel.options[partnerSel.selectedIndex].text : '';
   const workDays = [...document.querySelectorAll('#jWorkDaysWrap .day-btn.active')].map(b=>b.dataset.day).join(',');
   const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const data = {
+    partner_id: partnerId,
     title: document.getElementById('jTitle').value,
     type: document.getElementById('jType').value,
     location: document.getElementById('jLocation').value,
@@ -1348,8 +1355,8 @@ async function saveJob() {
     lang_name: langNames[langVal] || langVal,
     work_auth: document.getElementById('jWorkAuth').value,
     employment_type: document.getElementById('jEmploymentType').value,
-    company_id: companyId,
-    company_name: companyName,
+    company_id: partnerId,
+    company_name: partnerName,
     work_days: workDays,
     work_start: document.getElementById('jWorkStart').value,
     work_end: document.getElementById('jWorkEnd').value,
@@ -1359,6 +1366,7 @@ async function saveJob() {
     urgent: document.getElementById('jUrgent').checked,
     active: true
   };
+  if (!data.partner_id) return alert('请选择合作公司');
   if (!data.title) return alert('请填写职位名称');
   if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
@@ -1701,7 +1709,7 @@ function filterPartners() {
   if (keyword) {
     filtered = filtered.filter(p => {
       const contacts = safeJSON(p.contacts,[]);
-      const contactStr = contacts.map(c=>`${c.name} ${c.phone} ${c.email}`).join(' ').toLowerCase();
+      const contactStr = contacts.map(c=>`${c.first_name||''} ${c.last_name||''} ${c.name||''} ${c.phone} ${c.email}`).join(' ').toLowerCase();
       return (p.name||'').toLowerCase().includes(keyword) || contactStr.includes(keyword) ||
         (p.industry||'').toLowerCase().includes(keyword) || (p.services||'').toLowerCase().includes(keyword);
     });
@@ -1715,7 +1723,7 @@ function safeJSON(str, fallback) { try { return JSON.parse(str||''); } catch { r
 function renderPartners(partners) {
   document.getElementById('partnersTable').innerHTML = partners.length ? partners.map(p => {
     const contacts = safeJSON(p.contacts,[]);
-    const mainContact = contacts.length ? contacts[0].name : (p.contact_person||'');
+    const mainContact = contacts.length ? (contacts[0].first_name||contacts[0].last_name ? `${contacts[0].first_name||''} ${contacts[0].last_name||''}`.trim() : (contacts[0].name||'')) : (p.contact_person||'');
     const mainPhone = contacts.length ? contacts[0].phone : (p.phone||'');
     return `<tr style="cursor:pointer" onclick="showPartnerById(${p.id})">
       <td><strong>${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}</td>
@@ -1759,8 +1767,9 @@ async function showPartnerById(id) {
           c.telegram ? `Telegram: ${esc(c.telegram)}` : '',
           c.other_comm ? `其他: ${esc(c.other_comm)}` : ''
         ].filter(Boolean);
+        const cFullName = (c.first_name||c.last_name) ? `${c.first_name||''} ${c.last_name||''}`.trim() : (c.name||'');
         return `<div style="padding:.4rem 0;border-bottom:1px solid var(--gray-200);font-size:.85rem">
-          <strong>${esc(c.name)}</strong>${c.role?' <span style="color:var(--gray-400)">('+esc(c.role)+')</span>':''}
+          <strong>${esc(cFullName)}</strong>${c.role?' <span style="color:var(--gray-400)">('+esc(c.role)+')</span>':''}
           <br>${c.phone?'📞 '+esc(c.phone)+' ':''}${c.email?'✉ '+esc(c.email):''}
           ${socials.length?`<br><span style="color:var(--gray-400);font-size:.78rem">💬 ${socials.join(' · ')}</span>`:''}
         </div>`;
@@ -1799,8 +1808,9 @@ function addPartnerContact(c) {
   const div = document.createElement('div');
   div.className = 'dyn-item';
   div.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.5rem">
-      <div class="field"><label>姓名</label><input class="pc-name" value="${esc(c?.name||'')}" placeholder="张三"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:.5rem">
+      <div class="field"><label>名 First</label><input class="pc-first" value="${esc(c?.first_name||c?.name||'')}" placeholder="三"></div>
+      <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(c?.last_name||'')}" placeholder="张"></div>
       <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
       <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
       <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
@@ -1817,13 +1827,14 @@ function addPartnerContact(c) {
 
 function getPartnerContacts() {
   return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>({
-    name: el.querySelector('.pc-name').value, role: el.querySelector('.pc-role').value,
+    first_name: el.querySelector('.pc-first').value, last_name: el.querySelector('.pc-last').value,
+    role: el.querySelector('.pc-role').value,
     phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
     whatsapp: el.querySelector('.pc-whatsapp').value,
     wechat: el.querySelector('.pc-wechat').value,
     telegram: el.querySelector('.pc-telegram').value,
     other_comm: el.querySelector('.pc-other_comm').value
-  })).filter(c=>c.name||c.phone||c.email);
+  })).filter(c=>c.first_name||c.last_name||c.phone||c.email);
 }
 
 // ── Dynamic addresses list ──
@@ -1918,14 +1929,19 @@ function openPartnerModal(p) {
   document.getElementById('partnerModalTitle').textContent = p ? '编辑合作公司' : '新增合作公司';
   document.getElementById('partnerId').value = p ? p.id : '';
   document.getElementById('pName').value = p ? p.name : '';
-  document.getElementById('pIndustry').value = p ? p.industry : '';
+  const pIndSel = document.getElementById('pIndustry');
+  const indVal = p ? (p.industry||'') : '';
+  if (indVal && !Array.from(pIndSel.options).some(o=>o.value===indVal)) {
+    const opt = document.createElement('option'); opt.value = indVal; opt.textContent = indVal; pIndSel.appendChild(opt);
+  }
+  pIndSel.value = indVal;
   document.getElementById('pNotes').value = p ? p.notes : '';
   document.getElementById('pActive').checked = p ? !!p.active : true;
   // Contacts
   document.getElementById('pContactsList').innerHTML = '';
   const contacts = p ? safeJSON(p.contacts,[]) : [];
   if (contacts.length) contacts.forEach(c=>addPartnerContact(c));
-  else if (p && (p.contact_person||p.phone||p.email)) addPartnerContact({name:p.contact_person,phone:p.phone,email:p.email});
+  else if (p && (p.contact_person||p.phone||p.email)) addPartnerContact({first_name:p.contact_person,phone:p.phone,email:p.email});
   else addPartnerContact();
   // Addresses
   document.getElementById('pAddrList').innerHTML = '';
@@ -1997,7 +2013,7 @@ async function savePartner() {
   const contacts = getPartnerContacts();
   const data = {
     name: document.getElementById('pName').value,
-    contact_person: contacts.length ? contacts[0].name : '',
+    contact_person: contacts.length ? `${contacts[0].first_name||''} ${contacts[0].last_name||''}`.trim() : '',
     phone: contacts.length ? contacts[0].phone : '',
     email: contacts.length ? contacts[0].email : '',
     address: getPartnerAddrs()[0] || '',
@@ -2182,6 +2198,41 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
 }
 function closeEmpModal() { document.getElementById('empModal').classList.remove('show'); }
+
+function randomFillEmployee() {
+  const firsts = ['John','Maria','Wei','Carlos','Anna','David','Linh','Ahmed','Sofia','James','Yuki','Jose','Emily','Marco','Mei'];
+  const lasts = ['Smith','Garcia','Chen','Nguyen','Johnson','Lopez','Kim','Patel','Williams','Martinez','Wang','Brown','Lee','Davis','Zhang'];
+  const positions = ['仓库分拣员','叉车操作员','生产线操作工','包装工','清洁工','质检员','搬运工','厨房帮工','洗碗工','装配工'];
+  const depts = ['Warehouse','Production','Kitchen','Cleaning','Assembly','Shipping','QC'];
+  const streets = ['123 Main St','456 Oak Ave','789 Elm Blvd','321 Pine Rd','654 Maple Dr','987 Cedar Ln','111 Lake St','222 River Rd'];
+  const cities = ['Chicago','Cicero','Melrose Park','Elk Grove Village','Schaumburg','Addison','Des Plaines','Niles'];
+  const rels = ['Spouse','Parent','Sibling','Friend','Child'];
+  const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+  const rnd = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+  const pad = n => String(n).padStart(2,'0');
+  const dob = `${rnd(1970,2000)}-${pad(rnd(1,12))}-${pad(rnd(1,28))}`;
+  const hire = `${rnd(2022,2026)}-${pad(rnd(1,12))}-${pad(rnd(1,28))}`;
+  const phone = `(${rnd(312,847)}) ${rnd(100,999)}-${rnd(1000,9999)}`;
+  const fn = pick(firsts), ln = pick(lasts);
+  document.getElementById('eFirst').value = fn;
+  document.getElementById('eLast').value = ln;
+  document.getElementById('eDob').value = dob;
+  document.getElementById('ePhone').value = phone;
+  document.getElementById('eEmail').value = `${fn.toLowerCase()}.${ln.toLowerCase()}@email.com`;
+  document.getElementById('eAddr').value = pick(streets);
+  document.getElementById('eCity').value = pick(cities);
+  document.getElementById('eState').value = 'IL';
+  document.getElementById('eZip').value = String(rnd(60601,60699));
+  document.getElementById('eHire').value = hire;
+  document.getElementById('ePos').value = pick(positions);
+  document.getElementById('eDept').value = pick(depts);
+  document.getElementById('ePayRate').value = (rnd(1550,2800)/100).toFixed(2);
+  document.getElementById('ePayType').value = 'hourly';
+  const efn2 = pick(firsts), eln2 = pick(lasts);
+  document.getElementById('eEmgName').value = `${efn2} ${eln2}`;
+  document.getElementById('eEmgPhone').value = `(${rnd(312,847)}) ${rnd(100,999)}-${rnd(1000,9999)}`;
+  document.getElementById('eEmgRel').value = pick(rels);
+}
 
 async function saveEmployee() {
   const id = document.getElementById('empId').value;
