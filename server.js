@@ -1129,18 +1129,32 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
 });
 
 // Admin: resend verification codes to unverified worker
-app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   if (w.active) return res.status(400).json({ error: 'Account already verified' });
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(w.id);
-  const phoneCode = String(Math.floor(100000 + Math.random() * 900000));
-  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  const canSMS = !!(twilioClient && TWILIO_FROM && w.phone);
+  const canEmail = !!(emailTransporter && w.email);
+  const phoneCode = canSMS ? String(Math.floor(100000 + Math.random() * 900000)) : null;
+  const emailCode = canEmail ? String(Math.floor(100000 + Math.random() * 900000)) : null;
   const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
-  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
-  console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${phoneCode} email=${emailCode}`);
-  res.json({ success: true, phone_code: phoneCode, email_code: emailCode });
+  let smsSent = false, emailSent = false;
+  if (phoneCode) {
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
+    smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+  }
+  if (emailCode) {
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
+    emailSent = await sendEmail(w.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+  }
+  console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${phoneCode||'N/A'}(sent:${smsSent}) email=${emailCode||'N/A'}(sent:${emailSent})`);
+  // Only expose codes to admin if delivery failed (so admin can tell user manually)
+  const result = { success: true, sms_sent: smsSent, email_sent: emailSent };
+  if (phoneCode && !smsSent) result.phone_code = phoneCode;
+  if (emailCode && !emailSent) result.email_code = emailCode;
+  res.json(result);
 });
 
 // ─── Customer Accounts (admin manages) ───

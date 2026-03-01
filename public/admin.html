@@ -5604,10 +5604,15 @@ async function suspendWorkerAccount(id, doSuspend) {
 async function resendWorkerVerify(id) {
   const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
   if (r && r.success) {
+    const msgs = [];
+    if (r.sms_sent) msgs.push('短信已发送 ✅');
+    if (r.email_sent) msgs.push('邮件已发送 ✅');
+    // Only show codes if delivery failed (so admin can tell user manually)
+    if (r.phone_code) msgs.push(`⚠️ 短信发送失败，手机验证码: ${r.phone_code}`);
+    if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
+    if (!msgs.length) msgs.push('未配置短信/邮件发送');
     showToast('✅ 验证码已重新生成');
-    if (r.phone_code || r.email_code) {
-      alert(`验证码已生成（系统会发送短信/邮件通知用户）\n手机验证码: ${r.phone_code||'—'}\n邮箱验证码: ${r.email_code||'—'}`);
-    }
+    alert(msgs.join('\n'));
   }
 }
 
