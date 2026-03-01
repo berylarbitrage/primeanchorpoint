@@ -1671,7 +1671,7 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
   try {
     const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
     if (!emp) return res.status(404).json({ error: 'Employee not found' });
-    const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending" AND (expires_at IS NULL OR expires_at > datetime("now"))').get(emp.id);
+    const existing = db.prepare("SELECT * FROM employee_doc_requests WHERE employee_id=? AND status='pending' AND (expires_at IS NULL OR expires_at > datetime('now'))").get(emp.id);
     if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true, expires_at: existing.expires_at });
     const token = crypto.randomBytes(28).toString('hex');
     const { admin_note, requested_docs, lang, positions } = req.body;
@@ -2799,7 +2799,11 @@ app.post('/api/register/worker', async (req, res) => {
       `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
   }
   console.log(`[Verify] Worker #${accountId} phone code: ${phoneCode || 'N/A'} (sent:${smsSent}), email code: ${emailCode || 'N/A'} (sent:${emailSent})`);
-  res.json({ success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, sms_sent: smsSent, email_sent: emailSent, message: 'Verification codes sent' });
+  // If delivery failed, include codes in response so they can be shown on-screen
+  const resp = { success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, sms_sent: smsSent, email_sent: emailSent };
+  if (canSMS && !smsSent) resp.phone_code = phoneCode;
+  if (canEmail && !emailSent) resp.email_code = emailCode;
+  res.json(resp);
 });
 
 // Resend verification code
@@ -2823,7 +2827,10 @@ app.post('/api/register/resend-code', async (req, res) => {
     sent = await sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
   }
-  res.json({ success: true, sent });
+  // If delivery failed, include code in response so frontend can display it
+  const resBody = { success: true, sent };
+  if (!sent) resBody.code = code;
+  res.json(resBody);
 });
 
 // Verify codes and activate account
