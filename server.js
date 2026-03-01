@@ -4,8 +4,53 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+const nodemailer = require('nodemailer');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// ─── Twilio SMS ───
+const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+  ? require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+  : null;
+const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER || '';
+
+async function sendSMS(to, body) {
+  if (!twilioClient || !TWILIO_FROM) {
+    console.log(`[SMS-SKIP] Twilio not configured. To: ${to}, Body: ${body}`);
+    return;
+  }
+  try {
+    await twilioClient.messages.create({ body, from: TWILIO_FROM, to });
+    console.log(`[SMS] Sent to ${to}`);
+  } catch (e) {
+    console.error(`[SMS-ERR] Failed to send to ${to}:`, e.message);
+  }
+}
+
+// ─── Email (Nodemailer) ───
+const emailTransporter = process.env.SMTP_HOST
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+    })
+  : null;
+const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
+
+async function sendEmail(to, subject, text) {
+  if (!emailTransporter) {
+    console.log(`[EMAIL-SKIP] SMTP not configured. To: ${to}, Subject: ${subject}, Body: ${text}`);
+    return;
+  }
+  try {
+    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text });
+    console.log(`[EMAIL] Sent to ${to}`);
+  } catch (e) {
+    console.error(`[EMAIL-ERR] Failed to send to ${to}:`, e.message);
+  }
+}
 
 // ─── Database Setup ───
 const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
@@ -475,6 +520,7 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFA
 // Migrate: add lang/positions to employee_doc_requests
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
+try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN expires_at DATETIME DEFAULT NULL"); } catch {}
 // Migrate: add GPS fields to time_entries
 try { db.exec("ALTER TABLE time_entries ADD COLUMN latitude REAL DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN longitude REAL DEFAULT NULL"); } catch {}
@@ -1555,16 +1601,15 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
   try {
     const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
     if (!emp) return res.status(404).json({ error: 'Employee not found' });
-    const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
-    if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
+    const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending" AND (expires_at IS NULL OR expires_at > datetime("now"))').get(emp.id);
+    if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true, expires_at: existing.expires_at });
     const token = crypto.randomBytes(28).toString('hex');
-    const { admin_note, requested_docs, lang } = req.body;
-    // Ensure positions column exists (idempotent)
-    try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
-    db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions) VALUES (?,?,?,?,?,?)')
+    const { admin_note, requested_docs, lang, positions } = req.body;
+    const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions, expires_at) VALUES (?,?,?,?,?,?,?)')
       .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']),
-          lang || 'zh', '[]');
-    res.json({ token, status: 'pending' });
+          lang || 'zh', JSON.stringify(positions || []), expiresAt);
+    res.json({ token, status: 'pending', expires_at: expiresAt });
   } catch(e) {
     console.error('doc-request error:', e.message);
     res.status(500).json({ error: e.message });
@@ -1587,6 +1632,9 @@ app.get('/api/emp-docs/:token', (req, res) => {
     FROM employee_doc_requests r JOIN employees e ON r.employee_id = e.id
     WHERE r.token=?`).get(req.params.token);
   if (!row) return res.status(404).json({ error: '链接无效或已过期' });
+  if (row.expires_at && new Date(row.expires_at) < new Date()) {
+    return res.status(410).json({ error: '链接已过期（有效期3天）/ Link expired (valid for 3 days)' });
+  }
   res.json({
     status: row.status,
     name: `${row.first_name} ${row.last_name}`,
@@ -2648,6 +2696,10 @@ app.post('/api/register/worker', (req, res) => {
   db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
   db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
   console.log(`[Verify] Worker #${accountId} phone code: ${phoneCode}, email code: ${emailCode}`);
+  // Send verification codes (non-blocking)
+  sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+  sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
   res.json({ success: true, account_id: accountId, needs_verification: true, message: 'Verification codes sent' });
 });
 
@@ -2656,7 +2708,7 @@ app.post('/api/register/resend-code', (req, res) => {
   const { account_id, type } = req.body;
   if (!account_id || !['phone', 'email'].includes(type))
     return res.status(400).json({ error: 'account_id and type (phone/email) required' });
-  const acc = db.prepare('SELECT id, active FROM worker_accounts WHERE id=?').get(account_id);
+  const acc = db.prepare('SELECT id, active, phone, email FROM worker_accounts WHERE id=?').get(account_id);
   if (!acc) return res.status(404).json({ error: 'Account not found' });
   if (acc.active) return res.status(400).json({ error: 'Account already verified' });
   const code = String(Math.floor(100000 + Math.random() * 900000));
@@ -2664,6 +2716,13 @@ app.post('/api/register/resend-code', (req, res) => {
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
   db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, type, code, expires);
   console.log(`[Verify] Resend ${type} code for Worker #${account_id}: ${code}`);
+  // Send code
+  if (type === 'phone') {
+    sendSMS(acc.phone, `[Prime Anchorpoint] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+  } else {
+    sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+  }
   res.json({ success: true });
 });
 
