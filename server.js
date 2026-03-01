@@ -363,6 +363,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
   UNIQUE(employee_id, job_id)
 )`);
 
+// Migrate employee_jobs: add date, financial, and performance columns
+[
+  "ALTER TABLE employee_jobs ADD COLUMN start_date TEXT DEFAULT ''",
+  "ALTER TABLE employee_jobs ADD COLUMN end_date TEXT DEFAULT ''",
+  "ALTER TABLE employee_jobs ADD COLUMN emp_hourly_rate REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN emp_total_hours REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN emp_total_pay REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN client_hourly_rate REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN client_total_billed REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_efficiency INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_quality INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_attendance INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_safety INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_teamwork INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_skills INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN notes TEXT DEFAULT ''"
+].forEach(sql => { try { db.exec(sql); } catch {} });
+
 db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sheet_id INTEGER NOT NULL,
@@ -1896,16 +1914,53 @@ app.put('/api/admin/employees/:id/contacts', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Assign a job to an employee
+// Get job records for an employee (with financial + performance data)
+app.get('/api/admin/employees/:id/job-records', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT ej.*, j.title AS job_title_live, j.location, j.pay AS job_pay,
+           p.name AS partner_name
+    FROM employee_jobs ej
+    LEFT JOIN jobs j ON ej.job_id = j.id
+    LEFT JOIN partners p ON j.partner_id = p.id
+    WHERE ej.employee_id = ?
+    ORDER BY ej.assigned_at DESC
+  `).all(req.params.id);
+  res.json(rows);
+});
+
+// Assign / update a job record for an employee
 app.post('/api/admin/employees/:id/assign-job', requireAdmin, (req, res) => {
   const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Employee not found' });
-  const { job_id } = req.body;
-  const job = db.prepare('SELECT id, title, company_name, location FROM jobs WHERE id=?').get(job_id);
+  const { job_id, start_date, end_date,
+          emp_hourly_rate, emp_total_hours, emp_total_pay,
+          client_hourly_rate, client_total_billed,
+          perf_efficiency, perf_quality, perf_attendance,
+          perf_safety, perf_teamwork, perf_skills, notes } = req.body;
+  const job = db.prepare('SELECT id, title, company_name FROM jobs WHERE id=?').get(job_id);
   if (!job) return res.status(404).json({ error: 'Job not found' });
   try {
-    db.prepare(`INSERT OR REPLACE INTO employee_jobs (employee_id, job_id, company_name, job_title, status) VALUES (?, ?, ?, ?, 'active')`)
-      .run(req.params.id, job.id, job.company_name || '', job.title || '');
+    db.prepare(`INSERT INTO employee_jobs
+      (employee_id, job_id, company_name, job_title, status,
+       start_date, end_date, emp_hourly_rate, emp_total_hours, emp_total_pay,
+       client_hourly_rate, client_total_billed,
+       perf_efficiency, perf_quality, perf_attendance, perf_safety, perf_teamwork, perf_skills, notes)
+      VALUES (?,?,?,?,'active',?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(employee_id, job_id) DO UPDATE SET
+        status='active', start_date=excluded.start_date, end_date=excluded.end_date,
+        emp_hourly_rate=excluded.emp_hourly_rate, emp_total_hours=excluded.emp_total_hours,
+        emp_total_pay=excluded.emp_total_pay, client_hourly_rate=excluded.client_hourly_rate,
+        client_total_billed=excluded.client_total_billed,
+        perf_efficiency=excluded.perf_efficiency, perf_quality=excluded.perf_quality,
+        perf_attendance=excluded.perf_attendance, perf_safety=excluded.perf_safety,
+        perf_teamwork=excluded.perf_teamwork, perf_skills=excluded.perf_skills,
+        notes=excluded.notes`)
+      .run(req.params.id, job.id, job.company_name||'', job.title||'',
+           start_date||'', end_date||'',
+           emp_hourly_rate||0, emp_total_hours||0, emp_total_pay||0,
+           client_hourly_rate||0, client_total_billed||0,
+           perf_efficiency||0, perf_quality||0, perf_attendance||0,
+           perf_safety||0, perf_teamwork||0, perf_skills||0, notes||'');
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ error: e.message });

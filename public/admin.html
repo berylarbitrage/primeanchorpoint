@@ -936,30 +936,88 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- ════ Assign Job Modal ════ -->
-<div class="modal-bg" id="assignJobModal"><div class="modal" style="max-width:500px">
-  <h2>安排职位</h2>
+<div class="modal-bg" id="assignJobModal"><div class="modal" style="max-width:620px">
+  <h2 id="assignJobModalTitle">工作记录</h2>
   <p id="assignJobEmpName" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
   <input type="hidden" id="assignJobEmpId">
 
   <div id="assignJobCurrentSection" style="margin-bottom:1rem">
-    <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">当前职位</label>
+    <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">已有职位</label>
     <div id="assignJobCurrentList" style="margin-top:.3rem;font-size:.88rem;color:var(--gray-600)">—</div>
   </div>
 
-  <div class="field"><label>选择职位</label>
-    <select id="assignJobSelect" style="width:100%">
-      <option value="">请选择职位...</option>
-    </select>
+  <!-- 职位选择 & 起止时间 -->
+  <div class="form-section">
+    <h4>职位信息</h4>
+    <div class="field"><label>选择职位 *</label>
+      <select id="assignJobSelect" style="width:100%">
+        <option value="">请选择职位...</option>
+      </select>
+    </div>
+    <div id="assignJobCompanyInfo" style="display:none;margin-top:-.3rem;margin-bottom:.8rem;font-size:.82rem;color:var(--gray-600)">
+      <span>公司：</span><strong id="assignJobCompanyName"></strong>
+      <span style="margin-left:1rem">地点：</span><strong id="assignJobLocation"></strong>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field"><label>开始日期</label><input type="date" id="assignJobStartDate"></div>
+      <div class="field"><label>结束日期</label><input type="date" id="assignJobEndDate"></div>
+    </div>
   </div>
 
-  <div id="assignJobCompanyInfo" style="display:none;margin-top:-.3rem;margin-bottom:.8rem;font-size:.82rem;color:var(--gray-600)">
-    <span>公司：</span><strong id="assignJobCompanyName"></strong>
-    <span style="margin-left:1rem">地点：</span><strong id="assignJobLocation"></strong>
+  <!-- 绩效评估 -->
+  <div class="form-section">
+    <h4>绩效评估 <span style="font-size:.78rem;font-weight:400;color:var(--gray-400)">(1–5分，0=未评)</span></h4>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem .75rem">
+      <div class="field" style="margin-bottom:.5rem"><label>⚡ 效率</label>
+        <select id="ajPerfEff" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>✅ 质量</label>
+        <select id="ajPerfQual" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>📅 出勤</label>
+        <select id="ajPerfAtt" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>🦺 安全</label>
+        <select id="ajPerfSafe" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>🤝 团队</label>
+        <select id="ajPerfTeam" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+      <div class="field" style="margin-bottom:.5rem"><label>🔧 技能</label>
+        <select id="ajPerfSkill" style="width:100%"><option value="0">— 未评</option><option value="1">1 – 差</option><option value="2">2 – 一般</option><option value="3">3 – 合格</option><option value="4">4 – 良好</option><option value="5">5 – 优秀</option></select></div>
+    </div>
+    <div class="field" style="margin-bottom:0"><label>评价备注</label>
+      <textarea id="assignJobNotes" rows="2" style="width:100%;resize:vertical;padding:.5rem;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem" placeholder="工作表现、优缺点…"></textarea></div>
+  </div>
+
+  <!-- 财务记录 -->
+  <div class="form-section">
+    <h4>财务记录</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem .75rem;align-items:end">
+      <div class="field" style="margin-bottom:.5rem"><label>员工时薪 ($/h)</label>
+        <input type="number" id="ajEmpRate" step="0.01" min="0" placeholder="0.00" oninput="calcJobFinancials()" style="width:100%"></div>
+      <div class="field" style="margin-bottom:.5rem"><label>工时 (h)</label>
+        <input type="number" id="ajEmpHours" step="0.5" min="0" placeholder="0" oninput="calcJobFinancials()" style="width:100%"></div>
+      <div class="field" style="margin-bottom:.5rem"><label>员工总收入 ($) <span style="font-weight:400;font-size:.75rem;color:var(--gray-400)">可手动覆盖</span></label>
+        <input type="number" id="ajEmpPay" step="0.01" min="0" placeholder="自动" style="width:100%" oninput="this.dataset.manual=this.value?'1':'';calcJobFinancials()"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem .75rem;align-items:end">
+      <div class="field" style="margin-bottom:.5rem"><label>客户账单率 ($/h)</label>
+        <input type="number" id="ajClientRate" step="0.01" min="0" placeholder="0.00" oninput="calcJobFinancials()" style="width:100%"></div>
+      <div class="field" style="margin-bottom:.5rem"><label>计费工时 (h)</label>
+        <input type="number" id="ajClientHours" step="0.5" min="0" placeholder="0" oninput="calcJobFinancials()" style="width:100%"></div>
+      <div class="field" style="margin-bottom:.5rem"><label>客户总账单 ($) <span style="font-weight:400;font-size:.75rem;color:var(--gray-400)">可手动覆盖</span></label>
+        <input type="number" id="ajClientBilled" step="0.01" min="0" placeholder="自动" style="width:100%" oninput="this.dataset.manual=this.value?'1':'';calcJobFinancials()"></div>
+    </div>
+    <div style="background:var(--sky-light);border-radius:8px;padding:.65rem 1rem;display:flex;justify-content:space-between;align-items:center;margin-top:.25rem">
+      <div style="font-size:.85rem;color:var(--gray-600)">
+        客户账单 <strong id="ajSumBilled">$0</strong> &nbsp;—&nbsp; 员工收入 <strong id="ajSumPay">$0</strong>
+      </div>
+      <div>
+        <span style="font-size:.82rem;color:var(--gray-500);margin-right:.5rem">公司利润</span>
+        <span id="ajProfit" style="font-weight:700;font-size:1.1rem;color:var(--green)">$0.00</span>
+      </div>
+    </div>
   </div>
 
   <div style="display:flex;gap:1rem;margin-top:1.25rem">
-    <button class="btn btn-green" onclick="confirmAssignJob()">确认分配</button>
-    <button class="btn" onclick="document.getElementById('assignJobModal').classList.remove('show')">取消</button>
+    <button class="btn btn-green" onclick="confirmAssignJob()">保存记录</button>
+    <button class="btn btn-outline" onclick="guardClose('assignJobModal')">取消</button>
   </div>
 </div></div>
 
@@ -3406,10 +3464,56 @@ async function viewEmployee(id) {
     }).join('') : '<p class="empty" style="padding:1rem">暂无材料收集链接，点击「+ 发送新链接」创建</p>'}
   </div>`;
 
+  // Job records (from employee_jobs — with financial + performance data)
+  const jobRecords = await api(`/admin/employees/${id}/job-records`);
+  const perfScore = v => v > 0 ? '★'.repeat(v) + '☆'.repeat(5-v) : '—';
+  const fmtUSD = v => v > 0 ? '$' + parseFloat(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+  const avgPerf = r => {
+    const vals = [r.perf_efficiency,r.perf_quality,r.perf_attendance,r.perf_safety,r.perf_teamwork,r.perf_skills].filter(v=>v>0);
+    return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : null;
+  };
+  html += `<div class="form-section">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h4 style="margin:0">职位记录 (${jobRecords.length} 条)</h4>
+      <button class="btn btn-sm btn-green" onclick='openAssignJobModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 添加记录</button>
+    </div>
+    ${jobRecords.length ? jobRecords.map(r => {
+      const profit = (r.client_total_billed||0) - (r.emp_total_pay||0);
+      const avg = avgPerf(r);
+      return `<div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:.85rem 1rem;margin-bottom:.6rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem">
+          <div>
+            <strong style="font-size:.95rem">${esc(r.job_title||'未知职位')}</strong>
+            ${r.company_name ? `<span style="color:var(--gray-500);margin-left:.5rem;font-size:.85rem">${esc(r.company_name)}</span>` : ''}
+            ${avg ? `<span style="margin-left:.6rem;background:var(--sky-light);color:var(--sky);border-radius:20px;padding:1px 8px;font-size:.78rem;font-weight:700">综合 ${avg}/5</span>` : ''}
+          </div>
+          <button class="btn btn-sm btn-outline" onclick='openAssignJobModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}");setTimeout(()=>prefillJobRecord(${JSON.stringify(r).replace(/'/g,"&#39;")}),300)' style="font-size:.78rem">编辑</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.3rem .75rem;font-size:.82rem">
+          <div><span style="color:var(--gray-400)">时间：</span>${r.start_date||'—'} ~ ${r.end_date||'—'}</div>
+          <div><span style="color:var(--gray-400)">员工时薪：</span>${r.emp_hourly_rate>0?'$'+r.emp_hourly_rate+'/h':'—'}</div>
+          <div><span style="color:var(--gray-400)">工时：</span>${r.emp_total_hours>0?r.emp_total_hours+'h':'—'}</div>
+        </div>
+        ${(r.emp_total_pay||r.client_total_billed) ? `
+        <div style="display:flex;gap:1.5rem;margin-top:.45rem;padding:.4rem .6rem;background:#fff;border-radius:6px;font-size:.83rem;flex-wrap:wrap">
+          <span>员工收入：<strong style="color:var(--blue)">${fmtUSD(r.emp_total_pay)}</strong></span>
+          <span>客户账单：<strong style="color:var(--gray-700)">${fmtUSD(r.client_total_billed)}</strong></span>
+          <span>公司利润：<strong style="color:${profit>=0?'var(--green)':'var(--red)'}">${profit>=0?'':'-'}${fmtUSD(Math.abs(profit))}</strong></span>
+        </div>` : ''}
+        ${avg ? `<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:.2rem;margin-top:.45rem;font-size:.75rem;text-align:center">
+          ${[['效率',r.perf_efficiency],['质量',r.perf_quality],['出勤',r.perf_attendance],['安全',r.perf_safety],['团队',r.perf_teamwork],['技能',r.perf_skills]].map(([label,v])=>
+            `<div style="background:#fff;border-radius:4px;padding:.2rem .3rem"><div style="color:var(--gray-400)">${label}</div><div style="color:var(--sky);font-size:.9rem">${v>0?v:'—'}</div></div>`
+          ).join('')}
+        </div>` : ''}
+        ${r.notes ? `<div style="margin-top:.4rem;font-size:.82rem;color:var(--gray-600);font-style:italic">${esc(r.notes)}</div>` : ''}
+      </div>`;
+    }).join('') : '<p class="empty" style="padding:1rem">暂无职位记录，点击「+ 添加记录」</p>'}
+  </div>`;
+
   // Work history section (from timesheet_sheets)
   const jobHist = emp.job_history || [];
   html += `<div class="form-section">
-    <h4>工作经历 (${jobHist.length} 个职位)</h4>
+    <h4>工时记录摘要 (${jobHist.length} 个职位)</h4>
     ${jobHist.length ? `<table><thead><tr><th>职位</th><th>公司</th><th>时间范围</th><th>工时单数</th><th>总工时</th><th>加班</th></tr></thead><tbody>
     ${jobHist.map(j => `<tr>
       <td style="font-weight:600">${esc(j.job_title||'—')}</td>
@@ -3419,7 +3523,7 @@ async function viewEmployee(id) {
       <td>${(j.total_hours||0).toFixed(1)}h</td>
       <td>${j.overtime_hours>0?`<span class="ot-text">${(j.overtime_hours||0).toFixed(1)}h</span>`:'—'}</td>
     </tr>`).join('')}
-    </tbody></table>` : '<p class="empty" style="padding:1rem">暂无工作经历记录</p>'}
+    </tbody></table>` : '<p class="empty" style="padding:1rem">暂无工时记录</p>'}
   </div>`;
 
   // Ratings section
@@ -3774,24 +3878,53 @@ function openEmpDocLink() {
 
 // ─── Assign Job to Employee ───
 let _allJobsCache = null;
+function calcJobFinancials() {
+  const empRate = parseFloat(document.getElementById('ajEmpRate').value) || 0;
+  const empHours = parseFloat(document.getElementById('ajEmpHours').value) || 0;
+  const clientRate = parseFloat(document.getElementById('ajClientRate').value) || 0;
+  const clientHours = parseFloat(document.getElementById('ajClientHours').value) || 0;
+  // Auto-fill pay fields only if user hasn't manually entered them
+  const payField = document.getElementById('ajEmpPay');
+  if (empRate && empHours && !payField.dataset.manual) payField.value = (empRate * empHours).toFixed(2);
+  const billedField = document.getElementById('ajClientBilled');
+  if (clientRate && clientHours && !billedField.dataset.manual) billedField.value = (clientRate * clientHours).toFixed(2);
+  // Compute profit from current field values
+  const pay = parseFloat(payField.value) || 0;
+  const billed = parseFloat(billedField.value) || 0;
+  const profit = billed - pay;
+  document.getElementById('ajSumPay').textContent = '$' + pay.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  document.getElementById('ajSumBilled').textContent = '$' + billed.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const profitEl = document.getElementById('ajProfit');
+  profitEl.textContent = (profit >= 0 ? '' : '-') + '$' + Math.abs(profit).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+  profitEl.style.color = profit >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
 async function openAssignJobModal(empId, empName) {
   document.getElementById('assignJobEmpId').value = empId;
   document.getElementById('assignJobEmpName').textContent = empName;
-  // Show current jobs
-  const emp = allEmployees.find(e => e.id === empId);
-  const currentJobs = (emp && emp.current_jobs) || [];
-  if (currentJobs.length) {
-    document.getElementById('assignJobCurrentList').innerHTML = currentJobs.map(j =>
-      '<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:2px 10px;border-radius:10px;font-size:.82rem;margin:2px">' +
-      esc(j.job_title || '未知职位') + (j.company_name ? ' <span style="color:var(--gray-400)">(' + esc(j.company_name) + ')</span>' : '') + '</span>'
+  document.getElementById('assignJobModalTitle').textContent = '工作记录';
+  // Reset form
+  ['assignJobStartDate','assignJobEndDate','assignJobNotes',
+   'ajEmpRate','ajEmpHours','ajEmpPay','ajClientRate','ajClientHours','ajClientBilled'].forEach(id => {
+    const el = document.getElementById(id);
+    el.value = '';
+    if (el.dataset) delete el.dataset.manual;
+  });
+  ['ajPerfEff','ajPerfQual','ajPerfAtt','ajPerfSafe','ajPerfTeam','ajPerfSkill'].forEach(id => {
+    document.getElementById(id).value = '0';
+  });
+  calcJobFinancials();
+  // Show current job records
+  const records = await api(`/admin/employees/${empId}/job-records`);
+  if (records && records.length) {
+    document.getElementById('assignJobCurrentList').innerHTML = records.map(j =>
+      `<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:2px 10px;border-radius:10px;font-size:.82rem;margin:2px;cursor:pointer" onclick="prefillJobRecord(${JSON.stringify(j).replace(/"/g,'&quot;')})">${esc(j.job_title||'未知职位')}${j.company_name?' <span style="color:var(--gray-400)">('+esc(j.company_name)+')</span>':''} <span style="font-size:.7rem;opacity:.6">点击编辑</span></span>`
     ).join('');
   } else {
-    document.getElementById('assignJobCurrentList').innerHTML = '<span style="color:var(--gray-300)">暂无职位</span>';
+    document.getElementById('assignJobCurrentList').innerHTML = '<span style="color:var(--gray-300)">暂无记录</span>';
   }
   // Load available jobs
-  if (!_allJobsCache) {
-    _allJobsCache = await api('/admin/jobs');
-  }
+  if (!_allJobsCache) _allJobsCache = await api('/admin/jobs');
   const activeJobs = (_allJobsCache || []).filter(j => j.active);
   const sel = document.getElementById('assignJobSelect');
   sel.innerHTML = '<option value="">请选择职位...</option>' + activeJobs.map(j =>
@@ -3809,22 +3942,64 @@ async function openAssignJobModal(empId, empName) {
   };
   document.getElementById('assignJobCompanyInfo').style.display = 'none';
   document.getElementById('assignJobModal').classList.add('show');
+  captureModalState('assignJobModal');
+}
+
+function prefillJobRecord(record) {
+  // Select the job in the dropdown
+  const sel = document.getElementById('assignJobSelect');
+  for (const opt of sel.options) {
+    if (opt.value == record.job_id) { sel.value = opt.value; sel.onchange && sel.onchange(); break; }
+  }
+  document.getElementById('assignJobStartDate').value = record.start_date || '';
+  document.getElementById('assignJobEndDate').value = record.end_date || '';
+  document.getElementById('ajPerfEff').value = record.perf_efficiency || 0;
+  document.getElementById('ajPerfQual').value = record.perf_quality || 0;
+  document.getElementById('ajPerfAtt').value = record.perf_attendance || 0;
+  document.getElementById('ajPerfSafe').value = record.perf_safety || 0;
+  document.getElementById('ajPerfTeam').value = record.perf_teamwork || 0;
+  document.getElementById('ajPerfSkill').value = record.perf_skills || 0;
+  document.getElementById('assignJobNotes').value = record.notes || '';
+  document.getElementById('ajEmpRate').value = record.emp_hourly_rate || '';
+  document.getElementById('ajEmpHours').value = record.emp_total_hours || '';
+  document.getElementById('ajEmpPay').value = record.emp_total_pay || '';
+  document.getElementById('ajClientRate').value = record.client_hourly_rate || '';
+  document.getElementById('ajClientHours').value = '';
+  document.getElementById('ajClientBilled').value = record.client_total_billed || '';
+  calcJobFinancials();
 }
 
 async function confirmAssignJob() {
   const empId = document.getElementById('assignJobEmpId').value;
   const jobId = document.getElementById('assignJobSelect').value;
   if (!jobId) return alert('请选择一个职位');
+  const pay = parseFloat(document.getElementById('ajEmpPay').value) || 0;
+  const billed = parseFloat(document.getElementById('ajClientBilled').value) || 0;
+  const body = {
+    job_id: parseInt(jobId),
+    start_date: document.getElementById('assignJobStartDate').value,
+    end_date: document.getElementById('assignJobEndDate').value,
+    emp_hourly_rate: parseFloat(document.getElementById('ajEmpRate').value) || 0,
+    emp_total_hours: parseFloat(document.getElementById('ajEmpHours').value) || 0,
+    emp_total_pay: pay,
+    client_hourly_rate: parseFloat(document.getElementById('ajClientRate').value) || 0,
+    client_total_billed: billed,
+    perf_efficiency: parseInt(document.getElementById('ajPerfEff').value) || 0,
+    perf_quality: parseInt(document.getElementById('ajPerfQual').value) || 0,
+    perf_attendance: parseInt(document.getElementById('ajPerfAtt').value) || 0,
+    perf_safety: parseInt(document.getElementById('ajPerfSafe').value) || 0,
+    perf_teamwork: parseInt(document.getElementById('ajPerfTeam').value) || 0,
+    perf_skills: parseInt(document.getElementById('ajPerfSkill').value) || 0,
+    notes: document.getElementById('assignJobNotes').value
+  };
   try {
-    const r = await api(`/admin/employees/${empId}/assign-job`, {
-      method: 'POST',
-      body: JSON.stringify({ job_id: parseInt(jobId) })
-    });
-    if (r.error) return alert('分配失败：' + r.error);
-    alert('职位分配成功');
+    const r = await api(`/admin/employees/${empId}/assign-job`, { method:'POST', body: JSON.stringify(body) });
+    if (r.error) return alert('保存失败：' + r.error);
+    clearModalState('assignJobModal');
     document.getElementById('assignJobModal').classList.remove('show');
     _allJobsCache = null;
     loadEmployees();
+    if (currentEmpForDetail && currentEmpForDetail.id == empId) viewEmployee(empId);
   } catch(e) {
     alert('请求失败：' + (e.message || '网络错误'));
   }
