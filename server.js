@@ -346,6 +346,8 @@ try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid_at TEXT DEFAU
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1553,14 +1555,32 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
   db.prepare(`UPDATE employees SET
     employee_id=?,first_name=?,last_name=?,email=?,phone=?,address=?,city=?,state=?,zip=?,dob=?,
     emergency_name=?,emergency_phone=?,emergency_relation=?,hire_date=?,position=?,department=?,
-    pay_rate=?,pay_type=?,status=?,pin_hash=?,pin_salt=?,ssn_encrypted=?,ssn_iv=?,ssn_last4=?,notes=?
+    pay_rate=?,pay_type=?,status=?,pin_hash=?,pin_salt=?,ssn_encrypted=?,ssn_iv=?,ssn_last4=?,notes=?,
+    extra_phones=?,extra_emails=?
     WHERE id=?`).run(
     d.employee_id||emp.employee_id,d.first_name,d.last_name,d.email||'',d.phone||'',d.address||'',
     d.city||'',d.state||'',d.zip||'',d.dob||'',
     d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
     d.hire_date||'',d.position||'',d.department||'',
     parseFloat(d.pay_rate)||0,d.pay_type||'hourly',d.status||'active',
-    pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',req.params.id);
+    pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
+    JSON.stringify(d.extra_phones || JSON.parse(emp.extra_phones || '[]')),
+    JSON.stringify(d.extra_emails || JSON.parse(emp.extra_emails || '[]')),
+    req.params.id);
+  res.json({ success: true });
+});
+
+// Update employee contact info (phone/email + extras)
+app.put('/api/admin/employees/:id/contacts', requireAdmin, (req, res) => {
+  const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(req.params.id);
+  if (!emp) return res.status(404).json({ error: 'Not found' });
+  const { phone, email, extra_phones, extra_emails } = req.body;
+  db.prepare(`UPDATE employees SET phone=?, email=?, extra_phones=?, extra_emails=? WHERE id=?`).run(
+    phone || '', email || '',
+    JSON.stringify(extra_phones || []),
+    JSON.stringify(extra_emails || []),
+    req.params.id
+  );
   res.json({ success: true });
 });
 
