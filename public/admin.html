@@ -52,6 +52,12 @@ tr:hover td{background:var(--sky-light)}
 .badge-employment{background:#EDE9FE;color:#5B21B6}
 .badge-w2{background:#D1FAE5;color:#065F46}
 .badge-contract{background:#FEF3C7;color:#92400E}
+.assign-dropdown{display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:200px;overflow-y:auto}
+.assign-dropdown.open{display:block}
+.assign-dropdown .adrop-item{padding:.5rem .75rem;cursor:pointer;font-size:.85rem;border-bottom:1px solid var(--gray-100)}
+.assign-dropdown .adrop-item:last-child{border-bottom:none}
+.assign-dropdown .adrop-item:hover,.assign-dropdown .adrop-item.focused{background:var(--sky-light)}
+.assign-dropdown .adrop-item small{display:block;color:var(--gray-500);font-size:.75rem}
 .badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
@@ -620,8 +626,21 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="assignModal"><div class="modal">
   <h2 id="assignModalTitle">新建派工</h2>
   <input type="hidden" id="assignId">
-  <div class="field"><label>选择人员 *</label><select id="aInquiry"><option value="">-- 请选择 --</option></select></div>
-  <div class="field"><label>分配职位 *</label><select id="aJob"><option value="">-- 请选择 --</option></select></div>
+  <input type="hidden" id="aInquiryId">
+  <input type="hidden" id="aJobId">
+
+  <div class="field" style="position:relative">
+    <label>选择人员 *</label>
+    <input id="aInquiry" autocomplete="off" placeholder="搜索姓名 / 电话 / 邮箱…" oninput="filterAssignSearch('inq')">
+    <div class="assign-dropdown" id="aInquiryDrop"></div>
+  </div>
+
+  <div class="field" style="position:relative">
+    <label>分配职位 *</label>
+    <input id="aJob" autocomplete="off" placeholder="搜索职位名称 / 地点…" oninput="filterAssignSearch('job')">
+    <div class="assign-dropdown" id="aJobDrop"></div>
+  </div>
+
   <div class="field"><label>状态</label><select id="aStatus">
     <option value="assigned">已分配</option>
     <option value="working">工作中</option>
@@ -1483,19 +1502,19 @@ function exportCSV() {
 }
 
 // Quick assign from inquiry list
-function quickAssign(inquiryId, name) {
-  openAssignModal();
-  document.getElementById('aInquiry').value = inquiryId;
+async function quickAssign(inquiryId, name) {
+  await openAssignModal();
+  document.getElementById('aInquiry').value = name || '';
+  document.getElementById('aInquiryId').value = inquiryId;
 }
 
 // Assign from inquiry detail modal
-function assignFromInquiry() {
+async function assignFromInquiry() {
   if (!currentInquiry) return;
   document.getElementById('inqModal').classList.remove('show');
-  openAssignModal();
-  setTimeout(() => {
-    document.getElementById('aInquiry').value = currentInquiry.id;
-  }, 100);
+  await openAssignModal();
+  document.getElementById('aInquiry').value = currentInquiry.name + (currentInquiry.phone ? ' · ' + currentInquiry.phone : '');
+  document.getElementById('aInquiryId').value = currentInquiry.id;
 }
 
 // ─── Assignments (派工管理) ───
@@ -1534,42 +1553,92 @@ function renderAssignments(assigns) {
   </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
 }
 
+// Cache for assignment search
+let _assignInqs = [], _assignJobs = [];
+
 async function openAssignModal(assignment) {
   document.getElementById('assignModalTitle').textContent = assignment ? '编辑派工' : '新建派工';
   document.getElementById('assignId').value = assignment ? assignment.id : '';
   document.getElementById('aStatus').value = assignment ? assignment.status : 'assigned';
   document.getElementById('aNotes').value = assignment ? assignment.notes : '';
+  document.getElementById('aInquiry').value = '';
+  document.getElementById('aJob').value = '';
+  document.getElementById('aInquiryId').value = '';
+  document.getElementById('aJobId').value = '';
+  closeAssignDropdowns();
 
-  // Load options for selects
   const [inqs, jobs] = await Promise.all([api('/admin/inquiries'), api('/admin/jobs')]);
-  const inqSelect = document.getElementById('aInquiry');
-  inqSelect.innerHTML = '<option value="">-- 请选择人员 --</option>' +
-    inqs.map(i => `<option value="${i.id}">${esc(i.name)} (${typeLabel(i.type)}) - ${esc(i.phone || i.email || '')}</option>`).join('');
-  const jobSelect = document.getElementById('aJob');
-  jobSelect.innerHTML = '<option value="">-- 请选择职位 --</option>' +
-    jobs.filter(j => j.active).map(j => `<option value="${j.id}">${esc(j.title)} - ${esc(j.location)} ${j.pay ? '(' + esc(j.pay) + ')' : ''}</option>`).join('');
+  _assignInqs = inqs;
+  _assignJobs = jobs.filter(j => j.active);
 
   if (assignment) {
-    inqSelect.value = assignment.inquiry_id;
-    jobSelect.value = assignment.job_id;
+    const inq = inqs.find(i => i.id == assignment.inquiry_id);
+    const job = _assignJobs.find(j => j.id == assignment.job_id);
+    if (inq) { document.getElementById('aInquiry').value = inq.name + (inq.phone ? ' · ' + inq.phone : ''); document.getElementById('aInquiryId').value = inq.id; }
+    if (job) { document.getElementById('aJob').value = job.title + ' - ' + job.location; document.getElementById('aJobId').value = job.id; }
   }
 
   document.getElementById('assignModal').classList.add('show');
 }
 
-function closeAssignModal() { document.getElementById('assignModal').classList.remove('show'); }
+function filterAssignSearch(which) {
+  const isInq = which === 'inq';
+  const q = document.getElementById(isInq ? 'aInquiry' : 'aJob').value.toLowerCase();
+  const drop = document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop');
+  // Clear selected id when user edits text
+  document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = '';
+
+  const items = isInq
+    ? _assignInqs.filter(i => !q || (i.name||'').toLowerCase().includes(q) || (i.phone||'').includes(q) || (i.email||'').toLowerCase().includes(q))
+    : _assignJobs.filter(j => !q || (j.title||'').toLowerCase().includes(q) || (j.location||'').toLowerCase().includes(q));
+
+  if (!items.length) { drop.classList.remove('open'); return; }
+
+  drop.innerHTML = items.slice(0, 30).map(item => {
+    if (isInq) {
+      return `<div class="adrop-item" onclick="selectAssignItem('inq',${item.id},${JSON.stringify(item.name + (item.phone ? ' · ' + item.phone : '')).replace(/</g,'&lt;')})">
+        ${esc(item.name)} <small>${esc(typeLabel(item.type))} ${item.phone ? '· ' + esc(item.phone) : ''} ${item.email ? '· ' + esc(item.email) : ''}</small></div>`;
+    } else {
+      return `<div class="adrop-item" onclick="selectAssignItem('job',${item.id},${JSON.stringify(item.title + ' - ' + item.location).replace(/</g,'&lt;')})">
+        ${esc(item.title)} <small>${esc(item.location)} ${item.pay ? '· ' + esc(item.pay) : ''} ${item.employment_type ? '· ' + esc(item.employment_type) : ''}</small></div>`;
+    }
+  }).join('');
+  drop.classList.add('open');
+}
+
+function selectAssignItem(which, id, label) {
+  const isInq = which === 'inq';
+  document.getElementById(isInq ? 'aInquiry' : 'aJob').value = label;
+  document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = id;
+  document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop').classList.remove('open');
+}
+
+function closeAssignDropdowns() {
+  document.getElementById('aInquiryDrop').classList.remove('open');
+  document.getElementById('aJobDrop').classList.remove('open');
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('#assignModal')) closeAssignDropdowns();
+});
+
+function closeAssignModal() {
+  closeAssignDropdowns();
+  document.getElementById('assignModal').classList.remove('show');
+}
 
 function editAssignment(a) { openAssignModal(a); }
 
 async function saveAssignment() {
   const id = document.getElementById('assignId').value;
   const data = {
-    inquiry_id: document.getElementById('aInquiry').value,
-    job_id: document.getElementById('aJob').value,
+    inquiry_id: document.getElementById('aInquiryId').value,
+    job_id: document.getElementById('aJobId').value,
     status: document.getElementById('aStatus').value,
     notes: document.getElementById('aNotes').value
   };
-  if (!data.inquiry_id || !data.job_id) return alert('请选择人员和职位');
+  if (!data.inquiry_id || !data.job_id) return alert('请搜索并选择人员和职位');
   if (id) await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/assignments', { method: 'POST', body: JSON.stringify(data) });
   closeAssignModal();
