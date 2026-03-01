@@ -348,6 +348,7 @@ try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT '
 try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
+try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -756,6 +757,23 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
       d.quote_request ? 1 : 0
     );
     res.json({ success: true, id: result.lastInsertRowid, employer_id: employerId || undefined });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/jobs/:id/apply - apply for a specific job
+app.post('/api/jobs/:id/apply', (req, res) => {
+  try {
+    const job = db.prepare('SELECT id, title FROM jobs WHERE id=? AND active=1').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const d = req.body;
+    if (!d.name) return res.status(400).json({ error: 'Name required' });
+    if (!d.phone) return res.status(400).json({ error: 'Phone required' });
+    const result = db.prepare(`INSERT INTO inquiries (name, email, phone, type, positions, experience, comments, job_id) VALUES (?, ?, ?, 'Job Seeker', ?, ?, ?, ?)`).run(
+      d.name, d.email || '', d.phone, job.title, d.experience || '', d.comments || '', job.id
+    );
+    res.json({ success: true, id: result.lastInsertRowid });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
