@@ -953,10 +953,8 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;flex-shrink:0">
-    <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
     <button class="btn" style="background:var(--gray-200);color:var(--gray-700)" onclick="openProcessModal()">✅ 标记已处理</button>
-    <button class="btn btn-red" onclick="deleteInqFromModal()">🗑 删除</button>
     <button class="btn" style="background:var(--gray-100);color:var(--gray-600)" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
@@ -1974,9 +1972,7 @@ function renderInquiries(inqs) {
     <td style="font-size:.82rem">${esc(i.location||'')}</td>
     <td style="white-space:nowrap">${esc(i.phone)}</td>
     <td style="white-space:nowrap">
-      <button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button>
       <button class="btn btn-sm" style="background:var(--gray-200);color:var(--gray-700)" onclick="event.stopPropagation();openProcessModalDirect(${JSON.stringify(i).replace(/'/g,'&#39;')})">处理</button>
-      <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button>
     </td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无待处理问卷</td></tr>';
 }
