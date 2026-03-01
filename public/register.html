@@ -168,8 +168,8 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 
       <div class="field">
         <label>EIN (雇主识别号码)</label>
-        <input type="text" id="eEin" placeholder="XX-XXXXXXX">
-        <div class="field-hint">Employer Identification Number (optional)</div>
+        <input type="text" id="eEin" placeholder="XX-XXXXXXX" maxlength="10" oninput="formatEin(this)">
+        <div class="field-hint">9位数字，格式 XX-XXXXXXX / 9 digits, format XX-XXXXXXX (optional)</div>
       </div>
 
       <div class="field-row">
@@ -293,6 +293,16 @@ if (typeParam === 'enterprise') {
   document.getElementById('loginLinks').innerHTML = '已有账号？/ Already have an account?<br><a href="/portal">工人登录 / Worker Login</a>';
 }
 
+function formatEin(el) {
+  // Only keep digits, auto-insert dash after 2nd digit
+  let digits = el.value.replace(/\D/g, '').slice(0, 9);
+  if (digits.length > 2) {
+    el.value = digits.slice(0, 2) + '-' + digits.slice(2);
+  } else {
+    el.value = digits;
+  }
+}
+
 function selectType(type) {
   _selectedType = type;
   document.getElementById('typeWorker').classList.toggle('active', type === 'worker');
@@ -381,6 +391,7 @@ async function registerEnterprise() {
   if (!company_name) return showError('请输入企业名称 / Company name is required');
   if (!contact_name) return showError('请输入联系人 / Contact name is required');
   if (!email) return showError('请输入邮箱 / Email is required');
+  if (ein && !/^\d{2}-\d{7}$/.test(ein)) return showError('EIN 格式应为 XX-XXXXXXX（9位数字）/ EIN must be in XX-XXXXXXX format');
   if (!password || password.length < 6) return showError('密码至少6位 / Password must be at least 6 characters');
   if (password !== password2) return showError('两次密码不一致 / Passwords do not match');
 
