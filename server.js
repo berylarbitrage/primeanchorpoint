@@ -2620,10 +2620,11 @@ app.post('/api/register/worker', (req, res) => {
   // Check phone or email uniqueness
   const existing = db.prepare('SELECT id FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
   if (existing) return res.status(400).json({ error: 'An account with this phone or email already exists' });
-  const { hash, salt } = hashPassword(password);
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
   const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
     VALUES (?,?,?,?,?,?,?,?,?,1)`)
-    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), );
+    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []));
   // Auto-login
   const token = crypto.randomBytes(32).toString('hex');
   workerSessions.set(token, { created: Date.now(), workerId: r.lastInsertRowid, employeeId: null });
@@ -2636,7 +2637,8 @@ app.post('/api/register/enterprise', (req, res) => {
     return res.status(400).json({ error: 'Company name, contact name, email, and password are required' });
   const existing = db.prepare('SELECT id FROM customer_accounts WHERE email=?').get(email);
   if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
-  const { hash, salt } = hashPassword(password);
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
   db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status)
     VALUES (?,?,?,?,?,?,?,?,0,'pending')`)
     .run(company_name, contact_name, email, phone || '', hash, salt, ein || '', staffing_needs || '');
