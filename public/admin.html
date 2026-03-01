@@ -3770,10 +3770,6 @@ async function generateEmpDocLink() {
         alert('更新联系方式失败：' + (e.message || '网络错误'));
       }
     }
-  } catch(e) {
-    alert('请求失败：' + (e.message || '网络错误'));
-    btn.disabled = false;
-    btn.textContent = '生成链接';
   }
 
   btn.disabled = true;
@@ -3788,6 +3784,11 @@ async function generateEmpDocLink() {
       document.getElementById('empDocLinkResult').style.display = '';
       document.getElementById('empDocLinkCopied').style.display = 'none';
       btn.textContent = '已生成';
+      // Show expiry info
+      if (r.expires_at) {
+        const exp = new Date(r.expires_at).toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric' });
+        document.getElementById('empDocLinkUrl').textContent += '\n⏰ 有效期至 ' + exp + '（3天）';
+      }
       // Show send-to summary
       const targets = [];
       if (phoneChecked && phones.length) targets.push('短信: ' + phones.join(', '));

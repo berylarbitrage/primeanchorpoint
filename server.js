@@ -457,6 +457,7 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFA
 // Migrate: add lang/positions to employee_doc_requests
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
+try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN expires_at DATETIME DEFAULT NULL"); } catch {}
 // Migrate: add GPS fields to time_entries
 try { db.exec("ALTER TABLE time_entries ADD COLUMN latitude REAL DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN longitude REAL DEFAULT NULL"); } catch {}
@@ -1536,14 +1537,15 @@ app.get('/api/admin/assignments/:id/contract', (req, res, next) => {
 app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Employee not found' });
-  const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
-  if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
+  const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending" AND (expires_at IS NULL OR expires_at > datetime("now"))').get(emp.id);
+  if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true, expires_at: existing.expires_at });
   const token = crypto.randomBytes(28).toString('hex');
   const { admin_note, requested_docs, lang, positions } = req.body;
-  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions) VALUES (?,?,?,?,?,?)')
+  const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions, expires_at) VALUES (?,?,?,?,?,?,?)')
     .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']),
-        lang || 'zh', JSON.stringify(positions || []));
-  res.json({ token, status: 'pending' });
+        lang || 'zh', JSON.stringify(positions || []), expiresAt);
+  res.json({ token, status: 'pending', expires_at: expiresAt });
 });
 
 app.get('/api/admin/employees/:id/doc-requests', requireAdmin, (req, res) => {
@@ -1562,6 +1564,9 @@ app.get('/api/emp-docs/:token', (req, res) => {
     FROM employee_doc_requests r JOIN employees e ON r.employee_id = e.id
     WHERE r.token=?`).get(req.params.token);
   if (!row) return res.status(404).json({ error: '链接无效或已过期' });
+  if (row.expires_at && new Date(row.expires_at) < new Date()) {
+    return res.status(410).json({ error: '链接已过期（有效期3天）/ Link expired (valid for 3 days)' });
+  }
   res.json({
     status: row.status,
     name: `${row.first_name} ${row.last_name}`,
