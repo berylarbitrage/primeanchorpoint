@@ -47,6 +47,11 @@ tr:hover td{background:var(--sky-light)}
 .badge-en{background:#E8F0FE;color:#4A90D9}.badge-zh{background:#FFF3E0;color:#E67E22}.badge-es{background:#E8F5E9;color:#2D9D78}
 .badge-employer{background:#E8F0FE;color:var(--blue)}.badge-seeker{background:#FFF3E0;color:#E67E22}.badge-other{background:var(--gray-200);color:var(--gray-600)}
 .badge-urgent{background:var(--red);color:#fff}
+.day-btn,.benefit-btn{padding:4px 10px;border-radius:20px;border:1px solid var(--gray-300);background:var(--gray-100);color:var(--gray-700);font-size:.78rem;cursor:pointer;transition:all .15s}
+.day-btn.active,.benefit-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
+.badge-employment{background:#EDE9FE;color:#5B21B6}
+.badge-w2{background:#D1FAE5;color:#065F46}
+.badge-contract{background:#FEF3C7;color:#92400E}
 .badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
@@ -256,7 +261,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>身份要求</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>地点 / 时间</th><th>薪资</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
 </div>
 
 <!-- Partners -->
@@ -493,18 +498,51 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Job Modal -->
-<div class="modal-bg" id="jobModal"><div class="modal">
+<div class="modal-bg" id="jobModal"><div class="modal" style="max-width:680px">
   <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
+
   <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
+
   <div class="field-row">
-    <div class="field"><label>类型</label><input id="jType" placeholder="例：全职、临时工"></div>
+    <div class="field"><label>合作公司</label>
+      <select id="jCompany"><option value="">-- 不绑定公司 --</option></select>
+    </div>
     <div class="field"><label>工作地点</label><input id="jLocation" placeholder="例：Chicago, IL"></div>
   </div>
+
+  <div class="field-row">
+    <div class="field"><label>职位类型</label>
+      <select id="jType">
+        <option value="">-- 请选择 --</option>
+        <option value="全职">全职 / Full-Time</option>
+        <option value="兼职">兼职 / Part-Time</option>
+        <option value="临时工">临时工 / Temporary</option>
+        <option value="临时转正">临时转正 / Temp-to-Hire</option>
+      </select>
+    </div>
+    <div class="field"><label>雇佣性质</label>
+      <select id="jEmploymentType">
+        <option value="">-- 请选择 --</option>
+        <option value="W2">W2</option>
+        <option value="Contract">Contract</option>
+        <option value="1099">1099</option>
+        <option value="W2+Contract">W2 + Contract</option>
+      </select>
+    </div>
+  </div>
+
   <div class="field-row">
     <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
-    <div class="field"><label>语言</label><select id="jLang"><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select></div>
+    <div class="field"><label>语言</label>
+      <select id="jLang">
+        <option value="en">English</option>
+        <option value="zh">中文</option>
+        <option value="es">Español</option>
+      </select>
+    </div>
   </div>
+
   <div class="field"><label>工作身份要求</label>
     <select id="jWorkAuth">
       <option value="">不限</option>
@@ -513,10 +551,41 @@ tr:hover td{background:var(--sky-light)}
       <option value="citizen">仅限美国公民 / US Citizen Only</option>
     </select>
   </div>
-  <div class="field-row">
-    <div class="field"><label>工作时间</label><input id="jSchedule" placeholder="例：周一至周五 7am-3:30pm"></div>
-    <div class="field"><label>福利</label><input id="jBenefits" placeholder="例：医疗、牙科、带薪假"></div>
+
+  <div class="field">
+    <label>工作日</label>
+    <div id="jWorkDaysWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
+      <button type="button" class="day-btn" data-day="Mon">Mon</button>
+      <button type="button" class="day-btn" data-day="Tue">Tue</button>
+      <button type="button" class="day-btn" data-day="Wed">Wed</button>
+      <button type="button" class="day-btn" data-day="Thu">Thu</button>
+      <button type="button" class="day-btn" data-day="Fri">Fri</button>
+      <button type="button" class="day-btn" data-day="Sat">Sat</button>
+      <button type="button" class="day-btn" data-day="Sun">Sun</button>
+    </div>
   </div>
+
+  <div class="field-row">
+    <div class="field"><label>上班时间</label><input type="time" id="jWorkStart"></div>
+    <div class="field"><label>下班时间</label><input type="time" id="jWorkEnd"></div>
+  </div>
+
+  <div class="field">
+    <label>福利待遇（多选）</label>
+    <div id="jBenefitsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
+      <button type="button" class="benefit-btn" data-val="医疗保险">医疗保险</button>
+      <button type="button" class="benefit-btn" data-val="牙科保险">牙科保险</button>
+      <button type="button" class="benefit-btn" data-val="视力保险">视力保险</button>
+      <button type="button" class="benefit-btn" data-val="401k">401k</button>
+      <button type="button" class="benefit-btn" data-val="带薪休假">带薪休假</button>
+      <button type="button" class="benefit-btn" data-val="加班费">加班费</button>
+      <button type="button" class="benefit-btn" data-val="交通补贴">交通补贴</button>
+      <button type="button" class="benefit-btn" data-val="餐补">餐补</button>
+      <button type="button" class="benefit-btn" data-val="周薪">周薪</button>
+      <button type="button" class="benefit-btn" data-val="节假日奖金">节假日奖金</button>
+    </div>
+  </div>
+
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
   <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
@@ -1087,87 +1156,168 @@ async function loadJobs() {
   const jobs = await api('/admin/jobs');
   const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
   const authLabel = a => ({any:'合法身份', gc:'绿卡/公民', citizen:'仅公民'})[a] || '不限';
+  const etBadge = et => {
+    if (!et) return '';
+    const cls = et === 'W2' ? 'badge-w2' : et === 'Contract' || et === '1099' ? 'badge-contract' : 'badge-employment';
+    return `<span class="badge ${cls}">${esc(et)}</span>`;
+  };
+  const scheduleStr = j => {
+    const parts = [];
+    if (j.work_days) parts.push(j.work_days);
+    if (j.work_start && j.work_end) parts.push(`${j.work_start}–${j.work_end}`);
+    return parts.join(' ');
+  };
   document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
-    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}</td>
-    <td>${esc(j.type)}</td><td>${esc(j.location)}</td>
-    <td>${esc(authLabel(j.work_auth))}</td>
+    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
+    <td>${esc(j.type)}</td>
+    <td>${etBadge(j.employment_type)}</td>
+    <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
+    <td>${esc(j.pay||'')}</td>
     <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
     <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
     <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
 }
 
-function openJobModal(job) {
+async function openJobModal(job) {
   document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
   document.getElementById('jobId').value = job ? job.id : '';
   document.getElementById('jTitle').value = job ? job.title : '';
-  document.getElementById('jType').value = job ? job.type : '';
+  document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jLocation').value = job ? job.location : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
-  document.getElementById('jSchedule').value = job ? (job.schedule || '') : '';
-  document.getElementById('jBenefits').value = job ? (job.benefits || '') : '';
+  document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
+  document.getElementById('jWorkStart').value = job ? (job.work_start || '') : '';
+  document.getElementById('jWorkEnd').value = job ? (job.work_end || '') : '';
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
+
+  // Load company dropdown
+  await loadJobCompanies(job ? (job.company_id || '') : '');
+
+  // Work days toggle
+  const activeDays = job && job.work_days ? job.work_days.split(',').map(s=>s.trim()) : [];
+  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
+    btn.classList.toggle('active', activeDays.includes(btn.dataset.day));
+  });
+
+  // Benefits toggle
+  const activeBenefits = job && job.benefits ? job.benefits.split(',').map(s=>s.trim()) : [];
+  document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.classList.toggle('active', activeBenefits.includes(btn.dataset.val));
+  });
+
   document.getElementById('jobModal').classList.add('show');
 }
 function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
 function editJob(j) { openJobModal(j); }
 
+async function loadJobCompanies(selectedId) {
+  const sel = document.getElementById('jCompany');
+  try {
+    const partners = await api('/admin/partners');
+    const active = partners.filter(p => p.active !== 0);
+    sel.innerHTML = '<option value="">-- 不绑定公司 --</option>' +
+      active.map(p => `<option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+  } catch { sel.innerHTML = '<option value="">-- 无法加载 --</option>'; }
+}
+
+// Wire up day/benefit toggle buttons (once DOM ready)
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
+    btn.addEventListener('click', () => btn.classList.toggle('active'));
+  });
+  document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.addEventListener('click', () => btn.classList.toggle('active'));
+  });
+});
+
 function randomFillJob() {
   const pool = [
-    { lang: 'zh', title: '仓库分拣员', type: '临时工', location: 'Chicago, IL', pay: '$17-19/hr', work_auth: 'any',
-      schedule: '周一至周五 06:00-14:30', benefits: '每周直接发薪、免费停车',
+    { lang: 'zh', title: '仓库分拣员', type: '临时工', employment_type: 'W2', location: 'Chicago, IL', pay: '$17-19/hr', work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '06:00', work_end: '14:30',
+      benefits: '周薪,交通补贴',
       desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。' },
-    { lang: 'zh', title: '叉车操作员', type: '全职', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true, work_auth: 'any',
-      schedule: '周一至周五 07:00-15:30，可加班', benefits: '医疗保险、牙科保险、带薪假',
+    { lang: 'zh', title: '叉车操作员', type: '全职', employment_type: 'W2', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true, work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '07:00', work_end: '15:30',
+      benefits: '医疗保险,牙科保险,带薪休假,加班费',
       desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁。' },
-    { lang: 'zh', title: '生产线操作工', type: '全职', location: 'Melrose Park, IL', pay: '$18/hr', work_auth: 'gc',
-      schedule: '周一至周五 06:00-14:30 / 夜班可选', benefits: '工服、手套免费提供，90天后享医保',
+    { lang: 'zh', title: '生产线操作工', type: '全职', employment_type: 'W2', location: 'Melrose Park, IL', pay: '$18/hr', work_auth: 'gc',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '06:00', work_end: '14:30',
+      benefits: '医疗保险,加班费',
       desc: '食品加工生产线工作，需遵守卫生规定。每周加班机会多，可双休。' },
-    { lang: 'en', title: 'Warehouse Associate', type: 'Temp-to-Hire', location: 'Schaumburg, IL', pay: '$16-18/hr', work_auth: 'any',
-      schedule: 'Mon–Fri, Day & Night shifts available', benefits: 'Weekly pay, referral bonus',
+    { lang: 'en', title: 'Warehouse Associate', type: '临时转正', employment_type: 'W2', location: 'Schaumburg, IL', pay: '$16-18/hr', work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '07:00', work_end: '15:30',
+      benefits: '周薪,节假日奖金',
       desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs.' },
-    { lang: 'en', title: 'Machine Operator', type: 'Full-Time', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true, work_auth: 'gc',
-      schedule: 'Mon–Fri 6am–2:30pm (overtime available)', benefits: 'Medical, dental & vision after 90 days, PTO',
+    { lang: 'en', title: 'Machine Operator', type: '全职', employment_type: 'W2', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true, work_auth: 'gc',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '06:00', work_end: '14:30',
+      benefits: '医疗保险,牙科保险,视力保险,带薪休假',
       desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred.' },
-    { lang: 'en', title: 'General Labor', type: 'Temporary', location: 'Addison, IL', pay: '$15.50/hr', work_auth: 'any',
-      schedule: 'Mon–Fri 7am–3:30pm, weekend shifts with differential', benefits: 'Weekly pay, free PPE',
+    { lang: 'en', title: 'General Labor', type: '临时工', employment_type: 'Contract', location: 'Addison, IL', pay: '$15.50/hr', work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri,Sat', work_start: '07:00', work_end: '15:30',
+      benefits: '周薪',
       desc: 'Various light industrial tasks including assembly, sorting and quality inspection.' },
-    { lang: 'es', title: 'Trabajador de Almacén', type: 'Tiempo Completo', location: 'Melrose Park, IL', pay: '$16-18/hr', work_auth: 'any',
-      schedule: 'Lunes a viernes 7am–3:30pm', benefits: 'Pago semanal, uniforme incluido',
+    { lang: 'es', title: 'Trabajador de Almacén', type: '全职', employment_type: 'W2', location: 'Melrose Park, IL', pay: '$16-18/hr', work_auth: 'any',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '07:00', work_end: '15:30',
+      benefits: '周薪,交通补贴',
       desc: 'Clasificar y empacar productos en almacén. No se requiere experiencia previa, se ofrece capacitación.' },
-    { lang: 'es', title: 'Operador de Montacargas', type: 'Temporal', location: 'Cicero, IL', pay: '$20/hr', urgent: true, work_auth: 'gc',
-      schedule: 'Turno nocturno 10pm–6am, lunes a viernes', benefits: 'Pago semanal, horas extras disponibles',
+    { lang: 'es', title: 'Operador de Montacargas', type: '临时工', employment_type: '1099', location: 'Cicero, IL', pay: '$20/hr', urgent: true, work_auth: 'gc',
+      work_days: 'Mon,Tue,Wed,Thu,Fri', work_start: '22:00', work_end: '06:00',
+      benefits: '周薪,加班费',
       desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía.' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
-  document.getElementById('jTitle').value    = r.title;
-  document.getElementById('jType').value     = r.type;
-  document.getElementById('jLocation').value = r.location;
-  document.getElementById('jPay').value      = r.pay;
-  document.getElementById('jLang').value      = r.lang;
-  document.getElementById('jWorkAuth').value  = r.work_auth || '';
-  document.getElementById('jSchedule').value  = r.schedule || '';
-  document.getElementById('jBenefits').value  = r.benefits || '';
-  document.getElementById('jDesc').value      = r.desc;
-  document.getElementById('jUrgent').checked  = !!r.urgent;
+  document.getElementById('jTitle').value          = r.title;
+  document.getElementById('jType').value           = r.type;
+  document.getElementById('jLocation').value       = r.location;
+  document.getElementById('jPay').value            = r.pay;
+  document.getElementById('jLang').value           = r.lang;
+  document.getElementById('jWorkAuth').value       = r.work_auth || '';
+  document.getElementById('jEmploymentType').value = r.employment_type || '';
+  document.getElementById('jWorkStart').value      = r.work_start || '';
+  document.getElementById('jWorkEnd').value        = r.work_end || '';
+  document.getElementById('jDesc').value           = r.desc;
+  document.getElementById('jUrgent').checked       = !!r.urgent;
+  // Days
+  const days = r.work_days ? r.work_days.split(',') : [];
+  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
+    btn.classList.toggle('active', days.includes(btn.dataset.day));
+  });
+  // Benefits
+  const bens = r.benefits ? r.benefits.split(',') : [];
+  document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.classList.toggle('active', bens.includes(btn.dataset.val));
+  });
 }
 
 async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
+  const langVal = document.getElementById('jLang').value;
+  const companySel = document.getElementById('jCompany');
+  const companyId = companySel.value ? parseInt(companySel.value) : null;
+  const companyName = companyId ? companySel.options[companySel.selectedIndex].text : '';
+  const workDays = [...document.querySelectorAll('#jWorkDaysWrap .day-btn.active')].map(b=>b.dataset.day).join(',');
+  const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const data = {
     title: document.getElementById('jTitle').value,
     type: document.getElementById('jType').value,
     location: document.getElementById('jLocation').value,
     pay: document.getElementById('jPay').value,
-    lang: document.getElementById('jLang').value,
-    lang_name: langNames[document.getElementById('jLang').value],
+    lang: langVal,
+    lang_name: langNames[langVal] || langVal,
     work_auth: document.getElementById('jWorkAuth').value,
-    schedule: document.getElementById('jSchedule').value,
-    benefits: document.getElementById('jBenefits').value,
+    employment_type: document.getElementById('jEmploymentType').value,
+    company_id: companyId,
+    company_name: companyName,
+    work_days: workDays,
+    work_start: document.getElementById('jWorkStart').value,
+    work_end: document.getElementById('jWorkEnd').value,
+    benefits,
+    schedule: '',
     description: document.getElementById('jDesc').value,
     urgent: document.getElementById('jUrgent').checked,
     active: true
