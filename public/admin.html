@@ -679,8 +679,9 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="field"><label>备注</label><textarea id="eNotes" placeholder="其他备注信息..."></textarea></div>
-  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+  <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn btn-green" onclick="saveEmployee()">保存员工</button>
+    <button class="btn" onclick="randomFillEmployee()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-outline" onclick="closeEmpModal()">取消</button>
   </div>
 </div></div>
@@ -1711,6 +1712,41 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
 }
 function closeEmpModal() { document.getElementById('empModal').classList.remove('show'); }
+
+function randomFillEmployee() {
+  const firsts = ['John','Maria','Wei','Carlos','Anna','David','Linh','Ahmed','Sofia','James','Yuki','Jose','Emily','Marco','Mei'];
+  const lasts = ['Smith','Garcia','Chen','Nguyen','Johnson','Lopez','Kim','Patel','Williams','Martinez','Wang','Brown','Lee','Davis','Zhang'];
+  const positions = ['仓库分拣员','叉车操作员','生产线操作工','包装工','清洁工','质检员','搬运工','厨房帮工','洗碗工','装配工'];
+  const depts = ['Warehouse','Production','Kitchen','Cleaning','Assembly','Shipping','QC'];
+  const streets = ['123 Main St','456 Oak Ave','789 Elm Blvd','321 Pine Rd','654 Maple Dr','987 Cedar Ln','111 Lake St','222 River Rd'];
+  const cities = ['Chicago','Cicero','Melrose Park','Elk Grove Village','Schaumburg','Addison','Des Plaines','Niles'];
+  const rels = ['Spouse','Parent','Sibling','Friend','Child'];
+  const pick = arr => arr[Math.floor(Math.random()*arr.length)];
+  const rnd = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+  const pad = n => String(n).padStart(2,'0');
+  const dob = `${rnd(1970,2000)}-${pad(rnd(1,12))}-${pad(rnd(1,28))}`;
+  const hire = `${rnd(2022,2026)}-${pad(rnd(1,12))}-${pad(rnd(1,28))}`;
+  const phone = `(${rnd(312,847)}) ${rnd(100,999)}-${rnd(1000,9999)}`;
+  const fn = pick(firsts), ln = pick(lasts);
+  document.getElementById('eFirst').value = fn;
+  document.getElementById('eLast').value = ln;
+  document.getElementById('eDob').value = dob;
+  document.getElementById('ePhone').value = phone;
+  document.getElementById('eEmail').value = `${fn.toLowerCase()}.${ln.toLowerCase()}@email.com`;
+  document.getElementById('eAddr').value = pick(streets);
+  document.getElementById('eCity').value = pick(cities);
+  document.getElementById('eState').value = 'IL';
+  document.getElementById('eZip').value = String(rnd(60601,60699));
+  document.getElementById('eHire').value = hire;
+  document.getElementById('ePos').value = pick(positions);
+  document.getElementById('eDept').value = pick(depts);
+  document.getElementById('ePayRate').value = (rnd(1550,2800)/100).toFixed(2);
+  document.getElementById('ePayType').value = 'hourly';
+  const efn2 = pick(firsts), eln2 = pick(lasts);
+  document.getElementById('eEmgName').value = `${efn2} ${eln2}`;
+  document.getElementById('eEmgPhone').value = `(${rnd(312,847)}) ${rnd(100,999)}-${rnd(1000,9999)}`;
+  document.getElementById('eEmgRel').value = pick(rels);
+}
 
 async function saveEmployee() {
   const id = document.getElementById('empId').value;
