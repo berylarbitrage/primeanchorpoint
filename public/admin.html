@@ -238,6 +238,22 @@ tr:hover td{background:var(--sky-light)}
 </div>
 </div>
 
+<!-- SMS Test Modal -->
+<div class="modal-bg" id="smsTestModal">
+<div class="modal" style="max-width:460px">
+  <h2>📡 测试短信发送</h2>
+  <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">输入一个手机号，测试 Twilio 是否能成功发送短信，并显示详细错误信息。</p>
+  <div class="field"><label>发送到手机号（E.164 格式，如 +12025551234）</label>
+    <input type="tel" id="smsTestPhone" placeholder="+1XXXXXXXXXX">
+  </div>
+  <div id="smsTestResult" style="display:none;margin-top:.75rem;padding:.75rem 1rem;border-radius:8px;font-size:.83rem;font-family:monospace;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto"></div>
+  <div class="modal-actions">
+    <button class="btn" onclick="document.getElementById('smsTestModal').classList.remove('show')">关闭</button>
+    <button class="btn btn-blue" id="smsTestBtn" onclick="runSmsTest()">发送测试短信</button>
+  </div>
+</div>
+</div>
+
 <!-- Activation Modal (self-verification on first login) -->
 <div class="modal-bg" id="activationModal" style="z-index:9999">
 <div class="modal" style="max-width:420px">
@@ -734,6 +750,7 @@ tr:hover td{background:var(--sky-light)}
       <button id="accTabCustomer" onclick="setAccTab('customer')">客户账户 Customer</button>
     </div>
     <div style="margin-left:auto;display:flex;gap:.5rem">
+      <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
       <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
     </div>
@@ -1952,6 +1969,56 @@ async function doActivate() {
   } else {
     errEl.textContent = r.error || '激活失败，请检查密码';
   }
+}
+
+function openSmsTestModal() {
+  document.getElementById('smsTestPhone').value = '';
+  document.getElementById('smsTestResult').style.display = 'none';
+  document.getElementById('smsTestResult').textContent = '';
+  document.getElementById('smsTestModal').classList.add('show');
+}
+
+async function runSmsTest() {
+  const to = document.getElementById('smsTestPhone').value.trim();
+  if (!to) { alert('请输入手机号'); return; }
+  const btn = document.getElementById('smsTestBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const resultEl = document.getElementById('smsTestResult');
+  resultEl.style.display = 'none';
+  try {
+    const res = await fetch(API + '/admin/test-sms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+      body: JSON.stringify({ to })
+    });
+    const d = await res.json();
+    const cfg = d.configured || {};
+    let out = '── Twilio 配置状态 ──\n';
+    out += `Account SID: ${cfg.account_sid || '❌ 未设置'}\n`;
+    out += `Auth Token:  ${cfg.auth_token ? '✅ 已设置' : '❌ 未设置'}\n`;
+    out += `发送号码:    ${cfg.phone_number || '❌ 未设置'}\n`;
+    out += `Client 就绪: ${cfg.client_ready ? '✅' : '❌'}\n\n`;
+    out += '── 发送结果 ──\n';
+    if (d.result) {
+      if (d.result.ok) {
+        out += `✅ 发送成功！\nSID: ${d.result.sid}\n状态: ${d.result.status}\n发送到: ${d.result.to}`;
+      } else {
+        out += `❌ 发送失败\n错误: ${d.result.error}`;
+        if (d.result.code) out += `\nTwilio 错误码: ${d.result.code}`;
+        out += `\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
+      }
+    }
+    resultEl.style.background = (d.result && d.result.ok) ? '#f0fff4' : '#fff5f5';
+    resultEl.style.border = `1px solid ${(d.result && d.result.ok) ? '#9ae6b4' : '#feb2b2'}`;
+    resultEl.textContent = out;
+    resultEl.style.display = 'block';
+  } catch (e) {
+    resultEl.style.background = '#fff5f5';
+    resultEl.style.border = '1px solid #feb2b2';
+    resultEl.textContent = '网络错误：' + e.message;
+    resultEl.style.display = 'block';
+  }
+  btn.disabled = false; btn.textContent = '发送测试短信';
 }
 
 function logout() {
