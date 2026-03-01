@@ -1161,6 +1161,19 @@ app.delete('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'
   res.json({ success: true });
 });
 
+// Clear all test data (worker accounts, customer accounts, verification codes, job applications)
+app.post('/api/admin/clear-test-data', requireAdmin, requireRole('admin'), (req, res) => {
+  const { confirm_text } = req.body;
+  if (confirm_text !== 'I confirm') return res.status(400).json({ error: 'Please type "I confirm" to proceed' });
+  const wDel = db.prepare('DELETE FROM worker_accounts').run();
+  const cDel = db.prepare('DELETE FROM customer_accounts').run();
+  db.prepare('DELETE FROM verification_codes').run();
+  db.prepare('DELETE FROM job_applications').run();
+  db.prepare('DELETE FROM customer_job_posts').run();
+  console.log(`[Admin] Cleared test data: ${wDel.changes} worker accounts, ${cDel.changes} customer accounts`);
+  res.json({ success: true, deleted_workers: wDel.changes, deleted_customers: cDel.changes });
+});
+
 // ─── Job Applications (admin view) ───
 app.get('/api/admin/job-applications', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare(`
