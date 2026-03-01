@@ -756,13 +756,28 @@ app.post('/api/admin/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
-  if (!user || !user.active) return res.status(401).json({ error: 'Invalid username or password' });
-  if (user && verifyPassword(password, user.salt, user.password_hash)) {
-    const token = createSession(user);
-    res.json({ success: true, token, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
-  } else {
-    res.status(401).json({ error: 'Invalid username or password' });
-  }
+  if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+  if (!verifyPassword(password, user.salt, user.password_hash)) return res.status(401).json({ error: 'Invalid username or password' });
+  // Password correct but account not yet self-verified — prompt user to set own password
+  if (!user.active) return res.json({ needs_activation: true, username });
+  const token = createSession(user);
+  res.json({ success: true, token, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
+});
+
+// Self-activation: user verifies identity with temp password and sets their own password
+app.post('/api/auth/activate', (req, res) => {
+  const { username, current_password, new_password } = req.body;
+  if (!username || !current_password || !new_password) return res.status(400).json({ error: 'Missing fields' });
+  if (new_password.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+  if (!verifyPassword(current_password, user.salt, user.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(new_password, salt);
+  db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
+  const updatedUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(user.id);
+  const token = createSession(updatedUser);
+  res.json({ success: true, token, role: updatedUser.role || 'staff', username: updatedUser.username, display_name: updatedUser.display_name || '' });
 });
 
 app.post('/api/admin/logout', requireAdmin, (req, res) => {
@@ -789,27 +804,31 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   const { username, password, role, display_name } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
-  const existing = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(username);
-  if (existing) return res.status(400).json({ error: 'Username already exists' });
+  const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
+  if (existing && existing.active) return res.status(400).json({ error: 'Username already exists' });
+  // Overwrite unverified (inactive) account with same username
+  if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)')
+  // New accounts start inactive (active=0); user must self-verify to activate
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, active) VALUES (?, ?, ?, ?, ?, 0)')
     .run(username, hash, salt, role, display_name || '');
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, active } = req.body;
+  const { username, password, role, display_name } = req.body;
   if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (password) {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(password, salt);
-    db.prepare('UPDATE admin_users SET password_hash=?, salt=? WHERE id=?').run(hash, salt, req.params.id);
+    db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, active=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, active !== undefined ? active : user.active, req.params.id);
+  // active field is intentionally excluded — only the user themselves can activate via self-verification
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, req.params.id);
   res.json({ success: true });
 });
 
