@@ -3627,10 +3627,9 @@ function buildTsRows() {
     d.setDate(start.getDate() + i);
     const dow = (d.getDay() + 6) % 7; // 0=Mon
     const dateStr = d.toISOString().slice(0,10);
-    const isWeekend = dow >= 5;
     const label = `${WEEKDAYS_ZH[dow]} ${WEEKDAYS_EN[dow]}`;
     const dateLabel = `${d.getMonth()+1}/${d.getDate()}`;
-    html += `<tr class="${isWeekend?'ts-off':''}" data-date="${dateStr}">
+    html += `<tr data-date="${dateStr}">
       <td class="day-label">${label}<small>${dateLabel} ${dateStr}</small></td>
       <td><input type="time" class="ts-in" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
       <td><input type="time" class="ts-out" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
