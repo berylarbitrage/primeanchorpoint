@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Prime Anchorpoint — 管理后台</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--accent:#F5A623;--white:#fff;--off-white:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--red:#E63946;--green:#2D9D78;--radius:8px}
@@ -1601,7 +1602,7 @@ async function loadDashboard() {
   document.getElementById('recentInq').innerHTML = recent.length ? '<table><thead><tr><th>姓名</th><th>类型</th><th>日期</th></tr></thead><tbody>' +
     recent.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
       <td>${esc(i.name)}</td>
-      <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span></td>
+      <td><span class="badge badge-${i.type === 'Employer' ? 'employer' : i.type === 'Job Seeker' ? 'seeker' : 'other'}">${typeLabel(i.type)}</span>${i.quote_request ? ' <span class="badge badge-urgent" style="background:#F5A623">报价</span>' : ''}</td>
       <td>${new Date(i.created_at).toLocaleDateString()}</td>
     </tr>`).join('') +
     '</tbody></table>' : '<p class="empty">暂无问卷提交</p>';
@@ -2045,7 +2046,7 @@ function renderInquiries(inqs) {
     <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></td>
     <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
     <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
-    <td><span class="badge badge-${i.type==='Employer'?'employer':i.type==='Job Seeker'?'seeker':'other'}">${typeLabel(i.type)}</span></td>
+    <td><span class="badge badge-${i.type==='Employer'?'employer':i.type==='Job Seeker'?'seeker':'other'}">${typeLabel(i.type)}</span>${i.quote_request ? ' <span class="badge badge-urgent" style="background:#F5A623">报价</span>' : ''}</td>
     <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.82rem">${esc(i.location||'')}</td>
     <td style="white-space:nowrap">${esc(i.phone)}</td>
@@ -2118,6 +2119,7 @@ function showInquiry(i) {
     ['地点', i.location], ['开始日期', i.start_date], ['工作经验', i.experience],
     ['语言能力', i.languages], ['备注', i.comments],
     ['简历', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank" style="color:var(--sky)">📄 下载简历</a>` : ''],
+    ['报价请求', i.quote_request ? '<span class="badge badge-urgent" style="background:#F5A623">是 — 需要报价</span>' : '否'],
     ['提交时间', new Date(i.created_at).toLocaleString()]
   ].filter(([k, v]) => v);
   document.getElementById('inqDetail').innerHTML = '<table style="width:100%">' +
