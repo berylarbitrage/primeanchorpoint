@@ -830,6 +830,7 @@ function managerPartnerIds(req) {
 // ─── Worker / Customer portal auth ───
 const workerSessions = new Map();
 const customerSessions = new Map();
+const resetCodes = new Map(); // key: "worker:login" or "customer:login", value: { code, expires }
 
 function requireWorker(req, res, next) {
   let token = null;
@@ -2431,10 +2432,13 @@ app.get('/admin', (req, res) => {
 
 // ─── Worker Portal API ───
 app.post('/api/worker/login', (req, res) => {
-  const { username, password } = req.body;
-  const w = db.prepare('SELECT * FROM worker_accounts WHERE username=? AND active=1').get(username);
+  const { login, username, password } = req.body;
+  const identifier = (login || username || '').trim();
+  if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
+  // Try matching by email, phone, or username
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE (email=? OR phone=? OR username=?) AND active=1').get(identifier, identifier, identifier);
   if (!w || !verifyPassword(password, w.salt, w.password_hash))
-    return res.status(401).json({ error: 'Invalid username or password' });
+    return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
   const token = crypto.randomBytes(32).toString('hex');
   workerSessions.set(token, { created: Date.now(), workerId: w.id, employeeId: w.employee_id });
   res.json({ token, employee_id: w.employee_id });
@@ -2499,17 +2503,45 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
   res.json(apps);
 });
 
+// ─── Worker Forgot / Reset Password ───
+app.post('/api/worker/forgot-password', (req, res) => {
+  const { login } = req.body;
+  if (!login) return res.status(400).json({ error: '请输入邮箱或手机号' });
+  const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(login, login, login);
+  if (!w) return res.status(404).json({ error: '未找到该账号 / Account not found' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  resetCodes.set('worker:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
+  console.log(`[Reset Code] Worker account ${login}: ${code}`);
+  res.json({ success: true, message: '验证码已发送 / Code sent' });
+});
+
+app.post('/api/worker/reset-password', (req, res) => {
+  const { login, code, new_password } = req.body;
+  if (!login || !code || !new_password) return res.status(400).json({ error: '请填写完整信息' });
+  if (new_password.length < 6) return res.status(400).json({ error: '密码至少6位' });
+  const entry = resetCodes.get('worker:' + login);
+  if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
+  if (Date.now() > entry.expires) { resetCodes.delete('worker:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
+  const { hash, salt } = hashPassword(new_password);
+  db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  resetCodes.delete('worker:' + login);
+  res.json({ success: true });
+});
+
 // ─── Customer Portal API ───
 app.post('/api/customer/login', (req, res) => {
-  const { email, password } = req.body;
-  const cAny = db.prepare('SELECT * FROM customer_accounts WHERE email=?').get(email);
+  const { login, email, password } = req.body;
+  const identifier = (login || email || '').trim();
+  if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
+  // Try matching by email or phone
+  const cAny = db.prepare('SELECT * FROM customer_accounts WHERE email=? OR phone=?').get(identifier, identifier);
   if (cAny && cAny.approval_status === 'pending')
     return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
   if (cAny && cAny.approval_status === 'rejected')
     return res.status(403).json({ error: '您的企业注册已被拒绝，请联系管理员 / Your registration was rejected. Please contact admin' });
-  const c = db.prepare('SELECT * FROM customer_accounts WHERE email=? AND active=1').get(email);
+  const c = db.prepare('SELECT * FROM customer_accounts WHERE (email=? OR phone=?) AND active=1').get(identifier, identifier);
   if (!c || !verifyPassword(password, c.salt, c.password_hash))
-    return res.status(401).json({ error: 'Invalid email or password' });
+    return res.status(401).json({ error: '邮箱/电话或密码错误 / Invalid email/phone or password' });
   const token = crypto.randomBytes(32).toString('hex');
   customerSessions.set(token, { created: Date.now(), customerId: c.id, partnerId: c.partner_id });
   res.json({ token, company_name: c.company_name });
@@ -2546,6 +2578,31 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
     ORDER BY a.assigned_at DESC
   `).all(req.customerPartnerId);
   res.json(rows);
+});
+
+// ─── Customer Forgot / Reset Password ───
+app.post('/api/customer/forgot-password', (req, res) => {
+  const { login } = req.body;
+  if (!login) return res.status(400).json({ error: '请输入邮箱或电话' });
+  const c = db.prepare('SELECT id, email, phone FROM customer_accounts WHERE email=? OR phone=?').get(login, login);
+  if (!c) return res.status(404).json({ error: '未找到该账号 / Account not found' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  resetCodes.set('customer:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: c.id });
+  console.log(`[Reset Code] Customer account ${login}: ${code}`);
+  res.json({ success: true, message: '验证码已发送 / Code sent' });
+});
+
+app.post('/api/customer/reset-password', (req, res) => {
+  const { login, code, new_password } = req.body;
+  if (!login || !code || !new_password) return res.status(400).json({ error: '请填写完整信息' });
+  if (new_password.length < 6) return res.status(400).json({ error: '密码至少6位' });
+  const entry = resetCodes.get('customer:' + login);
+  if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
+  if (Date.now() > entry.expires) { resetCodes.delete('customer:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
+  const { hash, salt } = hashPassword(new_password);
+  db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  resetCodes.delete('customer:' + login);
+  res.json({ success: true });
 });
 
 // ─── Public Registration ───

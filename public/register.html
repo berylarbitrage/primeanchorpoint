@@ -77,11 +77,11 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 <div class="wrap">
   <div class="logo">
     <h1>Prime <span>Anchor</span>Point</h1>
-    <p>账号注册 / Account Registration</p>
+    <p id="logoSubtitle">账号注册 / Account Registration</p>
   </div>
 
   <div class="card" id="regCard">
-    <div class="type-selector">
+    <div class="type-selector" id="typeSelector">
       <div class="type-btn active" id="typeWorker" onclick="selectType('worker')">
         <div class="type-icon">👷</div>
         <div class="type-label">工人注册</div>
@@ -136,7 +136,7 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <div class="field">
         <label>感兴趣的工种 / Positions of Interest</label>
         <div class="pos-grid" id="posGrid"></div>
-        <div class="field-hint">选择您有兴趣或有经验的工种 / Select positions you're interested in or experienced with</div>
+        <div class="field-hint">可多选 / Select all that apply</div>
       </div>
 
       <div class="field">
@@ -189,8 +189,14 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       </div>
 
       <div class="field">
-        <label>用工需求 / Staffing Needs</label>
-        <textarea id="eNeeds" placeholder="请描述您的用工需求：需要什么工种、多少人、工作地点等&#10;Describe your staffing needs: positions, headcount, location, etc."></textarea>
+        <label>工种需求 / Position Needs</label>
+        <div class="pos-grid" id="ePosGrid"></div>
+        <div class="field-hint">可多选 / Select all positions you need workers for</div>
+      </div>
+
+      <div class="field">
+        <label>其他需求说明 / Additional Notes</label>
+        <textarea id="eNeeds" placeholder="需要多少人、工作地点、时间要求等&#10;Headcount, location, schedule, etc."></textarea>
       </div>
 
       <div class="field">
@@ -227,7 +233,7 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       </div>
     </div>
 
-    <div class="login-links">
+    <div class="login-links" id="loginLinks">
       已有账号？/ Already have an account?<br>
       <a href="/portal">工人登录 / Worker Login</a> &nbsp;·&nbsp;
       <a href="/customer">企业登录 / Enterprise Login</a>
@@ -262,10 +268,30 @@ const POSITIONS = [
   { key:'welder',           zh:'焊接工',     en:'Welder' },
 ];
 
-// Build position checkboxes
-document.getElementById('posGrid').innerHTML = POSITIONS.map(p =>
+const posHtml = POSITIONS.map(p =>
   `<label class="pos-check"><input type="checkbox" value="${p.key}"> ${p.zh} <span style="color:var(--gray-400);font-size:.72rem">${p.en}</span></label>`
 ).join('');
+
+// Build position checkboxes for both worker and enterprise forms
+document.getElementById('posGrid').innerHTML = posHtml;
+document.getElementById('ePosGrid').innerHTML = posHtml;
+
+// Auto-select type based on URL parameter
+const urlParams = new URLSearchParams(window.location.search);
+const typeParam = urlParams.get('type');
+if (typeParam === 'enterprise') {
+  selectType('enterprise');
+  // Hide type selector - enterprise only
+  document.getElementById('typeSelector').style.display = 'none';
+  document.getElementById('logoSubtitle').textContent = '企业注册 / Enterprise Registration';
+  document.getElementById('loginLinks').innerHTML = '已有账号？/ Already have an account?<br><a href="/customer">企业登录 / Enterprise Login</a>';
+} else if (typeParam === 'worker') {
+  selectType('worker');
+  // Hide type selector - worker only
+  document.getElementById('typeSelector').style.display = 'none';
+  document.getElementById('logoSubtitle').textContent = '工人注册 / Worker Registration';
+  document.getElementById('loginLinks').innerHTML = '已有账号？/ Already have an account?<br><a href="/portal">工人登录 / Worker Login</a>';
+}
 
 function selectType(type) {
   _selectedType = type;
@@ -329,8 +355,9 @@ async function registerWorker() {
     // Auto-login: save token and redirect
     if (d.token) localStorage.setItem('pa_worker_token', d.token);
     document.getElementById('formWorker').style.display = 'none';
-    document.querySelector('.type-selector').style.display = 'none';
-    document.querySelector('.login-links').style.display = 'none';
+    const ts = document.getElementById('typeSelector');
+    if (ts) ts.style.display = 'none';
+    document.getElementById('loginLinks').style.display = 'none';
     document.getElementById('workerSuccess').style.display = '';
     setTimeout(() => { window.location.href = '/portal'; }, 2000);
   } catch (e) {
@@ -345,15 +372,24 @@ async function registerEnterprise() {
   const email = document.getElementById('eEmail').value.trim();
   const phone = document.getElementById('ePhone').value.trim();
   const ein = document.getElementById('eEin').value.trim();
-  const staffing_needs = document.getElementById('eNeeds').value.trim();
+  const notes = document.getElementById('eNeeds').value.trim();
   const password = document.getElementById('ePassword').value;
   const password2 = document.getElementById('ePassword2').value;
+
+  const position_needs = Array.from(document.querySelectorAll('#ePosGrid input:checked')).map(c => c.value);
 
   if (!company_name) return showError('请输入企业名称 / Company name is required');
   if (!contact_name) return showError('请输入联系人 / Contact name is required');
   if (!email) return showError('请输入邮箱 / Email is required');
   if (!password || password.length < 6) return showError('密码至少6位 / Password must be at least 6 characters');
   if (password !== password2) return showError('两次密码不一致 / Passwords do not match');
+
+  // Combine position_needs and notes into staffing_needs
+  const posLabels = position_needs.map(k => {
+    const p = POSITIONS.find(pp => pp.key === k);
+    return p ? p.zh + '/' + p.en : k;
+  });
+  const staffing_needs = (posLabels.length ? '工种需求: ' + posLabels.join(', ') + '\n' : '') + notes;
 
   try {
     const r = await fetch('/api/register/enterprise', {
@@ -364,8 +400,9 @@ async function registerEnterprise() {
     const d = await r.json();
     if (!r.ok || d.error) return showError(d.error || 'Registration failed');
     document.getElementById('formEnterprise').style.display = 'none';
-    document.querySelector('.type-selector').style.display = 'none';
-    document.querySelector('.login-links').style.display = 'none';
+    const ts = document.getElementById('typeSelector');
+    if (ts) ts.style.display = 'none';
+    document.getElementById('loginLinks').style.display = 'none';
     document.getElementById('enterpriseSuccess').style.display = '';
   } catch (e) {
     showError('网络错误，请重试 / Network error, please try again');
