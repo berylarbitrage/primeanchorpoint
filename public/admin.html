@@ -1164,7 +1164,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="field-row">
       <div class="field"><label>员工编号</label><input id="eEmpId" placeholder="留空自动生成 EMP001..."></div>
-      <div class="field"><label>出生日期</label><input id="eDob" type="date"></div>
+      <div class="field"><label>出生日期 *</label><input id="eDob" type="date"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>电话</label><input id="ePhone" placeholder="(555) 000-0000"></div>
@@ -1324,7 +1324,7 @@ tr:hover td{background:var(--sky-light)}
   <p style="font-size:.85rem;color:var(--gray-600);margin-bottom:.75rem">
     以下链接可发给员工确认工时。员工可以点击同意或填写反驳意见。
   </p>
-  <div id="tsLinkUrl" class="ts-link-box"></div>
+  <a id="tsLinkUrl" class="ts-link-box" href="#" target="_blank" style="display:block;color:var(--sky);text-decoration:none;word-break:break-all"></a>
   <div class="ts-send-btns">
     <button class="btn" onclick="copyTsLink()">📋 复制链接</button>
     <button class="btn btn-green" id="tsEmailBtn" style="display:none" onclick="openTsEmail()">📧 发邮件</button>
@@ -2999,6 +2999,7 @@ async function saveEmployee() {
     pin: document.getElementById('ePin').value || (id ? '__KEEP__' : ''),
   };
   if (!data.first_name || !data.last_name) return alert('请填写员工姓名');
+  if (!id && !data.dob) return alert('请填写出生日期（用于工时确认页身份验证）');
   const ssn = document.getElementById('eSSN').value.replace(/\D/g,'');
   if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
   async function doSave(forceData) {
@@ -3719,7 +3720,9 @@ function showTsLink(token, count, emp) {
   _tsLinkToken = token;
   _tsLinkEmp = emp || (tsSelectedEmps.length === 1 ? tsSelectedEmps[0] : null);
   const url = `${location.origin}/ts?token=${token}`;
-  document.getElementById('tsLinkUrl').textContent = url;
+  const linkEl = document.getElementById('tsLinkUrl');
+  linkEl.textContent = url;
+  linkEl.href = url;
   // show email/SMS buttons if employee has contact info
   const emailBtn = document.getElementById('tsEmailBtn');
   const smsBtn = document.getElementById('tsSmsBtn');

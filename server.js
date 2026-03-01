@@ -1739,13 +1739,19 @@ app.put('/api/admin/timesheet-sheets/:id/labor-paid', requireAdmin, (req, res) =
 // Get sheet data (no auth — token is the secret)
 app.get('/api/ts/:token', (req, res) => {
   const sheet = db.prepare(`
-    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
+    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone, e.dob
     FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
     WHERE ts.confirm_token=?`).get(req.params.token);
   if (!sheet) return res.status(404).json({ error: 'Not found' });
+  // Require DOB verification — client must pass ?dob=YYYY-MM-DD
+  const dob = (req.query.dob || '').trim();
+  if (!dob) return res.status(401).json({ error: 'dob_required' });
+  if (!sheet.dob || dob !== sheet.dob) return res.status(401).json({ error: 'dob_mismatch' });
   const entries = db.prepare(
     `SELECT * FROM time_entries WHERE sheet_id=? ORDER BY clock_in`).all(sheet.id);
-  res.json({ sheet, entries });
+  // Strip DOB from response
+  const { dob: _dob, ...safeSheet } = sheet;
+  res.json({ sheet: safeSheet, entries });
 });
 
 // Employee submits confirm or dispute
