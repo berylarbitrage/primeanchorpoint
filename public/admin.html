@@ -238,6 +238,22 @@ tr:hover td{background:var(--sky-light)}
 </div>
 </div>
 
+<!-- Activation Modal (self-verification on first login) -->
+<div class="modal-bg" id="activationModal" style="z-index:9999">
+<div class="modal" style="max-width:420px">
+  <h2>激活账户</h2>
+  <p style="font-size:.88rem;color:var(--gray-500);margin-bottom:1rem">你的账户尚未激活。请设置你自己的登录密码以完成激活。</p>
+  <input type="hidden" id="activateUsername">
+  <div class="field"><label>当前临时密码</label><input type="password" id="activateCurrent" placeholder="管理员给你的初始密码"></div>
+  <div class="field"><label>新密码 *</label><input type="password" id="activateNew" placeholder="至少6位"></div>
+  <div class="field"><label>确认新密码 *</label><input type="password" id="activateConfirm" placeholder="再次输入新密码" onkeydown="if(event.key==='Enter')doActivate()"></div>
+  <div class="err" id="activateErr" style="margin-bottom:.5rem"></div>
+  <div class="modal-actions">
+    <button class="btn btn-blue" onclick="doActivate()">激活并登录</button>
+  </div>
+</div>
+</div>
+
 <!-- APP -->
 <div class="app" id="app">
 <div class="sidebar" id="sidebar">
@@ -763,8 +779,8 @@ tr:hover td{background:var(--sky-light)}
     <label>指定管理的公司（多选，Manager 专用）</label>
     <div id="accPartnerCheckboxes" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem;max-height:140px;overflow:auto;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px"></div>
   </div>
-  <div class="field"><label>状态</label>
-    <select id="accActive"><option value="1">启用</option><option value="0">禁用</option></select>
+  <div id="accHint" class="field" style="background:var(--gray-100);border-radius:6px;padding:.6rem .75rem;font-size:.83rem;color:var(--gray-500)">
+    新建账户默认未激活，用户首次登录时需自行设置密码完成激活
   </div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('accountModal')">取消</button>
@@ -1862,8 +1878,8 @@ async function api(path, opts = {}) {
   }
   const data = await res.json();
   if (data.pending) { alert(data.message || '操作已提交审批'); return data; }
-  if (res.status === 401) { alert('登录已过期，请重新登录'); logout(); return data; }
-  if (res.status === 403) { alert('权限不足 / Permission denied'); return data; }
+  if (res.status === 401 && path !== '/admin/login') { alert('登录已过期，请重新登录'); logout(); return data; }
+  if (res.status === 403 && path !== '/admin/login') { alert('权限不足 / Permission denied'); return data; }
   return data;
 }
 
@@ -1885,24 +1901,56 @@ function applyRoleUI() {
   });
 }
 
+function finishLogin(r) {
+  TOKEN = r.token;
+  USER_ROLE = r.role || 'staff';
+  USER_NAME = r.username || '';
+  _currentUserId = r.user_id || 0;
+  document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('app').classList.add('show');
+  applyRoleUI();
+  if (USER_ROLE === 'manager') { showTab('time'); }
+  else { loadDashboard(); }
+}
+
 async function doLogin() {
   const username = document.getElementById('userInput').value;
   const password = document.getElementById('passInput').value;
   if (!username || !password) { document.getElementById('loginErr').textContent = '请输入用户名和密码'; return; }
   const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
   if (r.success) {
-    TOKEN = r.token;
-    USER_ROLE = r.role || 'staff';
-    USER_NAME = r.username || '';
-    _currentUserId = r.user_id || 0;
-    document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
-    document.getElementById('loginWrap').style.display = 'none';
-    document.getElementById('app').classList.add('show');
-    applyRoleUI();
-    if (USER_ROLE === 'manager') { showTab('time'); }
-    else { loadDashboard(); }
+    finishLogin(r);
+  } else if (r.needs_activation) {
+    // Password correct but account needs self-verification
+    document.getElementById('loginErr').textContent = '';
+    document.getElementById('activateUsername').value = username;
+    document.getElementById('activateCurrent').value = password;
+    document.getElementById('activateNew').value = '';
+    document.getElementById('activateConfirm').value = '';
+    document.getElementById('activateErr').textContent = '';
+    document.getElementById('activationModal').classList.add('show');
   } else {
     document.getElementById('loginErr').textContent = '用户名或密码错误';
+  }
+}
+
+async function doActivate() {
+  const username = document.getElementById('activateUsername').value;
+  const current_password = document.getElementById('activateCurrent').value;
+  const new_password = document.getElementById('activateNew').value;
+  const confirm = document.getElementById('activateConfirm').value;
+  const errEl = document.getElementById('activateErr');
+  if (!new_password) { errEl.textContent = '请输入新密码'; return; }
+  if (new_password.length < 6) { errEl.textContent = '密码至少6位'; return; }
+  if (new_password !== confirm) { errEl.textContent = '两次密码不一致'; return; }
+  const res = await fetch(API + '/auth/activate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, current_password, new_password }) });
+  const r = await res.json();
+  if (r.success) {
+    document.getElementById('activationModal').classList.remove('show');
+    finishLogin(r);
+  } else {
+    errEl.textContent = r.error || '激活失败，请检查密码';
   }
 }
 
@@ -5446,7 +5494,7 @@ async function loadAccounts() {
     <td>${esc(a.display_name||'')}</td>
     <td><span class="badge ${roleBadge(a.role)}">${roleLabel[a.role]||a.role}</span></td>
     <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>
-    <td>${a.active?'<span style="color:var(--green)">启用</span>':'<span style="color:var(--red)">禁用</span>'}</td>
+    <td>${a.active?'<span style="color:var(--green)">已激活</span>':'<span style="color:var(--gray-400)">待激活</span>'}</td>
     <td>${(a.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editAccount(${a.id})">编辑</button>
@@ -5466,9 +5514,11 @@ async function openAccountModal(data) {
   document.getElementById('accPassword').value = '';
   document.getElementById('accDisplayName').value = data ? (data.display_name||'') : '';
   document.getElementById('accRole').value = data ? (data.role||'staff') : 'staff';
-  document.getElementById('accActive').value = data ? String(data.active) : '1';
   document.getElementById('accountModalTitle').textContent = data ? '编辑内部账户' : '新建内部账户';
-  document.getElementById('accPassHint').textContent = data ? '(留空则不修改)' : '*';
+  document.getElementById('accPassHint').textContent = data ? '(留空则不修改；修改密码将重置激活状态)' : '*';
+  document.getElementById('accHint').textContent = data
+    ? '账户激活状态由用户自行完成验证，管理员无法代为激活。修改密码会重置为待激活状态。'
+    : '新建账户默认未激活，用户首次登录时需自行设置密码完成激活。';
   // Partner checkboxes for manager
   const partners = _allPartners.length ? _allPartners : await api('/admin/partners').catch(()=>[]);
   _allPartners = partners;
@@ -5497,7 +5547,6 @@ async function saveAccount() {
     password: document.getElementById('accPassword').value,
     display_name: document.getElementById('accDisplayName').value,
     role: document.getElementById('accRole').value,
-    active: parseInt(document.getElementById('accActive').value),
     assigned_partner_ids: selectedPartners
   };
   if (!d.username) return alert('请输入用户名');
