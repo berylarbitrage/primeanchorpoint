@@ -334,6 +334,18 @@ try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid_at TEXT DEFAU
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT ''`); } catch(e) {}
 
+db.exec(`CREATE TABLE IF NOT EXISTS employee_position_ratings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  position_key TEXT NOT NULL,
+  skill_score INTEGER DEFAULT 0,
+  recommend INTEGER DEFAULT -1,
+  suggest_pay TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(employee_id, position_key),
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   inquiry_id INTEGER NOT NULL,
@@ -593,18 +605,29 @@ function verifyPassword(password, salt, hash) {
   try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
 }
 
-// In-memory session store (tokens expire in 24h)
-const sessions = new Map();
+// DB-backed session store (survives server restarts, tokens expire in 24h)
+db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  username TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`);
+// Clean up expired sessions on startup
+try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { created: Date.now(), userId: user.id, username: user.username, role: user.role || 'staff' });
+  db.prepare('INSERT INTO admin_sessions (token, user_id, username, role, created_at) VALUES (?,?,?,?,?)')
+    .run(token, user.id, user.username, user.role || 'staff', Date.now());
   return token;
 }
 function getSession(token) {
-  const s = sessions.get(token);
+  if (!token) return null;
+  const s = db.prepare('SELECT * FROM admin_sessions WHERE token=?').get(token);
   if (!s) return null;
-  if (Date.now() - s.created > 24 * 60 * 60 * 1000) { sessions.delete(token); return null; }
-  return s;
+  if (Date.now() - s.created_at > 24*60*60*1000) { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); return null; }
+  return { userId: s.user_id, username: s.username, role: s.role, created: s.created_at };
 }
 function validSession(token) { return !!getSession(token); }
 
@@ -725,6 +748,14 @@ app.post('/api/admin/login', (req, res) => {
   } else {
     res.status(401).json({ error: 'Invalid username or password' });
   }
+});
+
+app.post('/api/admin/logout', requireAdmin, (req, res) => {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) {
+    db.prepare('DELETE FROM admin_sessions WHERE token=?').run(auth.slice(7));
+  }
+  res.json({ success: true });
 });
 
 // Get current user info
@@ -904,6 +935,24 @@ app.put('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager,
     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(inquiry_id, position_key) DO UPDATE SET skill_score=excluded.skill_score, recommend=excluded.recommend, suggest_pay=excluded.suggest_pay, updated_at=CURRENT_TIMESTAMP`);
   const txn = db.transaction(() => ratings.forEach(r => upsert.run(req.params.id, r.position_key, r.skill_score || 0, r.recommend ? 1 : 0, r.suggest_pay || '')));
+  txn();
+  res.json({ success: true });
+});
+
+// Employee position ratings
+app.get('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
+  const saved = db.prepare('SELECT * FROM employee_position_ratings WHERE employee_id=?').all(req.params.id);
+  const rMap = {};
+  saved.forEach(r => { rMap[r.position_key] = r; });
+  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
+});
+
+app.put('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
+  const { ratings } = req.body;
+  const upsert = db.prepare(`INSERT INTO employee_position_ratings (employee_id, position_key, skill_score, recommend, suggest_pay, updated_at)
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(employee_id, position_key) DO UPDATE SET skill_score=excluded.skill_score, recommend=excluded.recommend, suggest_pay=excluded.suggest_pay, updated_at=CURRENT_TIMESTAMP`);
+  const txn = db.transaction(() => ratings.forEach(r => upsert.run(req.params.id, r.position_key, r.skill_score || 0, r.recommend != null ? r.recommend : -1, r.suggest_pay || '')));
   txn();
   res.json({ success: true });
 });
