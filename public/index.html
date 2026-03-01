@@ -265,7 +265,7 @@
 /* ─── Quote Page ─── */
 .btn-accent-lg{display:inline-block;padding:12px 32px;background:var(--accent);color:#fff;font-family:'DM Sans',sans-serif;font-weight:700;font-size:.88rem;border-radius:var(--radius);border:none;cursor:pointer;transition:var(--tr)}.btn-accent-lg:hover{background:#d9900e;transform:translateY(-2px)}
 .quote-hdr{background:linear-gradient(135deg,var(--blue-dark) 0%,var(--blue-mid) 100%);padding:4.5rem 2rem 3rem;text-align:center;position:relative;overflow:hidden}
-.quote-hdr::before{content:'';position:absolute;inset:0;background:url('https://images.pexels.com/photos/4483610/pexels-photo-4483610.jpeg?auto=compress&cs=tinysrgb&w=1400');background-size:cover;background-position:center;opacity:.12}
+.quote-hdr::before{content:'';position:absolute;inset:0;background:url('https://images.pexels.com/photos/4483610/pexels-photo-4483610.jpeg?auto=compress&cs=tinysrgb&w=1400');background-size:cover;background-position:center;opacity:.12;pointer-events:none}
 .quote-hdr h1{font-family:'Plus Jakarta Sans',sans-serif;font-size:clamp(1.9rem,4vw,2.6rem);font-weight:800;color:#fff;margin-bottom:.5rem;position:relative}
 .quote-hdr p{color:rgba(255,255,255,.65);font-size:.95rem;position:relative}
 .quote-steps{max-width:860px;margin:2.5rem auto 0;display:grid;grid-template-columns:repeat(3,1fr);gap:2rem;position:relative}
@@ -688,7 +688,7 @@
         <p data-i18n="qFormP">Select the products you need and we'll get back to you with pricing.</p>
       </div>
       <p class="req-note" data-i18n="contactReq">"*" required fields</p>
-      <form id="quoteForm" onsubmit="submitQuote(event)">
+      <form id="supQuoteForm" onsubmit="submitQuote(event)">
         <div class="form-grid">
           <div class="form-group"><label><span data-i18n="fName">Name</span> <span class="req">*</span></label><input type="text" name="q_name" required></div>
           <div class="form-group"><label><span data-i18n="fEmail">Email</span> <span class="req">*</span></label><input type="email" name="q_email" required></div>
@@ -729,7 +729,7 @@
         </div>
         <button type="submit" class="btn-submit" data-i18n="qSubmit">Get Quote</button>
       </form>
-      <div class="quote-success" id="quoteSuccess"><div class="check">&#10003;</div><h3 data-i18n="qThankH">Quote Request Received!</h3><p data-i18n="qThankP">We'll review your request and get back to you with pricing within 24 hours.</p></div>
+      <div class="quote-success" id="supQuoteSuccess"><div class="check">&#10003;</div><h3 data-i18n="qThankH">Quote Request Received!</h3><p data-i18n="qThankP">We'll review your request and get back to you with pricing within 24 hours.</p></div>
     </div>
   </div>
 </div></section></div>
@@ -960,7 +960,7 @@ function go(pg){document.querySelectorAll('.page').forEach(p=>p.classList.remove
 
 function filterSupplies(cat,btn){document.querySelectorAll('.supply-cat-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.supply-card').forEach(c=>{c.style.display=(cat==='all'||c.dataset.cat===cat)?'':'none'})}
 
-async function submitQuote(e){e.preventDefault();const f=e.target,b=f.querySelector('.btn-submit');b.textContent='...';b.disabled=true;const products=Array.from(document.querySelectorAll('.quote-product-tag.selected')).map(t=>t.textContent.trim()).join(', ');if(!products){alert(currentLang==='zh'?'请至少选择一个产品':currentLang==='es'?'Seleccione al menos un producto':'Please select at least one product');b.textContent=T[currentLang]?.qSubmit||'Get Quote';b.disabled=false;return}const d={name:f.querySelector('[name="q_name"]').value,email:f.querySelector('[name="q_email"]').value,phone:f.querySelector('[name="q_phone"]').value,company:f.querySelector('[name="q_company"]')?.value||'',products:products,quantity:f.querySelector('[name="q_quantity"]')?.value||'',location:f.querySelector('[name="q_location"]')?.value||'',notes:f.querySelector('[name="q_notes"]')?.value||''};try{const r=await fetch(WP_API+'/quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});if(r.ok){f.style.display='none';document.getElementById('quoteSuccess').style.display='block'}else throw 0}catch(err){const sub=encodeURIComponent('Supply Quote Request from '+d.name);const body=encodeURIComponent(Object.entries(d).filter(([k,v])=>v).map(([k,v])=>k+': '+v).join('\n'));window.location.href='mailto:primeanchorpoint@gmail.com?subject='+sub+'&body='+body}b.textContent=T[currentLang]?.qSubmit||'Get Quote';b.disabled=false}
+async function submitQuote(e){e.preventDefault();const f=e.target,b=f.querySelector('.btn-submit');b.textContent='...';b.disabled=true;const products=Array.from(document.querySelectorAll('.quote-product-tag.selected')).map(t=>t.textContent.trim()).join(', ');if(!products){alert(currentLang==='zh'?'请至少选择一个产品':currentLang==='es'?'Seleccione al menos un producto':'Please select at least one product');b.textContent=T[currentLang]?.qSubmit||'Get Quote';b.disabled=false;return}const d={name:f.querySelector('[name="q_name"]').value,email:f.querySelector('[name="q_email"]').value,phone:f.querySelector('[name="q_phone"]').value,company:f.querySelector('[name="q_company"]')?.value||'',products:products,quantity:f.querySelector('[name="q_quantity"]')?.value||'',location:f.querySelector('[name="q_location"]')?.value||'',notes:f.querySelector('[name="q_notes"]')?.value||''};try{const r=await fetch(WP_API+'/quote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});if(r.ok){f.style.display='none';document.getElementById('supQuoteSuccess').style.display='block'}else throw 0}catch(err){const sub=encodeURIComponent('Supply Quote Request from '+d.name);const body=encodeURIComponent(Object.entries(d).filter(([k,v])=>v).map(([k,v])=>k+': '+v).join('\n'));window.location.href='mailto:primeanchorpoint@gmail.com?subject='+sub+'&body='+body}b.textContent=T[currentLang]?.qSubmit||'Get Quote';b.disabled=false}
 
 let allJobs=[];
 async function loadJobs(){try{const r=await fetch(WP_API+'/jobs?lang=all');if(!r.ok)throw 0;allJobs=await r.json();renderJobs(allJobs)}catch(e){document.getElementById('jobList').innerHTML='<div style="text-align:center;padding:3rem;color:var(--gray-400)"><p style="font-size:1.05rem;margin-bottom:.5rem">Coming Soon</p><p style="font-size:.85rem">Job listings will appear once the backend is connected.</p></div>'}}
