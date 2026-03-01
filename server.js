@@ -305,6 +305,16 @@ const partnerMigrations = ['contacts','addresses','social_media','links'];
 partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
+// Migrate jobs table (add new columns if missing)
+const jobMigrations = [
+  "ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL",
+  "ALTER TABLE jobs ADD COLUMN employment_type TEXT DEFAULT ''",
+  "ALTER TABLE jobs ADD COLUMN benefits TEXT DEFAULT '[]'",
+  "ALTER TABLE jobs ADD COLUMN schedule_days TEXT DEFAULT '[]'",
+  "ALTER TABLE jobs ADD COLUMN schedule_start TEXT DEFAULT ''",
+  "ALTER TABLE jobs ADD COLUMN schedule_end TEXT DEFAULT ''"
+];
+jobMigrations.forEach(sql => { try { db.exec(sql); } catch {} });
 
 // timesheet_sheets: one per submitted period, carries the employee-facing confirmation token
 db.exec(`CREATE TABLE IF NOT EXISTS timesheet_sheets (

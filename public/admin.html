@@ -1458,6 +1458,7 @@ let USER_ROLE = '';
 let USER_NAME = '';
 const API = '/api';
 
+
 function togglePass() {
   const inp = document.getElementById('passInput');
   const btn = inp.nextElementSibling;
@@ -2613,10 +2614,13 @@ function editPartnerFromDetail() {
 function addPartnerContact(c) {
   const div = document.createElement('div');
   div.className = 'dyn-item';
+  // Support both new {first_name, last_name} and legacy {name} formats
+  const fname = c?.first_name || (c?.name && !c.last_name ? c.name : '');
+  const lname = c?.last_name || '';
   div.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:.5rem">
-      <div class="field"><label>名 First</label><input class="pc-first" value="${esc(c?.first_name||c?.name||'')}" placeholder="三"></div>
-      <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(c?.last_name||'')}" placeholder="张"></div>
+      <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
+      <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
       <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
       <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
       <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
@@ -2632,15 +2636,20 @@ function addPartnerContact(c) {
 }
 
 function getPartnerContacts() {
-  return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>({
-    first_name: el.querySelector('.pc-first').value, last_name: el.querySelector('.pc-last').value,
-    role: el.querySelector('.pc-role').value,
-    phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
-    whatsapp: el.querySelector('.pc-whatsapp').value,
-    wechat: el.querySelector('.pc-wechat').value,
-    telegram: el.querySelector('.pc-telegram').value,
-    other_comm: el.querySelector('.pc-other_comm').value
-  })).filter(c=>c.first_name||c.last_name||c.phone||c.email);
+  return Array.from(document.querySelectorAll('#pContactsList .dyn-item')).map(el=>{
+    const fn = (el.querySelector('.pc-first')?.value || '').trim();
+    const ln = (el.querySelector('.pc-last')?.value || '').trim();
+    return {
+      first_name: fn, last_name: ln,
+      name: [fn, ln].filter(Boolean).join(' '),
+      role: el.querySelector('.pc-role').value,
+      phone: el.querySelector('.pc-phone').value, email: el.querySelector('.pc-email').value,
+      whatsapp: el.querySelector('.pc-whatsapp').value,
+      wechat: el.querySelector('.pc-wechat').value,
+      telegram: el.querySelector('.pc-telegram').value,
+      other_comm: el.querySelector('.pc-other_comm').value
+    };
+  }).filter(c=>c.name||c.phone||c.email);
 }
 
 // ── Dynamic addresses list ──
