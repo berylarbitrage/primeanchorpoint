@@ -258,6 +258,7 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('ts-history')" data-role="admin,staff">📚 工时历史</a>
   <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
   <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
+  <a onclick="showTab('interviews')" data-role="admin,staff">🗓️ 面试管理</a>
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
   <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
   <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
@@ -625,6 +626,73 @@ tr:hover td{background:var(--sky-light)}
   <div class="card">
     <table><thead><tr><th>员工</th><th>调查类型</th><th>下单日期</th><th>完成日期</th><th>结果</th><th>状态</th><th>调查机构</th><th>费用</th><th>操作</th></tr></thead>
     <tbody id="bgTable"></tbody></table>
+  </div>
+</div>
+
+<!-- Interview Management Tab -->
+<div id="tab-interviews" style="display:none">
+  <div class="top"><h1>面试管理</h1></div>
+
+  <!-- Sub-tabs -->
+  <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:1rem">
+    <button id="ivTabSlots" onclick="switchIvTab('slots')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)">
+      时间槽管理
+    </button>
+    <button id="ivTabList" onclick="switchIvTab('list')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
+      面试预约列表
+    </button>
+  </div>
+
+  <!-- Slots pane -->
+  <div id="ivPaneSlots">
+    <div class="card" style="margin-bottom:1rem">
+      <h3 style="margin-bottom:1rem">添加面试时间槽</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:.75rem;align-items:end">
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">日期时间</label>
+          <input type="datetime-local" id="ivSlotDatetime" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">时长（分钟）</label>
+          <input type="number" id="ivSlotDuration" value="30" min="10" max="120" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">最大名额</label>
+          <input type="number" id="ivSlotMax" value="1" min="1" max="20" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点（可选）</label>
+          <input type="text" id="ivSlotLocation" placeholder="如：公司会议室、Zoom" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <button class="btn btn-blue" onclick="addInterviewSlot()" style="white-space:nowrap">添加时间槽</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:1rem">现有时间槽</h3>
+      <table><thead><tr><th>日期时间</th><th>时长</th><th>地点</th><th>名额</th><th>已预约</th><th>操作</th></tr></thead>
+      <tbody id="ivSlotsTable"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Interviews pane -->
+  <div id="ivPaneList" style="display:none">
+    <div class="card">
+      <div style="display:flex;gap:.75rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+        <input type="text" id="ivSearch" placeholder="搜索姓名、电话..." oninput="filterInterviews()" style="flex:1;min-width:180px;padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <select id="ivStatusFilter" onchange="filterInterviews()" style="padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <option value="">全部状态</option>
+          <option value="scheduled">已预约</option>
+          <option value="completed">面试完成</option>
+          <option value="passed">已通过</option>
+          <option value="failed">未通过</option>
+          <option value="cancelled">已取消</option>
+        </select>
+      </div>
+      <table><thead><tr><th>姓名</th><th>电话</th><th>面试时间</th><th>地点</th><th>状态</th><th>文件链接</th><th>操作</th></tr></thead>
+      <tbody id="ivInterviewsTable"></tbody></table>
+    </div>
   </div>
 </div>
 
@@ -1895,6 +1963,7 @@ function showTab(t) {
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')   loadAccounts();
   if (t === 'approvals')  loadApprovals();
+  if (t === 'interviews') loadInterviews();
 }
 
 // ─── Dashboard ───
@@ -5918,6 +5987,138 @@ async function rejectAction() {
   closeModal('approvalDetailModal');
   currentApprovalId = null;
   loadApprovals();
+}
+
+// ── Interview Management ──
+let _allInterviews = [];
+
+function switchIvTab(tab) {
+  document.getElementById('ivPaneSlots').style.display = tab === 'slots' ? '' : 'none';
+  document.getElementById('ivPaneList').style.display  = tab === 'list'  ? '' : 'none';
+  document.getElementById('ivTabSlots').style.cssText  = tab === 'slots'
+    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
+    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
+  document.getElementById('ivTabList').style.cssText   = tab === 'list'
+    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
+    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
+  if (tab === 'list') filterInterviews();
+}
+
+async function loadInterviews() {
+  const [slots, interviews] = await Promise.all([
+    api('/admin/interview-slots'),
+    api('/admin/interviews')
+  ]);
+  renderSlots(slots || []);
+  _allInterviews = interviews || [];
+  filterInterviews();
+}
+
+function renderSlots(slots) {
+  const tbody = document.getElementById('ivSlotsTable');
+  if (!slots.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无时间槽</td></tr>'; return; }
+  tbody.innerHTML = slots.map(s => {
+    const dt = new Date(s.slot_datetime);
+    const past = dt <= new Date();
+    return `<tr style="${past ? 'opacity:.55' : ''}">
+      <td>${dt.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}${past ? ' <span style="color:var(--gray-400);font-size:.75rem">已过期</span>' : ''}</td>
+      <td>${s.duration_min} 分钟</td>
+      <td>${esc(s.location||'—')}</td>
+      <td>${s.max_bookings}</td>
+      <td><span style="color:${s.total_booked>0?'var(--sky)':'var(--gray-400)'}">${s.total_booked||0}</span></td>
+      <td><button class="btn btn-sm btn-red" onclick="deleteSlot(${s.id})">删除</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function addInterviewSlot() {
+  const dt = document.getElementById('ivSlotDatetime').value;
+  if (!dt) return showToast('❌ 请选择日期时间', 'error');
+  const r = await api('/admin/interview-slots', {
+    method: 'POST',
+    body: JSON.stringify({
+      slot_datetime: dt,
+      duration_min: parseInt(document.getElementById('ivSlotDuration').value) || 30,
+      max_bookings: parseInt(document.getElementById('ivSlotMax').value) || 1,
+      location: document.getElementById('ivSlotLocation').value.trim()
+    })
+  });
+  if (r && r.success) {
+    showToast('✅ 时间槽已添加');
+    document.getElementById('ivSlotDatetime').value = '';
+    document.getElementById('ivSlotLocation').value = '';
+    loadInterviews();
+  } else {
+    showToast('❌ ' + (r && r.error || '添加失败'), 'error');
+  }
+}
+
+async function deleteSlot(id) {
+  const r = await api(`/admin/interview-slots/${id}`, { method: 'DELETE' });
+  if (r && r.success) { showToast('✅ 已删除'); loadInterviews(); }
+  else showToast('❌ ' + (r && r.error || '删除失败'), 'error');
+}
+
+function filterInterviews() {
+  const q = (document.getElementById('ivSearch')?.value || '').toLowerCase();
+  const st = document.getElementById('ivStatusFilter')?.value || '';
+  const rows = _allInterviews.filter(i =>
+    (!q || (i.worker_name+i.worker_phone+i.worker_email).toLowerCase().includes(q)) &&
+    (!st || i.status === st)
+  );
+  renderInterviews(rows);
+}
+
+const IV_STATUS = {
+  scheduled: '<span class="badge badge-yellow">⏳ 已预约</span>',
+  completed: '<span class="badge badge-blue">✔ 完成</span>',
+  passed:    '<span class="badge badge-green">✅ 通过</span>',
+  failed:    '<span class="badge badge-red">❌ 未通过</span>',
+  cancelled: '<span class="badge">已取消</span>',
+};
+
+function renderInterviews(rows) {
+  const tbody = document.getElementById('ivInterviewsTable');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无面试预约</td></tr>'; return; }
+  tbody.innerHTML = rows.map(i => {
+    const dt = new Date(i.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const docLink = i.doc_request_token
+      ? `<a href="/emp-docs?token=${i.doc_request_token}" target="_blank" style="font-size:.78rem;color:var(--sky)">📎 查看链接</a>`
+      : (i.status === 'passed' ? '<span style="color:var(--red);font-size:.78rem">链接缺失</span>' : '—');
+    return `<tr>
+      <td><strong>${esc(i.worker_name||'')}</strong></td>
+      <td>${esc(i.worker_phone||'')}</td>
+      <td>${dt}</td>
+      <td style="font-size:.82rem">${esc(i.location||'—')}</td>
+      <td>${IV_STATUS[i.status] || i.status}</td>
+      <td>${docLink}</td>
+      <td style="white-space:nowrap;display:flex;gap:.3rem;flex-wrap:wrap">
+        ${i.status==='scheduled'?`<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1" onclick="setIvStatus(${i.id},'completed')">标记完成</button>`:''}
+        ${i.status==='completed'?`
+          <button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">通过并发链接</button>
+          <button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'failed')">未通过</button>`:''}
+        ${i.status==='passed'&&!i.doc_request_token?`<button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">发文件链接</button>`:''}
+        ${i.status==='scheduled'?`<button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'cancelled')">取消</button>`:''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function setIvStatus(id, status) {
+  const r = await api(`/admin/interviews/${id}`, { method:'PUT', body: JSON.stringify({ status }) });
+  if (r && r.success) { showToast('✅ 状态已更新'); loadInterviews(); switchIvTab('list'); }
+  else showToast('❌ ' + (r && r.error || '更新失败'), 'error');
+}
+
+async function ivPassAndSend(id) {
+  const r = await api(`/admin/interviews/${id}/send-docs`, { method:'POST', body: JSON.stringify({}) });
+  if (r && r.token) {
+    showToast('✅ 已标记通过，文件链接已生成', 'success', 5000);
+    loadInterviews();
+    switchIvTab('list');
+  } else {
+    showToast('❌ ' + (r && r.error || '操作失败'), 'error');
+  }
 }
 
 </script>
