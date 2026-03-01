@@ -2644,12 +2644,12 @@ async function savePartner() {
   if (!data.name) return alert('请填写公司名称');
   if (id) {
     await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
-    showToast(`✅ 公司「${data.name}」信息已更新`);
+    showToast(`✅ 公司「${data.name}」(#${id}) 信息已更新`);
   } else {
     const r = await api('/admin/partners', { method:'POST', body:JSON.stringify(data) });
     if (r.id) {
       document.getElementById('partnerId').value = r.id;
-      showToast(`✅ 公司「${data.name}」创建成功`);
+      showToast(`✅ 公司「${data.name}」创建成功，公司编号：#${r.id}`);
     }
   }
   closePartnerModal();
@@ -2886,7 +2886,9 @@ async function saveEmployee() {
   if (r.success || r.id) {
     closeEmpModal();
     loadEmployees();
-    showToast(id ? `✅ 员工信息已更新` : `✅ 员工「${data.first_name} ${data.last_name}」创建成功`);
+    showToast(id
+      ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
+      : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r.employee_id}`);
   } else alert(r.error || '保存失败');
 }
 
