@@ -5381,7 +5381,7 @@ async function loadAccounts() {
     <td>${(a.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editAccount(${a.id})">编辑</button>
-      ${a.id!==1?`<button class="btn btn-sm btn-red" onclick="deleteAccount(${a.id},'${esc(a.username)}')">删除</button>`:''}
+      ${a.id!==1?`<button class="btn btn-sm btn-red" onclick="deleteAccount(${a.id},'${esc(a.display_name||a.username)}')">删除</button>`:''}
     </td>
   </tr>`).join('');
 }
@@ -5478,7 +5478,7 @@ async function loadWorkerAccounts() {
       ${w.active?(w.suspended?`<button class="btn btn-sm btn-green" onclick="suspendWorkerAccount(${w.id},0)">恢复</button>`:`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendWorkerAccount(${w.id},1)">暂停</button>`):''}
       <button class="btn btn-sm btn-blue" onclick="openResetPwdModal('worker',${w.id},'${esc(w.name||w.username)}')">改密码</button>
       <button class="btn btn-sm" onclick="editWorkerAccount(${w.id})">编辑</button>
-      <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.username)}')">删除</button>
+      <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">删除</button>
     </td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无工人账户</td></tr>';
 }
