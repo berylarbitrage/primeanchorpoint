@@ -162,6 +162,14 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       </div>
 
       <div class="field">
+        <label>关联合作公司 / Select Your Company *</label>
+        <select id="ePartner">
+          <option value="">加载中… / Loading…</option>
+        </select>
+        <div class="field-hint">请选择您所在的公司 / Select the company you work for</div>
+      </div>
+
+      <div class="field">
         <label>企业名称 / Company Name *</label>
         <input type="text" id="eName" placeholder="请输入公司全称 / Full company name">
       </div>
@@ -303,6 +311,19 @@ const posHtml = POSITIONS.map(p =>
 // Build position checkboxes for both worker and enterprise forms
 document.getElementById('posGrid').innerHTML = posHtml;
 document.getElementById('ePosGrid').innerHTML = posHtml;
+
+// Load partner list for enterprise registration
+fetch('/api/public/partners').then(r => r.json()).then(partners => {
+  const sel = document.getElementById('ePartner');
+  if (!partners.length) {
+    sel.innerHTML = '<option value="">— 暂无可选公司，请联系管理员 / No companies available —</option>';
+  } else {
+    sel.innerHTML = '<option value="">— 请选择您所在的公司 / Select your company —</option>' +
+      partners.map(p => `<option value="${p.id}">${p.name}${p.industry ? ' · ' + p.industry : ''}</option>`).join('');
+  }
+}).catch(() => {
+  document.getElementById('ePartner').innerHTML = '<option value="">— 加载失败，请刷新重试 / Load failed —</option>';
+});
 
 // Auto-select type based on URL parameter
 const urlParams = new URLSearchParams(window.location.search);
@@ -497,6 +518,7 @@ async function resendCode(type) {
 
 async function registerEnterprise() {
   hideError();
+  const partner_id = document.getElementById('ePartner').value;
   const company_name = document.getElementById('eName').value.trim();
   const contact_name = document.getElementById('eContact').value.trim();
   const email = document.getElementById('eEmail').value.trim();
@@ -508,6 +530,7 @@ async function registerEnterprise() {
 
   const position_needs = Array.from(document.querySelectorAll('#ePosGrid input:checked')).map(c => c.value);
 
+  if (!partner_id) return showError('请选择您所在的合作公司 / Please select your company');
   if (!company_name) return showError('请输入企业名称 / Company name is required');
   if (!contact_name) return showError('请输入联系人 / Contact name is required');
   if (!email) return showError('请输入邮箱 / Email is required');
@@ -528,7 +551,7 @@ async function registerEnterprise() {
     const r = await fetch('/api/register/enterprise', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_name, contact_name, email, phone, ein, staffing_needs, password })
+      body: JSON.stringify({ company_name, contact_name, email, phone, ein, staffing_needs, password, partner_id })
     });
     const d = await r.json();
     if (!r.ok || d.error) return showError(d.error || 'Registration failed');

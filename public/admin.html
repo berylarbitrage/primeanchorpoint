@@ -760,6 +760,44 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Enterprise Approval Modal -->
+<div class="modal-bg" id="entApprovalModal"><div class="modal" style="max-width:580px">
+  <h2>企业注册审核</h2>
+  <input type="hidden" id="entApprovalId">
+  <div id="entApprovalDetails" style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:1rem;margin-bottom:1.25rem;font-size:.875rem;line-height:2"></div>
+  <div class="field">
+    <label>关联合作公司档案 * <span style="color:var(--red);font-size:.78rem;font-weight:400">（审核通过必须选择）</span></label>
+    <select id="entApprovalPartner">
+      <option value="">— 请选择关联公司 —</option>
+    </select>
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('entApprovalModal')">取消</button>
+    <button class="btn btn-red" onclick="rejectEnterpriseFromModal()">拒绝注册</button>
+    <button class="btn btn-green" onclick="confirmApproveEnterprise()">通过并关联</button>
+  </div>
+</div></div>
+
+<!-- Reset Password Modal -->
+<div class="modal-bg" id="resetPwdModal"><div class="modal" style="max-width:400px">
+  <h2>重置密码</h2>
+  <input type="hidden" id="resetPwdType">
+  <input type="hidden" id="resetPwdId">
+  <p id="resetPwdTarget" style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem"></p>
+  <div class="field">
+    <label>新密码 *</label>
+    <input type="password" id="resetPwdNew" placeholder="至少6位">
+  </div>
+  <div class="field">
+    <label>确认密码 *</label>
+    <input type="password" id="resetPwdConfirm" placeholder="再次输入新密码">
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('resetPwdModal')">取消</button>
+    <button class="btn btn-blue" onclick="saveResetPassword()">保存新密码</button>
+  </div>
+</div></div>
+
 <!-- Job Modal -->
 <!-- ════ Employee Rating Modal ════ -->
 <div class="modal-bg" id="ratingModal"><div class="modal" style="max-width:560px">
@@ -5370,16 +5408,23 @@ async function loadWorkerAccounts() {
   const rows = await api('/admin/worker-accounts');
   if (!Array.isArray(rows)) return;
   const statusMap = { citizen:'公民', green_card:'绿卡', ead:'EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他' };
+  const workerStatus = w => {
+    if (!w.active) return '<span style="color:var(--orange);font-weight:600">⏳ 待验证</span>';
+    if (w.suspended) return '<span style="color:var(--red);font-weight:600">⛔ 已暂停</span>';
+    return '<span style="color:var(--green);font-weight:600">✅ 正常</span>';
+  };
   document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w=>`<tr>
     <td><strong>${esc(w.name||w.username)}</strong></td>
     <td>${esc(w.phone||'')}</td>
     <td style="font-size:.82rem">${esc(w.email||'')}</td>
     <td>${statusMap[w.work_status]||esc(w.work_status||'')}</td>
     <td>${w.first_name?esc(w.first_name+' '+w.last_name):'<span style="color:var(--gray-400)">未绑定</span>'}</td>
-    <td>${w.active?'<span style="color:var(--green)">✅ 已验证</span>':'<span style="color:var(--orange)">⏳ 待验证</span>'}</td>
+    <td>${workerStatus(w)}</td>
     <td>${(w.created_at||'').slice(0,10)}</td>
-    <td style="white-space:nowrap">
-      ${!w.active?'<button class="btn btn-sm btn-green" onclick="activateWorkerAccount('+w.id+')">手动激活</button>':''}
+    <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
+      ${!w.active?`<button class="btn btn-sm btn-green" onclick="activateWorkerAccount(${w.id})">激活</button><button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="resendWorkerVerify(${w.id})">重发验证</button>`:''}
+      ${w.active?(w.suspended?`<button class="btn btn-sm btn-green" onclick="suspendWorkerAccount(${w.id},0)">恢复</button>`:`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendWorkerAccount(${w.id},1)">暂停</button>`):''}
+      <button class="btn btn-sm btn-blue" onclick="openResetPwdModal('worker',${w.id},'${esc(w.name||w.username)}')">改密码</button>
       <button class="btn btn-sm" onclick="editWorkerAccount(${w.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.username)}')">删除</button>
     </td>
@@ -5460,8 +5505,10 @@ async function loadCustomerAccounts() {
     <td style="font-size:.82rem">${esc(c.ein||'—')}</td>
     <td>${statusBadge(c)}</td>
     <td>${(c.created_at||'').slice(0,10)}</td>
-    <td style="white-space:nowrap">
-      ${c.approval_status==='pending'?`<button class="btn btn-sm btn-green" onclick="approveEnterprise(${c.id})">通过</button> <button class="btn btn-sm btn-red" onclick="rejectEnterprise(${c.id})">拒绝</button> `:''}
+    <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
+      ${c.approval_status==='pending'?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
+      ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
+      ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
       <button class="btn btn-sm" onclick="editCustomerAccount(${c.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteCustomerAccount(${c.id},'${esc(c.company_name)}')">删除</button>
     </td>
@@ -5545,6 +5592,102 @@ async function clearAllTestData() {
   }
 }
 
+// ── Worker: suspend / resend verification ──
+async function suspendWorkerAccount(id, doSuspend) {
+  const label = doSuspend ? '暂停' : '恢复';
+  if (!confirm(`确认${label}该工人账户？`)) return;
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ suspended: doSuspend ? 1 : 0 }) });
+  loadWorkerAccounts();
+  showToast(`✅ 账户已${label}`);
+}
+
+async function resendWorkerVerify(id) {
+  const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
+  if (r && r.success) {
+    showToast('✅ 验证码已重新生成');
+    if (r.phone_code || r.email_code) {
+      alert(`验证码已生成（系统会发送短信/邮件通知用户）\n手机验证码: ${r.phone_code||'—'}\n邮箱验证码: ${r.email_code||'—'}`);
+    }
+  }
+}
+
+// ── Customer: suspend / restore ──
+async function suspendCustomerAccount(id, doEnable) {
+  const label = doEnable ? '恢复' : '暂停';
+  if (!confirm(`确认${label}该客户账户？`)) return;
+  await api(`/admin/customer-accounts/${id}`, { method:'PUT', body:JSON.stringify({ active: doEnable ? 1 : 0 }) });
+  loadCustomerAccounts();
+  showToast(`✅ 客户账户已${label}`);
+}
+
+// ── Reset password (worker or customer) ──
+function openResetPwdModal(type, id, name) {
+  document.getElementById('resetPwdType').value = type;
+  document.getElementById('resetPwdId').value = id;
+  document.getElementById('resetPwdTarget').textContent = `账户：${name}`;
+  document.getElementById('resetPwdNew').value = '';
+  document.getElementById('resetPwdConfirm').value = '';
+  document.getElementById('resetPwdModal').classList.add('show');
+}
+
+async function saveResetPassword() {
+  const type = document.getElementById('resetPwdType').value;
+  const id = document.getElementById('resetPwdId').value;
+  const pwd = document.getElementById('resetPwdNew').value;
+  const pwd2 = document.getElementById('resetPwdConfirm').value;
+  if (!pwd || pwd.length < 6) return alert('密码至少6位');
+  if (pwd !== pwd2) return alert('两次密码不一致');
+  const endpoint = type === 'worker' ? `/admin/worker-accounts/${id}` : `/admin/customer-accounts/${id}`;
+  const r = await api(endpoint, { method:'PUT', body:JSON.stringify({ password: pwd }) });
+  if (r && r.success !== false) {
+    closeModal('resetPwdModal');
+    showToast('✅ 密码已重置');
+  }
+}
+
+// ── Enterprise approval modal ──
+async function openEntApprovalModal(id) {
+  const rows = await api('/admin/customer-accounts');
+  const c = rows.find(r => r.id === id);
+  if (!c) return;
+  document.getElementById('entApprovalId').value = id;
+  document.getElementById('entApprovalDetails').innerHTML = `
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:.25rem .75rem;align-items:baseline">
+      <span style="color:var(--gray-500);font-weight:600">公司名称</span><span>${esc(c.company_name)}</span>
+      <span style="color:var(--gray-500);font-weight:600">联系人</span><span>${esc(c.contact_name||'—')}</span>
+      <span style="color:var(--gray-500);font-weight:600">邮箱</span><span>${esc(c.email)}</span>
+      <span style="color:var(--gray-500);font-weight:600">电话</span><span>${esc(c.phone||'—')}</span>
+      <span style="color:var(--gray-500);font-weight:600">EIN</span><span>${esc(c.ein||'—')}</span>
+      <span style="color:var(--gray-500);font-weight:600">人力需求</span><span style="white-space:pre-wrap">${esc(c.staffing_needs||'—')}</span>
+      <span style="color:var(--gray-500);font-weight:600">注册时间</span><span>${(c.created_at||'').slice(0,10)}</span>
+    </div>`;
+  const partners = _allPartners.length ? _allPartners : await api('/admin/partners').catch(()=>[]);
+  _allPartners = partners;
+  document.getElementById('entApprovalPartner').innerHTML = '<option value="">— 请选择关联公司 —</option>' +
+    partners.map(p=>`<option value="${p.id}"${c.partner_id==p.id?' selected':''}>${esc(p.name)}${p.industry?' · '+esc(p.industry):''}</option>`).join('');
+  document.getElementById('entApprovalModal').classList.add('show');
+}
+
+async function confirmApproveEnterprise() {
+  const id = document.getElementById('entApprovalId').value;
+  const partner_id = document.getElementById('entApprovalPartner').value;
+  if (!partner_id) return alert('请先选择关联的合作公司档案（必须）');
+  const r = await api(`/admin/approve-enterprise/${id}`, { method:'PUT', body:JSON.stringify({ partner_id }) });
+  if (r && r.success !== false) {
+    closeModal('entApprovalModal');
+    showToast('✅ 企业已审核通过并关联');
+    loadCustomerAccounts();
+  }
+}
+
+async function rejectEnterpriseFromModal() {
+  const id = document.getElementById('entApprovalId').value;
+  if (!confirm('确认拒绝此企业注册？')) return;
+  await api(`/admin/reject-enterprise/${id}`, { method:'PUT' });
+  closeModal('entApprovalModal');
+  showToast('❌ 企业注册已拒绝');
+  loadCustomerAccounts();
+}
 function randomFillWorkerAccount() {
   const phones = ['3125550101','7735550202','8475550303','7085550404','6305550505'];
   const pw = 'Test' + _randInt(1000,9999) + '!';
