@@ -349,6 +349,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS employee_position_ratings (
   FOREIGN KEY (employee_id) REFERENCES employees(id)
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS job_audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  changes TEXT DEFAULT '{}',
+  performed_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   inquiry_id INTEGER NOT NULL,
@@ -849,9 +858,25 @@ app.post('/api/admin/pending-actions/:id/reject', requireAdmin, requireRole('adm
   res.json({ success: true });
 });
 
-// Jobs CRUD
+// Jobs CRUD (with audit logging)
+const logJobAudit = db.prepare('INSERT INTO job_audit_log (job_id, action, changes, performed_by) VALUES (?,?,?,?)');
+
+function diffJob(oldJ, newD) {
+  const fields = ['title','type','location','pay','job_status','close_reason','close_note','active','headcount','employment_type','work_days','work_start','work_end','benefits','description','urgent','company_name','work_auth'];
+  const changes = {};
+  for (const f of fields) {
+    const o = String(oldJ[f] ?? ''), n = String(newD[f] ?? '');
+    if (o !== n) changes[f] = { from: oldJ[f], to: newD[f] };
+  }
+  return changes;
+}
+
 app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare('SELECT j.*, p.name AS partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id ORDER BY j.created_at DESC').all());
+});
+
+app.get('/api/admin/jobs/:id/history', requireAdmin, blockManager, (req, res) => {
+  res.json(db.prepare('SELECT * FROM job_audit_log WHERE job_id=? ORDER BY created_at DESC').all(req.params.id));
 });
 
 app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
@@ -871,11 +896,13 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
     d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
     jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1
   );
+  logJobAudit.run(r.lastInsertRowid, 'created', JSON.stringify({ title: d.title, company_name: d.company_name||'' }), req.userName);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
   const d = req.body;
+  const old = db.prepare('SELECT * FROM jobs WHERE id=?').get(req.params.id);
   const jobStatus = d.job_status || 'open';
   db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?,
     description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
@@ -892,11 +919,19 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
       jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
       req.params.id
     );
+  // Determine action type
+  let action = 'updated';
+  if (old && old.job_status === 'open' && jobStatus !== 'open') action = 'closed';
+  if (old && old.job_status !== 'open' && jobStatus === 'open') action = 'reopened';
+  const changes = old ? diffJob(old, { ...d, job_status: jobStatus, active: jobStatus==='open'?1:0 }) : {};
+  logJobAudit.run(req.params.id, action, JSON.stringify(changes), req.userName);
   res.json({ success: true });
 });
 
 app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
+  const old = db.prepare('SELECT title, company_name FROM jobs WHERE id=?').get(req.params.id);
   db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
+  logJobAudit.run(req.params.id, 'deleted', JSON.stringify(old || {}), req.userName);
   res.json({ success: true });
 });
 
