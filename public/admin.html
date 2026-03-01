@@ -23,11 +23,11 @@
 .pass-wrap .eye:hover{color:var(--gray-600)}
 
 .app{display:none}.app.show{display:block}
-.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:var(--blue);color:#fff;padding:1.5rem 0}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:var(--blue);color:#fff;padding:1.5rem 0;overflow-y:auto;display:flex;flex-direction:column}
 .sidebar h2{font-size:1rem;padding:0 1.5rem;margin-bottom:2rem;color:var(--sky)}
 .sidebar a{display:block;padding:10px 1.5rem;color:rgba(255,255,255,.5);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}
 .sidebar a:hover,.sidebar a.active{color:#fff;background:rgba(255,255,255,.08)}
-.sidebar .logout{position:absolute;bottom:1.5rem;left:0;right:0;padding:10px 1.5rem;color:var(--red);font-size:.82rem}
+.sidebar .logout{margin-top:auto;padding:10px 1.5rem;color:var(--red);font-size:.82rem}
 .main{margin-left:220px;padding:2rem}
 .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:.5rem}
 .top h1{font-size:1.5rem;color:var(--blue)}
@@ -751,7 +751,7 @@ tr:hover td{background:var(--sky-light)}
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveRating()">保存评分</button>
-    <button class="btn" onclick="document.getElementById('ratingModal').classList.remove('show')">取消</button>
+    <button class="btn" onclick="guardClose('ratingModal')">取消</button>
   </div>
 </div></div>
 
@@ -760,6 +760,26 @@ tr:hover td{background:var(--sky-light)}
   <h2>发送材料收集链接</h2>
   <p id="empDocLinkTarget" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
   <input type="hidden" id="empDocLinkEmpId">
+
+  <div style="display:flex;gap:1rem;flex-wrap:wrap">
+    <div class="field" style="flex:1;min-width:140px"><label>语言 / Language</label>
+      <select id="docReqLang">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+      </select>
+    </div>
+    <div class="field" style="flex:1;min-width:180px"><label>发送方式</label>
+      <select id="docReqSendVia" onchange="updateDocReqSendTarget()">
+        <option value="phone">手机短信 (SMS)</option>
+        <option value="email">邮箱 (Email)</option>
+      </select>
+    </div>
+  </div>
+  <div class="field" id="docReqSendTarget" style="margin-top:-.2rem">
+    <label id="docReqSendLabel">发送至手机</label>
+    <input type="text" id="docReqSendValue" readonly style="background:var(--gray-100);color:var(--gray-600)">
+  </div>
 
   <div class="field"><label>选择需要收集的材料（多选）</label>
     <div style="display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem">
@@ -830,7 +850,7 @@ tr:hover td{background:var(--sky-light)}
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-red" onclick="confirmCloseJob()">确认关闭</button>
-    <button class="btn" onclick="document.getElementById('closeJobModal').classList.remove('show')">取消</button>
+    <button class="btn" onclick="guardClose('closeJobModal')">取消</button>
   </div>
 </div></div>
 
@@ -953,10 +973,8 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;flex-shrink:0">
-    <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
     <button class="btn" style="background:var(--gray-200);color:var(--gray-700)" onclick="openProcessModal()">✅ 标记已处理</button>
-    <button class="btn btn-red" onclick="deleteInqFromModal()">🗑 删除</button>
     <button class="btn" style="background:var(--gray-100);color:var(--gray-600)" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
@@ -979,7 +997,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveProcessInquiry()">确认</button>
-    <button class="btn btn-red" onclick="document.getElementById('procModal').classList.remove('show')">取消</button>
+    <button class="btn btn-red" onclick="guardClose('procModal')">取消</button>
   </div>
 </div></div>
 
@@ -1703,16 +1721,18 @@ function renderJobsFiltered() {
 }
 
 async function loadJobs() {
-  _allJobs = await api('/admin/jobs');
+  const res = await api('/admin/jobs');
+  _allJobs = Array.isArray(res) ? res : [];
   renderJobsFiltered();
 }
 
 async function openJobModal(job) {
+  try {
   document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
   document.getElementById('jobId').value = job ? job.id : '';
   // Load partners for search
-  _jobPartners = await api('/admin/partners');
-  _jobPartners = _jobPartners.filter(p => p.active);
+  const partnerRes = await api('/admin/partners');
+  _jobPartners = Array.isArray(partnerRes) ? partnerRes.filter(p => p.active) : [];
   document.getElementById('jPartnerDrop').classList.remove('open');
   if (job && job.partner_id) {
     const p = _jobPartners.find(x => x.id == job.partner_id);
@@ -1748,8 +1768,10 @@ async function openJobModal(job) {
   });
 
   document.getElementById('jobModal').classList.add('show');
+  captureModalState('jobModal');
+  } catch(e) { console.error('openJobModal error:', e); document.getElementById('jobModal').classList.add('show'); }
 }
-function closeJobModal() { document.getElementById('jobModal').classList.remove('show'); }
+function closeJobModal() { guardClose('jobModal'); }
 function editJob(j) { openJobModal(j); }
 
 // Wire up day/benefit toggle buttons (once DOM ready)
@@ -1859,6 +1881,7 @@ async function saveJob() {
   if (!data.title) return alert('请填写职位名称');
   if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
+  clearModalState('jobModal');
   closeJobModal();
   loadJobs();
 }
@@ -1879,6 +1902,7 @@ function openCloseJobModal(job) {
     r.checked = r.value === existing;
   });
   document.getElementById('closeJobModal').classList.add('show');
+  captureModalState('closeJobModal');
 }
 
 async function confirmCloseJob() {
@@ -1898,6 +1922,7 @@ async function confirmCloseJob() {
   if (!job) return;
   const data = { ...job, job_status: statusMap[reason] || 'closed', close_reason: reason, close_note: note, active: false };
   await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  clearModalState('closeJobModal');
   document.getElementById('closeJobModal').classList.remove('show');
   loadJobs();
 }
@@ -2025,9 +2050,7 @@ function renderInquiries(inqs) {
     <td style="font-size:.82rem">${esc(i.location||'')}</td>
     <td style="white-space:nowrap">${esc(i.phone)}</td>
     <td style="white-space:nowrap">
-      <button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button>
       <button class="btn btn-sm" style="background:var(--gray-200);color:var(--gray-700)" onclick="event.stopPropagation();openProcessModalDirect(${JSON.stringify(i).replace(/'/g,'&#39;')})">处理</button>
-      <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button>
     </td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无待处理问卷</td></tr>';
 }
@@ -2053,6 +2076,7 @@ function openProcessModal() {
   document.getElementById('procStatus').value = '';
   document.getElementById('procNote').value = '';
   document.getElementById('procModal').classList.add('show');
+  captureModalState('procModal');
 }
 
 function openProcessModalDirect(inq) {
@@ -2067,6 +2091,7 @@ async function saveProcessInquiry() {
   const note = document.getElementById('procNote').value.trim();
   if (!note) return alert('请填写备注');
   await api(`/admin/inquiries/${currentInquiry.id}/process`, { method: 'PUT', body: JSON.stringify({ status, note }) });
+  clearModalState('procModal');
   document.getElementById('procModal').classList.remove('show');
   document.getElementById('inqModal').classList.remove('show');
   // refresh both lists
@@ -2361,6 +2386,7 @@ async function openAssignModal(assignment) {
   }
 
   document.getElementById('assignModal').classList.add('show');
+  captureModalState('assignModal');
 }
 
 let _jobPartners = [];
@@ -2426,10 +2452,7 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#jobModal')) document.getElementById('jPartnerDrop').classList.remove('open');
 });
 
-function closeAssignModal() {
-  closeAssignDropdowns();
-  document.getElementById('assignModal').classList.remove('show');
-}
+function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
 
 function editAssignment(a) { openAssignModal(a); }
 
@@ -2465,6 +2488,7 @@ async function saveAssignment() {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd
     });
   }
+  clearModalState('assignModal');
   closeAssignModal();
   loadAssignments();
 }
@@ -2748,9 +2772,10 @@ function openPartnerModal(p) {
   if (p && p.id) loadPartnerFiles(p.id);
   else document.getElementById('pFilesList').innerHTML = '';
   document.getElementById('partnerModal').classList.add('show');
+  captureModalState('partnerModal');
 }
 
-function closePartnerModal() { document.getElementById('partnerModal').classList.remove('show'); }
+function closePartnerModal() { guardClose('partnerModal'); }
 
 async function loadPartnerFiles(pid) {
   const files = await api(`/admin/partners/${pid}/files`);
@@ -2824,6 +2849,7 @@ async function savePartner() {
       showToast(`✅ 公司「${data.name}」创建成功，公司编号：#${r.id}`);
     }
   }
+  clearModalState('partnerModal');
   closePartnerModal();
   loadPartners();
 }
@@ -2944,7 +2970,7 @@ function renderEmployees(list) {
     <td>
       <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
       <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
-      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>发送材料链接</button>
+      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}","${esc(e.phone||"")}","${esc(e.email||"")}")'>发送材料链接</button>
       <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
       ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
     </td>
@@ -2985,8 +3011,9 @@ function openEmpModal(id) {
     document.getElementById('ePayType').value = 'hourly';
   }
   document.getElementById('empModal').classList.add('show');
+  captureModalState('empModal');
 }
-function closeEmpModal() { document.getElementById('empModal').classList.remove('show'); }
+function closeEmpModal() { guardClose('empModal'); }
 
 function randomFillEmployee() {
   const firsts = ['John','Maria','Wei','Carlos','Anna','David','Linh','Ahmed','Sofia','James','Yuki','Jose','Emily','Marco','Mei'];
@@ -3053,16 +3080,38 @@ async function saveEmployee() {
   if (!id && !data.dob) return alert('请填写出生日期（用于工时确认页身份验证）');
   const ssn = document.getElementById('eSSN').value.replace(/\D/g,'');
   if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
-  const r = id
-    ? await api(`/admin/employees/${id}`, { method:'PUT', body: JSON.stringify(data) })
-    : await api('/admin/employees', { method:'POST', body: JSON.stringify(data) });
-  if (r.success || r.id) {
-    closeEmpModal();
-    loadEmployees();
-    showToast(id
-      ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
-      : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r.employee_id}`);
-  } else alert(r.error || '保存失败');
+  async function doSave(forceData) {
+    return id
+      ? await api(`/admin/employees/${id}`, { method:'PUT', body: JSON.stringify(forceData) })
+      : await api('/admin/employees', { method:'POST', body: JSON.stringify(forceData) });
+  }
+  async function finishSave(r2) {
+    if (r2.success || r2.id) {
+      clearModalState('empModal');
+      closeEmpModal();
+      await loadEmployees();
+      showToast(id
+        ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
+        : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r2.employee_id}`);
+    } else alert(r2.error || '保存失败');
+  }
+  const r = await doSave(data);
+  if (r && r.duplicate) {
+    const fieldLabel = r.field === 'phone' ? '手机号' : '邮箱';
+    const emp = r.existing;
+    const empName = `${emp.first_name} ${emp.last_name}（员工号：${emp.employee_id}）`;
+    const openExisting = confirm(`该${fieldLabel}已登记在员工「${empName}」名下。\n\n点击「确定」打开该员工档案查看，点击「取消」忽略重复继续保存当前信息。`);
+    if (openExisting) {
+      clearModalState('empModal');
+      closeEmpModal();
+      await loadEmployees();
+      openEmpModal(emp.id);
+    } else {
+      await finishSave(await doSave({ ...data, force: true }));
+    }
+    return;
+  }
+  await finishSave(r);
 }
 
 async function terminateEmployee(id, name) {
@@ -3155,7 +3204,7 @@ async function viewEmployee(id) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h4 style="margin:0">材料收集链接 (${docReqs.length} 条)</h4>
       <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0"
-        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 发送新链接</button>
+        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}","${esc(emp.phone||"")}","${esc(emp.email||"")}")'>+ 发送新链接</button>
     </div>
     ${docReqs.length ? docReqs.map(r => {
       const link = location.origin + '/emp-docs.html?token=' + r.token;
@@ -3276,6 +3325,7 @@ async function openRatingModal(empId, empName, existing) {
     document.getElementById('rNotes').value   = '';
   }
   document.getElementById('ratingModal').classList.add('show');
+  captureModalState('ratingModal');
 }
 
 function onRatingJobChange() { /* placeholder for future autofill */ }
@@ -3307,6 +3357,7 @@ async function saveRating() {
   if (allZero) return alert('请至少为一个维度打分');
   if (id) await api(`/admin/employee-ratings/${id}`, { method:'PUT', body:JSON.stringify(data) });
   else    await api('/admin/employee-ratings', { method:'POST', body:JSON.stringify(data) });
+  clearModalState('ratingModal');
   document.getElementById('ratingModal').classList.remove('show');
   viewEmployee(empId); // refresh detail
 }
@@ -3324,7 +3375,10 @@ async function deleteRating(ratingId, empId) {
 // ─── Employee Doc Request Links ───
 let _currentDocLinkUrl = '';
 
-function sendEmpDocLink(empId, empName) {
+let _empDocPhone = '', _empDocEmail = '';
+function sendEmpDocLink(empId, empName, phone, email) {
+  _empDocPhone = phone || '';
+  _empDocEmail = email || '';
   document.getElementById('empDocLinkEmpId').value = empId;
   document.getElementById('empDocLinkTarget').textContent = empName;
   document.getElementById('empDocLinkResult').style.display = 'none';
@@ -3332,24 +3386,44 @@ function sendEmpDocLink(empId, empName) {
   document.getElementById('docReqGovId').checked = true;
   document.getElementById('docReqSsn').checked = true;
   document.getElementById('docReqWorkCard').checked = true;
+  document.getElementById('docReqLang').value = 'zh';
+  document.getElementById('docReqSendVia').value = 'phone';
+  updateDocReqSendTarget();
   document.getElementById('btnGenDocLink').disabled = false;
+  document.getElementById('btnGenDocLink').textContent = '生成链接';
   document.getElementById('empDocLinkModal').classList.add('show');
+}
+function updateDocReqSendTarget() {
+  const via = document.getElementById('docReqSendVia').value;
+  const label = document.getElementById('docReqSendLabel');
+  const input = document.getElementById('docReqSendValue');
+  if (via === 'phone') { label.textContent = '发送至手机'; input.value = _empDocPhone || '（未填写手机号）'; }
+  else { label.textContent = '发送至邮箱'; input.value = _empDocEmail || '（未填写邮箱）'; }
 }
 
 async function generateEmpDocLink() {
   const empId = document.getElementById('empDocLinkEmpId').value;
   const note  = document.getElementById('empDocAdminNote').value;
+  const lang  = document.getElementById('docReqLang').value;
+  const sendVia = document.getElementById('docReqSendVia').value;
   const docIds = { gov_id: 'docReqGovId', ssn: 'docReqSsn', work_card: 'docReqWorkCard' };
   const requestedDocs = Object.entries(docIds).filter(([,id]) => document.getElementById(id).checked).map(([k]) => k);
   if (!requestedDocs.length) return alert('请至少选择一种材料');
-  const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs }) });
+  const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs, lang }) });
   if (r.token) {
-    _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token;
+    _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token + '&lang=' + lang;
     document.getElementById('empDocLinkUrl').textContent = _currentDocLinkUrl;
     document.getElementById('empDocLinkResult').style.display = '';
     document.getElementById('empDocLinkCopied').style.display = 'none';
     document.getElementById('btnGenDocLink').disabled = true;
     document.getElementById('btnGenDocLink').textContent = '已生成';
+    // Show send instruction
+    const target = sendVia === 'phone' ? _empDocPhone : _empDocEmail;
+    if (target) {
+      document.getElementById('empDocLinkCopied').textContent = sendVia === 'phone' ? '请复制链接通过短信发送至 ' + target : '请复制链接通过邮件发送至 ' + target;
+      document.getElementById('empDocLinkCopied').style.display = '';
+      document.getElementById('empDocLinkCopied').style.color = 'var(--blue)';
+    }
   }
 }
 
@@ -3471,10 +3545,11 @@ async function openTimeModal(entry) {
   }
   document.getElementById('timeCalcPreview').style.display = 'none';
   document.getElementById('timeModal').classList.add('show');
+  captureModalState('timeModal');
   // Live calc
   ['tIn','tOut','tBreak'].forEach(id => document.getElementById(id).addEventListener('change', previewHours));
 }
-function closeTimeModal() { document.getElementById('timeModal').classList.remove('show'); }
+function closeTimeModal() { guardClose('timeModal'); }
 
 function previewHours() {
   const inp = document.getElementById('tIn').value;
@@ -3505,7 +3580,7 @@ async function saveTimeEntry() {
   const r = id
     ? await api(`/admin/time-entries/${id}`, { method:'PUT', body: JSON.stringify(data) })
     : await api('/admin/time-entries', { method:'POST', body: JSON.stringify(data) });
-  if (r.success) { closeTimeModal(); loadTimeEntries(); }
+  if (r.success) { clearModalState('timeModal'); closeTimeModal(); loadTimeEntries(); }
   else alert(r.error||'保存失败');
 }
 
@@ -3594,9 +3669,10 @@ async function openTsModal() {
   document.getElementById('tsConfirmBlock').style.display = 'none';
   buildTsRows();
   document.getElementById('tsModal').classList.add('show');
+  captureModalState('tsModal');
 }
 
-function closeTsModal() { document.getElementById('tsModal').classList.remove('show'); }
+function closeTsModal() { guardClose('tsModal'); }
 
 const WEEKDAYS_ZH = ['周一','周二','周三','周四','周五','周六','周日'];
 const WEEKDAYS_EN = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
@@ -3731,6 +3807,7 @@ async function saveBatchTimesheet() {
       else alert(`${emp.name} 保存失败: ${r.error || '未知错误'}`);
     }
     if (results.length) {
+      clearModalState('tsModal');
       closeTsModal();
       loadTimeEntries();
       if (results.length === 1) {
@@ -3992,8 +4069,9 @@ function openDocModal() {
   document.getElementById('docNotes').value  = '';
   document.getElementById('docFile').value   = '';
   document.getElementById('docModal').classList.add('show');
+  captureModalState('docModal');
 }
-function closeDocModal() { document.getElementById('docModal').classList.remove('show'); }
+function closeDocModal() { guardClose('docModal'); }
 
 async function uploadDoc() {
   const empId = document.getElementById('docEmpSel').value;
@@ -4011,7 +4089,7 @@ async function uploadDoc() {
     body: fd
   });
   const r = await res.json();
-  if (r.success || r.id) { closeDocModal(); loadDocuments(); }
+  if (r.success || r.id) { clearModalState('docModal'); closeDocModal(); loadDocuments(); }
   else alert(r.error||'上传失败');
 }
 
@@ -4095,8 +4173,9 @@ function openBgModal(bg) {
   }
   document.getElementById('bgFile').value = '';
   document.getElementById('bgModal').classList.add('show');
+  captureModalState('bgModal');
 }
-function closeBgModal() { document.getElementById('bgModal').classList.remove('show'); }
+function closeBgModal() { guardClose('bgModal'); }
 
 async function saveBgCheck() {
   const id    = document.getElementById('bgId').value;
@@ -4118,7 +4197,7 @@ async function saveBgCheck() {
   const method = id ? 'PUT' : 'POST';
   const res = await fetch(url, { method, headers:{'Authorization':`Bearer ${TOKEN}`}, body: fd });
   const r = await res.json();
-  if (r.success || r.id) { closeBgModal(); loadBgChecks(); }
+  if (r.success || r.id) { clearModalState('bgModal'); closeBgModal(); loadBgChecks(); }
   else alert(r.error||'保存失败');
 }
 
@@ -4128,7 +4207,56 @@ async function deleteBgCheck(id) {
   loadBgChecks();
 }
 
-function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+// ─── Unsaved-changes guard ───
+const _modalSnap = {};
+function captureModalState(modalId) {
+  const m = document.getElementById(modalId);
+  if (!m) return;
+  setTimeout(() => {
+    const snap = {};
+    m.querySelectorAll('input,select,textarea').forEach(el => {
+      const k = el.id || el.name;
+      if (!k || el.type === 'file') return;
+      if (el.type === 'radio') { if (el.checked) snap['r:'+el.name] = el.value; }
+      else if (el.type === 'checkbox') snap[k] = String(el.checked);
+      else snap[k] = el.value;
+    });
+    // capture toggle-button states (day-btn, benefit-btn, svc-tag)
+    m.querySelectorAll('.day-btn,.benefit-btn,.svc-tag').forEach(b => {
+      snap['btn:'+( b.dataset.day||b.dataset.val||b.dataset.v||b.textContent.trim())] = String(b.classList.contains('active'));
+    });
+    _modalSnap[modalId] = snap;
+  }, 0);
+}
+function isModalDirty(modalId) {
+  const old = _modalSnap[modalId];
+  if (!old) return false;
+  const m = document.getElementById(modalId);
+  const cur = {};
+  m.querySelectorAll('input,select,textarea').forEach(el => {
+    const k = el.id || el.name;
+    if (!k || el.type === 'file') return;
+    if (el.type === 'radio') { if (el.checked) cur['r:'+el.name] = el.value; }
+    else if (el.type === 'checkbox') cur[k] = String(el.checked);
+    else cur[k] = el.value;
+  });
+  m.querySelectorAll('.day-btn,.benefit-btn,.svc-tag').forEach(b => {
+    cur['btn:'+(b.dataset.day||b.dataset.val||b.dataset.v||b.textContent.trim())] = String(b.classList.contains('active'));
+  });
+  const allKeys = new Set([...Object.keys(old), ...Object.keys(cur)]);
+  for (const k of allKeys) { if ((old[k]??'') !== (cur[k]??'')) return true; }
+  return false;
+}
+function clearModalState(modalId) { delete _modalSnap[modalId]; }
+function guardClose(modalId, extraFn) {
+  if (isModalDirty(modalId)) {
+    if (!confirm('你有未保存的修改，确定要离开吗？')) return;
+  }
+  clearModalState(modalId);
+  if (extraFn) extraFn();
+  document.getElementById(modalId).classList.remove('show');
+}
+function closeModal(id) { guardClose(id); }
 
 // ─── Accounts Management ───
 async function loadAccounts() {
@@ -4158,6 +4286,7 @@ function openAccountModal(data) {
   document.getElementById('accountModalTitle').textContent = data ? '编辑账户' : '新建账户';
   document.getElementById('accPassHint').textContent = data ? '(留空则不修改)' : '*';
   document.getElementById('accountModal').classList.add('show');
+  captureModalState('accountModal');
 }
 
 async function editAccount(id) {
@@ -4184,6 +4313,7 @@ async function saveAccount() {
     if (!d.password) return alert('请输入密码');
     await api('/admin/accounts', { method: 'POST', body: JSON.stringify(d) });
   }
+  clearModalState('accountModal');
   closeModal('accountModal');
   loadAccounts();
 }

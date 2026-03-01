@@ -20,6 +20,7 @@ if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
 
 const db = new Database(path.join(dataDir, 'prime.db'));
 db.pragma('journal_mode = WAL');
+db.pragma('wal_autocheckpoint = 100');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS jobs (
@@ -228,6 +229,7 @@ db.exec(`
     status TEXT DEFAULT 'pending',
     requested_docs TEXT DEFAULT '["gov_id","ssn","work_card"]',
     admin_note TEXT DEFAULT '',
+    lang TEXT DEFAULT 'zh',
     completed_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id)
@@ -333,6 +335,7 @@ try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN verified_at TEXT DEFAULT 
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'`); } catch(e) {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS employee_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -404,6 +407,9 @@ function runBackup(trigger) {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const results = [];
   const dbPath = path.join(dataDir, 'prime.db');
+
+  // Checkpoint WAL before backup to ensure all data is in the main db file
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
 
   for (const dir of BACKUP_DIRS) {
     try {
@@ -1229,9 +1235,9 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
   if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
   const token = crypto.randomBytes(28).toString('hex');
-  const { admin_note, requested_docs } = req.body;
-  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs) VALUES (?,?,?,?)')
-    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']));
+  const { admin_note, requested_docs, lang } = req.body;
+  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang) VALUES (?,?,?,?,?)')
+    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']), lang || 'zh');
   res.json({ token, status: 'pending' });
 });
 
@@ -1257,6 +1263,7 @@ app.get('/api/emp-docs/:token', (req, res) => {
     emp_code: row.emp_code,
     requested_docs: JSON.parse(row.requested_docs || '["gov_id","ssn","work_card"]'),
     admin_note: row.admin_note,
+    lang: row.lang || 'zh',
     completed_at: row.completed_at
   });
 });
@@ -1436,6 +1443,16 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.first_name || !d.last_name) return res.status(400).json({ error: '请填写姓名' });
+  if (!d.force) {
+    if (d.phone && d.phone.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE phone=?').get(d.phone.trim());
+      if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
+    }
+    if (d.email && d.email.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE email=?').get(d.email.trim());
+      if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
+    }
+  }
   const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
   if (d.ssn) {
@@ -1471,6 +1488,16 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
   const d = req.body;
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
+  if (!d.force) {
+    if (d.phone && d.phone.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE phone=? AND id!=?').get(d.phone.trim(), req.params.id);
+      if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
+    }
+    if (d.email && d.email.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE email=? AND id!=?').get(d.email.trim(), req.params.id);
+      if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
+    }
+  }
   let ssn_encrypted = emp.ssn_encrypted, ssn_iv = emp.ssn_iv, ssn_last4 = emp.ssn_last4;
   if (d.ssn && d.ssn !== '__KEEP__') {
     const digits = d.ssn.replace(/\D/g, '');
@@ -1894,6 +1921,26 @@ app.get('/admin', (req, res) => {
 });
 
 // ─── Start ───
+// Periodic WAL checkpoint every 5 minutes
+setInterval(() => {
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) { console.error('[WAL] checkpoint error:', e.message); }
+}, 5 * 60 * 1000);
+
+// Graceful shutdown: checkpoint WAL and close database
+function gracefulShutdown(signal) {
+  console.log(`[Shutdown] ${signal} received, checkpointing WAL...`);
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    db.close();
+    console.log('[Shutdown] Database closed cleanly');
+  } catch(e) { console.error('[Shutdown] Error:', e.message); }
+  process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 app.listen(PORT, () => {
+  // Initial checkpoint on startup to flush any pending WAL data
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
 });
