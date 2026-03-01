@@ -33,6 +33,9 @@ db.exec(`
     description TEXT DEFAULT '',
     urgent INTEGER DEFAULT 0,
     active INTEGER DEFAULT 1,
+    work_auth TEXT DEFAULT '',
+    benefits TEXT DEFAULT '',
+    schedule TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS inquiries (
@@ -221,7 +224,11 @@ db.exec(`
 `);
 
 // ─── Migrations for existing databases ───
-try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) { /* column already exists */ }
+try { db.exec(`ALTER TABLE jobs ADD COLUMN work_auth TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN benefits TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule TEXT DEFAULT ''`); } catch(e) {}
+
+try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 
 // Migrate admin_users table (add role, display_name, active, created_at columns if missing)
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
@@ -233,6 +240,30 @@ const partnerMigrations = ['contacts','addresses','social_media','links'];
 partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
+
+// timesheet_sheets: one per submitted period, carries the employee-facing confirmation token
+db.exec(`CREATE TABLE IF NOT EXISTS timesheet_sheets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  company_name TEXT DEFAULT '',
+  period_start TEXT NOT NULL,
+  period_end TEXT NOT NULL,
+  job_id INTEGER DEFAULT NULL,
+  total_hours REAL DEFAULT 0,
+  regular_hours REAL DEFAULT 0,
+  overtime_hours REAL DEFAULT 0,
+  status TEXT DEFAULT 'pending',
+  confirm_token TEXT UNIQUE NOT NULL,
+  employee_action TEXT DEFAULT '',
+  employee_note TEXT DEFAULT '',
+  confirmed_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`);
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_start TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_end TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN sheet_id INTEGER DEFAULT NULL`); } catch(e) {}
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -530,7 +561,8 @@ app.get('/api/jobs', (req, res) => {
   res.json(jobs.map(j => ({
     id: j.id, title: j.title, type: j.type, location: j.location,
     pay: j.pay, lang: j.lang, lang_name: j.lang_name,
-    desc: j.description, urgent: !!j.urgent
+    desc: j.description, urgent: !!j.urgent, work_auth: j.work_auth || '',
+    benefits: j.benefits || '', schedule: j.schedule || ''
   })));
 });
 
@@ -680,15 +712,15 @@ app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
 
 app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
-  const stmt = db.prepare('INSERT INTO jobs (title, type, location, pay, lang, lang_name, description, urgent) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-  const r = stmt.run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0);
+  const stmt = db.prepare('INSERT INTO jobs (title, type, location, pay, lang, lang_name, description, urgent, work_auth, benefits, schedule) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const r = stmt.run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE jobs SET title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=? WHERE id=?')
-    .run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, req.params.id);
+  db.prepare('UPDATE jobs SET title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=? WHERE id=?')
+    .run(d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '', req.params.id);
   res.json({ success: true });
 });
 
@@ -1184,28 +1216,62 @@ app.post('/api/admin/time-entries', requireAdmin, blockManager, (req, res) => {
   res.json({ success: true, id: r.lastInsertRowid, ...hrs });
 });
 
-// Batch time entry (weekly timesheet)
+// Batch time entry (weekly timesheet) — also creates a timesheet_sheet with confirmation token
 app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res) => {
-  const { employee_id, entries, job_id } = req.body;
+  const { employee_id, entries, job_id, company_name, period_start, period_end } = req.body;
   if (!employee_id || !entries || !entries.length) return res.status(400).json({ error: 'employee_id and entries required' });
-  const stmt = db.prepare(`INSERT INTO time_entries
-    (employee_id,clock_in,clock_out,break_minutes,total_hours,regular_hours,overtime_hours,job_id,notes,status)
+
+  function lunchMin(start, end) {
+    if (!start || !end) return 0;
+    const [sh,sm] = start.split(':').map(Number);
+    const [eh,em] = end.split(':').map(Number);
+    return Math.max(0, (eh*60+em) - (sh*60+sm));
+  }
+
+  const stmtEntry = db.prepare(`INSERT INTO time_entries
+    (employee_id,clock_in,clock_out,break_minutes,lunch_start,lunch_end,company_name,
+     total_hours,regular_hours,overtime_hours,job_id,notes,status,sheet_id)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const stmtSheet = db.prepare(`INSERT INTO timesheet_sheets
+    (employee_id,company_name,period_start,period_end,job_id,
+     total_hours,regular_hours,overtime_hours,status,confirm_token)
     VALUES(?,?,?,?,?,?,?,?,?,?)`);
-  const insert = db.transaction((rows) => {
-    let count = 0;
+  const stmtLink = db.prepare(`UPDATE time_entries SET sheet_id=? WHERE id=?`);
+
+  const doAll = db.transaction((rows) => {
+    // compute totals first pass
+    let totTotal=0, totReg=0, totOT=0;
+    const prepared = [];
     for (const e of rows) {
       if (!e.clock_in || !e.clock_out) continue;
-      const hrs = calcHours(e.clock_in, e.clock_out, parseInt(e.break_minutes)||0);
+      const bMin = lunchMin(e.lunch_start, e.lunch_end) || parseInt(e.break_minutes)||0;
+      const hrs = calcHours(e.clock_in, e.clock_out, bMin);
       if (hrs.total <= 0) continue;
-      stmt.run(employee_id, e.clock_in, e.clock_out, parseInt(e.break_minutes)||0,
-        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed');
-      count++;
+      totTotal += hrs.total; totReg += hrs.regular; totOT += hrs.overtime;
+      prepared.push({ e, bMin, hrs });
     }
-    return count;
+    if (!prepared.length) return { count: 0, token: null };
+    // create the sheet
+    const token = crypto.randomBytes(20).toString('hex');
+    const ps = period_start || prepared[0].e.clock_in.slice(0,10);
+    const pe = period_end || prepared[prepared.length-1].e.clock_in.slice(0,10);
+    const sheetRow = stmtSheet.run(employee_id, company_name||'', ps, pe, job_id||null,
+      Math.round(totTotal*100)/100, Math.round(totReg*100)/100, Math.round(totOT*100)/100,
+      'pending', token);
+    const sheetId = sheetRow.lastInsertRowid;
+    // insert entries linked to sheet
+    for (const { e, bMin, hrs } of prepared) {
+      const r = stmtEntry.run(employee_id, e.clock_in, e.clock_out, bMin,
+        e.lunch_start||'', e.lunch_end||'', company_name||'',
+        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed', sheetId);
+      stmtLink.run(sheetId, r.lastInsertRowid);
+    }
+    return { count: prepared.length, token, sheet_id: sheetId };
   });
+
   try {
-    const count = insert(entries);
-    res.json({ success: true, count });
+    const result = doAll(entries);
+    res.json({ success: true, ...result });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
@@ -1225,6 +1291,41 @@ app.put('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('u
 
 app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('delete', 'time_entries'), (req, res) => {
   db.prepare('DELETE FROM time_entries WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// List timesheet sheets (admin)
+app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
+    FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
+    ORDER BY ts.created_at DESC LIMIT 300`).all();
+  res.json(rows);
+});
+
+// ─── PUBLIC TIMESHEET CONFIRMATION ───
+
+// Get sheet data (no auth — token is the secret)
+app.get('/api/ts/:token', (req, res) => {
+  const sheet = db.prepare(`
+    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
+    FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
+    WHERE ts.confirm_token=?`).get(req.params.token);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  const entries = db.prepare(
+    `SELECT * FROM time_entries WHERE sheet_id=? ORDER BY clock_in`).all(sheet.id);
+  res.json({ sheet, entries });
+});
+
+// Employee submits confirm or dispute
+app.post('/api/ts/:token/respond', (req, res) => {
+  const { action, note } = req.body; // action: 'confirm' | 'dispute'
+  if (!['confirm','dispute'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+  const sheet = db.prepare('SELECT id,status FROM timesheet_sheets WHERE confirm_token=?').get(req.params.token);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE timesheet_sheets
+    SET status=?, employee_action=?, employee_note=?, confirmed_at=CURRENT_TIMESTAMP
+    WHERE id=?`).run(action === 'confirm' ? 'confirmed' : 'disputed', action, note||'', sheet.id);
   res.json({ success: true });
 });
 
@@ -1332,6 +1433,11 @@ app.post('/api/timeclock/punch', (req, res) => {
 // Serve timeclock page
 app.get('/timeclock', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'timeclock.html'));
+});
+
+// Serve employee timesheet confirmation page
+app.get('/ts', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'ts.html'));
 });
 
 // ─── Admin Panel Page ───

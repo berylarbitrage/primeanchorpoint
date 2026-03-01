@@ -86,6 +86,17 @@ tr:hover td{background:var(--sky-light)}
 .detail-row span:first-child{font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase}
 .detail-row span:last-child{font-size:.88rem;color:var(--gray-800);margin-top:2px}
 .field-row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem}
+/* Employee search bar */
+.emp-srch-wrap{position:relative}
+.emp-srch-drop{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:200;max-height:220px;overflow-y:auto;margin-top:2px;display:none}
+.emp-srch-drop .eo{padding:8px 12px;cursor:pointer;font-size:.85rem;border-bottom:1px solid var(--gray-200)}
+.emp-srch-drop .eo:last-child{border-bottom:none}
+.emp-srch-drop .eo:hover{background:var(--sky-light)}
+.emp-srch-drop .eo small{display:block;font-size:.75rem;color:var(--gray-400)}
+.emp-selected{background:var(--sky-light);border-radius:4px;padding:4px 8px;font-size:.82rem;color:var(--blue);font-weight:600;margin-top:4px;display:none}
+/* PDF link modal */
+.ts-link-box{background:var(--sky-light);border:1px solid var(--sky);border-radius:var(--radius);padding:1rem;margin:1rem 0;word-break:break-all;font-size:.82rem;font-family:monospace;color:var(--blue)}
+.ts-send-btns{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.75rem}
 /* Partner Modal Enhanced */
 .dyn-list{margin-bottom:.5rem}
 .dyn-item{display:flex;gap:.5rem;align-items:flex-start;margin-bottom:.5rem;padding:.6rem;background:var(--off-white);border-radius:6px;border:1px solid var(--gray-200)}
@@ -245,7 +256,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>职位名称</th><th>类型</th><th>地点</th><th>身份要求</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
 </div>
 
 <!-- Partners -->
@@ -494,6 +505,18 @@ tr:hover td{background:var(--sky-light)}
     <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
     <div class="field"><label>语言</label><select id="jLang"><option value="en">English</option><option value="zh">中文</option><option value="es">Español</option></select></div>
   </div>
+  <div class="field"><label>工作身份要求</label>
+    <select id="jWorkAuth">
+      <option value="">不限</option>
+      <option value="any">合法工作身份即可 / Any Work Authorization</option>
+      <option value="gc">绿卡或公民 / Green Card or Citizen</option>
+      <option value="citizen">仅限美国公民 / US Citizen Only</option>
+    </select>
+  </div>
+  <div class="field-row">
+    <div class="field"><label>工作时间</label><input id="jSchedule" placeholder="例：周一至周五 7am-3:30pm"></div>
+    <div class="field"><label>福利</label><input id="jBenefits" placeholder="例：医疗、牙科、带薪假"></div>
+  </div>
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
   <div class="field"><label><input type="checkbox" id="jUrgent"> 急聘</label></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
@@ -738,8 +761,20 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="field-row no-print" style="margin-bottom:1rem">
-    <div class="field"><label>员工 *</label><select id="tsEmp" onchange="updateTsEmployeeInfo()"><option value="">-- 请选择员工 --</option></select></div>
+    <div class="field">
+      <label>员工 *</label>
+      <input type="hidden" id="tsEmp">
+      <div class="emp-srch-wrap">
+        <input id="tsEmpSearch" type="text" placeholder="输入姓名或工号搜索..." autocomplete="off"
+          oninput="filterTsEmp()" onfocus="filterTsEmp()" onblur="hideTsEmpDrop()">
+        <div id="tsEmpDrop" class="emp-srch-drop"></div>
+      </div>
+      <div id="tsEmpSelected" class="emp-selected"></div>
+    </div>
+    <div class="field"><label>公司 (客户)</label><input id="tsCompany" type="text" placeholder="例：ABC Logistics"></div>
     <div class="field"><label>起始日期 (周一)</label><input id="tsStartDate" type="date" onchange="buildTsRows()"></div>
+  </div>
+  <div class="field-row no-print" style="margin-bottom:1rem">
     <div class="field"><label>关联职位 (可选)</label><select id="tsJob"><option value="">无</option></select></div>
   </div>
   <!-- Print header (hidden on screen) -->
@@ -753,7 +788,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="tsTableWrap">
     <table class="ts-table">
-      <thead><tr><th>日期</th><th>上班时间</th><th>下班时间</th><th>休息(分钟)</th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
+      <thead><tr><th>日期</th><th>上班时间</th><th>下班时间</th><th>午休开始</th><th>午休结束</th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
       <tbody id="tsBody"></tbody>
     </table>
   </div>
@@ -763,19 +798,31 @@ tr:hover td{background:var(--sky-light)}
     <span>正常: <strong id="tsSumReg">0.00h</strong></span>
     <span>加班: <strong class="ot" id="tsSumOT">0.00h</strong></span>
   </div>
-  <div class="ts-confirm">
-    <h4>员工确认 / Employee Confirmation</h4>
-    <p style="font-size:.8rem;color:var(--gray-400);margin-bottom:.5rem">I certify that the hours recorded above are accurate and complete. / 本人确认以上工时记录准确无误。</p>
-    <label><input type="checkbox" id="tsConfirmCheck"> <span>本人确认上述时间准确 / I confirm the hours above are correct</span></label>
-    <div style="margin-top:.75rem;display:flex;gap:2rem;flex-wrap:wrap">
-      <div style="flex:1;min-width:200px"><label style="font-size:.75rem;font-weight:700;color:var(--gray-400)">员工签名 / Employee Signature</label><div style="border-bottom:1px solid var(--gray-800);height:36px;margin-top:4px" id="tsSigLine"></div></div>
-      <div style="width:150px"><label style="font-size:.75rem;font-weight:700;color:var(--gray-400)">日期 / Date</label><div style="border-bottom:1px solid var(--gray-800);height:36px;margin-top:4px;font-size:.9rem;padding-top:12px" id="tsSigDate"></div></div>
-    </div>
+  <div class="ts-confirm" id="tsConfirmBlock" style="display:none">
+    <h4>员工确认状态 / Confirmation Status</h4>
+    <div id="tsConfirmStatus" style="font-size:.85rem;color:var(--gray-600);margin-top:.5rem"></div>
   </div>
   <div class="ts-actions no-print">
-    <button class="btn btn-green" onclick="saveBatchTimesheet()">保存工时表</button>
-    <button class="btn btn-accent" onclick="printTimesheet()">生成 PDF / 打印</button>
+    <button class="btn btn-green" onclick="saveBatchTimesheet()">保存并生成确认链接</button>
+    <button class="btn btn-accent" onclick="printTimesheet()">打印 / PDF 预览</button>
     <button class="btn btn-outline" onclick="closeTsModal()">取消</button>
+  </div>
+</div></div>
+
+<!-- ════ Timesheet PDF Link Modal ════ -->
+<div class="modal-bg" id="tsLinkModal"><div class="modal">
+  <h2>✅ 工时表已保存</h2>
+  <p style="font-size:.85rem;color:var(--gray-600);margin-bottom:.75rem">
+    以下链接可发给员工确认工时。员工可以点击同意或填写反驳意见。
+  </p>
+  <div id="tsLinkUrl" class="ts-link-box"></div>
+  <div class="ts-send-btns">
+    <button class="btn" onclick="copyTsLink()">📋 复制链接</button>
+    <button class="btn btn-green" id="tsEmailBtn" style="display:none" onclick="openTsEmail()">📧 发邮件</button>
+    <button class="btn btn-accent" id="tsSmsBtn" style="display:none" onclick="openTsSms()">💬 发短信</button>
+  </div>
+  <div style="margin-top:1.5rem;text-align:right">
+    <button class="btn btn-outline" onclick="document.getElementById('tsLinkModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
 
@@ -1039,13 +1086,15 @@ function esc(s) {
 async function loadJobs() {
   const jobs = await api('/admin/jobs');
   const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
+  const authLabel = a => ({any:'合法身份', gc:'绿卡/公民', citizen:'仅公民'})[a] || '不限';
   document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
     <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}</td>
     <td>${esc(j.type)}</td><td>${esc(j.location)}</td>
+    <td>${esc(authLabel(j.work_auth))}</td>
     <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
     <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
     <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
 }
 
 function openJobModal(job) {
@@ -1056,6 +1105,9 @@ function openJobModal(job) {
   document.getElementById('jLocation').value = job ? job.location : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jLang').value = job ? job.lang : 'en';
+  document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
+  document.getElementById('jSchedule').value = job ? (job.schedule || '') : '';
+  document.getElementById('jBenefits').value = job ? (job.benefits || '') : '';
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
   document.getElementById('jobModal').classList.add('show');
@@ -1065,31 +1117,42 @@ function editJob(j) { openJobModal(j); }
 
 function randomFillJob() {
   const pool = [
-    { lang: 'zh', title: '仓库分拣员', type: '临时工', location: 'Chicago, IL', pay: '$17-19/hr',
-      desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。工作时间：周一至周五 06:00-14:30。' },
-    { lang: 'zh', title: '叉车操作员', type: '全职', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true,
-      desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁，提供完善福利（医疗+牙科）。' },
-    { lang: 'zh', title: '生产线操作工', type: '全职', location: 'Melrose Park, IL', pay: '$18/hr',
-      desc: '食品加工生产线工作，需遵守卫生规定，提供工服及手套。每周加班机会多，可双休。' },
-    { lang: 'en', title: 'Warehouse Associate', type: 'Temp-to-Hire', location: 'Schaumburg, IL', pay: '$16-18/hr',
-      desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs. Day and night shifts available.' },
-    { lang: 'en', title: 'Machine Operator', type: 'Full-Time', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true,
-      desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred. Benefits after 90 days.' },
-    { lang: 'en', title: 'General Labor', type: 'Temporary', location: 'Addison, IL', pay: '$15.50/hr',
-      desc: 'Various light industrial tasks including assembly, sorting and quality inspection. Weekend shifts available with a pay differential.' },
-    { lang: 'es', title: 'Trabajador de Almacén', type: 'Tiempo Completo', location: 'Melrose Park, IL', pay: '$16-18/hr',
-      desc: 'Clasificar y empacar productos en almacén. Horario de lunes a viernes, 7am-3:30pm. No se requiere experiencia previa, se ofrece capacitación.' },
-    { lang: 'es', title: 'Operador de Montacargas', type: 'Temporal', location: 'Cicero, IL', pay: '$20/hr', urgent: true,
-      desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía en turno nocturno (10pm-6am). Pago semanal.' },
+    { lang: 'zh', title: '仓库分拣员', type: '临时工', location: 'Chicago, IL', pay: '$17-19/hr', work_auth: 'any',
+      schedule: '周一至周五 06:00-14:30', benefits: '每周直接发薪、免费停车',
+      desc: '负责仓库商品的分拣、打包及上架工作，需能站立操作8小时，无需经验，培训上岗。' },
+    { lang: 'zh', title: '叉车操作员', type: '全职', location: 'Cicero, IL', pay: '$20-24/hr', urgent: true, work_auth: 'any',
+      schedule: '周一至周五 07:00-15:30，可加班', benefits: '医疗保险、牙科保险、带薪假',
+      desc: '需持有有效叉车证，负责货物装卸及仓储管理，工作环境整洁。' },
+    { lang: 'zh', title: '生产线操作工', type: '全职', location: 'Melrose Park, IL', pay: '$18/hr', work_auth: 'gc',
+      schedule: '周一至周五 06:00-14:30 / 夜班可选', benefits: '工服、手套免费提供，90天后享医保',
+      desc: '食品加工生产线工作，需遵守卫生规定。每周加班机会多，可双休。' },
+    { lang: 'en', title: 'Warehouse Associate', type: 'Temp-to-Hire', location: 'Schaumburg, IL', pay: '$16-18/hr', work_auth: 'any',
+      schedule: 'Mon–Fri, Day & Night shifts available', benefits: 'Weekly pay, referral bonus',
+      desc: 'Pick, pack and ship customer orders in a fast-paced fulfillment center. Must be able to lift 50 lbs.' },
+    { lang: 'en', title: 'Machine Operator', type: 'Full-Time', location: 'Elk Grove Village, IL', pay: '$19-22/hr', urgent: true, work_auth: 'gc',
+      schedule: 'Mon–Fri 6am–2:30pm (overtime available)', benefits: 'Medical, dental & vision after 90 days, PTO',
+      desc: 'Operate and monitor automated packaging machinery on a production line. Prior manufacturing experience preferred.' },
+    { lang: 'en', title: 'General Labor', type: 'Temporary', location: 'Addison, IL', pay: '$15.50/hr', work_auth: 'any',
+      schedule: 'Mon–Fri 7am–3:30pm, weekend shifts with differential', benefits: 'Weekly pay, free PPE',
+      desc: 'Various light industrial tasks including assembly, sorting and quality inspection.' },
+    { lang: 'es', title: 'Trabajador de Almacén', type: 'Tiempo Completo', location: 'Melrose Park, IL', pay: '$16-18/hr', work_auth: 'any',
+      schedule: 'Lunes a viernes 7am–3:30pm', benefits: 'Pago semanal, uniforme incluido',
+      desc: 'Clasificar y empacar productos en almacén. No se requiere experiencia previa, se ofrece capacitación.' },
+    { lang: 'es', title: 'Operador de Montacargas', type: 'Temporal', location: 'Cicero, IL', pay: '$20/hr', urgent: true, work_auth: 'gc',
+      schedule: 'Turno nocturno 10pm–6am, lunes a viernes', benefits: 'Pago semanal, horas extras disponibles',
+      desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía.' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
   document.getElementById('jTitle').value    = r.title;
   document.getElementById('jType').value     = r.type;
   document.getElementById('jLocation').value = r.location;
   document.getElementById('jPay').value      = r.pay;
-  document.getElementById('jLang').value     = r.lang;
-  document.getElementById('jDesc').value     = r.desc;
-  document.getElementById('jUrgent').checked = !!r.urgent;
+  document.getElementById('jLang').value      = r.lang;
+  document.getElementById('jWorkAuth').value  = r.work_auth || '';
+  document.getElementById('jSchedule').value  = r.schedule || '';
+  document.getElementById('jBenefits').value  = r.benefits || '';
+  document.getElementById('jDesc').value      = r.desc;
+  document.getElementById('jUrgent').checked  = !!r.urgent;
 }
 
 async function saveJob() {
@@ -1102,6 +1165,9 @@ async function saveJob() {
     pay: document.getElementById('jPay').value,
     lang: document.getElementById('jLang').value,
     lang_name: langNames[document.getElementById('jLang').value],
+    work_auth: document.getElementById('jWorkAuth').value,
+    schedule: document.getElementById('jSchedule').value,
+    benefits: document.getElementById('jBenefits').value,
     description: document.getElementById('jDesc').value,
     urgent: document.getElementById('jUrgent').checked,
     active: true
@@ -2070,6 +2136,7 @@ async function deleteTimeEntry(id) {
 // ─── Weekly Timesheet Modal ───
 let tsWeeks = 1;
 let tsAllEmps = [];
+let tsSelectedEmp = null; // { id, name, code, email, phone }
 
 function setTsWeeks(n, btn) {
   tsWeeks = n;
@@ -2078,25 +2145,53 @@ function setTsWeeks(n, btn) {
   buildTsRows();
 }
 
+// Employee search for tsModal
+function filterTsEmp() {
+  const q = document.getElementById('tsEmpSearch').value.toLowerCase();
+  const drop = document.getElementById('tsEmpDrop');
+  const matches = tsAllEmps.filter(e => e.status === 'active' &&
+    (`${e.first_name} ${e.last_name}`.toLowerCase().includes(q) ||
+     (e.employee_id||'').toLowerCase().includes(q)));
+  if (!matches.length || !q) { drop.style.display = 'none'; return; }
+  drop.innerHTML = matches.slice(0,8).map(e =>
+    `<div class="eo" onmousedown="selectTsEmp(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}','${esc(e.employee_id||'')}','${esc(e.email||'')}','${esc(e.phone||'')}')">
+      ${esc(e.first_name)} ${esc(e.last_name)}
+      <small>${esc(e.employee_id||'')} ${e.department ? '· '+esc(e.department) : ''}</small>
+    </div>`).join('');
+  drop.style.display = 'block';
+}
+function hideTsEmpDrop() { setTimeout(()=>document.getElementById('tsEmpDrop').style.display='none',150); }
+function selectTsEmp(id, name, code, email, phone) {
+  tsSelectedEmp = { id, name, code, email, phone };
+  document.getElementById('tsEmp').value = id;
+  document.getElementById('tsEmpSearch').value = `${name} (${code})`;
+  document.getElementById('tsEmpDrop').style.display = 'none';
+  const sel = document.getElementById('tsEmpSelected');
+  sel.textContent = `✔ ${name} · ${code}`;
+  sel.style.display = 'block';
+  updateTsEmployeeInfo();
+}
+
 async function openTsModal() {
-  // populate employees
   tsAllEmps = await api('/admin/employees');
-  const sel = document.getElementById('tsEmp');
-  sel.innerHTML = '<option value="">-- 请选择员工 --</option>' +
-    tsAllEmps.filter(e=>e.status==='active').map(e=>`<option value="${e.id}" data-name="${esc(e.first_name)} ${esc(e.last_name)}" data-code="${esc(e.employee_id)}">${esc(e.first_name)} ${esc(e.last_name)} (${esc(e.employee_id)})</option>`).join('');
+  tsSelectedEmp = null;
+  document.getElementById('tsEmp').value = '';
+  document.getElementById('tsEmpSearch').value = '';
+  document.getElementById('tsEmpDrop').style.display = 'none';
+  document.getElementById('tsEmpSelected').style.display = 'none';
+  document.getElementById('tsCompany').value = '';
   // populate jobs
   const jobs = await api('/admin/jobs');
   document.getElementById('tsJob').innerHTML = '<option value="">无</option>' +
     jobs.filter(j=>j.active).map(j=>`<option value="${j.id}">${esc(j.title)} — ${esc(j.location)}</option>`).join('');
   // default start date: this Monday
   const today = new Date();
-  const dayOfWeek = today.getDay(); // 0=Sun
   const monday = new Date(today);
-  monday.setDate(today.getDate() - ((dayOfWeek + 6) % 7));
+  monday.setDate(today.getDate() - ((today.getDay()+6)%7));
   document.getElementById('tsStartDate').value = monday.toISOString().slice(0,10);
   tsWeeks = 1;
   document.querySelectorAll('.ts-week-toggle button').forEach((b,i)=>b.classList.toggle('active',i===0));
-  document.getElementById('tsConfirmCheck').checked = false;
+  document.getElementById('tsConfirmBlock').style.display = 'none';
   buildTsRows();
   document.getElementById('tsModal').classList.add('show');
 }
@@ -2124,7 +2219,8 @@ function buildTsRows() {
       <td class="day-label">${label}<small>${dateLabel} ${dateStr}</small></td>
       <td><input type="time" class="ts-in" onchange="calcTsRow(this)"></td>
       <td><input type="time" class="ts-out" onchange="calcTsRow(this)"></td>
-      <td><input type="number" class="ts-break" value="0" min="0" step="5" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-lunch-start" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-lunch-end" onchange="calcTsRow(this)"></td>
       <td class="ts-hours">—</td>
       <td class="ts-hours">—</td>
       <td class="ts-ot">—</td>
@@ -2132,15 +2228,21 @@ function buildTsRows() {
   }
   document.getElementById('tsBody').innerHTML = html;
   updateTsTotals();
-  // set signature date
-  document.getElementById('tsSigDate').textContent = new Date().toLocaleDateString('en-US');
 }
 
 function calcTsRow(el) {
   const tr = el.closest('tr');
   const inVal = tr.querySelector('.ts-in').value;
   const outVal = tr.querySelector('.ts-out').value;
-  const breakMin = parseInt(tr.querySelector('.ts-break').value) || 0;
+  // compute lunch break in minutes from start/end times
+  const lsVal = tr.querySelector('.ts-lunch-start').value;
+  const leVal = tr.querySelector('.ts-lunch-end').value;
+  let breakMin = 0;
+  if (lsVal && leVal) {
+    const [sh,sm] = lsVal.split(':').map(Number);
+    const [eh,em] = leVal.split(':').map(Number);
+    breakMin = Math.max(0, (eh*60+em) - (sh*60+sm));
+  }
   const cells = tr.querySelectorAll('.ts-hours, .ts-ot');
   if (!inVal || !outVal) { cells[0].textContent = '—'; cells[1].textContent = '—'; cells[2].textContent = '—'; updateTsTotals(); return; }
   const dateStr = tr.dataset.date;
@@ -2175,24 +2277,24 @@ function updateTsTotals() {
 }
 
 function updateTsEmployeeInfo() {
-  const sel = document.getElementById('tsEmp');
-  const opt = sel.options[sel.selectedIndex];
-  if (opt && opt.value) {
-    document.getElementById('tsPrintName').textContent = opt.dataset.name || '';
-    document.getElementById('tsPrintId').textContent = opt.dataset.code || '';
+  if (tsSelectedEmp) {
+    document.getElementById('tsPrintName').textContent = tsSelectedEmp.name || '';
+    document.getElementById('tsPrintId').textContent = tsSelectedEmp.code || '';
   }
 }
 
 async function saveBatchTimesheet() {
   const empId = document.getElementById('tsEmp').value;
-  if (!empId) return alert('请选择员工');
+  if (!empId) return alert('请先通过搜索选择员工');
   const entries = [];
+  let periodStart = '', periodEnd = '';
   document.querySelectorAll('#tsBody tr').forEach(tr => {
     const inVal = tr.querySelector('.ts-in').value;
     const outVal = tr.querySelector('.ts-out').value;
     if (!inVal || !outVal) return;
     const dateStr = tr.dataset.date;
-    const breakMin = parseInt(tr.querySelector('.ts-break').value) || 0;
+    const lsVal = tr.querySelector('.ts-lunch-start').value;
+    const leVal = tr.querySelector('.ts-lunch-end').value;
     let clockOut = dateStr + 'T' + outVal;
     const clockIn = dateStr + 'T' + inVal;
     if (new Date(clockOut) <= new Date(clockIn)) {
@@ -2200,21 +2302,64 @@ async function saveBatchTimesheet() {
       nextDay.setDate(nextDay.getDate() + 1);
       clockOut = nextDay.toISOString().slice(0,10) + 'T' + outVal;
     }
-    entries.push({ clock_in: clockIn, clock_out: clockOut, break_minutes: breakMin });
+    if (!periodStart || dateStr < periodStart) periodStart = dateStr;
+    if (!periodEnd || dateStr > periodEnd) periodEnd = dateStr;
+    entries.push({ clock_in: clockIn, clock_out: clockOut, lunch_start: lsVal, lunch_end: leVal });
   });
   if (entries.length === 0) return alert('请至少填写一天的工时');
   const jobId = document.getElementById('tsJob').value || null;
+  const company = document.getElementById('tsCompany').value || '';
   const r = await api('/admin/time-entries/batch', {
     method: 'POST',
-    body: JSON.stringify({ employee_id: parseInt(empId), entries, job_id: jobId ? parseInt(jobId) : null })
+    body: JSON.stringify({
+      employee_id: parseInt(empId), entries,
+      job_id: jobId ? parseInt(jobId) : null,
+      company_name: company,
+      period_start: periodStart,
+      period_end: periodEnd
+    })
   });
   if (r.success) {
-    alert(`成功保存 ${r.count} 条工时记录`);
     closeTsModal();
     loadTimeEntries();
+    showTsLink(r.token, r.count);
   } else {
     alert(r.error || '保存失败');
   }
+}
+
+let _tsLinkToken = '';
+let _tsLinkEmp = null;
+function showTsLink(token, count) {
+  _tsLinkToken = token;
+  _tsLinkEmp = tsSelectedEmp;
+  const url = `${location.origin}/ts?token=${token}`;
+  document.getElementById('tsLinkUrl').textContent = url;
+  // show email/SMS buttons if employee has contact info
+  const emailBtn = document.getElementById('tsEmailBtn');
+  const smsBtn = document.getElementById('tsSmsBtn');
+  emailBtn.style.display = (_tsLinkEmp && _tsLinkEmp.email) ? 'inline-block' : 'none';
+  smsBtn.style.display = (_tsLinkEmp && _tsLinkEmp.phone) ? 'inline-block' : 'none';
+  document.getElementById('tsLinkModal').classList.add('show');
+}
+function copyTsLink() {
+  const url = document.getElementById('tsLinkUrl').textContent;
+  navigator.clipboard.writeText(url).then(() => alert('链接已复制'));
+}
+function openTsEmail() {
+  const url = document.getElementById('tsLinkUrl').textContent;
+  const emp = _tsLinkEmp;
+  const subject = encodeURIComponent('请确认您的工时记录 / Please confirm your timesheet');
+  const body = encodeURIComponent(
+    `Hi ${emp ? emp.name : ''},\n\n请点击以下链接查看并确认您的工时记录:\n${url}\n\nPlease click the link above to review and confirm your timesheet.\n\n— Prime Anchorpoint`
+  );
+  window.open(`mailto:${emp ? emp.email : ''}?subject=${subject}&body=${body}`);
+}
+function openTsSms() {
+  const url = document.getElementById('tsLinkUrl').textContent;
+  const emp = _tsLinkEmp;
+  const msg = encodeURIComponent(`[Prime Anchorpoint] 请确认您的工时记录: ${url}`);
+  window.open(`sms:${emp ? emp.phone : ''}?body=${msg}`);
 }
 
 function printTimesheet() {
