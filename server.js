@@ -209,6 +209,13 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule TEXT DEFAULT ''`); } catch(e
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 
+// Assignment detail fields
+try { db.exec(`ALTER TABLE assignments ADD COLUMN pay_rate TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN pay_type TEXT DEFAULT 'hourly'`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_type TEXT DEFAULT 'W2'`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN benefits TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN start_date TEXT DEFAULT ''`); } catch(e) {}
+
 // Migrate admin_users table (add role, display_name, active, created_at columns if missing)
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
   try { db.exec(`ALTER TABLE admin_users ADD COLUMN ${col}`); } catch {}
@@ -809,15 +816,19 @@ app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
 });
 
 app.post('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
-  const { inquiry_id, job_id, notes } = req.body;
+  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date } = req.body;
   if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
-  const r = db.prepare('INSERT INTO assignments (inquiry_id, job_id, notes) VALUES (?, ?, ?)').run(inquiry_id, job_id, notes || '');
+  const r = db.prepare(`INSERT INTO assignments
+    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('update', 'assignments'), (req, res) => {
-  const { status, notes } = req.body;
-  db.prepare('UPDATE assignments SET status=?, notes=? WHERE id=?').run(status || 'assigned', notes || '', req.params.id);
+  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date } = req.body;
+  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=? WHERE id=?`)
+    .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', req.params.id);
   res.json({ success: true });
 });
 

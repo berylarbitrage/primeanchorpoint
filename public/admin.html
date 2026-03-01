@@ -238,7 +238,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="cancelled">已取消</option>
     </select>
   </div>
-  <div class="card"><table><thead><tr><th>日期</th><th>人员</th><th>分配职位</th><th>工作地点</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>日期</th><th>人员</th><th>分配职位</th><th>合同/薪资</th><th>福利</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div>
 </div>
 
 <!-- Jobs -->
@@ -527,12 +527,29 @@ tr:hover td{background:var(--sky-light)}
   <input type="hidden" id="assignId">
   <div class="field"><label>选择人员 *</label><select id="aInquiry"><option value="">-- 请选择 --</option></select></div>
   <div class="field"><label>分配职位 *</label><select id="aJob"><option value="">-- 请选择 --</option></select></div>
-  <div class="field"><label>状态</label><select id="aStatus">
-    <option value="assigned">已分配</option>
-    <option value="working">工作中</option>
-    <option value="completed">已完成</option>
-    <option value="cancelled">已取消</option>
-  </select></div>
+  <div class="field-row">
+    <div class="field"><label>开始日期</label><input type="date" id="aStartDate"></div>
+    <div class="field"><label>状态</label><select id="aStatus">
+      <option value="assigned">已分配</option>
+      <option value="working">工作中</option>
+      <option value="completed">已完成</option>
+      <option value="cancelled">已取消</option>
+    </select></div>
+  </div>
+  <div class="field-row">
+    <div class="field"><label>合同类型</label><select id="aContractType">
+      <option value="W2">W2（雇员）</option>
+      <option value="1099">1099（独立承包商）</option>
+    </select></div>
+    <div class="field"><label>薪资方式</label><select id="aPayType">
+      <option value="hourly">时薪（$/hr）</option>
+      <option value="salary">固定月薪</option>
+      <option value="annual">年薪</option>
+      <option value="per_piece">计件</option>
+    </select></div>
+  </div>
+  <div class="field"><label>薪资 / 工资</label><input id="aPayRate" placeholder="例：18.50/hr 或 $3,200/月"></div>
+  <div class="field"><label>福利待遇</label><textarea id="aBenefits" rows="2" placeholder="例：医疗保险、带薪假期、401K、免费停车..."></textarea></div>
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveAssignment()">保存</button>
@@ -1262,25 +1279,36 @@ function filterAssignments() {
   renderAssignments(filtered);
 }
 
+const payTypeLabel = t => ({ hourly:'时薪', salary:'月薪', annual:'年薪', per_piece:'计件' }[t] || t);
 function renderAssignments(assigns) {
   document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => `<tr>
-    <td>${new Date(a.assigned_at).toLocaleDateString()}</td>
+    <td>${new Date(a.assigned_at).toLocaleDateString()}${a.start_date ? '<br><span style="font-size:.72rem;color:var(--gray-400)">开始：' + a.start_date + '</span>' : ''}</td>
     <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
-    <td>${esc(a.job_title || '未知职位')}</td>
-    <td>${esc(a.job_location || '')}</td>
+    <td>${esc(a.job_title || '未知职位')}<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(a.job_location || '')}</span></td>
+    <td>
+      <span class="badge" style="background:${a.contract_type==='1099'?'var(--orange-light,#fff3e0)':'var(--sky-light)'};color:${a.contract_type==='1099'?'#e65100':'var(--blue)'};font-weight:700">${esc(a.contract_type||'W2')}</span>
+      ${a.pay_rate ? '<br><span style="font-size:.8rem;font-weight:600">' + esc(a.pay_rate) + '</span>' : ''}
+      ${a.pay_type ? '<br><span style="font-size:.72rem;color:var(--gray-400)">' + payTypeLabel(a.pay_type) + '</span>' : ''}
+    </td>
+    <td style="font-size:.78rem;max-width:160px;white-space:normal">${esc(a.benefits || '—')}</td>
     <td><span class="badge badge-${a.status}">${statusLabel(a.status)}</span></td>
     <td>
       <button class="btn btn-sm" onclick='editAssignment(${JSON.stringify(a).replace(/'/g,"&#39;")})'>编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteAssignment(${a.id})">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
 }
 
 async function openAssignModal(assignment) {
   document.getElementById('assignModalTitle').textContent = assignment ? '编辑派工' : '新建派工';
   document.getElementById('assignId').value = assignment ? assignment.id : '';
   document.getElementById('aStatus').value = assignment ? assignment.status : 'assigned';
-  document.getElementById('aNotes').value = assignment ? assignment.notes : '';
+  document.getElementById('aNotes').value = assignment ? (assignment.notes || '') : '';
+  document.getElementById('aStartDate').value = assignment ? (assignment.start_date || '') : '';
+  document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
+  document.getElementById('aPayType').value = assignment ? (assignment.pay_type || 'hourly') : 'hourly';
+  document.getElementById('aPayRate').value = assignment ? (assignment.pay_rate || '') : '';
+  document.getElementById('aBenefits').value = assignment ? (assignment.benefits || '') : '';
 
   // Load options for selects
   const [inqs, jobs] = await Promise.all([api('/admin/inquiries'), api('/admin/jobs')]);
@@ -1309,7 +1337,12 @@ async function saveAssignment() {
     inquiry_id: document.getElementById('aInquiry').value,
     job_id: document.getElementById('aJob').value,
     status: document.getElementById('aStatus').value,
-    notes: document.getElementById('aNotes').value
+    notes: document.getElementById('aNotes').value,
+    start_date: document.getElementById('aStartDate').value,
+    contract_type: document.getElementById('aContractType').value,
+    pay_type: document.getElementById('aPayType').value,
+    pay_rate: document.getElementById('aPayRate').value,
+    benefits: document.getElementById('aBenefits').value
   };
   if (!data.inquiry_id || !data.job_id) return alert('请选择人员和职位');
   if (id) await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
