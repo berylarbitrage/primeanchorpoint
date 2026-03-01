@@ -401,6 +401,8 @@ const WORKER_POSITIONS = [
   { key:'order_picker',       zh:'拣货员',       en:'Order Picker' },
   { key:'welder',             zh:'焊接工',       en:'Welder' },
 ];
+// Add quote_request column to inquiries if not already present (migration)
+try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -731,13 +733,14 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
       const city = (d.location || '').split(',')[0].trim();
       employerId = nextEmployerId(city);
     }
-    const stmt = db.prepare(`INSERT INTO inquiries (name, email, phone, company, type, employer_id, positions, workers, location, start_date, experience, languages, comments, resume_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const stmt = db.prepare(`INSERT INTO inquiries (name, email, phone, company, type, employer_id, positions, workers, location, start_date, experience, languages, comments, resume_path, quote_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const result = stmt.run(
       d.name, d.email || '', d.phone || '', d.company || '', d.type || '',
       employerId,
       d.positions || '', d.workers || '', d.location || '', d.start_date || '',
       d.experience || '', d.languages || '', d.comments || '',
-      req.file ? req.file.filename : ''
+      req.file ? req.file.filename : '',
+      d.quote_request ? 1 : 0
     );
     res.json({ success: true, id: result.lastInsertRowid, employer_id: employerId || undefined });
   } catch (e) {
