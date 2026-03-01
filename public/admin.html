@@ -761,6 +761,26 @@ tr:hover td{background:var(--sky-light)}
   <p id="empDocLinkTarget" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
   <input type="hidden" id="empDocLinkEmpId">
 
+  <div style="display:flex;gap:1rem;flex-wrap:wrap">
+    <div class="field" style="flex:1;min-width:140px"><label>语言 / Language</label>
+      <select id="docReqLang">
+        <option value="zh">中文</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+      </select>
+    </div>
+    <div class="field" style="flex:1;min-width:180px"><label>发送方式</label>
+      <select id="docReqSendVia" onchange="updateDocReqSendTarget()">
+        <option value="phone">手机短信 (SMS)</option>
+        <option value="email">邮箱 (Email)</option>
+      </select>
+    </div>
+  </div>
+  <div class="field" id="docReqSendTarget" style="margin-top:-.2rem">
+    <label id="docReqSendLabel">发送至手机</label>
+    <input type="text" id="docReqSendValue" readonly style="background:var(--gray-100);color:var(--gray-600)">
+  </div>
+
   <div class="field"><label>选择需要收集的材料（多选）</label>
     <div style="display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem">
       <label style="display:flex;align-items:center;gap:.6rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
@@ -832,6 +852,15 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn btn-red" onclick="confirmCloseJob()">确认关闭</button>
     <button class="btn" onclick="guardClose('closeJobModal')">取消</button>
   </div>
+</div></div>
+
+<!-- Job History Modal -->
+<div class="modal-bg" id="jobHistoryModal"><div class="modal modal-lg">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <h2 id="jobHistoryTitle" style="margin:0">职位变更记录</h2>
+    <button class="btn btn-sm btn-outline" onclick="document.getElementById('jobHistoryModal').classList.remove('show')">关闭</button>
+  </div>
+  <div id="jobHistoryContent"></div>
 </div></div>
 
 <div class="modal-bg" id="jobModal"><div class="modal" style="max-width:680px">
@@ -941,22 +970,11 @@ tr:hover td{background:var(--sky-light)}
   <div style="flex:1;overflow-y:auto;min-height:0">
   <div id="inqDetail"></div>
   <div id="inqOnboardStatus" style="display:none;margin-top:1rem;padding:.75rem 1rem;background:var(--off-white);border-radius:8px;font-size:.85rem"></div>
-
-  <!-- Per-job ratings -->
-  <div id="inqJobRatings" style="display:none;margin-top:1.5rem">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-      <h3 style="font-size:.95rem;font-weight:700;color:var(--blue);margin:0">📋 岗位匹配评估</h3>
-      <button class="btn btn-sm btn-green" onclick="saveJobRatings()">保存评估</button>
-    </div>
-    <div id="inqJobRatingsList"></div>
-  </div>
   </div>
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;flex-shrink:0">
-    <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
     <button class="btn" style="background:var(--gray-200);color:var(--gray-700)" onclick="openProcessModal()">✅ 标记已处理</button>
-    <button class="btn btn-red" onclick="deleteInqFromModal()">🗑 删除</button>
     <button class="btn" style="background:var(--gray-100);color:var(--gray-600)" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
@@ -1173,7 +1191,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="field-row">
       <div class="field"><label>员工编号</label><input id="eEmpId" placeholder="留空自动生成 EMP001..."></div>
-      <div class="field"><label>出生日期</label><input id="eDob" type="date"></div>
+      <div class="field"><label>出生日期 *</label><input id="eDob" type="date"></div>
     </div>
     <div class="field-row">
       <div class="field"><label>电话</label><input id="ePhone" placeholder="(555) 000-0000"></div>
@@ -1239,6 +1257,14 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div id="empDetailContent"></div>
+  <!-- 岗位匹配评估 -->
+  <div id="empJobRatings" style="display:none;margin-top:1.5rem;border-top:1px solid var(--gray-200);padding-top:1.25rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h3 style="font-size:.95rem;font-weight:700;color:var(--blue);margin:0">📋 岗位匹配评估</h3>
+      <button class="btn btn-sm btn-green" onclick="saveEmpRatings()">保存评估</button>
+    </div>
+    <div id="empJobRatingsList"></div>
+  </div>
 </div></div>
 
 <!-- ════ Time Entry Modal (single entry for editing) ════ -->
@@ -1272,15 +1298,14 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="field-row no-print" style="margin-bottom:1rem">
-    <div class="field">
-      <label>员工 *</label>
-      <input type="hidden" id="tsEmp">
+    <div class="field" style="flex:2">
+      <label>员工 * <span style="font-weight:400;color:var(--gray-400);font-size:.78rem">（可选多人，相同工时将批量提交）</span></label>
       <div class="emp-srch-wrap">
-        <input id="tsEmpSearch" type="text" placeholder="输入姓名或工号搜索..." autocomplete="off"
+        <input id="tsEmpSearch" type="text" placeholder="输入姓名或工号搜索并添加..." autocomplete="off"
           oninput="filterTsEmp()" onfocus="filterTsEmp()" onblur="hideTsEmpDrop()">
         <div id="tsEmpDrop" class="emp-srch-drop"></div>
       </div>
-      <div id="tsEmpSelected" class="emp-selected"></div>
+      <div id="tsEmpTags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px"></div>
     </div>
     <div class="field"><label>公司 (客户)</label><input id="tsCompany" type="text" placeholder="例：ABC Logistics"></div>
     <div class="field"><label>起始日期 (周一)</label><input id="tsStartDate" type="date" onchange="buildTsRows()"></div>
@@ -1326,7 +1351,7 @@ tr:hover td{background:var(--sky-light)}
   <p style="font-size:.85rem;color:var(--gray-600);margin-bottom:.75rem">
     以下链接可发给员工确认工时。员工可以点击同意或填写反驳意见。
   </p>
-  <div id="tsLinkUrl" class="ts-link-box"></div>
+  <a id="tsLinkUrl" class="ts-link-box" href="#" target="_blank" style="display:block;color:var(--sky);text-decoration:none;word-break:break-all"></a>
   <div class="ts-send-btns">
     <button class="btn" onclick="copyTsLink()">📋 复制链接</button>
     <button class="btn btn-green" id="tsEmailBtn" style="display:none" onclick="openTsEmail()">📧 发邮件</button>
@@ -1494,6 +1519,7 @@ async function doLogin() {
 }
 
 function logout() {
+  if (TOKEN) fetch(API + '/admin/logout', { method:'POST', headers:{ 'Authorization':`Bearer ${TOKEN}` } }).catch(()=>{});
   TOKEN = '';
   USER_ROLE = '';
   USER_NAME = '';
@@ -1688,22 +1714,25 @@ function renderJobsFiltered() {
           ? `<button class="btn btn-sm" style="background:var(--orange-light,#fff3e0);color:#c05621;border:1px solid #fbd38d" onclick='openCloseJobModal(${JSON.stringify(j).replace(/'/g,"&#39;")})'>关闭</button>`
           : `<button class="btn btn-sm btn-green" onclick="reopenJob(${j.id})">重新开放</button>`}
         <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
+        <button class="btn btn-sm btn-outline" onclick="showJobHistory(${j.id},'${esc(j.title)}')">历史</button>
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="8" class="empty">${isHistory ? '暂无历史职位' : '暂无在招职位，点击 "+ 新增职位" 添加'}</td></tr>`;
 }
 
 async function loadJobs() {
-  _allJobs = await api('/admin/jobs');
+  const res = await api('/admin/jobs');
+  _allJobs = Array.isArray(res) ? res : [];
   renderJobsFiltered();
 }
 
 async function openJobModal(job) {
+  try {
   document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
   document.getElementById('jobId').value = job ? job.id : '';
   // Load partners for search
-  _jobPartners = await api('/admin/partners');
-  _jobPartners = _jobPartners.filter(p => p.active);
+  const partnerRes = await api('/admin/partners');
+  _jobPartners = Array.isArray(partnerRes) ? partnerRes.filter(p => p.active) : [];
   document.getElementById('jPartnerDrop').classList.remove('open');
   if (job && job.partner_id) {
     const p = _jobPartners.find(x => x.id == job.partner_id);
@@ -1740,6 +1769,7 @@ async function openJobModal(job) {
 
   document.getElementById('jobModal').classList.add('show');
   captureModalState('jobModal');
+  } catch(e) { console.error('openJobModal error:', e); document.getElementById('jobModal').classList.add('show'); }
 }
 function closeJobModal() { guardClose('jobModal'); }
 function editJob(j) { openJobModal(j); }
@@ -1904,6 +1934,50 @@ async function reopenJob(id) {
   loadJobs();
 }
 
+async function showJobHistory(jobId, title) {
+  document.getElementById('jobHistoryTitle').textContent = `变更记录 — ${title}`;
+  document.getElementById('jobHistoryContent').innerHTML = '<p class="empty" style="padding:1rem">加载中...</p>';
+  document.getElementById('jobHistoryModal').classList.add('show');
+  const logs = await api(`/admin/jobs/${jobId}/history`);
+  const ACTION_LABEL = { created:'新建', updated:'编辑', closed:'关闭', reopened:'重新开放', deleted:'删除' };
+  const FIELD_LABEL = {
+    title:'职位名称', type:'职位类型', location:'地点', pay:'薪资', job_status:'状态',
+    close_reason:'关闭原因', close_note:'关闭备注', active:'在招', headcount:'人数',
+    employment_type:'雇佣性质', work_days:'工作日', work_start:'上班时间', work_end:'下班时间',
+    benefits:'福利', description:'描述', urgent:'急聘', company_name:'公司', work_auth:'身份要求'
+  };
+  if (!logs.length) {
+    document.getElementById('jobHistoryContent').innerHTML = '<p class="empty" style="padding:1rem">暂无变更记录</p>';
+    return;
+  }
+  document.getElementById('jobHistoryContent').innerHTML = `<table><thead><tr><th>时间</th><th>操作</th><th>操作人</th><th>变更内容</th></tr></thead><tbody>` +
+    logs.map(l => {
+      const changes = JSON.parse(l.changes || '{}');
+      const keys = Object.keys(changes);
+      let detail = '';
+      if (l.action === 'created') {
+        detail = `<span style="color:var(--green)">创建职位: ${esc(changes.title||'')}${changes.company_name?' · '+esc(changes.company_name):''}</span>`;
+      } else if (l.action === 'deleted') {
+        detail = `<span style="color:var(--red)">删除: ${esc(changes.title||'')}${changes.company_name?' · '+esc(changes.company_name):''}</span>`;
+      } else if (keys.length) {
+        detail = keys.map(k => {
+          const c = changes[k];
+          return `<div style="margin-bottom:2px"><strong>${FIELD_LABEL[k]||k}</strong>: <span style="text-decoration:line-through;color:var(--gray-400)">${esc(String(c.from??''))}</span> → <span style="color:var(--blue)">${esc(String(c.to??''))}</span></div>`;
+        }).join('');
+      } else {
+        detail = '<span style="color:var(--gray-400)">无字段变更</span>';
+      }
+      const dt = new Date(l.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+      const actionBadge = l.action === 'deleted' ? 'badge-red' : l.action === 'created' ? 'badge-green' : l.action === 'closed' ? 'badge-yellow' : 'badge-blue';
+      return `<tr>
+        <td style="white-space:nowrap;font-size:.78rem">${dt}</td>
+        <td><span class="badge ${actionBadge}">${ACTION_LABEL[l.action]||l.action}</span></td>
+        <td style="font-size:.82rem">${esc(l.performed_by||'—')}</td>
+        <td style="font-size:.78rem">${detail}</td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
+}
+
 // ─── Inquiries (问卷管理) ───
 let allInqHistory = [];
 let currentInqTab = 'pending';
@@ -1976,9 +2050,7 @@ function renderInquiries(inqs) {
     <td style="font-size:.82rem">${esc(i.location||'')}</td>
     <td style="white-space:nowrap">${esc(i.phone)}</td>
     <td style="white-space:nowrap">
-      <button class="btn btn-sm btn-green" onclick="event.stopPropagation();quickAssign(${i.id},'${esc(i.name)}')">派工</button>
       <button class="btn btn-sm" style="background:var(--gray-200);color:var(--gray-700)" onclick="event.stopPropagation();openProcessModalDirect(${JSON.stringify(i).replace(/'/g,'&#39;')})">处理</button>
-      <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deleteInq(${i.id})">删除</button>
     </td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无待处理问卷</td></tr>';
 }
@@ -2036,7 +2108,6 @@ async function undoProcessInquiry(id) {
   loadInquiries();
 }
 
-let _inqJobRatings = []; // [{ key, zh, en, rating:{...} }]
 
 function showInquiry(i) {
   currentInquiry = i;
@@ -2076,72 +2147,73 @@ function showInquiry(i) {
     btnOnboard.style.display = 'none';
     statusDiv.style.display = 'none';
   }
-  // Load position ratings
-  loadJobRatings(i.id);
   document.getElementById('inqModal').classList.add('show');
 }
 
-async function loadJobRatings(inqId) {
-  const section = document.getElementById('inqJobRatings');
-  const list = document.getElementById('inqJobRatingsList');
-  const data = await api(`/admin/inquiries/${inqId}/position-ratings`);
-  _inqJobRatings = data;
+let _empRatingsData = [];
+let _empRatingEmpId = null;
+
+async function loadEmpRatings(empId) {
+  _empRatingEmpId = empId;
+  const section = document.getElementById('empJobRatings');
+  const list = document.getElementById('empJobRatingsList');
+  const data = await api(`/admin/employees/${empId}/position-ratings`);
+  _empRatingsData = data;
   section.style.display = '';
   list.innerHTML = data.map(p => {
     const r = p.rating || {};
     const score = r.skill_score || 0;
-    const rec = r.recommend;
+    const rec = r.recommend != null && r.recommend !== -1 ? r.recommend : null;
     const hasRating = !!p.rating;
     const stars = [1,2,3,4,5].map(n =>
-      `<span class="star${n <= score ? ' on' : ''}" data-n="${n}" onclick="setJobStar('${p.key}',${n})">★</span>`
+      `<span class="star${n <= score ? ' on' : ''}" data-n="${n}" onclick="setEmpStar('${p.key}',${n})">★</span>`
     ).join('');
     const pay = r.suggest_pay || '';
-    return `<div class="job-rating-card" id="jrc-${p.key}">
+    return `<div class="job-rating-card" id="empJrc-${p.key}">
       <div class="jr-title">${esc(p.zh)} <span style="font-size:.75rem;color:var(--gray-400);font-weight:400">${esc(p.en)}</span></div>
       <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:3px;margin-top:.4rem">能力评分</div>
-      <div class="star-row" id="stars-${p.key}">${stars}</div>
+      <div class="star-row" id="empStars-${p.key}">${stars}</div>
       <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:4px">是否推荐</div>
       <div class="jr-recommend-row">
-        <button class="rec-btn yes${hasRating&&rec===1?' active':''}" onclick="setJobRec('${p.key}',1)">✅ 推荐</button>
-        <button class="rec-btn no${hasRating&&rec===0?' active':''}" onclick="setJobRec('${p.key}',0)">❌ 不推荐</button>
+        <button class="rec-btn yes${hasRating&&rec===1?' active':''}" onclick="setEmpRec('${p.key}',1)">✅ 推荐</button>
+        <button class="rec-btn no${hasRating&&rec===0?' active':''}" onclick="setEmpRec('${p.key}',0)">❌ 不推荐</button>
       </div>
-      <div id="jpay-wrap-${p.key}" style="${hasRating&&rec===1?'':'display:none'}">
+      <div id="empJpayWrap-${p.key}" style="${hasRating&&rec===1?'':'display:none'}">
         <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:4px">建议薪资</div>
         <div class="jr-pay-row">
-          <input id="jpay-${p.key}" value="${esc(pay)}" placeholder="例：$18/hr 或 $3,200/月">
+          <input id="empJpay-${p.key}" value="${esc(pay)}" placeholder="例：$18/hr 或 $3,200/月">
         </div>
       </div>
     </div>`;
   }).join('');
 }
 
-function setJobStar(posKey, n) {
-  const row = document.getElementById(`stars-${posKey}`);
+function setEmpStar(posKey, n) {
+  const row = document.getElementById(`empStars-${posKey}`);
   row.querySelectorAll('.star').forEach(s => {
     s.classList.toggle('on', parseInt(s.dataset.n) <= n);
   });
 }
 
-function setJobRec(posKey, val) {
-  const card = document.getElementById(`jrc-${posKey}`);
+function setEmpRec(posKey, val) {
+  const card = document.getElementById(`empJrc-${posKey}`);
   card.querySelectorAll('.rec-btn').forEach(b => b.classList.remove('active'));
   card.querySelector(val===1 ? '.rec-btn.yes' : '.rec-btn.no').classList.add('active');
-  document.getElementById(`jpay-wrap-${posKey}`).style.display = val===1 ? '' : 'none';
+  document.getElementById(`empJpayWrap-${posKey}`).style.display = val===1 ? '' : 'none';
 }
 
-async function saveJobRatings() {
-  if (!currentInquiry) return;
-  const ratings = _inqJobRatings.map(p => {
-    const stars = document.getElementById(`stars-${p.key}`);
+async function saveEmpRatings() {
+  if (!_empRatingEmpId) return;
+  const ratings = _empRatingsData.map(p => {
+    const stars = document.getElementById(`empStars-${p.key}`);
     const score = stars ? [...stars.querySelectorAll('.star.on')].length : 0;
-    const card = document.getElementById(`jrc-${p.key}`);
-    const recommend = card?.querySelector('.rec-btn.yes.active') ? 1 : (card?.querySelector('.rec-btn.no.active') ? 0 : null);
-    const payInp = document.getElementById(`jpay-${p.key}`);
-    return { position_key: p.key, skill_score: score, recommend: recommend ?? 0, suggest_pay: payInp ? payInp.value.trim() : '' };
+    const card = document.getElementById(`empJrc-${p.key}`);
+    const recommend = card?.querySelector('.rec-btn.yes.active') ? 1 : (card?.querySelector('.rec-btn.no.active') ? 0 : -1);
+    const payInp = document.getElementById(`empJpay-${p.key}`);
+    return { position_key: p.key, skill_score: score, recommend, suggest_pay: payInp ? payInp.value.trim() : '' };
   });
-  await api(`/admin/inquiries/${currentInquiry.id}/position-ratings`, { method: 'PUT', body: JSON.stringify({ ratings }) });
-  loadJobRatings(currentInquiry.id);
-  alert('评估已保存');
+  await api(`/admin/employees/${_empRatingEmpId}/position-ratings`, { method: 'PUT', body: JSON.stringify({ ratings }) });
+  showToast('✅ 岗位评估已保存');
 }
 
 async function sendOnboardLink() {
@@ -2898,7 +2970,7 @@ function renderEmployees(list) {
     <td>
       <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
       <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
-      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>发送材料链接</button>
+      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}","${esc(e.phone||"")}","${esc(e.email||"")}")'>发送材料链接</button>
       <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
       ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
     </td>
@@ -3005,6 +3077,7 @@ async function saveEmployee() {
     pin: document.getElementById('ePin').value || (id ? '__KEEP__' : ''),
   };
   if (!data.first_name || !data.last_name) return alert('请填写员工姓名');
+  if (!id && !data.dob) return alert('请填写出生日期（用于工时确认页身份验证）');
   const ssn = document.getElementById('eSSN').value.replace(/\D/g,'');
   if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
   async function doSave(forceData) {
@@ -3131,7 +3204,7 @@ async function viewEmployee(id) {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
       <h4 style="margin:0">材料收集链接 (${docReqs.length} 条)</h4>
       <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0"
-        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 发送新链接</button>
+        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}","${esc(emp.phone||"")}","${esc(emp.email||"")}")'>+ 发送新链接</button>
     </div>
     ${docReqs.length ? docReqs.map(r => {
       const link = location.origin + '/emp-docs.html?token=' + r.token;
@@ -3202,6 +3275,7 @@ async function viewEmployee(id) {
   document.getElementById('empDetailTitle').textContent = `${emp.first_name} ${emp.last_name} (${emp.employee_id})`;
   document.getElementById('empDetailContent').innerHTML = html;
   document.getElementById('empDetailModal').classList.add('show');
+  loadEmpRatings(emp.id);
 }
 function closeEmpDetailModal() { document.getElementById('empDetailModal').classList.remove('show'); }
 
@@ -3301,7 +3375,10 @@ async function deleteRating(ratingId, empId) {
 // ─── Employee Doc Request Links ───
 let _currentDocLinkUrl = '';
 
-function sendEmpDocLink(empId, empName) {
+let _empDocPhone = '', _empDocEmail = '';
+function sendEmpDocLink(empId, empName, phone, email) {
+  _empDocPhone = phone || '';
+  _empDocEmail = email || '';
   document.getElementById('empDocLinkEmpId').value = empId;
   document.getElementById('empDocLinkTarget').textContent = empName;
   document.getElementById('empDocLinkResult').style.display = 'none';
@@ -3309,25 +3386,44 @@ function sendEmpDocLink(empId, empName) {
   document.getElementById('docReqGovId').checked = true;
   document.getElementById('docReqSsn').checked = true;
   document.getElementById('docReqWorkCard').checked = true;
+  document.getElementById('docReqLang').value = 'zh';
+  document.getElementById('docReqSendVia').value = 'phone';
+  updateDocReqSendTarget();
   document.getElementById('btnGenDocLink').disabled = false;
+  document.getElementById('btnGenDocLink').textContent = '生成链接';
   document.getElementById('empDocLinkModal').classList.add('show');
+}
+function updateDocReqSendTarget() {
+  const via = document.getElementById('docReqSendVia').value;
+  const label = document.getElementById('docReqSendLabel');
+  const input = document.getElementById('docReqSendValue');
+  if (via === 'phone') { label.textContent = '发送至手机'; input.value = _empDocPhone || '（未填写手机号）'; }
+  else { label.textContent = '发送至邮箱'; input.value = _empDocEmail || '（未填写邮箱）'; }
 }
 
 async function generateEmpDocLink() {
   const empId = document.getElementById('empDocLinkEmpId').value;
   const note  = document.getElementById('empDocAdminNote').value;
-  const docs  = ['gov_id','ssn','work_card'].filter(k => document.getElementById('docReq'+k.replace(/^\w/,c=>c.toUpperCase()).replace('_','').replace(/^\w/,c=>c.toUpperCase())).checked);
+  const lang  = document.getElementById('docReqLang').value;
+  const sendVia = document.getElementById('docReqSendVia').value;
   const docIds = { gov_id: 'docReqGovId', ssn: 'docReqSsn', work_card: 'docReqWorkCard' };
   const requestedDocs = Object.entries(docIds).filter(([,id]) => document.getElementById(id).checked).map(([k]) => k);
   if (!requestedDocs.length) return alert('请至少选择一种材料');
-  const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs }) });
+  const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs, lang }) });
   if (r.token) {
-    _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token;
+    _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token + '&lang=' + lang;
     document.getElementById('empDocLinkUrl').textContent = _currentDocLinkUrl;
     document.getElementById('empDocLinkResult').style.display = '';
     document.getElementById('empDocLinkCopied').style.display = 'none';
     document.getElementById('btnGenDocLink').disabled = true;
     document.getElementById('btnGenDocLink').textContent = '已生成';
+    // Show send instruction
+    const target = sendVia === 'phone' ? _empDocPhone : _empDocEmail;
+    if (target) {
+      document.getElementById('empDocLinkCopied').textContent = sendVia === 'phone' ? '请复制链接通过短信发送至 ' + target : '请复制链接通过邮件发送至 ' + target;
+      document.getElementById('empDocLinkCopied').style.display = '';
+      document.getElementById('empDocLinkCopied').style.color = 'var(--blue)';
+    }
   }
 }
 
@@ -3506,7 +3602,7 @@ async function deleteTimeEntry(id) {
 // ─── Weekly Timesheet Modal ───
 let tsWeeks = 1;
 let tsAllEmps = [];
-let tsSelectedEmp = null; // { id, name, code, email, phone }
+let tsSelectedEmps = []; // [{ id, name, code, email, phone }, ...]
 
 function setTsWeeks(n, btn) {
   tsWeeks = n;
@@ -3519,36 +3615,45 @@ function setTsWeeks(n, btn) {
 function filterTsEmp() {
   const q = document.getElementById('tsEmpSearch').value.toLowerCase();
   const drop = document.getElementById('tsEmpDrop');
-  const matches = tsAllEmps.filter(e => e.status === 'active' &&
+  const selectedIds = new Set(tsSelectedEmps.map(e => e.id));
+  const matches = tsAllEmps.filter(e => e.status === 'active' && !selectedIds.has(e.id) &&
     (`${e.first_name} ${e.last_name}`.toLowerCase().includes(q) ||
      (e.employee_id||'').toLowerCase().includes(q)));
   if (!matches.length || !q) { drop.style.display = 'none'; return; }
   drop.innerHTML = matches.slice(0,8).map(e =>
-    `<div class="eo" onmousedown="selectTsEmp(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}','${esc(e.employee_id||'')}','${esc(e.email||'')}','${esc(e.phone||'')}')">
+    `<div class="eo" onmousedown="addTsEmp(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}','${esc(e.employee_id||'')}','${esc(e.email||'')}','${esc(e.phone||'')}')">
       ${esc(e.first_name)} ${esc(e.last_name)}
       <small>${esc(e.employee_id||'')} ${e.department ? '· '+esc(e.department) : ''}</small>
     </div>`).join('');
   drop.style.display = 'block';
 }
 function hideTsEmpDrop() { setTimeout(()=>document.getElementById('tsEmpDrop').style.display='none',150); }
-function selectTsEmp(id, name, code, email, phone) {
-  tsSelectedEmp = { id, name, code, email, phone };
-  document.getElementById('tsEmp').value = id;
-  document.getElementById('tsEmpSearch').value = `${name} (${code})`;
+function addTsEmp(id, name, code, email, phone) {
+  if (tsSelectedEmps.find(e => e.id === id)) return;
+  tsSelectedEmps.push({ id, name, code, email, phone });
+  document.getElementById('tsEmpSearch').value = '';
   document.getElementById('tsEmpDrop').style.display = 'none';
-  const sel = document.getElementById('tsEmpSelected');
-  sel.textContent = `✔ ${name} · ${code}`;
-  sel.style.display = 'block';
-  updateTsEmployeeInfo();
+  renderTsEmpTags();
+}
+function removeTsEmp(id) {
+  tsSelectedEmps = tsSelectedEmps.filter(e => e.id !== id);
+  renderTsEmpTags();
+}
+function renderTsEmpTags() {
+  const tags = document.getElementById('tsEmpTags');
+  tags.innerHTML = tsSelectedEmps.map(e =>
+    `<span style="display:inline-flex;align-items:center;gap:4px;background:var(--sky-light);color:var(--blue);border-radius:20px;padding:3px 10px;font-size:.78rem;font-weight:600">
+      ${esc(e.name)} <span style="color:var(--gray-400);font-weight:400">${esc(e.code)}</span>
+      <span style="cursor:pointer;color:var(--gray-500);margin-left:2px" onmousedown="removeTsEmp(${e.id})">✕</span>
+    </span>`).join('');
 }
 
 async function openTsModal() {
   tsAllEmps = await api('/admin/employees');
-  tsSelectedEmp = null;
-  document.getElementById('tsEmp').value = '';
+  tsSelectedEmps = [];
   document.getElementById('tsEmpSearch').value = '';
   document.getElementById('tsEmpDrop').style.display = 'none';
-  document.getElementById('tsEmpSelected').style.display = 'none';
+  document.getElementById('tsEmpTags').innerHTML = '';
   document.getElementById('tsCompany').value = '';
   // populate jobs
   const jobs = await api('/admin/jobs');
@@ -3648,15 +3753,14 @@ function updateTsTotals() {
 }
 
 function updateTsEmployeeInfo() {
-  if (tsSelectedEmp) {
-    document.getElementById('tsPrintName').textContent = tsSelectedEmp.name || '';
-    document.getElementById('tsPrintId').textContent = tsSelectedEmp.code || '';
+  if (tsSelectedEmps.length === 1) {
+    document.getElementById('tsPrintName').textContent = tsSelectedEmps[0].name || '';
+    document.getElementById('tsPrintId').textContent = tsSelectedEmps[0].code || '';
   }
 }
 
 async function saveBatchTimesheet() {
-  const empId = document.getElementById('tsEmp').value;
-  if (!empId) return alert('请先通过搜索选择员工，点击下拉列表中的员工名称');
+  if (!tsSelectedEmps.length) return alert('请先搜索并添加至少一名员工');
   const entries = [];
   let periodStart = '', periodEnd = '';
   let totalRows = 0, skippedRows = 0;
@@ -3687,23 +3791,30 @@ async function saveBatchTimesheet() {
   const jobId = document.getElementById('tsJob').value || null;
   const company = document.getElementById('tsCompany').value || '';
   try {
-    const r = await api('/admin/time-entries/batch', {
-      method: 'POST',
-      body: JSON.stringify({
-        employee_id: parseInt(empId), entries,
-        job_id: jobId ? parseInt(jobId) : null,
-        company_name: company,
-        period_start: periodStart,
-        period_end: periodEnd
-      })
-    });
-    if (r.success) {
+    const results = [];
+    for (const emp of tsSelectedEmps) {
+      const r = await api('/admin/time-entries/batch', {
+        method: 'POST',
+        body: JSON.stringify({
+          employee_id: parseInt(emp.id), entries,
+          job_id: jobId ? parseInt(jobId) : null,
+          company_name: company,
+          period_start: periodStart,
+          period_end: periodEnd
+        })
+      });
+      if (r.success) results.push({ emp, token: r.token, count: r.count });
+      else alert(`${emp.name} 保存失败: ${r.error || '未知错误'}`);
+    }
+    if (results.length) {
       clearModalState('tsModal');
       closeTsModal();
       loadTimeEntries();
-      showTsLink(r.token, r.count);
-    } else {
-      alert(r.error || '保存失败，请重试');
+      if (results.length === 1) {
+        showTsLink(results[0].token, results[0].count, results[0].emp);
+      } else {
+        showToast(`✅ 已为 ${results.length} 名员工保存工时并生成确认链接`);
+      }
     }
   } catch(e) {
     alert('网络错误，请检查连接后重试：' + e.message);
@@ -3712,11 +3823,13 @@ async function saveBatchTimesheet() {
 
 let _tsLinkToken = '';
 let _tsLinkEmp = null;
-function showTsLink(token, count) {
+function showTsLink(token, count, emp) {
   _tsLinkToken = token;
-  _tsLinkEmp = tsSelectedEmp;
+  _tsLinkEmp = emp || (tsSelectedEmps.length === 1 ? tsSelectedEmps[0] : null);
   const url = `${location.origin}/ts?token=${token}`;
-  document.getElementById('tsLinkUrl').textContent = url;
+  const linkEl = document.getElementById('tsLinkUrl');
+  linkEl.textContent = url;
+  linkEl.href = url;
   // show email/SMS buttons if employee has contact info
   const emailBtn = document.getElementById('tsEmailBtn');
   const smsBtn = document.getElementById('tsSmsBtn');

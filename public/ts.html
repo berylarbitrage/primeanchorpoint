@@ -57,7 +57,20 @@ tr.weekend td{opacity:.45}
     <h1>Prime Anchorpoint — 工时确认 / Timesheet Confirmation</h1>
   </div>
 
-  <div id="loadingMsg" class="loading">正在加载工时记录… / Loading timesheet…</div>
+  <!-- DOB Gate -->
+  <div id="dobGate" class="card" style="max-width:420px;margin:2rem auto">
+    <h2 style="margin-bottom:.75rem">身份验证 / Identity Verification</h2>
+    <p style="font-size:.85rem;color:var(--gray-600);margin-bottom:1.25rem;line-height:1.6">
+      请输入您的出生日期以查看工时记录。<br>
+      Please enter your date of birth to access your timesheet.
+    </p>
+    <label style="font-size:.78rem;font-weight:700;text-transform:uppercase;color:var(--gray-400);display:block;margin-bottom:.4rem">出生日期 / Date of Birth</label>
+    <input id="dobInput" type="date" style="width:100%;padding:9px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-family:inherit;font-size:.95rem;outline:none;margin-bottom:.75rem">
+    <div id="dobError" style="color:var(--red);font-size:.82rem;margin-bottom:.75rem;display:none">生日输入有误，请重试。/ Incorrect date of birth, please try again.</div>
+    <button class="btn btn-confirm" style="width:100%" onclick="submitDob()">验证 / Verify</button>
+  </div>
+
+  <div id="loadingMsg" class="loading" style="display:none">正在加载工时记录… / Loading timesheet…</div>
   <div id="errorMsg" class="error-msg" style="display:none"></div>
 
   <div id="mainContent" style="display:none">
@@ -150,10 +163,29 @@ function lunchLabel(ls, le) {
 
 const token = new URLSearchParams(location.search).get('token');
 
-async function load() {
+async function submitDob() {
+  const dob = document.getElementById('dobInput').value;
+  if (!dob) { document.getElementById('dobError').style.display = ''; return; }
+  document.getElementById('dobError').style.display = 'none';
+  document.getElementById('dobGate').style.display = 'none';
+  document.getElementById('loadingMsg').style.display = '';
+  await load(dob);
+}
+
+document.getElementById('dobInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitDob();
+});
+
+async function load(dob) {
   if (!token) { showError('链接无效，缺少确认码。/ Invalid link — missing token.'); return; }
   try {
-    const res = await fetch(`/api/ts/${token}`);
+    const res = await fetch(`/api/ts/${token}?dob=${encodeURIComponent(dob)}`);
+    if (res.status === 401) {
+      document.getElementById('loadingMsg').style.display = 'none';
+      document.getElementById('dobGate').style.display = '';
+      document.getElementById('dobError').style.display = '';
+      return;
+    }
     if (!res.ok) { showError('链接无效或已过期。/ Link not found or expired.'); return; }
     const { sheet, entries } = await res.json();
     render(sheet, entries);
@@ -259,12 +291,14 @@ async function submitResponse(action) {
 
 function showError(msg) {
   document.getElementById('loadingMsg').style.display = 'none';
+  document.getElementById('dobGate').style.display = 'none';
   const el = document.getElementById('errorMsg');
   el.textContent = msg;
   el.style.display = 'block';
 }
 
-load();
+// Don't auto-load — wait for DOB gate submission
+if (!token) showError('链接无效，缺少确认码。/ Invalid link — missing token.');
 </script>
 </body>
 </html>
