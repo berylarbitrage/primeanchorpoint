@@ -1369,6 +1369,7 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn btn-green" onclick="savePartner()">保存</button>
     <button class="btn" onclick="randomFillPartner()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-outline" onclick="closePartnerModal()">取消</button>
+    <button class="btn" onclick="randomFillPartner()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300);margin-left:auto">🎲 随机填充</button>
   </div>
 </div></div>
 
@@ -3282,6 +3283,91 @@ function randomFillEmployee() {
   document.getElementById('eEmgName').value = `${efn2} ${eln2}`;
   document.getElementById('eEmgPhone').value = `(${rnd(312,847)}) ${rnd(100,999)}-${rnd(1000,9999)}`;
   document.getElementById('eEmgRel').value = pick(rels);
+}
+
+function randomFillPartner() {
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const rnd  = (lo, hi) => Math.floor(Math.random() * (hi - lo + 1)) + lo;
+  const area = pick(['312','773','847','630','708','224','331','872']);
+
+  const companies = [
+    {name:'Allied Freight Solutions Inc.',    industry:'物流 Logistics'},
+    {name:'Pacific Star Warehousing LLC',     industry:'仓储 Warehousing'},
+    {name:'Midwest Fresh Foods Co.',          industry:'食品加工 Food Processing'},
+    {name:'Summit Manufacturing Group',       industry:'制造业 Manufacturing'},
+    {name:'BrightLine Distribution Corp.',    industry:'运输 Transportation'},
+    {name:'GoldenGate Packaging LLC',         industry:'制造业 Manufacturing'},
+    {name:'Delta Cold Chain Logistics',       industry:'物流 Logistics'},
+    {name:'Premier Industrial Services',      industry:'仓储 Warehousing'},
+    {name:'Horizon Food Processing Inc.',     industry:'食品加工 Food Processing'},
+    {name:'Tristar Staffing Partners',        industry:'其他 Other'},
+  ];
+  const company = pick(companies);
+
+  // ── 基本信息 ──
+  document.getElementById('pName').value = company.name;
+  document.getElementById('pIndustry').value = company.industry;
+  document.getElementById('pActive').checked = Math.random() > 0.15;
+
+  // ── 联系人：清空旧的，添加1~2个 ──
+  document.getElementById('pContactsList').innerHTML = '';
+  const firstNames = ['Michael','Jennifer','David','Lisa','Robert','Sandra','Kevin','Jessica','Brian','Monica','Wei','Carlos','Mei','Jose','Anna'];
+  const lastNames  = ['Thompson','Williams','Garcia','Chen','Johnson','Martinez','Lee','Davis','Brown','Wang','Smith','Nguyen','Lopez','Kim','Patel'];
+  const roles      = ['Operations Manager','Warehouse Manager','HR Director','Logistics Coordinator','Plant Manager','Purchasing Manager','Site Supervisor','Director of Operations'];
+  const count = rnd(1, 2);
+  for (let i = 0; i < count; i++) {
+    addPartnerContact();
+    const items = document.querySelectorAll('#pContactsList .dyn-item');
+    const el = items[items.length - 1];
+    const fn = pick(firstNames), ln = pick(lastNames);
+    el.querySelector('.pc-first').value   = fn;
+    el.querySelector('.pc-last').value    = ln;
+    el.querySelector('.pc-role').value    = pick(roles);
+    el.querySelector('.pc-phone').value   = `(${area}) ${rnd(200,999)}-${rnd(1000,9999)}`;
+    el.querySelector('.pc-email').value   = `${fn.toLowerCase()}.${ln.toLowerCase()}@${company.name.split(' ')[0].toLowerCase().replace(/[^a-z]/g,'')}.com`;
+    if (Math.random() > 0.5)
+      el.querySelector('.pc-whatsapp').value = `+1${area}${rnd(2000000,9999999)}`;
+    if (Math.random() > 0.6)
+      el.querySelector('.pc-wechat').value = `${fn.toLowerCase()}${rnd(100,999)}`;
+  }
+
+  // ── 地址：清空旧的，添加1个 ──
+  document.getElementById('pAddrList').innerHTML = '';
+  const streets  = ['1200 Industrial Pkwy','850 W. Commerce Dr','3400 N. Logistics Blvd','7700 S. Distribution Way','2200 E. Warehouse Rd','500 Corporate Center Dr','9100 Freight Ave','3800 W. Factory Ln'];
+  const cities   = [{c:'Chicago',s:'IL',z:'606'},{c:'Cicero',s:'IL',z:'60804'},{c:'Melrose Park',s:'IL',z:'60160'},{c:'Elk Grove Village',s:'IL',z:'60007'},{c:'Addison',s:'IL',z:'60101'},{c:'Schaumburg',s:'IL',z:'60173'},{c:'Bolingbrook',s:'IL',z:'60440'},{c:'Aurora',s:'IL',z:'60505'}];
+  const city = pick(cities);
+  const zipSuffix = typeof city.z === 'string' && city.z.length === 5 ? city.z : city.z + rnd(10,99);
+  addPartnerAddr();
+  const addrRow = document.querySelector('#pAddrList .pa-addr-row');
+  if (addrRow) {
+    addrRow.querySelector('.pa-street').value = `${rnd(100,9999)} ${pick(streets).replace(/^\d+\s/,'')}`;
+    if (Math.random() > 0.5) addrRow.querySelector('.pa-street2').value = `Ste ${rnd(100,999)}`;
+    addrRow.querySelector('.pa-city').value   = city.c;
+    const stateEl = addrRow.querySelector('.pa-state');
+    if (stateEl) { for (const opt of stateEl.options) { if (opt.value === city.s) { opt.selected = true; break; } } }
+    addrRow.querySelector('.pa-zip').value    = zipSuffix.length === 5 ? zipSuffix : city.z + String(rnd(10,99));
+  }
+
+  // ── 公司链接 ──
+  const slug = company.name.split(' ')[0].toLowerCase().replace(/[^a-z]/g,'');
+  document.getElementById('pWebsite').value  = `https://www.${slug}.com`;
+  document.getElementById('pLinkedin').value = `https://linkedin.com/company/${slug}`;
+  if (Math.random() > 0.5) document.getElementById('pFbPage').value = `https://facebook.com/${slug}`;
+
+  // ── 合作服务：随机激活2~4个 ──
+  const tags = document.querySelectorAll('#pSvcTags .svc-tag');
+  tags.forEach(t => t.classList.remove('active'));
+  const shuffled = [...tags].sort(() => Math.random() - 0.5);
+  shuffled.slice(0, rnd(2, 4)).forEach(t => t.classList.add('active'));
+
+  // ── 备注 ──
+  const notes = [
+    `长期合作伙伴，主要负责${company.industry.split(' ')[0]}板块的人员需求。结算周期：双周。`,
+    `通过推荐引入，${rnd(2020,2025)}年开始合作。目前每周稳定需要${rnd(5,30)}名工人。`,
+    `季节性需求较高，${pick(['Q1','Q2','Q3','Q4'])}旺季用工量翻倍。付款准时，信誉良好。`,
+    `对接人为人事主管，需提前48小时通知。工人需穿工装，公司提供安全鞋补贴。`,
+  ];
+  document.getElementById('pNotes').value = pick(notes);
 }
 
 async function saveEmployee() {
