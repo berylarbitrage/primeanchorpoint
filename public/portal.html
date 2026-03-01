@@ -53,6 +53,18 @@ tr:last-child td{border-bottom:none}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
+/* Punch card */
+.punch-card{text-align:center;padding:1.5rem}
+.punch-status{font-size:.9rem;color:var(--gray-500);margin-bottom:1rem}
+.punch-time{font-size:1.5rem;font-weight:700;color:var(--blue);margin-bottom:.25rem}
+.punch-sub{font-size:.8rem;color:var(--gray-400);margin-bottom:1.25rem}
+.btn-punch{padding:.85rem 2.5rem;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;transition:all .2s}
+.btn-punch-in{background:var(--green);color:#fff}
+.btn-punch-in:hover{background:#059669}
+.btn-punch-out{background:var(--red);color:#fff}
+.btn-punch-out:hover{background:#dc2626}
+.btn-punch:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
+.gps-indicator{margin-top:.75rem;font-size:.78rem;color:var(--gray-400);display:flex;align-items:center;justify-content:center;gap:.35rem}
 @media(max-width:600px){.job-card{flex-direction:column}.header h1{font-size:.9rem}}
 </style>
 </head>
@@ -116,8 +128,17 @@ tr:last-child td{border-bottom:none}
     <!-- Timeclock -->
     <div id="tabTimeclock" style="display:none">
       <div class="card">
-        <h2>我的打卡记录</h2>
-        <table><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工作时长</th><th>正常</th><th>加班</th><th>状态</th></tr></thead>
+        <div class="punch-card">
+          <div class="punch-status" id="punchStatus">正在检查状态…</div>
+          <div class="punch-time" id="punchTime"></div>
+          <div class="punch-sub" id="punchSub"></div>
+          <button class="btn-punch btn-punch-in" id="btnPunch" onclick="doPunch()" disabled>获取位置中…</button>
+          <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>打卡历史记录</h2>
+        <table><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工作时长</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
         <tbody id="timeclockTable"></tbody></table>
       </div>
     </div>
@@ -195,7 +216,7 @@ function showTab(tab) {
   });
   document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', ['jobs','applications','timeclock','profile'][i]===tab));
   if (tab === 'applications') loadApplications();
-  else if (tab === 'timeclock') loadTimeclock();
+  else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
   else if (tab === 'profile') loadProfile();
   else loadJobs();
 }
@@ -264,12 +285,96 @@ async function loadApplications() {
   </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无申请记录</td></tr>';
 }
 
+// ─── GPS Punch ───
+let _gpsCoords = null;
+let _punchStatus = null; // { clocked_in, open_entry }
+
+function initGPS() {
+  if (!navigator.geolocation) {
+    document.getElementById('gpsIndicator').textContent = '⚠️ 设备不支持GPS定位';
+    enablePunchBtn(true);
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      const acc = Math.round(pos.coords.accuracy);
+      document.getElementById('gpsIndicator').innerHTML = `📍 已定位（精度 ±${acc}m）`;
+      enablePunchBtn(true);
+    },
+    err => {
+      document.getElementById('gpsIndicator').innerHTML = '⚠️ 无法获取位置（将不记录GPS）';
+      enablePunchBtn(true);
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+function enablePunchBtn(ready) {
+  if (!_punchStatus) return; // wait for status
+  const btn = document.getElementById('btnPunch');
+  btn.disabled = !ready;
+  if (ready) {
+    if (_punchStatus.clocked_in) {
+      btn.textContent = '⏹ 下班打卡 / Clock Out';
+      btn.className = 'btn-punch btn-punch-out';
+    } else {
+      btn.textContent = '▶ 上班打卡 / Clock In';
+      btn.className = 'btn-punch btn-punch-in';
+    }
+  }
+}
+
+async function loadPunchStatus() {
+  const s = await wApi('/punch/status');
+  if (!s) return;
+  _punchStatus = s;
+  const statusEl = document.getElementById('punchStatus');
+  const timeEl = document.getElementById('punchTime');
+  const subEl = document.getElementById('punchSub');
+  if (s.clocked_in && s.open_entry) {
+    const ci = new Date(s.open_entry.clock_in);
+    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
+    timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+  } else {
+    statusEl.innerHTML = '<span style="color:var(--gray-400)">● 未在班</span>';
+    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    subEl.textContent = new Date().toLocaleDateString();
+  }
+  enablePunchBtn(_gpsCoords !== null || document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
+}
+
+async function doPunch() {
+  const btn = document.getElementById('btnPunch');
+  btn.disabled = true;
+  btn.textContent = '处理中…';
+  const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null };
+  const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
+  if (!r) { btn.disabled = false; enablePunchBtn(true); return; }
+  if (r.action === 'in') {
+    showToast('✅ 上班打卡成功！', 'success');
+  } else if (r.action === 'out') {
+    const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
+    showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
+  }
+  // Refresh GPS coords and status
+  _gpsCoords = null;
+  document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
+  btn.textContent = '获取位置中…';
+  await loadPunchStatus();
+  loadTimeclock();
+  initGPS();
+}
+
 async function loadTimeclock() {
+  await loadPunchStatus();
   const entries = await wApi('/timeclock');
   if (!entries) return;
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t=>{
     const ci = t.clock_in ? new Date(t.clock_in) : null;
     const co = t.clock_out ? new Date(t.clock_out) : null;
+    const mapLink = t.latitude ? `<a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="${(+t.latitude).toFixed(4)},${(+t.longitude).toFixed(4)}">📍</a>` : '—';
     return `<tr>
       <td>${ci ? ci.toLocaleDateString() : '—'}</td>
       <td>${ci ? ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
@@ -278,8 +383,9 @@ async function loadTimeclock() {
       <td>${t.regular_hours ? t.regular_hours.toFixed(2) + ' h' : '—'}</td>
       <td>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+' h</span>' : '—'}</td>
       <td>${t.status === 'closed' ? '✅ 已完成' : '<span style="color:var(--sky)">进行中</span>'}</td>
+      <td>${mapLink}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="7" class="empty">暂无打卡记录</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="empty">暂无打卡记录</td></tr>';
 }
 
 async function loadProfile() {

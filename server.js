@@ -392,6 +392,21 @@ db.exec(`
 `);
 // Migrate: add assigned_partner_ids to admin_users (for manager role)
 try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFAULT ''"); } catch {}
+// Migrate: add lang/positions to employee_doc_requests
+try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
+try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
+// Migrate: add GPS fields to time_entries
+try { db.exec("ALTER TABLE time_entries ADD COLUMN latitude REAL DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN longitude REAL DEFAULT NULL"); } catch {}
+// Table for position self-ratings from doc requests
+db.exec(`CREATE TABLE IF NOT EXISTS doc_request_position_ratings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  doc_request_id INTEGER NOT NULL REFERENCES employee_doc_requests(id),
+  position_key TEXT NOT NULL,
+  interest INTEGER DEFAULT 0,
+  skill_score INTEGER DEFAULT 0,
+  UNIQUE(doc_request_id, position_key)
+)`);
 
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
@@ -1083,6 +1098,11 @@ app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('d
   res.json({ success: true });
 });
 
+// Worker positions list
+app.get('/api/admin/worker-positions', requireAdmin, (req, res) => {
+  res.json(WORKER_POSITIONS);
+});
+
 // Inquiry × Worker Position ratings (static list from website)
 app.get('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
   const saved = db.prepare('SELECT * FROM inquiry_position_ratings WHERE inquiry_id=?').all(req.params.id);
@@ -1315,9 +1335,10 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
   if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
   const token = crypto.randomBytes(28).toString('hex');
-  const { admin_note, requested_docs } = req.body;
-  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs) VALUES (?,?,?,?)')
-    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']));
+  const { admin_note, requested_docs, lang, positions } = req.body;
+  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions) VALUES (?,?,?,?,?,?)')
+    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']),
+        lang || 'zh', JSON.stringify(positions || []));
   res.json({ token, status: 'pending' });
 });
 
@@ -1343,6 +1364,8 @@ app.get('/api/emp-docs/:token', (req, res) => {
     emp_code: row.emp_code,
     requested_docs: JSON.parse(row.requested_docs || '["gov_id","ssn","work_card"]'),
     admin_note: row.admin_note,
+    lang: row.lang || 'zh',
+    positions: JSON.parse(row.positions || '[]'),
     completed_at: row.completed_at
   });
 });
@@ -1380,6 +1403,17 @@ app.post('/api/emp-docs/:token/submit', empDocReqUpload.fields([
         VALUES(?,?,?,?,?)`)
         .run(row.employee_id, docType, DOC_LABEL[docType] || docType, f.filename, f.originalname);
     }
+  }
+  // Save position self-ratings if provided
+  if (req.body.position_ratings) {
+    try {
+      const ratings = JSON.parse(req.body.position_ratings);
+      const stmt = db.prepare(`INSERT OR REPLACE INTO doc_request_position_ratings
+        (doc_request_id, position_key, interest, skill_score) VALUES (?,?,?,?)`);
+      for (const r of ratings) {
+        stmt.run(row.id, r.key, r.interest ? 1 : 0, parseInt(r.skill) || 0);
+      }
+    } catch {}
   }
   db.prepare(`UPDATE employee_doc_requests SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE token=?`).run(row.token);
   res.json({ success: true });
@@ -1988,6 +2022,29 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json([]);
   const entries = db.prepare('SELECT * FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 60').all(req.workerEmployeeId);
   res.json(entries);
+});
+
+app.post('/api/worker/punch', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '账号未关联员工档案，请联系HR' });
+  const { latitude, longitude } = req.body;
+  const now = new Date().toISOString();
+  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
+  if (open) {
+    const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, ...hrs });
+  } else {
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude) VALUES(?,?,'open',?,?)")
+      .run(req.workerEmployeeId, now, latitude || null, longitude || null);
+    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+  }
+});
+
+app.get('/api/worker/punch/status', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json({ clocked_in: false });
+  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
+  res.json({ clocked_in: !!open, open_entry: open || null });
 });
 
 app.get('/api/worker/assignments', requireWorker, (req, res) => {
