@@ -1474,6 +1474,11 @@ async function api(path, opts = {}) {
     ...opts,
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}`, ...(opts.headers || {}) }
   });
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.includes('application/json')) {
+    console.error('API returned non-JSON:', res.status, ct);
+    return { error: '服务器返回异常，请刷新页面或联系管理员重启服务器' };
+  }
   const data = await res.json();
   if (data.pending) { alert(data.message || '操作已提交审批'); return data; }
   if (res.status === 401) { alert('登录已过期，请重新登录'); logout(); return data; }
