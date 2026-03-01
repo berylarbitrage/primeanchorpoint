@@ -56,6 +56,20 @@
   .progress-dot{flex:1;height:4px;background:var(--gray-200);border-radius:2px;transition:background .3s}
   .progress-dot.done{background:var(--green)}
   .progress-dot.active{background:var(--sky)}
+  /* Position self-rating */
+  .pos-row{display:flex;align-items:center;gap:.6rem;padding:.5rem 0;border-bottom:1px solid var(--gray-100)}
+  .pos-row:last-child{border-bottom:none}
+  .pos-name{flex:1;font-size:.87rem;font-weight:600;color:var(--gray-800)}
+  .pos-name small{display:block;font-size:.73rem;font-weight:400;color:var(--gray-400)}
+  .interest-toggle{display:flex;align-items:center;gap:0}
+  .int-btn{border:1px solid var(--gray-200);background:#fff;padding:4px 10px;font-size:.75rem;font-weight:600;cursor:pointer;transition:var(--tr)}
+  .int-btn:first-child{border-radius:6px 0 0 6px;border-right:none}
+  .int-btn:last-child{border-radius:0 6px 6px 0}
+  .int-btn.active-yes{background:#d1fae5;border-color:var(--green);color:#065f46}
+  .int-btn.active-no{background:#fee2e2;border-color:var(--red);color:#991b1b}
+  .stars{display:flex;gap:2px}
+  .star{font-size:1.2rem;cursor:pointer;line-height:1;transition:transform .1s;user-select:none}
+  .star:hover,.star.lit{transform:scale(1.15)}
 </style>
 </head>
 <body>
@@ -110,11 +124,17 @@
   <div class="card" id="docFormCard">
     <h2 id="uploadHeading"></h2>
     <div class="progress-bar" id="progressBar"></div>
-
     <div id="docList"></div>
 
     <button class="btn btn-submit" id="btnSubmit" onclick="submitDocs()"></button>
     <div class="error-msg" id="errMsg"></div>
+  </div>
+
+  <!-- Position self-rating (shown only when positions included) -->
+  <div class="card" id="positionCard" style="display:none">
+    <h2 id="posHeading"></h2>
+    <p id="posSubtitle" style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem;line-height:1.5"></p>
+    <div id="positionList"></div>
   </div>
 </div>
 
@@ -154,6 +174,10 @@ const I18N = {
     errNetwork: '网络错误，请检查连接后重试',
     errMissing: '请上传：',
     footer: '© Prime Anchor Point · 所有文件均加密存储 · 仅限授权人员查看',
+    posHeading: '🧑‍🔧 工种兴趣 & 技能自评',
+    posSubtitle: '请对您有兴趣或有经验的工种进行评分（可选），这将帮助 HR 为您安排最合适的工作。',
+    interested: '感兴趣',
+    notInterested: '不感兴趣',
     docs: {
       gov_id:    { label: '政府颁发的身份证件', sub: 'Government-Issued ID',
                    desc: '驾照（Driver\'s License）、州身份证（State ID）、护照（Passport）均可。请确保证件有效且拍摄清晰。' },
@@ -187,6 +211,10 @@ const I18N = {
     errNetwork: 'Network error. Please check your connection and try again.',
     errMissing: 'Please upload: ',
     footer: '© Prime Anchor Point · All files encrypted · Authorized personnel only',
+    posHeading: '🧑‍🔧 Job Interest & Skills Self-Assessment',
+    posSubtitle: 'Rate your interest and skill level for each position below (optional). This helps HR match you with the right jobs.',
+    interested: 'Interested',
+    notInterested: 'Not Interested',
     docs: {
       gov_id:    { label: 'Government-Issued ID', sub: '',
                    desc: 'Driver\'s License, State ID, or Passport. Please ensure the document is valid and the photo is clear.' },
@@ -220,6 +248,10 @@ const I18N = {
     errNetwork: 'Error de red. Verifique su conexión e intente de nuevo.',
     errMissing: 'Por favor cargue: ',
     footer: '© Prime Anchor Point · Archivos encriptados · Solo personal autorizado',
+    posHeading: '🧑‍🔧 Interés en Puestos y Autoevaluación',
+    posSubtitle: 'Califique su interés y nivel de habilidad en cada puesto (opcional). Esto ayuda a HR a asignarle el trabajo más adecuado.',
+    interested: 'Me interesa',
+    notInterested: 'No me interesa',
     docs: {
       gov_id:    { label: 'Identificación Oficial', sub: 'Government-Issued ID',
                    desc: 'Licencia de conducir, ID estatal o pasaporte. Asegúrese de que el documento sea válido y la foto sea clara.' },
@@ -234,12 +266,37 @@ const I18N = {
 const DOC_ICONS = { gov_id: '🪪', ssn: '📋', work_card: '💼' };
 const DOC_ACCEPT = '.pdf,.jpg,.jpeg,.png,.heic,.heif';
 
+const POS_LABELS = {
+  warehouse_sorter: {zh:'仓库分拣员',en:'Warehouse Sorter',es:'Clasificador de almacén'},
+  labeler:          {zh:'贴标员',en:'Labeler',es:'Etiquetador'},
+  packer:           {zh:'打包员',en:'Packer',es:'Empacador'},
+  forklift_operator:{zh:'叉车操作员',en:'Forklift Operator',es:'Operador de montacargas'},
+  cdl_driver:       {zh:'CDL卡车司机',en:'CDL Truck Driver',es:'Conductor CDL'},
+  delivery_driver:  {zh:'送货司机',en:'Delivery Driver',es:'Conductor de reparto'},
+  shift_supervisor: {zh:'班组长',en:'Shift Supervisor',es:'Supervisor de turno'},
+  site_manager:     {zh:'现场主管',en:'Site Manager',es:'Gerente de sitio'},
+  quality_inspector:{zh:'质检员',en:'Quality Inspector',es:'Inspector de calidad'},
+  machine_operator: {zh:'机器操作员',en:'Machine Operator',es:'Operador de máquinas'},
+  assembly_line:    {zh:'装配线工人',en:'Assembly Line',es:'Línea de ensamblaje'},
+  material_handler: {zh:'物料搬运工',en:'Material Handler',es:'Manejo de materiales'},
+  inventory_clerk:  {zh:'库存文员',en:'Inventory Clerk',es:'Empleado de inventario'},
+  general_labor:    {zh:'普工',en:'General Labor',es:'Trabajador general'},
+  janitorial:       {zh:'清洁工',en:'Janitorial',es:'Personal de limpieza'},
+  food_processing:  {zh:'食品加工',en:'Food Processing',es:'Procesamiento de alimentos'},
+  warehouse_lead:   {zh:'仓库领班',en:'Warehouse Lead',es:'Líder de almacén'},
+  loading_unloading:{zh:'装卸工',en:'Loading/Unloading',es:'Carga y descarga'},
+  order_picker:     {zh:'拣货员',en:'Order Picker',es:'Selector de pedidos'},
+  welder:           {zh:'焊接工',en:'Welder',es:'Soldador'},
+};
+
 const params = new URLSearchParams(location.search);
 const TOKEN = params.get('token');
 let LANG = params.get('lang') || 'zh';
 let T = I18N[LANG] || I18N.zh;
 let _requestedDocs = [];
+let _positions = [];
 const _fileMap = {};
+const _posRatings = {};
 
 function t(key) { return T[key] || I18N.zh[key] || key; }
 function docT(key) { return (T.docs && T.docs[key]) || (I18N.zh.docs && I18N.zh.docs[key]) || { label: key, sub: '', desc: '' }; }
@@ -258,6 +315,8 @@ function applyLang() {
   document.getElementById('adminNoteLabel').textContent = t('adminNoteLabel');
   document.getElementById('uploadHeading').textContent = t('uploadHeading');
   document.getElementById('btnSubmit').textContent = t('btnSubmit');
+  document.getElementById('posHeading').textContent = t('posHeading');
+  document.getElementById('posSubtitle').textContent = t('posSubtitle');
   document.getElementById('successTitle').textContent = t('successTitle');
   document.getElementById('successBody').innerHTML = t('successBody');
   document.getElementById('footerText').textContent = t('footer');
@@ -275,7 +334,6 @@ async function init() {
     const r = await fetch(`/api/emp-docs/${TOKEN}`);
     if (!r.ok) { show('screenInvalid'); return; }
     const d = await r.json();
-    // Use lang from server if URL didn't specify
     if (!params.get('lang') && d.lang) { LANG = d.lang; T = I18N[LANG] || I18N.zh; applyLang(); }
     if (d.status === 'completed') { show('screenCompleted'); return; }
     const initials = d.name.split(' ').map(w=>w[0]||'').join('').toUpperCase().slice(0,2);
@@ -287,7 +345,9 @@ async function init() {
       document.getElementById('adminNoteBlock').style.display = '';
     }
     _requestedDocs = d.requested_docs || ['gov_id','ssn','work_card'];
+    _positions = d.positions || [];
     buildDocForm();
+    if (_positions.length) buildPositionForm();
     show('screenForm');
   } catch(e) { show('screenInvalid'); }
 }
@@ -312,6 +372,43 @@ function buildDocForm() {
       </div>
     </div>`;
   }).join('');
+}
+
+function buildPositionForm() {
+  document.getElementById('positionCard').style.display = '';
+  const container = document.getElementById('positionList');
+  container.innerHTML = _positions.map(key => {
+    _posRatings[key] = { interest: null, skill: 0 };
+    const label = (POS_LABELS[key] || {})[LANG] || key;
+    const enLabel = (POS_LABELS[key] || {}).en || key;
+    return `<div class="pos-row" id="posrow_${key}">
+      <div class="pos-name">${label}${LANG!=='en'?`<small>${enLabel}</small>`:''}</div>
+      <div class="interest-toggle">
+        <button class="int-btn" id="yes_${key}" onclick="setInterest('${key}',true)">${t('interested')}</button>
+        <button class="int-btn" id="no_${key}" onclick="setInterest('${key}',false)">${t('notInterested')}</button>
+      </div>
+      <div class="stars" id="stars_${key}">
+        ${[1,2,3,4,5].map(n=>`<span class="star" id="star_${key}_${n}" onclick="setStar('${key}',${n})">☆</span>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setInterest(key, val) {
+  _posRatings[key] = _posRatings[key] || { interest: null, skill: 0 };
+  _posRatings[key].interest = val;
+  document.getElementById('yes_' + key).className = 'int-btn' + (val ? ' active-yes' : '');
+  document.getElementById('no_' + key).className = 'int-btn' + (!val ? ' active-no' : '');
+}
+
+function setStar(key, n) {
+  _posRatings[key] = _posRatings[key] || { interest: null, skill: 0 };
+  _posRatings[key].skill = n;
+  for (let i = 1; i <= 5; i++) {
+    const s = document.getElementById(`star_${key}_${i}`);
+    s.textContent = i <= n ? '★' : '☆';
+    s.classList.toggle('lit', i <= n);
+  }
 }
 
 function onFileChange(key, input) {
@@ -343,6 +440,13 @@ async function submitDocs() {
   hideErr();
   const fd = new FormData();
   for (const [key, file] of Object.entries(_fileMap)) fd.append(key, file);
+  // Add position ratings if any were rated
+  if (_positions.length) {
+    const ratings = _positions
+      .filter(k => _posRatings[k] && (_posRatings[k].interest !== null || _posRatings[k].skill > 0))
+      .map(k => ({ key: k, interest: !!_posRatings[k].interest, skill: _posRatings[k].skill }));
+    if (ratings.length) fd.append('position_ratings', JSON.stringify(ratings));
+  }
   try {
     const r = await fetch(`/api/emp-docs/${TOKEN}/submit`, { method:'POST', body: fd });
     const d = await r.json();

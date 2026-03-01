@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工人门户 — Prime Anchorpoint</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--sky:#0ea5e9;--blue:#1e3a5f;--green:#10b981;--red:#ef4444;--orange:#f97316;--gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-500:#64748b;--gray-700:#334155;--radius:10px}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color:var(--gray-700);min-height:100vh}
+/* Login */
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
+.login-box{background:#fff;border-radius:16px;padding:2.5rem;width:100%;max-width:380px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.login-box img{width:72px;display:block;margin:0 auto 1rem}
+.login-box h1{text-align:center;font-size:1.3rem;color:var(--blue);margin-bottom:.25rem}
+.login-box p{text-align:center;color:var(--gray-400);font-size:.88rem;margin-bottom:1.5rem}
+.login-box input{width:100%;padding:.75rem 1rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.95rem;margin-bottom:.85rem}
+.login-box input:focus{outline:2px solid var(--sky);border-color:transparent}
+.btn-login{width:100%;padding:.85rem;background:var(--sky);color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer}
+.btn-login:hover{background:#0284c7}
+.login-extra{display:flex;justify-content:space-between;align-items:center;margin-top:.85rem;font-size:.8rem}
+.login-extra a{color:var(--sky);font-weight:600;text-decoration:none}
+.login-extra a:hover{text-decoration:underline}
+/* Forgot password modal */
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal-box{background:#fff;border-radius:16px;padding:2rem;width:90%;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.modal-box h2{font-size:1.1rem;font-weight:700;color:var(--blue);margin-bottom:.5rem}
+.modal-box p{font-size:.85rem;color:var(--gray-500);margin-bottom:1rem}
+.modal-box input{width:100%;padding:.7rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.92rem;margin-bottom:.75rem}
+.modal-box input:focus{outline:2px solid var(--sky);border-color:transparent}
+.modal-btn{width:100%;padding:.75rem;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;margin-bottom:.5rem}
+.modal-btn-primary{background:var(--sky);color:#fff}
+.modal-btn-primary:hover{background:#0284c7}
+.modal-btn-secondary{background:var(--gray-100);color:var(--gray-500)}
+.modal-msg{padding:.6rem .8rem;border-radius:6px;font-size:.82rem;margin-bottom:.75rem;display:none}
+.modal-msg.show{display:block}
+.modal-msg.error{background:#fef2f2;border:1px solid #fecaca;color:#dc2626}
+.modal-msg.success{background:#f0fdf4;border:1px solid #bbf7d0;color:#16a34a}
+.code-row{display:flex;gap:.5rem;align-items:center}
+.code-row input{flex:1}
+.code-row button{flex-shrink:0;padding:.7rem 1rem;border:none;border-radius:8px;background:var(--sky);color:#fff;font-size:.85rem;font-weight:600;cursor:pointer;white-space:nowrap}
+.code-row button:hover{background:#0284c7}
+.code-row button:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
+/* App shell */
+#app{display:none}
+.header{background:var(--blue);color:#fff;padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:1rem;font-weight:700}
+.header-right{display:flex;align-items:center;gap:1rem;font-size:.85rem}
+.nav{background:#fff;border-bottom:1px solid var(--gray-200);display:flex;gap:0;overflow-x:auto}
+.nav-btn{padding:.75rem 1.25rem;border:none;background:none;font-size:.88rem;font-weight:600;color:var(--gray-500);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+.nav-btn.active{color:var(--sky);border-bottom-color:var(--sky)}
+.content{max-width:900px;margin:1.5rem auto;padding:0 1rem}
+.card{background:#fff;border-radius:var(--radius);padding:1.25rem;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:1rem}
+.card h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1rem}
+/* Job cards */
+.job-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:.75rem;display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}
+.job-card:hover{border-color:var(--sky);box-shadow:0 2px 8px rgba(14,165,233,.1)}
+.job-title{font-weight:700;color:var(--blue);font-size:1rem}
+.job-meta{font-size:.82rem;color:var(--gray-500);margin-top:.25rem}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600}
+.badge-urgent{background:#fef2f2;color:#ef4444;border:1px solid #fecaca}
+.badge-applied{background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0}
+.btn{padding:.5rem 1rem;border:none;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer}
+.btn-sky{background:var(--sky);color:#fff}
+.btn-sky:hover{background:#0284c7}
+.btn-gray{background:var(--gray-100);color:var(--gray-500)}
+.btn-green{background:var(--green);color:#fff}
+/* Timesheet table */
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{background:var(--gray-50);padding:.6rem .75rem;text-align:left;font-weight:600;color:var(--gray-500);border-bottom:2px solid var(--gray-200)}
+td{padding:.65rem .75rem;border-bottom:1px solid var(--gray-100)}
+tr:last-child td{border-bottom:none}
+.empty{color:var(--gray-400);padding:2rem;text-align:center}
+/* Toast */
+#toast-wrap{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
+.toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
+.toast.in{opacity:1;transform:translateY(0)}
+.toast.success{background:#065F46;border-left:4px solid #34d399}
+/* Punch card */
+.punch-card{text-align:center;padding:1.5rem}
+.punch-status{font-size:.9rem;color:var(--gray-500);margin-bottom:1rem}
+.punch-time{font-size:1.5rem;font-weight:700;color:var(--blue);margin-bottom:.25rem}
+.punch-sub{font-size:.8rem;color:var(--gray-400);margin-bottom:1.25rem}
+.btn-punch{padding:.85rem 2.5rem;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;transition:all .2s}
+.btn-punch-in{background:var(--green);color:#fff}
+.btn-punch-in:hover{background:#059669}
+.btn-punch-out{background:var(--red);color:#fff}
+.btn-punch-out:hover{background:#dc2626}
+.btn-punch:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
+.gps-indicator{margin-top:.75rem;font-size:.78rem;color:var(--gray-400);display:flex;align-items:center;justify-content:center;gap:.35rem}
+@media(max-width:600px){.job-card{flex-direction:column}.header h1{font-size:.9rem}}
+</style>
+</head>
+<body>
+<div id="toast-wrap"></div>
+
+<!-- Login -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-box">
+    <img src="/logo.svg" alt="Prime Anchorpoint">
+    <h1>工人门户</h1>
+    <p>Worker Self-Service Portal</p>
+    <input type="text" id="wLogin" placeholder="邮箱或手机号 / Email or Phone" autocomplete="username">
+    <input type="password" id="wPassword" placeholder="密码 / Password" autocomplete="current-password">
+    <button class="btn-login" onclick="workerLogin()">登录 / Login</button>
+    <div class="login-extra">
+      <a href="javascript:void(0)" onclick="showForgotPassword()">忘记密码？</a>
+      <a href="/register?type=worker">注册 / Register</a>
+    </div>
+  </div>
+</div>
+
+<!-- Forgot Password Modal -->
+<div class="modal-overlay" id="forgotModal">
+  <div class="modal-box">
+    <h2>忘记密码 / Forgot Password</h2>
+    <div class="modal-msg" id="forgotMsg"></div>
+
+    <!-- Step 1: Enter email/phone -->
+    <div id="forgotStep1">
+      <p>请输入您注册时使用的邮箱或手机号<br>Enter your registered email or phone</p>
+      <input type="text" id="forgotLogin" placeholder="邮箱或手机号 / Email or Phone">
+      <button class="modal-btn modal-btn-primary" onclick="sendResetCode()">发送验证码 / Send Code</button>
+    </div>
+
+    <!-- Step 2: Enter code + new password -->
+    <div id="forgotStep2" style="display:none">
+      <p>验证码已发送，请查收<br>Verification code has been sent</p>
+      <div class="code-row">
+        <input type="text" id="resetCode" placeholder="验证码 / Code" maxlength="6">
+        <button onclick="sendResetCode()" id="resendBtn">重新发送</button>
+      </div>
+      <input type="password" id="newPassword" placeholder="新密码（至少6位）/ New password (min 6)">
+      <input type="password" id="newPassword2" placeholder="确认新密码 / Confirm new password">
+      <button class="modal-btn modal-btn-primary" onclick="resetPassword()">重置密码 / Reset Password</button>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div id="forgotStep3" style="display:none">
+      <p style="color:var(--green);font-weight:600;text-align:center;font-size:1rem">密码重置成功！<br>Password reset successful!</p>
+    </div>
+
+    <button class="modal-btn modal-btn-secondary" onclick="closeForgotPassword()">关闭 / Close</button>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <div class="header">
+    <h1>Prime Anchorpoint — 工人门户</h1>
+    <div class="header-right">
+      <span id="workerNameDisplay"></span>
+      <button onclick="workerLogout()" style="background:rgba(255,255,255,.15);color:#fff;border:none;padding:.35rem .8rem;border-radius:6px;cursor:pointer;font-size:.82rem">退出</button>
+    </div>
+  </div>
+  <div class="nav">
+    <button class="nav-btn active" onclick="showTab('jobs')">职位浏览</button>
+    <button class="nav-btn" onclick="showTab('applications')">我的申请</button>
+    <button class="nav-btn" onclick="showTab('timeclock')">我的打卡记录</button>
+    <button class="nav-btn" onclick="showTab('profile')">我的信息</button>
+  </div>
+  <div class="content">
+
+    <!-- Jobs -->
+    <div id="tabJobs">
+      <div class="card" style="display:flex;align-items:center;gap:1rem;padding:.85rem 1.25rem">
+        <input type="text" id="jobSearchInput" placeholder="搜索职位、地点、公司..." oninput="filterJobs()" style="flex:1;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem">
+        <select id="jobTypeFilter" onchange="filterJobs()" style="padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem">
+          <option value="">全部类型</option>
+          <option value="全职">全职</option>
+          <option value="兼职">兼职</option>
+          <option value="临时工">临时工</option>
+          <option value="临时转正">临时转正</option>
+        </select>
+      </div>
+      <div id="jobsList"></div>
+    </div>
+
+    <!-- My Applications -->
+    <div id="tabApplications" style="display:none">
+      <div class="card">
+        <h2>我的申请记录</h2>
+        <table><thead><tr><th>职位</th><th>地点</th><th>公司</th><th>薪资</th><th>申请状态</th><th>申请时间</th></tr></thead>
+        <tbody id="applicationsTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- Timeclock -->
+    <div id="tabTimeclock" style="display:none">
+      <div class="card">
+        <div class="punch-card">
+          <div class="punch-status" id="punchStatus">正在检查状态…</div>
+          <div class="punch-time" id="punchTime"></div>
+          <div class="punch-sub" id="punchSub"></div>
+          <button class="btn-punch btn-punch-in" id="btnPunch" onclick="doPunch()" disabled>获取位置中…</button>
+          <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>打卡历史记录</h2>
+        <table><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工作时长</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
+        <tbody id="timeclockTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- Profile -->
+    <div id="tabProfile" style="display:none">
+      <div class="card" id="profileCard">
+        <h2>我的档案</h2>
+        <div id="profileContent"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let WORKER_TOKEN = localStorage.getItem('pa_worker_token') || '';
+let _allJobs = [];
+let _forgotLogin = '';
+
+function showToast(msg, type='success') {
+  const wrap = document.getElementById('toast-wrap');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  wrap.appendChild(t);
+  requestAnimationFrame(() => requestAnimationFrame(() => t.classList.add('in')));
+  setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+async function wApi(path, opts={}) {
+  const r = await fetch('/api/worker' + path, {
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
+    ...opts
+  });
+  if (r.status === 401) { workerLogout(); return null; }
+  return r.json();
+}
+
+async function workerLogin() {
+  const login = document.getElementById('wLogin').value.trim();
+  const password = document.getElementById('wPassword').value;
+  if (!login || !password) return alert('请输入邮箱/手机号和密码');
+  const r = await fetch('/api/worker/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ login, password })
+  });
+  if (!r.ok) { const e = await r.json(); return alert(e.error || '登录失败'); }
+  const data = await r.json();
+  WORKER_TOKEN = data.token;
+  localStorage.setItem('pa_worker_token', WORKER_TOKEN);
+  showApp();
+}
+
+function workerLogout() {
+  WORKER_TOKEN = '';
+  localStorage.removeItem('pa_worker_token');
+  document.getElementById('loginWrap').style.display = '';
+  document.getElementById('app').style.display = 'none';
+}
+
+// ─── Forgot Password ───
+function showForgotPassword() {
+  document.getElementById('forgotModal').classList.add('show');
+  document.getElementById('forgotStep1').style.display = '';
+  document.getElementById('forgotStep2').style.display = 'none';
+  document.getElementById('forgotStep3').style.display = 'none';
+  hideForgotMsg();
+}
+
+function closeForgotPassword() {
+  document.getElementById('forgotModal').classList.remove('show');
+}
+
+function showForgotMsg(msg, type) {
+  const el = document.getElementById('forgotMsg');
+  el.textContent = msg;
+  el.className = 'modal-msg show ' + type;
+}
+function hideForgotMsg() {
+  document.getElementById('forgotMsg').className = 'modal-msg';
+}
+
+async function sendResetCode() {
+  hideForgotMsg();
+  const login = document.getElementById('forgotLogin').value.trim();
+  if (!login) return showForgotMsg('请输入邮箱或手机号', 'error');
+  _forgotLogin = login;
+  try {
+    const r = await fetch('/api/worker/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login })
+    });
+    const d = await r.json();
+    if (!r.ok) return showForgotMsg(d.error || '发送失败', 'error');
+    document.getElementById('forgotStep1').style.display = 'none';
+    document.getElementById('forgotStep2').style.display = '';
+    showForgotMsg('验证码已发送 / Code sent', 'success');
+    // Countdown on resend button
+    const btn = document.getElementById('resendBtn');
+    btn.disabled = true;
+    let sec = 60;
+    const iv = setInterval(() => {
+      sec--;
+      btn.textContent = `重新发送(${sec}s)`;
+      if (sec <= 0) { clearInterval(iv); btn.disabled = false; btn.textContent = '重新发送'; }
+    }, 1000);
+  } catch {
+    showForgotMsg('网络错误', 'error');
+  }
+}
+
+async function resetPassword() {
+  hideForgotMsg();
+  const code = document.getElementById('resetCode').value.trim();
+  const pw = document.getElementById('newPassword').value;
+  const pw2 = document.getElementById('newPassword2').value;
+  if (!code) return showForgotMsg('请输入验证码', 'error');
+  if (!pw || pw.length < 6) return showForgotMsg('密码至少6位', 'error');
+  if (pw !== pw2) return showForgotMsg('两次密码不一致', 'error');
+  try {
+    const r = await fetch('/api/worker/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login: _forgotLogin, code, new_password: pw })
+    });
+    const d = await r.json();
+    if (!r.ok) return showForgotMsg(d.error || '重置失败', 'error');
+    document.getElementById('forgotStep2').style.display = 'none';
+    document.getElementById('forgotStep3').style.display = '';
+    setTimeout(() => closeForgotPassword(), 2000);
+  } catch {
+    showForgotMsg('网络错误', 'error');
+  }
+}
+
+async function showApp() {
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('app').style.display = '';
+  const me = await wApi('/me');
+  if (!me) return;
+  const name = me.employee ? `${me.employee.first_name} ${me.employee.last_name}` : me.account.username;
+  document.getElementById('workerNameDisplay').textContent = name;
+  loadJobs();
+}
+
+function showTab(tab) {
+  ['jobs','applications','timeclock','profile'].forEach(t => {
+    document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
+  });
+  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', ['jobs','applications','timeclock','profile'][i]===tab));
+  if (tab === 'applications') loadApplications();
+  else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
+  else if (tab === 'profile') loadProfile();
+  else loadJobs();
+}
+
+async function loadJobs() {
+  const jobs = await wApi('/jobs');
+  if (!jobs) return;
+  _allJobs = jobs;
+  renderJobs(jobs);
+}
+
+function filterJobs() {
+  const q = document.getElementById('jobSearchInput').value.toLowerCase();
+  const type = document.getElementById('jobTypeFilter').value;
+  renderJobs(_allJobs.filter(j =>
+    (!q || (j.title+j.location+j.company_name).toLowerCase().includes(q)) &&
+    (!type || (j.type||'').includes(type))
+  ));
+}
+
+function renderJobs(jobs) {
+  const authLabel = a => ({any:'合法工作身份',gc:'绿卡/公民',citizen:'仅公民'})[a] || '';
+  document.getElementById('jobsList').innerHTML = jobs.length ? jobs.map(j => `
+    <div class="job-card">
+      <div style="flex:1;min-width:0">
+        <div class="job-title">${esc(j.title)} ${j.urgent?'<span class="badge badge-urgent">急聘</span>':''} ${j.applied?'<span class="badge badge-applied">✓ 已申请</span>':''}</div>
+        <div class="job-meta">
+          ${j.company_name?`<strong>${esc(j.company_name)}</strong> · `:''}<span>${esc(j.location)}</span>
+          ${j.pay?` · 薪资: ${esc(j.pay)}`:''}
+          ${j.type?` · ${esc(j.type)}`:''}
+          ${j.employment_type?` · ${esc(j.employment_type)}`:''}
+        </div>
+        ${j.work_days||j.work_start?`<div class="job-meta" style="margin-top:.25rem">⏰ ${esc(j.work_days||'')} ${j.work_start?j.work_start+'–'+(j.work_end||'?'):''}</div>`:''}
+        ${j.benefits?`<div class="job-meta" style="margin-top:.25rem">🎁 ${esc(j.benefits)}</div>`:''}
+        ${authLabel(j.work_auth)?`<div class="job-meta" style="margin-top:.2rem">🪪 ${authLabel(j.work_auth)}</div>`:''}
+        ${j.description?`<div style="margin-top:.5rem;font-size:.82rem;color:var(--gray-700);line-height:1.5">${esc(j.description).slice(0,160)}${j.description.length>160?'…':''}</div>`:''}
+      </div>
+      <div style="flex-shrink:0">
+        ${j.applied
+          ? `<button class="btn btn-gray" disabled>已申请</button>`
+          : `<button class="btn btn-sky" onclick="applyJob(${j.id})">申请此职位</button>`}
+      </div>
+    </div>`).join('') : '<div class="empty">暂无在招职位</div>';
+}
+
+async function applyJob(jobId) {
+  if (!confirm('确认申请此职位？')) return;
+  const r = await wApi(`/apply/${jobId}`, { method:'POST', body:'{}' });
+  if (!r) return;
+  if (r.success) { showToast('✅ 申请成功！HR将与您联系'); loadJobs(); }
+  else alert(r.error || '申请失败');
+}
+
+async function loadApplications() {
+  const apps = await wApi('/assignments');
+  if (!apps) return;
+  const statusLabel = { pending:'待审核', approved:'已通过', rejected:'未通过', assigned:'已派工' };
+  const statusColor = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)', assigned:'color:var(--sky)' };
+  document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map(a=>`<tr>
+    <td><strong>${esc(a.title||'')}</strong></td>
+    <td>${esc(a.location||'')}</td>
+    <td>${esc(a.company_name||'')}</td>
+    <td>${esc(a.pay||'')}</td>
+    <td><span style="font-weight:600;${statusColor[a.status]||''}">${statusLabel[a.status]||a.status}</span></td>
+    <td>${(a.created_at||'').slice(0,10)}</td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无申请记录</td></tr>';
+}
+
+// ─── GPS Punch ───
+let _gpsCoords = null;
+let _punchStatus = null; // { clocked_in, open_entry }
+
+function initGPS() {
+  if (!navigator.geolocation) {
+    document.getElementById('gpsIndicator').textContent = '⚠️ 设备不支持GPS定位';
+    enablePunchBtn(true);
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      const acc = Math.round(pos.coords.accuracy);
+      document.getElementById('gpsIndicator').innerHTML = `📍 已定位（精度 ±${acc}m）`;
+      enablePunchBtn(true);
+    },
+    err => {
+      document.getElementById('gpsIndicator').innerHTML = '⚠️ 无法获取位置（将不记录GPS）';
+      enablePunchBtn(true);
+    },
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+function enablePunchBtn(ready) {
+  if (!_punchStatus) return; // wait for status
+  const btn = document.getElementById('btnPunch');
+  btn.disabled = !ready;
+  if (ready) {
+    if (_punchStatus.clocked_in) {
+      btn.textContent = '⏹ 下班打卡 / Clock Out';
+      btn.className = 'btn-punch btn-punch-out';
+    } else {
+      btn.textContent = '▶ 上班打卡 / Clock In';
+      btn.className = 'btn-punch btn-punch-in';
+    }
+  }
+}
+
+async function loadPunchStatus() {
+  const s = await wApi('/punch/status');
+  if (!s) return;
+  _punchStatus = s;
+  const statusEl = document.getElementById('punchStatus');
+  const timeEl = document.getElementById('punchTime');
+  const subEl = document.getElementById('punchSub');
+  if (s.clocked_in && s.open_entry) {
+    const ci = new Date(s.open_entry.clock_in);
+    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
+    timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+  } else {
+    statusEl.innerHTML = '<span style="color:var(--gray-400)">● 未在班</span>';
+    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    subEl.textContent = new Date().toLocaleDateString();
+  }
+  enablePunchBtn(_gpsCoords !== null || document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
+}
+
+async function doPunch() {
+  const btn = document.getElementById('btnPunch');
+  btn.disabled = true;
+  btn.textContent = '处理中…';
+  const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null };
+  const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
+  if (!r) { btn.disabled = false; enablePunchBtn(true); return; }
+  if (r.action === 'in') {
+    showToast('✅ 上班打卡成功！', 'success');
+  } else if (r.action === 'out') {
+    const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
+    showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
+  }
+  // Refresh GPS coords and status
+  _gpsCoords = null;
+  document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
+  btn.textContent = '获取位置中…';
+  await loadPunchStatus();
+  loadTimeclock();
+  initGPS();
+}
+
+async function loadTimeclock() {
+  await loadPunchStatus();
+  const entries = await wApi('/timeclock');
+  if (!entries) return;
+  document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t=>{
+    const ci = t.clock_in ? new Date(t.clock_in) : null;
+    const co = t.clock_out ? new Date(t.clock_out) : null;
+    const mapLink = t.latitude ? `<a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="${(+t.latitude).toFixed(4)},${(+t.longitude).toFixed(4)}">📍</a>` : '—';
+    return `<tr>
+      <td>${ci ? ci.toLocaleDateString() : '—'}</td>
+      <td>${ci ? ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+      <td>${co ? co.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--orange)">未打卡</span>'}</td>
+      <td>${t.total_hours ? t.total_hours.toFixed(2) + ' h' : '—'}</td>
+      <td>${t.regular_hours ? t.regular_hours.toFixed(2) + ' h' : '—'}</td>
+      <td>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+' h</span>' : '—'}</td>
+      <td>${t.status === 'closed' ? '✅ 已完成' : '<span style="color:var(--sky)">进行中</span>'}</td>
+      <td>${mapLink}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">暂无打卡记录</td></tr>';
+}
+
+async function loadProfile() {
+  const me = await wApi('/me');
+  if (!me) return;
+  const e = me.employee;
+  document.getElementById('profileContent').innerHTML = e ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;font-size:.9rem">
+      <div><span style="color:var(--gray-400)">姓名</span><br><strong>${esc(e.first_name+' '+e.last_name)}</strong></div>
+      <div><span style="color:var(--gray-400)">工号</span><br><strong>${esc(e.employee_id||'')}</strong></div>
+      <div><span style="color:var(--gray-400)">职位</span><br>${esc(e.position||'—')}</div>
+      <div><span style="color:var(--gray-400)">部门</span><br>${esc(e.department||'—')}</div>
+      <div><span style="color:var(--gray-400)">薪资</span><br>${e.pay_rate ? '$'+e.pay_rate+'/'+e.pay_type : '—'}</div>
+      <div><span style="color:var(--gray-400)">状态</span><br>${e.status||'—'}</div>
+    </div>` :
+    `<p style="color:var(--gray-400)">员工档案未绑定，请联系HR</p><p style="margin-top:.5rem;font-size:.85rem">账号: <strong>${esc(me.account.username)}</strong></p>`;
+}
+
+function esc(s) {
+  const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML;
+}
+
+// Auto-login if token exists
+if (WORKER_TOKEN) showApp().catch(() => workerLogout());
+else document.getElementById('loginWrap').style.display = '';
+</script>
+</body>
+</html>
