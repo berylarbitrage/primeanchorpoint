@@ -710,7 +710,11 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="jobModal"><div class="modal" style="max-width:680px">
   <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
-  <div class="field"><label>合作公司 *</label><select id="jPartner"><option value="">-- 请选择公司 --</option></select></div>
+  <input type="hidden" id="jPartnerId">
+  <div class="field" style="position:relative"><label>合作公司 *</label>
+    <input id="jPartnerSearch" autocomplete="off" placeholder="搜索公司名称…" oninput="filterPartnerSearch()">
+    <div class="assign-dropdown" id="jPartnerDrop"></div>
+  </div>
   <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
 
   <div class="field-row">
@@ -813,7 +817,8 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
     <button class="btn" style="background:var(--gray-200);color:var(--gray-700)" onclick="openProcessModal()">✅ 标记已处理</button>
-    <button class="btn btn-red" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
+    <button class="btn btn-red" onclick="deleteInqFromModal()">🗑 删除</button>
+    <button class="btn" style="background:var(--gray-100);color:var(--gray-600)" onclick="document.getElementById('inqModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
 
@@ -830,7 +835,7 @@ tr:hover td{background:var(--sky-light)}
     </select>
   </div>
   <div class="field">
-    <label>备注（选填）</label>
+    <label>备注 *（必填）</label>
     <textarea id="procNote" placeholder="例：已入职XX公司，或沟通后不符合需求..." style="height:90px"></textarea>
   </div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
@@ -1520,12 +1525,18 @@ async function loadJobs() {
 async function openJobModal(job) {
   document.getElementById('jobModalTitle').textContent = job ? '编辑职位' : '新增职位';
   document.getElementById('jobId').value = job ? job.id : '';
-  // Populate partner dropdown
-  const partners = await api('/admin/partners');
-  const pSel = document.getElementById('jPartner');
-  pSel.innerHTML = '<option value="">-- 请选择公司 --</option>' +
-    partners.filter(p=>p.active).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
-  pSel.value = job ? (job.partner_id||'') : '';
+  // Load partners for search
+  _jobPartners = await api('/admin/partners');
+  _jobPartners = _jobPartners.filter(p => p.active);
+  document.getElementById('jPartnerDrop').classList.remove('open');
+  if (job && job.partner_id) {
+    const p = _jobPartners.find(x => x.id == job.partner_id);
+    document.getElementById('jPartnerId').value = job.partner_id;
+    document.getElementById('jPartnerSearch').value = p ? p.name : '';
+  } else {
+    document.getElementById('jPartnerId').value = '';
+    document.getElementById('jPartnerSearch').value = '';
+  }
   document.getElementById('jTitle').value = job ? job.title : '';
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jLocation').value = job ? job.location : '';
@@ -1629,9 +1640,8 @@ async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
   const langVal = document.getElementById('jLang').value;
-  const partnerSel = document.getElementById('jPartner');
-  const partnerId = partnerSel.value || null;
-  const partnerName = partnerId ? partnerSel.options[partnerSel.selectedIndex].text : '';
+  const partnerId = document.getElementById('jPartnerId').value || null;
+  const partnerName = partnerId ? ((_jobPartners||[]).find(p=>p.id==partnerId)||{}).name||'' : '';
   const workDays = [...document.querySelectorAll('#jWorkDaysWrap .day-btn.active')].map(b=>b.dataset.day).join(',');
   const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const data = {
@@ -1823,6 +1833,7 @@ async function saveProcessInquiry() {
   const status = document.getElementById('procStatus').value;
   if (!status) return alert('请选择处理结果');
   const note = document.getElementById('procNote').value.trim();
+  if (!note) return alert('请填写备注');
   await api(`/admin/inquiries/${currentInquiry.id}/process`, { method: 'PUT', body: JSON.stringify({ status, note }) });
   document.getElementById('procModal').classList.remove('show');
   document.getElementById('inqModal').classList.remove('show');
@@ -1933,6 +1944,15 @@ async function viewOnboardDocs(subId, name) {
   document.getElementById('onboardDocModal').classList.add('show');
 }
 
+async function deleteInqFromModal() {
+  if (!currentInquiry) return;
+  if (!confirm('确定删除此问卷？')) return;
+  await api(`/admin/inquiries/${currentInquiry.id}`, { method: 'DELETE' });
+  document.getElementById('inqModal').classList.remove('show');
+  allInqHistory = [];
+  loadInquiries();
+}
+
 async function deleteInq(id) {
   if (!confirm('确定删除此问卷？')) return;
   await api(`/admin/inquiries/${id}`, { method: 'DELETE' });
@@ -2034,6 +2054,26 @@ async function openAssignModal(assignment) {
   document.getElementById('assignModal').classList.add('show');
 }
 
+let _jobPartners = [];
+
+function filterPartnerSearch() {
+  const q = document.getElementById('jPartnerSearch').value.toLowerCase();
+  const drop = document.getElementById('jPartnerDrop');
+  document.getElementById('jPartnerId').value = '';
+  const items = _jobPartners.filter(p => !q || (p.name||'').toLowerCase().includes(q));
+  if (!items.length) { drop.classList.remove('open'); return; }
+  drop.innerHTML = items.slice(0, 30).map(p =>
+    `<div class="adrop-item" onclick="selectPartnerItem(${p.id},${JSON.stringify(p.name).replace(/</g,'&lt;')})">${esc(p.name)}<small>${esc(p.industry||'')}</small></div>`
+  ).join('');
+  drop.classList.add('open');
+}
+
+function selectPartnerItem(id, name) {
+  document.getElementById('jPartnerId').value = id;
+  document.getElementById('jPartnerSearch').value = name;
+  document.getElementById('jPartnerDrop').classList.remove('open');
+}
+
 function filterAssignSearch(which) {
   const isInq = which === 'inq';
   const q = document.getElementById(isInq ? 'aInquiry' : 'aJob').value.toLowerCase();
@@ -2074,6 +2114,7 @@ function closeAssignDropdowns() {
 // Close dropdowns when clicking outside
 document.addEventListener('click', e => {
   if (!e.target.closest('#assignModal')) closeAssignDropdowns();
+  if (!e.target.closest('#jobModal')) document.getElementById('jPartnerDrop').classList.remove('open');
 });
 
 function closeAssignModal() {
