@@ -202,6 +202,25 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id)
   );
+  CREATE TABLE IF NOT EXISTS employee_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    job_id INTEGER DEFAULT NULL,
+    job_title TEXT DEFAULT '',
+    score_efficiency INTEGER DEFAULT 0,
+    score_quality INTEGER DEFAULT 0,
+    score_attendance INTEGER DEFAULT 0,
+    score_safety INTEGER DEFAULT 0,
+    score_teamwork INTEGER DEFAULT 0,
+    score_skills INTEGER DEFAULT 0,
+    pay_est_min REAL DEFAULT 0,
+    pay_est_max REAL DEFAULT 0,
+    pay_est_type TEXT DEFAULT 'hourly',
+    notes TEXT DEFAULT '',
+    rated_by TEXT DEFAULT '',
+    rated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  );
   CREATE TABLE IF NOT EXISTS onboarding_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT UNIQUE NOT NULL,
@@ -237,6 +256,14 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN employment_type TEXT DEFAULT ''`); } 
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_days TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_start TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_end TEXT DEFAULT ''`); } catch(e) {}
+// Job status & closure tracking
+try { db.exec(`ALTER TABLE jobs ADD COLUMN job_status TEXT DEFAULT 'open'`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN close_reason TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN close_note TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN headcount INTEGER DEFAULT 1`); } catch(e) {}
+// Backfill job_status from active flag for existing rows
+try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
+try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
@@ -734,15 +761,38 @@ app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
 
 app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
-  const stmt = db.prepare('INSERT INTO jobs (partner_id, title, type, location, pay, lang, lang_name, description, urgent, work_auth, benefits, schedule, company_id, company_name, employment_type, work_days, work_start, work_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  const r = stmt.run(d.partner_id || null, d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '', d.company_id || null, d.company_name || '', d.employment_type || '', d.work_days || '', d.work_start || '', d.work_end || '');
+  const jobStatus = d.job_status || 'open';
+  const stmt = db.prepare(`INSERT INTO jobs
+    (partner_id, title, type, location, pay, lang, lang_name, description, urgent,
+     work_auth, benefits, schedule, company_id, company_name, employment_type,
+     work_days, work_start, work_end, job_status, active, close_reason, close_note, headcount)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const r = stmt.run(
+    d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+    d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
+    d.company_id||null, d.company_name||'', d.employment_type||'',
+    d.work_days||'', d.work_start||'', d.work_end||'',
+    jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1
+  );
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?, company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=? WHERE id=?')
-    .run(d.partner_id || null, d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '', d.company_id || null, d.company_name || '', d.employment_type || '', d.work_days || '', d.work_start || '', d.work_end || '', req.params.id);
+  const jobStatus = d.job_status || 'open';
+  db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?,
+    description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
+    company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?,
+    job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
+    .run(
+      d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+      d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
+      d.work_auth||'', d.benefits||'', d.schedule||'',
+      d.company_id||null, d.company_name||'', d.employment_type||'',
+      d.work_days||'', d.work_start||'', d.work_end||'',
+      jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
+      req.params.id
+    );
   res.json({ success: true });
 });
 
@@ -980,6 +1030,54 @@ app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('up
 
 app.delete('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('delete', 'assignments'), (req, res) => {
   db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Employee Ratings ───
+app.get('/api/admin/employee-ratings', requireAdmin, (req, res) => {
+  const { employee_id } = req.query;
+  if (!employee_id) return res.status(400).json({ error: 'employee_id required' });
+  const rows = db.prepare(`
+    SELECT r.*, j.title AS job_title_current
+    FROM employee_ratings r
+    LEFT JOIN jobs j ON r.job_id = j.id
+    WHERE r.employee_id = ?
+    ORDER BY r.rated_at DESC
+  `).all(employee_id);
+  res.json(rows);
+});
+
+app.post('/api/admin/employee-ratings', requireAdmin, (req, res) => {
+  const d = req.body;
+  if (!d.employee_id) return res.status(400).json({ error: 'employee_id required' });
+  const r = db.prepare(`INSERT INTO employee_ratings
+    (employee_id, job_id, job_title, score_efficiency, score_quality, score_attendance,
+     score_safety, score_teamwork, score_skills, pay_est_min, pay_est_max, pay_est_type, notes, rated_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(d.employee_id, d.job_id||null, d.job_title||'',
+      d.score_efficiency||0, d.score_quality||0, d.score_attendance||0,
+      d.score_safety||0, d.score_teamwork||0, d.score_skills||0,
+      d.pay_est_min||0, d.pay_est_max||0, d.pay_est_type||'hourly',
+      d.notes||'', d.rated_by||'');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/employee-ratings/:id', requireAdmin, (req, res) => {
+  const d = req.body;
+  db.prepare(`UPDATE employee_ratings SET
+    job_id=?, job_title=?, score_efficiency=?, score_quality=?, score_attendance=?,
+    score_safety=?, score_teamwork=?, score_skills=?, pay_est_min=?, pay_est_max=?,
+    pay_est_type=?, notes=?, rated_by=? WHERE id=?`)
+    .run(d.job_id||null, d.job_title||'',
+      d.score_efficiency||0, d.score_quality||0, d.score_attendance||0,
+      d.score_safety||0, d.score_teamwork||0, d.score_skills||0,
+      d.pay_est_min||0, d.pay_est_max||0, d.pay_est_type||'hourly',
+      d.notes||'', d.rated_by||'', req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/employee-ratings/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM employee_ratings WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
