@@ -244,6 +244,7 @@ tr:hover td{background:var(--sky-light)}
   <h2>⚓ 管理后台</h2>
   <a class="active" onclick="showTab('dashboard')">仪表盘</a>
   <a onclick="showTab('inquiries')" data-role="admin,staff">问卷管理</a>
+  <a onclick="showTab('quotes')" data-role="admin,staff">📋 报价请求</a>
   <a onclick="showTab('assignments')" data-role="admin,staff">派工管理</a>
   <a onclick="showTab('jobs')" data-role="admin,staff">职位管理</a>
   <a onclick="showTab('partners')" data-role="admin,staff">合作公司</a>
@@ -331,6 +332,17 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="card"><table><thead><tr><th>处理日期</th><th>姓名</th><th>类型</th><th>申请职位</th><th>处理结果</th><th>备注</th><th>操作</th></tr></thead><tbody id="inqHistTable"></tbody></table></div>
   </div>
+</div>
+
+<!-- Quotes -->
+<div id="tab-quotes" style="display:none">
+  <div class="top">
+    <h1>报价请求</h1>
+  </div>
+  <div class="search-bar">
+    <input type="text" id="quoteSearch" placeholder="搜索姓名、邮箱、公司、产品..." oninput="filterQuotes()">
+  </div>
+  <div class="card"><table><thead><tr><th>日期</th><th>姓名</th><th>公司</th><th>邮箱</th><th>电话</th><th>产品</th><th>数量</th><th>地点</th><th>备注</th><th>操作</th></tr></thead><tbody id="quoteTable"></tbody></table></div>
 </div>
 
 <!-- Assignments -->
@@ -1807,6 +1819,7 @@ function showTab(t) {
   if (t === 'dashboard')  loadDashboard();
   if (t === 'jobs')       loadJobs();
   if (t === 'inquiries')  loadInquiries();
+  if (t === 'quotes')     loadQuotes();
   if (t === 'assignments') loadAssignments();
   if (t === 'partners')   loadPartners();
   if (t === 'backups')    loadBackups();
@@ -2729,6 +2742,36 @@ async function assignFromInquiry() {
   await openAssignModal();
   document.getElementById('aInquiry').value = currentInquiry.name + (currentInquiry.phone ? ' · ' + currentInquiry.phone : '');
   document.getElementById('aInquiryId').value = currentInquiry.id;
+}
+
+// ─── Quotes (报价请求) ───
+let allQuotes = [];
+async function loadQuotes() {
+  allQuotes = await api('/admin/quotes');
+  filterQuotes();
+}
+function filterQuotes() {
+  const q = (document.getElementById('quoteSearch').value || '').toLowerCase();
+  const rows = allQuotes.filter(r =>
+    !q || [r.name, r.email, r.company, r.products, r.phone, r.location].some(f => (f || '').toLowerCase().includes(q))
+  );
+  document.getElementById('quoteTable').innerHTML = rows.length ? rows.map(r => `<tr>
+    <td>${(r.created_at || '').slice(0, 10)}</td>
+    <td><strong>${esc(r.name)}</strong></td>
+    <td>${esc(r.company)}</td>
+    <td>${esc(r.email)}</td>
+    <td>${esc(r.phone)}</td>
+    <td>${esc(r.products)}</td>
+    <td>${esc(r.quantity)}</td>
+    <td>${esc(r.location)}</td>
+    <td>${esc(r.notes)}</td>
+    <td><button class="btn btn-xs btn-danger" onclick="deleteQuote(${r.id})">删除</button></td>
+  </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无报价请求</td></tr>';
+}
+async function deleteQuote(id) {
+  if (!confirm('确定删除该报价请求？')) return;
+  await api('/admin/quotes/' + id, { method: 'DELETE' });
+  loadQuotes();
 }
 
 // ─── Assignments (派工管理) ───
