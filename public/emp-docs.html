@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>员工材料提交 — Prime Anchor Point</title>
+<title>Prime Anchor Point</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -76,29 +76,29 @@
 
 <div style="width:100%;max-width:560px;margin-bottom:.5rem">
   <div class="logo">Prime <span>Anchor</span>Point</div>
-  <div class="subtitle" id="pageSubtitle">员工材料安全提交通道</div>
+  <div class="subtitle" id="pageSubtitle"></div>
 </div>
 
 <!-- Loading -->
 <div class="card screen active" id="screenLoading">
   <div class="spinner"></div>
-  <div style="text-align:center;color:var(--gray-400);font-size:.9rem" id="loadingText">验证链接中…</div>
+  <div style="text-align:center;color:var(--gray-400);font-size:.9rem" id="loadingText"></div>
 </div>
 
 <!-- Invalid -->
 <div class="card screen" id="screenInvalid">
   <div style="text-align:center;padding:1.5rem 0">
     <div style="font-size:3rem;margin-bottom:.75rem">🔒</div>
-    <div style="font-size:1.1rem;font-weight:700;color:var(--red);margin-bottom:.5rem" id="invalidTitle">链接无效或已过期</div>
-    <div style="font-size:.88rem;color:var(--gray-500)" id="invalidBody">请联系 HR 重新获取上传链接</div>
+    <div style="font-size:1.1rem;font-weight:700;color:var(--red);margin-bottom:.5rem" id="invalidTitle"></div>
+    <div style="font-size:.88rem;color:var(--gray-500)" id="invalidDesc"></div>
   </div>
 </div>
 
 <!-- Completed -->
 <div class="card screen" id="screenCompleted">
   <div class="success-icon">✅</div>
-  <div class="success-title" id="completedTitle">材料已提交</div>
-  <div class="success-body" id="completedBody">您的身份文件已安全上传，HR 会进行核实。<br>如有疑问请联系我们。</div>
+  <div class="success-title" id="completedTitle"></div>
+  <div class="success-body" id="completedBody"></div>
 </div>
 
 <!-- Main form -->
@@ -112,26 +112,27 @@
       </div>
     </div>
     <div class="notice">
-      <strong id="noticeTitleText">🔒 安全提示</strong>
-      <span id="noticeBodyText">您上传的所有文件将通过加密传输，仅限 HR 人员查看，不会用于任何其他用途。</span>
+      <strong id="noticeTitle"></strong>
+      <span id="noticeBody"></span>
     </div>
     <div id="adminNoteBlock" class="admin-note" style="display:none">
-      <strong id="adminNoteLabel">HR 留言</strong>
+      <strong id="adminNoteLabel"></strong>
       <span id="adminNoteText"></span>
     </div>
   </div>
 
   <div class="card" id="docFormCard">
-    <h2 id="docHeading">📎 请上传以下材料</h2>
+    <h2 id="uploadHeading"></h2>
     <div class="progress-bar" id="progressBar"></div>
     <div id="docList"></div>
-    <button class="btn btn-submit" id="btnSubmit" onclick="submitDocs()">提交材料</button>
+
+    <button class="btn btn-submit" id="btnSubmit" onclick="submitDocs()"></button>
     <div class="error-msg" id="errMsg"></div>
   </div>
 
   <!-- Position self-rating (shown only when positions included) -->
   <div class="card" id="positionCard" style="display:none">
-    <h2 id="posHeading">🧑‍🔧 工种兴趣 &amp; 技能自评</h2>
+    <h2 id="posHeading"></h2>
     <p id="posSubtitle" style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem;line-height:1.5"></p>
     <div id="positionList"></div>
   </div>
@@ -140,213 +141,131 @@
 <!-- Success (after submit) -->
 <div class="card screen" id="screenSuccess">
   <div class="success-icon">🎉</div>
-  <div class="success-title" id="successTitle">提交成功！</div>
-  <div class="success-body" id="successBody">感谢您的配合！<br>您的文件已安全上传至系统，HR 将尽快完成审核。<br><br>
-    <span style="font-size:.8rem;color:var(--gray-400)" id="successClose">您现在可以安全关闭此页面</span>
-  </div>
+  <div class="success-title" id="successTitle"></div>
+  <div class="success-body" id="successBody"></div>
 </div>
 
-<div style="font-size:.72rem;color:var(--gray-400);text-align:center;margin-top:.5rem;padding-bottom:2rem" id="footerText">
-  © Prime Anchor Point · 所有文件均加密存储 · 仅限授权人员查看
-</div>
+<div style="font-size:.72rem;color:var(--gray-400);text-align:center;margin-top:.5rem;padding-bottom:2rem" id="footerText"></div>
 
 <script>
-const STRINGS = {
+// ─── i18n ───
+const I18N = {
   zh: {
+    pageTitle: '员工材料提交 — Prime Anchor Point',
     subtitle: '员工材料安全提交通道',
     loading: '验证链接中…',
     invalidTitle: '链接无效或已过期',
-    invalidBody: '请联系 HR 重新获取上传链接',
+    invalidDesc: '请联系 HR 重新获取上传链接',
     completedTitle: '材料已提交',
-    completedBody: '您的身份文件已安全上传，HR 会进行核实。如有疑问请联系我们。',
+    completedBody: '您的身份文件已安全上传，HR 会进行核实。<br>如有疑问请联系我们。',
     noticeTitle: '🔒 安全提示',
     noticeBody: '您上传的所有文件将通过加密传输，仅限 HR 人员查看，不会用于任何其他用途。',
     adminNoteLabel: 'HR 留言',
     empCodePrefix: '员工编号：',
-    docHeading: '📎 请上传以下材料',
-    uploadClick: '点击或拖拽上传',
+    uploadHeading: '📎 请上传以下材料',
+    clickUpload: '点击或拖拽上传',
     uploadHint: '支持 PDF / JPG / PNG / HEIC，最大 20MB',
     fileSelected: '已选择文件',
-    submitBtn: '提交材料',
-    uploading: '上传中…',
-    missingPrefix: '请上传：',
-    networkErr: '网络错误，请检查连接后重试',
-    uploadFail: '上传失败，请重试',
+    btnSubmit: '提交材料',
+    btnUploading: '上传中…',
+    successTitle: '提交成功！',
+    successBody: '感谢您的配合！<br>您的文件已安全上传至系统，HR 将尽快完成审核。<br><br><span style="font-size:.8rem;color:var(--gray-400)">您现在可以安全关闭此页面</span>',
+    errUpload: '上传失败，请重试',
+    errNetwork: '网络错误，请检查连接后重试',
+    errMissing: '请上传：',
+    footer: '© Prime Anchor Point · 所有文件均加密存储 · 仅限授权人员查看',
     posHeading: '🧑‍🔧 工种兴趣 & 技能自评',
     posSubtitle: '请对您有兴趣或有经验的工种进行评分（可选），这将帮助 HR 为您安排最合适的工作。',
     interested: '感兴趣',
     notInterested: '不感兴趣',
-    skillLabel: '技能',
-    successTitle: '提交成功！',
-    successBody: '感谢您的配合！您的文件已安全上传至系统，HR 将尽快完成审核。',
-    successClose: '您现在可以安全关闭此页面',
-    footer: '© Prime Anchor Point · 所有文件均加密存储 · 仅限授权人员查看',
+    docs: {
+      gov_id:    { label: '政府颁发的身份证件', sub: 'Government-Issued ID',
+                   desc: '驾照（Driver\'s License）、州身份证（State ID）、护照（Passport）均可。请确保证件有效且拍摄清晰。' },
+      ssn:       { label: '社会安全卡', sub: 'Social Security Card',
+                   desc: '请提供 SSN 原卡正面照片。如卡片已破损请联系 HR 说明情况。' },
+      work_card: { label: '工卡 / 工作许可证', sub: 'Work Authorization Card',
+                   desc: 'EAD 卡、工作签证页、I-94 记录、绿卡等均可。如您是美国公民可上传护照替代。' },
+    }
   },
   en: {
-    subtitle: 'Secure Document Submission Portal',
-    loading: 'Verifying link…',
-    invalidTitle: 'Link Invalid or Expired',
-    invalidBody: 'Please contact HR to get a new upload link.',
+    pageTitle: 'Employee Document Submission — Prime Anchor Point',
+    subtitle: 'Secure Employee Document Upload',
+    loading: 'Verifying link...',
+    invalidTitle: 'Invalid or Expired Link',
+    invalidDesc: 'Please contact HR for a new upload link.',
     completedTitle: 'Documents Submitted',
-    completedBody: 'Your documents have been securely uploaded. HR will review them shortly. Contact us if you have any questions.',
+    completedBody: 'Your documents have been securely uploaded. HR will review them.<br>Contact us if you have any questions.',
     noticeTitle: '🔒 Security Notice',
-    noticeBody: 'All files you upload are encrypted in transit and can only be viewed by authorized HR personnel.',
+    noticeBody: 'All uploaded files are encrypted in transit and only accessible by authorized HR personnel.',
     adminNoteLabel: 'HR Message',
     empCodePrefix: 'Employee ID: ',
-    docHeading: '📎 Please Upload the Following Documents',
-    uploadClick: 'Click or drag to upload',
+    uploadHeading: '📎 Please Upload the Following Documents',
+    clickUpload: 'Click or drag to upload',
     uploadHint: 'Supports PDF / JPG / PNG / HEIC, max 20MB',
     fileSelected: 'File selected',
-    submitBtn: 'Submit Documents',
-    uploading: 'Uploading…',
-    missingPrefix: 'Please upload: ',
-    networkErr: 'Network error. Please check your connection and try again.',
-    uploadFail: 'Upload failed. Please try again.',
+    btnSubmit: 'Submit Documents',
+    btnUploading: 'Uploading...',
+    successTitle: 'Submitted Successfully!',
+    successBody: 'Thank you! Your files have been securely uploaded. HR will review them shortly.<br><br><span style="font-size:.8rem;color:var(--gray-400)">You may safely close this page</span>',
+    errUpload: 'Upload failed. Please try again.',
+    errNetwork: 'Network error. Please check your connection and try again.',
+    errMissing: 'Please upload: ',
+    footer: '© Prime Anchor Point · All files encrypted · Authorized personnel only',
     posHeading: '🧑‍🔧 Job Interest & Skills Self-Assessment',
     posSubtitle: 'Rate your interest and skill level for each position below (optional). This helps HR match you with the right jobs.',
     interested: 'Interested',
     notInterested: 'Not Interested',
-    skillLabel: 'Skill',
-    successTitle: 'Submitted Successfully!',
-    successBody: 'Thank you for your cooperation! Your documents have been securely uploaded. HR will complete the review shortly.',
-    successClose: 'You may now safely close this page.',
-    footer: '© Prime Anchor Point · All files encrypted · Authorized personnel only',
+    docs: {
+      gov_id:    { label: 'Government-Issued ID', sub: '',
+                   desc: 'Driver\'s License, State ID, or Passport. Please ensure the document is valid and the photo is clear.' },
+      ssn:       { label: 'Social Security Card', sub: '',
+                   desc: 'Please provide a photo of the front of your SSN card. Contact HR if your card is damaged.' },
+      work_card: { label: 'Work Authorization Card', sub: '',
+                   desc: 'EAD card, work visa page, I-94 record, or Green Card. US citizens may upload a passport instead.' },
+    }
   },
   es: {
-    subtitle: 'Portal Seguro de Envío de Documentos',
-    loading: 'Verificando enlace…',
-    invalidTitle: 'Enlace inválido o vencido',
-    invalidBody: 'Por favor contacte a HR para obtener un nuevo enlace de carga.',
+    pageTitle: 'Envío de Documentos — Prime Anchor Point',
+    subtitle: 'Canal Seguro de Envío de Documentos',
+    loading: 'Verificando enlace...',
+    invalidTitle: 'Enlace Inválido o Expirado',
+    invalidDesc: 'Por favor contacte a HR para obtener un nuevo enlace.',
     completedTitle: 'Documentos Enviados',
-    completedBody: 'Sus documentos han sido subidos de forma segura. HR los revisará en breve. Contáctenos si tiene alguna pregunta.',
+    completedBody: 'Sus documentos han sido cargados de forma segura. HR los revisará.<br>Contáctenos si tiene alguna pregunta.',
     noticeTitle: '🔒 Aviso de Seguridad',
-    noticeBody: 'Todos los archivos se transmiten cifrados y solo pueden ser vistos por el personal autorizado de HR.',
+    noticeBody: 'Todos los archivos cargados se transmiten de forma encriptada y solo el personal autorizado de HR puede acceder a ellos.',
     adminNoteLabel: 'Mensaje de HR',
-    empCodePrefix: 'ID de empleado: ',
-    docHeading: '📎 Por favor suba los siguientes documentos',
-    uploadClick: 'Haga clic o arrastre para subir',
-    uploadHint: 'Compatible con PDF / JPG / PNG / HEIC, máx 20MB',
+    empCodePrefix: 'ID de Empleado: ',
+    uploadHeading: '📎 Por Favor Cargue los Siguientes Documentos',
+    clickUpload: 'Haga clic o arrastre para cargar',
+    uploadHint: 'Soporta PDF / JPG / PNG / HEIC, máx. 20MB',
     fileSelected: 'Archivo seleccionado',
-    submitBtn: 'Enviar Documentos',
-    uploading: 'Subiendo…',
-    missingPrefix: 'Por favor suba: ',
-    networkErr: 'Error de red. Verifique su conexión e intente de nuevo.',
-    uploadFail: 'Error al subir. Intente de nuevo.',
+    btnSubmit: 'Enviar Documentos',
+    btnUploading: 'Cargando...',
+    successTitle: '¡Enviado Exitosamente!',
+    successBody: '¡Gracias! Sus archivos han sido cargados de forma segura. HR los revisará pronto.<br><br><span style="font-size:.8rem;color:var(--gray-400)">Puede cerrar esta página de forma segura</span>',
+    errUpload: 'Error al cargar. Por favor intente de nuevo.',
+    errNetwork: 'Error de red. Verifique su conexión e intente de nuevo.',
+    errMissing: 'Por favor cargue: ',
+    footer: '© Prime Anchor Point · Archivos encriptados · Solo personal autorizado',
     posHeading: '🧑‍🔧 Interés en Puestos y Autoevaluación',
     posSubtitle: 'Califique su interés y nivel de habilidad en cada puesto (opcional). Esto ayuda a HR a asignarle el trabajo más adecuado.',
     interested: 'Me interesa',
     notInterested: 'No me interesa',
-    skillLabel: 'Habilidad',
-    successTitle: '¡Enviado con Éxito!',
-    successBody: '¡Gracias por su cooperación! Sus documentos han sido subidos de forma segura. HR completará la revisión pronto.',
-    successClose: 'Ahora puede cerrar esta página de forma segura.',
-    footer: '© Prime Anchor Point · Todos los archivos cifrados · Solo personal autorizado',
+    docs: {
+      gov_id:    { label: 'Identificación Oficial', sub: 'Government-Issued ID',
+                   desc: 'Licencia de conducir, ID estatal o pasaporte. Asegúrese de que el documento sea válido y la foto sea clara.' },
+      ssn:       { label: 'Tarjeta de Seguro Social', sub: 'Social Security Card',
+                   desc: 'Proporcione una foto del frente de su tarjeta SSN. Contacte a HR si su tarjeta está dañada.' },
+      work_card: { label: 'Tarjeta de Autorización de Trabajo', sub: 'Work Authorization Card',
+                   desc: 'Tarjeta EAD, página de visa de trabajo, registro I-94 o Green Card. Ciudadanos de EE.UU. pueden cargar un pasaporte.' },
+    }
   }
 };
 
-const DOC_INFO = {
-  gov_id: {
-    zh: { label: '政府颁发的身份证件', desc: '驾照（Driver\'s License）、州身份证（State ID）、护照（Passport）均可。请确保证件有效且拍摄清晰。' },
-    en: { label: 'Government-Issued ID', desc: 'Driver\'s License, State ID, or Passport accepted. Please ensure the document is valid and clearly photographed.' },
-    es: { label: 'Identificación emitida por el gobierno', desc: 'Se acepta licencia de conducir, ID estatal o pasaporte. Asegúrese de que el documento sea válido y esté fotografiado con claridad.' },
-    icon: '🪪', accept: '.pdf,.jpg,.jpeg,.png,.heic,.heif'
-  },
-  ssn: {
-    zh: { label: '社会安全卡', desc: '请提供 SSN 原卡正面照片。如卡片已破损请联系 HR 说明情况。' },
-    en: { label: 'Social Security Card', desc: 'Please provide a photo of the front of your original SSN card. If damaged, please contact HR.' },
-    es: { label: 'Tarjeta de Seguro Social', desc: 'Proporcione una foto del frente de su tarjeta SSN original. Si está dañada, contacte a HR.' },
-    icon: '📋', accept: '.pdf,.jpg,.jpeg,.png,.heic,.heif'
-  },
-  work_card: {
-    zh: { label: '工卡 / 工作许可证', desc: 'EAD 卡、工作签证页、I-94 记录、绿卡等均可。如您是美国公民可上传护照替代。' },
-    en: { label: 'Work Authorization Card', desc: 'EAD card, work visa page, I-94 record, or Green Card accepted. US citizens may upload a passport instead.' },
-    es: { label: 'Tarjeta de Autorización de Trabajo', desc: 'Se acepta tarjeta EAD, página de visa de trabajo, registro I-94 o Tarjeta Verde. Los ciudadanos pueden subir su pasaporte.' },
-    icon: '💼', accept: '.pdf,.jpg,.jpeg,.png,.heic,.heif'
-  },
-};
+const DOC_ICONS = { gov_id: '🪪', ssn: '📋', work_card: '💼' };
+const DOC_ACCEPT = '.pdf,.jpg,.jpeg,.png,.heic,.heif';
 
-const TOKEN = new URLSearchParams(location.search).get('token');
-let _lang = 'zh';
-let _requestedDocs = [];
-let _positions = [];
-const _fileMap = {};
-const _posRatings = {}; // key -> { interest: bool, skill: 1-5 }
-
-function t(key) { return (STRINGS[_lang] || STRINGS.zh)[key] || key; }
-
-function applyLanguage() {
-  document.documentElement.lang = _lang === 'zh' ? 'zh' : _lang === 'es' ? 'es' : 'en';
-  document.getElementById('pageSubtitle').textContent = t('subtitle');
-  document.getElementById('loadingText').textContent = t('loading');
-  document.getElementById('invalidTitle').textContent = t('invalidTitle');
-  document.getElementById('invalidBody').textContent = t('invalidBody');
-  document.getElementById('completedTitle').textContent = t('completedTitle');
-  document.getElementById('completedBody').textContent = t('completedBody');
-  document.getElementById('noticeTitleText').textContent = t('noticeTitle');
-  document.getElementById('noticeBodyText').textContent = t('noticeBody');
-  document.getElementById('adminNoteLabel').textContent = t('adminNoteLabel');
-  document.getElementById('docHeading').textContent = t('docHeading');
-  document.getElementById('btnSubmit').textContent = t('submitBtn');
-  document.getElementById('posHeading').textContent = t('posHeading');
-  document.getElementById('posSubtitle').textContent = t('posSubtitle');
-  document.getElementById('successTitle').textContent = t('successTitle');
-  document.getElementById('successBody').innerHTML = t('successBody') + '<br><br><span style="font-size:.8rem;color:var(--gray-400)">' + t('successClose') + '</span>';
-  document.getElementById('footerText').textContent = t('footer');
-}
-
-function show(id) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-}
-
-async function init() {
-  if (!TOKEN) { show('screenInvalid'); return; }
-  try {
-    const r = await fetch(`/api/emp-docs/${TOKEN}`);
-    if (!r.ok) { show('screenInvalid'); return; }
-    const d = await r.json();
-    _lang = d.lang || 'zh';
-    applyLanguage();
-    if (d.status === 'completed') { show('screenCompleted'); return; }
-    const initials = d.name.split(' ').map(w=>w[0]||'').join('').toUpperCase().slice(0,2);
-    document.getElementById('empAvatar').textContent = initials;
-    document.getElementById('empName').textContent = d.name;
-    document.getElementById('empCode').textContent = d.emp_code ? t('empCodePrefix') + d.emp_code : '';
-    if (d.admin_note) {
-      document.getElementById('adminNoteText').textContent = d.admin_note;
-      document.getElementById('adminNoteBlock').style.display = '';
-    }
-    _requestedDocs = d.requested_docs || ['gov_id','ssn','work_card'];
-    _positions = d.positions || [];
-    buildDocForm();
-    if (_positions.length) buildPositionForm();
-    show('screenForm');
-  } catch(e) { show('screenInvalid'); }
-}
-
-function buildDocForm() {
-  const pb = document.getElementById('progressBar');
-  const dl = document.getElementById('docList');
-  pb.innerHTML = _requestedDocs.map(k => `<div class="progress-dot" id="pd_${k}"></div>`).join('');
-  dl.innerHTML = _requestedDocs.map(key => {
-    const info = DOC_INFO[key] || { zh:{label:key,desc:''}, en:{label:key,desc:''}, es:{label:key,desc:''}, icon:'📄', accept:'.pdf,.jpg,.jpeg,.png' };
-    const loc = info[_lang] || info.zh || { label: key, desc: '' };
-    const engLabel = (info.en || {}).label || key;
-    return `<div class="doc-block" id="block_${key}">
-      <div class="doc-title">${info.icon} ${loc.label} ${_lang!=='en'?`<span style="font-size:.72rem;color:var(--gray-400);font-weight:400">${engLabel}</span>`:''}</div>
-      <div class="doc-desc">${loc.desc}</div>
-      <div class="upload-zone" id="zone_${key}" onclick="document.getElementById('file_${key}').click()">
-        <input type="file" id="file_${key}" name="${key}" accept="${info.accept}" style="display:none" onchange="onFileChange('${key}',this)">
-        <div class="upload-icon" id="icon_${key}">⬆️</div>
-        <div class="upload-label" id="lbl_${key}">${t('uploadClick')}</div>
-        <div class="upload-hint">${t('uploadHint')}</div>
-        <div class="upload-done" id="done_${key}"></div>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-// Position label lookup
 const POS_LABELS = {
   warehouse_sorter: {zh:'仓库分拣员',en:'Warehouse Sorter',es:'Clasificador de almacén'},
   labeler:          {zh:'贴标员',en:'Labeler',es:'Etiquetador'},
@@ -370,20 +289,105 @@ const POS_LABELS = {
   welder:           {zh:'焊接工',en:'Welder',es:'Soldador'},
 };
 
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('token');
+let LANG = params.get('lang') || 'zh';
+let T = I18N[LANG] || I18N.zh;
+let _requestedDocs = [];
+let _positions = [];
+const _fileMap = {};
+const _posRatings = {};
+
+function t(key) { return T[key] || I18N.zh[key] || key; }
+function docT(key) { return (T.docs && T.docs[key]) || (I18N.zh.docs && I18N.zh.docs[key]) || { label: key, sub: '', desc: '' }; }
+
+function applyLang() {
+  document.title = t('pageTitle');
+  document.documentElement.lang = LANG === 'es' ? 'es' : LANG === 'en' ? 'en' : 'zh';
+  document.getElementById('pageSubtitle').textContent = t('subtitle');
+  document.getElementById('loadingText').textContent = t('loading');
+  document.getElementById('invalidTitle').textContent = t('invalidTitle');
+  document.getElementById('invalidDesc').textContent = t('invalidDesc');
+  document.getElementById('completedTitle').textContent = t('completedTitle');
+  document.getElementById('completedBody').innerHTML = t('completedBody');
+  document.getElementById('noticeTitle').textContent = t('noticeTitle');
+  document.getElementById('noticeBody').textContent = t('noticeBody');
+  document.getElementById('adminNoteLabel').textContent = t('adminNoteLabel');
+  document.getElementById('uploadHeading').textContent = t('uploadHeading');
+  document.getElementById('btnSubmit').textContent = t('btnSubmit');
+  document.getElementById('posHeading').textContent = t('posHeading');
+  document.getElementById('posSubtitle').textContent = t('posSubtitle');
+  document.getElementById('successTitle').textContent = t('successTitle');
+  document.getElementById('successBody').innerHTML = t('successBody');
+  document.getElementById('footerText').textContent = t('footer');
+}
+
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+async function init() {
+  applyLang();
+  if (!TOKEN) { show('screenInvalid'); return; }
+  try {
+    const r = await fetch(`/api/emp-docs/${TOKEN}`);
+    if (!r.ok) { show('screenInvalid'); return; }
+    const d = await r.json();
+    if (!params.get('lang') && d.lang) { LANG = d.lang; T = I18N[LANG] || I18N.zh; applyLang(); }
+    if (d.status === 'completed') { show('screenCompleted'); return; }
+    const initials = d.name.split(' ').map(w=>w[0]||'').join('').toUpperCase().slice(0,2);
+    document.getElementById('empAvatar').textContent = initials;
+    document.getElementById('empName').textContent = d.name;
+    document.getElementById('empCode').textContent = d.emp_code ? t('empCodePrefix') + d.emp_code : '';
+    if (d.admin_note) {
+      document.getElementById('adminNoteText').textContent = d.admin_note;
+      document.getElementById('adminNoteBlock').style.display = '';
+    }
+    _requestedDocs = d.requested_docs || ['gov_id','ssn','work_card'];
+    _positions = d.positions || [];
+    buildDocForm();
+    if (_positions.length) buildPositionForm();
+    show('screenForm');
+  } catch(e) { show('screenInvalid'); }
+}
+
+function buildDocForm() {
+  const pb = document.getElementById('progressBar');
+  const dl = document.getElementById('docList');
+  pb.innerHTML = _requestedDocs.map(k => `<div class="progress-dot" id="pd_${k}"></div>`).join('');
+  dl.innerHTML = _requestedDocs.map(key => {
+    const info = docT(key);
+    const icon = DOC_ICONS[key] || '📄';
+    const sub = info.sub ? ` <span style="font-size:.72rem;color:var(--gray-400);font-weight:400">${info.sub}</span>` : '';
+    return `<div class="doc-block" id="block_${key}">
+      <div class="doc-title">${icon} ${info.label}${sub}</div>
+      <div class="doc-desc">${info.desc}</div>
+      <div class="upload-zone" id="zone_${key}" onclick="document.getElementById('file_${key}').click()">
+        <input type="file" id="file_${key}" name="${key}" accept="${DOC_ACCEPT}" style="display:none" onchange="onFileChange('${key}',this)">
+        <div class="upload-icon" id="icon_${key}">⬆️</div>
+        <div class="upload-label" id="lbl_${key}">${t('clickUpload')}</div>
+        <div class="upload-hint">${t('uploadHint')}</div>
+        <div class="upload-done" id="done_${key}"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 function buildPositionForm() {
   document.getElementById('positionCard').style.display = '';
   const container = document.getElementById('positionList');
   container.innerHTML = _positions.map(key => {
     _posRatings[key] = { interest: null, skill: 0 };
-    const label = (POS_LABELS[key] || {})[_lang] || key;
+    const label = (POS_LABELS[key] || {})[LANG] || key;
     const enLabel = (POS_LABELS[key] || {}).en || key;
     return `<div class="pos-row" id="posrow_${key}">
-      <div class="pos-name">${label}${_lang!=='en'?`<small>${enLabel}</small>`:''}</div>
+      <div class="pos-name">${label}${LANG!=='en'?`<small>${enLabel}</small>`:''}</div>
       <div class="interest-toggle">
         <button class="int-btn" id="yes_${key}" onclick="setInterest('${key}',true)">${t('interested')}</button>
         <button class="int-btn" id="no_${key}" onclick="setInterest('${key}',false)">${t('notInterested')}</button>
       </div>
-      <div class="stars" id="stars_${key}" title="${t('skillLabel')}">
+      <div class="stars" id="stars_${key}">
         ${[1,2,3,4,5].map(n=>`<span class="star" id="star_${key}_${n}" onclick="setStar('${key}',${n})">☆</span>`).join('')}
       </div>
     </div>`;
@@ -426,16 +430,13 @@ function onFileChange(key, input) {
 async function submitDocs() {
   const missing = _requestedDocs.filter(k => !_fileMap[k]);
   if (missing.length) {
-    const labels = missing.map(k => {
-      const info = DOC_INFO[k];
-      return info ? (info[_lang] || info.zh).label : k;
-    }).join(_lang === 'zh' ? '、' : ', ');
-    showErr(t('missingPrefix') + labels);
+    const labels = missing.map(k => docT(k).label).join(LANG === 'zh' ? '、' : ', ');
+    showErr(t('errMissing') + labels);
     return;
   }
   const btn = document.getElementById('btnSubmit');
   btn.disabled = true;
-  btn.textContent = t('uploading');
+  btn.textContent = t('btnUploading');
   hideErr();
   const fd = new FormData();
   for (const [key, file] of Object.entries(_fileMap)) fd.append(key, file);
@@ -450,8 +451,8 @@ async function submitDocs() {
     const r = await fetch(`/api/emp-docs/${TOKEN}/submit`, { method:'POST', body: fd });
     const d = await r.json();
     if (d.success) { show('screenSuccess'); }
-    else { showErr(d.error || t('uploadFail')); btn.disabled=false; btn.textContent=t('submitBtn'); }
-  } catch(e) { showErr(t('networkErr')); btn.disabled=false; btn.textContent=t('submitBtn'); }
+    else { showErr(d.error || t('errUpload')); btn.disabled=false; btn.textContent=t('btnSubmit'); }
+  } catch(e) { showErr(t('errNetwork')); btn.disabled=false; btn.textContent=t('btnSubmit'); }
 }
 
 function showErr(msg) { const el=document.getElementById('errMsg'); el.textContent=msg; el.style.display='block'; }

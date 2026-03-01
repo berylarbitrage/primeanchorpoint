@@ -20,6 +20,7 @@ if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
 
 const db = new Database(path.join(dataDir, 'prime.db'));
 db.pragma('journal_mode = WAL');
+db.pragma('wal_autocheckpoint = 100');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS jobs (
@@ -228,6 +229,7 @@ db.exec(`
     status TEXT DEFAULT 'pending',
     requested_docs TEXT DEFAULT '["gov_id","ssn","work_card"]',
     admin_note TEXT DEFAULT '',
+    lang TEXT DEFAULT 'zh',
     completed_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id)
@@ -267,6 +269,9 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN employment_type TEXT DEFAULT ''`); } 
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_days TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_start TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_end TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule_days TEXT DEFAULT '[]'`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule_start TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule_end TEXT DEFAULT ''`); } catch(e) {}
 // Job status & closure tracking
 try { db.exec(`ALTER TABLE jobs ADD COLUMN job_status TEXT DEFAULT 'open'`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN close_reason TEXT DEFAULT ''`); } catch(e) {}
@@ -287,6 +292,8 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN pay_type TEXT DEFAULT 'hourly'
 try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_type TEXT DEFAULT 'W2'`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN benefits TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN start_date TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_file TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT ''`); } catch(e) {}
 
 // Migrate admin_users table (add role, display_name, active, created_at columns if missing)
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
@@ -332,6 +339,34 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_start TEXT DEFAULT ''`)
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_end TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN sheet_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN verified_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'`); } catch(e) {}
+
+db.exec(`CREATE TABLE IF NOT EXISTS employee_position_ratings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  position_key TEXT NOT NULL,
+  skill_score INTEGER DEFAULT 0,
+  recommend INTEGER DEFAULT -1,
+  suggest_pay TEXT DEFAULT '',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(employee_id, position_key),
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS job_audit_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  changes TEXT DEFAULT '{}',
+  performed_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
 
 db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -430,6 +465,8 @@ const WORKER_POSITIONS = [
   { key:'order_picker',       zh:'拣货员',       en:'Order Picker' },
   { key:'welder',             zh:'焊接工',       en:'Welder' },
 ];
+// Add quote_request column to inquiries if not already present (migration)
+try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -446,6 +483,9 @@ function runBackup(trigger) {
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const results = [];
   const dbPath = path.join(dataDir, 'prime.db');
+
+  // Checkpoint WAL before backup to ensure all data is in the main db file
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
 
   for (const dir of BACKUP_DIRS) {
     try {
@@ -656,18 +696,29 @@ function verifyPassword(password, salt, hash) {
   try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
 }
 
-// In-memory session store (tokens expire in 24h)
-const sessions = new Map();
+// DB-backed session store (survives server restarts, tokens expire in 24h)
+db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  username TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`);
+// Clean up expired sessions on startup
+try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { created: Date.now(), userId: user.id, username: user.username, role: user.role || 'staff', assigned_partner_ids: user.assigned_partner_ids || '' });
+  db.prepare('INSERT INTO admin_sessions (token, user_id, username, role, created_at) VALUES (?,?,?,?,?)')
+    .run(token, user.id, user.username, user.role || 'staff', Date.now());
   return token;
 }
 function getSession(token) {
-  const s = sessions.get(token);
+  if (!token) return null;
+  const s = db.prepare('SELECT * FROM admin_sessions WHERE token=?').get(token);
   if (!s) return null;
-  if (Date.now() - s.created > 24 * 60 * 60 * 1000) { sessions.delete(token); return null; }
-  return s;
+  if (Date.now() - s.created_at > 24*60*60*1000) { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); return null; }
+  return { userId: s.user_id, username: s.username, role: s.role, created: s.created_at };
 }
 function validSession(token) { return !!getSession(token); }
 
@@ -772,8 +823,12 @@ app.get('/api/jobs', (req, res) => {
     id: j.id, title: j.title, type: j.type, location: j.location,
     pay: j.pay, lang: j.lang, lang_name: j.lang_name,
     desc: j.description, urgent: !!j.urgent, work_auth: j.work_auth || '',
-    benefits: j.benefits || '', schedule: j.schedule || '',
+    partner_name: j.partner_name || '',
     company_name: j.company_name || '', employment_type: j.employment_type || '',
+    benefits: j.benefits || '[]', schedule: j.schedule || '',
+    schedule_days: j.schedule_days || '[]',
+    schedule_start: j.schedule_start || '',
+    schedule_end: j.schedule_end || '',
     work_days: j.work_days || '', work_start: j.work_start || '', work_end: j.work_end || ''
   })));
 });
@@ -788,13 +843,14 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
       const city = (d.location || '').split(',')[0].trim();
       employerId = nextEmployerId(city);
     }
-    const stmt = db.prepare(`INSERT INTO inquiries (name, email, phone, company, type, employer_id, positions, workers, location, start_date, experience, languages, comments, resume_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const stmt = db.prepare(`INSERT INTO inquiries (name, email, phone, company, type, employer_id, positions, workers, location, start_date, experience, languages, comments, resume_path, quote_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     const result = stmt.run(
       d.name, d.email || '', d.phone || '', d.company || '', d.type || '',
       employerId,
       d.positions || '', d.workers || '', d.location || '', d.start_date || '',
       d.experience || '', d.languages || '', d.comments || '',
-      req.file ? req.file.filename : ''
+      req.file ? req.file.filename : '',
+      d.quote_request ? 1 : 0
     );
     res.json({ success: true, id: result.lastInsertRowid, employer_id: employerId || undefined });
   } catch (e) {
@@ -830,6 +886,14 @@ app.post('/api/admin/login', (req, res) => {
   } else {
     res.status(401).json({ error: 'Invalid username or password' });
   }
+});
+
+app.post('/api/admin/logout', requireAdmin, (req, res) => {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) {
+    db.prepare('DELETE FROM admin_sessions WHERE token=?').run(auth.slice(7));
+  }
+  res.json({ success: true });
 });
 
 // Get current user info
@@ -1024,9 +1088,25 @@ app.post('/api/admin/pending-actions/:id/reject', requireAdmin, requireRole('adm
   res.json({ success: true });
 });
 
-// Jobs CRUD
+// Jobs CRUD (with audit logging)
+const logJobAudit = db.prepare('INSERT INTO job_audit_log (job_id, action, changes, performed_by) VALUES (?,?,?,?)');
+
+function diffJob(oldJ, newD) {
+  const fields = ['title','type','location','pay','job_status','close_reason','close_note','active','headcount','employment_type','work_days','work_start','work_end','benefits','description','urgent','company_name','work_auth'];
+  const changes = {};
+  for (const f of fields) {
+    const o = String(oldJ[f] ?? ''), n = String(newD[f] ?? '');
+    if (o !== n) changes[f] = { from: oldJ[f], to: newD[f] };
+  }
+  return changes;
+}
+
 app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare('SELECT j.*, p.name AS partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id ORDER BY j.created_at DESC').all());
+});
+
+app.get('/api/admin/jobs/:id/history', requireAdmin, blockManager, (req, res) => {
+  res.json(db.prepare('SELECT * FROM job_audit_log WHERE job_id=? ORDER BY created_at DESC').all(req.params.id));
 });
 
 app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
@@ -1035,24 +1115,29 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const stmt = db.prepare(`INSERT INTO jobs
     (partner_id, title, type, location, pay, lang, lang_name, description, urgent,
      work_auth, benefits, schedule, company_id, company_name, employment_type,
-     work_days, work_start, work_end, job_status, active, close_reason, close_note, headcount)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+     work_days, work_start, work_end, schedule_days, schedule_start, schedule_end,
+     job_status, active, close_reason, close_note, headcount)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
     d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
     d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
     d.company_id||null, d.company_name||'', d.employment_type||'',
     d.work_days||'', d.work_start||'', d.work_end||'',
+    d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
     jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1
   );
+  logJobAudit.run(r.lastInsertRowid, 'created', JSON.stringify({ title: d.title, company_name: d.company_name||'' }), req.userName);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
   const d = req.body;
+  const old = db.prepare('SELECT * FROM jobs WHERE id=?').get(req.params.id);
   const jobStatus = d.job_status || 'open';
   db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?,
     description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
     company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?,
+    schedule_days=?, schedule_start=?, schedule_end=?,
     job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
     .run(
       d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
@@ -1060,14 +1145,23 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
       d.work_auth||'', d.benefits||'', d.schedule||'',
       d.company_id||null, d.company_name||'', d.employment_type||'',
       d.work_days||'', d.work_start||'', d.work_end||'',
+      d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
       jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
       req.params.id
     );
+  // Determine action type
+  let action = 'updated';
+  if (old && old.job_status === 'open' && jobStatus !== 'open') action = 'closed';
+  if (old && old.job_status !== 'open' && jobStatus === 'open') action = 'reopened';
+  const changes = old ? diffJob(old, { ...d, job_status: jobStatus, active: jobStatus==='open'?1:0 }) : {};
+  logJobAudit.run(req.params.id, action, JSON.stringify(changes), req.userName);
   res.json({ success: true });
 });
 
 app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
+  const old = db.prepare('SELECT title, company_name FROM jobs WHERE id=?').get(req.params.id);
   db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
+  logJobAudit.run(req.params.id, 'deleted', JSON.stringify(old || {}), req.userName);
   res.json({ success: true });
 });
 
@@ -1117,6 +1211,24 @@ app.put('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager,
     VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(inquiry_id, position_key) DO UPDATE SET skill_score=excluded.skill_score, recommend=excluded.recommend, suggest_pay=excluded.suggest_pay, updated_at=CURRENT_TIMESTAMP`);
   const txn = db.transaction(() => ratings.forEach(r => upsert.run(req.params.id, r.position_key, r.skill_score || 0, r.recommend ? 1 : 0, r.suggest_pay || '')));
+  txn();
+  res.json({ success: true });
+});
+
+// Employee position ratings
+app.get('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
+  const saved = db.prepare('SELECT * FROM employee_position_ratings WHERE employee_id=?').all(req.params.id);
+  const rMap = {};
+  saved.forEach(r => { rMap[r.position_key] = r; });
+  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
+});
+
+app.put('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
+  const { ratings } = req.body;
+  const upsert = db.prepare(`INSERT INTO employee_position_ratings (employee_id, position_key, skill_score, recommend, suggest_pay, updated_at)
+    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(employee_id, position_key) DO UPDATE SET skill_score=excluded.skill_score, recommend=excluded.recommend, suggest_pay=excluded.suggest_pay, updated_at=CURRENT_TIMESTAMP`);
+  const txn = db.transaction(() => ratings.forEach(r => upsert.run(req.params.id, r.position_key, r.skill_score || 0, r.recommend != null ? r.recommend : -1, r.suggest_pay || '')));
   txn();
   res.json({ success: true });
 });
@@ -1322,8 +1434,31 @@ app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('up
 });
 
 app.delete('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('delete', 'assignments'), (req, res) => {
+  const a = db.prepare('SELECT contract_file FROM assignments WHERE id=?').get(req.params.id);
+  if (a && a.contract_file) { const fp = path.join(docsDir, a.contract_file); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
   db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Assignment contract file upload/download
+app.post('/api/admin/assignments/:id/contract', requireAdmin, blockManager, docUpload.single('file'), (req, res) => {
+  const a = db.prepare('SELECT id, contract_file FROM assignments WHERE id=?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Assignment not found' });
+  if (a.contract_file) { const old = path.join(docsDir, a.contract_file); if (fs.existsSync(old)) fs.unlinkSync(old); }
+  db.prepare('UPDATE assignments SET contract_file=?, contract_filename=? WHERE id=?')
+    .run(req.file ? req.file.filename : '', req.file ? req.file.originalname : '', req.params.id);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/assignments/:id/contract', (req, res, next) => {
+  if (req.query.token && validSession(req.query.token)) return next();
+  return requireAdmin(req, res, next);
+}, (req, res) => {
+  const a = db.prepare('SELECT contract_file, contract_filename FROM assignments WHERE id=?').get(req.params.id);
+  if (!a || !a.contract_file) return res.status(404).json({ error: 'No contract file' });
+  const fp = path.join(docsDir, a.contract_file);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File not found' });
+  res.download(fp, a.contract_filename || a.contract_file);
 });
 
 // ─── Employee Doc Requests (私密材料链接) ───
@@ -1556,13 +1691,38 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   const docs = db.prepare('SELECT * FROM employee_documents WHERE employee_id=? ORDER BY uploaded_at DESC').all(req.params.id);
   const bgChecks = db.prepare('SELECT * FROM background_checks WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id);
   const recentTime = db.prepare('SELECT * FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 20').all(req.params.id);
+  // Job history: distinct jobs from timesheet_sheets with summary
+  const jobHistory = db.prepare(`
+    SELECT s.job_id, s.company_name, j.title AS job_title,
+      COUNT(*) AS sheet_count,
+      SUM(s.total_hours) AS total_hours,
+      SUM(s.regular_hours) AS regular_hours,
+      SUM(s.overtime_hours) AS overtime_hours,
+      MIN(s.period_start) AS first_period,
+      MAX(s.period_end) AS last_period
+    FROM timesheet_sheets s
+    LEFT JOIN jobs j ON s.job_id = j.id
+    WHERE s.employee_id=?
+    GROUP BY COALESCE(s.job_id, s.company_name)
+    ORDER BY MAX(s.period_end) DESC
+  `).all(req.params.id);
   const ssn_full = emp.ssn_encrypted && emp.ssn_iv ? decryptSSN(emp.ssn_encrypted, emp.ssn_iv) : null;
-  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime });
+  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory });
 });
 
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.first_name || !d.last_name) return res.status(400).json({ error: '请填写姓名' });
+  if (!d.force) {
+    if (d.phone && d.phone.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE phone=?').get(d.phone.trim());
+      if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
+    }
+    if (d.email && d.email.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE email=?').get(d.email.trim());
+      if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
+    }
+  }
   const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
   if (d.ssn) {
@@ -1598,6 +1758,16 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
   const d = req.body;
   const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
   if (!emp) return res.status(404).json({ error: 'Not found' });
+  if (!d.force) {
+    if (d.phone && d.phone.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE phone=? AND id!=?').get(d.phone.trim(), req.params.id);
+      if (dup) return res.json({ duplicate: true, field: 'phone', existing: dup });
+    }
+    if (d.email && d.email.trim()) {
+      const dup = db.prepare('SELECT id,first_name,last_name,employee_id FROM employees WHERE email=? AND id!=?').get(d.email.trim(), req.params.id);
+      if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
+    }
+  }
   let ssn_encrypted = emp.ssn_encrypted, ssn_iv = emp.ssn_iv, ssn_last4 = emp.ssn_last4;
   if (d.ssn && d.ssn !== '__KEEP__') {
     const digits = d.ssn.replace(/\D/g, '');
@@ -1837,11 +2007,46 @@ app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard
 
 // List timesheet sheets (admin)
 app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
+  const { stage } = req.query; // 'verify' | 'payment' | 'history'
+  let where = '';
+  if (stage === 'verify')  where = `WHERE ts.status IN ('pending','confirmed','disputed')`;
+  if (stage === 'payment') where = `WHERE ts.status = 'verified'`;
+  if (stage === 'history') where = `WHERE ts.status = 'completed'`;
   const rows = db.prepare(`
     SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
     FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
-    ORDER BY ts.created_at DESC LIMIT 300`).all();
+    ${where} ORDER BY ts.created_at DESC LIMIT 300`).all();
   res.json(rows);
+});
+
+// Staff verifies sheet and submits to client
+app.put('/api/admin/timesheet-sheets/:id/verify', requireAdmin, (req, res) => {
+  const { staff_note } = req.body;
+  const sheet = db.prepare('SELECT id FROM timesheet_sheets WHERE id=?').get(req.params.id);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE timesheet_sheets SET status='verified', verified_at=CURRENT_TIMESTAMP, staff_note=? WHERE id=?`)
+    .run(staff_note || '', req.params.id);
+  res.json({ success: true });
+});
+
+// Mark client has paid us
+app.put('/api/admin/timesheet-sheets/:id/client-paid', requireAdmin, (req, res) => {
+  const sheet = db.prepare('SELECT id, labor_paid FROM timesheet_sheets WHERE id=?').get(req.params.id);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  const complete = sheet.labor_paid === 1;
+  db.prepare(`UPDATE timesheet_sheets SET client_paid=1, client_paid_at=CURRENT_TIMESTAMP${complete ? ", status='completed'" : ''} WHERE id=?`)
+    .run(req.params.id);
+  res.json({ success: true, completed: complete });
+});
+
+// Mark we have paid labor
+app.put('/api/admin/timesheet-sheets/:id/labor-paid', requireAdmin, (req, res) => {
+  const sheet = db.prepare('SELECT id, client_paid FROM timesheet_sheets WHERE id=?').get(req.params.id);
+  if (!sheet) return res.status(404).json({ error: 'Not found' });
+  const complete = sheet.client_paid === 1;
+  db.prepare(`UPDATE timesheet_sheets SET labor_paid=1, labor_paid_at=CURRENT_TIMESTAMP${complete ? ", status='completed'" : ''} WHERE id=?`)
+    .run(req.params.id);
+  res.json({ success: true, completed: complete });
 });
 
 // ─── PUBLIC TIMESHEET CONFIRMATION ───
@@ -1849,13 +2054,19 @@ app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
 // Get sheet data (no auth — token is the secret)
 app.get('/api/ts/:token', (req, res) => {
   const sheet = db.prepare(`
-    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
+    SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone, e.dob
     FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
     WHERE ts.confirm_token=?`).get(req.params.token);
   if (!sheet) return res.status(404).json({ error: 'Not found' });
+  // Require DOB verification — client must pass ?dob=YYYY-MM-DD
+  const dob = (req.query.dob || '').trim();
+  if (!dob) return res.status(401).json({ error: 'dob_required' });
+  if (!sheet.dob || dob !== sheet.dob) return res.status(401).json({ error: 'dob_mismatch' });
   const entries = db.prepare(
     `SELECT * FROM time_entries WHERE sheet_id=? ORDER BY clock_in`).all(sheet.id);
-  res.json({ sheet, entries });
+  // Strip DOB from response
+  const { dob: _dob, ...safeSheet } = sheet;
+  res.json({ sheet: safeSheet, entries });
 });
 
 // Employee submits confirm or dispute
@@ -2109,6 +2320,26 @@ app.get('/customer', (req, res) => {
 });
 
 // ─── Start ───
+// Periodic WAL checkpoint every 5 minutes
+setInterval(() => {
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) { console.error('[WAL] checkpoint error:', e.message); }
+}, 5 * 60 * 1000);
+
+// Graceful shutdown: checkpoint WAL and close database
+function gracefulShutdown(signal) {
+  console.log(`[Shutdown] ${signal} received, checkpointing WAL...`);
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    db.close();
+    console.log('[Shutdown] Database closed cleanly');
+  } catch(e) { console.error('[Shutdown] Error:', e.message); }
+  process.exit(0);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 app.listen(PORT, () => {
+  // Initial checkpoint on startup to flush any pending WAL data
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
 });
