@@ -201,6 +201,15 @@ tr:hover td{background:var(--sky-light)}
 .ts-actions{display:flex;gap:.75rem;flex-wrap:wrap}
 @media print{body *{visibility:hidden}#tsPrintArea,#tsPrintArea *{visibility:visible}#tsPrintArea{position:absolute;left:0;top:0;width:100%;padding:20px}#tsPrintArea .no-print{display:none!important}}
 @media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}.stats-row{grid-template-columns:repeat(2,1fr)}.hours-bar{grid-template-columns:repeat(2,1fr)}.field-row3{grid-template-columns:1fr}}
+/* Day toggle buttons */
+.day-btn{padding:5px 9px;border:1.5px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-600);font-size:.78rem;cursor:pointer;transition:all .15s;font-weight:600;white-space:nowrap}
+.day-btn:hover{border-color:var(--sky);color:var(--sky)}
+.day-selected{background:var(--sky)!important;border-color:var(--sky)!important;color:#fff!important}
+/* Benefit chip checkboxes */
+.benefit-chip{display:inline-flex;align-items:center;gap:.3rem;padding:5px 10px;border:1.5px solid var(--gray-200);border-radius:20px;cursor:pointer;font-size:.78rem;color:var(--gray-600);transition:all .15s;font-weight:500}
+.benefit-chip:hover{border-color:var(--sky);color:var(--sky)}
+.benefit-chip input{display:none}
+.benefit-chip:has(input:checked){background:var(--sky);border-color:var(--sky);color:#fff}
 /* Toast */
 #toast-wrap{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
