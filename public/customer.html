@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>客户门户 — Prime Anchorpoint</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--sky:#0ea5e9;--blue:#1e3a5f;--green:#10b981;--red:#ef4444;--orange:#f97316;--gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-500:#64748b;--gray-700:#334155;--radius:10px}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color:var(--gray-700);min-height:100vh}
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
+.login-box{background:#fff;border-radius:16px;padding:2.5rem;width:100%;max-width:380px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.login-box img{width:72px;display:block;margin:0 auto 1rem}
+.login-box h1{text-align:center;font-size:1.3rem;color:var(--blue);margin-bottom:.25rem}
+.login-box p{text-align:center;color:var(--gray-400);font-size:.88rem;margin-bottom:1.5rem}
+.login-box input{width:100%;padding:.75rem 1rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.95rem;margin-bottom:.85rem}
+.login-box input:focus{outline:2px solid var(--sky);border-color:transparent}
+.btn-login{width:100%;padding:.85rem;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer}
+.btn-login:hover{background:#16325e}
+#app{display:none}
+.header{background:var(--blue);color:#fff;padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:1rem;font-weight:700}
+.header-right{display:flex;align-items:center;gap:1rem;font-size:.85rem}
+.nav{background:#fff;border-bottom:1px solid var(--gray-200);display:flex;gap:0;overflow-x:auto}
+.nav-btn{padding:.75rem 1.25rem;border:none;background:none;font-size:.88rem;font-weight:600;color:var(--gray-500);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
+.nav-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
+.content{max-width:960px;margin:1.5rem auto;padding:0 1rem}
+.card{background:#fff;border-radius:var(--radius);padding:1.25rem;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:1rem}
+.card h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1rem}
+.field{margin-bottom:.85rem}
+.field label{display:block;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--gray-500);margin-bottom:.3rem}
+.field input,.field select,.field textarea{width:100%;padding:.65rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem}
+.field textarea{resize:vertical;min-height:80px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.btn{padding:.6rem 1.2rem;border:none;border-radius:8px;font-size:.88rem;font-weight:600;cursor:pointer}
+.btn-blue{background:var(--blue);color:#fff}
+.btn-blue:hover{background:#16325e}
+.btn-green{background:var(--green);color:#fff}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+th{background:var(--gray-50);padding:.6rem .75rem;text-align:left;font-weight:600;color:var(--gray-500);border-bottom:2px solid var(--gray-200)}
+td{padding:.65rem .75rem;border-bottom:1px solid var(--gray-100)}
+tr:last-child td{border-bottom:none}
+.empty{color:var(--gray-400);padding:2rem;text-align:center}
+.status-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:600}
+.s-pending{background:#fef3c7;color:#92400e}
+.s-in_progress{background:#dbeafe;color:#1d4ed8}
+.s-completed{background:#d1fae5;color:#065f46}
+.s-cancelled{background:#fee2e2;color:#991b1b}
+#toast-wrap{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
+.toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
+.toast.in{opacity:1;transform:translateY(0)}
+.toast.success{background:#065F46;border-left:4px solid #34d399}
+</style>
+</head>
+<body>
+<div id="toast-wrap"></div>
+
+<!-- Login -->
+<div class="login-wrap" id="loginWrap">
+  <div class="login-box">
+    <img src="/logo.svg" alt="Prime Anchorpoint">
+    <h1>客户门户</h1>
+    <p>Customer Portal — Prime Anchorpoint</p>
+    <input type="email" id="cEmail" placeholder="邮箱 / Email" autocomplete="email">
+    <input type="password" id="cPassword" placeholder="密码 / Password" autocomplete="current-password">
+    <button class="btn-login" onclick="customerLogin()">登录 / Login</button>
+    <p style="margin-top:1rem;font-size:.8rem;color:var(--gray-400);text-align:center">如需开通账号请联系 Prime Anchorpoint</p>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <div class="header">
+    <h1>Prime Anchorpoint — 客户门户</h1>
+    <div class="header-right">
+      <span id="customerNameDisplay"></span>
+      <button onclick="customerLogout()" style="background:rgba(255,255,255,.15);color:#fff;border:none;padding:.35rem .8rem;border-radius:6px;cursor:pointer;font-size:.82rem">退出</button>
+    </div>
+  </div>
+  <div class="nav">
+    <button class="nav-btn active" onclick="showTab('post')">发布用工需求</button>
+    <button class="nav-btn" onclick="showTab('posts')">我的需求记录</button>
+    <button class="nav-btn" onclick="showTab('workers')">派遣工人列表</button>
+    <button class="nav-btn" onclick="showTab('profile')">我的信息</button>
+  </div>
+  <div class="content">
+
+    <!-- Post Job -->
+    <div id="tabPost">
+      <div class="card">
+        <h2>发布新用工需求</h2>
+        <div class="field-row">
+          <div class="field"><label>职位 / 工种 *</label><input id="pTitle" placeholder="例：仓库分拣员、叉车司机"></div>
+          <div class="field"><label>工作地点</label><input id="pLocation" placeholder="例：Chicago, IL 60601"></div>
+        </div>
+        <div class="field-row">
+          <div class="field"><label>需要人数</label><input type="number" id="pHeadcount" min="1" value="1"></div>
+          <div class="field"><label>期望开始日期</label><input type="date" id="pStartDate"></div>
+        </div>
+        <div class="field"><label>工作类型</label>
+          <select id="pWorkType">
+            <option value="">— 请选择 —</option>
+            <option value="全职">全职 / Full-Time</option>
+            <option value="兼职">兼职 / Part-Time</option>
+            <option value="临时工">临时工 / Temporary</option>
+            <option value="临时转正">临时转正 / Temp-to-Hire</option>
+          </select>
+        </div>
+        <div class="field"><label>技能要求 / 岗位描述</label>
+          <textarea id="pRequirements" placeholder="请描述工作职责、技能要求、身体要求等..."></textarea>
+        </div>
+        <div class="field"><label>其他备注</label>
+          <textarea id="pNotes" rows="3" placeholder="其他需要告知的信息，例如工作时间、特殊要求等..."></textarea>
+        </div>
+        <div style="display:flex;gap:.75rem;align-items:center">
+          <button class="btn btn-blue" onclick="submitPost()">提交需求</button>
+          <button class="btn" style="background:var(--gray-100);color:var(--gray-500)" onclick="randomFillPost()">🎲 随机填充测试</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- My Posts -->
+    <div id="tabPosts" style="display:none">
+      <div class="card">
+        <h2>我的用工需求记录</h2>
+        <table>
+          <thead><tr><th>职位</th><th>地点</th><th>人数</th><th>工作类型</th><th>期望开始</th><th>状态</th><th>提交时间</th></tr></thead>
+          <tbody id="postsTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Workers -->
+    <div id="tabWorkers" style="display:none">
+      <div class="card">
+        <h2>派遣工人列表</h2>
+        <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">显示由 Prime Anchorpoint 派遣至贵公司的工人信息</p>
+        <table>
+          <thead><tr><th>姓名</th><th>职位</th><th>联系电话</th><th>工作岗位</th><th>工作地点</th><th>派工状态</th></tr></thead>
+          <tbody id="workersTable"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Profile -->
+    <div id="tabProfile" style="display:none">
+      <div class="card" id="profileCard">
+        <h2>我的公司信息</h2>
+        <div id="profileContent"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let C_TOKEN = localStorage.getItem('pa_customer_token') || '';
+
+function showToast(msg, type='success') {
+  const wrap = document.getElementById('toast-wrap');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  wrap.appendChild(t);
+  requestAnimationFrame(() => requestAnimationFrame(() => t.classList.add('in')));
+  setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML; }
+
+async function cApi(path, opts={}) {
+  const r = await fetch('/api/customer' + path, {
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + C_TOKEN },
+    ...opts
+  });
+  if (r.status === 401) { customerLogout(); return null; }
+  return r.json();
+}
+
+async function customerLogin() {
+  const email = document.getElementById('cEmail').value.trim();
+  const password = document.getElementById('cPassword').value;
+  if (!email || !password) return alert('请输入邮箱和密码');
+  const r = await fetch('/api/customer/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  if (!r.ok) { const e = await r.json(); return alert(e.error || '登录失败'); }
+  const data = await r.json();
+  C_TOKEN = data.token;
+  localStorage.setItem('pa_customer_token', C_TOKEN);
+  showApp();
+}
+
+function customerLogout() {
+  C_TOKEN = '';
+  localStorage.removeItem('pa_customer_token');
+  document.getElementById('loginWrap').style.display = '';
+  document.getElementById('app').style.display = 'none';
+}
+
+async function showApp() {
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('app').style.display = '';
+  const me = await cApi('/me');
+  if (!me) return;
+  document.getElementById('customerNameDisplay').textContent = me.company_name;
+}
+
+function showTab(tab) {
+  ['post','posts','workers','profile'].forEach(t => {
+    document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
+  });
+  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', ['post','posts','workers','profile'][i]===tab));
+  if (tab === 'posts') loadPosts();
+  else if (tab === 'workers') loadWorkers();
+  else if (tab === 'profile') loadProfile();
+}
+
+async function submitPost() {
+  const d = {
+    title: document.getElementById('pTitle').value.trim(),
+    location: document.getElementById('pLocation').value.trim(),
+    headcount: parseInt(document.getElementById('pHeadcount').value) || 1,
+    start_date: document.getElementById('pStartDate').value,
+    work_type: document.getElementById('pWorkType').value,
+    requirements: document.getElementById('pRequirements').value.trim(),
+    notes: document.getElementById('pNotes').value.trim()
+  };
+  if (!d.title) return alert('请填写职位/工种');
+  const r = await cApi('/post-job', { method:'POST', body:JSON.stringify(d) });
+  if (!r) return;
+  if (r.success) {
+    showToast('✅ 需求已提交，HR将尽快与您联系');
+    document.getElementById('pTitle').value = '';
+    document.getElementById('pLocation').value = '';
+    document.getElementById('pHeadcount').value = '1';
+    document.getElementById('pStartDate').value = '';
+    document.getElementById('pWorkType').value = '';
+    document.getElementById('pRequirements').value = '';
+    document.getElementById('pNotes').value = '';
+  } else alert(r.error || '提交失败');
+}
+
+function randomFillPost() {
+  const pool = [
+    { title:'仓库分拣员', location:'Chicago, IL 60601', headcount:5, work_type:'临时工', requirements:'负责仓库商品分拣、打包，需能站立8小时，无需经验，培训上岗。', notes:'周一至周五 6:00–14:30，偶尔需要加班' },
+    { title:'叉车操作员', location:'Cicero, IL 60804', headcount:2, work_type:'全职', requirements:'需持有效叉车证，负责货物装卸及仓储管理，1年以上经验优先。', notes:'长期工，薪资面议，立即可上班优先' },
+    { title:'生产线操作工', location:'Melrose Park, IL 60160', headcount:8, work_type:'临时工', requirements:'食品加工生产线，需遵守卫生规定，体力充沛，男女不限。', notes:'3个月合同，表现优秀可转正' },
+    { title:'Warehouse Associate', location:'Schaumburg, IL 60173', headcount:3, work_type:'临时转正', requirements:'Pick, pack and ship orders. Must lift 50 lbs. No experience required, will train.', notes:'Day shift 7am-3:30pm, possible OT Fridays' },
+    { title:'Machine Operator', location:'Elk Grove Village, IL 60007', headcount:4, work_type:'全职', requirements:'Operate packaging machinery, monitor quality, perform basic maintenance checks.', notes:'Night shift available, $1/hr shift differential' },
+    { title:'Trabajador de Almacén', location:'Melrose Park, IL', headcount:6, work_type:'临时工', requirements:'Clasificar y empacar productos. No se requiere experiencia, se ofrece capacitación.', notes:'Pago semanal, transporte disponible desde Cicero' },
+  ];
+  const r = pool[Math.floor(Math.random() * pool.length)];
+  document.getElementById('pTitle').value = r.title;
+  document.getElementById('pLocation').value = r.location;
+  document.getElementById('pHeadcount').value = r.headcount;
+  document.getElementById('pWorkType').value = r.work_type;
+  document.getElementById('pRequirements').value = r.requirements;
+  document.getElementById('pNotes').value = r.notes;
+  const d = new Date(); d.setDate(d.getDate() + Math.floor(Math.random()*14)+3);
+  document.getElementById('pStartDate').value = d.toISOString().slice(0,10);
+}
+
+async function loadPosts() {
+  const posts = await cApi('/my-posts');
+  if (!posts) return;
+  const statusLabel = { pending:'待处理', in_progress:'处理中', completed:'已完成', cancelled:'已取消' };
+  const statusCls = { pending:'s-pending', in_progress:'s-in_progress', completed:'s-completed', cancelled:'s-cancelled' };
+  document.getElementById('postsTable').innerHTML = posts.length ? posts.map(p=>`<tr>
+    <td><strong>${esc(p.title)}</strong></td>
+    <td>${esc(p.location||'')}</td>
+    <td style="text-align:center">${p.headcount}</td>
+    <td>${esc(p.work_type||'')}</td>
+    <td>${esc(p.start_date||'')}</td>
+    <td><span class="status-badge ${statusCls[p.status]||'s-pending'}">${statusLabel[p.status]||p.status}</span></td>
+    <td>${(p.created_at||'').slice(0,10)}</td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无需求记录</td></tr>';
+}
+
+async function loadWorkers() {
+  const workers = await cApi('/my-workers');
+  if (!workers) return;
+  document.getElementById('workersTable').innerHTML = workers.length ? workers.map(w=>`<tr>
+    <td>${esc(w.first_name||'')} ${esc(w.last_name||'')}</td>
+    <td>${esc(w.position||'')}</td>
+    <td>${esc(w.phone||'')}</td>
+    <td>${esc(w.job_title||'')}</td>
+    <td>${esc(w.location||'')}</td>
+    <td>${esc(w.assign_status||'')}</td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无派遣工人信息</td></tr>';
+}
+
+async function loadProfile() {
+  const me = await cApi('/me');
+  if (!me) return;
+  document.getElementById('profileContent').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;font-size:.9rem">
+      <div><span style="color:var(--gray-400)">公司名称</span><br><strong>${esc(me.company_name)}</strong></div>
+      <div><span style="color:var(--gray-400)">联系人</span><br>${esc(me.contact_name||'—')}</div>
+      <div><span style="color:var(--gray-400)">联系邮箱</span><br>${esc(me.email)}</div>
+      <div><span style="color:var(--gray-400)">电话</span><br>${esc(me.phone||'—')}</div>
+    </div>
+    <p style="margin-top:1.25rem;font-size:.82rem;color:var(--gray-400)">如需修改公司信息，请联系 Prime Anchorpoint 客服</p>`;
+}
+
+if (C_TOKEN) showApp().catch(() => customerLogout());
+else document.getElementById('loginWrap').style.display = '';
+</script>
+</body>
+</html>
