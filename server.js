@@ -202,6 +202,36 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (employee_id) REFERENCES employees(id)
   );
+  CREATE TABLE IF NOT EXISTS employee_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    employee_id INTEGER NOT NULL,
+    job_id INTEGER DEFAULT NULL,
+    job_title TEXT DEFAULT '',
+    score_efficiency INTEGER DEFAULT 0,
+    score_quality INTEGER DEFAULT 0,
+    score_attendance INTEGER DEFAULT 0,
+    score_safety INTEGER DEFAULT 0,
+    score_teamwork INTEGER DEFAULT 0,
+    score_skills INTEGER DEFAULT 0,
+    pay_est_min REAL DEFAULT 0,
+    pay_est_max REAL DEFAULT 0,
+    pay_est_type TEXT DEFAULT 'hourly',
+    notes TEXT DEFAULT '',
+    rated_by TEXT DEFAULT '',
+    rated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  );
+  CREATE TABLE IF NOT EXISTS employee_doc_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    employee_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    requested_docs TEXT DEFAULT '["gov_id","ssn","work_card"]',
+    admin_note TEXT DEFAULT '',
+    completed_at DATETIME DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id)
+  );
   CREATE TABLE IF NOT EXISTS onboarding_tokens (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     token TEXT UNIQUE NOT NULL,
@@ -237,6 +267,17 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN employment_type TEXT DEFAULT ''`); } 
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_days TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_start TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_end TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule_days TEXT DEFAULT '[]'`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule_start TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule_end TEXT DEFAULT ''`); } catch(e) {}
+// Job status & closure tracking
+try { db.exec(`ALTER TABLE jobs ADD COLUMN job_status TEXT DEFAULT 'open'`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN close_reason TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN close_note TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN headcount INTEGER DEFAULT 1`); } catch(e) {}
+// Backfill job_status from active flag for existing rows
+try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
+try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
@@ -249,6 +290,8 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN pay_type TEXT DEFAULT 'hourly'
 try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_type TEXT DEFAULT 'W2'`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN benefits TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN start_date TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_file TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT ''`); } catch(e) {}
 
 // Migrate admin_users table (add role, display_name, active, created_at columns if missing)
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
@@ -635,18 +678,20 @@ function blockManager(req, res, next) {
 // GET /api/jobs - public job listings
 app.get('/api/jobs', (req, res) => {
   const lang = req.query.lang;
-  let jobs;
-  if (lang && lang !== 'all') {
-    jobs = db.prepare('SELECT * FROM jobs WHERE active=1 AND lang=? ORDER BY created_at DESC').all(lang);
-  } else {
-    jobs = db.prepare('SELECT * FROM jobs WHERE active=1 ORDER BY created_at DESC').all();
-  }
+  const base = `SELECT j.*, p.name as partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id WHERE j.active=1`;
+  const jobs = (lang && lang !== 'all')
+    ? db.prepare(base + ' AND j.lang=? ORDER BY j.created_at DESC').all(lang)
+    : db.prepare(base + ' ORDER BY j.created_at DESC').all();
   res.json(jobs.map(j => ({
     id: j.id, title: j.title, type: j.type, location: j.location,
     pay: j.pay, lang: j.lang, lang_name: j.lang_name,
     desc: j.description, urgent: !!j.urgent, work_auth: j.work_auth || '',
-    benefits: j.benefits || '', schedule: j.schedule || '',
+    partner_name: j.partner_name || '',
     company_name: j.company_name || '', employment_type: j.employment_type || '',
+    benefits: j.benefits || '[]', schedule: j.schedule || '',
+    schedule_days: j.schedule_days || '[]',
+    schedule_start: j.schedule_start || '',
+    schedule_end: j.schedule_end || '',
     work_days: j.work_days || '', work_start: j.work_start || '', work_end: j.work_end || ''
   })));
 });
@@ -805,15 +850,42 @@ app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
 
 app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
-  const stmt = db.prepare('INSERT INTO jobs (partner_id, title, type, location, pay, lang, lang_name, description, urgent, work_auth, benefits, schedule, company_id, company_name, employment_type, work_days, work_start, work_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  const r = stmt.run(d.partner_id || null, d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '', d.company_id || null, d.company_name || '', d.employment_type || '', d.work_days || '', d.work_start || '', d.work_end || '');
+  const jobStatus = d.job_status || 'open';
+  const stmt = db.prepare(`INSERT INTO jobs
+    (partner_id, title, type, location, pay, lang, lang_name, description, urgent,
+     work_auth, benefits, schedule, company_id, company_name, employment_type,
+     work_days, work_start, work_end, schedule_days, schedule_start, schedule_end,
+     job_status, active, close_reason, close_note, headcount)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  const r = stmt.run(
+    d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+    d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
+    d.company_id||null, d.company_name||'', d.employment_type||'',
+    d.work_days||'', d.work_start||'', d.work_end||'',
+    d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
+    jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1
+  );
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?, description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?, company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=? WHERE id=?')
-    .run(d.partner_id || null, d.title, d.type || '', d.location || '', d.pay || '', d.lang || 'en', d.lang_name || 'English', d.description || '', d.urgent ? 1 : 0, d.active !== false ? 1 : 0, d.work_auth || '', d.benefits || '', d.schedule || '', d.company_id || null, d.company_name || '', d.employment_type || '', d.work_days || '', d.work_start || '', d.work_end || '', req.params.id);
+  const jobStatus = d.job_status || 'open';
+  db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?,
+    description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
+    company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?,
+    schedule_days=?, schedule_start=?, schedule_end=?,
+    job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
+    .run(
+      d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+      d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
+      d.work_auth||'', d.benefits||'', d.schedule||'',
+      d.company_id||null, d.company_name||'', d.employment_type||'',
+      d.work_days||'', d.work_start||'', d.work_end||'',
+      d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
+      jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
+      req.params.id
+    );
   res.json({ success: true });
 });
 
@@ -1086,7 +1158,157 @@ app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('up
 });
 
 app.delete('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('delete', 'assignments'), (req, res) => {
+  const a = db.prepare('SELECT contract_file FROM assignments WHERE id=?').get(req.params.id);
+  if (a && a.contract_file) { const fp = path.join(docsDir, a.contract_file); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
   db.prepare('DELETE FROM assignments WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Assignment contract file upload/download
+app.post('/api/admin/assignments/:id/contract', requireAdmin, blockManager, docUpload.single('file'), (req, res) => {
+  const a = db.prepare('SELECT id, contract_file FROM assignments WHERE id=?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Assignment not found' });
+  if (a.contract_file) { const old = path.join(docsDir, a.contract_file); if (fs.existsSync(old)) fs.unlinkSync(old); }
+  db.prepare('UPDATE assignments SET contract_file=?, contract_filename=? WHERE id=?')
+    .run(req.file ? req.file.filename : '', req.file ? req.file.originalname : '', req.params.id);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/assignments/:id/contract', (req, res, next) => {
+  if (req.query.token && validSession(req.query.token)) return next();
+  return requireAdmin(req, res, next);
+}, (req, res) => {
+  const a = db.prepare('SELECT contract_file, contract_filename FROM assignments WHERE id=?').get(req.params.id);
+  if (!a || !a.contract_file) return res.status(404).json({ error: 'No contract file' });
+  const fp = path.join(docsDir, a.contract_file);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File not found' });
+  res.download(fp, a.contract_filename || a.contract_file);
+});
+
+// ─── Employee Doc Requests (私密材料链接) ───
+
+// Admin: create / get link for an employee
+app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
+  const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+  const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
+  if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
+  const token = crypto.randomBytes(28).toString('hex');
+  const { admin_note, requested_docs } = req.body;
+  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs) VALUES (?,?,?,?)')
+    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']));
+  res.json({ token, status: 'pending' });
+});
+
+app.get('/api/admin/employees/:id/doc-requests', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id));
+});
+
+app.delete('/api/admin/employee-doc-requests/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM employee_doc_requests WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Public: validate token
+app.get('/api/emp-docs/:token', (req, res) => {
+  const row = db.prepare(`
+    SELECT r.*, e.first_name, e.last_name, e.employee_id AS emp_code
+    FROM employee_doc_requests r JOIN employees e ON r.employee_id = e.id
+    WHERE r.token=?`).get(req.params.token);
+  if (!row) return res.status(404).json({ error: '链接无效或已过期' });
+  res.json({
+    status: row.status,
+    name: `${row.first_name} ${row.last_name}`,
+    emp_code: row.emp_code,
+    requested_docs: JSON.parse(row.requested_docs || '["gov_id","ssn","work_card"]'),
+    admin_note: row.admin_note,
+    completed_at: row.completed_at
+  });
+});
+
+// Public: submit documents
+const empDocReqUpload = multer({
+  storage: multer.diskStorage({
+    destination: docsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `empdoc-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    cb(null, /pdf|jpg|jpeg|png|heic|heif/.test(path.extname(file.originalname).toLowerCase()));
+  }
+});
+
+app.post('/api/emp-docs/:token/submit', empDocReqUpload.fields([
+  { name: 'gov_id', maxCount: 1 },
+  { name: 'ssn', maxCount: 1 },
+  { name: 'work_card', maxCount: 1 }
+]), (req, res) => {
+  const row = db.prepare('SELECT * FROM employee_doc_requests WHERE token=?').get(req.params.token);
+  if (!row) return res.status(404).json({ error: '链接无效或已过期' });
+  if (row.status === 'completed') return res.status(400).json({ error: '已提交，无法重复提交' });
+  const files = req.files || {};
+  if (!Object.keys(files).length) return res.status(400).json({ error: '请至少上传一份文件' });
+  const DOC_LABEL = { gov_id: '政府身份证件', ssn: '社安卡', work_card: '工卡 / 工作许可证' };
+  for (const [docType, fileArr] of Object.entries(files)) {
+    if (fileArr && fileArr[0]) {
+      const f = fileArr[0];
+      db.prepare(`INSERT INTO employee_documents (employee_id,doc_type,doc_label,file_path,file_name)
+        VALUES(?,?,?,?,?)`)
+        .run(row.employee_id, docType, DOC_LABEL[docType] || docType, f.filename, f.originalname);
+    }
+  }
+  db.prepare(`UPDATE employee_doc_requests SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE token=?`).run(row.token);
+  res.json({ success: true });
+});
+
+// ─── Employee Ratings ───
+app.get('/api/admin/employee-ratings', requireAdmin, (req, res) => {
+  const { employee_id } = req.query;
+  if (!employee_id) return res.status(400).json({ error: 'employee_id required' });
+  const rows = db.prepare(`
+    SELECT r.*, j.title AS job_title_current
+    FROM employee_ratings r
+    LEFT JOIN jobs j ON r.job_id = j.id
+    WHERE r.employee_id = ?
+    ORDER BY r.rated_at DESC
+  `).all(employee_id);
+  res.json(rows);
+});
+
+app.post('/api/admin/employee-ratings', requireAdmin, (req, res) => {
+  const d = req.body;
+  if (!d.employee_id) return res.status(400).json({ error: 'employee_id required' });
+  const r = db.prepare(`INSERT INTO employee_ratings
+    (employee_id, job_id, job_title, score_efficiency, score_quality, score_attendance,
+     score_safety, score_teamwork, score_skills, pay_est_min, pay_est_max, pay_est_type, notes, rated_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(d.employee_id, d.job_id||null, d.job_title||'',
+      d.score_efficiency||0, d.score_quality||0, d.score_attendance||0,
+      d.score_safety||0, d.score_teamwork||0, d.score_skills||0,
+      d.pay_est_min||0, d.pay_est_max||0, d.pay_est_type||'hourly',
+      d.notes||'', d.rated_by||'');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/employee-ratings/:id', requireAdmin, (req, res) => {
+  const d = req.body;
+  db.prepare(`UPDATE employee_ratings SET
+    job_id=?, job_title=?, score_efficiency=?, score_quality=?, score_attendance=?,
+    score_safety=?, score_teamwork=?, score_skills=?, pay_est_min=?, pay_est_max=?,
+    pay_est_type=?, notes=?, rated_by=? WHERE id=?`)
+    .run(d.job_id||null, d.job_title||'',
+      d.score_efficiency||0, d.score_quality||0, d.score_attendance||0,
+      d.score_safety||0, d.score_teamwork||0, d.score_skills||0,
+      d.pay_est_min||0, d.pay_est_max||0, d.pay_est_type||'hourly',
+      d.notes||'', d.rated_by||'', req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/employee-ratings/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM employee_ratings WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 

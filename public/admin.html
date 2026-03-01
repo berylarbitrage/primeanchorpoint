@@ -55,6 +55,33 @@ tr:hover td{background:var(--sky-light)}
 .badge-unreachable{background:#F3F4F6;color:#6B7280}
 .badge-w2{background:#D1FAE5;color:#065F46}
 .badge-contract{background:#FEF3C7;color:#92400E}
+.badge-open{background:#D1FAE5;color:#065F46}.badge-filled{background:#DBEAFE;color:#1D4ED8}.badge-on_hold{background:#FEF9C3;color:#92400E}.badge-closed{background:#F3F4F6;color:#6B7280}
+/* ── Star ratings ── */
+.star-row{display:flex;align-items:center;gap:.5rem;margin:.35rem 0}
+.star-row label{width:90px;font-size:.82rem;color:var(--gray-600);flex-shrink:0}
+.stars{display:inline-flex;gap:2px;direction:rtl}
+.stars input{display:none}
+.stars label{font-size:1.35rem;color:#D1D5DB;cursor:pointer;transition:color .1s;direction:ltr}
+.stars input:checked~label,.stars label:hover,.stars label:hover~label{color:#FBBF24}
+.rating-card{background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:.85rem 1rem;margin-bottom:.75rem}
+.rating-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.6rem}
+.rating-card-title{font-weight:700;color:var(--blue);font-size:.92rem}
+.rating-card-meta{font-size:.75rem;color:var(--gray-400)}
+.rating-mini-stars{display:inline-flex;gap:1px;font-size:.85rem}
+.rating-score-bar{display:flex;align-items:center;gap:.5rem;margin:.2rem 0;font-size:.78rem}
+.rating-score-bar span:first-child{width:72px;color:var(--gray-500);flex-shrink:0}
+.score-pip{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--gray-200);margin:0 1px}
+.score-pip.filled{background:#FBBF24}
+.pay-range-badge{display:inline-block;background:#EFF6FF;color:#1D4ED8;border-radius:20px;padding:3px 10px;font-size:.78rem;font-weight:700;margin-top:.4rem}
+.avg-star-badge{display:inline-flex;align-items:center;gap:3px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:12px;padding:2px 8px;font-size:.78rem;font-weight:700;color:#92400E}
+/* Close-reason modal radio list */
+.close-reason-group{margin:.4rem 0 .8rem}
+.close-reason-group h4{font-size:.78rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px;margin-bottom:.4rem}
+.cr-option{display:flex;align-items:center;gap:.6rem;padding:.45rem .6rem;border-radius:6px;cursor:pointer;transition:background .12s}
+.cr-option:hover{background:var(--sky-light)}
+.cr-option input[type=radio]{accent-color:var(--sky);width:15px;height:15px;flex-shrink:0}
+.cr-option label{cursor:pointer;font-size:.88rem;line-height:1.3}
+.cr-option label small{display:block;font-size:.75rem;color:var(--gray-400);font-weight:400}
 .assign-dropdown{display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid var(--gray-300);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:200px;overflow-y:auto}
 .assign-dropdown.open{display:block}
 .assign-dropdown .adrop-item{padding:.5rem .75rem;cursor:pointer;font-size:.85rem;border-bottom:1px solid var(--gray-100)}
@@ -65,6 +92,7 @@ tr:hover td{background:var(--sky-light)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
 .modal{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
+#inqModal>.modal{overflow-y:hidden}
 .modal h2{font-size:1.2rem;color:var(--blue);margin-bottom:1.5rem}
 .field{margin-bottom:1rem}.field label{display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;margin-bottom:4px}
 .field input,.field select,.field textarea{width:100%;padding:10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.9rem;outline:none;font-family:inherit}
@@ -174,6 +202,15 @@ tr:hover td{background:var(--sky-light)}
 .ts-actions{display:flex;gap:.75rem;flex-wrap:wrap}
 @media print{body *{visibility:hidden}#tsPrintArea,#tsPrintArea *{visibility:visible}#tsPrintArea{position:absolute;left:0;top:0;width:100%;padding:20px}#tsPrintArea .no-print{display:none!important}}
 @media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}.stats-row{grid-template-columns:repeat(2,1fr)}.hours-bar{grid-template-columns:repeat(2,1fr)}.field-row3{grid-template-columns:1fr}}
+/* Day toggle buttons */
+.day-btn{padding:5px 9px;border:1.5px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-600);font-size:.78rem;cursor:pointer;transition:all .15s;font-weight:600;white-space:nowrap}
+.day-btn:hover{border-color:var(--sky);color:var(--sky)}
+.day-selected{background:var(--sky)!important;border-color:var(--sky)!important;color:#fff!important}
+/* Benefit chip checkboxes */
+.benefit-chip{display:inline-flex;align-items:center;gap:.3rem;padding:5px 10px;border:1.5px solid var(--gray-200);border-radius:20px;cursor:pointer;font-size:.78rem;color:var(--gray-600);transition:all .15s;font-weight:500}
+.benefit-chip:hover{border-color:var(--sky);color:var(--sky)}
+.benefit-chip input{display:none}
+.benefit-chip:has(input:checked){background:var(--sky);border-color:var(--sky);color:#fff}
 /* Toast */
 #toast-wrap{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
@@ -323,7 +360,14 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" onclick="openJobModal()">+ 新增职位</button>
     </div>
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>地点 / 时间</th><th>薪资</th><th>语言</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div class="search-bar" style="align-items:center">
+    <div class="ts-week-toggle" style="flex-shrink:0">
+      <button id="jobTabOpen" class="active" onclick="setJobTab('open')">在招职位</button>
+      <button id="jobTabHistory" onclick="setJobTab('history')">历史职位</button>
+    </div>
+    <input type="text" id="jobSearch" placeholder="搜索职位名称、公司、地点..." oninput="renderJobsFiltered()" style="flex:1">
+  </div>
+  <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>人数</th><th>地点 / 时间</th><th>薪资</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
 </div>
 
 <!-- Partners -->
@@ -611,6 +655,185 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Job Modal -->
+<!-- ════ Employee Rating Modal ════ -->
+<div class="modal-bg" id="ratingModal"><div class="modal" style="max-width:560px">
+  <h2 id="ratingModalTitle">职位能力评分</h2>
+  <input type="hidden" id="ratingId">
+  <input type="hidden" id="ratingEmpId">
+
+  <div class="field" style="position:relative">
+    <label>评分职位 *</label>
+    <select id="ratingJob" onchange="onRatingJobChange()"><option value="">-- 通用评分（不绑定具体职位）--</option></select>
+  </div>
+
+  <div style="margin:.8rem 0 .4rem;font-weight:600;color:var(--blue);font-size:.88rem">能力维度评分（1–5 ★）</div>
+
+  <div class="star-row">
+    <label>工作效率</label>
+    <div class="stars" id="starsEfficiency">
+      <input type="radio" name="s_efficiency" id="e5" value="5"><label for="e5">★</label>
+      <input type="radio" name="s_efficiency" id="e4" value="4"><label for="e4">★</label>
+      <input type="radio" name="s_efficiency" id="e3" value="3"><label for="e3">★</label>
+      <input type="radio" name="s_efficiency" id="e2" value="2"><label for="e2">★</label>
+      <input type="radio" name="s_efficiency" id="e1" value="1"><label for="e1">★</label>
+    </div>
+    <span id="lblEfficiency" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>工作质量</label>
+    <div class="stars" id="starsQuality">
+      <input type="radio" name="s_quality" id="q5" value="5"><label for="q5">★</label>
+      <input type="radio" name="s_quality" id="q4" value="4"><label for="q4">★</label>
+      <input type="radio" name="s_quality" id="q3" value="3"><label for="q3">★</label>
+      <input type="radio" name="s_quality" id="q2" value="2"><label for="q2">★</label>
+      <input type="radio" name="s_quality" id="q1" value="1"><label for="q1">★</label>
+    </div>
+    <span id="lblQuality" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>出勤情况</label>
+    <div class="stars" id="starsAttendance">
+      <input type="radio" name="s_attendance" id="a5" value="5"><label for="a5">★</label>
+      <input type="radio" name="s_attendance" id="a4" value="4"><label for="a4">★</label>
+      <input type="radio" name="s_attendance" id="a3" value="3"><label for="a3">★</label>
+      <input type="radio" name="s_attendance" id="a2" value="2"><label for="a2">★</label>
+      <input type="radio" name="s_attendance" id="a1" value="1"><label for="a1">★</label>
+    </div>
+    <span id="lblAttendance" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>安全意识</label>
+    <div class="stars" id="starsSafety">
+      <input type="radio" name="s_safety" id="sf5" value="5"><label for="sf5">★</label>
+      <input type="radio" name="s_safety" id="sf4" value="4"><label for="sf4">★</label>
+      <input type="radio" name="s_safety" id="sf3" value="3"><label for="sf3">★</label>
+      <input type="radio" name="s_safety" id="sf2" value="2"><label for="sf2">★</label>
+      <input type="radio" name="s_safety" id="sf1" value="1"><label for="sf1">★</label>
+    </div>
+    <span id="lblSafety" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>团队协作</label>
+    <div class="stars" id="starsTeamwork">
+      <input type="radio" name="s_teamwork" id="t5" value="5"><label for="t5">★</label>
+      <input type="radio" name="s_teamwork" id="t4" value="4"><label for="t4">★</label>
+      <input type="radio" name="s_teamwork" id="t3" value="3"><label for="t3">★</label>
+      <input type="radio" name="s_teamwork" id="t2" value="2"><label for="t2">★</label>
+      <input type="radio" name="s_teamwork" id="t1" value="1"><label for="t1">★</label>
+    </div>
+    <span id="lblTeamwork" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+  <div class="star-row">
+    <label>技能掌握</label>
+    <div class="stars" id="starsSkills">
+      <input type="radio" name="s_skills" id="sk5" value="5"><label for="sk5">★</label>
+      <input type="radio" name="s_skills" id="sk4" value="4"><label for="sk4">★</label>
+      <input type="radio" name="s_skills" id="sk3" value="3"><label for="sk3">★</label>
+      <input type="radio" name="s_skills" id="sk2" value="2"><label for="sk2">★</label>
+      <input type="radio" name="s_skills" id="sk1" value="1"><label for="sk1">★</label>
+    </div>
+    <span id="lblSkills" style="font-size:.78rem;color:var(--gray-400)"></span>
+  </div>
+
+  <div style="margin:.9rem 0 .4rem;font-weight:600;color:var(--blue);font-size:.88rem">薪资预估（该工人在此职位的合理区间）</div>
+  <div class="field-row">
+    <div class="field"><label>最低 $</label><input type="number" id="rPayMin" min="0" step="0.5" placeholder="15.00"></div>
+    <div class="field"><label>最高 $</label><input type="number" id="rPayMax" min="0" step="0.5" placeholder="20.00"></div>
+    <div class="field"><label>方式</label><select id="rPayType">
+      <option value="hourly">时薪 /hr</option>
+      <option value="salary">月薪 /mo</option>
+      <option value="annual">年薪 /yr</option>
+    </select></div>
+  </div>
+
+  <div class="field"><label>评分人</label><input id="rRatedBy" placeholder="评分人姓名或工号"></div>
+  <div class="field"><label>备注 / 评语</label><textarea id="rNotes" rows="2" placeholder="对该工人在此职位的综合评价..."></textarea></div>
+
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-green" onclick="saveRating()">保存评分</button>
+    <button class="btn" onclick="document.getElementById('ratingModal').classList.remove('show')">取消</button>
+  </div>
+</div></div>
+
+<!-- ════ Employee Doc-Request Link Modal ════ -->
+<div class="modal-bg" id="empDocLinkModal"><div class="modal" style="max-width:500px">
+  <h2>发送材料收集链接</h2>
+  <p id="empDocLinkTarget" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
+  <input type="hidden" id="empDocLinkEmpId">
+
+  <div class="field"><label>选择需要收集的材料（多选）</label>
+    <div style="display:flex;flex-direction:column;gap:.4rem;margin-top:.4rem">
+      <label style="display:flex;align-items:center;gap:.6rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+        <input type="checkbox" id="docReqGovId" value="gov_id" checked style="width:15px;height:15px">
+        🪪 政府身份证件（驾照 / 州ID / 护照）
+      </label>
+      <label style="display:flex;align-items:center;gap:.6rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+        <input type="checkbox" id="docReqSsn" value="ssn" checked style="width:15px;height:15px">
+        📋 社会安全卡（SSN Card）
+      </label>
+      <label style="display:flex;align-items:center;gap:.6rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+        <input type="checkbox" id="docReqWorkCard" value="work_card" checked style="width:15px;height:15px">
+        💼 工卡 / 工作许可证（EAD / Work Permit / 绿卡）
+      </label>
+    </div>
+  </div>
+
+  <div class="field"><label>HR 留言（可选，将显示给员工）</label>
+    <textarea id="empDocAdminNote" rows="2" placeholder="例：请在3天内完成上传，感谢配合。"></textarea>
+  </div>
+
+  <div id="empDocLinkResult" style="display:none;background:var(--sky-light);border:1px solid var(--sky);border-radius:var(--radius);padding:.85rem 1rem;font-size:.83rem;margin-top:.75rem">
+    <div style="font-weight:600;color:var(--blue);margin-bottom:.5rem">✅ 链接已生成，请复制发送给员工：</div>
+    <div id="empDocLinkUrl" style="word-break:break-all;color:var(--sky);user-select:all;margin-bottom:.5rem"></div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="copyEmpDocLink()">复制链接</button>
+      <button class="btn btn-sm" onclick="openEmpDocLink()">在新窗口打开预览</button>
+    </div>
+    <div id="empDocLinkCopied" style="display:none;color:var(--green);font-size:.78rem;margin-top:.3rem">✓ 已复制到剪贴板</div>
+  </div>
+
+  <div style="display:flex;gap:1rem;margin-top:1.25rem">
+    <button class="btn btn-green" id="btnGenDocLink" onclick="generateEmpDocLink()">生成链接</button>
+    <button class="btn" onclick="document.getElementById('empDocLinkModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Close-Job Modal -->
+<div class="modal-bg" id="closeJobModal"><div class="modal" style="max-width:480px">
+  <h2>关闭职位</h2>
+  <p id="closeJobTitle" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
+  <input type="hidden" id="closeJobId">
+
+  <div class="close-reason-group">
+    <h4>✅ 招聘完成</h4>
+    <label class="cr-option"><input type="radio" name="closeReason" value="filled_full"> <label>已招齐全部人数 <small>达到职位目标人数，招聘圆满完成</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="filled_partial"> <label>部分完成，客户接受 <small>虽未全额招满，客户已满意当前人数</small></label></label>
+  </div>
+
+  <div class="close-reason-group">
+    <h4>⏸ 暂缓招聘</h4>
+    <label class="cr-option"><input type="radio" name="closeReason" value="on_hold_client"> <label>客户要求暂缓 <small>客户主动通知暂时停止招聘，后续可能恢复</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="on_hold_internal"> <label>公司内部暂缓 <small>公司内部原因暂时搁置，不确定是否继续</small></label></label>
+  </div>
+
+  <div class="close-reason-group">
+    <h4>❌ 职位取消</h4>
+    <label class="cr-option"><input type="radio" name="closeReason" value="client_cancelled"> <label>客户撤单 / 需求取消 <small>客户通知不再需要此职位，正式取消</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="budget_cut"> <label>预算削减 / 项目暂停 <small>因预算问题或项目取消导致职位取消</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="project_end"> <label>项目完成 / 自然结束 <small>临时项目结束，不再需要额外人手</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="position_changed"> <label>岗位需求变更 <small>职位要求或性质改变，原职位作废，将重新发布</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="no_candidates"> <label>长期无合适候选人 <small>经过充分努力仍未找到符合要求的人选</small></label></label>
+    <label class="cr-option"><input type="radio" name="closeReason" value="other"> <label>其他原因 <small>见下方备注</small></label></label>
+  </div>
+
+  <div class="field"><label>补充说明（选填）</label><textarea id="closeJobNote" rows="2" placeholder="如有需要，可添加更多说明..."></textarea></div>
+
+  <div style="display:flex;gap:1rem;margin-top:1.5rem">
+    <button class="btn btn-red" onclick="confirmCloseJob()">确认关闭</button>
+    <button class="btn" onclick="document.getElementById('closeJobModal').classList.remove('show')">取消</button>
+  </div>
+</div></div>
+
 <div class="modal-bg" id="jobModal"><div class="modal" style="max-width:680px">
   <h2 id="jobModalTitle">新增职位</h2>
   <input type="hidden" id="jobId">
@@ -701,7 +924,10 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
-  <div class="field"><label style="display:inline-flex;align-items:center;gap:.4rem;text-transform:none;font-size:.9rem"><input type="checkbox" id="jUrgent"> 急聘（紧急招聘）</label></div>
+  <div class="field-row">
+    <div class="field"><label>招聘人数</label><input type="number" id="jHeadcount" min="1" value="1" placeholder="1"></div>
+    <div class="field" style="display:flex;align-items:flex-end;padding-bottom:.2rem"><label style="display:inline-flex;align-items:center;gap:.4rem;text-transform:none;font-size:.9rem"><input type="checkbox" id="jUrgent"> 急聘（紧急招聘）</label></div>
+  </div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
     <button class="btn" onclick="saveJob()">保存</button>
     <button class="btn" onclick="randomFillJob()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
@@ -710,12 +936,13 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Inquiry Detail Modal -->
-<div class="modal-bg" id="inqModal"><div class="modal" style="max-width:640px">
+<div class="modal-bg" id="inqModal"><div class="modal" style="max-width:640px;display:flex;flex-direction:column">
   <h2>问卷详情</h2>
+  <div style="flex:1;overflow-y:auto;min-height:0">
   <div id="inqDetail"></div>
   <div id="inqOnboardStatus" style="display:none;margin-top:1rem;padding:.75rem 1rem;background:var(--off-white);border-radius:8px;font-size:.85rem"></div>
 
-  <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap">
+  <div style="display:flex;gap:1rem;margin-top:1.5rem;flex-wrap:wrap;flex-shrink:0">
     <button class="btn btn-green" onclick="assignFromInquiry()">派工</button>
     <button class="btn btn-accent" id="btnSendOnboard" style="display:none" onclick="sendOnboardLink()">发送入职链接</button>
     <button class="btn" style="background:var(--gray-200);color:var(--gray-700)" onclick="openProcessModal()">✅ 标记已处理</button>
@@ -796,7 +1023,27 @@ tr:hover td{background:var(--sky-light)}
     </select></div>
     <div class="field"><label>薪资 / 工资</label><input id="aPayRate" placeholder="例：18.50/hr 或 $3,200/月"></div>
   </div>
-  <div class="field"><label>福利待遇</label><textarea id="aBenefits" rows="2" placeholder="例：医疗保险、带薪假期、401K、免费停车..."></textarea></div>
+  <div class="field">
+    <label>福利待遇（多选）</label>
+    <div id="aBenefitsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
+      <button type="button" class="benefit-btn" data-val="医疗保险">医疗保险</button>
+      <button type="button" class="benefit-btn" data-val="牙科保险">牙科保险</button>
+      <button type="button" class="benefit-btn" data-val="视力保险">视力保险</button>
+      <button type="button" class="benefit-btn" data-val="401k">401k</button>
+      <button type="button" class="benefit-btn" data-val="带薪休假">带薪休假</button>
+      <button type="button" class="benefit-btn" data-val="加班费">加班费</button>
+      <button type="button" class="benefit-btn" data-val="交通补贴">交通补贴</button>
+      <button type="button" class="benefit-btn" data-val="餐补">餐补</button>
+      <button type="button" class="benefit-btn" data-val="周薪">周薪</button>
+      <button type="button" class="benefit-btn" data-val="节假日奖金">节假日奖金</button>
+      <button type="button" class="benefit-btn" data-val="免费停车">免费停车</button>
+    </div>
+  </div>
+  <div class="form-section" style="margin-top:.5rem">
+    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">劳务合同上传</label>
+    <div id="aContractFileInfo" style="font-size:.82rem;color:var(--gray-500);margin:.3rem 0"></div>
+    <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%;margin-top:.3rem">
+  </div>
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveAssignment()">保存</button>
@@ -1002,7 +1249,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="field"><label>下班时间</label><input id="tOut" type="datetime-local"></div>
   </div>
   <div class="field-row">
-    <div class="field"><label>休息时间 (分钟)</label><input id="tBreak" type="number" min="0" value="0" placeholder="30"></div>
+    <div class="field"><label>休息时间 (分钟) <small style="font-weight:400;color:var(--gray-400)">可选</small></label><input id="tBreak" type="number" min="0" value="0" placeholder="0"></div>
     <div class="field"><label>关联职位 (可选)</label><select id="tJob"><option value="">无</option></select></div>
   </div>
   <div class="field"><label>备注</label><input id="tNotes" placeholder="班次备注..."></div>
@@ -1050,7 +1297,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="tsTableWrap">
     <table class="ts-table">
-      <thead><tr><th>日期</th><th>上班时间</th><th>下班时间</th><th>午休开始</th><th>午休结束</th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
+      <thead><tr><th>日期</th><th>上班时间 *</th><th>下班时间 *</th><th>午休开始<br><small style="font-weight:400;color:var(--gray-400)">(可选)</small></th><th>午休结束<br><small style="font-weight:400;color:var(--gray-400)">(可选)</small></th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
       <tbody id="tsBody"></tbody>
     </table>
   </div>
@@ -1363,13 +1610,47 @@ function esc(s) {
 }
 
 // ─── Jobs ───
-async function loadJobs() {
-  const jobs = await api('/admin/jobs');
-  const langBadge = l => l === 'zh' ? 'badge-zh' : l === 'es' ? 'badge-es' : 'badge-en';
-  const authLabel = a => ({any:'合法身份', gc:'绿卡/公民', citizen:'仅公民'})[a] || '不限';
+let _allJobs = [];
+let _jobTab = 'open'; // 'open' | 'history'
+
+const JOB_STATUS_LABEL = {
+  open:      { text: '在招中',   cls: 'badge-open' },
+  filled_full:    { text: '已招满',   cls: 'badge-filled' },
+  filled_partial: { text: '部分完成', cls: 'badge-filled' },
+  on_hold_client: { text: '暂缓（客户）', cls: 'badge-on_hold' },
+  on_hold_internal:{ text:'暂缓（内部）',cls:'badge-on_hold' },
+  client_cancelled:{ text:'客户撤单',  cls:'badge-closed' },
+  budget_cut:     { text: '预算削减', cls: 'badge-closed' },
+  project_end:    { text: '项目结束', cls: 'badge-closed' },
+  position_changed:{ text:'岗位变更', cls:'badge-closed' },
+  no_candidates:  { text: '无合适人选', cls: 'badge-closed' },
+  closed:         { text: '已关闭',   cls: 'badge-closed' },
+  other:          { text: '其他',     cls: 'badge-closed' },
+};
+
+function setJobTab(tab) {
+  _jobTab = tab;
+  document.getElementById('jobTabOpen').classList.toggle('active', tab === 'open');
+  document.getElementById('jobTabHistory').classList.toggle('active', tab === 'history');
+  renderJobsFiltered();
+}
+
+function renderJobsFiltered() {
+  const q = (document.getElementById('jobSearch')?.value || '').toLowerCase();
+  const isOpen = s => s === 'open';
+  const list = _allJobs.filter(j => {
+    const status = j.job_status || (j.active ? 'open' : 'closed');
+    if (_jobTab === 'open' && !isOpen(status)) return false;
+    if (_jobTab === 'history' && isOpen(status)) return false;
+    if (q && !( (j.title||'').toLowerCase().includes(q) ||
+                (j.company_name||'').toLowerCase().includes(q) ||
+                (j.location||'').toLowerCase().includes(q) )) return false;
+    return true;
+  });
+
   const etBadge = et => {
     if (!et) return '';
-    const cls = et === 'W2' ? 'badge-w2' : et === 'Contract' || et === '1099' ? 'badge-contract' : 'badge-employment';
+    const cls = et === 'W2' ? 'badge-w2' : (et === 'Contract' || et === '1099') ? 'badge-contract' : 'badge-employment';
     return `<span class="badge ${cls}">${esc(et)}</span>`;
   };
   const scheduleStr = j => {
@@ -1378,16 +1659,42 @@ async function loadJobs() {
     if (j.work_start && j.work_end) parts.push(`${j.work_start}–${j.work_end}`);
     return parts.join(' ');
   };
-  document.getElementById('jobsTable').innerHTML = jobs.length ? jobs.map(j => `<tr>
-    <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}</td>
-    <td>${esc(j.type)}</td>
-    <td>${etBadge(j.employment_type)}</td>
-    <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
-    <td>${esc(j.pay||'')}</td>
-    <td><span class="badge ${langBadge(j.lang)}">${esc(j.lang_name || j.lang)}</span></td>
-    <td>${j.active ? '✅ 在招' : '⏸ 停招'}</td>
-    <td><button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button> <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button></td>
-  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无职位，点击 "+ 新增职位" 添加</td></tr>';
+  const statusInfo = s => JOB_STATUS_LABEL[s] || JOB_STATUS_LABEL.closed;
+  const CLOSE_REASON_LABEL = {
+    filled_full:'已招齐全部人数', filled_partial:'部分完成客户接受',
+    on_hold_client:'客户要求暂缓', on_hold_internal:'公司内部暂缓',
+    client_cancelled:'客户撤单', budget_cut:'预算削减',
+    project_end:'项目结束', position_changed:'岗位需求变更',
+    no_candidates:'长期无合适候选人', other:'其他原因'
+  };
+
+  const isHistory = _jobTab === 'history';
+  document.getElementById('jobsTable').innerHTML = list.length ? list.map(j => {
+    const st = j.job_status || (j.active ? 'open' : 'closed');
+    const si = statusInfo(st);
+    const reasonTip = j.close_reason ? `<br><small style="color:var(--gray-400)">${CLOSE_REASON_LABEL[j.close_reason]||j.close_reason}${j.close_note?' · '+esc(j.close_note):''}</small>` : '';
+    return `<tr>
+      <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
+      <td>${esc(j.type||'')}</td>
+      <td>${etBadge(j.employment_type)}</td>
+      <td style="text-align:center">${j.headcount||1}</td>
+      <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
+      <td>${esc(j.pay||'')}</td>
+      <td><span class="badge ${si.cls}">${si.text}</span>${reasonTip}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button>
+        ${!isHistory
+          ? `<button class="btn btn-sm" style="background:var(--orange-light,#fff3e0);color:#c05621;border:1px solid #fbd38d" onclick='openCloseJobModal(${JSON.stringify(j).replace(/'/g,"&#39;")})'>关闭</button>`
+          : `<button class="btn btn-sm btn-green" onclick="reopenJob(${j.id})">重新开放</button>`}
+        <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
+      </td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="8" class="empty">${isHistory ? '暂无历史职位' : '暂无在招职位，点击 "+ 新增职位" 添加'}</td></tr>`;
+}
+
+async function loadJobs() {
+  _allJobs = await api('/admin/jobs');
+  renderJobsFiltered();
 }
 
 async function openJobModal(job) {
@@ -1416,6 +1723,7 @@ async function openJobModal(job) {
   document.getElementById('jWorkEnd').value = job ? (job.work_end || '') : '';
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
+  document.getElementById('jHeadcount').value = job ? (job.headcount || 1) : 1;
 
   // Work days toggle
   const activeDays = job && job.work_days ? job.work_days.split(',').map(s=>s.trim()) : [];
@@ -1440,6 +1748,9 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => btn.classList.toggle('active'));
   });
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.addEventListener('click', () => btn.classList.toggle('active'));
+  });
+  document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
     btn.addEventListener('click', () => btn.classList.toggle('active'));
   });
 });
@@ -1530,6 +1841,8 @@ async function saveJob() {
     schedule: '',
     description: document.getElementById('jDesc').value,
     urgent: document.getElementById('jUrgent').checked,
+    headcount: parseInt(document.getElementById('jHeadcount').value) || 1,
+    job_status: 'open',
     active: true
   };
   if (!data.partner_id) return alert('请选择合作公司');
@@ -1543,6 +1856,46 @@ async function saveJob() {
 async function deleteJob(id) {
   if (!confirm('确定删除此职位？')) return;
   await api(`/admin/jobs/${id}`, { method: 'DELETE' });
+  loadJobs();
+}
+
+function openCloseJobModal(job) {
+  document.getElementById('closeJobId').value = job.id;
+  document.getElementById('closeJobTitle').textContent = job.title + (job.company_name ? '  ·  ' + job.company_name : '');
+  document.getElementById('closeJobNote').value = job.close_note || '';
+  // Pre-select existing reason if any
+  const existing = job.close_reason || '';
+  document.querySelectorAll('#closeJobModal input[name=closeReason]').forEach(r => {
+    r.checked = r.value === existing;
+  });
+  document.getElementById('closeJobModal').classList.add('show');
+}
+
+async function confirmCloseJob() {
+  const id = document.getElementById('closeJobId').value;
+  const reason = document.querySelector('#closeJobModal input[name=closeReason]:checked')?.value || '';
+  if (!reason) return alert('请选择关闭原因');
+  const note = document.getElementById('closeJobNote').value;
+  // Determine job_status from reason
+  const statusMap = {
+    filled_full: 'filled_full', filled_partial: 'filled_partial',
+    on_hold_client: 'on_hold_client', on_hold_internal: 'on_hold_internal',
+    client_cancelled: 'client_cancelled', budget_cut: 'budget_cut',
+    project_end: 'project_end', position_changed: 'position_changed',
+    no_candidates: 'no_candidates', other: 'other'
+  };
+  const job = _allJobs.find(j => j.id == id);
+  if (!job) return;
+  const data = { ...job, job_status: statusMap[reason] || 'closed', close_reason: reason, close_note: note, active: false };
+  await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  document.getElementById('closeJobModal').classList.remove('show');
+  loadJobs();
+}
+
+async function reopenJob(id) {
+  const job = _allJobs.find(j => j.id == id);
+  if (!job) return;
+  await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify({ ...job, job_status: 'open', close_reason: '', close_note: '', active: true }) });
   loadJobs();
 }
 
@@ -1925,7 +2278,17 @@ async function openAssignModal(assignment) {
   document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
   document.getElementById('aPayType').value = assignment ? (assignment.pay_type || 'hourly') : 'hourly';
   document.getElementById('aPayRate').value = assignment ? (assignment.pay_rate || '') : '';
-  document.getElementById('aBenefits').value = assignment ? (assignment.benefits || '') : '';
+  // Benefits toggle
+  const activeBens = assignment && assignment.benefits ? assignment.benefits.split(',').map(s=>s.trim()) : [];
+  document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
+    btn.classList.toggle('active', activeBens.includes(btn.dataset.val));
+  });
+  // Contract file info
+  document.getElementById('aContractFile').value = '';
+  const fileInfo = document.getElementById('aContractFileInfo');
+  if (assignment && assignment.contract_filename) {
+    fileInfo.innerHTML = `已上传: <a href="/api/admin/assignments/${assignment.id}/contract?token=${TOKEN}" target="_blank">${esc(assignment.contract_filename)}</a>`;
+  } else { fileInfo.textContent = ''; }
   document.getElementById('aInquiry').value = '';
   document.getElementById('aJob').value = '';
   document.getElementById('aInquiryId').value = '';
@@ -2018,6 +2381,7 @@ function editAssignment(a) { openAssignModal(a); }
 
 async function saveAssignment() {
   const id = document.getElementById('assignId').value;
+  const benefits = [...document.querySelectorAll('#aBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const data = {
     inquiry_id: document.getElementById('aInquiryId').value,
     job_id: document.getElementById('aJobId').value,
@@ -2027,11 +2391,26 @@ async function saveAssignment() {
     contract_type: document.getElementById('aContractType').value,
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
-    benefits: document.getElementById('aBenefits').value
+    benefits
   };
   if (!data.inquiry_id || !data.job_id) return alert('请搜索并选择人员和职位');
-  if (id) await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-  else await api('/admin/assignments', { method: 'POST', body: JSON.stringify(data) });
+  let assignId;
+  if (id) {
+    await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    assignId = id;
+  } else {
+    const r = await api('/admin/assignments', { method: 'POST', body: JSON.stringify(data) });
+    assignId = r.id;
+  }
+  // Upload contract file if selected
+  const fileInput = document.getElementById('aContractFile');
+  if (fileInput.files.length && assignId) {
+    const fd = new FormData();
+    fd.append('file', fileInput.files[0]);
+    await fetch(API + `/admin/assignments/${assignId}/contract`, {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + TOKEN }, body: fd
+    });
+  }
   closeAssignModal();
   loadAssignments();
 }
@@ -2510,6 +2889,8 @@ function renderEmployees(list) {
     <td>${e.hire_date||'—'}</td>
     <td>
       <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
+      <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
+      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>发送材料链接</button>
       <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
       ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
     </td>
@@ -2712,12 +3093,228 @@ async function viewEmployee(id) {
     </tbody></table>`:'<p class="empty" style="padding:1rem">暂无背景调查记录</p>'}
   </div>`;
 
+  // Doc requests section
+  const docReqs = await api(`/admin/employees/${id}/doc-requests`);
+  const DR_STATUS = { pending:'⏳ 待填写', completed:'✅ 已完成' };
+  html += `<div class="form-section">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h4 style="margin:0">材料收集链接 (${docReqs.length} 条)</h4>
+      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0"
+        onclick='sendEmpDocLink(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 发送新链接</button>
+    </div>
+    ${docReqs.length ? docReqs.map(r => {
+      const link = location.origin + '/emp-docs.html?token=' + r.token;
+      const docs = JSON.parse(r.requested_docs || '[]');
+      const DOC_SHORT = { gov_id:'身份证', ssn:'社安卡', work_card:'工卡' };
+      return `<div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:.75rem;margin-bottom:.6rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.4rem">
+          <div>
+            <span class="badge" style="background:${r.status==='completed'?'#D1FAE5':'#FEF9C3'};color:${r.status==='completed'?'#065F46':'#92400E'}">${DR_STATUS[r.status]||r.status}</span>
+            <span style="font-size:.78rem;color:var(--gray-400);margin-left:.5rem">${new Date(r.created_at).toLocaleDateString()}</span>
+            ${r.completed_at?`<span style="font-size:.78rem;color:var(--green);margin-left:.3rem">完成于 ${new Date(r.completed_at).toLocaleDateString()}</span>`:''}
+          </div>
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap">
+            ${docs.map(d=>`<span style="background:var(--sky-light);color:var(--blue);font-size:.7rem;padding:2px 7px;border-radius:10px;font-weight:600">${DOC_SHORT[d]||d}</span>`).join('')}
+          </div>
+        </div>
+        ${r.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);margin-top:.35rem;font-style:italic">"${esc(r.admin_note)}"</div>`:''}
+        <div style="margin-top:.55rem;display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+          <span style="font-size:.72rem;color:var(--sky);word-break:break-all;flex:1;min-width:0;user-select:all">${link}</span>
+          <button class="btn btn-sm" onclick="navigator.clipboard.writeText('${link}').then(e=>{this.textContent='✓ 已复制';setTimeout(()=>this.textContent='复制',1800)})">复制</button>
+          <button class="btn btn-sm btn-red" onclick="deleteDocRequest(${r.id},${id})">删除</button>
+        </div>
+      </div>`;
+    }).join('') : '<p class="empty" style="padding:1rem">暂无材料收集链接，点击「+ 发送新链接」创建</p>'}
+  </div>`;
+
+  // Ratings section
+  const ratings = await api(`/admin/employee-ratings?employee_id=${id}`);
+  const SCORE_LABEL = ['', '差', '一般', '良好', '优秀', '出色'];
+  const PAY_EST_UNIT = { hourly:'/hr', salary:'/mo', annual:'/yr' };
+  const starStr = n => '★'.repeat(n||0) + '☆'.repeat(5-(n||0));
+  const avgScore = r => {
+    const vals = [r.score_efficiency,r.score_quality,r.score_attendance,r.score_safety,r.score_teamwork,r.score_skills].filter(v=>v>0);
+    return vals.length ? (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : '—';
+  };
+  html += `<div class="form-section">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h4 style="margin:0">职位能力评分 (${ratings.length} 条)</h4>
+      <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>+ 新增评分</button>
+    </div>
+    ${ratings.length ? ratings.map(r=>`
+    <div class="rating-card">
+      <div class="rating-card-header">
+        <div>
+          <div class="rating-card-title">${r.job_title||r.job_title_current||'通用评分'}</div>
+          <div class="rating-card-meta">${r.rated_by?'评分人：'+esc(r.rated_by)+' · ':''} ${new Date(r.rated_at).toLocaleDateString()}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="avg-star-badge">★ ${avgScore(r)}</div>
+          ${r.pay_est_min||r.pay_est_max?`<div class="pay-range-badge">$${r.pay_est_min}–$${r.pay_est_max} ${PAY_EST_UNIT[r.pay_est_type]||'/hr'}</div>`:''}
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.1rem .5rem">
+        ${[['工作效率',r.score_efficiency],['工作质量',r.score_quality],['出勤情况',r.score_attendance],['安全意识',r.score_safety],['团队协作',r.score_teamwork],['技能掌握',r.score_skills]].map(([lbl,sc])=>`
+        <div class="rating-score-bar"><span>${lbl}</span>
+          ${[1,2,3,4,5].map(i=>`<span class="score-pip${i<=(sc||0)?' filled':''}"></span>`).join('')}
+          <span style="color:var(--gray-500);font-size:.72rem">${SCORE_LABEL[sc||0]||''}</span>
+        </div>`).join('')}
+      </div>
+      ${r.notes?`<div style="font-size:.8rem;color:var(--gray-600);margin-top:.5rem;font-style:italic">"${esc(r.notes)}"</div>`:''}
+      <div style="margin-top:.6rem;display:flex;gap:.5rem">
+        <button class="btn btn-sm" onclick='editRating(${JSON.stringify(r).replace(/'/g,"&#39;")},${id},"${esc(emp.first_name)} ${esc(emp.last_name)}")'>编辑</button>
+        <button class="btn btn-sm btn-red" onclick="deleteRating(${r.id},${id})">删除</button>
+      </div>
+    </div>`).join('') : '<p class="empty" style="padding:1rem">暂无评分记录，点击「+ 新增评分」开始评分</p>'}
+  </div>`;
+
   document.getElementById('empDetailTitle').textContent = `${emp.first_name} ${emp.last_name} (${emp.employee_id})`;
   document.getElementById('empDetailContent').innerHTML = html;
   document.getElementById('empDetailModal').classList.add('show');
   loadEmpRatings(emp.id);
 }
 function closeEmpDetailModal() { document.getElementById('empDetailModal').classList.remove('show'); }
+
+// ─── Employee Ratings ───
+const STAR_LABEL = ['','差','一般','良好','优秀','出色'];
+
+function setStarValue(name, val) {
+  document.querySelectorAll(`input[name="${name}"]`).forEach(r => { r.checked = (parseInt(r.value) === val); });
+}
+function getStarValue(name) {
+  const checked = document.querySelector(`input[name="${name}"]:checked`);
+  return checked ? parseInt(checked.value) : 0;
+}
+
+async function openRatingModal(empId, empName, existing) {
+  document.getElementById('ratingModalTitle').textContent = `评分 — ${empName}`;
+  document.getElementById('ratingEmpId').value = empId;
+  document.getElementById('ratingId').value = existing ? existing.id : '';
+
+  // Populate job select
+  const jobs = await api('/admin/jobs');
+  const sel = document.getElementById('ratingJob');
+  sel.innerHTML = '<option value="">-- 通用评分（不绑定具体职位）--</option>' +
+    jobs.map(j => `<option value="${j.id}">${esc(j.title)}${j.company_name?' — '+esc(j.company_name):''}</option>`).join('');
+
+  if (existing) {
+    sel.value = existing.job_id || '';
+    setStarValue('s_efficiency', existing.score_efficiency||0);
+    setStarValue('s_quality',    existing.score_quality||0);
+    setStarValue('s_attendance', existing.score_attendance||0);
+    setStarValue('s_safety',     existing.score_safety||0);
+    setStarValue('s_teamwork',   existing.score_teamwork||0);
+    setStarValue('s_skills',     existing.score_skills||0);
+    document.getElementById('rPayMin').value  = existing.pay_est_min||'';
+    document.getElementById('rPayMax').value  = existing.pay_est_max||'';
+    document.getElementById('rPayType').value = existing.pay_est_type||'hourly';
+    document.getElementById('rRatedBy').value = existing.rated_by||'';
+    document.getElementById('rNotes').value   = existing.notes||'';
+  } else {
+    sel.value = '';
+    ['s_efficiency','s_quality','s_attendance','s_safety','s_teamwork','s_skills']
+      .forEach(n => document.querySelectorAll(`input[name="${n}"]`).forEach(r => r.checked=false));
+    document.getElementById('rPayMin').value  = '';
+    document.getElementById('rPayMax').value  = '';
+    document.getElementById('rPayType').value = 'hourly';
+    document.getElementById('rRatedBy').value = '';
+    document.getElementById('rNotes').value   = '';
+  }
+  document.getElementById('ratingModal').classList.add('show');
+}
+
+function onRatingJobChange() { /* placeholder for future autofill */ }
+
+async function saveRating() {
+  const empId = document.getElementById('ratingEmpId').value;
+  const id    = document.getElementById('ratingId').value;
+  const jobSel = document.getElementById('ratingJob');
+  const jobId  = jobSel.value ? parseInt(jobSel.value) : null;
+  const jobTitle = jobId ? jobSel.options[jobSel.selectedIndex].text : '';
+  const data = {
+    employee_id:     empId,
+    job_id:          jobId,
+    job_title:       jobTitle,
+    score_efficiency: getStarValue('s_efficiency'),
+    score_quality:    getStarValue('s_quality'),
+    score_attendance: getStarValue('s_attendance'),
+    score_safety:     getStarValue('s_safety'),
+    score_teamwork:   getStarValue('s_teamwork'),
+    score_skills:     getStarValue('s_skills'),
+    pay_est_min:  parseFloat(document.getElementById('rPayMin').value)||0,
+    pay_est_max:  parseFloat(document.getElementById('rPayMax').value)||0,
+    pay_est_type: document.getElementById('rPayType').value,
+    rated_by: document.getElementById('rRatedBy').value,
+    notes:    document.getElementById('rNotes').value,
+  };
+  const allZero = !data.score_efficiency && !data.score_quality && !data.score_attendance &&
+                  !data.score_safety && !data.score_teamwork && !data.score_skills;
+  if (allZero) return alert('请至少为一个维度打分');
+  if (id) await api(`/admin/employee-ratings/${id}`, { method:'PUT', body:JSON.stringify(data) });
+  else    await api('/admin/employee-ratings', { method:'POST', body:JSON.stringify(data) });
+  document.getElementById('ratingModal').classList.remove('show');
+  viewEmployee(empId); // refresh detail
+}
+
+function editRating(r, empId, empName) {
+  openRatingModal(empId, empName, r);
+}
+
+async function deleteRating(ratingId, empId) {
+  if (!confirm('确定删除此评分记录？')) return;
+  await api(`/admin/employee-ratings/${ratingId}`, { method:'DELETE' });
+  viewEmployee(empId);
+}
+
+// ─── Employee Doc Request Links ───
+let _currentDocLinkUrl = '';
+
+function sendEmpDocLink(empId, empName) {
+  document.getElementById('empDocLinkEmpId').value = empId;
+  document.getElementById('empDocLinkTarget').textContent = empName;
+  document.getElementById('empDocLinkResult').style.display = 'none';
+  document.getElementById('empDocAdminNote').value = '';
+  document.getElementById('docReqGovId').checked = true;
+  document.getElementById('docReqSsn').checked = true;
+  document.getElementById('docReqWorkCard').checked = true;
+  document.getElementById('btnGenDocLink').disabled = false;
+  document.getElementById('empDocLinkModal').classList.add('show');
+}
+
+async function generateEmpDocLink() {
+  const empId = document.getElementById('empDocLinkEmpId').value;
+  const note  = document.getElementById('empDocAdminNote').value;
+  const docs  = ['gov_id','ssn','work_card'].filter(k => document.getElementById('docReq'+k.replace(/^\w/,c=>c.toUpperCase()).replace('_','').replace(/^\w/,c=>c.toUpperCase())).checked);
+  const docIds = { gov_id: 'docReqGovId', ssn: 'docReqSsn', work_card: 'docReqWorkCard' };
+  const requestedDocs = Object.entries(docIds).filter(([,id]) => document.getElementById(id).checked).map(([k]) => k);
+  if (!requestedDocs.length) return alert('请至少选择一种材料');
+  const r = await api(`/admin/employees/${empId}/doc-request`, { method:'POST', body: JSON.stringify({ admin_note: note, requested_docs: requestedDocs }) });
+  if (r.token) {
+    _currentDocLinkUrl = location.origin + '/emp-docs.html?token=' + r.token;
+    document.getElementById('empDocLinkUrl').textContent = _currentDocLinkUrl;
+    document.getElementById('empDocLinkResult').style.display = '';
+    document.getElementById('empDocLinkCopied').style.display = 'none';
+    document.getElementById('btnGenDocLink').disabled = true;
+    document.getElementById('btnGenDocLink').textContent = '已生成';
+  }
+}
+
+function copyEmpDocLink() {
+  navigator.clipboard.writeText(_currentDocLinkUrl).then(() => {
+    document.getElementById('empDocLinkCopied').style.display = '';
+  });
+}
+
+function openEmpDocLink() {
+  if (_currentDocLinkUrl) window.open(_currentDocLinkUrl, '_blank');
+}
+
+async function deleteDocRequest(reqId, empId) {
+  if (!confirm('删除此链接后员工将无法再访问，确认删除？')) return;
+  await api(`/admin/employee-doc-requests/${reqId}`, { method:'DELETE' });
+  viewEmployee(empId);
+}
+
 function editFromDetail() {
   if (!currentEmpForDetail) return;
   closeEmpDetailModal();
@@ -2957,10 +3554,10 @@ function buildTsRows() {
     const dateLabel = `${d.getMonth()+1}/${d.getDate()}`;
     html += `<tr class="${isWeekend?'ts-off':''}" data-date="${dateStr}">
       <td class="day-label">${label}<small>${dateLabel} ${dateStr}</small></td>
-      <td><input type="time" class="ts-in" onchange="calcTsRow(this)"></td>
-      <td><input type="time" class="ts-out" onchange="calcTsRow(this)"></td>
-      <td><input type="time" class="ts-lunch-start" onchange="calcTsRow(this)"></td>
-      <td><input type="time" class="ts-lunch-end" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-in" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-out" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-lunch-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-lunch-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
       <td class="ts-hours">—</td>
       <td class="ts-hours">—</td>
       <td class="ts-ot">—</td>
@@ -3025,13 +3622,16 @@ function updateTsEmployeeInfo() {
 
 async function saveBatchTimesheet() {
   const empId = document.getElementById('tsEmp').value;
-  if (!empId) return alert('请先通过搜索选择员工');
+  if (!empId) return alert('请先通过搜索选择员工，点击下拉列表中的员工名称');
   const entries = [];
   let periodStart = '', periodEnd = '';
+  let totalRows = 0, skippedRows = 0;
   document.querySelectorAll('#tsBody tr').forEach(tr => {
+    totalRows++;
     const inVal = tr.querySelector('.ts-in').value;
     const outVal = tr.querySelector('.ts-out').value;
-    if (!inVal || !outVal) return;
+    if (!inVal && !outVal) return; // both empty, skip quietly
+    if (!inVal || !outVal) { skippedRows++; return; } // only one filled, track it
     const dateStr = tr.dataset.date;
     const lsVal = tr.querySelector('.ts-lunch-start').value;
     const leVal = tr.querySelector('.ts-lunch-end').value;
@@ -3046,25 +3646,32 @@ async function saveBatchTimesheet() {
     if (!periodEnd || dateStr > periodEnd) periodEnd = dateStr;
     entries.push({ clock_in: clockIn, clock_out: clockOut, lunch_start: lsVal, lunch_end: leVal });
   });
-  if (entries.length === 0) return alert('请至少填写一天的工时');
+  if (entries.length === 0) {
+    if (skippedRows > 0) return alert('有 ' + skippedRows + ' 天只填了上班或下班时间，请确保每天的上班时间和下班时间都填写完整。\n（午休时间可以不填）');
+    return alert('请至少填写一天的上班时间和下班时间。\n（午休时间可以不填）');
+  }
   const jobId = document.getElementById('tsJob').value || null;
   const company = document.getElementById('tsCompany').value || '';
-  const r = await api('/admin/time-entries/batch', {
-    method: 'POST',
-    body: JSON.stringify({
-      employee_id: parseInt(empId), entries,
-      job_id: jobId ? parseInt(jobId) : null,
-      company_name: company,
-      period_start: periodStart,
-      period_end: periodEnd
-    })
-  });
-  if (r.success) {
-    closeTsModal();
-    loadTimeEntries();
-    showTsLink(r.token, r.count);
-  } else {
-    alert(r.error || '保存失败');
+  try {
+    const r = await api('/admin/time-entries/batch', {
+      method: 'POST',
+      body: JSON.stringify({
+        employee_id: parseInt(empId), entries,
+        job_id: jobId ? parseInt(jobId) : null,
+        company_name: company,
+        period_start: periodStart,
+        period_end: periodEnd
+      })
+    });
+    if (r.success) {
+      closeTsModal();
+      loadTimeEntries();
+      showTsLink(r.token, r.count);
+    } else {
+      alert(r.error || '保存失败，请重试');
+    }
+  } catch(e) {
+    alert('网络错误，请检查连接后重试：' + e.message);
   }
 }
 
