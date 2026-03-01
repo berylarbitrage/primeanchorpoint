@@ -879,7 +879,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="field"><label>下班时间</label><input id="tOut" type="datetime-local"></div>
   </div>
   <div class="field-row">
-    <div class="field"><label>休息时间 (分钟)</label><input id="tBreak" type="number" min="0" value="0" placeholder="30"></div>
+    <div class="field"><label>休息时间 (分钟) <small style="font-weight:400;color:var(--gray-400)">可选</small></label><input id="tBreak" type="number" min="0" value="0" placeholder="0"></div>
     <div class="field"><label>关联职位 (可选)</label><select id="tJob"><option value="">无</option></select></div>
   </div>
   <div class="field"><label>备注</label><input id="tNotes" placeholder="班次备注..."></div>
@@ -927,7 +927,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="tsTableWrap">
     <table class="ts-table">
-      <thead><tr><th>日期</th><th>上班时间</th><th>下班时间</th><th>午休开始</th><th>午休结束</th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
+      <thead><tr><th>日期</th><th>上班时间 *</th><th>下班时间 *</th><th>午休开始<br><small style="font-weight:400;color:var(--gray-400)">(可选)</small></th><th>午休结束<br><small style="font-weight:400;color:var(--gray-400)">(可选)</small></th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
       <tbody id="tsBody"></tbody>
     </table>
   </div>
@@ -2646,10 +2646,10 @@ function buildTsRows() {
     const dateLabel = `${d.getMonth()+1}/${d.getDate()}`;
     html += `<tr class="${isWeekend?'ts-off':''}" data-date="${dateStr}">
       <td class="day-label">${label}<small>${dateLabel} ${dateStr}</small></td>
-      <td><input type="time" class="ts-in" onchange="calcTsRow(this)"></td>
-      <td><input type="time" class="ts-out" onchange="calcTsRow(this)"></td>
-      <td><input type="time" class="ts-lunch-start" onchange="calcTsRow(this)"></td>
-      <td><input type="time" class="ts-lunch-end" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-in" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-out" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-lunch-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" class="ts-lunch-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
       <td class="ts-hours">—</td>
       <td class="ts-hours">—</td>
       <td class="ts-ot">—</td>
@@ -2714,13 +2714,16 @@ function updateTsEmployeeInfo() {
 
 async function saveBatchTimesheet() {
   const empId = document.getElementById('tsEmp').value;
-  if (!empId) return alert('请先通过搜索选择员工');
+  if (!empId) return alert('请先通过搜索选择员工，点击下拉列表中的员工名称');
   const entries = [];
   let periodStart = '', periodEnd = '';
+  let totalRows = 0, skippedRows = 0;
   document.querySelectorAll('#tsBody tr').forEach(tr => {
+    totalRows++;
     const inVal = tr.querySelector('.ts-in').value;
     const outVal = tr.querySelector('.ts-out').value;
-    if (!inVal || !outVal) return;
+    if (!inVal && !outVal) return; // both empty, skip quietly
+    if (!inVal || !outVal) { skippedRows++; return; } // only one filled, track it
     const dateStr = tr.dataset.date;
     const lsVal = tr.querySelector('.ts-lunch-start').value;
     const leVal = tr.querySelector('.ts-lunch-end').value;
@@ -2735,25 +2738,32 @@ async function saveBatchTimesheet() {
     if (!periodEnd || dateStr > periodEnd) periodEnd = dateStr;
     entries.push({ clock_in: clockIn, clock_out: clockOut, lunch_start: lsVal, lunch_end: leVal });
   });
-  if (entries.length === 0) return alert('请至少填写一天的工时');
+  if (entries.length === 0) {
+    if (skippedRows > 0) return alert('有 ' + skippedRows + ' 天只填了上班或下班时间，请确保每天的上班时间和下班时间都填写完整。\n（午休时间可以不填）');
+    return alert('请至少填写一天的上班时间和下班时间。\n（午休时间可以不填）');
+  }
   const jobId = document.getElementById('tsJob').value || null;
   const company = document.getElementById('tsCompany').value || '';
-  const r = await api('/admin/time-entries/batch', {
-    method: 'POST',
-    body: JSON.stringify({
-      employee_id: parseInt(empId), entries,
-      job_id: jobId ? parseInt(jobId) : null,
-      company_name: company,
-      period_start: periodStart,
-      period_end: periodEnd
-    })
-  });
-  if (r.success) {
-    closeTsModal();
-    loadTimeEntries();
-    showTsLink(r.token, r.count);
-  } else {
-    alert(r.error || '保存失败');
+  try {
+    const r = await api('/admin/time-entries/batch', {
+      method: 'POST',
+      body: JSON.stringify({
+        employee_id: parseInt(empId), entries,
+        job_id: jobId ? parseInt(jobId) : null,
+        company_name: company,
+        period_start: periodStart,
+        period_end: periodEnd
+      })
+    });
+    if (r.success) {
+      closeTsModal();
+      loadTimeEntries();
+      showTsLink(r.token, r.count);
+    } else {
+      alert(r.error || '保存失败，请重试');
+    }
+  } catch(e) {
+    alert('网络错误，请检查连接后重试：' + e.message);
   }
 }
 
