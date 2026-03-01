@@ -76,7 +76,22 @@ db.exec(`
     services TEXT DEFAULT '',
     notes TEXT DEFAULT '',
     active INTEGER DEFAULT 1,
+    contacts TEXT DEFAULT '[]',
+    addresses TEXT DEFAULT '[]',
+    social_media TEXT DEFAULT '{}',
+    links TEXT DEFAULT '{}',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS partner_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    partner_id INTEGER NOT NULL,
+    file_type TEXT DEFAULT 'other',
+    file_label TEXT DEFAULT '',
+    file_path TEXT DEFAULT '',
+    file_name TEXT DEFAULT '',
+    notes TEXT DEFAULT '',
+    uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (partner_id) REFERENCES partners(id)
   );
   CREATE TABLE IF NOT EXISTS assignments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -170,6 +185,11 @@ db.exec(`
 
 // ─── Migrations for existing databases ───
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) { /* column already exists */ }
+// Migrate partners table (add new columns if missing)
+const partnerMigrations = ['contacts','addresses','social_media','links'];
+partnerMigrations.forEach(col => {
+  try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
+});
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -534,27 +554,70 @@ app.delete('/api/admin/quotes/:id', requireAdmin, (req, res) => {
 
 // Partners CRUD
 app.get('/api/admin/partners', requireAdmin, (req, res) => {
-  res.json(db.prepare('SELECT * FROM partners ORDER BY created_at DESC').all());
+  const rows = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id) as file_count FROM partners p ORDER BY p.created_at DESC`).all();
+  res.json(rows);
 });
 
 app.post('/api/admin/partners', requireAdmin, (req, res) => {
   const d = req.body;
   if (!d.name) return res.status(400).json({ error: 'Name required' });
-  const stmt = db.prepare('INSERT INTO partners (name, contact_person, phone, email, address, industry, services, notes, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  const r = stmt.run(d.name, d.contact_person || '', d.phone || '', d.email || '', d.address || '', d.industry || '', d.services || '', d.notes || '', d.active !== false ? 1 : 0);
+  const r = db.prepare(`INSERT INTO partners (name,contact_person,phone,email,address,industry,services,notes,active,contacts,addresses,social_media,links)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
+    d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
+    d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/partners/:id', requireAdmin, (req, res) => {
   const d = req.body;
-  db.prepare('UPDATE partners SET name=?, contact_person=?, phone=?, email=?, address=?, industry=?, services=?, notes=?, active=? WHERE id=?')
-    .run(d.name, d.contact_person || '', d.phone || '', d.email || '', d.address || '', d.industry || '', d.services || '', d.notes || '', d.active !== false ? 1 : 0, req.params.id);
+  db.prepare(`UPDATE partners SET name=?,contact_person=?,phone=?,email=?,address=?,industry=?,services=?,notes=?,active=?,contacts=?,addresses=?,social_media=?,links=? WHERE id=?`)
+    .run(d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
+      d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
+      d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', req.params.id);
   res.json({ success: true });
 });
 
 app.delete('/api/admin/partners/:id', requireAdmin, (req, res) => {
+  // Delete associated files
+  const files = db.prepare('SELECT * FROM partner_files WHERE partner_id=?').all(req.params.id);
+  files.forEach(f => { if (f.file_path) { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); } });
+  db.prepare('DELETE FROM partner_files WHERE partner_id=?').run(req.params.id);
   db.prepare('DELETE FROM partners WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Partner files
+app.get('/api/admin/partners/:id/files', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM partner_files WHERE partner_id=? ORDER BY uploaded_at DESC').all(req.params.id));
+});
+
+app.post('/api/admin/partners/:id/files', requireAdmin, docUpload.single('file'), (req, res) => {
+  const p = db.prepare('SELECT id FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const r = db.prepare(`INSERT INTO partner_files (partner_id,file_type,file_label,file_path,file_name,notes) VALUES(?,?,?,?,?,?)`).run(
+    req.params.id, req.body.file_type||'other', req.body.file_label||'',
+    req.file?req.file.filename:'', req.file?req.file.originalname:'', req.body.notes||'');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.delete('/api/admin/partner-files/:id', requireAdmin, (req, res) => {
+  const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  if (f.file_path) { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); }
+  db.prepare('DELETE FROM partner_files WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/partner-files/:id/download', (req, res, next) => {
+  if (req.query.token && validSession(req.query.token)) return next();
+  return requireAdmin(req, res, next);
+}, (req, res) => {
+  const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
+  if (!f || !f.file_path) return res.status(404).json({ error: 'File not found' });
+  const fp = path.join(docsDir, f.file_path);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File not found' });
+  res.download(fp, f.file_name || f.file_path);
 });
 
 // Assignments CRUD
