@@ -174,9 +174,15 @@ tr:hover td{background:var(--sky-light)}
 .ts-actions{display:flex;gap:.75rem;flex-wrap:wrap}
 @media print{body *{visibility:hidden}#tsPrintArea,#tsPrintArea *{visibility:visible}#tsPrintArea{position:absolute;left:0;top:0;width:100%;padding:20px}#tsPrintArea .no-print{display:none!important}}
 @media(max-width:768px){.sidebar{width:100%;height:auto;position:relative;display:flex;flex-wrap:wrap;padding:.5rem}.sidebar h2{display:none}.sidebar a{padding:8px 12px;font-size:.78rem}.main{margin-left:0}.stats-row{grid-template-columns:repeat(2,1fr)}.hours-bar{grid-template-columns:repeat(2,1fr)}.field-row3{grid-template-columns:1fr}}
+/* Toast */
+#toast-wrap{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
+.toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
+.toast.in{opacity:1;transform:translateY(0)}
+.toast.success{background:#065F46;border-left:4px solid #34d399}
 </style>
 </head>
 <body>
+<div id="toast-wrap"></div>
 
 <!-- LOGIN -->
 <div class="login-wrap" id="loginWrap">
@@ -1278,6 +1284,19 @@ function statusLabel(s) {
   const m = { assigned: '已分配', working: '工作中', completed: '已完成', cancelled: '已取消' };
   return m[s] || s;
 }
+function showToast(msg, type = 'success') {
+  const wrap = document.getElementById('toast-wrap');
+  const t = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.textContent = msg;
+  wrap.appendChild(t);
+  requestAnimationFrame(() => { requestAnimationFrame(() => t.classList.add('in')); });
+  setTimeout(() => {
+    t.classList.remove('in');
+    setTimeout(() => t.remove(), 300);
+  }, 3000);
+}
+
 function esc(s) {
   if (!s) return '';
   const d = document.createElement('div');
@@ -2304,10 +2323,15 @@ async function savePartner() {
     })
   };
   if (!data.name) return alert('请填写公司名称');
-  if (id) await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
-  else {
+  if (id) {
+    await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
+    showToast(`✅ 公司「${data.name}」信息已更新`);
+  } else {
     const r = await api('/admin/partners', { method:'POST', body:JSON.stringify(data) });
-    if (r.id) document.getElementById('partnerId').value = r.id;
+    if (r.id) {
+      document.getElementById('partnerId').value = r.id;
+      showToast(`✅ 公司「${data.name}」创建成功`);
+    }
   }
   closePartnerModal();
   loadPartners();
@@ -2538,8 +2562,11 @@ async function saveEmployee() {
   const r = id
     ? await api(`/admin/employees/${id}`, { method:'PUT', body: JSON.stringify(data) })
     : await api('/admin/employees', { method:'POST', body: JSON.stringify(data) });
-  if (r.success || r.id) { closeEmpModal(); loadEmployees(); }
-  else alert(r.error || '保存失败');
+  if (r.success || r.id) {
+    closeEmpModal();
+    loadEmployees();
+    showToast(id ? `✅ 员工信息已更新` : `✅ 员工「${data.first_name} ${data.last_name}」创建成功`);
+  } else alert(r.error || '保存失败');
 }
 
 async function terminateEmployee(id, name) {
