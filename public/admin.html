@@ -1659,6 +1659,29 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ── Danger Confirm Modal ── -->
+<div class="modal-bg" id="dangerConfirmModal"><div class="modal" style="max-width:420px">
+  <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.1rem">
+    <div style="width:44px;height:44px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </div>
+    <div>
+      <h2 id="dangerConfirmTitle" style="margin:0;color:#B91C1C;font-size:1.1rem">确认删除</h2>
+      <p id="dangerConfirmDesc" style="margin:.2rem 0 0;font-size:.83rem;color:var(--gray-600)"></p>
+    </div>
+  </div>
+  <div style="background:#FFF5F5;border:1px solid #FECACA;border-radius:var(--radius);padding:.9rem 1rem;margin-bottom:1.1rem">
+    <p style="margin:0 0 .6rem;font-size:.85rem;color:var(--gray-700)">此操作<strong>不可撤销</strong>。请在下方输入 <strong id="dangerConfirmTarget" style="color:#B91C1C;font-family:monospace"></strong> 确认：</p>
+    <input id="dangerConfirmInput" type="text" placeholder="在此输入以确认" oninput="checkDangerConfirm()"
+      style="width:100%;box-sizing:border-box;border:1.5px solid #FECACA;border-radius:6px;padding:.5rem .7rem;font-size:.92rem;outline:none;transition:border .15s"
+      onfocus="this.style.borderColor='#DC2626'" onblur="this.style.borderColor='#FECACA'">
+  </div>
+  <div style="display:flex;gap:.65rem;justify-content:flex-end">
+    <button class="btn btn-outline" onclick="closeDangerConfirm()">取消</button>
+    <button class="btn btn-red" id="dangerConfirmBtn" disabled onclick="execDangerConfirm()">确认删除</button>
+  </div>
+</div></div>
+
 <script>
 let TOKEN = '';
 let USER_ROLE = '';
@@ -1851,6 +1874,33 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// ─── Danger Confirm Modal ───
+let _dangerConfirmCallback = null;
+function showDeleteConfirm(targetName, description, onConfirm) {
+  document.getElementById('dangerConfirmTitle').textContent = '确认删除';
+  document.getElementById('dangerConfirmDesc').textContent = description || '';
+  document.getElementById('dangerConfirmTarget').textContent = targetName;
+  document.getElementById('dangerConfirmInput').value = '';
+  document.getElementById('dangerConfirmBtn').disabled = true;
+  _dangerConfirmCallback = onConfirm;
+  document.getElementById('dangerConfirmModal').classList.add('show');
+  setTimeout(() => document.getElementById('dangerConfirmInput').focus(), 80);
+}
+function checkDangerConfirm() {
+  const val = document.getElementById('dangerConfirmInput').value;
+  const target = document.getElementById('dangerConfirmTarget').textContent;
+  document.getElementById('dangerConfirmBtn').disabled = (val !== target);
+}
+function closeDangerConfirm() {
+  document.getElementById('dangerConfirmModal').classList.remove('show');
+  _dangerConfirmCallback = null;
+}
+async function execDangerConfirm() {
+  const cb = _dangerConfirmCallback;
+  closeDangerConfirm();
+  if (cb) await cb();
 }
 
 // ─── Jobs ───
@@ -5000,9 +5050,12 @@ async function saveAccount() {
 }
 
 async function deleteAccount(id, name) {
-  if (!confirm(`确认删除账户 "${name}" ?`)) return;
-  await api(`/admin/accounts/${id}`, { method:'DELETE' });
-  loadAccounts();
+  showDeleteConfirm(name, `删除后该账户将无法登录，相关数据将一并清除。`, async () => {
+    const r = await api(`/admin/accounts/${id}`, { method:'DELETE' });
+    if (r && r.error) return showToast('❌ 删除失败：' + r.error);
+    loadAccounts();
+    showToast('✅ 账户已删除');
+  });
 }
 
 // ── Worker accounts ──
@@ -5060,9 +5113,12 @@ async function saveWorkerAccount() {
 }
 
 async function deleteWorkerAccount(id, name) {
-  if (!confirm(`确认删除工人账户 "${name}" ?`)) return;
-  await api(`/admin/worker-accounts/${id}`, { method:'DELETE' });
-  loadWorkerAccounts();
+  showDeleteConfirm(name, `删除后该工人账户将无法登录，相关记录将一并清除。`, async () => {
+    const r = await api(`/admin/worker-accounts/${id}`, { method:'DELETE' });
+    if (r && r.error) return showToast('❌ 删除失败：' + r.error);
+    loadWorkerAccounts();
+    showToast('✅ 工人账户已删除');
+  });
 }
 
 // ── Customer accounts ──
