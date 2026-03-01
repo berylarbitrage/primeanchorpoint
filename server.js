@@ -562,18 +562,29 @@ function verifyPassword(password, salt, hash) {
   try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
 }
 
-// In-memory session store (tokens expire in 24h)
-const sessions = new Map();
+// DB-backed session store (survives server restarts, tokens expire in 24h)
+db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  username TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+)`);
+// Clean up expired sessions on startup
+try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { created: Date.now(), userId: user.id, username: user.username, role: user.role || 'staff' });
+  db.prepare('INSERT INTO admin_sessions (token, user_id, username, role, created_at) VALUES (?,?,?,?,?)')
+    .run(token, user.id, user.username, user.role || 'staff', Date.now());
   return token;
 }
 function getSession(token) {
-  const s = sessions.get(token);
+  if (!token) return null;
+  const s = db.prepare('SELECT * FROM admin_sessions WHERE token=?').get(token);
   if (!s) return null;
-  if (Date.now() - s.created > 24 * 60 * 60 * 1000) { sessions.delete(token); return null; }
-  return s;
+  if (Date.now() - s.created_at > 24*60*60*1000) { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); return null; }
+  return { userId: s.user_id, username: s.username, role: s.role, created: s.created_at };
 }
 function validSession(token) { return !!getSession(token); }
 
@@ -692,6 +703,14 @@ app.post('/api/admin/login', (req, res) => {
   } else {
     res.status(401).json({ error: 'Invalid username or password' });
   }
+});
+
+app.post('/api/admin/logout', requireAdmin, (req, res) => {
+  const auth = req.headers.authorization;
+  if (auth && auth.startsWith('Bearer ')) {
+    db.prepare('DELETE FROM admin_sessions WHERE token=?').run(auth.slice(7));
+  }
+  res.json({ success: true });
 });
 
 // Get current user info
