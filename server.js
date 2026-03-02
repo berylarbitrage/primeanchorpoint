@@ -2942,6 +2942,36 @@ app.post('/api/register/verify', (req, res) => {
   res.json({ success: true, token, message: 'Verification successful' });
 });
 
+// Verify one step at a time (phone first, then email)
+app.post('/api/register/verify-step', (req, res) => {
+  const { account_id, type, code } = req.body;
+  if (!account_id || !type || !code) return res.status(400).json({ error: 'account_id, type, and code required' });
+  if (!['phone', 'email'].includes(type)) return res.status(400).json({ error: 'type must be phone or email' });
+  const acc = db.prepare('SELECT id, active, employee_id FROM worker_accounts WHERE id=?').get(account_id);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  if (acc.active) return res.status(400).json({ error: 'Account already verified' });
+  const now = new Date().toISOString();
+  const vc = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?')
+    .get(account_id, type, code, now);
+  if (!vc) return res.status(400).json({
+    error: type === 'phone'
+      ? '手机验证码错误或已过期 / Invalid or expired phone code'
+      : '邮箱验证码错误或已过期 / Invalid or expired email code'
+  });
+  // This step verified — remove its code
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
+  // Check remaining steps
+  const remaining = db.prepare('SELECT type FROM verification_codes WHERE worker_account_id=?').all(account_id);
+  if (remaining.length === 0) {
+    // All done — activate account and auto-login
+    db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
+    const token = crypto.randomBytes(32).toString('hex');
+    workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+    return res.json({ success: true, all_done: true, token });
+  }
+  return res.json({ success: true, all_done: false, next_steps: remaining.map(r => r.type) });
+});
+
 app.post('/api/register/enterprise', (req, res) => {
   const { company_name, contact_name, email, phone, ein, staffing_needs, password, partner_id } = req.body;
   if (!company_name || !contact_name || !email || !password)
