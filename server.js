@@ -1787,7 +1787,7 @@ app.put('/api/admin/inquiries/:id/process', requireAdmin, blockManager, (req, re
   if (undo) {
     db.prepare('UPDATE inquiries SET processed=0, proc_status=\'\', proc_note=\'\', processed_at=NULL WHERE id=?').run(req.params.id);
   } else {
-    const valid = ['cooperated','rejected','unreachable'];
+    const valid = ['cooperated','quote_high','too_small','no_match','unreachable','other','rejected'];
     if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
     db.prepare('UPDATE inquiries SET processed=1, proc_status=?, proc_note=?, processed_at=CURRENT_TIMESTAMP WHERE id=?')
       .run(status, note || '', req.params.id);
