@@ -77,6 +77,18 @@ tr:last-child td{border-bottom:none}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
+/* Onboarding steps */
+.ob-step{display:flex;align-items:flex-start;gap:1rem;padding:.85rem 0;border-bottom:1px solid var(--gray-100)}
+.ob-step:last-child{border-bottom:none}
+.ob-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;margin-top:2px}
+.ob-done{background:#d1fae5;color:#065f46}
+.ob-submitted{background:#fef3c7;color:#92400e}
+.ob-pending{background:#dbeafe;color:#1d4ed8}
+.ob-locked{background:var(--gray-100);color:var(--gray-400)}
+.ob-waived{background:#f3e8ff;color:#7c3aed}
+.ob-title{font-weight:700;font-size:.95rem;color:var(--blue)}
+.ob-badge{display:inline-block;padding:1px 8px;border-radius:20px;font-size:.72rem;font-weight:600;margin-left:.4rem;vertical-align:middle}
+.ob-note{font-size:.8rem;color:var(--gray-500);margin-top:.2rem;font-style:italic}
 /* Punch card */
 .punch-card{text-align:center;padding:1.5rem}
 .punch-status{font-size:.9rem;color:var(--gray-500);margin-bottom:1rem}
@@ -222,6 +234,7 @@ tr:last-child td{border-bottom:none}
     <button class="nav-btn" data-tab="applications" onclick="showTab('applications')">我的申请</button>
     <button class="nav-btn" data-tab="timeclock" onclick="showTab('timeclock')">我的打卡记录</button>
     <button class="nav-btn" data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none">合规文件</button>
+    <button class="nav-btn" data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none">📋 待办事项</button>
     <button class="nav-btn" data-tab="profile" onclick="showTab('profile')">我的信息</button>
   </div>
   <div class="content">
@@ -453,6 +466,15 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
 
+    <!-- Todos / Onboarding -->
+    <div id="tabTodos" style="display:none">
+      <div class="card">
+        <h2>📋 我的入职待办事项</h2>
+        <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1.25rem">请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。</p>
+        <div id="onboardingList"></div>
+      </div>
+    </div>
+
     <!-- Profile -->
     <div id="tabProfile" style="display:none">
       <div class="card" id="profileCard">
@@ -600,12 +622,14 @@ async function showApp() {
   // Only show compliance tab if interview passed
   _interviewPassed = interview && interview.status === 'passed';
   document.getElementById('navCompliance').style.display = _interviewPassed ? '' : 'none';
+  // Show todos tab (always visible for logged-in workers)
+  document.getElementById('navTodos').style.display = '';
 
   loadJobs();
 }
 
 function showTab(tab) {
-  ['jobs','interview','applications','timeclock','compliance','profile'].forEach(t => {
+  ['jobs','interview','applications','timeclock','compliance','todos','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -614,6 +638,7 @@ function showTab(tab) {
   else if (tab === 'compliance') loadCompliance();
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
+  else if (tab === 'todos') loadOnboarding();
   else loadJobs();
 }
 
@@ -1124,6 +1149,61 @@ async function submitW9(e) {
     if (data.success) { showToast('✅ W-9 已提交，等待审核'); form.reset(); loadCompliance(); }
     else alert(data.error || '提交失败');
   } catch { alert('网络错误'); }
+}
+
+// ─── Onboarding / 待办事项 ───
+async function loadOnboarding() {
+  const tasks = await wApi('/onboarding');
+  const list = document.getElementById('onboardingList');
+  if (!tasks) return;
+  if (!tasks.length) {
+    list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
+    return;
+  }
+  const icons = { phone_verify:'📱', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
+  const sBadgeStyle = {
+    locked:'color:var(--gray-400);background:var(--gray-100);border:1px solid var(--gray-200)',
+    pending:'color:#1d4ed8;background:#dbeafe;border:1px solid #bfdbfe',
+    submitted:'color:#92400e;background:#fef3c7;border:1px solid #fde68a',
+    completed:'color:#065f46;background:#d1fae5;border:1px solid #6ee7b7',
+    waived:'color:#7c3aed;background:#f3e8ff;border:1px solid #e9d5ff'
+  };
+  list.innerHTML = tasks.map(t => {
+    const s = t.status;
+    let actionHtml = '';
+    if (s === 'pending') {
+      if (t.key === 'interview') {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('interview')">去预约面试</button>`;
+      } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">去提交文件 →</button>`;
+      } else if ((t.key === 'contract' || t.key === 'gusto') && t.action_url) {
+        const label = t.key === 'gusto' ? '填写 Gusto 信息 →' : '查看/签署合同 →';
+        actionHtml = `<a class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;text-decoration:none;display:inline-block" href="${esc(t.action_url)}" target="_blank">${label}</a>`;
+      } else if (t.key !== 'phone_verify') {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="submitOnboardingTask('${t.key}')">标记已提交</button>`;
+      }
+    } else if (s === 'submitted') {
+      actionHtml = `<div style="font-size:.8rem;color:var(--orange);margin-top:.4rem">已提交，等待 HR 审核中…</div>`;
+    }
+    return `<div class="ob-step">
+      <div class="ob-icon ob-${s==='completed'?'done':s==='waived'?'waived':s==='submitted'?'submitted':s==='pending'?'pending':'locked'}">${icons[t.key]||'📌'}</div>
+      <div style="flex:1">
+        <div><span class="ob-title">${esc(t.title)}</span>
+          <span class="ob-badge" style="${sBadgeStyle[s]||''}">${sLabel[s]||s}</span>
+          ${!t.required?'<span style="font-size:.72rem;color:var(--gray-400);margin-left:.35rem">(可豁免)</span>':''}
+        </div>
+        ${t.admin_note ? `<div class="ob-note">💬 ${esc(t.admin_note)}</div>` : ''}
+        ${actionHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function submitOnboardingTask(key) {
+  const r = await wApi(`/onboarding/${key}/submit`, { method:'POST', body:'{}' });
+  if (r && r.success) { showToast('✅ 已提交，等待 HR 审核'); loadOnboarding(); }
+  else alert(r?.error || '提交失败');
 }
 
 function esc(s) {

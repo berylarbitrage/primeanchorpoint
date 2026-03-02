@@ -804,6 +804,21 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_compliance_docs (
   FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id)
 )`);
 
+// ─── Worker Onboarding Tasks ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  task_key TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  admin_note TEXT DEFAULT '',
+  action_url TEXT DEFAULT '',
+  completed_at DATETIME,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(worker_account_id, task_key)
+)`);
+
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
+
 // ─── Integration Settings (WorkBright, Checkr, Gusto, Twilio) ───
 db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1461,6 +1476,116 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   db.prepare('UPDATE worker_accounts SET employee_id=?, active=?, suspended=? WHERE id=?')
     .run(employee_id !== undefined ? employee_id : w.employee_id, active !== undefined ? active : w.active, suspended !== undefined ? suspended : (w.suspended||0), req.params.id);
   res.json({ success: true });
+});
+
+// ── Worker Onboarding ──
+const ONBOARDING_STEPS = [
+  { key: 'phone_verify', title: '手机号验证',      desc: '必须通过手机号验证才能继续',                     required: true  },
+  { key: 'interview',    title: '完成面试',          desc: '预约并参加 HR 面试',                              required: true  },
+  { key: 'id_verify',    title: 'ID 证件认证',       desc: '上传护照、驾照或州 ID 卡等政府颁发证件',         required: true  },
+  { key: 'ssn_verify',   title: 'SSN 社安号验证',    desc: 'HR 核实社会安全号码',                             required: true  },
+  { key: 'ead_upload',   title: 'EAD / 工卡上传',    desc: 'EAD 工卡（如适用）',                              required: false },
+  { key: 'i9',           title: 'I-9 就业资格',      desc: '填写并提交 I-9 就业资格验证表',                  required: true  },
+  { key: 'w9',           title: 'W-9 税表',           desc: '独立承包商 W-9 税务信息表',                      required: true  },
+  { key: 'contract',     title: '签署雇佣合同',       desc: '电子签署雇佣协议',                               required: true  },
+  { key: 'gusto',        title: 'Gusto 薪资信息',     desc: '在 Gusto 填写直接存款及薪资信息',               required: true  },
+];
+
+function initWorkerOnboarding(workerId) {
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+  if (!w) return;
+  const insert = db.prepare(`INSERT OR IGNORE INTO worker_onboarding (worker_account_id, task_key, status) VALUES (?,?,?)`);
+  const tx = db.transaction(() => {
+    for (const s of ONBOARDING_STEPS) {
+      insert.run(workerId, s.key, 'pending');
+    }
+  });
+  tx();
+  // auto-complete phone_verify if worker already active
+  if (w.active) {
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='phone_verify' AND status='pending'`).run(workerId);
+  }
+  // auto-complete interview if already passed
+  const passed = db.prepare(`SELECT i.id FROM interviews i WHERE i.worker_account_id=? AND i.status='passed'`).get(workerId);
+  if (passed) {
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status='pending'`).run(workerId);
+  }
+}
+
+function getOnboardingTasks(workerId) {
+  const rows = db.prepare('SELECT * FROM worker_onboarding WHERE worker_account_id=? ORDER BY id ASC').all(workerId);
+  const rowMap = {};
+  rows.forEach(r => { rowMap[r.task_key] = r; });
+  return ONBOARDING_STEPS.map((s, idx) => {
+    const row = rowMap[s.key] || { status: 'not_initialized', admin_note: '', action_url: '', completed_at: null };
+    // compute locked: previous REQUIRED step must be completed/waived
+    let locked = false;
+    if (idx > 0) {
+      const prevRequired = ONBOARDING_STEPS.slice(0, idx).filter(p => p.required);
+      locked = prevRequired.some(p => {
+        const pr = rowMap[p.key];
+        return !pr || !['completed','waived'].includes(pr.status);
+      });
+    }
+    return { ...s, ...row, locked: locked && !['completed','waived'].includes(row.status) };
+  });
+}
+
+app.post('/api/admin/worker-accounts/:id/init-onboarding', requireAdmin, (req, res) => {
+  initWorkerOnboarding(parseInt(req.params.id));
+  res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
+});
+
+app.get('/api/admin/worker-accounts/:id/onboarding', requireAdmin, (req, res) => {
+  // auto-init if no tasks yet
+  const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.params.id);
+  if (!existing) initWorkerOnboarding(parseInt(req.params.id));
+  res.json(getOnboardingTasks(parseInt(req.params.id)));
+});
+
+app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, res) => {
+  const { status, admin_note, action_url } = req.body;
+  const valid = ['pending','submitted','completed','waived'];
+  if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  const completedAt = ['completed','waived'].includes(status) ? new Date().toISOString() : null;
+  db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
+    VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,
+      action_url=excluded.action_url, completed_at=excluded.completed_at, updated_at=CURRENT_TIMESTAMP`)
+    .run(req.params.id, req.params.key, status, admin_note||'', action_url||'', completedAt);
+  res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
+});
+
+app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res) => {
+  const { ready } = req.body;
+  db.prepare('UPDATE worker_accounts SET dispatch_ready=? WHERE id=?').run(ready ? 1 : 0, req.params.id);
+  res.json({ success: true });
+});
+
+// Worker: view own onboarding tasks
+app.get('/api/worker/onboarding', requireWorker, (req, res) => {
+  const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.workerId);
+  if (!existing) initWorkerOnboarding(req.workerId);
+  res.json(getOnboardingTasks(req.workerId));
+});
+
+// Worker: submit a task (marks as submitted, pending admin review)
+app.post('/api/worker/onboarding/:key/submit', requireWorker, (req, res) => {
+  const { note } = req.body;
+  db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, updated_at)
+    VALUES (?,?,'submitted',?,CURRENT_TIMESTAMP)
+    ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='submitted', admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+    .run(req.workerId, req.params.key, note||'');
+  res.json({ success: true });
+});
+
+// Check if inquiry person has a dispatch_ready worker account
+app.get('/api/admin/inquiries/:id/worker-status', requireAdmin, (req, res) => {
+  const inq = db.prepare('SELECT phone, email FROM inquiries WHERE id=?').get(req.params.id);
+  if (!inq) return res.status(404).json({ error: 'Not found' });
+  const w = db.prepare('SELECT id, active, dispatch_ready, suspended FROM worker_accounts WHERE phone=? OR (? != \'\' AND email=?)').get(inq.phone||'', inq.email||'', inq.email||'');
+  if (!w) return res.json({ has_account: false, dispatch_ready: false });
+  res.json({ has_account: true, dispatch_ready: !!w.dispatch_ready, active: !!w.active, suspended: !!w.suspended, worker_id: w.id });
 });
 
 app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
