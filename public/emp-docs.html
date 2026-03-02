@@ -185,6 +185,8 @@ const I18N = {
                    desc: '请提供 SSN 原卡正面照片。如卡片已破损请联系 HR 说明情况。' },
       work_card: { label: '工卡 / 工作许可证', sub: 'Work Authorization Card',
                    desc: 'EAD 卡、工作签证页、I-94 记录、绿卡等均可。如您是美国公民可上传护照替代。' },
+      w9:        { label: 'W-9 税表', sub: 'IRS Form W-9',
+                   desc: '请填写并签署 W-9 表格后上传扫描件或照片。表格可从 IRS 官网下载：irs.gov/pub/irs-pdf/fw9.pdf' },
     }
   },
   en: {
@@ -222,6 +224,8 @@ const I18N = {
                    desc: 'Please provide a photo of the front of your SSN card. Contact HR if your card is damaged.' },
       work_card: { label: 'Work Authorization Card', sub: '',
                    desc: 'EAD card, work visa page, I-94 record, or Green Card. US citizens may upload a passport instead.' },
+      w9:        { label: 'IRS Form W-9', sub: '',
+                   desc: 'Please complete and sign the W-9 form and upload a scan or photo. Download from irs.gov/pub/irs-pdf/fw9.pdf' },
     }
   },
   es: {
@@ -259,11 +263,13 @@ const I18N = {
                    desc: 'Proporcione una foto del frente de su tarjeta SSN. Contacte a HR si su tarjeta está dañada.' },
       work_card: { label: 'Tarjeta de Autorización de Trabajo', sub: 'Work Authorization Card',
                    desc: 'Tarjeta EAD, página de visa de trabajo, registro I-94 o Green Card. Ciudadanos de EE.UU. pueden cargar un pasaporte.' },
+      w9:        { label: 'Formulario W-9 del IRS', sub: 'IRS Form W-9',
+                   desc: 'Complete y firme el formulario W-9 y cargue un escaneo o foto. Descárguelo en irs.gov/pub/irs-pdf/fw9.pdf' },
     }
   }
 };
 
-const DOC_ICONS = { gov_id: '🪪', ssn: '📋', work_card: '💼' };
+const DOC_ICONS = { gov_id: '🪪', ssn: '📋', work_card: '💼', w9: '📝' };
 const DOC_ACCEPT = '.pdf,.jpg,.jpeg,.png,.heic,.heif';
 
 const POS_LABELS = {
