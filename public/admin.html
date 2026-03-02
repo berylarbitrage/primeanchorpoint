@@ -254,6 +254,22 @@ tr:hover td{background:var(--sky-light)}
 </div>
 </div>
 
+<!-- Email Code Test Modal -->
+<div class="modal-bg" id="emailCodeTestModal">
+<div class="modal" style="max-width:460px">
+  <h2>✉️ 测试邮箱验证码</h2>
+  <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">输入一个邮箱地址，测试 SendGrid/SMTP 是否能成功发送验证码邮件。</p>
+  <div class="field"><label>发送到邮箱</label>
+    <input type="email" id="emailCodeTestAddr" placeholder="test@example.com">
+  </div>
+  <div id="emailCodeTestResult" style="display:none;margin-top:.75rem;padding:.75rem 1rem;border-radius:8px;font-size:.83rem;font-family:monospace;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto"></div>
+  <div class="modal-actions">
+    <button class="btn" onclick="document.getElementById('emailCodeTestModal').classList.remove('show')">关闭</button>
+    <button class="btn btn-blue" id="emailCodeTestBtn" onclick="runEmailCodeTest()">发送验证码</button>
+  </div>
+</div>
+</div>
+
 <!-- Activation Modal (self-verification on first login) -->
 <div class="modal-bg" id="activationModal" style="z-index:9999">
 <div class="modal" style="max-width:420px">
@@ -415,10 +431,28 @@ tr:hover td{background:var(--sky-light)}
     <div class="ts-week-toggle" style="flex-shrink:0">
       <button id="jobTabOpen" class="active" onclick="setJobTab('open')">在招职位</button>
       <button id="jobTabHistory" onclick="setJobTab('history')">历史职位</button>
+      <button id="jobTabApps" onclick="setJobTab('applications')">工人申请 <span id="jobAppsBadge" style="display:none;background:var(--orange);color:#fff;border-radius:10px;font-size:.7rem;padding:1px 6px;margin-left:3px"></span></button>
     </div>
     <input type="text" id="jobSearch" placeholder="搜索职位名称、公司、地点..." oninput="renderJobsFiltered()" style="flex:1">
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>人数</th><th>地点 / 时间</th><th>薪资</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div id="jobsSection">
+    <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>人数</th><th>地点 / 时间</th><th>薪资</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  </div>
+  <div id="jobAppsSection" style="display:none">
+    <div class="search-bar" style="margin-top:0;padding-top:0">
+      <input type="text" id="jobAppSearch" placeholder="搜索姓名、职位..." oninput="filterJobApps()" style="flex:1">
+      <select id="jobAppStatusFilter" onchange="filterJobApps()">
+        <option value="">全部状态</option>
+        <option value="pending">待审核</option>
+        <option value="approved">已通过</option>
+        <option value="rejected">未通过</option>
+      </select>
+    </div>
+    <div class="card">
+      <table><thead><tr><th>申请时间</th><th>申请人</th><th>申请职位</th><th>面试时间</th><th>期望薪资</th><th>留言</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="jobAppsTable"></tbody></table>
+    </div>
+  </div>
 </div>
 
 <!-- Partners -->
@@ -808,6 +842,7 @@ tr:hover td{background:var(--sky-light)}
       <button id="accTabCustomer" onclick="setAccTab('customer')">客户账户 Customer</button>
     </div>
     <div style="margin-left:auto;display:flex;gap:.5rem">
+      <button class="btn" style="background:#f0fff4;color:#2f9e44;border:1px solid #b2f2bb" onclick="openEmailCodeTestModal()">✉️ 测试邮箱</button>
       <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
       <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
@@ -1408,7 +1443,20 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="field-row">
     <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
-    <div class="field"><label>语言</label>
+    <div class="field"><label>结算周期</label>
+      <select id="jPayPeriod">
+        <option value="">不指定</option>
+        <option value="hourly">每小时 (Hourly)</option>
+        <option value="daily">每天 (Daily)</option>
+        <option value="weekly">每周 (Weekly)</option>
+        <option value="biweekly">每两周 (Bi-weekly)</option>
+        <option value="semimonthly">每半月 (Semi-monthly)</option>
+        <option value="monthly">每月 (Monthly)</option>
+      </select>
+    </div>
+  </div>
+  <div class="field-row">
+    <div class="field" style="flex:0 0 auto"><label>语言</label>
       <select id="jLang">
         <option value="en">English</option>
         <option value="zh">中文</option>
@@ -2123,6 +2171,70 @@ async function doActivate() {
   }
 }
 
+function openEmailCodeTestModal() {
+  document.getElementById('emailCodeTestAddr').value = '';
+  document.getElementById('emailCodeTestResult').style.display = 'none';
+  document.getElementById('emailCodeTestResult').textContent = '';
+  document.getElementById('emailCodeTestModal').classList.add('show');
+}
+
+async function runEmailCodeTest() {
+  const to = document.getElementById('emailCodeTestAddr').value.trim();
+  if (!to) { alert('请输入邮箱地址'); return; }
+  const btn = document.getElementById('emailCodeTestBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const resultEl = document.getElementById('emailCodeTestResult');
+  resultEl.style.display = 'none';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    let res;
+    try {
+      res = await fetch(API + '/admin/test-email-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+        body: JSON.stringify({ to }),
+        signal: ctrl.signal
+      });
+    } finally { clearTimeout(timer); }
+    const d = await res.json();
+    const cfg = d.configured || {};
+    let out = '── 邮件配置状态 ──\n';
+    out += `发送方式:         ${cfg.transport === 'sendgrid-api' ? '✅ SendGrid HTTP API' : cfg.transport === 'smtp' ? '✅ SMTP' : '❌ 未配置'}\n`;
+    out += `SendGrid API Key: ${cfg.sendgrid_api ? '✅ 已设置' : '未设置'}\n`;
+    out += `SMTP Host:        ${cfg.smtp_host || '未设置'}\n`;
+    out += `SMTP User:        ${cfg.smtp_user || '未设置'}\n`;
+    out += `SMTP Pass:        ${cfg.smtp_pass_set ? '✅ 已设置' : '未设置'}\n`;
+    out += `EMAIL_FROM:       ${cfg.email_from || '❌ 未设置'}\n`;
+    out += '\n── 发送结果 ──\n';
+    if (d.sent) {
+      out += `✅ 验证码邮件已发送！\n发送到: ${to}\n`;
+      if (d.messageId) out += `Message-ID: ${d.messageId}\n`;
+      if (d.response) out += `SMTP响应: ${d.response}\n`;
+      out += '\n收到邮件说明 SendGrid/SMTP 配置正确。\n没收到请检查垃圾邮件文件夹。';
+    } else {
+      out += `❌ 发送失败\n错误: ${d.error || '未知错误'}`;
+      if (d.smtp_responseCode) out += `\nSMTP 响应码: ${d.smtp_responseCode}`;
+      if (d.smtp_response) out += `\nSMTP 响应: ${d.smtp_response}`;
+      if (d.smtp_code) out += `\n错误类型: ${d.smtp_code}`;
+      out += '\n\n常见原因：\n• EMAIL_FROM 未在 SendGrid 中验证（Sender Authentication）\n• API Key 缺少 Mail Send 权限';
+    }
+    resultEl.style.background = d.sent ? '#f0fff4' : '#fff5f5';
+    resultEl.style.border = `1px solid ${d.sent ? '#9ae6b4' : '#feb2b2'}`;
+    resultEl.textContent = out;
+    resultEl.style.display = 'block';
+  } catch (e) {
+    resultEl.style.background = '#fff5f5';
+    resultEl.style.border = '1px solid #feb2b2';
+    const isTimeout = e.name === 'AbortError';
+    resultEl.textContent = isTimeout
+      ? '❌ 请求超时（25秒无响应）\n\n可能原因：\n• 服务器无法连接 SendGrid SMTP（被防火墙拦截）\n• 检查 SMTP_HOST / SMTP_PORT 是否正确\n• SendGrid SMTP: smtp.sendgrid.net:587'
+      : '网络错误：' + e.message;
+    resultEl.style.display = 'block';
+  }
+  btn.disabled = false; btn.textContent = '发送验证码';
+}
+
 function openSmsTestModal() {
   document.getElementById('smsTestPhone').value = '';
   document.getElementById('smsTestResult').style.display = 'none';
@@ -2386,7 +2498,61 @@ function setJobTab(tab) {
   _jobTab = tab;
   document.getElementById('jobTabOpen').classList.toggle('active', tab === 'open');
   document.getElementById('jobTabHistory').classList.toggle('active', tab === 'history');
-  renderJobsFiltered();
+  document.getElementById('jobTabApps').classList.toggle('active', tab === 'applications');
+  document.getElementById('jobsSection').style.display = tab === 'applications' ? 'none' : '';
+  document.getElementById('jobAppsSection').style.display = tab === 'applications' ? '' : 'none';
+  if (tab === 'applications') loadJobApps();
+  else renderJobsFiltered();
+}
+
+let _allJobApps = [];
+async function loadJobApps() {
+  const data = await api('/admin/job-applications');
+  _allJobApps = Array.isArray(data) ? data : [];
+  // Update badge count for pending
+  const pending = _allJobApps.filter(a => a.status === 'pending').length;
+  const badge = document.getElementById('jobAppsBadge');
+  if (pending > 0) { badge.style.display = ''; badge.textContent = pending; }
+  else { badge.style.display = 'none'; }
+  filterJobApps();
+}
+
+function filterJobApps() {
+  const q = (document.getElementById('jobAppSearch')?.value || '').toLowerCase();
+  const sf = document.getElementById('jobAppStatusFilter')?.value || '';
+  let list = _allJobApps;
+  if (q) list = list.filter(a =>
+    (a.first_name||''+a.last_name||''+a.username||'').toLowerCase().includes(q) ||
+    (a.job_title||'').toLowerCase().includes(q)
+  );
+  if (sf) list = list.filter(a => a.status === sf);
+  renderJobApps(list);
+}
+
+function renderJobApps(list) {
+  const statusLabel = { pending:'待审核', approved:'已通过', rejected:'未通过' };
+  const statusCls   = { pending:'badge-pending', approved:'badge-approved', rejected:'badge-rejected' };
+  document.getElementById('jobAppsTable').innerHTML = list.length ? list.map(a => {
+    const name = a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : (a.username || '—');
+    return `<tr>
+      <td style="font-size:.8rem">${(a.created_at||'').slice(0,10)}</td>
+      <td><strong>${esc(name)}</strong></td>
+      <td>${esc(a.job_title||'—')}<br><small style="color:var(--gray-400)">${esc(a.job_location||'')}</small></td>
+      <td style="font-size:.83rem">${esc(a.interview_availability||'—')}</td>
+      <td style="font-size:.83rem">${esc(a.expected_pay||'—')}</td>
+      <td style="font-size:.82rem;max-width:180px;white-space:normal;color:var(--gray-600)">${esc(a.applicant_message||'—')}</td>
+      <td><span class="badge ${statusCls[a.status]||'badge-pending'}">${statusLabel[a.status]||a.status}</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm btn-green" onclick="updateJobApp(${a.id},'approved')">通过</button>
+        <button class="btn btn-sm btn-red" onclick="updateJobApp(${a.id},'rejected')">拒绝</button>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">暂无工人申请记录</td></tr>';
+}
+
+async function updateJobApp(id, status) {
+  await api(`/admin/job-applications/${id}`, { method:'PUT', body: JSON.stringify({ status }) });
+  loadJobApps();
 }
 
 function renderJobsFiltered() {
@@ -2451,6 +2617,13 @@ async function loadJobs() {
   const res = await api('/admin/jobs');
   _allJobs = Array.isArray(res) ? res : [];
   renderJobsFiltered();
+  // Refresh badge without switching tab
+  api('/admin/job-applications').then(data => {
+    if (!Array.isArray(data)) return;
+    const pending = data.filter(a => a.status === 'pending').length;
+    const badge = document.getElementById('jobAppsBadge');
+    if (badge) { badge.style.display = pending > 0 ? '' : 'none'; if (pending > 0) badge.textContent = pending; }
+  });
 }
 
 async function openJobModal(job) {
@@ -2473,6 +2646,7 @@ async function openJobModal(job) {
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jLocation').value = job ? job.location : '';
   document.getElementById('jPay').value = job ? job.pay : '';
+  document.getElementById('jPayPeriod').value = job ? (job.pay_period || '') : '';
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
@@ -2554,6 +2728,7 @@ function randomFillJob() {
   document.getElementById('jType').value           = r.type;
   document.getElementById('jLocation').value       = r.location;
   document.getElementById('jPay').value            = r.pay;
+  document.getElementById('jPayPeriod').value      = r.pay_period || '';
   document.getElementById('jLang').value           = r.lang;
   document.getElementById('jWorkAuth').value       = r.work_auth || '';
   document.getElementById('jEmploymentType').value = r.employment_type || '';
@@ -2766,6 +2941,7 @@ async function saveJob() {
     type: document.getElementById('jType').value,
     location: document.getElementById('jLocation').value,
     pay: document.getElementById('jPay').value,
+    pay_period: document.getElementById('jPayPeriod').value,
     lang: langVal,
     lang_name: langNames[langVal] || langVal,
     work_auth: document.getElementById('jWorkAuth').value,
@@ -3263,8 +3439,17 @@ function filterAssignments() {
 }
 
 const payTypeLabel = t => ({ hourly:'时薪', salary:'月薪', annual:'年薪', per_piece:'计件' }[t] || t);
+const DS_STATUS_LABELS = { sent:'已发送(待签)', delivered:'已送达', completed:'双方已签', declined:'已拒签', voided:'已撤销' };
+const DS_STATUS_COLORS = { sent:'#F59E0B', delivered:'#3B82F6', completed:'#10B981', declined:'#EF4444', voided:'#6B7280' };
+
 function renderAssignments(assigns) {
-  document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => `<tr>
+  document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => {
+    const dsLabel = a.ds_status ? (DS_STATUS_LABELS[a.ds_status] || a.ds_status) : '';
+    const dsColor = DS_STATUS_COLORS[a.ds_status] || '#6B7280';
+    const dsBadge = a.ds_envelope_id
+      ? `<br><span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer" onclick="refreshDsStatus('assignment',${a.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
+      : (a.contract_file ? `<br><button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-top:2px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('assignment',${a.id},'${esc(a.inquiry_email||'')}','${esc(a.inquiry_name||'')}')">✍ DocuSign</button>` : '');
+    return `<tr>
     <td>${new Date(a.assigned_at).toLocaleDateString()}${a.start_date ? '<br><span style="font-size:.72rem;color:var(--gray-400)">开始：' + a.start_date + '</span>' : ''}</td>
     <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
     <td>${esc(a.job_title || '未知职位')}<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(a.job_location || '')}</span></td>
@@ -3272,6 +3457,7 @@ function renderAssignments(assigns) {
       <span class="badge" style="background:${a.contract_type==='1099'?'var(--orange-light,#fff3e0)':'var(--sky-light)'};color:${a.contract_type==='1099'?'#e65100':'var(--blue)'};font-weight:700">${esc(a.contract_type||'W2')}</span>
       ${a.pay_rate ? '<br><span style="font-size:.8rem;font-weight:600">' + esc(a.pay_rate) + '</span>' : ''}
       ${a.pay_type ? '<br><span style="font-size:.72rem;color:var(--gray-400)">' + payTypeLabel(a.pay_type) + '</span>' : ''}
+      ${dsBadge}
     </td>
     <td style="font-size:.78rem;max-width:160px;white-space:normal">${esc(a.benefits || '—')}</td>
     <td><span class="badge badge-${a.status}">${statusLabel(a.status)}</span></td>
@@ -3279,7 +3465,40 @@ function renderAssignments(assigns) {
       <button class="btn btn-sm" onclick='editAssignment(${JSON.stringify(a).replace(/'/g,"&#39;")})'>编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteAssignment(${a.id})">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+  </tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+}
+
+async function sendForDocuSign(type, id, defaultEmail, defaultName) {
+  const email = prompt(`请输入${type === 'assignment' ? '工人' : '合作方'}的邮箱地址：`, defaultEmail || '');
+  if (email === null) return;
+  if (!email.trim()) return alert('邮箱不能为空');
+  const name = prompt('请输入姓名（可选）：', defaultName || '');
+  if (name === null) return;
+  const url = type === 'assignment' ? `/admin/assignments/${id}/send-docusign` : `/admin/partner-files/${id}/send-docusign`;
+  const body = type === 'assignment' ? { worker_email: email.trim(), worker_name: name.trim() } : { partner_email: email.trim(), partner_name: name.trim() };
+  try {
+    const r = await api(url, { method: 'POST', body: JSON.stringify(body) });
+    if (r.success) {
+      alert(`DocuSign 已发送！签署邀请已发至双方邮箱。\nEnvelope ID: ${r.envelopeId}`);
+      if (type === 'assignment') loadAssignments();
+    } else { alert('发送失败：' + (r.error || '未知错误')); }
+  } catch (e) { alert('发送失败：' + e.message); }
+}
+
+async function refreshDsStatus(type, id, badgeEl) {
+  const url = type === 'assignment' ? `/admin/assignments/${id}/docusign-status` : `/admin/partner-files/${id}/docusign-status`;
+  try {
+    const prev = badgeEl ? badgeEl.textContent : '';
+    if (badgeEl) badgeEl.textContent = '⟳ 刷新中…';
+    const r = await api(url);
+    const label = DS_STATUS_LABELS[r.status] || r.status || '未知';
+    const color = DS_STATUS_COLORS[r.status] || '#6B7280';
+    const s1 = r.workerSigned || r.partnerSigned ? '✓ 一方已签' : '○ 待签署';
+    const s2 = r.companySigned ? '✓ 公司已签' : '○ 公司待签';
+    if (badgeEl) { badgeEl.style.color = color; badgeEl.style.background = color + '20'; badgeEl.textContent = `✍ ${label}`; badgeEl.title = `${s1} | ${s2}  (点击刷新)`; }
+    if (r.status === 'completed') alert(`双方均已签署完成！\n一方: ${r.workerSigned || r.partnerSigned || '—'}\n公司: ${r.companySigned || '—'}`);
+  } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
 }
 
 // Cache for assignment search
@@ -3725,12 +3944,20 @@ function closePartnerModal() { guardClose('partnerModal'); }
 async function loadPartnerFiles(pid) {
   const files = await api(`/admin/partners/${pid}/files`);
   const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
-  document.getElementById('pFilesList').innerHTML = files.length ? files.map(f=>
-    `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||'文件')}</a>
+  const signable = new Set(['contract','agreement']);
+  document.getElementById('pFilesList').innerHTML = files.length ? files.map(f=>{
+    const dsLabel = f.ds_status ? (DS_STATUS_LABELS[f.ds_status] || f.ds_status) : '';
+    const dsColor = DS_STATUS_COLORS[f.ds_status] || '#6B7280';
+    const dsBtn = f.ds_envelope_id
+      ? `<span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer;margin-left:.4rem" onclick="refreshDsStatus('partnerfile',${f.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
+      : (signable.has(f.file_type) && f.file_path ? `<button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-left:.4rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('partnerfile',${f.id},'','')">✍ DocuSign</button>` : '');
+    return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||'文件')}</a>
       <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span>
       <span style="font-size:.72rem;color:var(--gray-400)">${esc(f.file_label)}</span>
+      ${dsBtn}
       <button class="btn btn-sm btn-red" style="margin-left:auto" onclick="deletePartnerFile(${f.id},${pid})">删除</button>
-    </div>`).join('') : '<p style="font-size:.82rem;color:var(--gray-400)">暂无文件</p>';
+    </div>`;
+  }).join('') : '<p style="font-size:.82rem;color:var(--gray-400)">暂无文件</p>';
 }
 
 async function uploadPartnerFile() {
@@ -3966,7 +4193,7 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
-function closeEmpModal() { guardClose('empModal'); }
+function closeEmpModal() { _convertFromWorkerId = null; guardClose('empModal'); }
 
 function randomFillEmployee() {
   const firsts = ['John','Maria','Wei','Carlos','Anna','David','Linh','Ahmed','Sofia','James','Yuki','Jose','Emily','Marco','Mei'];
@@ -4143,9 +4370,21 @@ async function saveEmployee() {
       clearModalState('empModal');
       closeEmpModal();
       await loadEmployees();
-      showToast(id
-        ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
-        : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r2.employee_id}`);
+      // If this was a "convert worker → employee" action, link the account
+      if (!id && _convertFromWorkerId && r2.id) {
+        await api(`/admin/worker-accounts/${_convertFromWorkerId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ employee_id: r2.id })
+        });
+        _convertFromWorkerId = null;
+        await loadWorkerAccounts();
+        showToast(`✅ 员工「${data.first_name} ${data.last_name}」创建成功（员工号：${r2.employee_id}），工人账户已自动绑定`);
+      } else {
+        _convertFromWorkerId = null;
+        showToast(id
+          ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
+          : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r2.employee_id}`);
+      }
     } else alert(r2.error || '保存失败');
   }
   const r = await doSave(data);
@@ -5856,6 +6095,7 @@ async function loadWorkerAccounts() {
     <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
       ${!w.active?`<button class="btn btn-sm btn-green" onclick="activateWorkerAccount(${w.id})">激活</button><button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="resendWorkerVerify(${w.id})">重发验证</button>`:''}
       ${w.active?(w.suspended?`<button class="btn btn-sm btn-green" onclick="suspendWorkerAccount(${w.id},0)">恢复</button>`:`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendWorkerAccount(${w.id},1)">暂停</button>`):''}
+      ${!w.employee_id?`<button class="btn btn-sm" style="background:var(--green-light,#f0fdf4);color:var(--green);border:1px solid #bbf7d0" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>转为正式员工</button>`:''}
       <button class="btn btn-sm btn-blue" onclick="openResetPwdModal('worker',${w.id},'${esc(w.name||w.username)}')">改密码</button>
       <button class="btn btn-sm" onclick="editWorkerAccount(${w.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">删除</button>
@@ -5880,6 +6120,38 @@ async function editWorkerAccount(id) {
   const rows = await api('/admin/worker-accounts');
   const w = rows.find(r=>r.id===id);
   if (w) openWorkerAccountModal(w);
+}
+
+let _convertFromWorkerId = null;
+
+function convertWorkerToEmployee(w) {
+  _convertFromWorkerId = w.id;
+
+  // Smart name split: space → English order; no space → Chinese (first char = surname)
+  const fullName = (w.name || w.username || '').trim();
+  let firstName = '', lastName = '';
+  if (fullName.includes(' ')) {
+    const parts = fullName.split(/\s+/);
+    lastName  = parts[parts.length - 1];
+    firstName = parts.slice(0, -1).join(' ');
+  } else if (fullName.length >= 2) {
+    lastName  = fullName[0];
+    firstName = fullName.slice(1);
+  } else {
+    firstName = fullName;
+  }
+
+  // Open new-employee modal and pre-fill known fields
+  openEmpModal(null);
+  document.getElementById('eFirst').value = firstName;
+  document.getElementById('eLast').value  = lastName;
+  document.getElementById('ePhone').value = w.phone || '';
+  document.getElementById('eEmail').value = w.email || '';
+  document.getElementById('eDob').value   = w.dob   || '';
+  document.getElementById('eHire').value  = new Date().toISOString().slice(0, 10);
+
+  // Update modal title to signal origin
+  document.getElementById('empModalTitle').textContent = '新增正式员工（来自工人账户）';
 }
 
 async function saveWorkerAccount() {

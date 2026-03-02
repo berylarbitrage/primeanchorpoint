@@ -169,6 +169,44 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Apply Job Modal -->
+<div class="modal-overlay" id="applyModal" style="display:none;align-items:center;justify-content:center">
+  <div class="modal-box" style="max-width:460px;width:92%">
+    <h3 style="margin:0 0 .25rem;color:var(--blue);font-size:1.05rem">申请职位 / Apply for Position</h3>
+    <div id="applyJobLabel" style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem"></div>
+    <div class="modal-msg" id="applyMsg"></div>
+
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
+        📅 面试时间 / Interview Availability <span style="color:#dc2626">*</span>
+      </label>
+      <input id="applyAvailability" type="text" placeholder="例：周一至周五 9am–5pm，或具体日期 / e.g. Weekdays 9am–5pm"
+        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
+        💰 期望薪资 / Expected Pay
+      </label>
+      <input id="applyExpectedPay" type="text" placeholder="例：$18/hr 或 $3,500/月 / e.g. $18/hr or $3,500/mo"
+        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:1.1rem">
+      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
+        💬 想对我们说的话 / Message to HR
+      </label>
+      <textarea id="applyMessage" rows="3" placeholder="介绍一下您的相关经验、期待，或任何想告诉我们的 / Introduce yourself, share your expectations, or anything you'd like us to know"
+        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none;resize:vertical;line-height:1.5"></textarea>
+    </div>
+
+    <div style="display:flex;gap:.6rem;justify-content:flex-end">
+      <button class="modal-btn modal-btn-secondary" onclick="closeApplyModal()">取消 / Cancel</button>
+      <button class="modal-btn modal-btn-primary" id="applySubmitBtn" onclick="submitApply()">提交申请 / Submit</button>
+    </div>
+  </div>
+</div>
+
 <!-- App -->
 <div id="app">
   <div class="header">
@@ -191,7 +229,7 @@ tr:last-child td{border-bottom:none}
     <!-- Jobs -->
     <div id="tabJobs">
       <div class="card" style="display:flex;align-items:center;gap:1rem;padding:.85rem 1.25rem">
-        <input type="text" id="jobSearchInput" placeholder="搜索职位、地点、公司..." oninput="filterJobs()" style="flex:1;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem">
+        <input type="text" id="jobSearchInput" placeholder="搜索职位、地点..." oninput="filterJobs()" style="flex:1;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem">
         <select id="jobTypeFilter" onchange="filterJobs()" style="padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem">
           <option value="">全部类型</option>
           <option value="全职">全职</option>
@@ -220,7 +258,7 @@ tr:last-child td{border-bottom:none}
     <div id="tabApplications" style="display:none">
       <div class="card">
         <h2>我的申请记录</h2>
-        <table><thead><tr><th>职位</th><th>地点</th><th>公司</th><th>薪资</th><th>申请状态</th><th>申请时间</th></tr></thead>
+        <table><thead><tr><th>职位</th><th>地点</th><th>薪资</th><th>申请状态</th><th>申请时间</th></tr></thead>
         <tbody id="applicationsTable"></tbody></table>
       </div>
     </div>
@@ -553,7 +591,7 @@ let _interviewPassed = false;
 
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
-  document.getElementById('app').style.display = '';
+  document.getElementById('app').style.display = 'block';
   const [me, interview] = await Promise.all([wApi('/me'), wApi('/interview')]);
   if (!me) return;
   const name = me.employee ? `${me.employee.first_name} ${me.employee.last_name}` : me.account.username;
@@ -702,7 +740,7 @@ function filterJobs() {
   const q = document.getElementById('jobSearchInput').value.toLowerCase();
   const type = document.getElementById('jobTypeFilter').value;
   renderJobs(_allJobs.filter(j =>
-    (!q || (j.title+j.location+j.company_name).toLowerCase().includes(q)) &&
+    (!q || (j.title+j.location).toLowerCase().includes(q)) &&
     (!type || (j.type||'').includes(type))
   ));
 }
@@ -714,8 +752,8 @@ function renderJobs(jobs) {
       <div style="flex:1;min-width:0">
         <div class="job-title">${esc(j.title)} ${j.urgent?'<span class="badge badge-urgent">急聘</span>':''} ${j.applied?'<span class="badge badge-applied">✓ 已申请</span>':''}</div>
         <div class="job-meta">
-          ${j.company_name?`<strong>${esc(j.company_name)}</strong> · `:''}<span>${esc(j.location)}</span>
-          ${j.pay?` · 薪资: ${esc(j.pay)}`:''}
+          <span>${esc(j.location)}</span>
+          ${j.pay?` · 薪资: ${esc(j.pay)}${j.pay_period?` <span style="font-size:.78rem;color:var(--gray-400)">(${({'hourly':'每小时','daily':'每天','weekly':'每周','biweekly':'每两周','semimonthly':'每半月','monthly':'每月'})[j.pay_period]||j.pay_period})</span>`:''}` :''}
           ${j.type?` · ${esc(j.type)}`:''}
           ${j.employment_type?` · ${esc(j.employment_type)}`:''}
         </div>
@@ -732,12 +770,59 @@ function renderJobs(jobs) {
     </div>`).join('') : '<div class="empty">暂无在招职位</div>';
 }
 
-async function applyJob(jobId) {
-  if (!confirm('确认申请此职位？')) return;
-  const r = await wApi(`/apply/${jobId}`, { method:'POST', body:'{}' });
+let _applyJobId = null;
+
+function applyJob(jobId) {
+  _applyJobId = jobId;
+  // Fill in job label from cached list
+  const job = (_allJobs || []).find(j => j.id === jobId);
+  document.getElementById('applyJobLabel').textContent = job
+    ? `${job.title}${job.company_name ? '  ·  ' + job.company_name : ''}${job.location ? '  ·  ' + job.location : ''}`
+    : '';
+  document.getElementById('applyAvailability').value = '';
+  document.getElementById('applyExpectedPay').value = '';
+  document.getElementById('applyMessage').value = '';
+  document.getElementById('applyMsg').className = 'modal-msg';
+  document.getElementById('applyModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('applyAvailability').focus(), 100);
+}
+
+function closeApplyModal() {
+  document.getElementById('applyModal').style.display = 'none';
+  _applyJobId = null;
+}
+
+async function submitApply() {
+  const availability = document.getElementById('applyAvailability').value.trim();
+  if (!availability) {
+    const el = document.getElementById('applyMsg');
+    el.className = 'modal-msg show error';
+    el.textContent = '请填写面试时间 / Please enter your interview availability';
+    return;
+  }
+  const btn = document.getElementById('applySubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '提交中…';
+  const r = await wApi(`/apply/${_applyJobId}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      interview_availability: availability,
+      expected_pay: document.getElementById('applyExpectedPay').value.trim(),
+      applicant_message: document.getElementById('applyMessage').value.trim()
+    })
+  });
+  btn.disabled = false;
+  btn.textContent = '提交申请 / Submit';
   if (!r) return;
-  if (r.success) { showToast('✅ 申请成功！HR将与您联系'); loadJobs(); }
-  else alert(r.error || '申请失败');
+  if (r.success) {
+    closeApplyModal();
+    showToast('✅ 申请成功！HR将与您联系');
+    loadJobs();
+  } else {
+    const el = document.getElementById('applyMsg');
+    el.className = 'modal-msg show error';
+    el.textContent = r.error || '申请失败';
+  }
 }
 
 async function loadApplications() {
@@ -748,7 +833,6 @@ async function loadApplications() {
   document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map(a=>`<tr>
     <td><strong>${esc(a.title||'')}</strong></td>
     <td>${esc(a.location||'')}</td>
-    <td>${esc(a.company_name||'')}</td>
     <td>${esc(a.pay||'')}</td>
     <td><span style="font-weight:600;${statusColor[a.status]||''}">${statusLabel[a.status]||a.status}</span></td>
     <td>${(a.created_at||'').slice(0,10)}</td>
@@ -802,15 +886,35 @@ async function loadPunchStatus() {
   const statusEl = document.getElementById('punchStatus');
   const timeEl = document.getElementById('punchTime');
   const subEl = document.getElementById('punchSub');
+  const btn = document.getElementById('btnPunch');
+
+  if (s.no_employee) {
+    statusEl.innerHTML = '<span style="color:var(--red)">⚠ 账号未关联员工档案</span>';
+    timeEl.textContent = '—';
+    subEl.textContent = '请联系HR关联您的员工档案后方可打卡';
+    btn.disabled = true;
+    btn.textContent = '账号未关联，无法打卡';
+    btn.className = 'btn-punch';
+    return;
+  }
+
   if (s.clocked_in && s.open_entry) {
     const ci = new Date(s.open_entry.clock_in);
     statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
     timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+  } else if (!s.has_active_job) {
+    statusEl.innerHTML = '<span style="color:var(--orange)">● 未在班</span>';
+    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    subEl.textContent = '当前无有效工作安排';
+    btn.disabled = true;
+    btn.textContent = '暂无工作安排，无法打卡';
+    btn.className = 'btn-punch';
+    return;
   } else {
     statusEl.innerHTML = '<span style="color:var(--gray-400)">● 未在班</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = new Date().toLocaleDateString();
+    subEl.textContent = s.active_job ? s.active_job.title || new Date().toLocaleDateString() : new Date().toLocaleDateString();
   }
   enablePunchBtn(_gpsCoords !== null || document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
 }
@@ -822,6 +926,12 @@ async function doPunch() {
   const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null };
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { btn.disabled = false; enablePunchBtn(true); return; }
+  if (r.error) {
+    showToast('❌ ' + r.error, 'error');
+    btn.disabled = false;
+    await loadPunchStatus();
+    return;
+  }
   if (r.action === 'in') {
     const geoMsg = r.geo_verified ? (r.site_name ? ` (${r.site_name})` : ' (位置已验证)') : '';
     showToast(`✅ 上班打卡成功！${geoMsg}`, 'success');
@@ -842,6 +952,10 @@ async function loadTimeclock() {
   await loadPunchStatus();
   const entries = await wApi('/timeclock');
   if (!entries) return;
+  if (!Array.isArray(entries)) {
+    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="8" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录</td></tr>';
+    return;
+  }
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t=>{
     const ci = t.clock_in ? new Date(t.clock_in) : null;
     const co = t.clock_out ? new Date(t.clock_out) : null;
