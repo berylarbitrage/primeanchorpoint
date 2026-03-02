@@ -6525,7 +6525,7 @@ async function loadWorkerAccounts() {
     <td><strong>${esc(w.name||w.username)}</strong><br><span style="font-size:.72rem;color:var(--gray-400)">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</span></td>
     <td style="font-size:.8rem">${esc(w.phone||'')}</td>
     <td style="font-size:.78rem">${esc(w.email||'')}</td>
-    <td style="font-size:.8rem">${WORK_STATUS_MAP[w.work_status]||statusMap[w.work_status]||esc(w.work_status||'—')}</td>
+    <td style="font-size:.8rem">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
     <td style="font-size:.8rem">${w.interview_status ? IV_STATUS_MAP[w.interview_status]||w.interview_status : '<span style="color:var(--gray-300)">未安排</span>'}</td>
     <td style="white-space:nowrap">
       ${complianceBadge('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
