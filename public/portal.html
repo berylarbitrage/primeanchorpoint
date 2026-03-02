@@ -179,12 +179,12 @@ tr:last-child td{border-bottom:none}
     </div>
   </div>
   <div class="nav">
-    <button class="nav-btn active" onclick="showTab('jobs')">职位浏览</button>
-    <button class="nav-btn" onclick="showTab('interview')">预约面试</button>
-    <button class="nav-btn" onclick="showTab('applications')">我的申请</button>
-    <button class="nav-btn" onclick="showTab('timeclock')">我的打卡记录</button>
-    <button class="nav-btn" onclick="showTab('compliance')">合规文件</button>
-    <button class="nav-btn" onclick="showTab('profile')">我的信息</button>
+    <button class="nav-btn active" data-tab="jobs" onclick="showTab('jobs')">职位浏览</button>
+    <button class="nav-btn" data-tab="interview" onclick="showTab('interview')">预约面试</button>
+    <button class="nav-btn" data-tab="applications" onclick="showTab('applications')">我的申请</button>
+    <button class="nav-btn" data-tab="timeclock" onclick="showTab('timeclock')">我的打卡记录</button>
+    <button class="nav-btn" data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none">合规文件</button>
+    <button class="nav-btn" data-tab="profile" onclick="showTab('profile')">我的信息</button>
   </div>
   <div class="content">
 
@@ -549,13 +549,20 @@ async function resetPassword() {
   }
 }
 
+let _interviewPassed = false;
+
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = '';
-  const me = await wApi('/me');
+  const [me, interview] = await Promise.all([wApi('/me'), wApi('/interview')]);
   if (!me) return;
   const name = me.employee ? `${me.employee.first_name} ${me.employee.last_name}` : me.account.username;
   document.getElementById('workerNameDisplay').textContent = name;
+
+  // Only show compliance tab if interview passed
+  _interviewPassed = interview && interview.status === 'passed';
+  document.getElementById('navCompliance').style.display = _interviewPassed ? '' : 'none';
+
   loadJobs();
 }
 
@@ -563,7 +570,7 @@ function showTab(tab) {
   ['jobs','interview','applications','timeclock','compliance','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
-  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', ['jobs','interview','applications','timeclock','compliance','profile'][i]===tab));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
   else if (tab === 'compliance') loadCompliance();
@@ -577,6 +584,10 @@ async function loadInterview() {
     wApi('/interview'),
     wApi('/interview-slots')
   ]);
+
+  // Update compliance tab visibility
+  _interviewPassed = interview && interview.status === 'passed';
+  document.getElementById('navCompliance').style.display = _interviewPassed ? '' : 'none';
 
   // Status card
   const statusCard = document.getElementById('interviewStatusCard');
@@ -878,9 +889,17 @@ const STATUS_LABELS = { pending: '审核中', approved: '已通过', rejected: '
 const STATUS_CLASS = { pending: 'ci-pending', approved: 'ci-approved', rejected: 'ci-rejected', not_submitted: 'ci-not-submitted', ordered: 'ci-pending', completed: 'ci-approved', clear: 'ci-approved', flagged: 'ci-rejected' };
 
 async function loadCompliance() {
+  const grid = document.getElementById('complianceOverview');
+  if (!_interviewPassed) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2.5rem 1rem">
+      <div style="font-size:2.5rem;margin-bottom:.75rem">🔒</div>
+      <div style="font-weight:700;font-size:1.05rem;color:var(--gray-600);margin-bottom:.5rem">合规文件尚未开放</div>
+      <div style="font-size:.85rem;color:var(--gray-400)">请先完成面试，面试通过后 HR 会发送链接，届时即可提交合规文件。</div>
+    </div>`;
+    return;
+  }
   const data = await wApi('/compliance');
   if (!data) return;
-  const grid = document.getElementById('complianceOverview');
   const docs = data.documents || {};
   const bg = data.background_check;
 
