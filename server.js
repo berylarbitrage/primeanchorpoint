@@ -892,6 +892,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
 )`);
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 1"); } catch {}
 
 // ─── Worker Skills ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
@@ -1642,7 +1643,7 @@ function getOnboardingTasks(workerId) {
   const rowMap = {};
   rows.forEach(r => { rowMap[r.task_key] = r; });
   return ONBOARDING_STEPS.map((s, idx) => {
-    const row = rowMap[s.key] || { status: 'not_initialized', admin_note: '', action_url: '', completed_at: null };
+    const row = rowMap[s.key] || { status: 'not_initialized', admin_note: '', action_url: '', completed_at: null, visible_to_worker: 1 };
     // compute locked: previous REQUIRED step must be completed/waived
     let locked = false;
     if (idx > 0) {
@@ -1687,11 +1688,20 @@ app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res
   res.json({ success: true });
 });
 
-// Worker: view own onboarding tasks
+// Admin: toggle task visibility on worker portal
+app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmin, (req, res) => {
+  const { visible } = req.body;
+  db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
+    .run(visible ? 1 : 0, req.params.id, req.params.key);
+  res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
+});
+
+// Worker: view own onboarding tasks (only visible ones)
 app.get('/api/worker/onboarding', requireWorker, (req, res) => {
   const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.workerId);
   if (!existing) initWorkerOnboarding(req.workerId);
-  res.json(getOnboardingTasks(req.workerId));
+  const tasks = getOnboardingTasks(req.workerId).filter(t => t.visible_to_worker !== 0);
+  res.json(tasks);
 });
 
 // Worker: submit a task (marks as submitted, pending admin review)
