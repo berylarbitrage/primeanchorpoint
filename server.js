@@ -459,6 +459,10 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN job_status TEXT DEFAULT 'open'`); } c
 try { db.exec(`ALTER TABLE jobs ADD COLUMN close_reason TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN close_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN headcount INTEGER DEFAULT 1`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN pay_period TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_availability TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE job_applications ADD COLUMN applicant_message TEXT DEFAULT ''`); } catch(e) {}
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
@@ -1716,13 +1720,13 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   const jobStatus = d.job_status || 'open';
   const stmt = db.prepare(`INSERT INTO jobs
-    (partner_id, title, type, location, pay, lang, lang_name, description, urgent,
+    (partner_id, title, type, location, pay, pay_period, lang, lang_name, description, urgent,
      work_auth, benefits, schedule, company_id, company_name, employment_type,
      work_days, work_start, work_end, schedule_days, schedule_start, schedule_end,
      job_status, active, close_reason, close_note, headcount)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
-    d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+    d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
     d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
     d.company_id||null, d.company_name||'', d.employment_type||'',
     d.work_days||'', d.work_start||'', d.work_end||'',
@@ -1737,13 +1741,13 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
   const d = req.body;
   const old = db.prepare('SELECT * FROM jobs WHERE id=?').get(req.params.id);
   const jobStatus = d.job_status || 'open';
-  db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?,
+  db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, pay_period=?, lang=?, lang_name=?,
     description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
     company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?,
     schedule_days=?, schedule_start=?, schedule_end=?,
     job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
     .run(
-      d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+      d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
       d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
       d.work_auth||'', d.benefits||'', d.schedule||'',
       d.company_id||null, d.company_name||'', d.employment_type||'',
@@ -3097,7 +3101,14 @@ app.get('/api/worker/me', requireWorker, (req, res) => {
 });
 
 app.get('/api/worker/jobs', requireWorker, (req, res) => {
-  const jobs = db.prepare('SELECT id, title, type, location, pay, work_auth, benefits, work_days, work_start, work_end, employment_type, company_name, description, urgent FROM jobs WHERE active=1 ORDER BY created_at DESC').all();
+  const jobs = db.prepare(`
+    SELECT j.id, j.title, j.type, j.location, j.pay, j.pay_period,
+           j.work_auth, j.benefits, j.work_days, j.work_start, j.work_end,
+           j.employment_type, j.description, j.urgent,
+           COALESCE(NULLIF(j.company_name,''), p.name, '') AS company_name
+    FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id
+    WHERE j.active=1 ORDER BY j.created_at DESC
+  `).all();
   const applied = db.prepare('SELECT job_id FROM job_applications WHERE worker_account_id=?').all(req.workerId).map(r => r.job_id);
   res.json(jobs.map(j => ({ ...j, applied: applied.includes(j.id) })));
 });
@@ -3106,7 +3117,9 @@ app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
   const job = db.prepare('SELECT id FROM jobs WHERE id=? AND active=1').get(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found or no longer active' });
   try {
-    db.prepare('INSERT INTO job_applications (job_id, worker_account_id, notes) VALUES (?,?,?)').run(req.params.jobId, req.workerId, req.body.notes || '');
+    const { notes, interview_availability, expected_pay, applicant_message } = req.body;
+    db.prepare(`INSERT INTO job_applications (job_id, worker_account_id, notes, interview_availability, expected_pay, applicant_message)
+      VALUES (?,?,?,?,?,?)`).run(req.params.jobId, req.workerId, notes||'', interview_availability||'', expected_pay||'', applicant_message||'');
     res.json({ success: true });
   } catch { res.status(400).json({ error: 'Already applied to this job' }); }
 });
@@ -3697,6 +3710,36 @@ app.post('/api/register/verify', async (req, res) => {
   const token = crypto.randomBytes(32).toString('hex');
   workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
   res.json({ success: true, token, message: 'Verification successful' });
+});
+
+// Verify one step at a time (phone first, then email)
+app.post('/api/register/verify-step', (req, res) => {
+  const { account_id, type, code } = req.body;
+  if (!account_id || !type || !code) return res.status(400).json({ error: 'account_id, type, and code required' });
+  if (!['phone', 'email'].includes(type)) return res.status(400).json({ error: 'type must be phone or email' });
+  const acc = db.prepare('SELECT id, active, employee_id FROM worker_accounts WHERE id=?').get(account_id);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  if (acc.active) return res.status(400).json({ error: 'Account already verified' });
+  const now = new Date().toISOString();
+  const vc = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?')
+    .get(account_id, type, code, now);
+  if (!vc) return res.status(400).json({
+    error: type === 'phone'
+      ? '手机验证码错误或已过期 / Invalid or expired phone code'
+      : '邮箱验证码错误或已过期 / Invalid or expired email code'
+  });
+  // This step verified — remove its code
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
+  // Check remaining steps
+  const remaining = db.prepare('SELECT type FROM verification_codes WHERE worker_account_id=?').all(account_id);
+  if (remaining.length === 0) {
+    // All done — activate account and auto-login
+    db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
+    const token = crypto.randomBytes(32).toString('hex');
+    workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+    return res.json({ success: true, all_done: true, token });
+  }
+  return res.json({ success: true, all_done: false, next_steps: remaining.map(r => r.type) });
 });
 
 app.post('/api/register/enterprise', (req, res) => {
