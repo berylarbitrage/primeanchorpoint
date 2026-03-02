@@ -11,11 +11,16 @@
 body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135deg,#f0f7ff 0%,#e0f0ff 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1.5rem}
 .wrap{width:100%;max-width:480px}
 .logo{text-align:center;margin-bottom:1.5rem}
+.logo img{height:56px;margin-bottom:.5rem}
 .logo h1{font-size:1.4rem;font-weight:800;color:var(--blue);letter-spacing:-.5px}
 .logo h1 span{color:var(--sky)}
 .logo p{color:var(--gray-400);font-size:.83rem;margin-top:.2rem}
 .card{background:#fff;border-radius:16px;padding:2rem;box-shadow:0 4px 24px rgba(14,165,233,.1)}
 
+.pw-wrap{position:relative;display:flex;align-items:center}
+.pw-wrap input{flex:1;padding-right:2.5rem}
+.pw-eye{position:absolute;right:.6rem;background:none;border:none;cursor:pointer;font-size:1.1rem;padding:0;line-height:1;color:var(--gray-400);opacity:.45}
+.pw-eye:hover{opacity:1}
 .lang-switcher{display:flex;gap:.3rem;justify-content:flex-end;margin-bottom:.75rem}
 .lang-btn{background:none;border:1px solid var(--gray-200);border-radius:20px;padding:.22rem .75rem;font-size:.75rem;font-weight:600;color:var(--gray-500);cursor:pointer;transition:all .15s}
 .lang-btn:hover{border-color:var(--sky);color:var(--sky)}
@@ -77,6 +82,7 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
     <button class="lang-btn" id="langEs" onclick="setLang('es')">Español</button>
   </div>
   <div class="logo">
+    <img src="/logo.svg" alt="Prime Anchor Point">
     <h1>Prime <span>Anchor</span>Point</h1>
     <p id="logoSubtitle"></p>
   </div>
@@ -109,11 +115,13 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <div class="field-row">
         <div class="field">
           <label id="lWPhone"></label>
-          <input type="tel" id="wPhone">
+          <input type="tel" id="wPhone" onblur="checkDuplicate('phone')" autocomplete="tel">
+          <div class="field-hint" id="dupPhone" style="color:var(--red);display:none"></div>
         </div>
         <div class="field">
           <label id="lWEmail"></label>
-          <input type="email" id="wEmail">
+          <input type="email" id="wEmail" onblur="checkDuplicate('email')" autocomplete="new-email">
+          <div class="field-hint" id="dupEmail" style="color:var(--red);display:none"></div>
         </div>
       </div>
 
@@ -135,12 +143,18 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 
       <div class="field">
         <label id="lWPwd"></label>
-        <input type="password" id="wPassword">
+        <div class="pw-wrap">
+          <input type="password" id="wPassword" autocomplete="new-password">
+          <button type="button" class="pw-eye" onclick="togglePw('wPassword',this)" tabindex="-1">&#128065;</button>
+        </div>
       </div>
 
       <div class="field">
         <label id="lWPwd2"></label>
-        <input type="password" id="wPassword2">
+        <div class="pw-wrap">
+          <input type="password" id="wPassword2" autocomplete="new-password">
+          <button type="button" class="pw-eye" onclick="togglePw('wPassword2',this)" tabindex="-1">&#128065;</button>
+        </div>
       </div>
 
       <button class="btn btn-submit" id="btnRegW" onclick="registerWorker()"></button>
@@ -358,6 +372,8 @@ const L = {
     errEmailCode:'请输入邮箱验证码',
     errNetwork:  '网络错误，请重试',
     errEinFmt:   'EIN 格式应为 XX-XXXXXXX（9位数字）',
+    dupPhone:    '该手机号已注册',
+    dupEmail:    '该邮箱已注册',
   },
   en: {
     title:            'Register — Prime Anchor Point',
@@ -457,6 +473,8 @@ const L = {
     errEmailCode:'Please enter email verification code',
     errNetwork:  'Network error, please try again',
     errEinFmt:   'EIN must be in XX-XXXXXXX format (9 digits)',
+    dupPhone:    'Phone number already registered',
+    dupEmail:    'Email already registered',
   },
   es: {
     title:            'Registro — Prime Anchor Point',
@@ -556,6 +574,8 @@ const L = {
     errEmailCode:'Ingrese el código de verificación del correo',
     errNetwork:  'Error de red, intente de nuevo',
     errEinFmt:   'EIN debe tener el formato XX-XXXXXXX (9 dígitos)',
+    dupPhone:    'Este teléfono ya está registrado',
+    dupEmail:    'Este correo ya está registrado',
   }
 };
 
@@ -712,6 +732,12 @@ function setLang(lang) {
   else if (_partnersCache === 'fail') renderPartnerDropdown('fail');
   else if (Array.isArray(_partnersCache)) renderPartnerDropdown(_partnersCache);
 
+  // Duplicate hints (update text if visible)
+  const dpEl = document.getElementById('dupPhone');
+  if (dpEl && dpEl.style.display !== 'none') dpEl.textContent = t('dupPhone');
+  const deEl = document.getElementById('dupEmail');
+  if (deEl && deEl.style.display !== 'none') deEl.textContent = t('dupEmail');
+
   // Position checkboxes
   renderPositions();
   // Status options
@@ -745,6 +771,38 @@ if (typeParam === 'enterprise') {
 } else if (typeParam === 'worker') {
   _typeOnly = 'worker';
   document.getElementById('typeSelector').style.display = 'none';
+}
+
+function togglePw(id, btn) {
+  const inp = document.getElementById(id);
+  if (inp.type === 'password') { inp.type = 'text'; btn.style.opacity = '1'; }
+  else { inp.type = 'password'; btn.style.opacity = '.45'; }
+}
+
+async function checkDuplicate(field) {
+  if (field === 'phone') {
+    const val = document.getElementById('wPhone').value.trim();
+    if (!val) return;
+    try {
+      const r = await fetch('/api/register/check?phone=' + encodeURIComponent(val.replace(/[\s\-()+]/g, '')));
+      const d = await r.json();
+      const el = document.getElementById('dupPhone');
+      el.style.display = d.taken ? '' : 'none';
+      el.textContent = d.taken ? t('dupPhone') : '';
+      document.getElementById('wPhone').style.borderColor = d.taken ? 'var(--red)' : '';
+    } catch {}
+  } else if (field === 'email') {
+    const val = document.getElementById('wEmail').value.trim();
+    if (!val) return;
+    try {
+      const r = await fetch('/api/register/check?email=' + encodeURIComponent(val));
+      const d = await r.json();
+      const el = document.getElementById('dupEmail');
+      el.style.display = d.taken ? '' : 'none';
+      el.textContent = d.taken ? t('dupEmail') : '';
+      document.getElementById('wEmail').style.borderColor = d.taken ? 'var(--red)' : '';
+    } catch {}
+  }
 }
 
 function formatEin(el) {
@@ -792,6 +850,8 @@ async function registerWorker() {
   if (!_selectedStatus) return showError(t('errStatus'));
   if (!pwd || pwd.length < 6) return showError(t('errPwd'));
   if (pwd !== pwd2) return showError(t('errPwdMatch'));
+  if (document.getElementById('dupPhone').style.display !== 'none') return showError(t('dupPhone'));
+  if (document.getElementById('dupEmail').style.display !== 'none') return showError(t('dupEmail'));
 
   const interests = Array.from(document.querySelectorAll('#posGrid input:checked')).map(c => c.value);
 
