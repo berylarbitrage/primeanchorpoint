@@ -412,10 +412,28 @@ tr:hover td{background:var(--sky-light)}
     <div class="ts-week-toggle" style="flex-shrink:0">
       <button id="jobTabOpen" class="active" onclick="setJobTab('open')">在招职位</button>
       <button id="jobTabHistory" onclick="setJobTab('history')">历史职位</button>
+      <button id="jobTabApps" onclick="setJobTab('applications')">工人申请 <span id="jobAppsBadge" style="display:none;background:var(--orange);color:#fff;border-radius:10px;font-size:.7rem;padding:1px 6px;margin-left:3px"></span></button>
     </div>
     <input type="text" id="jobSearch" placeholder="搜索职位名称、公司、地点..." oninput="renderJobsFiltered()" style="flex:1">
   </div>
-  <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>人数</th><th>地点 / 时间</th><th>薪资</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  <div id="jobsSection">
+    <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>人数</th><th>地点 / 时间</th><th>薪资</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+  </div>
+  <div id="jobAppsSection" style="display:none">
+    <div class="search-bar" style="margin-top:0;padding-top:0">
+      <input type="text" id="jobAppSearch" placeholder="搜索姓名、职位..." oninput="filterJobApps()" style="flex:1">
+      <select id="jobAppStatusFilter" onchange="filterJobApps()">
+        <option value="">全部状态</option>
+        <option value="pending">待审核</option>
+        <option value="approved">已通过</option>
+        <option value="rejected">未通过</option>
+      </select>
+    </div>
+    <div class="card">
+      <table><thead><tr><th>申请时间</th><th>申请人</th><th>申请职位</th><th>面试时间</th><th>期望薪资</th><th>留言</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="jobAppsTable"></tbody></table>
+    </div>
+  </div>
 </div>
 
 <!-- Partners -->
@@ -2230,7 +2248,61 @@ function setJobTab(tab) {
   _jobTab = tab;
   document.getElementById('jobTabOpen').classList.toggle('active', tab === 'open');
   document.getElementById('jobTabHistory').classList.toggle('active', tab === 'history');
-  renderJobsFiltered();
+  document.getElementById('jobTabApps').classList.toggle('active', tab === 'applications');
+  document.getElementById('jobsSection').style.display = tab === 'applications' ? 'none' : '';
+  document.getElementById('jobAppsSection').style.display = tab === 'applications' ? '' : 'none';
+  if (tab === 'applications') loadJobApps();
+  else renderJobsFiltered();
+}
+
+let _allJobApps = [];
+async function loadJobApps() {
+  const data = await api('/admin/job-applications');
+  _allJobApps = Array.isArray(data) ? data : [];
+  // Update badge count for pending
+  const pending = _allJobApps.filter(a => a.status === 'pending').length;
+  const badge = document.getElementById('jobAppsBadge');
+  if (pending > 0) { badge.style.display = ''; badge.textContent = pending; }
+  else { badge.style.display = 'none'; }
+  filterJobApps();
+}
+
+function filterJobApps() {
+  const q = (document.getElementById('jobAppSearch')?.value || '').toLowerCase();
+  const sf = document.getElementById('jobAppStatusFilter')?.value || '';
+  let list = _allJobApps;
+  if (q) list = list.filter(a =>
+    (a.first_name||''+a.last_name||''+a.username||'').toLowerCase().includes(q) ||
+    (a.job_title||'').toLowerCase().includes(q)
+  );
+  if (sf) list = list.filter(a => a.status === sf);
+  renderJobApps(list);
+}
+
+function renderJobApps(list) {
+  const statusLabel = { pending:'待审核', approved:'已通过', rejected:'未通过' };
+  const statusCls   = { pending:'badge-pending', approved:'badge-approved', rejected:'badge-rejected' };
+  document.getElementById('jobAppsTable').innerHTML = list.length ? list.map(a => {
+    const name = a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : (a.username || '—');
+    return `<tr>
+      <td style="font-size:.8rem">${(a.created_at||'').slice(0,10)}</td>
+      <td><strong>${esc(name)}</strong></td>
+      <td>${esc(a.job_title||'—')}<br><small style="color:var(--gray-400)">${esc(a.job_location||'')}</small></td>
+      <td style="font-size:.83rem">${esc(a.interview_availability||'—')}</td>
+      <td style="font-size:.83rem">${esc(a.expected_pay||'—')}</td>
+      <td style="font-size:.82rem;max-width:180px;white-space:normal;color:var(--gray-600)">${esc(a.applicant_message||'—')}</td>
+      <td><span class="badge ${statusCls[a.status]||'badge-pending'}">${statusLabel[a.status]||a.status}</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm btn-green" onclick="updateJobApp(${a.id},'approved')">通过</button>
+        <button class="btn btn-sm btn-red" onclick="updateJobApp(${a.id},'rejected')">拒绝</button>
+      </td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="8" class="empty">暂无工人申请记录</td></tr>';
+}
+
+async function updateJobApp(id, status) {
+  await api(`/admin/job-applications/${id}`, { method:'PUT', body: JSON.stringify({ status }) });
+  loadJobApps();
 }
 
 function renderJobsFiltered() {
@@ -2295,6 +2367,13 @@ async function loadJobs() {
   const res = await api('/admin/jobs');
   _allJobs = Array.isArray(res) ? res : [];
   renderJobsFiltered();
+  // Refresh badge without switching tab
+  api('/admin/job-applications').then(data => {
+    if (!Array.isArray(data)) return;
+    const pending = data.filter(a => a.status === 'pending').length;
+    const badge = document.getElementById('jobAppsBadge');
+    if (badge) { badge.style.display = pending > 0 ? '' : 'none'; if (pending > 0) badge.textContent = pending; }
+  });
 }
 
 async function openJobModal(job) {
