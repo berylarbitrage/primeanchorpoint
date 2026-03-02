@@ -1223,8 +1223,10 @@ const DOC_LABELS = {
   drivers_license: { zh: '身份证件验证', en: "ID Verification (Persona)", icon: '🪪' },
   w9: { zh: 'W-9 纳税人识别', en: 'W-9 Tax ID', icon: '📄' },
   ssn_card: { zh: '社安卡', en: 'SSN Card', icon: '🔒' },
-  work_permit: { zh: '工作许可', en: 'Work Permit', icon: '📃' },
-  background_check: { zh: '背景调查', en: 'Background Check', icon: '🔍' }
+  work_permit: { zh: '工作许可/EAD', en: 'Work Permit / EAD', icon: '📃' },
+  background_check: { zh: '背景调查', en: 'Background Check', icon: '🔍' },
+  employment_contract: { zh: '雇佣合同', en: 'Employment Contract', icon: '📝' },
+  gusto_payroll: { zh: 'Gusto 薪资设置', en: 'Gusto Payroll Setup', icon: '💰' }
 };
 
 const STATUS_LABELS = { pending: '审核中', approved: '已通过', rejected: '未通过', not_submitted: '未提交', ordered: '已下单', completed: '已完成', clear: '通过', flagged: '有记录' };
@@ -1244,15 +1246,40 @@ async function loadCompliance() {
   if (!data) return;
   const docs = data.documents || {};
   const bg = data.background_check;
+  const assignedTasks = data.assigned_tasks || [];
+
+  // If admin hasn't assigned any tasks, show a message
+  if (assignedTasks.length === 0) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2.5rem 1rem">
+      <div style="font-size:2.5rem;margin-bottom:.75rem">📋</div>
+      <div style="font-weight:700;font-size:1.05rem;color:var(--gray-600);margin-bottom:.5rem">暂无分配的合规任务</div>
+      <div style="font-size:.85rem;color:var(--gray-400)">HR 尚未为您分配合规任务，请耐心等待。<br>No compliance tasks have been assigned yet. Please wait for HR.</div>
+    </div>`;
+    return;
+  }
+
+  // Action mapping for each task type
+  const TASK_ACTIONS = {
+    i9: 'showI9Form()',
+    drivers_license: 'showDLForm()',
+    w9: 'showW9Form()',
+    ssn_card: null,
+    work_permit: null,
+    employment_contract: null,
+    gusto_payroll: null,
+    background_check: null
+  };
 
   let html = '';
-  // Core compliance items
-  const items = [
-    { type: 'i9', doc: docs.i9, action: 'showI9Form()' },
-    { type: 'drivers_license', doc: docs.drivers_license, action: 'showDLForm()' },
-    { type: 'w9', doc: docs.w9, action: 'showW9Form()' },
-    { type: 'background_check', doc: bg ? { status: bg.result || bg.status, created_at: bg.ordered_date || bg.completed_date } : null, action: null }
-  ];
+  // Build items from assigned tasks only
+  const items = assignedTasks
+    .filter(type => DOC_LABELS[type])
+    .map(type => {
+      if (type === 'background_check') {
+        return { type, doc: bg ? { status: bg.result || bg.status, created_at: bg.ordered_date || bg.completed_date } : null, action: TASK_ACTIONS[type] };
+      }
+      return { type, doc: docs[type], action: TASK_ACTIONS[type] };
+    });
 
   for (const item of items) {
     const label = DOC_LABELS[item.type];

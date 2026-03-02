@@ -1184,6 +1184,15 @@ tr:hover td{background:var(--sky-light)}
     <p style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">常见: 叉车 Forklift, 打包 Packaging, 清洁 Cleaning, 搬运 Loading, 仓储 Warehouse, 厨房 Kitchen, 电焊 Welding, 机械操作 Machine Op</p>
   </div>
 
+  <div style="margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <label style="font-size:.8rem;font-weight:600">分配合规任务 Assign Compliance Tasks</label>
+      <button class="btn btn-sm" onclick="wdSelectAllTasks()">全选/取消</button>
+    </div>
+    <div id="wdTasksList" style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem"></div>
+    <p style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">仅勾选的任务会显示在工人的 Portal 中 / Only checked tasks will appear in the worker's portal</p>
+  </div>
+
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('workerDetailModal')">取消</button>
     <button class="btn btn-blue" onclick="saveWorkerDetail()">保存</button>
@@ -6339,6 +6348,18 @@ async function sendResetLink(id, name) {
 // Worker detail modal for editing salary, payment, skills
 let _workerDetailId = null;
 let _workerDetailSkills = [];
+let _workerAssignedTasks = [];
+
+const ALL_TASK_TYPES = [
+  { key: 'drivers_license', label: '🪪 身份证件 ID Verification' },
+  { key: 'ssn_card', label: '🔒 社安卡 SSN Card' },
+  { key: 'work_permit', label: '📃 工作许可/EAD Work Permit' },
+  { key: 'i9', label: '📋 I-9 就业资格' },
+  { key: 'w9', label: '📄 W-9 纳税人识别' },
+  { key: 'employment_contract', label: '📝 雇佣合同 Employment Contract' },
+  { key: 'gusto_payroll', label: '💰 Gusto 薪资 Payroll' },
+  { key: 'background_check', label: '🔍 背景调查 Background Check' }
+];
 
 async function openWorkerDetailModal(id) {
   const rows = await api('/admin/worker-accounts');
@@ -6346,6 +6367,7 @@ async function openWorkerDetailModal(id) {
   if (!w) return;
   _workerDetailId = id;
   _workerDetailSkills = (w.skills || []).map(s => ({...s}));
+  try { _workerAssignedTasks = JSON.parse(w.assigned_tasks || '[]'); } catch { _workerAssignedTasks = []; }
 
   const modal = document.getElementById('workerDetailModal');
   if (!modal) return;
@@ -6355,7 +6377,37 @@ async function openWorkerDetailModal(id) {
   document.getElementById('wdOurRating').value = w.our_salary_rating || '';
   document.getElementById('wdPaymentMethod').value = w.payment_method || 'cash';
   renderWdSkills();
+  renderWdTasks();
   modal.classList.add('show');
+}
+
+function renderWdTasks() {
+  const container = document.getElementById('wdTasksList');
+  container.innerHTML = ALL_TASK_TYPES.map(t => {
+    const checked = _workerAssignedTasks.includes(t.key) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:.4rem;padding:.35rem .5rem;border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;font-size:.8rem;${checked ? 'background:#f0f9ff;border-color:#bae6fd' : ''}">
+      <input type="checkbox" value="${t.key}" ${checked} onchange="toggleWdTask('${t.key}',this.checked)">
+      ${t.label}
+    </label>`;
+  }).join('');
+}
+
+function toggleWdTask(key, checked) {
+  if (checked && !_workerAssignedTasks.includes(key)) {
+    _workerAssignedTasks.push(key);
+  } else if (!checked) {
+    _workerAssignedTasks = _workerAssignedTasks.filter(k => k !== key);
+  }
+  renderWdTasks();
+}
+
+function wdSelectAllTasks() {
+  if (_workerAssignedTasks.length === ALL_TASK_TYPES.length) {
+    _workerAssignedTasks = [];
+  } else {
+    _workerAssignedTasks = ALL_TASK_TYPES.map(t => t.key);
+  }
+  renderWdTasks();
 }
 
 function renderWdSkills() {
@@ -6381,7 +6433,8 @@ async function saveWorkerDetail() {
   const data = {
     expected_salary: document.getElementById('wdExpectedSalary').value,
     our_salary_rating: document.getElementById('wdOurRating').value,
-    payment_method: document.getElementById('wdPaymentMethod').value
+    payment_method: document.getElementById('wdPaymentMethod').value,
+    assigned_tasks: _workerAssignedTasks
   };
   await api(`/admin/worker-accounts/${_workerDetailId}`, { method:'PUT', body: JSON.stringify(data) });
   // Save skills

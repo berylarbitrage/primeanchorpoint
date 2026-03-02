@@ -692,6 +692,7 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFA
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
 // Migrate: suspended flag for worker accounts (distinct from unverified)
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN assigned_tasks TEXT DEFAULT '[]'"); } catch {}
 
 // ─── Interview system ───
 db.exec(`CREATE TABLE IF NOT EXISTS interview_slots (
@@ -1471,7 +1472,7 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   if (password) {
@@ -1480,7 +1481,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   }
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
-    payment_method=COALESCE(?,payment_method) WHERE id=?`)
+    payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks) WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
       active !== undefined ? active : w.active,
@@ -1488,6 +1489,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       expected_salary !== undefined ? expected_salary : null,
       our_salary_rating !== undefined ? our_salary_rating : null,
       payment_method !== undefined ? payment_method : null,
+      assigned_tasks !== undefined ? JSON.stringify(assigned_tasks) : null,
       req.params.id
     );
   res.json({ success: true });
@@ -3483,10 +3485,15 @@ app.get('/api/worker/compliance', requireWorker, (req, res) => {
   if (req.workerEmployeeId) {
     bgCheck = db.prepare('SELECT id, check_type, status, result, ordered_date, completed_date FROM background_checks WHERE employee_id=? ORDER BY created_at DESC LIMIT 1').get(req.workerEmployeeId);
   }
+  // Get assigned tasks for this worker
+  const worker = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(req.workerId);
+  let assignedTasks = [];
+  try { assignedTasks = JSON.parse(worker?.assigned_tasks || '[]'); } catch {}
   res.json({
     documents: byType,
     all_documents: docs,
     background_check: bgCheck,
+    assigned_tasks: assignedTasks,
     doc_types: ['i9', 'drivers_license', 'w9', 'ssn_card', 'work_permit', 'other']
   });
 });
