@@ -2113,14 +2113,13 @@ async function runEmailCodeTest() {
     } finally { clearTimeout(timer); }
     const d = await res.json();
     const cfg = d.configured || {};
-    let out = '── SMTP 配置状态 ──\n';
-    out += `SMTP Host:    ${cfg.smtp_host || '❌ 未设置'}\n`;
-    out += `SMTP Port:    ${cfg.smtp_port || '-'}\n`;
-    out += `SMTP Secure:  ${cfg.smtp_secure}\n`;
-    out += `SMTP User:    ${cfg.smtp_user || '❌ 未设置'}\n`;
-    out += `SMTP Pass:    ${cfg.smtp_pass_set ? '✅ 已设置' : '❌ 未设置'}\n`;
-    out += `EMAIL_FROM:   ${cfg.email_from || '❌ 未设置'}\n`;
-    out += `Transporter:  ${cfg.transporter_ready ? '✅ 就绪' : '❌ 未就绪'}\n`;
+    let out = '── 邮件配置状态 ──\n';
+    out += `发送方式:         ${cfg.transport === 'sendgrid-api' ? '✅ SendGrid HTTP API' : cfg.transport === 'smtp' ? '✅ SMTP' : '❌ 未配置'}\n`;
+    out += `SendGrid API Key: ${cfg.sendgrid_api ? '✅ 已设置' : '未设置'}\n`;
+    out += `SMTP Host:        ${cfg.smtp_host || '未设置'}\n`;
+    out += `SMTP User:        ${cfg.smtp_user || '未设置'}\n`;
+    out += `SMTP Pass:        ${cfg.smtp_pass_set ? '✅ 已设置' : '未设置'}\n`;
+    out += `EMAIL_FROM:       ${cfg.email_from || '❌ 未设置'}\n`;
     out += '\n── 发送结果 ──\n';
     if (d.sent) {
       out += `✅ 验证码邮件已发送！\n发送到: ${to}\n`;
