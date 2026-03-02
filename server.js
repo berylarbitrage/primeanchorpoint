@@ -96,8 +96,15 @@ async function getTwilioAccountType() {
   } catch (e) { return { error: e.message }; }
 }
 
-// ─── Email (Nodemailer) ───
-const emailTransporter = process.env.SMTP_HOST
+// ─── Email ───
+// Prefer SendGrid HTTP API (works through firewalls that block SMTP ports).
+// Set SENDGRID_API_KEY, or reuse SMTP_PASS when SMTP_USER=apikey (SendGrid SMTP creds).
+const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
+const _sgKey = process.env.SENDGRID_API_KEY ||
+  (process.env.SMTP_USER === 'apikey' ? process.env.SMTP_PASS : null);
+
+// Fallback: generic SMTP via nodemailer (non-SendGrid providers only)
+const emailTransporter = (!_sgKey && process.env.SMTP_HOST)
   ? nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
@@ -108,25 +115,41 @@ const emailTransporter = process.env.SMTP_HOST
       socketTimeout: 15000,
     })
   : null;
-// EMAIL_FROM must be a verified sender (SendGrid: verified sender; Gmail: must match SMTP_USER)
-const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
-if (emailTransporter && !process.env.EMAIL_FROM) {
-  console.warn('[EMAIL-WARN] EMAIL_FROM not set — emails may be rejected. Set EMAIL_FROM to your verified sender address.');
-}
 
-if (emailTransporter) {
-  emailTransporter.verify().then(() => {
-    console.log(`[EMAIL] SMTP connection verified OK (from: ${EMAIL_FROM})`);
-  }).catch(e => {
-    console.error(`[EMAIL-ERR] SMTP connection failed at startup: ${e.message}`);
-  });
+if (!_sgKey && !emailTransporter) {
+  console.warn('[EMAIL-WARN] No email transport configured. Set SENDGRID_API_KEY (recommended) or SMTP_HOST.');
+}
+if (_sgKey) {
+  console.log(`[EMAIL] SendGrid HTTP API ready (from: ${EMAIL_FROM})`);
+} else if (emailTransporter) {
+  emailTransporter.verify()
+    .then(() => console.log(`[EMAIL] SMTP connection verified OK (from: ${EMAIL_FROM})`))
+    .catch(e => console.error(`[EMAIL-ERR] SMTP connection failed at startup: ${e.message}`));
 }
 
 async function sendEmail(to, subject, text) {
-  if (!emailTransporter) {
-    console.log(`[EMAIL-SKIP] SMTP not configured. To: ${to}`);
-    return false;
+  if (_sgKey) {
+    try {
+      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: { email: EMAIL_FROM },
+          subject,
+          content: [{ type: 'text/plain', value: text }],
+        }),
+      });
+      if (r.status === 202) { console.log(`[EMAIL] Sent to ${to}`); return true; }
+      const body = await r.text();
+      console.error(`[EMAIL-ERR] SendGrid API ${r.status}: ${body}`);
+      return false;
+    } catch (e) {
+      console.error(`[EMAIL-ERR] SendGrid API fetch failed: ${e.message}`);
+      return false;
+    }
   }
+  if (!emailTransporter) { console.log(`[EMAIL-SKIP] No transport. To: ${to}`); return false; }
   try {
     await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text });
     console.log(`[EMAIL] Sent to ${to}`);
@@ -1440,26 +1463,22 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
   res.json({ configured, result, accountInfo, method: 'sms' });
 });
 
-// Admin: test email (SMTP) configuration
+// Admin: test email configuration
 app.post('/api/admin/test-email', requireAdmin, requireRole('admin'), async (req, res) => {
   const { to } = req.body;
   if (!to) return res.status(400).json({ error: 'Missing email address' });
   const configured = {
+    sendgrid_api: !!_sgKey,
     smtp_host: process.env.SMTP_HOST || null,
     smtp_port: process.env.SMTP_PORT || '587',
-    smtp_secure: process.env.SMTP_SECURE || 'false',
     smtp_user: process.env.SMTP_USER || null,
     smtp_pass_set: !!process.env.SMTP_PASS,
     email_from: EMAIL_FROM,
-    transporter_ready: !!emailTransporter,
+    transport: _sgKey ? 'sendgrid-api' : emailTransporter ? 'smtp' : 'none',
   };
-  if (!emailTransporter) return res.json({ configured, sent: false, error: 'SMTP not configured (SMTP_HOST missing)' });
-  // Verify connection first
-  try { await emailTransporter.verify(); } catch (e) {
-    return res.json({ configured, sent: false, error: `SMTP connection failed: ${e.message}` });
-  }
-  const sent = await sendEmail(to, 'Prime Anchorpoint SMTP Test', `SMTP is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
-  res.json({ configured, sent, error: sent ? null : 'sendMail failed — check server logs for [EMAIL-ERR]' });
+  if (!_sgKey && !emailTransporter) return res.json({ configured, sent: false, error: 'No email transport configured' });
+  const sent = await sendEmail(to, 'Prime Anchorpoint Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
+  res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
 });
 
 // Admin: test email verification code (sends a real 6-digit code in the same format as registration)
@@ -1467,37 +1486,22 @@ app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async
   const { to } = req.body;
   if (!to) return res.status(400).json({ error: 'Missing email address' });
   const configured = {
+    sendgrid_api: !!_sgKey,
     smtp_host: process.env.SMTP_HOST || null,
     smtp_port: process.env.SMTP_PORT || '587',
-    smtp_secure: process.env.SMTP_SECURE || 'false',
     smtp_user: process.env.SMTP_USER || null,
     smtp_pass_set: !!process.env.SMTP_PASS,
     email_from: EMAIL_FROM,
-    transporter_ready: !!emailTransporter,
+    transport: _sgKey ? 'sendgrid-api' : emailTransporter ? 'smtp' : 'none',
   };
-  if (!emailTransporter) return res.json({ configured, sent: false, error: 'SMTP not configured (SMTP_HOST missing)' });
-  try { await emailTransporter.verify(); } catch (e) {
-    return res.json({ configured, sent: false, error: `SMTP connection failed: ${e.message}` });
-  }
+  if (!_sgKey && !emailTransporter) return res.json({ configured, sent: false, error: 'No email transport configured' });
   const code = String(Math.floor(100000 + Math.random() * 900000));
-  try {
-    const info = await emailTransporter.sendMail({
-      from: EMAIL_FROM,
-      to,
-      subject: 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
-      text: `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`
-    });
-    res.json({ configured, sent: true, messageId: info.messageId, response: info.response });
-  } catch (e) {
-    res.json({
-      configured,
-      sent: false,
-      error: e.message,
-      smtp_code: e.code || null,
-      smtp_response: e.response || null,
-      smtp_responseCode: e.responseCode || null,
-    });
-  }
+  const sent = await sendEmail(
+    to,
+    'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`
+  );
+  res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
 });
 
 // Admin: resend verification codes to unverified worker
@@ -1509,7 +1513,7 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
 
   const canVerifyPhone = !!(twilioClient && TWILIO_VERIFY_SID && w.phone);
   const canSMSFallback = !!(twilioClient && TWILIO_FROM && w.phone && !TWILIO_VERIFY_SID);
-  const canEmail = !!(emailTransporter && w.email);
+  const canEmail = !!(_sgKey || emailTransporter) && !!w.email;
   const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   let smsSent = false, emailSent = false;
   let phoneCode = null, emailCode = null;
@@ -3517,7 +3521,7 @@ app.post('/api/register/worker', async (req, res) => {
   const canVerifyPhone = !!(twilioClient && TWILIO_VERIFY_SID); // Twilio Verify API
   const canSMSFallback = !!(twilioClient && TWILIO_FROM && !TWILIO_VERIFY_SID); // Legacy SMS (only if Verify not configured)
   const canSMS = canVerifyPhone || canSMSFallback;
-  const canEmail = !!emailTransporter;
+  const canEmail = !!(_sgKey || emailTransporter);
   const needsVerification = canSMS || canEmail;
 
   const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
