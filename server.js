@@ -3402,12 +3402,13 @@ app.post('/api/customer/reset-password', (req, res) => {
 
 // ─── Public Registration ───
 app.post('/api/register/worker', async (req, res) => {
+  try {
   const { name, phone, email, dob, work_status, position_interests, password } = req.body;
   if (!name || !phone || !email || !password)
-    return res.status(400).json({ error: 'Name, phone, email, and password are required' });
+    return res.status(400).json({ error: '请填写姓名、手机号、邮箱和密码 / Name, phone, email, and password are required' });
   // Check phone or email uniqueness; allow re-registration only if previous account was never verified AND codes have expired
   const existing = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
-  if (existing && existing.active) return res.status(400).json({ error: 'An account with this phone or email already exists' });
+  if (existing && existing.active) return res.status(400).json({ error: '该手机号或邮箱已注册 / An account with this phone or email already exists' });
   if (existing && !existing.active) {
     // Unverified account — check if any verification codes are still valid
     const now = new Date().toISOString();
@@ -3475,6 +3476,10 @@ app.post('/api/register/worker', async (req, res) => {
   if (phoneCode && !smsSent) resp.phone_code = phoneCode; // Only for legacy SMS fallback
   if (canEmail && !emailSent) resp.email_code = emailCode;
   res.json(resp);
+  } catch (e) {
+    console.error('[Register Worker]', e.message);
+    res.status(500).json({ error: '注册失败，请稍后重试 / Registration failed: ' + e.message });
+  }
 });
 
 // Resend verification code
@@ -3557,10 +3562,10 @@ app.post('/api/register/verify', async (req, res) => {
 app.post('/api/register/enterprise', (req, res) => {
   const { company_name, contact_name, email, phone, ein, staffing_needs, password, partner_id } = req.body;
   if (!company_name || !contact_name || !email || !password)
-    return res.status(400).json({ error: 'Company name, contact name, email, and password are required' });
+    return res.status(400).json({ error: '请填写企业名称、联系人、邮箱和密码 / Company name, contact name, email, and password are required' });
   if (!partner_id) return res.status(400).json({ error: '请选择您所在的合作公司 / Please select your company' });
   const existing = db.prepare('SELECT id FROM customer_accounts WHERE email=?').get(email);
-  if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
+  if (existing) return res.status(400).json({ error: '该邮箱已注册 / An account with this email already exists' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
   db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status, partner_id)

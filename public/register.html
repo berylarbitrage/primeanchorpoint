@@ -412,7 +412,7 @@ async function registerWorker() {
       body: JSON.stringify({ name, phone, email, dob, work_status: _selectedStatus, position_interests: interests, password })
     });
     const d = await r.json();
-    if (!r.ok || d.error) return showError(d.error || 'Registration failed');
+    if (!r.ok || d.error) return showError(d.error || '注册失败，请稍后重试 / Registration failed, please try again');
 
     // If no verification needed, go directly to portal
     if (!d.needs_verification) {
@@ -572,7 +572,7 @@ async function registerEnterprise() {
       body: JSON.stringify({ company_name, contact_name, email, phone, ein, staffing_needs, password, partner_id })
     });
     const d = await r.json();
-    if (!r.ok || d.error) return showError(d.error || 'Registration failed');
+    if (!r.ok || d.error) return showError(d.error || '注册失败，请稍后重试 / Registration failed, please try again');
     document.getElementById('formEnterprise').style.display = 'none';
     const ts = document.getElementById('typeSelector');
     if (ts) ts.style.display = 'none';
