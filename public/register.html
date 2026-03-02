@@ -255,23 +255,40 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
     <!-- Verification step -->
     <div id="workerVerify" style="display:none">
       <div style="text-align:center;margin-bottom:1.5rem">
-        <div style="font-size:2rem;margin-bottom:.5rem" id="verifyIcon">📱✉️</div>
-        <h2 style="color:var(--blue);margin:0 0 .5rem" id="verifyTitle">验证账号 / Verify Account</h2>
+        <div style="font-size:2rem;margin-bottom:.5rem" id="verifyIcon">📱</div>
+        <div id="verifyStepIndicator" style="font-size:.78rem;color:#aaa;margin-bottom:.4rem"></div>
+        <h2 style="color:var(--blue);margin:0 0 .5rem" id="verifyTitle">验证手机号 / Verify Phone</h2>
         <p style="color:#666;font-size:.9rem" id="verifyDesc">
-          验证码已发送，请输入收到的6位数验证码。<br>
-          Verification code(s) have been sent. Please enter the 6-digit code(s).
+          验证码已发送到您的手机，请输入收到的6位数验证码。<br>
+          A verification code has been sent to your phone.
         </p>
       </div>
-      <div class="field" id="phoneCodeSection" style="display:none">
-        <label>手机验证码 / Phone Code</label>
-        <input type="text" id="vPhoneCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem">
+      <!-- Phone step -->
+      <div id="phoneCodeSection" style="display:none">
+        <div class="field">
+          <label>手机验证码 / Phone Code</label>
+          <input type="text" id="vPhoneCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem" oninput="this.value=this.value.replace(/\D/g,'')">
+        </div>
+        <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
+          <a href="#" onclick="resendCode('phone');return false" style="font-size:.82rem;color:var(--sky)">重新发送手机验证码 / Resend phone code</a>
+        </div>
+        <button class="btn btn-submit" onclick="verifyStep('phone')">下一步 / Next</button>
       </div>
-      <div id="phoneResendSection" style="text-align:right;margin-top:-.5rem;margin-bottom:1rem;display:none">
-        <a href="#" onclick="resendCode('phone');return false" style="font-size:.82rem;color:var(--sky)">重新发送手机验证码 / Resend phone code</a>
+      <!-- Email step -->
+      <div id="emailCodeSection" style="display:none">
+        <div class="field">
+          <label>邮箱验证码 / Email Code</label>
+          <input type="text" id="vEmailCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem" oninput="this.value=this.value.replace(/\D/g,'')">
+        </div>
+        <div id="emailCodeHint" style="font-size:.82rem;color:#e07b00;margin:-.25rem 0 .75rem;display:none;padding:.5rem .75rem;background:#fff8e6;border-radius:6px"></div>
+        <div style="text-align:right;margin-top:-.25rem;margin-bottom:1rem">
+          <a href="#" onclick="resendCode('email');return false" style="font-size:.82rem;color:var(--sky)">重新发送邮箱验证码 / Resend email code</a>
+        </div>
+        <button class="btn btn-submit" onclick="verifyStep('email')">完成验证 / Complete</button>
       </div>
-      <div class="field" id="emailCodeSection" style="display:none">
-        <label>邮箱验证码 / Email Code</label>
-        <input type="text" id="vEmailCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem">
+      <!-- Single-step (only one channel) -->
+      <div id="singleStepSection" style="display:none">
+        <button class="btn btn-submit" onclick="verifyWorker()">确认验证 / Verify & Complete</button>
       </div>
       <div id="emailResendSection" style="text-align:right;margin-top:-.5rem;margin-bottom:1rem;display:none">
         <a href="#" onclick="resendCode('email');return false" style="font-size:.82rem;color:var(--sky)">重新发送邮箱验证码 / Resend email code</a>
@@ -620,12 +637,14 @@ async function registerWorker() {
 let _pendingAccountId = null;
 let _needsPhone = false;
 let _needsEmail = false;
-let _verifyPhoneDone = false; // two-step: true once phone step is passed
+let _emailCodeFallback = null;
+let _verifyPhoneDone = false;
 
 function _initVerifyUI(d) {
   _pendingAccountId = d.account_id;
   _needsPhone = !!d.needs_phone;
   _needsEmail = !!d.needs_email;
+  _emailCodeFallback = d.email_code || null;
   _verifyPhoneDone = false;
   document.getElementById('vPhoneCode').value = '';
   document.getElementById('vEmailCode').value = '';
@@ -635,7 +654,6 @@ function _initVerifyUI(d) {
   document.getElementById('loginLinks').style.display = 'none';
   document.getElementById('workerVerify').style.display = 'block';
   if (_needsPhone && _needsEmail) {
-    // Two-step: phone first, email second
     document.getElementById('phoneCodeSection').style.display = '';
     document.getElementById('phoneResendSection').style.display = '';
     document.getElementById('emailCodeSection').style.display = 'none';
@@ -671,6 +689,81 @@ function _initVerifyUI(d) {
   }
 }
 
+function showVerifyStep(type, regData) {
+  // Hide all step sections first
+  document.getElementById('phoneCodeSection').style.display = 'none';
+  document.getElementById('emailCodeSection').style.display = 'none';
+  document.getElementById('singleStepSection').style.display = 'none';
+
+  const total = (_needsPhone ? 1 : 0) + (_needsEmail ? 1 : 0);
+  if (type === 'phone') {
+    const stepNum = 1;
+    document.getElementById('verifyStepIndicator').textContent = total > 1 ? `步骤 ${stepNum}/${total} · Step ${stepNum}/${total}` : '';
+    document.getElementById('verifyIcon').textContent = '📱';
+    document.getElementById('verifyTitle').textContent = '验证手机号 / Verify Phone';
+    document.getElementById('verifyDesc').innerHTML = (regData && regData.phone_code)
+      ? '短信发送失败，验证码已自动填入，请直接点击下一步。<br>SMS delivery failed — code has been filled in automatically.'
+      : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
+    document.getElementById('phoneCodeSection').style.display = '';
+    if (regData && regData.phone_code) document.getElementById('vPhoneCode').value = regData.phone_code;
+  } else {
+    showEmailStep(regData);
+  }
+}
+
+function showEmailStep(regData) {
+  document.getElementById('phoneCodeSection').style.display = 'none';
+  document.getElementById('singleStepSection').style.display = 'none';
+
+  const total = (_needsPhone ? 1 : 0) + (_needsEmail ? 1 : 0);
+  const stepNum = _needsPhone ? 2 : 1;
+  document.getElementById('verifyStepIndicator').textContent = total > 1 ? `步骤 ${stepNum}/${total} · Step ${stepNum}/${total}` : '';
+  document.getElementById('verifyIcon').textContent = '✉️';
+  document.getElementById('verifyTitle').textContent = '验证邮箱 / Verify Email';
+
+  const fallback = (regData && regData.email_code) || _emailCodeFallback;
+  if (fallback) {
+    document.getElementById('verifyDesc').innerHTML = '邮件发送失败，请使用下方验证码完成验证。<br>Email delivery failed — use the code below to verify.';
+    document.getElementById('vEmailCode').value = fallback;
+    const hint = document.getElementById('emailCodeHint');
+    hint.style.display = '';
+    hint.innerHTML = `📋 邮箱验证码 / Email Code: <strong style="font-size:1.1rem;letter-spacing:.15rem">${fallback}</strong>`;
+  } else {
+    document.getElementById('verifyDesc').innerHTML = '验证码已发送到您的邮箱，请检查收件箱（或垃圾邮件文件夹）。<br>A verification code has been sent to your email. Check your inbox (or spam folder).';
+    document.getElementById('emailCodeHint').style.display = 'none';
+  }
+  document.getElementById('emailCodeSection').style.display = '';
+}
+
+async function verifyStep(type) {
+  hideError();
+  const code = type === 'phone'
+    ? document.getElementById('vPhoneCode').value.trim()
+    : document.getElementById('vEmailCode').value.trim();
+  if (!code) return showError(type === 'phone' ? '请输入手机验证码 / Please enter phone code' : '请输入邮箱验证码 / Please enter email code');
+  try {
+    const r = await fetch('/api/register/verify-step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: _pendingAccountId, type, code })
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) return showError(d.error || 'Verification failed');
+    if (d.all_done) {
+      if (d.token) localStorage.setItem('pa_worker_token', d.token);
+      document.getElementById('workerVerify').style.display = 'none';
+      document.getElementById('workerSuccess').style.display = '';
+      setTimeout(() => { window.location.href = '/portal'; }, 2000);
+    } else {
+      // Move to next step
+      if (d.next_steps && d.next_steps.includes('email')) showEmailStep(null);
+    }
+  } catch (e) {
+    showError('网络错误，请重试 / Network error, please try again');
+  }
+}
+
+// Fallback for single-channel verify (kept for compatibility)
 async function verifyWorker() {
   hideError();
   if (_needsPhone && _needsEmail && !_verifyPhoneDone) {

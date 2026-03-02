@@ -169,6 +169,44 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Apply Job Modal -->
+<div class="modal-overlay" id="applyModal" style="display:none;align-items:center;justify-content:center">
+  <div class="modal-box" style="max-width:460px;width:92%">
+    <h3 style="margin:0 0 .25rem;color:var(--blue);font-size:1.05rem">申请职位 / Apply for Position</h3>
+    <div id="applyJobLabel" style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem"></div>
+    <div class="modal-msg" id="applyMsg"></div>
+
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
+        📅 面试时间 / Interview Availability <span style="color:#dc2626">*</span>
+      </label>
+      <input id="applyAvailability" type="text" placeholder="例：周一至周五 9am–5pm，或具体日期 / e.g. Weekdays 9am–5pm"
+        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
+        💰 期望薪资 / Expected Pay
+      </label>
+      <input id="applyExpectedPay" type="text" placeholder="例：$18/hr 或 $3,500/月 / e.g. $18/hr or $3,500/mo"
+        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:1.1rem">
+      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
+        💬 想对我们说的话 / Message to HR
+      </label>
+      <textarea id="applyMessage" rows="3" placeholder="介绍一下您的相关经验、期待，或任何想告诉我们的 / Introduce yourself, share your expectations, or anything you'd like us to know"
+        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none;resize:vertical;line-height:1.5"></textarea>
+    </div>
+
+    <div style="display:flex;gap:.6rem;justify-content:flex-end">
+      <button class="modal-btn modal-btn-secondary" onclick="closeApplyModal()">取消 / Cancel</button>
+      <button class="modal-btn modal-btn-primary" id="applySubmitBtn" onclick="submitApply()">提交申请 / Submit</button>
+    </div>
+  </div>
+</div>
+
 <!-- App -->
 <div id="app">
   <div class="header">
@@ -621,30 +659,52 @@ async function loadInterview() {
     slotsCard.style.display = '';
   }
 
-  // Slots list
+  // Slots list - grouped by date
   const list = document.getElementById('interviewSlotsList');
   if (!slots || !slots.length) {
     list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无可用面试时间，请稍后再查看或联系 HR。</div>';
     return;
   }
-  list.innerHTML = slots.map(s => {
+
+  // Group slots by date
+  const grouped = {};
+  slots.forEach(s => {
     const dt = new Date(s.slot_datetime);
-    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'short' });
-    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
-    const remaining = s.max_bookings - s.booked_count;
-    return `<div style="border:1px solid var(--gray-200);border-radius:10px;padding:1rem;margin-bottom:.75rem;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap">
-      <div>
-        <div style="font-weight:700;font-size:.95rem">${dateStr} ${timeStr}</div>
-        <div style="font-size:.82rem;color:var(--gray-500);margin-top:.2rem">
-          时长 ${s.duration_min} 分钟${s.location ? ' · ' + s.location : ''}
-          <span style="margin-left:.5rem;color:#d97706">剩余 ${remaining} 个名额</span>
-        </div>
+    const dateKey = dt.toISOString().split('T')[0];
+    if (!grouped[dateKey]) grouped[dateKey] = { date: dt, slots: [] };
+    grouped[dateKey].slots.push(s);
+  });
+
+  let html = '';
+  for (const [dateKey, group] of Object.entries(grouped)) {
+    const dt = group.date;
+    const dateLabel = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+    // First slot's location as the day's location
+    const dayLocation = group.slots[0].location;
+    html += `<div style="margin-bottom:1.25rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:2px solid #e0f2fe">
+        <span style="font-size:1.3rem">📅</span>
+        <span style="font-weight:700;font-size:1rem;color:#0c4a6e">${dateLabel}</span>
+        ${dayLocation ? `<span style="font-size:.8rem;color:var(--gray-500);margin-left:auto">📍 ${dayLocation}</span>` : ''}
       </div>
-      <button onclick="bookSlot(${s.id})" style="padding:.5rem 1.1rem;background:var(--sky);color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap;font-size:.88rem">
-        预约此时间
-      </button>
-    </div>`;
-  }).join('');
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem">`;
+
+    group.slots.forEach(s => {
+      const sdt = new Date(s.slot_datetime);
+      const timeStr = sdt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+      const remaining = s.max_bookings - s.booked_count;
+      const full = remaining <= 0;
+      html += `<button onclick="${full ? '' : `bookSlot(${s.id})`}" ${full ? 'disabled' : ''}
+        style="padding:.7rem .5rem;border:1px solid ${full?'var(--gray-200)':'#bae6fd'};border-radius:10px;background:${full?'#f9fafb':'#f0f9ff'};cursor:${full?'not-allowed':'pointer'};text-align:center;transition:all .15s">
+        <div style="font-weight:700;font-size:1rem;color:${full?'var(--gray-400)':'#0369a1'}">${timeStr}</div>
+        <div style="font-size:.75rem;color:${full?'var(--gray-400)':'#d97706'};margin-top:.2rem">${full ? '已满' : `剩余 ${remaining} 名额`}</div>
+        <div style="font-size:.72rem;color:var(--gray-400);margin-top:.1rem">${s.duration_min}分钟</div>
+      </button>`;
+    });
+
+    html += `</div></div>`;
+  }
+  list.innerHTML = html;
 }
 
 async function bookSlot(slotId) {
@@ -682,7 +742,7 @@ function renderJobs(jobs) {
         <div class="job-title">${esc(j.title)} ${j.urgent?'<span class="badge badge-urgent">急聘</span>':''} ${j.applied?'<span class="badge badge-applied">✓ 已申请</span>':''}</div>
         <div class="job-meta">
           <span>${esc(j.location)}</span>
-          ${j.pay?` · 薪资: ${esc(j.pay)}`:''}
+          ${j.pay?` · 薪资: ${esc(j.pay)}${j.pay_period?` <span style="font-size:.78rem;color:var(--gray-400)">(${({'hourly':'每小时','daily':'每天','weekly':'每周','biweekly':'每两周','semimonthly':'每半月','monthly':'每月'})[j.pay_period]||j.pay_period})</span>`:''}` :''}
           ${j.type?` · ${esc(j.type)}`:''}
           ${j.employment_type?` · ${esc(j.employment_type)}`:''}
         </div>
@@ -699,12 +759,59 @@ function renderJobs(jobs) {
     </div>`).join('') : '<div class="empty">暂无在招职位</div>';
 }
 
-async function applyJob(jobId) {
-  if (!confirm('确认申请此职位？')) return;
-  const r = await wApi(`/apply/${jobId}`, { method:'POST', body:'{}' });
+let _applyJobId = null;
+
+function applyJob(jobId) {
+  _applyJobId = jobId;
+  // Fill in job label from cached list
+  const job = (_allJobs || []).find(j => j.id === jobId);
+  document.getElementById('applyJobLabel').textContent = job
+    ? `${job.title}${job.company_name ? '  ·  ' + job.company_name : ''}${job.location ? '  ·  ' + job.location : ''}`
+    : '';
+  document.getElementById('applyAvailability').value = '';
+  document.getElementById('applyExpectedPay').value = '';
+  document.getElementById('applyMessage').value = '';
+  document.getElementById('applyMsg').className = 'modal-msg';
+  document.getElementById('applyModal').style.display = 'flex';
+  setTimeout(() => document.getElementById('applyAvailability').focus(), 100);
+}
+
+function closeApplyModal() {
+  document.getElementById('applyModal').style.display = 'none';
+  _applyJobId = null;
+}
+
+async function submitApply() {
+  const availability = document.getElementById('applyAvailability').value.trim();
+  if (!availability) {
+    const el = document.getElementById('applyMsg');
+    el.className = 'modal-msg show error';
+    el.textContent = '请填写面试时间 / Please enter your interview availability';
+    return;
+  }
+  const btn = document.getElementById('applySubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '提交中…';
+  const r = await wApi(`/apply/${_applyJobId}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      interview_availability: availability,
+      expected_pay: document.getElementById('applyExpectedPay').value.trim(),
+      applicant_message: document.getElementById('applyMessage').value.trim()
+    })
+  });
+  btn.disabled = false;
+  btn.textContent = '提交申请 / Submit';
   if (!r) return;
-  if (r.success) { showToast('✅ 申请成功！HR将与您联系'); loadJobs(); }
-  else alert(r.error || '申请失败');
+  if (r.success) {
+    closeApplyModal();
+    showToast('✅ 申请成功！HR将与您联系');
+    loadJobs();
+  } else {
+    const el = document.getElementById('applyMsg');
+    el.className = 'modal-msg show error';
+    el.textContent = r.error || '申请失败';
+  }
 }
 
 async function loadApplications() {
