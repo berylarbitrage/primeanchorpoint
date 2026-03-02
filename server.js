@@ -105,8 +105,11 @@ const emailTransporter = process.env.SMTP_HOST
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
     })
   : null;
-// Gmail/Google Workspace requires FROM to match the authenticated SMTP_USER
-const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@primeanchorpoint.com';
+// EMAIL_FROM must be a verified sender (SendGrid: verified sender; Gmail: must match SMTP_USER)
+const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
+if (emailTransporter && !process.env.EMAIL_FROM) {
+  console.warn('[EMAIL-WARN] EMAIL_FROM not set — emails may be rejected. Set EMAIL_FROM to your verified sender address.');
+}
 
 if (emailTransporter) {
   emailTransporter.verify().then(() => {
