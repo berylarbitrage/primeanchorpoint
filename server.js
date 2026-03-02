@@ -1604,6 +1604,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
 // ── Worker Onboarding ──
 const ONBOARDING_STEPS = [
   { key: 'phone_verify', title: '手机号验证',      desc: '必须通过手机号验证才能继续',                     required: true  },
+  { key: 'email_verify', title: '邮箱验证',        desc: '必须通过邮箱验证才能继续',                       required: true  },
   { key: 'interview',    title: '完成面试',          desc: '预约并参加 HR 面试',                              required: true  },
   { key: 'id_verify',    title: 'ID 证件认证',       desc: '上传护照、驾照或州 ID 卡等政府颁发证件',         required: true  },
   { key: 'ssn_verify',   title: 'SSN 社安号验证',    desc: 'HR 核实社会安全号码',                             required: true  },
@@ -1624,9 +1625,10 @@ function initWorkerOnboarding(workerId) {
     }
   });
   tx();
-  // auto-complete phone_verify if worker already active
+  // auto-complete phone_verify and email_verify if worker already active (both verified during registration)
   if (w.active) {
     db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='phone_verify' AND status='pending'`).run(workerId);
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='email_verify' AND status='pending'`).run(workerId);
   }
   // auto-complete interview if already passed
   const passed = db.prepare(`SELECT i.id FROM interviews i WHERE i.worker_account_id=? AND i.status='passed'`).get(workerId);
