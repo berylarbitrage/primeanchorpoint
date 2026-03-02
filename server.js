@@ -127,9 +127,38 @@ if (_sgKey) {
     .catch(e => console.error(`[EMAIL-ERR] SMTP connection failed at startup: ${e.message}`));
 }
 
-async function sendEmail(to, subject, text) {
+function verificationCodeHtml(code, isAdminTest = false) {
+  const label = isAdminTest ? '管理员测试 / Admin Test' : '邮箱验证 / Email Verification';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 0">
+<tr><td align="center">
+<table width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+<tr><td style="background:#1a1a2e;padding:24px 32px">
+  <p style="margin:0;color:#fff;font-size:18px;font-weight:600">Prime Anchorpoint</p>
+  <p style="margin:4px 0 0;color:#a0aec0;font-size:12px">${label}</p>
+</td></tr>
+<tr><td style="padding:32px">
+  <p style="margin:0 0 8px;color:#374151;font-size:15px">您的验证码 / Your verification code:</p>
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:20px;text-align:center;margin:16px 0">
+    <span style="font-size:36px;font-weight:700;letter-spacing:8px;color:#1a1a2e;font-family:monospace">${code}</span>
+  </div>
+  <p style="margin:0;color:#6b7280;font-size:13px">验证码15分钟内有效。请勿分享给他人。<br>This code expires in 15 minutes. Do not share it with anyone.</p>
+</td></tr>
+<tr><td style="padding:0 32px 24px;border-top:1px solid #f3f4f6">
+  <p style="margin:16px 0 0;color:#9ca3af;font-size:11px">如非本人操作请忽略此邮件。If you did not request this, please ignore this email.</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+}
+
+async function sendEmail(to, subject, text, html) {
   if (_sgKey) {
     try {
+      const content = [{ type: 'text/plain', value: text }];
+      if (html) content.push({ type: 'text/html', value: html });
       const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
         headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
@@ -137,7 +166,7 @@ async function sendEmail(to, subject, text) {
           personalizations: [{ to: [{ email: to }] }],
           from: { email: EMAIL_FROM },
           subject,
-          content: [{ type: 'text/plain', value: text }],
+          content,
         }),
       });
       if (r.status === 202) { console.log(`[EMAIL] Sent to ${to}`); return true; }
@@ -151,7 +180,7 @@ async function sendEmail(to, subject, text) {
   }
   if (!emailTransporter) { console.log(`[EMAIL-SKIP] No transport. To: ${to}`); return false; }
   try {
-    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text });
+    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text, html });
     console.log(`[EMAIL] Sent to ${to}`);
     return true;
   } catch (e) {
@@ -1499,7 +1528,8 @@ app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async
   const sent = await sendEmail(
     to,
     'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
-    `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`
+    `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    verificationCodeHtml(code, true)
   );
   res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
 });
@@ -1532,7 +1562,8 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
     emailSent = await sendEmail(w.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
-      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+      verificationCodeHtml(emailCode));
   }
   console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${canVerifyPhone?'TwilioVerify':phoneCode||'N/A'}(sent:${smsSent}) email=${emailCode||'N/A'}(sent:${emailSent})`);
   const result = { success: true, sms_sent: smsSent, email_sent: emailSent };
@@ -3115,11 +3146,15 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
   if (open) {
+    // Clock out — always allowed regardless of job status
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
     res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
   } else {
+    // Clock in — requires an active job assignment
+    const activeJob = db.prepare("SELECT ej.id, j.title FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1").get(req.workerEmployeeId);
+    if (!activeJob) return res.status(400).json({ error: '当前没有有效的工作安排，无法打卡。请联系HR。/ No active job assignment. Please contact HR.' });
     const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified) VALUES(?,?,'open',?,?,?,?)")
       .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified);
     res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified, site_name: matchedSiteId ? db.prepare('SELECT name FROM job_sites WHERE id=?').get(matchedSiteId)?.name : null });
@@ -3127,9 +3162,10 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
-  if (!req.workerEmployeeId) return res.json({ clocked_in: false });
+  if (!req.workerEmployeeId) return res.json({ clocked_in: false, no_employee: true });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
-  res.json({ clocked_in: !!open, open_entry: open || null });
+  const activeJob = db.prepare("SELECT ej.id, j.title, j.company_name FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1").get(req.workerEmployeeId);
+  res.json({ clocked_in: !!open, open_entry: open || null, has_active_job: !!activeJob, active_job: activeJob || null });
 });
 
 app.get('/api/worker/assignments', requireWorker, (req, res) => {
@@ -3478,6 +3514,22 @@ app.post('/api/customer/reset-password', (req, res) => {
 });
 
 // ─── Public Registration ───
+
+// Real-time duplicate check (phone or email)
+app.get('/api/register/check', (req, res) => {
+  const { phone, email } = req.query;
+  if (phone) {
+    const clean = phone.replace(/[\s\-()+]/g, '');
+    const row = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=?').get(clean);
+    if (row && row.active) return res.json({ taken: true, field: 'phone' });
+  }
+  if (email) {
+    const row = db.prepare('SELECT id, active FROM worker_accounts WHERE email=?').get(email.toLowerCase().trim());
+    if (row && row.active) return res.json({ taken: true, field: 'email' });
+  }
+  res.json({ taken: false });
+});
+
 app.post('/api/register/worker', async (req, res) => {
   try {
   const { name, phone, email, dob, work_status, position_interests, password } = req.body;
@@ -3500,7 +3552,8 @@ app.post('/api/register/worker', async (req, res) => {
         phoneSent = await sendSMS(existing.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneRow.code}，15分钟内有效。Your verification code: ${phoneRow.code}`);
       if (emailRow && existing.email)
         emailSent = await sendEmail(existing.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
-          `您的邮箱验证码是: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+          `您的邮箱验证码是: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+          verificationCodeHtml(emailRow.code));
       const pendingResp = {
         error: '该手机号或邮箱已有待验证的注册，验证码已重新发送，请输入验证码完成注册。 / A pending registration exists. Verification codes have been resent — please enter them below.',
         pending_account_id: existing.id,
@@ -3558,7 +3611,8 @@ app.post('/api/register/worker', async (req, res) => {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
     emailSent = await sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
-      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+      verificationCodeHtml(emailCode));
   }
   console.log(`[Verify] Worker #${accountId} phone: ${canVerifyPhone ? 'Twilio Verify' : phoneCode || 'N/A'} (sent:${smsSent}), email: ${emailCode || 'N/A'} (sent:${emailSent})`);
   const resp = { success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, sms_sent: smsSent, email_sent: emailSent };
@@ -3599,7 +3653,8 @@ app.post('/api/register/resend-code', async (req, res) => {
     code = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'email', code, expires);
     sent = await sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
-      `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+      `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+      verificationCodeHtml(code));
     console.log(`[Verify] Resend email for Worker #${account_id}: ${code} (sent:${sent})`);
   }
   res.json({ success: true, sent });
