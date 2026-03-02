@@ -1457,8 +1457,6 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
   }
   console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${canVerifyPhone?'TwilioVerify':phoneCode||'N/A'}(sent:${smsSent}) email=${emailCode||'N/A'}(sent:${emailSent})`);
   const result = { success: true, sms_sent: smsSent, email_sent: emailSent };
-  if (phoneCode && !smsSent) result.phone_code = phoneCode; // Only for legacy SMS fallback
-  if (emailCode && !emailSent) result.email_code = emailCode;
   res.json(result);
 });
 
@@ -3430,8 +3428,6 @@ app.post('/api/register/worker', async (req, res) => {
         needs_phone: !!phoneRow,
         needs_email: !!emailRow
       };
-      if (phoneRow && phoneRow.code !== '__twilio_verify__' && !phoneSent) pendingResp.phone_code = phoneRow.code;
-      if (emailRow && !emailSent) pendingResp.email_code = emailRow.code;
       return res.status(400).json(pendingResp);
     }
     // All codes expired — clean up and allow fresh registration
@@ -3487,8 +3483,6 @@ app.post('/api/register/worker', async (req, res) => {
   }
   console.log(`[Verify] Worker #${accountId} phone: ${canVerifyPhone ? 'Twilio Verify' : phoneCode || 'N/A'} (sent:${smsSent}), email: ${emailCode || 'N/A'} (sent:${emailSent})`);
   const resp = { success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, sms_sent: smsSent, email_sent: emailSent };
-  if (phoneCode && !smsSent) resp.phone_code = phoneCode; // Only for legacy SMS fallback
-  if (canEmail && !emailSent) resp.email_code = emailCode;
   res.json(resp);
   } catch (e) {
     console.error('[Register Worker]', e.message);
@@ -3529,9 +3523,7 @@ app.post('/api/register/resend-code', async (req, res) => {
       `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
     console.log(`[Verify] Resend email for Worker #${account_id}: ${code} (sent:${sent})`);
   }
-  const resBody = { success: true, sent };
-  if (code && !sent) resBody.code = code;
-  res.json(resBody);
+  res.json({ success: true, sent });
 });
 
 // Verify codes and activate account

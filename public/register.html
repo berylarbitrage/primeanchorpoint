@@ -445,13 +445,13 @@ function _initVerifyUI(d) {
   _needsPhone = !!d.needs_phone;
   _needsEmail = !!d.needs_email;
   _verifyPhoneDone = false;
-  document.getElementById('vPhoneCode').value = d.phone_code || '';
-  document.getElementById('vEmailCode').value = d.email_code || '';
+  document.getElementById('vPhoneCode').value = '';
+  document.getElementById('vEmailCode').value = '';
   document.getElementById('formWorker').style.display = 'none';
   const ts = document.getElementById('typeSelector');
   if (ts) ts.style.display = 'none';
   document.getElementById('loginLinks').style.display = 'none';
-  document.getElementById('workerVerify').style.display = '';
+  document.getElementById('workerVerify').style.display = 'block';
   if (_needsPhone && _needsEmail) {
     // Two-step: phone first, email second
     document.getElementById('phoneCodeSection').style.display = '';
@@ -461,8 +461,8 @@ function _initVerifyUI(d) {
     document.getElementById('verifyBtn').textContent = '下一步：验证邮箱 / Next: Verify Email';
     document.getElementById('verifyIcon').textContent = '📱';
     document.getElementById('verifyTitle').textContent = '第1步：验证手机号 / Step 1: Verify Phone';
-    document.getElementById('verifyDesc').innerHTML = d.phone_code
-      ? '短信发送失败，验证码已自动填入，请直接点击下一步。<br>SMS delivery failed — code filled in automatically, click Next.'
+    document.getElementById('verifyDesc').innerHTML = d.sms_sent === false
+      ? '短信发送失败，请点击"重新发送手机验证码"。<br>SMS delivery failed — click Resend to get a new code.'
       : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
   } else if (_needsPhone) {
     document.getElementById('phoneCodeSection').style.display = '';
@@ -472,8 +472,8 @@ function _initVerifyUI(d) {
     document.getElementById('verifyBtn').textContent = '确认验证 / Verify & Complete';
     document.getElementById('verifyIcon').textContent = '📱';
     document.getElementById('verifyTitle').textContent = '验证手机号 / Verify Phone';
-    document.getElementById('verifyDesc').innerHTML = d.phone_code
-      ? '短信发送失败，验证码已自动填入，请直接点击验证。<br>SMS delivery failed — code filled in automatically.'
+    document.getElementById('verifyDesc').innerHTML = d.sms_sent === false
+      ? '短信发送失败，请点击"重新发送手机验证码"。<br>SMS delivery failed — click Resend to get a new code.'
       : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
   } else {
     document.getElementById('phoneCodeSection').style.display = 'none';
@@ -483,8 +483,8 @@ function _initVerifyUI(d) {
     document.getElementById('verifyBtn').textContent = '确认验证 / Verify & Complete';
     document.getElementById('verifyIcon').textContent = '✉️';
     document.getElementById('verifyTitle').textContent = '验证邮箱 / Verify Email';
-    document.getElementById('verifyDesc').innerHTML = d.email_code
-      ? '邮件发送失败，验证码已自动填入，请直接点击验证。<br>Email delivery failed — code filled in automatically.'
+    document.getElementById('verifyDesc').innerHTML = d.email_sent === false
+      ? '邮件发送失败，请点击"重新发送邮箱验证码"。<br>Email delivery failed — click Resend to get a new code.'
       : '验证码已发送到您的邮箱，请输入收到的6位数验证码。<br>A verification code has been sent to your email.';
   }
 }
@@ -540,11 +540,8 @@ async function resendCode(type) {
     });
     const d = await r.json();
     if (r.ok) {
-      if (d.code) {
-        // Delivery failed — pre-fill the code automatically
-        const inputId = type === 'phone' ? 'vPhoneCode' : 'vEmailCode';
-        document.getElementById(inputId).value = d.code;
-        document.getElementById('verifyHint').textContent = '发送失败，验证码已自动填入 / Delivery failed — code filled automatically';
+      if (!d.sent) {
+        document.getElementById('verifyHint').textContent = '发送失败，请稍后再试 / Delivery failed — please try again later';
       } else {
         document.getElementById('verifyHint').textContent = (type === 'phone' ? '手机' : '邮箱') + '验证码已重新发送 / Code resent';
       }

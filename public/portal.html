@@ -551,7 +551,7 @@ async function resetPassword() {
 
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
-  document.getElementById('app').style.display = '';
+  document.getElementById('app').style.display = 'block';
   const me = await wApi('/me');
   if (!me) return;
   const name = me.employee ? `${me.employee.first_name} ${me.employee.last_name}` : me.account.username;
