@@ -814,7 +814,7 @@ tr:hover td{background:var(--sky-light)}
           <option value="cancelled">已取消</option>
         </select>
       </div>
-      <table><thead><tr><th>姓名</th><th>电话</th><th>面试时间</th><th>地点</th><th>状态</th><th>文件链接</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>姓名</th><th>电话</th><th>面试时间</th><th>地点</th><th>状态</th><th>文件链接</th><th>身份验证</th><th>操作</th></tr></thead>
       <tbody id="ivInterviewsTable"></tbody></table>
     </div>
   </div>
@@ -7125,15 +7125,34 @@ const IV_STATUS = {
   failed:    '<span class="badge badge-red">❌ 未通过</span>',
   cancelled: '<span class="badge">已取消</span>',
 };
+const ID_VERIFY_BADGE = {
+  '':          '',
+  'not_sent':  '',
+  'pending':   '<span style="background:#fef9c3;color:#854d0e;padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700">🕐 验证中</span>',
+  'completed': '<span style="background:#dbeafe;color:#1d4ed8;padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700">⏳ 待审批</span>',
+  'approved':  '<span style="background:#dcfce7;color:#15803d;padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700">✅ 已验证</span>',
+  'declined':  '<span style="background:#fee2e2;color:#dc2626;padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700">❌ 验证失败</span>',
+};
 
 function renderInterviews(rows) {
   const tbody = document.getElementById('ivInterviewsTable');
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无面试预约</td></tr>'; return; }
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无面试预约</td></tr>'; return; }
   tbody.innerHTML = rows.map(i => {
     const dt = new Date(i.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
     const docLink = i.doc_request_token
       ? `<a href="/emp-docs?token=${i.doc_request_token}" target="_blank" style="font-size:.78rem;color:var(--sky)">📎 查看链接</a>`
       : (i.status === 'passed' ? '<span style="color:var(--red);font-size:.78rem">链接缺失</span>' : '—');
+    const idStatus = i.identity_status || '';
+    const idBadge = ID_VERIFY_BADGE[idStatus] || '';
+    // Show send button for completed/passed; show resend if pending/declined
+    const canSendId = i.status === 'completed' || i.status === 'passed';
+    const idBtn = canSendId
+      ? (idStatus === 'approved'
+          ? ''
+          : `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5" onclick="sendIdentityVerify(${i.id},'${esc(i.worker_name||'')}')">
+              ${idStatus === 'pending' ? '重发验证' : idStatus === 'declined' ? '重发验证' : '发身份验证'}
+             </button>`)
+      : '';
     return `<tr>
       <td><strong>${esc(i.worker_name||'')}</strong></td>
       <td>${esc(i.worker_phone||'')}</td>
@@ -7141,6 +7160,7 @@ function renderInterviews(rows) {
       <td style="font-size:.82rem">${esc(i.location||'—')}</td>
       <td>${IV_STATUS[i.status] || i.status}</td>
       <td>${docLink}</td>
+      <td>${idBadge || '<span style="color:var(--gray-400);font-size:.78rem">—</span>'}</td>
       <td style="white-space:nowrap;display:flex;gap:.3rem;flex-wrap:wrap">
         ${i.status==='scheduled'?`<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1" onclick="setIvStatus(${i.id},'completed')">标记完成</button>`:''}
         ${i.status==='completed'?`
@@ -7148,9 +7168,21 @@ function renderInterviews(rows) {
           <button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'failed')">未通过</button>`:''}
         ${i.status==='passed'&&!i.doc_request_token?`<button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">发文件链接</button>`:''}
         ${i.status==='scheduled'?`<button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'cancelled')">取消</button>`:''}
+        ${idBtn}
       </td>
     </tr>`;
   }).join('');
+}
+
+async function sendIdentityVerify(interviewId, workerName) {
+  if (!confirm(`确定向 ${workerName} 发送 Persona 身份验证（驾照+自拍+SSN）？\n验证链接将通过短信和邮件发送给工人。`)) return;
+  const r = await api(`/admin/interviews/${interviewId}/send-identity`, { method: 'POST', body: JSON.stringify({}) });
+  if (r && r.success) {
+    showToast(`✅ 身份验证已发送${r.smsSent ? '（短信已发）' : '（短信未发，请检查 Twilio 配置）'}`, 'success', 5000);
+    loadInterviews(); switchIvTab('list');
+  } else {
+    showToast('❌ ' + (r && r.error || '发送失败'), 'error');
+  }
 }
 
 async function setIvStatus(id, status) {

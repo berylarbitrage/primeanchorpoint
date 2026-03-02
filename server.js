@@ -96,6 +96,60 @@ async function getTwilioAccountType() {
   } catch (e) { return { error: e.message }; }
 }
 
+// ─── Persona Identity Verification ───
+async function createPersonaInquiry(workerId, workerName, workerPhone) {
+  const apiKey = process.env.PERSONA_API_KEY;
+  const templateId = process.env.PERSONA_TEMPLATE_ID;
+  if (!apiKey || !templateId) return null;
+  const parts = (workerName || '').trim().split(/\s+/);
+  const firstName = parts[0] || '';
+  const lastName = parts.slice(1).join(' ') || '';
+  try {
+    const resp = await fetch('https://withpersona.com/api/v1/inquiries', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Persona-Version': '2023-01-05' },
+      body: JSON.stringify({ data: { attributes: {
+        'inquiry-template-id': templateId,
+        'reference-id': String(workerId),
+        fields: { 'name-first': firstName, 'name-last': lastName, 'phone-number': formatPhoneE164(workerPhone || '') || undefined }
+      }}})
+    });
+    if (!resp.ok) { console.error('[Persona] Create inquiry failed:', await resp.text()); return null; }
+    const d = await resp.json();
+    const inqId = d.data.id;
+    const token = d.data.attributes['session-token'];
+    return { inquiryId: inqId, sessionToken: token, link: `https://withpersona.com/verify?inquiry-id=${inqId}&session-token=${token}` };
+  } catch (e) { console.error('[Persona] createPersonaInquiry error:', e.message); return null; }
+}
+
+async function resumePersonaInquiry(inquiryId) {
+  const apiKey = process.env.PERSONA_API_KEY;
+  if (!apiKey || !inquiryId) return null;
+  try {
+    const resp = await fetch(`https://withpersona.com/api/v1/inquiries/${inquiryId}/resume`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Persona-Version': '2023-01-05' }
+    });
+    if (!resp.ok) return null;
+    const d = await resp.json();
+    const token = d.data?.attributes?.['session-token'];
+    return token ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${token}` : null;
+  } catch (e) { return null; }
+}
+
+function verifyPersonaWebhook(rawBody, sigHeader) {
+  const secret = process.env.PERSONA_WEBHOOK_SECRET;
+  if (!secret) return true; // skip if not configured (dev mode)
+  const parts = (sigHeader || '').split(',');
+  const t = parts.find(p => p.startsWith('t='))?.slice(2);
+  const v1 = parts.find(p => p.startsWith('v1='))?.slice(3);
+  if (!t || !v1) return false;
+  try {
+    const expected = crypto.createHmac('sha256', secret).update(`${t}.${rawBody}`).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(v1, 'hex'), Buffer.from(expected, 'hex'));
+  } catch (e) { return false; }
+}
+
 // ─── Email ───
 // Prefer SendGrid HTTP API (works through firewalls that block SMTP ports).
 // Set SENDGRID_API_KEY, or reuse SMTP_PASS when SMTP_USER=apikey (SendGrid SMTP creds).
@@ -465,6 +519,9 @@ try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_phone TEXT DEFAULT ''`)
 try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_email TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN applicant_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN persona_inquiry_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN identity_status TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN identity_sent_at TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN applicant_message TEXT DEFAULT ''`); } catch(e) {}
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
@@ -4361,7 +4418,8 @@ app.get('/api/admin/interviews', requireAdmin, (req, res) => {
   const rows = db.prepare(`
     SELECT i.*, s.slot_datetime, s.duration_min, s.location,
       w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
-      w.work_status, w.position_interests
+      w.work_status, w.position_interests,
+      w.identity_status, w.persona_inquiry_id, w.identity_sent_at
     FROM interviews i
     JOIN interview_slots s ON i.slot_id = s.id
     JOIN worker_accounts w ON i.worker_account_id = w.id
@@ -4406,6 +4464,80 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
     VALUES (?,?,?,?,?,?,?)`).run(token, interview.employee_id, admin_note || '', JSON.stringify(['gov_id','ssn','work_card','w9']), lang || 'zh', '[]', expiresAt);
   db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(token, req.params.id);
   res.json({ token, expires_at: expiresAt });
+});
+
+// Admin: send Persona identity verification to worker via interview
+app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, res) => {
+  try {
+    const interview = db.prepare(`
+      SELECT i.*, w.id as worker_id, w.name as worker_name, w.phone as worker_phone,
+        w.email as worker_email, w.persona_inquiry_id, w.identity_status
+      FROM interviews i JOIN worker_accounts w ON i.worker_account_id = w.id WHERE i.id=?
+    `).get(req.params.id);
+    if (!interview) return res.status(404).json({ error: 'Interview not found' });
+    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
+      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    const { force } = req.body || {};
+    if (interview.identity_status === 'approved' && !force)
+      return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
+    const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
+    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(result.inquiryId, interview.worker_id);
+    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍+SSN）以继续求职流程。点击链接在手机完成：${result.link}`;
+    const smsSent = await sendSMS(interview.worker_phone, smsText);
+    if (interview.worker_email) {
+      await sendEmail(interview.worker_email,
+        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        `请完成身份验证：${result.link}`,
+        `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请在手机上点击以下链接，按提示上传驾照、完成自拍及 SSN 核验：</p><p><a href="${result.link}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.link}</p>`
+      );
+    }
+    res.json({ success: true, smsSent, inquiryId: result.inquiryId, link: result.link });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Persona webhook — called by Persona when verification status changes
+app.post('/api/webhooks/persona', express.raw({ type: '*/*' }), (req, res) => {
+  try {
+    const rawBody = req.body.toString('utf8');
+    const sig = req.headers['persona-signature'];
+    if (!verifyPersonaWebhook(rawBody, sig)) {
+      console.warn('[Persona Webhook] Signature mismatch');
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+    const event = JSON.parse(rawBody);
+    // Persona sends the inquiry object nested under payload.data
+    const payload = event.data?.attributes?.payload?.data || event.data;
+    const inquiryId = payload?.id;
+    const eventName = event.data?.attributes?.name || '';
+    const status = payload?.attributes?.status || '';
+    console.log(`[Persona Webhook] ${eventName} | inquiry=${inquiryId} | status=${status}`);
+    if (inquiryId) {
+      let identityStatus = '';
+      if (status === 'approved' || eventName.includes('approved')) identityStatus = 'approved';
+      else if (status === 'declined' || eventName.includes('declined') || eventName.includes('failed')) identityStatus = 'declined';
+      else if (status === 'completed' || eventName.includes('completed')) identityStatus = 'completed';
+      if (identityStatus) {
+        db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
+        console.log(`[Persona Webhook] Updated ${inquiryId} → ${identityStatus}`);
+      }
+    }
+    res.json({ received: true });
+  } catch (e) { console.error('[Persona Webhook]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Worker: get own identity verification status + fresh session link
+app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
+  try {
+    const w = db.prepare('SELECT persona_inquiry_id, identity_status, identity_sent_at FROM worker_accounts WHERE id=?').get(req.workerId);
+    if (!w) return res.status(404).json({ error: 'Not found' });
+    let link = null;
+    if (w.persona_inquiry_id && w.identity_status === 'pending') {
+      link = await resumePersonaInquiry(w.persona_inquiry_id);
+    }
+    res.json({ status: w.identity_status || 'not_sent', sent_at: w.identity_sent_at || null, link });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Worker: list available slots

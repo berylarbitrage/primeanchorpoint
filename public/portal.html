@@ -593,6 +593,12 @@ tr:last-child td{border-bottom:none}
         <h2 style="margin-bottom:1rem">📱 联系方式</h2>
         <div id="profileContact"></div>
       </div>
+      <!-- Identity Verification -->
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:.3rem">🪪 身份验证</h2>
+        <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">由HR发起 · 驾照 + 自拍 + SSN核验 · 通过Persona平台</p>
+        <div id="profileIdentity"><p style="color:var(--gray-400);font-size:.88rem">加载中...</p></div>
+      </div>
       <!-- Uploaded documents -->
       <div class="card">
         <h2 style="margin-bottom:1rem">📂 我的文件</h2>
@@ -1220,8 +1226,37 @@ async function loadTimeclock() {
 }
 
 async function loadProfile() {
-  const [me, docs] = await Promise.all([wApi('/me'), wApi('/compliance')]);
+  const [me, docs, idStatus] = await Promise.all([wApi('/me'), wApi('/compliance'), wApi('/identity/status')]);
   if (!me) return;
+
+  // ── Identity verification ──
+  const idEl = document.getElementById('profileIdentity');
+  if (idEl) {
+    const st = idStatus?.status || 'not_sent';
+    const sentAt = idStatus?.sent_at ? new Date(idStatus.sent_at).toLocaleDateString('zh-CN') : '';
+    const statusMap = {
+      not_sent: { icon:'⬜', label:'未发起', color:'var(--gray-400)', desc:'HR 面试通过后会为您发送验证链接' },
+      pending:  { icon:'🕐', label:'待完成', color:'#854d0e', desc:`验证链接已于 ${sentAt} 发送到您的手机和邮箱` },
+      completed:{ icon:'⏳', label:'待审批', color:'#1d4ed8', desc:'您的资料已提交，等待系统审核' },
+      approved: { icon:'✅', label:'已通过', color:'#15803d', desc:`身份验证已于 ${sentAt} 通过` },
+      declined: { icon:'❌', label:'未通过', color:'#dc2626', desc:'验证失败，请联系 HR 重新发送链接' },
+    };
+    const s = statusMap[st] || statusMap.not_sent;
+    const startBtn = (st === 'pending' && idStatus?.link)
+      ? `<a href="${idStatus.link}" target="_blank" rel="noopener noreferrer"
+           style="display:inline-flex;align-items:center;gap:.4rem;margin-top:.75rem;padding:.55rem 1.2rem;background:#1a7ed4;color:#fff;border-radius:8px;font-size:.88rem;font-weight:700;text-decoration:none">
+           🪪 开始身份验证
+         </a>` : '';
+    idEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <span style="font-size:1.6rem">${s.icon}</span>
+        <div>
+          <div style="font-size:.95rem;font-weight:700;color:${s.color}">${s.label}</div>
+          <div style="font-size:.8rem;color:var(--gray-400);margin-top:.1rem">${s.desc}</div>
+        </div>
+      </div>
+      ${startBtn}`;
+  }
   _workerInfo = me;
   const e = me.employee;
   const a = me.account;
