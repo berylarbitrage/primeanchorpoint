@@ -15,6 +15,7 @@ const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_T
   ? require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
 const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER || '';
+const TWILIO_VERIFY_SID = process.env.TWILIO_VERIFY_SERVICE_SID || '';
 
 function formatPhoneE164(phone) {
   const digits = phone.replace(/\D/g, '');
@@ -35,6 +36,38 @@ async function sendSMS(to, body) {
     return true;
   } catch (e) {
     console.error(`[SMS-ERR] Failed to send to ${formatted}:`, e.message);
+    return false;
+  }
+}
+
+// ─── Twilio Verify API (for verification codes) ───
+async function sendVerifyCode(to, channel = 'sms') {
+  if (!twilioClient || !TWILIO_VERIFY_SID) {
+    console.log(`[Verify-SKIP] Twilio Verify not configured. To: ${to}, Channel: ${channel}`);
+    return false;
+  }
+  const formatted = formatPhoneE164(to);
+  try {
+    const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
+      .verifications.create({ to: formatted, channel });
+    console.log(`[Verify] Sent ${channel} to ${formatted}, status: ${v.status}`);
+    return true;
+  } catch (e) {
+    console.error(`[Verify-ERR] Failed to send to ${formatted}:`, e.message);
+    return false;
+  }
+}
+
+async function checkVerifyCode(to, code) {
+  if (!twilioClient || !TWILIO_VERIFY_SID) return false;
+  const formatted = formatPhoneE164(to);
+  try {
+    const check = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
+      .verificationChecks.create({ to: formatted, code });
+    console.log(`[Verify] Check ${formatted}: ${check.status}`);
+    return check.status === 'approved';
+  } catch (e) {
+    console.error(`[Verify-ERR] Check failed for ${formatted}:`, e.message);
     return false;
   }
 }
@@ -1292,25 +1325,33 @@ app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRo
   if (!w) return res.status(404).json({ error: 'Not found' });
   if (w.active) return res.status(400).json({ error: 'Account already verified' });
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(w.id);
-  const canSMS = !!(twilioClient && TWILIO_FROM && w.phone);
+
+  const canVerifyPhone = !!(twilioClient && TWILIO_VERIFY_SID && w.phone);
+  const canSMSFallback = !!(twilioClient && TWILIO_FROM && w.phone && !TWILIO_VERIFY_SID);
   const canEmail = !!(emailTransporter && w.email);
-  const phoneCode = canSMS ? String(Math.floor(100000 + Math.random() * 900000)) : null;
-  const emailCode = canEmail ? String(Math.floor(100000 + Math.random() * 900000)) : null;
   const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   let smsSent = false, emailSent = false;
-  if (phoneCode) {
+  let phoneCode = null, emailCode = null;
+
+  // Phone: prefer Twilio Verify
+  if (canVerifyPhone) {
+    smsSent = await sendVerifyCode(w.phone);
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', '__twilio_verify__', expires);
+  } else if (canSMSFallback) {
+    phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
     smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
   }
-  if (emailCode) {
+  // Email
+  if (canEmail) {
+    emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
     emailSent = await sendEmail(w.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
   }
-  console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${phoneCode||'N/A'}(sent:${smsSent}) email=${emailCode||'N/A'}(sent:${emailSent})`);
-  // Only expose codes to admin if delivery failed (so admin can tell user manually)
+  console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${canVerifyPhone?'TwilioVerify':phoneCode||'N/A'}(sent:${smsSent}) email=${emailCode||'N/A'}(sent:${emailSent})`);
   const result = { success: true, sms_sent: smsSent, email_sent: emailSent };
-  if (phoneCode && !smsSent) result.phone_code = phoneCode;
+  if (phoneCode && !smsSent) result.phone_code = phoneCode; // Only for legacy SMS fallback
   if (emailCode && !emailSent) result.email_code = emailCode;
   res.json(result);
 });
@@ -2814,24 +2855,50 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
 });
 
 // ─── Worker Forgot / Reset Password ───
-app.post('/api/worker/forgot-password', (req, res) => {
+app.post('/api/worker/forgot-password', async (req, res) => {
   const { login } = req.body;
   if (!login) return res.status(400).json({ error: '请输入邮箱或手机号' });
   const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(login, login, login);
   if (!w) return res.status(404).json({ error: '未找到该账号 / Account not found' });
+
+  // Prefer Twilio Verify for phone-based reset
+  if (w.phone && twilioClient && TWILIO_VERIFY_SID) {
+    const sent = await sendVerifyCode(w.phone);
+    resetCodes.set('worker:' + login, { useVerify: true, phone: w.phone, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
+    console.log(`[Reset] Worker ${login}: sent via Twilio Verify (sent:${sent})`);
+    return res.json({ success: true, message: '验证码已发送到您的手机 / Code sent to your phone' });
+  }
+
+  // Fallback: generate our own code (log to console)
   const code = String(Math.floor(100000 + Math.random() * 900000));
   resetCodes.set('worker:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
+  // Try to send via SMS or email
+  if (w.phone && twilioClient && TWILIO_FROM) {
+    await sendSMS(w.phone, `[Prime Anchorpoint] 重置密码验证码: ${code}，10分钟内有效。Reset code: ${code}`);
+  } else if (w.email && emailTransporter) {
+    await sendEmail(w.email, 'Prime Anchorpoint 重置密码 / Password Reset',
+      `您的重置密码验证码: ${code}\nYour password reset code: ${code}\n\n10分钟内有效 / Valid for 10 minutes.`);
+  }
   console.log(`[Reset Code] Worker account ${login}: ${code}`);
   res.json({ success: true, message: '验证码已发送 / Code sent' });
 });
 
-app.post('/api/worker/reset-password', (req, res) => {
+app.post('/api/worker/reset-password', async (req, res) => {
   const { login, code, new_password } = req.body;
   if (!login || !code || !new_password) return res.status(400).json({ error: '请填写完整信息' });
   if (new_password.length < 6) return res.status(400).json({ error: '密码至少6位' });
   const entry = resetCodes.get('worker:' + login);
-  if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
+  if (!entry) return res.status(400).json({ error: '请先发送验证码 / Please request a code first' });
   if (Date.now() > entry.expires) { resetCodes.delete('worker:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
+
+  // Check code: Twilio Verify or local
+  if (entry.useVerify) {
+    const ok = await checkVerifyCode(entry.phone, code);
+    if (!ok) return res.status(400).json({ error: '验证码错误或已过期 / Invalid or expired code' });
+  } else {
+    if (entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
+  }
+
   const { hash, salt } = hashPassword(new_password);
   db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
   resetCodes.delete('worker:' + login);
@@ -3141,7 +3208,9 @@ app.post('/api/register/worker', async (req, res) => {
   const hash = hashPassword(password, salt);
 
   // Determine which verification channels are available
-  const canSMS = !!(twilioClient && TWILIO_FROM);
+  const canVerifyPhone = !!(twilioClient && TWILIO_VERIFY_SID); // Twilio Verify API
+  const canSMSFallback = !!(twilioClient && TWILIO_FROM && !TWILIO_VERIFY_SID); // Legacy SMS (only if Verify not configured)
+  const canSMS = canVerifyPhone || canSMSFallback;
   const canEmail = !!emailTransporter;
   const needsVerification = canSMS || canEmail;
 
@@ -3158,27 +3227,32 @@ app.post('/api/register/worker', async (req, res) => {
     return res.json({ success: true, account_id: accountId, needs_verification: false, token });
   }
 
-  // Generate verification codes only for configured channels
   const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(accountId);
 
-  let phoneCode = null, emailCode = null;
   let smsSent = false, emailSent = false;
-  if (canSMS) {
+  let phoneCode = null, emailCode = null;
+
+  // Phone: prefer Twilio Verify API, fallback to regular SMS
+  if (canVerifyPhone) {
+    smsSent = await sendVerifyCode(phone);
+    // Mark that we used Twilio Verify (no local code needed)
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', '__twilio_verify__', expires);
+  } else if (canSMSFallback) {
     phoneCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
     smsSent = await sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
   }
+  // Email: always use our own codes via SMTP
   if (canEmail) {
     emailCode = String(Math.floor(100000 + Math.random() * 900000));
     db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
     emailSent = await sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
   }
-  console.log(`[Verify] Worker #${accountId} phone code: ${phoneCode || 'N/A'} (sent:${smsSent}), email code: ${emailCode || 'N/A'} (sent:${emailSent})`);
-  // If delivery failed, include codes in response so they can be shown on-screen
+  console.log(`[Verify] Worker #${accountId} phone: ${canVerifyPhone ? 'Twilio Verify' : phoneCode || 'N/A'} (sent:${smsSent}), email: ${emailCode || 'N/A'} (sent:${emailSent})`);
   const resp = { success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, sms_sent: smsSent, email_sent: emailSent };
-  if (canSMS && !smsSent) resp.phone_code = phoneCode;
+  if (phoneCode && !smsSent) resp.phone_code = phoneCode; // Only for legacy SMS fallback
   if (canEmail && !emailSent) resp.email_code = emailCode;
   res.json(resp);
 });
@@ -3191,43 +3265,61 @@ app.post('/api/register/resend-code', async (req, res) => {
   const acc = db.prepare('SELECT id, active, phone, email FROM worker_accounts WHERE id=?').get(account_id);
   if (!acc) return res.status(404).json({ error: 'Account not found' });
   if (acc.active) return res.status(400).json({ error: 'Account already verified' });
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+
+  let sent = false;
+  let code = null;
   const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
-  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, type, code, expires);
-  console.log(`[Verify] Resend ${type} code for Worker #${account_id}: ${code}`);
-  // Send code
-  let sent = false;
+
   if (type === 'phone') {
-    sent = await sendSMS(acc.phone, `[Prime Anchorpoint] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+    // Prefer Twilio Verify API
+    if (twilioClient && TWILIO_VERIFY_SID) {
+      sent = await sendVerifyCode(acc.phone);
+      db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'phone', '__twilio_verify__', expires);
+      console.log(`[Verify] Resend phone via Twilio Verify for Worker #${account_id} (sent:${sent})`);
+    } else {
+      code = String(Math.floor(100000 + Math.random() * 900000));
+      db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'phone', code, expires);
+      sent = await sendSMS(acc.phone, `[Prime Anchorpoint] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+      console.log(`[Verify] Resend phone SMS for Worker #${account_id}: ${code} (sent:${sent})`);
+    }
   } else {
+    code = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'email', code, expires);
     sent = await sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
       `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+    console.log(`[Verify] Resend email for Worker #${account_id}: ${code} (sent:${sent})`);
   }
-  // If delivery failed, include code in response so frontend can display it
   const resBody = { success: true, sent };
-  if (!sent) resBody.code = code;
+  if (code && !sent) resBody.code = code;
   res.json(resBody);
 });
 
 // Verify codes and activate account
-app.post('/api/register/verify', (req, res) => {
+app.post('/api/register/verify', async (req, res) => {
   const { account_id, phone_code, email_code } = req.body;
   if (!account_id) return res.status(400).json({ error: 'account_id required' });
-  const acc = db.prepare('SELECT id, active, employee_id FROM worker_accounts WHERE id=?').get(account_id);
+  const acc = db.prepare('SELECT id, active, employee_id, phone FROM worker_accounts WHERE id=?').get(account_id);
   if (!acc) return res.status(404).json({ error: 'Account not found' });
   if (acc.active) return res.status(400).json({ error: 'Account already verified' });
   const now = new Date().toISOString();
   // Check which verification codes exist for this account
-  const pendingPhone = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND type=?').get(account_id, 'phone');
+  const pendingPhone = db.prepare('SELECT id, code FROM verification_codes WHERE worker_account_id=? AND type=?').get(account_id, 'phone');
   const pendingEmail = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND type=?').get(account_id, 'email');
-  // Validate phone code if one was issued
+  // Validate phone code
   if (pendingPhone) {
     if (!phone_code) return res.status(400).json({ error: '请输入手机验证码 / Phone verification code required' });
-    const pv = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'phone', phone_code, now);
-    if (!pv) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+    if (pendingPhone.code === '__twilio_verify__') {
+      // Check via Twilio Verify API
+      const ok = await checkVerifyCode(acc.phone, phone_code);
+      if (!ok) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+    } else {
+      // Check against local DB
+      const pv = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'phone', phone_code, now);
+      if (!pv) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+    }
   }
-  // Validate email code if one was issued
+  // Validate email code (always local DB)
   if (pendingEmail) {
     if (!email_code) return res.status(400).json({ error: '请输入邮箱验证码 / Email verification code required' });
     const ev = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'email', email_code, now);
