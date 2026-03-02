@@ -3509,6 +3509,22 @@ app.post('/api/customer/reset-password', (req, res) => {
 });
 
 // ─── Public Registration ───
+
+// Real-time duplicate check (phone or email)
+app.get('/api/register/check', (req, res) => {
+  const { phone, email } = req.query;
+  if (phone) {
+    const clean = phone.replace(/[\s\-()+]/g, '');
+    const row = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=?').get(clean);
+    if (row && row.active) return res.json({ taken: true, field: 'phone' });
+  }
+  if (email) {
+    const row = db.prepare('SELECT id, active FROM worker_accounts WHERE email=?').get(email.toLowerCase().trim());
+    if (row && row.active) return res.json({ taken: true, field: 'email' });
+  }
+  res.json({ taken: false });
+});
+
 app.post('/api/register/worker', async (req, res) => {
   try {
   const { name, phone, email, dob, work_status, position_interests, password } = req.body;
