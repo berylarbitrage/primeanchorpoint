@@ -105,11 +105,20 @@ const emailTransporter = process.env.SMTP_HOST
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
     })
   : null;
-const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
+// Gmail/Google Workspace requires FROM to match the authenticated SMTP_USER
+const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@primeanchorpoint.com';
+
+if (emailTransporter) {
+  emailTransporter.verify().then(() => {
+    console.log(`[EMAIL] SMTP connection verified OK (from: ${EMAIL_FROM})`);
+  }).catch(e => {
+    console.error(`[EMAIL-ERR] SMTP connection failed at startup: ${e.message}`);
+  });
+}
 
 async function sendEmail(to, subject, text) {
   if (!emailTransporter) {
-    console.log(`[EMAIL-SKIP] SMTP not configured. To: ${to}, Subject: ${subject}, Body: ${text}`);
+    console.log(`[EMAIL-SKIP] SMTP not configured. To: ${to}`);
     return false;
   }
   try {
@@ -117,7 +126,7 @@ async function sendEmail(to, subject, text) {
     console.log(`[EMAIL] Sent to ${to}`);
     return true;
   } catch (e) {
-    console.error(`[EMAIL-ERR] Failed to send to ${to}:`, e.message);
+    console.error(`[EMAIL-ERR] Failed to send to ${to}: ${e.message} (code: ${e.code}, response: ${e.response})`);
     return false;
   }
 }
@@ -1423,6 +1432,28 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
   // Fallback to regular SMS
   const result = await sendSMSWithDetail(to, '[Prime Anchorpoint] 测试短信 / SMS Test: Twilio is working!');
   res.json({ configured, result, accountInfo, method: 'sms' });
+});
+
+// Admin: test email (SMTP) configuration
+app.post('/api/admin/test-email', requireAdmin, requireRole('admin'), async (req, res) => {
+  const { to } = req.body;
+  if (!to) return res.status(400).json({ error: 'Missing email address' });
+  const configured = {
+    smtp_host: process.env.SMTP_HOST || null,
+    smtp_port: process.env.SMTP_PORT || '587',
+    smtp_secure: process.env.SMTP_SECURE || 'false',
+    smtp_user: process.env.SMTP_USER || null,
+    smtp_pass_set: !!process.env.SMTP_PASS,
+    email_from: EMAIL_FROM,
+    transporter_ready: !!emailTransporter,
+  };
+  if (!emailTransporter) return res.json({ configured, sent: false, error: 'SMTP not configured (SMTP_HOST missing)' });
+  // Verify connection first
+  try { await emailTransporter.verify(); } catch (e) {
+    return res.json({ configured, sent: false, error: `SMTP connection failed: ${e.message}` });
+  }
+  const sent = await sendEmail(to, 'Prime Anchorpoint SMTP Test', `SMTP is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
+  res.json({ configured, sent, error: sent ? null : 'sendMail failed — check server logs for [EMAIL-ERR]' });
 });
 
 // Admin: resend verification codes to unverified worker
