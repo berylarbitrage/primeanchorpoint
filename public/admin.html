@@ -242,7 +242,7 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="smsTestModal">
 <div class="modal" style="max-width:460px">
   <h2>📡 测试短信发送</h2>
-  <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">输入一个手机号，测试 Twilio 是否能成功发送短信，并显示详细错误信息。</p>
+  <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">输入一个手机号，测试 Twilio 是否能成功发送短信（优先使用 Verify API）。</p>
   <div class="field"><label>发送到手机号（E.164 格式，如 +12025551234）</label>
     <input type="tel" id="smsTestPhone" placeholder="+1XXXXXXXXXX">
   </div>
@@ -2093,42 +2093,56 @@ async function runSmsTest() {
     const acct = d.accountInfo || {};
     const isTrial = acct.type === 'Trial';
     let out = '── Twilio 配置状态 ──\n';
-    out += `Account SID: ${cfg.account_sid || '❌ 未设置'}\n`;
-    out += `Auth Token:  ${cfg.auth_token ? '✅ 已设置' : '❌ 未设置'}\n`;
-    out += `发送号码:    ${cfg.phone_number || '❌ 未设置'}\n`;
-    out += `Client 就绪: ${cfg.client_ready ? '✅' : '❌'}\n`;
+    out += `Account SID:  ${cfg.account_sid || '❌ 未设置'}\n`;
+    out += `Auth Token:   ${cfg.auth_token ? '✅ 已设置' : '❌ 未设置'}\n`;
+    out += `发送号码:     ${cfg.phone_number || '❌ 未设置'}\n`;
+    out += `Verify SID:   ${cfg.verify_sid ? '✅ ' + cfg.verify_sid : '未配置（用普通SMS）'}\n`;
+    out += `Client 就绪:  ${cfg.client_ready ? '✅' : '❌'}\n`;
     if (acct.type) {
       const typeLabel = isTrial ? '⚠️ Trial（试用账号）' : '✅ ' + acct.type;
-      out += `账号类型:    ${typeLabel}\n`;
-      out += `账号名称:    ${acct.friendlyName || '-'}\n`;
+      out += `账号类型:     ${typeLabel}\n`;
+      out += `账号名称:     ${acct.friendlyName || '-'}\n`;
     } else if (acct.error) {
-      out += `账号类型:    ❌ 查询失败: ${acct.error}\n`;
+      out += `账号类型:     ❌ 查询失败: ${acct.error}\n`;
     }
-    out += '\n── 发送结果 ──\n';
+    out += `\n── 发送方式: ${d.method === 'verify' ? 'Twilio Verify API（无需10DLC）' : '普通 SMS'} ──\n`;
     if (d.result) {
-      const st = d.result.status;
-      const isQueued = st === 'queued' || st === 'accepted';
-      const isUndelivered = st === 'undelivered' || st === 'failed';
-      if (d.result.ok && !isQueued && !isUndelivered) {
-        out += `✅ 发送成功！已送达\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}`;
-      } else if (d.result.ok && isQueued && isTrial) {
-        out += `⚠️ 已提交但未送达（Trial 账号限制）\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}\n\n`;
-        out += '【原因】Trial 账号只能发短信给在 Twilio 控制台\n已验证过的号码（Verified Caller IDs）。\n\n';
-        out += '【解决方法】\n';
-        out += '1. 升级到付费账号（推荐），即可向任何号码发短信\n';
-        out += '2. 或在 Twilio 控制台 → Phone Numbers →\n   Verified Caller IDs 中添加并验证目标号码';
-      } else if (d.result.ok && isQueued) {
-        out += `⚠️ 消息已提交，但状态仍为"${st}"（可能延迟）\nSID: ${d.result.sid}\n发送到: ${d.result.to}`;
-      } else if (isUndelivered) {
-        out += `❌ 发送失败（${st}）\n错误码: ${d.result.errorCode || '-'}\n错误信息: ${d.result.errorMessage || d.result.error || '-'}\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
+      if (d.method === 'verify') {
+        // Twilio Verify API result
+        if (d.result.ok) {
+          out += `✅ 验证码已发送！\nSID: ${d.result.sid}\n状态: ${d.result.status}\n发送到: ${d.result.to}\n通道: ${d.result.channel}\n\n`;
+          out += '收到验证码说明 Twilio Verify 正常工作。\nVerify API 使用 Twilio 号码池发送，无需 10DLC 注册。';
+        } else {
+          out += `❌ 发送失败\n错误: ${d.result.error}`;
+          if (d.result.code) out += `\nTwilio 错误码: ${d.result.code}`;
+          out += `\n目标号码: ${d.result.to}`;
+        }
       } else {
-        out += `❌ 发送失败\n错误: ${d.result.error}`;
-        if (d.result.code) out += `\nTwilio 错误码: ${d.result.code}`;
-        out += `\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
+        // Legacy SMS result
+        const st = d.result.status;
+        const isQueued = st === 'queued' || st === 'accepted';
+        const isUndelivered = st === 'undelivered' || st === 'failed';
+        if (d.result.ok && !isQueued && !isUndelivered) {
+          out += `✅ 发送成功！已送达\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}`;
+        } else if (d.result.ok && isQueued && isTrial) {
+          out += `⚠️ 已提交但未送达（Trial 账号限制）\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}\n\n`;
+          out += '【原因】Trial 账号只能发短信给在 Twilio 控制台\n已验证过的号码（Verified Caller IDs）。\n\n';
+          out += '【解决方法】\n';
+          out += '1. 升级到付费账号（推荐），即可向任何号码发短信\n';
+          out += '2. 或在 Twilio 控制台 → Phone Numbers →\n   Verified Caller IDs 中添加并验证目标号码';
+        } else if (d.result.ok && isQueued) {
+          out += `⚠️ 消息已提交，但状态仍为"${st}"（可能延迟）\nSID: ${d.result.sid}\n发送到: ${d.result.to}`;
+        } else if (isUndelivered) {
+          out += `❌ 发送失败（${st}）\n错误码: ${d.result.errorCode || '-'}\n错误信息: ${d.result.errorMessage || d.result.error || '-'}\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
+        } else {
+          out += `❌ 发送失败\n错误: ${d.result.error}`;
+          if (d.result.code) out += `\nTwilio 错误码: ${d.result.code}`;
+          out += `\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
+        }
       }
     }
-    const isOk = d.result && d.result.ok && d.result.status === 'delivered';
-    const isWarn = d.result && d.result.ok && d.result.status !== 'delivered';
+    const isOk = d.result && d.result.ok && (d.result.status === 'delivered' || (d.method === 'verify' && d.result.status === 'pending'));
+    const isWarn = d.result && d.result.ok && !isOk;
     resultEl.style.background = isOk ? '#f0fff4' : isWarn ? '#fffbeb' : '#fff5f5';
     resultEl.style.border = `1px solid ${isOk ? '#9ae6b4' : isWarn ? '#f6ad55' : '#feb2b2'}`;
     resultEl.textContent = out;
