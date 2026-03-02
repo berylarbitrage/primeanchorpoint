@@ -1410,15 +1410,15 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
 });
 
 // POST /api/jobs/:id/apply - apply for a specific job
-app.post('/api/jobs/:id/apply', (req, res) => {
+app.post('/api/jobs/:id/apply', upload.single('resume'), (req, res) => {
   try {
     const job = db.prepare('SELECT id, title FROM jobs WHERE id=? AND active=1').get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     const d = req.body;
     if (!d.name) return res.status(400).json({ error: 'Name required' });
     if (!d.phone) return res.status(400).json({ error: 'Phone required' });
-    const result = db.prepare(`INSERT INTO inquiries (name, email, phone, type, positions, experience, comments, job_id) VALUES (?, ?, ?, 'Job Seeker', ?, ?, ?, ?)`).run(
-      d.name, d.email || '', d.phone, job.title, d.experience || '', d.comments || '', job.id
+    const result = db.prepare(`INSERT INTO inquiries (name, email, phone, type, positions, experience, comments, resume_path, job_id) VALUES (?, ?, ?, 'Job Seeker', ?, ?, ?, ?, ?)`).run(
+      d.name, d.email || '', d.phone, job.title, d.experience || '', d.comments || '', req.file ? req.file.filename : '', job.id
     );
     res.json({ success: true, id: result.lastInsertRowid });
   } catch (e) {
