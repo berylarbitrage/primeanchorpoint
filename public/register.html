@@ -244,7 +244,7 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <div id="emailResendSection" style="text-align:right;margin-top:-.5rem;margin-bottom:1rem;display:none">
         <a href="#" onclick="resendCode('email');return false" style="font-size:.82rem;color:var(--sky)">重新发送邮箱验证码 / Resend email code</a>
       </div>
-      <button class="btn btn-submit" onclick="verifyWorker()">确认验证 / Verify & Complete</button>
+      <button class="btn btn-submit" id="verifyBtn" onclick="verifyWorker()">确认验证 / Verify & Complete</button>
       <p id="verifyHint" style="text-align:center;font-size:.82rem;color:#999;margin-top:.75rem">验证码15分钟内有效 / Codes expire in 15 minutes</p>
     </div>
 
@@ -413,29 +413,7 @@ async function registerWorker() {
     });
     const d = await r.json();
     if (!r.ok || d.error) {
-      // Pending verification — switch to verify UI instead of just showing error
-      if (d.pending_account_id) {
-        _pendingAccountId = d.pending_account_id;
-        _needsPhone = !!d.needs_phone;
-        _needsEmail = !!d.needs_email;
-        if (_needsPhone) {
-          document.getElementById('phoneCodeSection').style.display = '';
-          document.getElementById('phoneResendSection').style.display = '';
-        }
-        if (_needsEmail) {
-          document.getElementById('emailCodeSection').style.display = '';
-          document.getElementById('emailResendSection').style.display = '';
-        }
-        document.getElementById('verifyIcon').textContent = _needsPhone && _needsEmail ? '📱✉️' : _needsPhone ? '📱' : '✉️';
-        document.getElementById('verifyTitle').textContent = '完成验证 / Complete Verification';
-        document.getElementById('verifyDesc').innerHTML = d.error;
-        document.getElementById('formWorker').style.display = 'none';
-        const ts = document.getElementById('typeSelector');
-        if (ts) ts.style.display = 'none';
-        document.getElementById('loginLinks').style.display = 'none';
-        document.getElementById('workerVerify').style.display = '';
-        return;
-      }
+      if (d.pending_account_id) return _initVerifyUI({ ...d, account_id: d.pending_account_id });
       return showError(d.error || '注册失败，请稍后重试 / Registration failed, please try again');
     }
 
@@ -446,57 +424,12 @@ async function registerWorker() {
       const ts = document.getElementById('typeSelector');
       if (ts) ts.style.display = 'none';
       document.getElementById('loginLinks').style.display = 'none';
-      document.getElementById('workerSuccess').style.display = '';
+      document.getElementById('workerSuccess').style.display = 'block';
       setTimeout(() => { window.location.href = '/portal'; }, 2000);
       return;
     }
 
-    // Show verification step with only the needed fields
-    _pendingAccountId = d.account_id;
-    _needsPhone = !!d.needs_phone;
-    _needsEmail = !!d.needs_email;
-
-    // Show/hide phone code section; if delivery failed, pre-fill the code
-    if (_needsPhone) {
-      document.getElementById('phoneCodeSection').style.display = '';
-      document.getElementById('phoneResendSection').style.display = '';
-      if (d.phone_code) document.getElementById('vPhoneCode').value = d.phone_code;
-    }
-    // Show/hide email code section; if delivery failed, pre-fill the code
-    if (_needsEmail) {
-      document.getElementById('emailCodeSection').style.display = '';
-      document.getElementById('emailResendSection').style.display = '';
-      if (d.email_code) document.getElementById('vEmailCode').value = d.email_code;
-    }
-    // Update header text based on what's needed and delivery status
-    const phoneOk = !_needsPhone || d.sms_sent;
-    const emailOk = !_needsEmail || d.email_sent;
-    const deliveryFailed = !phoneOk || !emailOk;
-    if (_needsPhone && _needsEmail) {
-      document.getElementById('verifyIcon').textContent = '📱✉️';
-      document.getElementById('verifyTitle').textContent = '验证手机号和邮箱 / Verify Phone & Email';
-      document.getElementById('verifyDesc').innerHTML = deliveryFailed
-        ? '短信/邮件发送失败，验证码已自动填入，请直接点击验证。<br>Delivery failed — code has been filled in automatically.'
-        : '验证码已发送到您的手机和邮箱，请输入收到的6位数验证码。<br>Verification codes have been sent to your phone and email.';
-    } else if (_needsPhone) {
-      document.getElementById('verifyIcon').textContent = '📱';
-      document.getElementById('verifyTitle').textContent = '验证手机号 / Verify Phone';
-      document.getElementById('verifyDesc').innerHTML = d.phone_code
-        ? '短信发送失败，验证码已自动填入，请直接点击验证。<br>SMS delivery failed — code has been filled in automatically.'
-        : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
-    } else if (_needsEmail) {
-      document.getElementById('verifyIcon').textContent = '✉️';
-      document.getElementById('verifyTitle').textContent = '验证邮箱 / Verify Email';
-      document.getElementById('verifyDesc').innerHTML = d.email_code
-        ? '邮件发送失败，验证码已自动填入，请直接点击验证。<br>Email delivery failed — code has been filled in automatically.'
-        : '验证码已发送到您的邮箱，请输入收到的6位数验证码。<br>A verification code has been sent to your email.';
-    }
-
-    document.getElementById('formWorker').style.display = 'none';
-    const ts = document.getElementById('typeSelector');
-    if (ts) ts.style.display = 'none';
-    document.getElementById('loginLinks').style.display = 'none';
-    document.getElementById('workerVerify').style.display = '';
+    _initVerifyUI(d);
   } catch (e) {
     showError('网络错误，请重试 / Network error, please try again');
   }
@@ -505,9 +438,74 @@ async function registerWorker() {
 let _pendingAccountId = null;
 let _needsPhone = false;
 let _needsEmail = false;
+let _verifyPhoneDone = false; // two-step: true once phone step is passed
+
+function _initVerifyUI(d) {
+  _pendingAccountId = d.account_id;
+  _needsPhone = !!d.needs_phone;
+  _needsEmail = !!d.needs_email;
+  _verifyPhoneDone = false;
+  document.getElementById('vPhoneCode').value = d.phone_code || '';
+  document.getElementById('vEmailCode').value = d.email_code || '';
+  document.getElementById('formWorker').style.display = 'none';
+  const ts = document.getElementById('typeSelector');
+  if (ts) ts.style.display = 'none';
+  document.getElementById('loginLinks').style.display = 'none';
+  document.getElementById('workerVerify').style.display = '';
+  if (_needsPhone && _needsEmail) {
+    // Two-step: phone first, email second
+    document.getElementById('phoneCodeSection').style.display = '';
+    document.getElementById('phoneResendSection').style.display = '';
+    document.getElementById('emailCodeSection').style.display = 'none';
+    document.getElementById('emailResendSection').style.display = 'none';
+    document.getElementById('verifyBtn').textContent = '下一步：验证邮箱 / Next: Verify Email';
+    document.getElementById('verifyIcon').textContent = '📱';
+    document.getElementById('verifyTitle').textContent = '第1步：验证手机号 / Step 1: Verify Phone';
+    document.getElementById('verifyDesc').innerHTML = d.phone_code
+      ? '短信发送失败，验证码已自动填入，请直接点击下一步。<br>SMS delivery failed — code filled in automatically, click Next.'
+      : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
+  } else if (_needsPhone) {
+    document.getElementById('phoneCodeSection').style.display = '';
+    document.getElementById('phoneResendSection').style.display = '';
+    document.getElementById('emailCodeSection').style.display = 'none';
+    document.getElementById('emailResendSection').style.display = 'none';
+    document.getElementById('verifyBtn').textContent = '确认验证 / Verify & Complete';
+    document.getElementById('verifyIcon').textContent = '📱';
+    document.getElementById('verifyTitle').textContent = '验证手机号 / Verify Phone';
+    document.getElementById('verifyDesc').innerHTML = d.phone_code
+      ? '短信发送失败，验证码已自动填入，请直接点击验证。<br>SMS delivery failed — code filled in automatically.'
+      : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
+  } else {
+    document.getElementById('phoneCodeSection').style.display = 'none';
+    document.getElementById('phoneResendSection').style.display = 'none';
+    document.getElementById('emailCodeSection').style.display = '';
+    document.getElementById('emailResendSection').style.display = '';
+    document.getElementById('verifyBtn').textContent = '确认验证 / Verify & Complete';
+    document.getElementById('verifyIcon').textContent = '✉️';
+    document.getElementById('verifyTitle').textContent = '验证邮箱 / Verify Email';
+    document.getElementById('verifyDesc').innerHTML = d.email_code
+      ? '邮件发送失败，验证码已自动填入，请直接点击验证。<br>Email delivery failed — code filled in automatically.'
+      : '验证码已发送到您的邮箱，请输入收到的6位数验证码。<br>A verification code has been sent to your email.';
+  }
+}
 
 async function verifyWorker() {
   hideError();
+  if (_needsPhone && _needsEmail && !_verifyPhoneDone) {
+    // Phone step: validate and advance to email step
+    const phoneCode = document.getElementById('vPhoneCode').value.trim();
+    if (!phoneCode) return showError('请输入手机验证码 / Please enter phone code');
+    _verifyPhoneDone = true;
+    document.getElementById('phoneCodeSection').style.display = 'none';
+    document.getElementById('phoneResendSection').style.display = 'none';
+    document.getElementById('emailCodeSection').style.display = '';
+    document.getElementById('emailResendSection').style.display = '';
+    document.getElementById('verifyBtn').textContent = '确认验证 / Verify & Complete';
+    document.getElementById('verifyIcon').textContent = '✉️';
+    document.getElementById('verifyTitle').textContent = '第2步：验证邮箱 / Step 2: Verify Email';
+    document.getElementById('verifyDesc').innerHTML = '验证码已发送到您的邮箱，请输入收到的6位数验证码。<br>A verification code has been sent to your email.';
+    return;
+  }
   const phoneCode = document.getElementById('vPhoneCode').value.trim();
   const emailCode = document.getElementById('vEmailCode').value.trim();
   if (_needsPhone && !phoneCode) return showError('请输入手机验证码 / Please enter phone code');
@@ -525,7 +523,7 @@ async function verifyWorker() {
     if (!r.ok || d.error) return showError(d.error || 'Verification failed');
     if (d.token) localStorage.setItem('pa_worker_token', d.token);
     document.getElementById('workerVerify').style.display = 'none';
-    document.getElementById('workerSuccess').style.display = '';
+    document.getElementById('workerSuccess').style.display = 'block';
     setTimeout(() => { window.location.href = '/portal'; }, 2000);
   } catch (e) {
     showError('网络错误，请重试 / Network error, please try again');

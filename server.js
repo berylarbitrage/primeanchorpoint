@@ -3414,15 +3414,25 @@ app.post('/api/register/worker', async (req, res) => {
     const now = new Date().toISOString();
     const validCode = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND expires_at>?').get(existing.id, now);
     if (validCode) {
-      // Codes still active — the user should complete the pending verification, not start over
-      const hasPhone = !!db.prepare("SELECT id FROM verification_codes WHERE worker_account_id=? AND type='phone' AND expires_at>?").get(existing.id, now);
-      const hasEmail = !!db.prepare("SELECT id FROM verification_codes WHERE worker_account_id=? AND type='email' AND expires_at>?").get(existing.id, now);
-      return res.status(400).json({
-        error: '该手机号或邮箱已有待验证的注册，验证码已重新发送，请输入验证码完成注册。 / A pending registration exists. Verification codes have been resent — please enter them to complete registration.',
+      // Codes still active — redirect the user to complete the pending verification
+      const phoneRow = db.prepare("SELECT code FROM verification_codes WHERE worker_account_id=? AND type='phone' AND expires_at>?").get(existing.id, now);
+      const emailRow = db.prepare("SELECT code FROM verification_codes WHERE worker_account_id=? AND type='email' AND expires_at>?").get(existing.id, now);
+      // Try to resend so the user gets fresh codes in their inbox
+      let phoneSent = false, emailSent = false;
+      if (phoneRow && phoneRow.code !== '__twilio_verify__' && existing.phone)
+        phoneSent = await sendSMS(existing.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneRow.code}，15分钟内有效。Your verification code: ${phoneRow.code}`);
+      if (emailRow && existing.email)
+        emailSent = await sendEmail(existing.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+          `您的邮箱验证码是: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+      const pendingResp = {
+        error: '该手机号或邮箱已有待验证的注册，验证码已重新发送，请输入验证码完成注册。 / A pending registration exists. Verification codes have been resent — please enter them below.',
         pending_account_id: existing.id,
-        needs_phone: hasPhone,
-        needs_email: hasEmail
-      });
+        needs_phone: !!phoneRow,
+        needs_email: !!emailRow
+      };
+      if (phoneRow && phoneRow.code !== '__twilio_verify__' && !phoneSent) pendingResp.phone_code = phoneRow.code;
+      if (emailRow && !emailSent) pendingResp.email_code = emailRow.code;
+      return res.status(400).json(pendingResp);
     }
     // All codes expired — clean up and allow fresh registration
     db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(existing.id);
