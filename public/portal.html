@@ -115,6 +115,7 @@ tr:last-child td{border-bottom:none}
 .geo-warn{background:#fef3c7;color:#92400e}
 @media(max-width:600px){.job-card{flex-direction:column}.header h1{font-size:.9rem}.form-row{grid-template-columns:1fr}.compliance-grid{grid-template-columns:1fr}}
 </style>
+<script src="https://cdn.withpersona.com/dist/persona-v5.5.0.js" defer></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -371,26 +372,40 @@ tr:last-child td{border-bottom:none}
         </form>
       </div>
 
-      <!-- Driver's License Upload -->
+      <!-- Driver's License / ID Verification (Persona) -->
       <div class="card" id="dlFormCard" style="display:none">
-        <h2>驾照验证 / Driver's License Verification</h2>
-        <form id="dlForm" onsubmit="submitDL(event)">
-          <div class="form-row">
-            <div class="form-group"><label>驾照号 DL Number *</label><input name="dl_number" required></div>
-            <div class="form-group"><label>发行州 State *</label><input name="dl_state" required maxlength="2" placeholder="CA"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>到期日 Expiration *</label><input name="dl_expiry" type="date" required></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>正面照片 Front *</label><input type="file" name="dl_front" accept=".pdf,.jpg,.jpeg,.png" required></div>
-            <div class="form-group"><label>背面照片 Back</label><input type="file" name="dl_back" accept=".pdf,.jpg,.jpeg,.png"></div>
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-sky">提交驾照 / Submit</button>
-            <button type="button" class="btn btn-gray" onclick="hideDLForm()">取消</button>
-          </div>
-        </form>
+        <h2>🪪 身份证件验证 / ID Verification</h2>
+        <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">
+          使用 Persona 安全验证您的驾照或身份证件。点击下方按钮开始，按照提示拍照即可自动验证。<br>
+          <span style="font-size:.8rem">Securely verify your driver's license or government ID via Persona. Click below to start.</span>
+        </p>
+        <div id="personaStatusBox" style="display:none;padding:1rem;border-radius:8px;margin-bottom:1rem"></div>
+        <div id="personaActions">
+          <button class="btn btn-sky" onclick="startPersonaVerification()" id="personaStartBtn" style="font-size:.95rem;padding:.7rem 1.5rem">
+            开始验证 / Start Verification
+          </button>
+          <button type="button" class="btn btn-gray" onclick="hideDLForm()" style="margin-left:.5rem">取消</button>
+        </div>
+        <!-- Fallback for manual upload if Persona not configured -->
+        <div id="dlManualFallback" style="display:none;margin-top:1rem;border-top:1px solid var(--gray-200);padding-top:1rem">
+          <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">Persona 未配置，请手动上传驾照</p>
+          <form id="dlForm" onsubmit="submitDL(event)">
+            <div class="form-row">
+              <div class="form-group"><label>驾照号 DL Number *</label><input name="dl_number" required></div>
+              <div class="form-group"><label>发行州 State *</label><input name="dl_state" required maxlength="2" placeholder="CA"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>到期日 Expiration *</label><input name="dl_expiry" type="date" required></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>正面照片 Front *</label><input type="file" name="dl_front" accept=".pdf,.jpg,.jpeg,.png" required></div>
+              <div class="form-group"><label>背面照片 Back</label><input type="file" name="dl_back" accept=".pdf,.jpg,.jpeg,.png"></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-sky">提交驾照 / Submit</button>
+            </div>
+          </form>
+        </div>
       </div>
 
       <!-- W-9 Form -->
@@ -992,7 +1007,7 @@ async function loadProfile() {
 // ─── Compliance Section ───
 const DOC_LABELS = {
   i9: { zh: 'I-9 就业资格验证', en: 'I-9 Employment Eligibility', icon: '📋' },
-  drivers_license: { zh: '驾照验证', en: "Driver's License", icon: '🪪' },
+  drivers_license: { zh: '身份证件验证', en: "ID Verification (Persona)", icon: '🪪' },
   w9: { zh: 'W-9 纳税人识别', en: 'W-9 Tax ID', icon: '📄' },
   ssn_card: { zh: '社安卡', en: 'SSN Card', icon: '🔒' },
   work_permit: { zh: '工作许可', en: 'Work Permit', icon: '📃' },
@@ -1056,10 +1071,107 @@ async function loadCompliance() {
 
 function showI9Form() { document.getElementById('i9FormCard').style.display = ''; }
 function hideI9Form() { document.getElementById('i9FormCard').style.display = 'none'; }
-function showDLForm() { document.getElementById('dlFormCard').style.display = ''; }
+async function showDLForm() {
+  document.getElementById('dlFormCard').style.display = '';
+  // Check if Persona is configured
+  const config = await wApi('/persona/config');
+  if (config && config.enabled) {
+    document.getElementById('personaActions').style.display = '';
+    document.getElementById('dlManualFallback').style.display = 'none';
+    // Check current status
+    const status = await wApi('/persona/status');
+    const box = document.getElementById('personaStatusBox');
+    if (status && status.persona_inquiry_id && status.status !== 'rejected') {
+      if (status.status === 'approved') {
+        box.style.display = '';
+        box.style.background = '#f0fdf4';
+        box.style.border = '1px solid #86efac';
+        box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
+        document.getElementById('personaStartBtn').style.display = 'none';
+      } else if (status.status === 'pending') {
+        box.style.display = '';
+        box.style.background = '#fefce8';
+        box.style.border = '1px solid #fde047';
+        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Verification in progress</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">Persona 正在自动验证您的证件，请稍候。</div>';
+        document.getElementById('personaStartBtn').textContent = '重新验证 / Re-verify';
+      }
+    }
+  } else {
+    // Fallback to manual upload
+    document.getElementById('personaActions').style.display = 'none';
+    document.getElementById('dlManualFallback').style.display = '';
+  }
+}
 function hideDLForm() { document.getElementById('dlFormCard').style.display = 'none'; }
 function showW9Form() { document.getElementById('w9FormCard').style.display = ''; }
 function hideW9Form() { document.getElementById('w9FormCard').style.display = 'none'; }
+
+// ── Persona Verification ──
+let _personaClient = null;
+
+async function startPersonaVerification() {
+  if (typeof Persona === 'undefined') {
+    showToast('❌ Persona SDK 加载失败，请刷新页面重试', 'error');
+    return;
+  }
+  const btn = document.getElementById('personaStartBtn');
+  btn.disabled = true;
+  btn.textContent = '加载中...';
+
+  try {
+    // Create inquiry on backend first
+    const r = await wApi('/persona/inquiry', { method: 'POST' });
+    if (!r || !r.inquiry_id) {
+      showToast('❌ ' + (r?.error || '创建验证失败'), 'error');
+      btn.disabled = false;
+      btn.textContent = '开始验证 / Start Verification';
+      return;
+    }
+
+    // Open Persona embedded flow
+    if (_personaClient) { try { _personaClient.destroy(); } catch {} }
+
+    _personaClient = new Persona.Client({
+      inquiryId: r.inquiry_id,
+      onReady: () => {
+        _personaClient.open();
+        btn.disabled = false;
+        btn.textContent = '开始验证 / Start Verification';
+      },
+      onComplete: ({ inquiryId, status, fields }) => {
+        console.log('[Persona] Complete:', inquiryId, status);
+        const box = document.getElementById('personaStatusBox');
+        box.style.display = '';
+        if (status === 'completed') {
+          box.style.background = '#fefce8';
+          box.style.border = '1px solid #fde047';
+          box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Processing...</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">证件已提交，系统正在自动验证。通过后状态会自动更新。</div>';
+        } else {
+          box.style.background = '#f0fdf4';
+          box.style.border = '1px solid #86efac';
+          box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 验证已提交 / Submitted</div>';
+        }
+        showToast('✅ 证件已提交验证');
+        loadCompliance();
+      },
+      onCancel: ({ inquiryId }) => {
+        console.log('[Persona] Cancelled:', inquiryId);
+        showToast('验证已取消', 'error');
+      },
+      onError: (error) => {
+        console.error('[Persona] Error:', error);
+        showToast('❌ 验证出错，请重试', 'error');
+        btn.disabled = false;
+        btn.textContent = '开始验证 / Start Verification';
+      }
+    });
+  } catch (e) {
+    console.error('[Persona] Init error:', e);
+    showToast('❌ 初始化失败: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '开始验证 / Start Verification';
+  }
+}
 
 function toggleI9Fields(val) {
   document.getElementById('i9AlienFields').style.display = (val === 'permanent_resident' || val === 'work_authorized') ? '' : 'none';
