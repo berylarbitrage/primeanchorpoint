@@ -484,7 +484,7 @@ function renderJobs(jobs) {
         <div class="job-title">${esc(j.title)} ${j.urgent?'<span class="badge badge-urgent">急聘</span>':''} ${j.applied?'<span class="badge badge-applied">✓ 已申请</span>':''}</div>
         <div class="job-meta">
           ${j.company_name?`<strong>${esc(j.company_name)}</strong> · `:''}<span>${esc(j.location)}</span>
-          ${j.pay?` · 薪资: ${esc(j.pay)}`:''}
+          ${j.pay?` · 薪资: ${esc(j.pay)}${j.pay_period?` <span style="font-size:.78rem;color:var(--gray-400)">(${({'hourly':'每小时','daily':'每天','weekly':'每周','biweekly':'每两周','semimonthly':'每半月','monthly':'每月'})[j.pay_period]||j.pay_period})</span>`:''}` :''}
           ${j.type?` · ${esc(j.type)}`:''}
           ${j.employment_type?` · ${esc(j.employment_type)}`:''}
         </div>

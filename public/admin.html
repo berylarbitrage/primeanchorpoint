@@ -1256,7 +1256,20 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="field-row">
     <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
-    <div class="field"><label>语言</label>
+    <div class="field"><label>结算周期</label>
+      <select id="jPayPeriod">
+        <option value="">不指定</option>
+        <option value="hourly">每小时 (Hourly)</option>
+        <option value="daily">每天 (Daily)</option>
+        <option value="weekly">每周 (Weekly)</option>
+        <option value="biweekly">每两周 (Bi-weekly)</option>
+        <option value="semimonthly">每半月 (Semi-monthly)</option>
+        <option value="monthly">每月 (Monthly)</option>
+      </select>
+    </div>
+  </div>
+  <div class="field-row">
+    <div class="field" style="flex:0 0 auto"><label>语言</label>
       <select id="jLang">
         <option value="en">English</option>
         <option value="zh">中文</option>
@@ -2304,6 +2317,7 @@ async function openJobModal(job) {
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jLocation').value = job ? job.location : '';
   document.getElementById('jPay').value = job ? job.pay : '';
+  document.getElementById('jPayPeriod').value = job ? (job.pay_period || '') : '';
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
@@ -2385,6 +2399,7 @@ function randomFillJob() {
   document.getElementById('jType').value           = r.type;
   document.getElementById('jLocation').value       = r.location;
   document.getElementById('jPay').value            = r.pay;
+  document.getElementById('jPayPeriod').value      = r.pay_period || '';
   document.getElementById('jLang').value           = r.lang;
   document.getElementById('jWorkAuth').value       = r.work_auth || '';
   document.getElementById('jEmploymentType').value = r.employment_type || '';
@@ -2597,6 +2612,7 @@ async function saveJob() {
     type: document.getElementById('jType').value,
     location: document.getElementById('jLocation').value,
     pay: document.getElementById('jPay').value,
+    pay_period: document.getElementById('jPayPeriod').value,
     lang: langVal,
     lang_name: langNames[langVal] || langVal,
     work_auth: document.getElementById('jWorkAuth').value,
