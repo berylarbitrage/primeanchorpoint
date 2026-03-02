@@ -242,7 +242,7 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="smsTestModal">
 <div class="modal" style="max-width:460px">
   <h2>📡 测试短信发送</h2>
-  <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">输入一个手机号，测试 Twilio 是否能成功发送短信，并显示详细错误信息。</p>
+  <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">输入一个手机号，测试 Twilio 是否能成功发送短信（优先使用 Verify API）。</p>
   <div class="field"><label>发送到手机号（E.164 格式，如 +12025551234）</label>
     <input type="tel" id="smsTestPhone" placeholder="+1XXXXXXXXXX">
   </div>
@@ -250,6 +250,22 @@ tr:hover td{background:var(--sky-light)}
   <div class="modal-actions">
     <button class="btn" onclick="document.getElementById('smsTestModal').classList.remove('show')">关闭</button>
     <button class="btn btn-blue" id="smsTestBtn" onclick="runSmsTest()">发送测试短信</button>
+  </div>
+</div>
+</div>
+
+<!-- Email Code Test Modal -->
+<div class="modal-bg" id="emailCodeTestModal">
+<div class="modal" style="max-width:460px">
+  <h2>✉️ 测试邮箱验证码</h2>
+  <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">输入一个邮箱地址，测试 SendGrid/SMTP 是否能成功发送验证码邮件。</p>
+  <div class="field"><label>发送到邮箱</label>
+    <input type="email" id="emailCodeTestAddr" placeholder="test@example.com">
+  </div>
+  <div id="emailCodeTestResult" style="display:none;margin-top:.75rem;padding:.75rem 1rem;border-radius:8px;font-size:.83rem;font-family:monospace;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto"></div>
+  <div class="modal-actions">
+    <button class="btn" onclick="document.getElementById('emailCodeTestModal').classList.remove('show')">关闭</button>
+    <button class="btn btn-blue" id="emailCodeTestBtn" onclick="runEmailCodeTest()">发送验证码</button>
   </div>
 </div>
 </div>
@@ -291,9 +307,12 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
   <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
   <a onclick="showTab('interviews')" data-role="admin,staff">🗓️ 面试管理</a>
+  <a onclick="showTab('compliance')" data-role="admin,staff">📑 合规审核</a>
+  <a onclick="showTab('jobsites')" data-role="admin,staff">📍 工作地点</a>
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
   <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
   <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
+  <a onclick="showTab('integrations')" data-role="admin">🔗 集成设置</a>
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -768,6 +787,7 @@ tr:hover td{background:var(--sky-light)}
       <button id="accTabCustomer" onclick="setAccTab('customer')">客户账户 Customer</button>
     </div>
     <div style="margin-left:auto;display:flex;gap:.5rem">
+      <button class="btn" style="background:#f0fff4;color:#2f9e44;border:1px solid #b2f2bb" onclick="openEmailCodeTestModal()">✉️ 测试邮箱</button>
       <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
       <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
@@ -794,6 +814,100 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Compliance Review 合规审核 -->
+<div id="tab-compliance" style="display:none">
+  <div class="top"><h1>合规文件审核</h1></div>
+  <div class="search-bar" style="margin-bottom:1rem">
+    <select id="complianceFilterType" onchange="loadComplianceDocs()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
+      <option value="">全部类型</option>
+      <option value="i9">I-9</option>
+      <option value="drivers_license">驾照</option>
+      <option value="w9">W-9</option>
+      <option value="ssn_card">SSN Card</option>
+      <option value="work_permit">工作许可</option>
+    </select>
+    <select id="complianceFilterStatus" onchange="loadComplianceDocs()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
+      <option value="">全部状态</option>
+      <option value="pending">待审核</option>
+      <option value="approved">已通过</option>
+      <option value="rejected">已拒绝</option>
+    </select>
+  </div>
+  <div class="card">
+    <table><thead><tr>
+      <th>工人</th><th>文件类型</th><th>状态</th><th>提交时间</th><th>审核备注</th><th>操作</th>
+    </tr></thead>
+    <tbody id="complianceDocsTable"></tbody></table>
+  </div>
+</div>
+
+<!-- Job Sites 工作地点 -->
+<div id="tab-jobsites" style="display:none">
+  <div class="top">
+    <h1>工作地点管理 (GPS 围栏)</h1>
+    <button class="btn btn-green" onclick="openJobSiteModal()">+ 添加地点</button>
+  </div>
+  <div class="card">
+    <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">工人打卡时系统用 Haversine 公式计算是否在指定半径内</p>
+    <table><thead><tr>
+      <th>名称</th><th>地址</th><th>坐标 (Lat, Lng)</th><th>半径</th><th>状态</th><th>操作</th>
+    </tr></thead>
+    <tbody id="jobSitesTable"></tbody></table>
+  </div>
+</div>
+
+<!-- Integration Settings 集成设置 -->
+<div id="tab-integrations" style="display:none">
+  <div class="top"><h1>第三方集成设置</h1></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem" id="integrationsGrid"></div>
+</div>
+
+</div></div>
+
+<!-- Job Site Modal -->
+<div class="modal-bg" id="jobSiteModal"><div class="modal" style="max-width:480px">
+  <h2 id="jobSiteModalTitle">添加工作地点</h2>
+  <input type="hidden" id="siteId">
+  <div class="field"><label>名称 *</label><input id="siteName" placeholder="例: 仓库A"></div>
+  <div class="field"><label>地址</label><input id="siteAddress" placeholder="123 Main St, City, ST"></div>
+  <div class="field-row" style="display:flex;gap:1rem">
+    <div class="field" style="flex:1"><label>纬度 Latitude *</label><input id="siteLat" type="number" step="any" placeholder="40.7128"></div>
+    <div class="field" style="flex:1"><label>经度 Longitude *</label><input id="siteLng" type="number" step="any" placeholder="-74.0060"></div>
+  </div>
+  <div class="field"><label>围栏半径 (米)</label><input id="siteRadius" type="number" value="200" min="50" max="2000"></div>
+  <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:1rem">提示: 可以在 Google Maps 上右键点击获取坐标</div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="saveJobSite()">保存</button>
+    <button class="btn" onclick="closeModal('jobSiteModal')">取消</button>
+  </div>
+</div></div>
+
+<!-- Compliance Review Modal -->
+<div class="modal-bg" id="complianceReviewModal"><div class="modal" style="max-width:600px">
+  <h2>审核合规文件</h2>
+  <div id="complianceReviewContent"></div>
+  <div class="field"><label>审核备注</label><textarea id="complianceReviewNotes" rows="3" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></textarea></div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="reviewComplianceDoc('approved')">通过 Approve</button>
+    <button class="btn btn-red" onclick="reviewComplianceDoc('rejected')">拒绝 Reject</button>
+    <button class="btn" onclick="closeModal('complianceReviewModal')">取消</button>
+  </div>
+</div></div>
+
+<!-- Integration Edit Modal -->
+<div class="modal-bg" id="integrationModal"><div class="modal" style="max-width:500px">
+  <h2 id="integrationModalTitle">编辑集成</h2>
+  <input type="hidden" id="intProvider">
+  <div class="field"><label>启用</label>
+    <select id="intEnabled"><option value="1">启用</option><option value="0">禁用</option></select>
+  </div>
+  <div class="field"><label>API Key</label><input id="intApiKey" placeholder="API Key"></div>
+  <div class="field"><label>API Secret</label><input id="intApiSecret" type="password" placeholder="API Secret (留空不修改)"></div>
+  <div class="field"><label>额外配置 (JSON)</label><textarea id="intConfig" rows="3" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="{}"></textarea></div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="saveIntegration()">保存</button>
+    <button class="btn" onclick="closeModal('integrationModal')">取消</button>
+  </div>
 </div></div>
 
 <!-- Admin/Staff/Manager Account Modal -->
@@ -2002,6 +2116,70 @@ async function doActivate() {
   }
 }
 
+function openEmailCodeTestModal() {
+  document.getElementById('emailCodeTestAddr').value = '';
+  document.getElementById('emailCodeTestResult').style.display = 'none';
+  document.getElementById('emailCodeTestResult').textContent = '';
+  document.getElementById('emailCodeTestModal').classList.add('show');
+}
+
+async function runEmailCodeTest() {
+  const to = document.getElementById('emailCodeTestAddr').value.trim();
+  if (!to) { alert('请输入邮箱地址'); return; }
+  const btn = document.getElementById('emailCodeTestBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const resultEl = document.getElementById('emailCodeTestResult');
+  resultEl.style.display = 'none';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    let res;
+    try {
+      res = await fetch(API + '/admin/test-email-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+        body: JSON.stringify({ to }),
+        signal: ctrl.signal
+      });
+    } finally { clearTimeout(timer); }
+    const d = await res.json();
+    const cfg = d.configured || {};
+    let out = '── 邮件配置状态 ──\n';
+    out += `发送方式:         ${cfg.transport === 'sendgrid-api' ? '✅ SendGrid HTTP API' : cfg.transport === 'smtp' ? '✅ SMTP' : '❌ 未配置'}\n`;
+    out += `SendGrid API Key: ${cfg.sendgrid_api ? '✅ 已设置' : '未设置'}\n`;
+    out += `SMTP Host:        ${cfg.smtp_host || '未设置'}\n`;
+    out += `SMTP User:        ${cfg.smtp_user || '未设置'}\n`;
+    out += `SMTP Pass:        ${cfg.smtp_pass_set ? '✅ 已设置' : '未设置'}\n`;
+    out += `EMAIL_FROM:       ${cfg.email_from || '❌ 未设置'}\n`;
+    out += '\n── 发送结果 ──\n';
+    if (d.sent) {
+      out += `✅ 验证码邮件已发送！\n发送到: ${to}\n`;
+      if (d.messageId) out += `Message-ID: ${d.messageId}\n`;
+      if (d.response) out += `SMTP响应: ${d.response}\n`;
+      out += '\n收到邮件说明 SendGrid/SMTP 配置正确。\n没收到请检查垃圾邮件文件夹。';
+    } else {
+      out += `❌ 发送失败\n错误: ${d.error || '未知错误'}`;
+      if (d.smtp_responseCode) out += `\nSMTP 响应码: ${d.smtp_responseCode}`;
+      if (d.smtp_response) out += `\nSMTP 响应: ${d.smtp_response}`;
+      if (d.smtp_code) out += `\n错误类型: ${d.smtp_code}`;
+      out += '\n\n常见原因：\n• EMAIL_FROM 未在 SendGrid 中验证（Sender Authentication）\n• API Key 缺少 Mail Send 权限';
+    }
+    resultEl.style.background = d.sent ? '#f0fff4' : '#fff5f5';
+    resultEl.style.border = `1px solid ${d.sent ? '#9ae6b4' : '#feb2b2'}`;
+    resultEl.textContent = out;
+    resultEl.style.display = 'block';
+  } catch (e) {
+    resultEl.style.background = '#fff5f5';
+    resultEl.style.border = '1px solid #feb2b2';
+    const isTimeout = e.name === 'AbortError';
+    resultEl.textContent = isTimeout
+      ? '❌ 请求超时（25秒无响应）\n\n可能原因：\n• 服务器无法连接 SendGrid SMTP（被防火墙拦截）\n• 检查 SMTP_HOST / SMTP_PORT 是否正确\n• SendGrid SMTP: smtp.sendgrid.net:587'
+      : '网络错误：' + e.message;
+    resultEl.style.display = 'block';
+  }
+  btn.disabled = false; btn.textContent = '发送验证码';
+}
+
 function openSmsTestModal() {
   document.getElementById('smsTestPhone').value = '';
   document.getElementById('smsTestResult').style.display = 'none';
@@ -2027,42 +2205,56 @@ async function runSmsTest() {
     const acct = d.accountInfo || {};
     const isTrial = acct.type === 'Trial';
     let out = '── Twilio 配置状态 ──\n';
-    out += `Account SID: ${cfg.account_sid || '❌ 未设置'}\n`;
-    out += `Auth Token:  ${cfg.auth_token ? '✅ 已设置' : '❌ 未设置'}\n`;
-    out += `发送号码:    ${cfg.phone_number || '❌ 未设置'}\n`;
-    out += `Client 就绪: ${cfg.client_ready ? '✅' : '❌'}\n`;
+    out += `Account SID:  ${cfg.account_sid || '❌ 未设置'}\n`;
+    out += `Auth Token:   ${cfg.auth_token ? '✅ 已设置' : '❌ 未设置'}\n`;
+    out += `发送号码:     ${cfg.phone_number || '❌ 未设置'}\n`;
+    out += `Verify SID:   ${cfg.verify_sid ? '✅ ' + cfg.verify_sid : '未配置（用普通SMS）'}\n`;
+    out += `Client 就绪:  ${cfg.client_ready ? '✅' : '❌'}\n`;
     if (acct.type) {
       const typeLabel = isTrial ? '⚠️ Trial（试用账号）' : '✅ ' + acct.type;
-      out += `账号类型:    ${typeLabel}\n`;
-      out += `账号名称:    ${acct.friendlyName || '-'}\n`;
+      out += `账号类型:     ${typeLabel}\n`;
+      out += `账号名称:     ${acct.friendlyName || '-'}\n`;
     } else if (acct.error) {
-      out += `账号类型:    ❌ 查询失败: ${acct.error}\n`;
+      out += `账号类型:     ❌ 查询失败: ${acct.error}\n`;
     }
-    out += '\n── 发送结果 ──\n';
+    out += `\n── 发送方式: ${d.method === 'verify' ? 'Twilio Verify API（无需10DLC）' : '普通 SMS'} ──\n`;
     if (d.result) {
-      const st = d.result.status;
-      const isQueued = st === 'queued' || st === 'accepted';
-      const isUndelivered = st === 'undelivered' || st === 'failed';
-      if (d.result.ok && !isQueued && !isUndelivered) {
-        out += `✅ 发送成功！已送达\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}`;
-      } else if (d.result.ok && isQueued && isTrial) {
-        out += `⚠️ 已提交但未送达（Trial 账号限制）\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}\n\n`;
-        out += '【原因】Trial 账号只能发短信给在 Twilio 控制台\n已验证过的号码（Verified Caller IDs）。\n\n';
-        out += '【解决方法】\n';
-        out += '1. 升级到付费账号（推荐），即可向任何号码发短信\n';
-        out += '2. 或在 Twilio 控制台 → Phone Numbers →\n   Verified Caller IDs 中添加并验证目标号码';
-      } else if (d.result.ok && isQueued) {
-        out += `⚠️ 消息已提交，但状态仍为"${st}"（可能延迟）\nSID: ${d.result.sid}\n发送到: ${d.result.to}`;
-      } else if (isUndelivered) {
-        out += `❌ 发送失败（${st}）\n错误码: ${d.result.errorCode || '-'}\n错误信息: ${d.result.errorMessage || d.result.error || '-'}\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
+      if (d.method === 'verify') {
+        // Twilio Verify API result
+        if (d.result.ok) {
+          out += `✅ 验证码已发送！\nSID: ${d.result.sid}\n状态: ${d.result.status}\n发送到: ${d.result.to}\n通道: ${d.result.channel}\n\n`;
+          out += '收到验证码说明 Twilio Verify 正常工作。\nVerify API 使用 Twilio 号码池发送，无需 10DLC 注册。';
+        } else {
+          out += `❌ 发送失败\n错误: ${d.result.error}`;
+          if (d.result.code) out += `\nTwilio 错误码: ${d.result.code}`;
+          out += `\n目标号码: ${d.result.to}`;
+        }
       } else {
-        out += `❌ 发送失败\n错误: ${d.result.error}`;
-        if (d.result.code) out += `\nTwilio 错误码: ${d.result.code}`;
-        out += `\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
+        // Legacy SMS result
+        const st = d.result.status;
+        const isQueued = st === 'queued' || st === 'accepted';
+        const isUndelivered = st === 'undelivered' || st === 'failed';
+        if (d.result.ok && !isQueued && !isUndelivered) {
+          out += `✅ 发送成功！已送达\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}`;
+        } else if (d.result.ok && isQueued && isTrial) {
+          out += `⚠️ 已提交但未送达（Trial 账号限制）\nSID: ${d.result.sid}\n状态: ${st}\n发送到: ${d.result.to}\n\n`;
+          out += '【原因】Trial 账号只能发短信给在 Twilio 控制台\n已验证过的号码（Verified Caller IDs）。\n\n';
+          out += '【解决方法】\n';
+          out += '1. 升级到付费账号（推荐），即可向任何号码发短信\n';
+          out += '2. 或在 Twilio 控制台 → Phone Numbers →\n   Verified Caller IDs 中添加并验证目标号码';
+        } else if (d.result.ok && isQueued) {
+          out += `⚠️ 消息已提交，但状态仍为"${st}"（可能延迟）\nSID: ${d.result.sid}\n发送到: ${d.result.to}`;
+        } else if (isUndelivered) {
+          out += `❌ 发送失败（${st}）\n错误码: ${d.result.errorCode || '-'}\n错误信息: ${d.result.errorMessage || d.result.error || '-'}\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
+        } else {
+          out += `❌ 发送失败\n错误: ${d.result.error}`;
+          if (d.result.code) out += `\nTwilio 错误码: ${d.result.code}`;
+          out += `\n发送号码: ${d.result.from || '未配置'}\n目标号码: ${d.result.to}`;
+        }
       }
     }
-    const isOk = d.result && d.result.ok && d.result.status === 'delivered';
-    const isWarn = d.result && d.result.ok && d.result.status !== 'delivered';
+    const isOk = d.result && d.result.ok && (d.result.status === 'delivered' || (d.method === 'verify' && d.result.status === 'pending'));
+    const isWarn = d.result && d.result.ok && !isOk;
     resultEl.style.background = isOk ? '#f0fff4' : isWarn ? '#fffbeb' : '#fff5f5';
     resultEl.style.border = `1px solid ${isOk ? '#9ae6b4' : isWarn ? '#f6ad55' : '#feb2b2'}`;
     resultEl.textContent = out;
@@ -2134,6 +2326,9 @@ function showTab(t) {
   if (t === 'accounts')   loadAccounts();
   if (t === 'approvals')  loadApprovals();
   if (t === 'interviews') loadInterviews();
+  if (t === 'compliance') loadComplianceDocs();
+  if (t === 'jobsites')   loadJobSites();
+  if (t === 'integrations') loadIntegrations();
 }
 
 // ─── Dashboard ───
@@ -3189,8 +3384,17 @@ function filterAssignments() {
 }
 
 const payTypeLabel = t => ({ hourly:'时薪', salary:'月薪', annual:'年薪', per_piece:'计件' }[t] || t);
+const DS_STATUS_LABELS = { sent:'已发送(待签)', delivered:'已送达', completed:'双方已签', declined:'已拒签', voided:'已撤销' };
+const DS_STATUS_COLORS = { sent:'#F59E0B', delivered:'#3B82F6', completed:'#10B981', declined:'#EF4444', voided:'#6B7280' };
+
 function renderAssignments(assigns) {
-  document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => `<tr>
+  document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => {
+    const dsLabel = a.ds_status ? (DS_STATUS_LABELS[a.ds_status] || a.ds_status) : '';
+    const dsColor = DS_STATUS_COLORS[a.ds_status] || '#6B7280';
+    const dsBadge = a.ds_envelope_id
+      ? `<br><span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer" onclick="refreshDsStatus('assignment',${a.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
+      : (a.contract_file ? `<br><button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-top:2px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('assignment',${a.id},'${esc(a.inquiry_email||'')}','${esc(a.inquiry_name||'')}')">✍ DocuSign</button>` : '');
+    return `<tr>
     <td>${new Date(a.assigned_at).toLocaleDateString()}${a.start_date ? '<br><span style="font-size:.72rem;color:var(--gray-400)">开始：' + a.start_date + '</span>' : ''}</td>
     <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
     <td>${esc(a.job_title || '未知职位')}<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(a.job_location || '')}</span></td>
@@ -3198,6 +3402,7 @@ function renderAssignments(assigns) {
       <span class="badge" style="background:${a.contract_type==='1099'?'var(--orange-light,#fff3e0)':'var(--sky-light)'};color:${a.contract_type==='1099'?'#e65100':'var(--blue)'};font-weight:700">${esc(a.contract_type||'W2')}</span>
       ${a.pay_rate ? '<br><span style="font-size:.8rem;font-weight:600">' + esc(a.pay_rate) + '</span>' : ''}
       ${a.pay_type ? '<br><span style="font-size:.72rem;color:var(--gray-400)">' + payTypeLabel(a.pay_type) + '</span>' : ''}
+      ${dsBadge}
     </td>
     <td style="font-size:.78rem;max-width:160px;white-space:normal">${esc(a.benefits || '—')}</td>
     <td><span class="badge badge-${a.status}">${statusLabel(a.status)}</span></td>
@@ -3205,7 +3410,40 @@ function renderAssignments(assigns) {
       <button class="btn btn-sm" onclick='editAssignment(${JSON.stringify(a).replace(/'/g,"&#39;")})'>编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteAssignment(${a.id})">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+  </tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+}
+
+async function sendForDocuSign(type, id, defaultEmail, defaultName) {
+  const email = prompt(`请输入${type === 'assignment' ? '工人' : '合作方'}的邮箱地址：`, defaultEmail || '');
+  if (email === null) return;
+  if (!email.trim()) return alert('邮箱不能为空');
+  const name = prompt('请输入姓名（可选）：', defaultName || '');
+  if (name === null) return;
+  const url = type === 'assignment' ? `/admin/assignments/${id}/send-docusign` : `/admin/partner-files/${id}/send-docusign`;
+  const body = type === 'assignment' ? { worker_email: email.trim(), worker_name: name.trim() } : { partner_email: email.trim(), partner_name: name.trim() };
+  try {
+    const r = await api(url, { method: 'POST', body: JSON.stringify(body) });
+    if (r.success) {
+      alert(`DocuSign 已发送！签署邀请已发至双方邮箱。\nEnvelope ID: ${r.envelopeId}`);
+      if (type === 'assignment') loadAssignments();
+    } else { alert('发送失败：' + (r.error || '未知错误')); }
+  } catch (e) { alert('发送失败：' + e.message); }
+}
+
+async function refreshDsStatus(type, id, badgeEl) {
+  const url = type === 'assignment' ? `/admin/assignments/${id}/docusign-status` : `/admin/partner-files/${id}/docusign-status`;
+  try {
+    const prev = badgeEl ? badgeEl.textContent : '';
+    if (badgeEl) badgeEl.textContent = '⟳ 刷新中…';
+    const r = await api(url);
+    const label = DS_STATUS_LABELS[r.status] || r.status || '未知';
+    const color = DS_STATUS_COLORS[r.status] || '#6B7280';
+    const s1 = r.workerSigned || r.partnerSigned ? '✓ 一方已签' : '○ 待签署';
+    const s2 = r.companySigned ? '✓ 公司已签' : '○ 公司待签';
+    if (badgeEl) { badgeEl.style.color = color; badgeEl.style.background = color + '20'; badgeEl.textContent = `✍ ${label}`; badgeEl.title = `${s1} | ${s2}  (点击刷新)`; }
+    if (r.status === 'completed') alert(`双方均已签署完成！\n一方: ${r.workerSigned || r.partnerSigned || '—'}\n公司: ${r.companySigned || '—'}`);
+  } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
 }
 
 // Cache for assignment search
@@ -3651,12 +3889,20 @@ function closePartnerModal() { guardClose('partnerModal'); }
 async function loadPartnerFiles(pid) {
   const files = await api(`/admin/partners/${pid}/files`);
   const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
-  document.getElementById('pFilesList').innerHTML = files.length ? files.map(f=>
-    `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||'文件')}</a>
+  const signable = new Set(['contract','agreement']);
+  document.getElementById('pFilesList').innerHTML = files.length ? files.map(f=>{
+    const dsLabel = f.ds_status ? (DS_STATUS_LABELS[f.ds_status] || f.ds_status) : '';
+    const dsColor = DS_STATUS_COLORS[f.ds_status] || '#6B7280';
+    const dsBtn = f.ds_envelope_id
+      ? `<span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer;margin-left:.4rem" onclick="refreshDsStatus('partnerfile',${f.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
+      : (signable.has(f.file_type) && f.file_path ? `<button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-left:.4rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('partnerfile',${f.id},'','')">✍ DocuSign</button>` : '');
+    return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||'文件')}</a>
       <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span>
       <span style="font-size:.72rem;color:var(--gray-400)">${esc(f.file_label)}</span>
+      ${dsBtn}
       <button class="btn btn-sm btn-red" style="margin-left:auto" onclick="deletePartnerFile(${f.id},${pid})">删除</button>
-    </div>`).join('') : '<p style="font-size:.82rem;color:var(--gray-400)">暂无文件</p>';
+    </div>`;
+  }).join('') : '<p style="font-size:.82rem;color:var(--gray-400)">暂无文件</p>';
 }
 
 async function uploadPartnerFile() {
@@ -5964,10 +6210,15 @@ async function suspendWorkerAccount(id, doSuspend) {
 async function resendWorkerVerify(id) {
   const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
   if (r && r.success) {
-    const lines = ['✅ 验证码已重新生成（系统会发送通知）'];
-    if (r.phone_code) lines.push(`手机验证码: ${esc(String(r.phone_code))}`);
-    if (r.email_code) lines.push(`邮箱验证码: ${esc(String(r.email_code))}`);
-    showToast(lines.join('<br>'), 'success', 6000);
+    const msgs = [];
+    if (r.sms_sent) msgs.push('短信已发送 ✅');
+    if (r.email_sent) msgs.push('邮件已发送 ✅');
+    // Only show codes if delivery failed (so admin can tell user manually)
+    if (r.phone_code) msgs.push(`⚠️ 短信发送失败，手机验证码: ${r.phone_code}`);
+    if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
+    if (!msgs.length) msgs.push('未配置短信/邮件发送');
+    showToast('✅ 验证码已重新生成');
+    alert(msgs.join('\n'));
   }
 }
 
@@ -6356,6 +6607,207 @@ async function ivPassAndSend(id) {
   } else {
     showToast('❌ ' + (r && r.error || '操作失败'), 'error');
   }
+}
+
+// ─── Compliance Review ───
+const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'驾照', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', other:'其他' };
+const COMP_STATUS_LABELS = { pending:'待审核', approved:'已通过', rejected:'已拒绝' };
+const COMP_STATUS_COLORS = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)' };
+let _complianceDocs = [];
+let _reviewDocId = null;
+
+async function loadComplianceDocs() {
+  const docs = await api('/admin/compliance-docs');
+  if (!docs) return;
+  _complianceDocs = docs;
+  const typeFilter = document.getElementById('complianceFilterType').value;
+  const statusFilter = document.getElementById('complianceFilterStatus').value;
+  const filtered = docs.filter(d =>
+    (!typeFilter || d.doc_type === typeFilter) &&
+    (!statusFilter || d.status === statusFilter)
+  );
+  document.getElementById('complianceDocsTable').innerHTML = filtered.length ? filtered.map(d => `<tr>
+    <td><strong>${esc(d.worker_name||'')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(d.worker_email||d.worker_phone||'')}</span></td>
+    <td>${COMP_TYPE_LABELS[d.doc_type]||d.doc_type}</td>
+    <td><span style="font-weight:600;${COMP_STATUS_COLORS[d.status]||''}">${COMP_STATUS_LABELS[d.status]||d.status}</span></td>
+    <td>${(d.created_at||'').slice(0,10)}</td>
+    <td style="font-size:.8rem">${esc(d.reviewer_notes||'—')}</td>
+    <td>
+      <button class="btn btn-sm" onclick="openComplianceReview(${d.id})">查看/审核</button>
+      ${d.file_path ? `<a href="/api/admin/compliance-docs/${d.id}/download" class="btn btn-sm" style="margin-left:.3rem">下载</a>` : ''}
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:2rem">暂无记录</td></tr>';
+}
+
+function openComplianceReview(id) {
+  const doc = _complianceDocs.find(d => d.id === id);
+  if (!doc) return;
+  _reviewDocId = id;
+  let formHtml = '';
+  try {
+    const fd = JSON.parse(doc.form_data || '{}');
+    const entries = Object.entries(fd).filter(([k]) => !k.startsWith('_') && k !== 'ssn_or_ein_encrypted');
+    if (entries.length) {
+      formHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem;font-size:.85rem">' +
+        entries.map(([k,v]) => `<div><span style="color:var(--gray-400)">${k}</span><br><strong>${typeof v === 'object' ? JSON.stringify(v) : esc(String(v))}</strong></div>`).join('') +
+        '</div>';
+    }
+  } catch {}
+  document.getElementById('complianceReviewContent').innerHTML = `
+    <div style="margin-bottom:1rem">
+      <p><strong>工人:</strong> ${esc(doc.worker_name||'')} (${esc(doc.worker_email||doc.worker_phone||'')})</p>
+      <p><strong>类型:</strong> ${COMP_TYPE_LABELS[doc.doc_type]||doc.doc_type}</p>
+      <p><strong>状态:</strong> <span style="${COMP_STATUS_COLORS[doc.status]||''};font-weight:600">${COMP_STATUS_LABELS[doc.status]||doc.status}</span></p>
+      <p><strong>提交时间:</strong> ${(doc.created_at||'').slice(0,16)}</p>
+      ${doc.file_name ? `<p><strong>文件:</strong> <a href="/api/admin/compliance-docs/${doc.id}/download">${esc(doc.file_name)}</a></p>` : ''}
+    </div>
+    ${formHtml ? '<h3 style="font-size:.9rem;margin-bottom:.5rem">表单数据:</h3>' + formHtml : ''}
+  `;
+  document.getElementById('complianceReviewNotes').value = doc.reviewer_notes || '';
+  document.getElementById('complianceReviewModal').classList.add('show');
+}
+
+async function reviewComplianceDoc(status) {
+  if (!_reviewDocId) return;
+  const notes = document.getElementById('complianceReviewNotes').value;
+  await api(`/admin/compliance-docs/${_reviewDocId}/review`, {
+    method:'PUT', body: JSON.stringify({ status, reviewer_notes: notes })
+  });
+  closeModal('complianceReviewModal');
+  showToast(`✅ 已${status === 'approved' ? '通过' : '拒绝'}`);
+  loadComplianceDocs();
+}
+
+// ─── Job Sites ───
+let _jobSites = [];
+
+async function loadJobSites() {
+  const sites = await api('/admin/job-sites');
+  if (!sites) return;
+  _jobSites = sites;
+  document.getElementById('jobSitesTable').innerHTML = sites.length ? sites.map(s => `<tr>
+    <td><strong>${esc(s.name)}</strong></td>
+    <td>${esc(s.address||'—')}</td>
+    <td><a href="https://maps.google.com/?q=${s.latitude},${s.longitude}" target="_blank">${(+s.latitude).toFixed(5)}, ${(+s.longitude).toFixed(5)}</a></td>
+    <td>${s.radius_meters}m</td>
+    <td>${s.active ? '<span style="color:var(--green);font-weight:600">启用</span>' : '<span style="color:var(--gray-400)">禁用</span>'}</td>
+    <td>
+      <button class="btn btn-sm" onclick="editJobSite(${s.id})">编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteJobSite(${s.id})">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:2rem">暂无工作地点，请添加</td></tr>';
+}
+
+function openJobSiteModal() {
+  document.getElementById('siteId').value = '';
+  document.getElementById('siteName').value = '';
+  document.getElementById('siteAddress').value = '';
+  document.getElementById('siteLat').value = '';
+  document.getElementById('siteLng').value = '';
+  document.getElementById('siteRadius').value = '200';
+  document.getElementById('jobSiteModalTitle').textContent = '添加工作地点';
+  document.getElementById('jobSiteModal').classList.add('show');
+}
+
+function editJobSite(id) {
+  const s = _jobSites.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('siteId').value = s.id;
+  document.getElementById('siteName').value = s.name;
+  document.getElementById('siteAddress').value = s.address || '';
+  document.getElementById('siteLat').value = s.latitude;
+  document.getElementById('siteLng').value = s.longitude;
+  document.getElementById('siteRadius').value = s.radius_meters;
+  document.getElementById('jobSiteModalTitle').textContent = '编辑工作地点';
+  document.getElementById('jobSiteModal').classList.add('show');
+}
+
+async function saveJobSite() {
+  const id = document.getElementById('siteId').value;
+  const data = {
+    name: document.getElementById('siteName').value.trim(),
+    address: document.getElementById('siteAddress').value.trim(),
+    latitude: parseFloat(document.getElementById('siteLat').value),
+    longitude: parseFloat(document.getElementById('siteLng').value),
+    radius_meters: parseInt(document.getElementById('siteRadius').value) || 200
+  };
+  if (!data.name || isNaN(data.latitude) || isNaN(data.longitude)) return alert('请填写名称和坐标');
+  if (id) {
+    await api(`/admin/job-sites/${id}`, { method:'PUT', body: JSON.stringify(data) });
+  } else {
+    await api('/admin/job-sites', { method:'POST', body: JSON.stringify(data) });
+  }
+  closeModal('jobSiteModal');
+  showToast('✅ 已保存');
+  loadJobSites();
+}
+
+async function deleteJobSite(id) {
+  if (!confirm('确认删除此工作地点？')) return;
+  await api(`/admin/job-sites/${id}`, { method:'DELETE' });
+  showToast('✅ 已删除');
+  loadJobSites();
+}
+
+// ─── Integration Settings ───
+const INT_LABELS = {
+  workbright: { name: 'WorkBright', desc: 'I-9 / Onboarding 平台', icon: '📋' },
+  checkr: { name: 'Checkr', desc: '背景调查 Background Check', icon: '🔍' },
+  gusto: { name: 'Gusto', desc: 'Payroll / 税务 / W-2 / 1099', icon: '💰' },
+  twilio: { name: 'Twilio', desc: '短信通知 + Verify', icon: '📱' }
+};
+
+async function loadIntegrations() {
+  const rows = await api('/admin/integrations');
+  if (!rows) return;
+  document.getElementById('integrationsGrid').innerHTML = rows.map(r => {
+    const info = INT_LABELS[r.provider] || { name: r.provider, desc: '', icon: '🔗' };
+    const statusBadge = r.enabled
+      ? '<span style="color:var(--green);font-weight:600;font-size:.82rem">已启用</span>'
+      : '<span style="color:var(--gray-400);font-size:.82rem">未启用</span>';
+    return `<div class="card" style="position:relative">
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+        <span style="font-size:1.5rem">${info.icon}</span>
+        <div>
+          <h3 style="font-size:1rem;font-weight:700;color:var(--blue)">${info.name}</h3>
+          <p style="font-size:.8rem;color:var(--gray-400)">${info.desc}</p>
+        </div>
+        <div style="margin-left:auto">${statusBadge}</div>
+      </div>
+      <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">
+        <p>API Key: <code>${r.api_key || '未设置'}</code></p>
+        <p>Secret: <code>${r.api_secret ? '********' : '未设置'}</code></p>
+      </div>
+      <button class="btn btn-sm" onclick="editIntegration('${r.provider}')">配置 / Configure</button>
+    </div>`;
+  }).join('');
+}
+
+function editIntegration(provider) {
+  const info = INT_LABELS[provider] || { name: provider };
+  document.getElementById('intProvider').value = provider;
+  document.getElementById('integrationModalTitle').textContent = `配置 ${info.name}`;
+  document.getElementById('intEnabled').value = '0';
+  document.getElementById('intApiKey').value = '';
+  document.getElementById('intApiSecret').value = '';
+  document.getElementById('intConfig').value = '{}';
+  document.getElementById('integrationModal').classList.add('show');
+}
+
+async function saveIntegration() {
+  const provider = document.getElementById('intProvider').value;
+  const data = {
+    enabled: document.getElementById('intEnabled').value === '1',
+    api_key: document.getElementById('intApiKey').value.trim() || undefined,
+    api_secret: document.getElementById('intApiSecret').value.trim() || undefined
+  };
+  try {
+    data.config = JSON.parse(document.getElementById('intConfig').value || '{}');
+  } catch { return alert('配置JSON格式错误'); }
+  await api(`/admin/integrations/${provider}`, { method:'PUT', body: JSON.stringify(data) });
+  closeModal('integrationModal');
+  showToast('✅ 集成设置已保存');
+  loadIntegrations();
 }
 
 </script>
