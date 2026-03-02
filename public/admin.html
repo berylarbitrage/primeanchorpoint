@@ -235,6 +235,12 @@ tr:hover td{background:var(--sky-light)}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
+/* Onboarding task list scrollbar */
+#onboardingTaskList{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+#onboardingTaskList::-webkit-scrollbar{width:5px}
+#onboardingTaskList::-webkit-scrollbar-track{background:transparent}
+#onboardingTaskList::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+#onboardingTaskList::-webkit-scrollbar-thumb:hover{background:#94a3b8}
 </style>
 </head>
 <body>
@@ -6636,7 +6642,7 @@ function renderOnboardingTasks(tasks) {
           ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="updateOnboardingTask('${t.key}','waived')">⏭️ 豁免</button>`:''}
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="updateOnboardingTask('${t.key}','pending')">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
-          <button class="btn btn-sm" style="${isVisible?'background:#fff7ed;color:#c2410c;border:1px solid #fed7aa':'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'🙈 对工人隐藏':'👁️ 对工人显示'}</button>
+          <button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>
         </div>
       </div>
     </div>`;
