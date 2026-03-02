@@ -856,8 +856,11 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <!-- Worker -->
-  <div id="accPanelWorker" class="card" style="display:none">
-    <table><thead><tr><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份状态</th><th>绑定员工</th><th>验证状态</th><th>创建</th><th>操作</th></tr></thead>
+  <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
+    <table style="font-size:.82rem"><thead><tr>
+      <th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>面试</th>
+      <th>合规文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>操作</th>
+    </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
 
@@ -1083,6 +1086,47 @@ tr:hover td{background:var(--sky-light)}
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('resetPwdModal')">取消</button>
     <button class="btn btn-blue" onclick="saveResetPassword()">保存新密码</button>
+  </div>
+</div></div>
+
+<!-- Worker Detail Modal (salary, payment, skills) -->
+<div class="modal-bg" id="workerDetailModal"><div class="modal" style="max-width:560px">
+  <h2>工人详情编辑</h2>
+  <p style="font-size:.9rem;font-weight:700;color:var(--sky);margin-bottom:.5rem" id="wdName"></p>
+  <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">身份: <span id="wdIdentity"></span></p>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+    <div class="field">
+      <label style="font-size:.8rem;font-weight:600">期望薪资 Expected Salary</label>
+      <input type="text" id="wdExpectedSalary" placeholder="如: 18/hr, 3500/mo">
+    </div>
+    <div class="field">
+      <label style="font-size:.8rem;font-weight:600">我们的薪资评分 Our Rating</label>
+      <input type="text" id="wdOurRating" placeholder="如: A, B+, 85分">
+    </div>
+  </div>
+
+  <div class="field" style="margin-bottom:1rem">
+    <label style="font-size:.8rem;font-weight:600">支付方式 Payment Method</label>
+    <select id="wdPaymentMethod" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+      <option value="cash">💵 现金 Cash Only</option>
+      <option value="check">✅ 支票 Check</option>
+      <option value="direct_deposit">🏦 直接存款 Direct Deposit</option>
+    </select>
+  </div>
+
+  <div style="margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <label style="font-size:.8rem;font-weight:600">技能评分 Skills</label>
+      <button class="btn btn-sm btn-green" onclick="addWdSkill()">+ 添加技能</button>
+    </div>
+    <div id="wdSkillsList"></div>
+    <p style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">常见: 叉车 Forklift, 打包 Packaging, 清洁 Cleaning, 搬运 Loading, 仓储 Warehouse, 厨房 Kitchen, 电焊 Welding, 机械操作 Machine Op</p>
+  </div>
+
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('workerDetailModal')">取消</button>
+    <button class="btn btn-blue" onclick="saveWorkerDetail()">保存</button>
   </div>
 </div></div>
 
@@ -6075,32 +6119,60 @@ async function deleteAccount(id, name) {
 }
 
 // ── Worker accounts ──
+const WORK_STATUS_MAP = { citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他' };
+const IV_STATUS_MAP = { scheduled:'⏳ 已约', completed:'✔ 面试完成', passed:'✅ 通过', failed:'❌ 未通过', cancelled:'取消' };
+const PAY_METHOD_LABELS = { check:'✅ 支票', cash:'💵 现金', direct_deposit:'🏦 直接存款' };
+
+function complianceBadge(type, status) {
+  if (!status) return `<span style="color:var(--gray-300);font-size:.72rem">—</span>`;
+  const colors = { approved:'background:#dcfce7;color:#15803d', pending:'background:#fef3c7;color:#92400e', rejected:'background:#fef2f2;color:#dc2626' };
+  return `<span style="display:inline-block;padding:0 4px;border-radius:3px;font-size:.68rem;font-weight:600;${colors[status]||''}">${type}</span>`;
+}
+
+function skillStars(rating) {
+  const max = 5;
+  const r = Math.min(max, Math.max(0, parseInt(rating) || 0));
+  return '<span style="color:#f59e0b;font-size:.75rem">' + '★'.repeat(r) + '<span style="color:#e5e7eb">' + '☆'.repeat(max - r) + '</span></span>';
+}
+
 async function loadWorkerAccounts() {
   const rows = await api('/admin/worker-accounts');
   if (!Array.isArray(rows)) return;
-  const statusMap = { citizen:'公民', green_card:'绿卡', ead:'EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他' };
   const workerStatus = w => {
     if (!w.active) return '<span style="color:var(--orange);font-weight:600">⏳ 待验证</span>';
-    if (w.suspended) return '<span style="color:var(--red);font-weight:600">⛔ 已暂停</span>';
+    if (w.suspended) return '<span style="color:var(--red);font-weight:600">⛔ 暂停</span>';
     return '<span style="color:var(--green);font-weight:600">✅ 正常</span>';
   };
-  document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w=>`<tr>
-    <td><strong>${esc(w.name||w.username)}</strong></td>
-    <td>${esc(w.phone||'')}</td>
-    <td style="font-size:.82rem">${esc(w.email||'')}</td>
-    <td>${statusMap[w.work_status]||esc(w.work_status||'')}</td>
-    <td>${w.first_name?esc(w.first_name+' '+w.last_name):'<span style="color:var(--gray-400)">未绑定</span>'}</td>
+  document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w => {
+    const c = w.compliance || {};
+    const skills = w.skills || [];
+    return `<tr>
+    <td><strong>${esc(w.name||w.username)}</strong><br><span style="font-size:.72rem;color:var(--gray-400)">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</span></td>
+    <td style="font-size:.8rem">${esc(w.phone||'')}</td>
+    <td style="font-size:.78rem">${esc(w.email||'')}</td>
+    <td style="font-size:.8rem">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
+    <td style="font-size:.8rem">${w.interview_status ? IV_STATUS_MAP[w.interview_status]||w.interview_status : '<span style="color:var(--gray-300)">未安排</span>'}</td>
+    <td style="white-space:nowrap">
+      ${complianceBadge('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
+      ${complianceBadge('SSN', c.ssn_card)}
+      ${complianceBadge('DL', c.drivers_license)}
+      ${complianceBadge('W9', c.w9)}
+      ${complianceBadge('I9', c.i9)}
+    </td>
+    <td style="font-size:.8rem">${PAY_METHOD_LABELS[w.payment_method]||'💵 现金'}</td>
+    <td style="font-size:.8rem">${w.expected_salary ? '$'+esc(w.expected_salary) : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.8rem">${w.our_salary_rating ? esc(w.our_salary_rating) : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.75rem">${skills.length ? skills.map(s => `<div>${esc(s.skill_name)} ${skillStars(s.rating)}</div>`).join('') : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td>${workerStatus(w)}</td>
-    <td>${(w.created_at||'').slice(0,10)}</td>
     <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
-      ${!w.active?`<button class="btn btn-sm btn-green" onclick="activateWorkerAccount(${w.id})">激活</button><button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="resendWorkerVerify(${w.id})">重发验证</button>`:''}
+      ${!w.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="resendWorkerVerify(${w.id})">重发验证</button>`:''}
       ${w.active?(w.suspended?`<button class="btn btn-sm btn-green" onclick="suspendWorkerAccount(${w.id},0)">恢复</button>`:`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendWorkerAccount(${w.id},1)">暂停</button>`):''}
-      ${!w.employee_id?`<button class="btn btn-sm" style="background:var(--green-light,#f0fdf4);color:var(--green);border:1px solid #bbf7d0" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>转为正式员工</button>`:''}
-      <button class="btn btn-sm btn-blue" onclick="openResetPwdModal('worker',${w.id},'${esc(w.name||w.username)}')">改密码</button>
-      <button class="btn btn-sm" onclick="editWorkerAccount(${w.id})">编辑</button>
+      ${!w.employee_id?`<button class="btn btn-sm" style="background:#f0fdf4;color:var(--green);border:1px solid #bbf7d0" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>转为正式员工</button>`:''}
+      <button class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">发送重置链接</button>
+      <button class="btn btn-sm" onclick="openWorkerDetailModal(${w.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="12" class="empty">暂无工人账户</td></tr>';
 }
 
 async function openWorkerAccountModal(data) {
@@ -6186,6 +6258,78 @@ async function deleteWorkerAccount(id, name) {
     loadWorkerAccounts();
     showToast('✅ 工人账户已删除');
   });
+}
+
+// Send password reset link
+async function sendResetLink(id, name) {
+  if (!confirm(`确定给 ${name} 发送密码重置链接？`)) return;
+  const r = await api(`/admin/worker-accounts/${id}/send-reset-link`, { method:'POST' });
+  if (r && r.success) {
+    let msgs = [];
+    if (r.sms_sent) msgs.push('短信已发送');
+    if (r.email_sent) msgs.push('邮件已发送');
+    if (!msgs.length) msgs.push('链接已生成（短信/邮件未配置）');
+    showToast('✅ 重置链接已发送');
+    alert(`密码重置链接:\n${r.reset_url}\n\n${msgs.join(' | ')}\n\n链接24小时有效，用户点击后可自行重设密码。`);
+  } else {
+    showToast('❌ ' + (r?.error || '发送失败'), 'error');
+  }
+}
+
+// Worker detail modal for editing salary, payment, skills
+let _workerDetailId = null;
+let _workerDetailSkills = [];
+
+async function openWorkerDetailModal(id) {
+  const rows = await api('/admin/worker-accounts');
+  const w = rows.find(r => r.id === id);
+  if (!w) return;
+  _workerDetailId = id;
+  _workerDetailSkills = (w.skills || []).map(s => ({...s}));
+
+  const modal = document.getElementById('workerDetailModal');
+  if (!modal) return;
+  document.getElementById('wdName').textContent = w.name || w.username;
+  document.getElementById('wdIdentity').textContent = (WORK_STATUS_MAP[w.work_status] || w.work_status || '—');
+  document.getElementById('wdExpectedSalary').value = w.expected_salary || '';
+  document.getElementById('wdOurRating').value = w.our_salary_rating || '';
+  document.getElementById('wdPaymentMethod').value = w.payment_method || 'cash';
+  renderWdSkills();
+  modal.classList.add('show');
+}
+
+function renderWdSkills() {
+  const container = document.getElementById('wdSkillsList');
+  container.innerHTML = _workerDetailSkills.map((s, i) => `
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.4rem">
+      <input type="text" value="${esc(s.skill_name)}" onchange="_workerDetailSkills[${i}].skill_name=this.value" placeholder="技能名称" style="flex:1;padding:.35rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      <select onchange="_workerDetailSkills[${i}].rating=parseInt(this.value)" style="padding:.35rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+        ${[1,2,3,4,5].map(v => `<option value="${v}" ${s.rating==v?'selected':''}>${v} ${'★'.repeat(v)}</option>`).join('')}
+      </select>
+      <button class="btn btn-sm btn-red" onclick="_workerDetailSkills.splice(${i},1);renderWdSkills()">×</button>
+    </div>
+  `).join('');
+}
+
+function addWdSkill() {
+  _workerDetailSkills.push({ skill_name: '', rating: 3 });
+  renderWdSkills();
+}
+
+async function saveWorkerDetail() {
+  if (!_workerDetailId) return;
+  const data = {
+    expected_salary: document.getElementById('wdExpectedSalary').value,
+    our_salary_rating: document.getElementById('wdOurRating').value,
+    payment_method: document.getElementById('wdPaymentMethod').value
+  };
+  await api(`/admin/worker-accounts/${_workerDetailId}`, { method:'PUT', body: JSON.stringify(data) });
+  // Save skills
+  const skills = _workerDetailSkills.filter(s => s.skill_name.trim());
+  await api(`/admin/worker-accounts/${_workerDetailId}/skills`, { method:'PUT', body: JSON.stringify({ skills }) });
+  closeModal('workerDetailModal');
+  showToast('✅ 工人信息已保存');
+  loadWorkerAccounts();
 }
 
 // ── Customer accounts ──

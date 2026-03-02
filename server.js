@@ -1414,10 +1414,48 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
 
 // ─── Worker Accounts (admin manages) ───
 app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  res.json(db.prepare(`
-    SELECT w.*, e.first_name, e.last_name, e.employee_id as emp_code
+  const workers = db.prepare(`
+    SELECT w.*, e.first_name, e.last_name, e.employee_id as emp_code,
+      e.pay_rate, e.pay_type, e.position, e.department
     FROM worker_accounts w LEFT JOIN employees e ON w.employee_id=e.id ORDER BY w.id DESC
-  `).all());
+  `).all();
+
+  // Enrich each worker with interview, compliance, and skill data
+  const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
+  const getCompDocs = db.prepare(`SELECT doc_type, status FROM worker_compliance_docs WHERE worker_account_id=?`);
+  const getSkills = db.prepare(`SELECT skill_name, rating FROM worker_skills WHERE worker_account_id=?`);
+
+  // Ensure worker_skills table exists
+  try { db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id),
+    skill_name TEXT NOT NULL,
+    rating INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`); } catch {}
+
+  // Add expected_salary, payment_method columns if missing
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN expected_salary TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
+
+  const enriched = workers.map(w => {
+    const interview = getInterview.get(w.id);
+    const docs = getCompDocs.all(w.id);
+    const skills = getSkills.all(w.id);
+
+    const complianceMap = {};
+    docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
+
+    return {
+      ...w,
+      interview_status: interview ? interview.status : null,
+      compliance: complianceMap,
+      skills: skills || []
+    };
+  });
+
+  res.json(enriched);
 });
 
 app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req, res) => {
@@ -1433,16 +1471,93 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   if (password) {
     const salt = crypto.randomBytes(16).toString('hex');
     db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hashPassword(password, salt), salt, req.params.id);
   }
-  db.prepare('UPDATE worker_accounts SET employee_id=?, active=?, suspended=? WHERE id=?')
-    .run(employee_id !== undefined ? employee_id : w.employee_id, active !== undefined ? active : w.active, suspended !== undefined ? suspended : (w.suspended||0), req.params.id);
+  db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
+    expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
+    payment_method=COALESCE(?,payment_method) WHERE id=?`)
+    .run(
+      employee_id !== undefined ? employee_id : w.employee_id,
+      active !== undefined ? active : w.active,
+      suspended !== undefined ? suspended : (w.suspended||0),
+      expected_salary !== undefined ? expected_salary : null,
+      our_salary_rating !== undefined ? our_salary_rating : null,
+      payment_method !== undefined ? payment_method : null,
+      req.params.id
+    );
   res.json({ success: true });
+});
+
+// Admin: update worker skills
+app.put('/api/admin/worker-accounts/:id/skills', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { skills } = req.body; // Array of { skill_name, rating }
+  if (!Array.isArray(skills)) return res.status(400).json({ error: 'skills array required' });
+  db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(req.params.id);
+  const insert = db.prepare('INSERT INTO worker_skills (worker_account_id, skill_name, rating) VALUES (?,?,?)');
+  skills.forEach(s => { if (s.skill_name) insert.run(req.params.id, s.skill_name, s.rating || 0); });
+  res.json({ success: true });
+});
+
+// Admin: send password reset link to worker
+app.post('/api/admin/worker-accounts/:id/send-reset-link', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Worker not found' });
+
+  // Generate a reset token
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+  // Store reset token
+  try { db.exec(`CREATE TABLE IF NOT EXISTS password_resets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_type TEXT NOT NULL,
+    account_id INTEGER NOT NULL,
+    token TEXT UNIQUE NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`); } catch {}
+
+  db.prepare('INSERT INTO password_resets (account_type, account_id, token, expires_at) VALUES (?,?,?,?)')
+    .run('worker', w.id, token, expiresAt);
+
+  const resetUrl = `${req.protocol}://${req.get('host')}/portal?reset=${token}`;
+  const results = { sms_sent: false, email_sent: false };
+
+  // Send via SMS
+  if (w.phone && process.env.TWILIO_ACCOUNT_SID) {
+    try {
+      const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      await twilio.messages.create({
+        body: `Prime Anchorpoint 密码重置链接 / Password Reset:\n${resetUrl}\n24小时内有效。`,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: w.phone
+      });
+      results.sms_sent = true;
+    } catch (e) { console.error('[Reset SMS]', e.message); }
+  }
+
+  // Send via email
+  if (w.email && process.env.SMTP_HOST) {
+    try {
+      const nodemailer = require('nodemailer');
+      const t = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT)||587, secure: process.env.SMTP_SECURE==='true', auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS} });
+      await t.sendMail({
+        from: process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com',
+        to: w.email,
+        subject: 'Prime Anchorpoint - 密码重置 / Password Reset',
+        html: `<p>请点击以下链接重置密码 / Click to reset your password:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>链接24小时内有效 / Valid for 24 hours.</p>`
+      });
+      results.email_sent = true;
+    } catch (e) { console.error('[Reset Email]', e.message); }
+  }
+
+  res.json({ success: true, reset_url: resetUrl, ...results });
 });
 
 app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
