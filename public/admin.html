@@ -990,16 +990,28 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
 
-  <div class="field-row">
-    <div class="field"><label>工作地点</label><input id="jLocation" placeholder="例：Chicago, IL"></div>
-    <div class="field"><label>职位类型</label>
-      <select id="jType">
-        <option value="">-- 请选择 --</option>
-        <option value="全职">全职 / Full-Time</option>
-        <option value="兼职">兼职 / Part-Time</option>
-        <option value="临时工">临时工 / Temporary</option>
-        <option value="临时转正">临时转正 / Temp-to-Hire</option>
-      </select>
+  <div class="field"><label>职位类型</label>
+    <select id="jType">
+      <option value="">-- 请选择 --</option>
+      <option value="全职">全职 / Full-Time</option>
+      <option value="兼职">兼职 / Part-Time</option>
+      <option value="临时工">临时工 / Temporary</option>
+      <option value="临时转正">临时转正 / Temp-to-Hire</option>
+    </select>
+  </div>
+
+  <div class="form-section" style="margin:0;padding:0;border:0">
+    <h4 style="margin-bottom:.5rem">工作地点 Work Location</h4>
+    <div class="field"><label>街道地址 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="jStreet" placeholder="e.g. 123 Main St"></div>
+    <div class="field"><label>单元 / 楼层 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="jStreet2" placeholder="e.g. Suite 200"></div>
+    <div class="field-row3">
+      <div class="field"><label>城市 City *</label><input id="jCity" placeholder="Chicago"></div>
+      <div class="field"><label>州 State *</label>
+        <select id="jState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
+          <option value="">-- 州 --</option>
+        </select>
+      </div>
+      <div class="field"><label>邮编 ZIP</label><input id="jZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'')"></div>
     </div>
   </div>
 
@@ -1316,11 +1328,16 @@ tr:hover td{background:var(--sky-light)}
       <div class="field"><label>电话</label><input id="ePhone" placeholder="(555) 000-0000"></div>
       <div class="field"><label>邮箱</label><input id="eEmail" type="email" placeholder="email@example.com"></div>
     </div>
-    <div class="field"><label>家庭住址</label><input id="eAddr" placeholder="街道地址"></div>
+    <div class="field"><label>街道地址 Street Address</label><input id="eAddr" placeholder="e.g. 123 Main St"></div>
+    <div class="field"><label>单元 / 楼层 Unit / Suite <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="eStreet2" placeholder="e.g. Apt 2B, Suite 100"></div>
     <div class="field-row3">
-      <div class="field"><label>城市</label><input id="eCity" placeholder="Chicago"></div>
-      <div class="field"><label>州</label><input id="eState" placeholder="IL"></div>
-      <div class="field"><label>邮编</label><input id="eZip" placeholder="60601"></div>
+      <div class="field"><label>城市 City</label><input id="eCity" placeholder="Chicago"></div>
+      <div class="field"><label>州 State</label>
+        <select id="eState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
+          <option value="">-- 州 --</option>
+        </select>
+      </div>
+      <div class="field"><label>邮编 ZIP</label><input id="eZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'')"></div>
     </div>
   </div>
   <div class="form-section">
@@ -1875,13 +1892,19 @@ async function openJobModal(job) {
   }
   document.getElementById('jTitle').value = job ? job.title : '';
   document.getElementById('jType').value = job ? (job.type || '') : '';
-  document.getElementById('jLocation').value = job ? job.location : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
   document.getElementById('jWorkStart').value = job ? (job.work_start || '') : '';
   document.getElementById('jWorkEnd').value = job ? (job.work_end || '') : '';
+  // Parse location into 5 fields
+  const _loc = parseAddressString(job ? (job.location||'') : '');
+  document.getElementById('jStreet').value  = _loc.street;
+  document.getElementById('jStreet2').value = _loc.street2;
+  document.getElementById('jCity').value    = _loc.city;
+  fillStateSelect(document.getElementById('jState'), _loc.state);
+  document.getElementById('jZip').value     = _loc.zip;
   document.getElementById('jDesc').value = job ? job.description : '';
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
   document.getElementById('jHeadcount').value = job ? (job.headcount || 1) : 1;
@@ -1905,8 +1928,52 @@ async function openJobModal(job) {
 function closeJobModal() { guardClose('jobModal'); }
 function editJob(j) { openJobModal(j); }
 
+// ── Address helpers ──
+const _US_STATES_EARLY = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
+
+function fillStateSelect(selectEl, selectedVal) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '<option value="">-- 州 --</option>' +
+    _US_STATES_EARLY.map(s => `<option value="${s}"${s===selectedVal?' selected':''}>${s}</option>`).join('');
+}
+
+// Parse "Street, [Street2,] City, ST [ZIP]" or "City, ST" into parts
+function parseAddressString(str) {
+  if (!str) return { street:'', street2:'', city:'', state:'', zip:'' };
+  const m5 = str.match(/^(.*?),\s*(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  const m4 = str.match(/^(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  const m3 = str.match(/^(.*?),\s*([^,]+),\s*([A-Z]{2})$/);
+  const m2 = str.match(/^([^,]+),\s*([A-Z]{2})(?:\s+(\d{5}(?:-\d{4})?))?$/);
+  if (m5) return { street:m5[1].trim(), street2:m5[2].trim(), city:m5[3].trim(), state:m5[4], zip:m5[5] };
+  if (m4) return { street:m4[1].trim(), street2:'', city:m4[2].trim(), state:m4[3], zip:m4[4] };
+  if (m3) return { street:m3[1].trim(), street2:'', city:m3[2].trim(), state:m3[3], zip:'' };
+  if (m2) return { street:'', street2:'', city:m2[1].trim(), state:m2[2], zip:m2[3]||'' };
+  return { street:'', street2:'', city:str.trim(), state:'', zip:'' };
+}
+
+// Combine 5 address parts into a display string
+function buildAddressString(street, street2, city, state, zip) {
+  const parts = [];
+  if (street) parts.push(street);
+  if (street2) parts.push(street2);
+  if (city) parts.push(city);
+  if (state) parts.push(state + (zip ? ' ' + zip : ''));
+  return parts.join(', ');
+}
+
+// Validate ZIP code — returns error message or ''
+function validateZip(zip) {
+  if (!zip) return '';
+  if (!/^\d{5}(-\d{4})?$/.test(zip)) return 'ZIP 格式有误（5位数字，或 ZIP+4）';
+  return '';
+}
+
 // Wire up day/benefit toggle buttons (once DOM ready)
 document.addEventListener('DOMContentLoaded', () => {
+  // Populate state dropdowns
+  fillStateSelect(document.getElementById('eState'), '');
+  fillStateSelect(document.getElementById('jState'), '');
+
   document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
     btn.addEventListener('click', () => btn.classList.toggle('active'));
   });
@@ -1956,7 +2023,12 @@ function randomFillJob() {
   const r = pool[Math.floor(Math.random() * pool.length)];
   document.getElementById('jTitle').value          = r.title;
   document.getElementById('jType').value           = r.type;
-  document.getElementById('jLocation').value       = r.location;
+  const _rloc = parseAddressString(r.location||'');
+  document.getElementById('jStreet').value         = _rloc.street;
+  document.getElementById('jStreet2').value        = _rloc.street2;
+  document.getElementById('jCity').value           = _rloc.city;
+  fillStateSelect(document.getElementById('jState'), _rloc.state);
+  document.getElementById('jZip').value            = _rloc.zip;
   document.getElementById('jPay').value            = r.pay;
   document.getElementById('jLang').value           = r.lang;
   document.getElementById('jWorkAuth').value       = r.work_auth || '';
@@ -1989,7 +2061,13 @@ async function saveJob() {
     partner_id: partnerId,
     title: document.getElementById('jTitle').value,
     type: document.getElementById('jType').value,
-    location: document.getElementById('jLocation').value,
+    location: buildAddressString(
+      document.getElementById('jStreet').value.trim(),
+      document.getElementById('jStreet2').value.trim(),
+      document.getElementById('jCity').value.trim(),
+      document.getElementById('jState').value,
+      document.getElementById('jZip').value.trim()
+    ),
     pay: document.getElementById('jPay').value,
     lang: langVal,
     lang_name: langNames[langVal] || langVal,
@@ -2010,6 +2088,11 @@ async function saveJob() {
   };
   if (!data.partner_id) return alert('请选择合作公司');
   if (!data.title) return alert('请填写职位名称');
+  const jCity = document.getElementById('jCity').value.trim();
+  const jState = document.getElementById('jState').value;
+  if (!jCity || !jState) return alert('请填写工作地点的城市和州');
+  const jZipErr = validateZip(document.getElementById('jZip').value.trim());
+  if (jZipErr) return alert(jZipErr);
   if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
   clearModalState('jobModal');
@@ -3129,8 +3212,9 @@ function openEmpModal(id) {
     document.getElementById('ePhone').value    = e.phone||'';
     document.getElementById('eEmail').value    = e.email||'';
     document.getElementById('eAddr').value     = e.address||'';
+    document.getElementById('eStreet2').value  = e.street2||'';
     document.getElementById('eCity').value     = e.city||'';
-    document.getElementById('eState').value    = e.state||'';
+    fillStateSelect(document.getElementById('eState'), e.state||'');
     document.getElementById('eZip').value      = e.zip||'';
     document.getElementById('eHire').value     = e.hire_date||'';
     document.getElementById('eStatus').value   = e.status||'active';
@@ -3145,8 +3229,9 @@ function openEmpModal(id) {
     document.getElementById('eSSN').value      = '';
     document.getElementById('ePin').value      = '';
   } else {
-    ['eFirst','eLast','eEmpId','eDob','ePhone','eEmail','eAddr','eCity','eState','eZip',
+    ['eFirst','eLast','eEmpId','eDob','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
      'eHire','ePos','eDept','ePayRate','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin'].forEach(id=>document.getElementById(id).value='');
+    fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
     document.getElementById('ePayType').value = 'hourly';
   }
@@ -3176,8 +3261,9 @@ function randomFillEmployee() {
   document.getElementById('ePhone').value = phone;
   document.getElementById('eEmail').value = `${fn.toLowerCase()}.${ln.toLowerCase()}@email.com`;
   document.getElementById('eAddr').value = pick(streets);
+  document.getElementById('eStreet2').value = '';
   document.getElementById('eCity').value = pick(cities);
-  document.getElementById('eState').value = 'IL';
+  fillStateSelect(document.getElementById('eState'), 'IL');
   document.getElementById('eZip').value = String(rnd(60601,60699));
   document.getElementById('eHire').value = hire;
   document.getElementById('ePos').value = pick(positions);
@@ -3200,8 +3286,9 @@ async function saveEmployee() {
     phone: document.getElementById('ePhone').value.trim(),
     email: document.getElementById('eEmail').value.trim(),
     address: document.getElementById('eAddr').value.trim(),
+    street2: document.getElementById('eStreet2').value.trim(),
     city: document.getElementById('eCity').value.trim(),
-    state: document.getElementById('eState').value.trim(),
+    state: document.getElementById('eState').value,
     zip: document.getElementById('eZip').value.trim(),
     hire_date: document.getElementById('eHire').value,
     status: document.getElementById('eStatus').value,
@@ -3218,6 +3305,8 @@ async function saveEmployee() {
   };
   if (!data.first_name || !data.last_name) return alert('请填写员工姓名');
   if (!id && !data.dob) return alert('请填写出生日期（用于工时确认页身份验证）');
+  const zipErr = validateZip(data.zip);
+  if (zipErr) return alert(zipErr);
   const ssn = document.getElementById('eSSN').value.replace(/\D/g,'');
   if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
   async function doSave(forceData) {
