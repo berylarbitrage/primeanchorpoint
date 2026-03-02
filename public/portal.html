@@ -66,6 +66,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .btn-sky:hover{background:#0284c7}
 .btn-gray{background:var(--gray-100);color:var(--gray-500)}
 .btn-green{background:var(--green);color:#fff}
+.btn-outline{background:#fff;color:var(--sky);border:1.5px solid var(--sky);font-weight:500}
+.btn-outline:hover{background:#f0f9ff}
 /* Timesheet table */
 table{width:100%;border-collapse:collapse;font-size:.85rem}
 th{background:var(--gray-50);padding:.6rem .75rem;text-align:left;font-weight:600;color:var(--gray-500);border-bottom:2px solid var(--gray-200)}
@@ -384,15 +386,50 @@ tr:last-child td{border-bottom:none}
       <div class="card" id="dlFormCard" style="display:none">
         <h2>🪪 身份证件验证 / ID Verification</h2>
         <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">
-          使用 Persona 安全验证您的驾照或身份证件。点击下方按钮开始，按照提示拍照即可自动验证。<br>
-          <span style="font-size:.8rem">Securely verify your driver's license or government ID via Persona. Click below to start.</span>
+          使用 Persona 安全验证您的驾照或身份证件。可以在本页面直接验证，也可以发送链接到手机或邮箱完成。<br>
+          <span style="font-size:.8rem">Verify your driver's license or government ID via Persona. Complete here, or send a link to your phone/email.</span>
         </p>
         <div id="personaStatusBox" style="display:none;padding:1rem;border-radius:8px;margin-bottom:1rem"></div>
         <div id="personaActions">
-          <button class="btn btn-sky" onclick="startPersonaVerification()" id="personaStartBtn" style="font-size:.95rem;padding:.7rem 1.5rem">
-            开始验证 / Start Verification
-          </button>
-          <button type="button" class="btn btn-gray" onclick="hideDLForm()" style="margin-left:.5rem">取消</button>
+          <!-- Primary: Embedded verification -->
+          <div style="margin-bottom:1rem">
+            <button class="btn btn-sky" onclick="startPersonaVerification()" id="personaStartBtn" style="font-size:.95rem;padding:.7rem 1.5rem">
+              📱 在此页面验证 / Verify Here
+            </button>
+            <button type="button" class="btn btn-gray" onclick="hideDLForm()" style="margin-left:.5rem">取消</button>
+          </div>
+          <!-- Link sharing options -->
+          <div style="border-top:1px solid var(--gray-200);padding-top:1rem;margin-top:.5rem">
+            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem;font-weight:600">
+              📤 发送验证链接 / Send Verification Link
+            </p>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
+              <button class="btn btn-outline" onclick="personaSendSMS()" id="personaSmsBtn" style="font-size:.85rem;padding:.5rem 1rem">
+                💬 短信发送 / Send SMS
+              </button>
+              <button class="btn btn-outline" onclick="personaSendEmail()" id="personaEmailBtn" style="font-size:.85rem;padding:.5rem 1rem">
+                📧 邮件发送 / Send Email
+              </button>
+              <button class="btn btn-outline" onclick="personaShowQR()" id="personaQRBtn" style="font-size:.85rem;padding:.5rem 1rem">
+                📷 显示二维码 / Show QR Code
+              </button>
+              <button class="btn btn-outline" onclick="personaCopyLink()" id="personaCopyBtn" style="font-size:.85rem;padding:.5rem 1rem">
+                🔗 复制链接 / Copy Link
+              </button>
+            </div>
+            <!-- QR Code display area -->
+            <div id="personaQRArea" style="display:none;text-align:center;padding:1rem;background:#f9fafb;border-radius:8px;margin-bottom:.75rem">
+              <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.5rem">用手机扫描二维码完成验证 / Scan with your phone to verify</p>
+              <div id="personaQRCode" style="display:inline-block"></div>
+            </div>
+            <!-- Link display area -->
+            <div id="personaLinkArea" style="display:none;padding:.75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;margin-bottom:.75rem">
+              <p style="font-size:.78rem;color:var(--gray-500);margin-bottom:.3rem">验证链接 / Verification Link:</p>
+              <input type="text" id="personaLinkInput" readonly style="width:100%;padding:.4rem .6rem;font-size:.8rem;border:1px solid #d1d5db;border-radius:4px;background:#fff" onclick="this.select()">
+            </div>
+            <!-- Send status message -->
+            <div id="personaSendStatus" style="display:none;padding:.5rem .75rem;border-radius:6px;font-size:.82rem;margin-bottom:.5rem"></div>
+          </div>
         </div>
         <!-- Fallback for manual upload if Persona not configured -->
         <div id="dlManualFallback" style="display:none;margin-top:1rem;border-top:1px solid var(--gray-200);padding-top:1rem">
@@ -1261,6 +1298,11 @@ async function showDLForm() {
     // Check current status
     const status = await wApi('/persona/status');
     const box = document.getElementById('personaStatusBox');
+    // Restore hosted URL if available
+    if (status && status.persona_hosted_url) {
+      _personaHostedUrl = status.persona_hosted_url;
+      updatePersonaLinkUI(status.persona_hosted_url);
+    }
     if (status && status.persona_inquiry_id && status.status !== 'rejected') {
       if (status.status === 'approved') {
         box.style.display = '';
@@ -1268,12 +1310,14 @@ async function showDLForm() {
         box.style.border = '1px solid #86efac';
         box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
         document.getElementById('personaStartBtn').style.display = 'none';
+        // Hide sharing options when already approved
+        document.querySelectorAll('#personaActions > div:last-child').forEach(el => el.style.display = 'none');
       } else if (status.status === 'pending') {
         box.style.display = '';
         box.style.background = '#fefce8';
         box.style.border = '1px solid #fde047';
-        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Verification in progress</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">Persona 正在自动验证您的证件，请稍候。</div>';
-        document.getElementById('personaStartBtn').textContent = '重新验证 / Re-verify';
+        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Verification in progress</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">Persona 正在自动验证您的证件，请稍候。如果通过手机完成了验证，请刷新页面查看最新状态。</div>';
+        document.getElementById('personaStartBtn').textContent = '📱 重新验证 / Re-verify';
       }
     }
   } else {
@@ -1288,6 +1332,15 @@ function hideW9Form() { document.getElementById('w9FormCard').style.display = 'n
 
 // ── Persona Verification ──
 let _personaClient = null;
+let _personaHostedUrl = null; // stored hosted URL for link sharing
+
+async function ensurePersonaInquiry() {
+  // Create inquiry if we don't have a hosted URL yet, or return existing one
+  if (_personaHostedUrl) return { inquiry_id: null, hosted_url: _personaHostedUrl };
+  const r = await wApi('/persona/inquiry', { method: 'POST' });
+  if (r && r.hosted_url) _personaHostedUrl = r.hosted_url;
+  return r;
+}
 
 async function startPersonaVerification() {
   if (typeof Persona === 'undefined') {
@@ -1304,8 +1357,13 @@ async function startPersonaVerification() {
     if (!r || !r.inquiry_id) {
       showToast('❌ ' + (r?.error || '创建验证失败'), 'error');
       btn.disabled = false;
-      btn.textContent = '开始验证 / Start Verification';
+      btn.textContent = '📱 在此页面验证 / Verify Here';
       return;
+    }
+    // Store hosted URL for sharing
+    if (r.hosted_url) {
+      _personaHostedUrl = r.hosted_url;
+      updatePersonaLinkUI(r.hosted_url);
     }
 
     // Open Persona embedded flow
@@ -1316,7 +1374,7 @@ async function startPersonaVerification() {
       onReady: () => {
         _personaClient.open();
         btn.disabled = false;
-        btn.textContent = '开始验证 / Start Verification';
+        btn.textContent = '📱 在此页面验证 / Verify Here';
       },
       onComplete: ({ inquiryId, status, fields }) => {
         console.log('[Persona] Complete:', inquiryId, status);
@@ -1332,6 +1390,7 @@ async function startPersonaVerification() {
           box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 验证已提交 / Submitted</div>';
         }
         showToast('✅ 证件已提交验证');
+        _personaHostedUrl = null; // reset after completion
         loadCompliance();
       },
       onCancel: ({ inquiryId }) => {
@@ -1342,14 +1401,150 @@ async function startPersonaVerification() {
         console.error('[Persona] Error:', error);
         showToast('❌ 验证出错，请重试', 'error');
         btn.disabled = false;
-        btn.textContent = '开始验证 / Start Verification';
+        btn.textContent = '📱 在此页面验证 / Verify Here';
       }
     });
   } catch (e) {
     console.error('[Persona] Init error:', e);
     showToast('❌ 初始化失败: ' + e.message, 'error');
     btn.disabled = false;
-    btn.textContent = '开始验证 / Start Verification';
+    btn.textContent = '📱 在此页面验证 / Verify Here';
+  }
+}
+
+// Update link display area with hosted URL
+function updatePersonaLinkUI(url) {
+  if (!url) return;
+  const linkArea = document.getElementById('personaLinkArea');
+  const linkInput = document.getElementById('personaLinkInput');
+  if (linkArea && linkInput) {
+    linkInput.value = url;
+    linkArea.style.display = '';
+  }
+}
+
+function showPersonaSendStatus(msg, type) {
+  const el = document.getElementById('personaSendStatus');
+  el.style.display = '';
+  el.style.background = type === 'ok' ? '#f0fdf4' : type === 'error' ? '#fef2f2' : '#fefce8';
+  el.style.color = type === 'ok' ? '#15803d' : type === 'error' ? '#dc2626' : '#a16207';
+  el.textContent = msg;
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+// Send verification link via SMS
+async function personaSendSMS() {
+  const btn = document.getElementById('personaSmsBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+  try {
+    if (!_personaHostedUrl) {
+      const r = await ensurePersonaInquiry();
+      if (!r || (!r.hosted_url && !_personaHostedUrl)) {
+        showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+        btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS'; return;
+      }
+    }
+    const r = await wApi('/persona/send-sms', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.success) {
+      showPersonaSendStatus('✅ 短信已发送到您的手机 / SMS sent to your phone', 'ok');
+    } else {
+      showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
+    }
+  } catch (e) {
+    showPersonaSendStatus('❌ ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS';
+}
+
+// Send verification link via email
+async function personaSendEmail() {
+  const btn = document.getElementById('personaEmailBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+  try {
+    if (!_personaHostedUrl) {
+      const r = await ensurePersonaInquiry();
+      if (!r || (!r.hosted_url && !_personaHostedUrl)) {
+        showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+        btn.disabled = false; btn.textContent = '📧 邮件发送 / Send Email'; return;
+      }
+    }
+    const r = await wApi('/persona/send-email', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.success) {
+      showPersonaSendStatus('✅ 邮件已发送 / Email sent', 'ok');
+    } else {
+      showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
+    }
+  } catch (e) {
+    showPersonaSendStatus('❌ ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = '📧 邮件发送 / Send Email';
+}
+
+// Show QR code for scanning
+async function personaShowQR() {
+  const area = document.getElementById('personaQRArea');
+  const qrDiv = document.getElementById('personaQRCode');
+  if (!_personaHostedUrl) {
+    const btn = document.getElementById('personaQRBtn');
+    btn.disabled = true; btn.textContent = '生成中...';
+    const r = await ensurePersonaInquiry();
+    btn.disabled = false; btn.textContent = '📷 显示二维码 / Show QR Code';
+    if (!r || (!r.hosted_url && !_personaHostedUrl)) {
+      showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+      return;
+    }
+  }
+  // Toggle QR display
+  if (area.style.display !== 'none') { area.style.display = 'none'; return; }
+  qrDiv.innerHTML = '';
+  // Generate QR code using qrcode.js (loaded on demand)
+  if (typeof QRCode === 'undefined') {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+    script.onload = () => { renderPersonaQR(qrDiv); area.style.display = ''; };
+    script.onerror = () => {
+      // Fallback: use Google Charts QR API
+      qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(_personaHostedUrl)}" alt="QR Code" style="width:200px;height:200px">`;
+      area.style.display = '';
+    };
+    document.head.appendChild(script);
+  } else {
+    renderPersonaQR(qrDiv);
+    area.style.display = '';
+  }
+  // Also show the link
+  updatePersonaLinkUI(_personaHostedUrl);
+}
+
+function renderPersonaQR(container) {
+  new QRCode(container, { text: _personaHostedUrl, width: 200, height: 200, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
+}
+
+// Copy verification link to clipboard
+async function personaCopyLink() {
+  if (!_personaHostedUrl) {
+    const btn = document.getElementById('personaCopyBtn');
+    btn.disabled = true; btn.textContent = '生成中...';
+    const r = await ensurePersonaInquiry();
+    btn.disabled = false; btn.textContent = '🔗 复制链接 / Copy Link';
+    if (!r || (!r.hosted_url && !_personaHostedUrl)) {
+      showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+      return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(_personaHostedUrl);
+    showPersonaSendStatus('✅ 链接已复制到剪贴板 / Link copied!', 'ok');
+    updatePersonaLinkUI(_personaHostedUrl);
+  } catch {
+    // Fallback for older browsers
+    const input = document.getElementById('personaLinkInput');
+    updatePersonaLinkUI(_personaHostedUrl);
+    input.select();
+    document.execCommand('copy');
+    showPersonaSendStatus('✅ 链接已复制 / Link copied!', 'ok');
   }
 }
 

@@ -3615,8 +3615,13 @@ app.post('/api/worker/persona/inquiry', requireWorker, async (req, res) => {
       return res.status(resp.status).json({ error: 'Persona API error', details: data });
     }
     const inquiryId = data.data?.id;
+    const sessionToken = data.meta?.['session-token'] || '';
+    // Build hosted flow URL for link/QR sharing
+    const hostedUrl = sessionToken
+      ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${sessionToken}`
+      : '';
     // Store the inquiry in compliance docs
-    const formData = JSON.stringify({ persona_inquiry_id: inquiryId, persona_status: 'created' });
+    const formData = JSON.stringify({ persona_inquiry_id: inquiryId, persona_status: 'created', persona_session_token: sessionToken, persona_hosted_url: hostedUrl });
     const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(req.workerId);
     if (existing) {
       db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -3625,7 +3630,7 @@ app.post('/api/worker/persona/inquiry', requireWorker, async (req, res) => {
       db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'drivers_license', ?, 'pending')")
         .run(req.workerId, formData);
     }
-    res.json({ success: true, inquiry_id: inquiryId });
+    res.json({ success: true, inquiry_id: inquiryId, hosted_url: hostedUrl });
   } catch (e) {
     console.error('[Persona] Error:', e.message);
     res.status(500).json({ error: 'Failed to create Persona inquiry: ' + e.message });
@@ -3650,10 +3655,70 @@ app.get('/api/worker/persona/status', requireWorker, (req, res) => {
       status: doc.status,
       persona_inquiry_id: formData.persona_inquiry_id || null,
       persona_status: formData.persona_status || null,
+      persona_hosted_url: formData.persona_hosted_url || null,
       reviewer_notes: doc.reviewer_notes || ''
     });
   } catch {
     res.json({ status: doc.status });
+  }
+});
+
+// Worker: send Persona verification link via SMS
+app.post('/api/worker/persona/send-sms', requireWorker, async (req, res) => {
+  const worker = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!worker) return res.status(404).json({ error: 'Worker not found' });
+  const phone = req.body.phone || worker.phone;
+  if (!phone) return res.status(400).json({ error: '没有手机号码 / No phone number' });
+
+  const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
+  if (!doc) return res.status(400).json({ error: '请先创建验证 / Please create verification first' });
+  try {
+    const formData = JSON.parse(doc.form_data || '{}');
+    const url = formData.persona_hosted_url;
+    if (!url) return res.status(400).json({ error: '验证链接不可用，请重新开始验证 / Verification link not available' });
+    const msg = `[Prime Anchor Point] 请点击以下链接完成身份验证 / Click the link below to verify your identity:\n${url}`;
+    const ok = await sendSMS(phone, msg);
+    if (ok) return res.json({ success: true, message: '短信已发送 / SMS sent' });
+    return res.status(500).json({ error: '短信发送失败 / SMS send failed' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Worker: send Persona verification link via email
+app.post('/api/worker/persona/send-email', requireWorker, async (req, res) => {
+  const worker = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!worker) return res.status(404).json({ error: 'Worker not found' });
+  const email = req.body.email || worker.email;
+  if (!email) return res.status(400).json({ error: '没有邮箱地址 / No email address' });
+
+  const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
+  if (!doc) return res.status(400).json({ error: '请先创建验证 / Please create verification first' });
+  try {
+    const formData = JSON.parse(doc.form_data || '{}');
+    const url = formData.persona_hosted_url;
+    if (!url) return res.status(400).json({ error: '验证链接不可用，请重新开始验证 / Verification link not available' });
+    const subject = 'Prime Anchor Point - 身份验证 / Identity Verification';
+    const html = `
+      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+        <h2 style="color:#0ea5e9">Prime Anchor Point</h2>
+        <p>您好 ${worker.name || ''},</p>
+        <p>请点击下方按钮完成身份验证（驾照/ID）：<br>Please click the button below to verify your identity:</p>
+        <div style="text-align:center;margin:2rem 0">
+          <a href="${url}" style="display:inline-block;background:#0ea5e9;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:1.1rem;font-weight:600">
+            开始验证 / Start Verification
+          </a>
+        </div>
+        <p style="font-size:.85rem;color:#666">或复制以下链接到浏览器打开 / Or copy this link:<br><a href="${url}">${url}</a></p>
+        <hr style="margin:2rem 0;border:none;border-top:1px solid #e5e7eb">
+        <p style="font-size:.8rem;color:#999">Prime Anchor Point Staffing</p>
+      </div>`;
+    const plainText = `请点击以下链接完成身份验证 / Click the link to verify your identity: ${url}`;
+    const ok = await sendEmail(email, subject, plainText, html);
+    if (ok) return res.json({ success: true, message: '邮件已发送 / Email sent' });
+    return res.status(500).json({ error: '邮件发送失败 / Email send failed' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
