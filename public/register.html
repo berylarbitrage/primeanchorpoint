@@ -412,7 +412,32 @@ async function registerWorker() {
       body: JSON.stringify({ name, phone, email, dob, work_status: _selectedStatus, position_interests: interests, password })
     });
     const d = await r.json();
-    if (!r.ok || d.error) return showError(d.error || '注册失败，请稍后重试 / Registration failed, please try again');
+    if (!r.ok || d.error) {
+      // Pending verification — switch to verify UI instead of just showing error
+      if (d.pending_account_id) {
+        _pendingAccountId = d.pending_account_id;
+        _needsPhone = !!d.needs_phone;
+        _needsEmail = !!d.needs_email;
+        if (_needsPhone) {
+          document.getElementById('phoneCodeSection').style.display = '';
+          document.getElementById('phoneResendSection').style.display = '';
+        }
+        if (_needsEmail) {
+          document.getElementById('emailCodeSection').style.display = '';
+          document.getElementById('emailResendSection').style.display = '';
+        }
+        document.getElementById('verifyIcon').textContent = _needsPhone && _needsEmail ? '📱✉️' : _needsPhone ? '📱' : '✉️';
+        document.getElementById('verifyTitle').textContent = '完成验证 / Complete Verification';
+        document.getElementById('verifyDesc').innerHTML = d.error;
+        document.getElementById('formWorker').style.display = 'none';
+        const ts = document.getElementById('typeSelector');
+        if (ts) ts.style.display = 'none';
+        document.getElementById('loginLinks').style.display = 'none';
+        document.getElementById('workerVerify').style.display = '';
+        return;
+      }
+      return showError(d.error || '注册失败，请稍后重试 / Registration failed, please try again');
+    }
 
     // If no verification needed, go directly to portal
     if (!d.needs_verification) {

@@ -3415,9 +3415,13 @@ app.post('/api/register/worker', async (req, res) => {
     const validCode = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND expires_at>?').get(existing.id, now);
     if (validCode) {
       // Codes still active — the user should complete the pending verification, not start over
+      const hasPhone = !!db.prepare("SELECT id FROM verification_codes WHERE worker_account_id=? AND type='phone' AND expires_at>?").get(existing.id, now);
+      const hasEmail = !!db.prepare("SELECT id FROM verification_codes WHERE worker_account_id=? AND type='email' AND expires_at>?").get(existing.id, now);
       return res.status(400).json({
-        error: '该手机号或邮箱已有待验证的注册，请完成验证码验证。如验证码已丢失，请等待15分钟后重新注册。 / A pending registration exists for this phone or email. Please complete verification, or wait 15 minutes for the codes to expire and try again.',
-        pending_account_id: existing.id
+        error: '该手机号或邮箱已有待验证的注册，验证码已重新发送，请输入验证码完成注册。 / A pending registration exists. Verification codes have been resent — please enter them to complete registration.',
+        pending_account_id: existing.id,
+        needs_phone: hasPhone,
+        needs_email: hasEmail
       });
     }
     // All codes expired — clean up and allow fresh registration
