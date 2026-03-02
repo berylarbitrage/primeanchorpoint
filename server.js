@@ -4984,6 +4984,18 @@ app.post('/api/worker/interviews', requireWorker, (req, res) => {
   }
 });
 
+// Worker: cancel my interview
+app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
+  const row = db.prepare(`SELECT id, slot_id, status FROM interviews WHERE worker_account_id=?`).get(req.workerId);
+  if (!row) return res.status(404).json({ error: '没有找到面试预约' });
+  if (row.status !== 'scheduled') return res.status(400).json({ error: '当前状态无法取消' });
+  db.prepare(`UPDATE interviews SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(row.id);
+  db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
+  // Reset onboarding interview task back to pending
+  db.prepare(`UPDATE worker_onboarding SET status='pending', completed_at=NULL WHERE worker_account_id=? AND task_key='interview' AND status IN ('submitted','completed')`).run(req.workerId);
+  res.json({ success: true });
+});
+
 // Global error handler — return JSON instead of Express's default HTML error page
 app.use((err, req, res, next) => {
   console.error('[Unhandled Error]', err.message);
