@@ -3405,11 +3405,21 @@ app.post('/api/register/worker', async (req, res) => {
   const { name, phone, email, dob, work_status, position_interests, password } = req.body;
   if (!name || !phone || !email || !password)
     return res.status(400).json({ error: 'Name, phone, email, and password are required' });
-  // Check phone or email uniqueness; allow re-registration if previous account was never verified
+  // Check phone or email uniqueness; allow re-registration only if previous account was never verified AND codes have expired
   const existing = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
   if (existing && existing.active) return res.status(400).json({ error: 'An account with this phone or email already exists' });
   if (existing && !existing.active) {
-    // Unverified account — clean up and allow fresh registration
+    // Unverified account — check if any verification codes are still valid
+    const now = new Date().toISOString();
+    const validCode = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND expires_at>?').get(existing.id, now);
+    if (validCode) {
+      // Codes still active — the user should complete the pending verification, not start over
+      return res.status(400).json({
+        error: '该手机号或邮箱已有待验证的注册，请完成验证码验证。如验证码已丢失，请等待15分钟后重新注册。 / A pending registration exists for this phone or email. Please complete verification, or wait 15 minutes for the codes to expire and try again.',
+        pending_account_id: existing.id
+      });
+    }
+    // All codes expired — clean up and allow fresh registration
     db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(existing.id);
