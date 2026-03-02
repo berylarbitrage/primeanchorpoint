@@ -695,6 +695,17 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEF
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
 
 // ─── Interview system ───
+db.exec(`CREATE TABLE IF NOT EXISTS interview_locations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  address TEXT DEFAULT '',
+  contact_name TEXT DEFAULT '',
+  contact_phone TEXT DEFAULT '',
+  instructions TEXT DEFAULT '',
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS interview_slots (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   slot_datetime TEXT NOT NULL,
@@ -718,6 +729,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS interviews (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(worker_account_id)
 )`);
+
+// Migrate interview_slots: add location detail columns
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN location_id INTEGER DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
 
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
@@ -3833,6 +3850,30 @@ app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
 // ─── Interview System ───
 
 // Admin: list all slots
+// ── Interview Locations (presets) ──
+app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM interview_locations ORDER BY name ASC').all());
+});
+app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
+  const { name, address, contact_name, contact_phone, instructions } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const r = db.prepare(`INSERT INTO interview_locations (name,address,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?)`)
+    .run(name, address||'', contact_name||'', contact_phone||'', instructions||'');
+  res.json({ success:true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
+  const { name, address, contact_name, contact_phone, instructions, active } = req.body;
+  const loc = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(req.params.id);
+  if (!loc) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE interview_locations SET name=?,address=?,contact_name=?,contact_phone=?,instructions=?,active=? WHERE id=?`)
+    .run(name??loc.name, address??loc.address, contact_name??loc.contact_name, contact_phone??loc.contact_phone, instructions??loc.instructions, active??loc.active, req.params.id);
+  res.json({ success:true });
+});
+app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
+  db.prepare('UPDATE interview_locations SET active=0 WHERE id=?').run(req.params.id);
+  res.json({ success:true });
+});
+
 app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
   const slots = db.prepare(`
     SELECT s.*, COUNT(i.id) AS total_booked
@@ -3845,10 +3886,16 @@ app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
 
 // Admin: create a slot
 app.post('/api/admin/interview-slots', requireAdmin, (req, res) => {
-  const { slot_datetime, duration_min, max_bookings, location, notes } = req.body;
+  const { slot_datetime, duration_min, max_bookings, location, location_id, contact_name, contact_phone, instructions, notes } = req.body;
   if (!slot_datetime) return res.status(400).json({ error: 'slot_datetime required' });
-  const r = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes)
-    VALUES (?,?,?,?,?)`).run(slot_datetime, duration_min || 30, max_bookings || 1, location || '', notes || '');
+  // If location_id given, pull details from preset
+  let loc = location||'', cname = contact_name||'', cphone = contact_phone||'', instr = instructions||'';
+  if (location_id) {
+    const preset = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(location_id);
+    if (preset) { loc = loc || preset.address; cname = cname || preset.contact_name; cphone = cphone || preset.contact_phone; instr = instr || preset.instructions; }
+  }
+  const r = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, location_id, contact_name, contact_phone, instructions, notes)
+    VALUES (?,?,?,?,?,?,?,?,?)`).run(slot_datetime, duration_min||30, max_bookings||1, loc, location_id||null, cname, cphone, instr, notes||'');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -3856,12 +3903,17 @@ app.post('/api/admin/interview-slots', requireAdmin, (req, res) => {
 app.post('/api/admin/interview-slots/batch', requireAdmin, (req, res) => {
   const { slots } = req.body;
   if (!Array.isArray(slots) || !slots.length) return res.status(400).json({ error: 'slots array required' });
-  const insert = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes) VALUES (?,?,?,?,?)`);
+  const insert = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, location_id, contact_name, contact_phone, instructions, notes) VALUES (?,?,?,?,?,?,?,?,?)`);
   const tx = db.transaction((items) => {
     let count = 0;
     for (const s of items) {
       if (!s.slot_datetime) continue;
-      insert.run(s.slot_datetime, s.duration_min || 30, s.max_bookings || 1, s.location || '', s.notes || '');
+      let loc = s.location||'', cname = s.contact_name||'', cphone = s.contact_phone||'', instr = s.instructions||'';
+      if (s.location_id) {
+        const preset = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(s.location_id);
+        if (preset) { loc = loc || preset.address; cname = cname || preset.contact_name; cphone = cphone || preset.contact_phone; instr = instr || preset.instructions; }
+      }
+      insert.run(s.slot_datetime, s.duration_min||30, s.max_bookings||1, loc, s.location_id||null, cname, cphone, instr, s.notes||'');
       count++;
     }
     return count;
@@ -3933,7 +3985,7 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
 // Worker: list available slots
 app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
   const slots = db.prepare(`
-    SELECT id, slot_datetime, duration_min, location, notes, max_bookings, booked_count
+    SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
     WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
     ORDER BY slot_datetime ASC
@@ -3944,7 +3996,7 @@ app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
 // Worker: get my interview
 app.get('/api/worker/interview', requireWorker, (req, res) => {
   const row = db.prepare(`
-    SELECT i.*, s.slot_datetime, s.duration_min, s.location
+    SELECT i.*, s.slot_datetime, s.duration_min, s.location, s.contact_name, s.contact_phone, s.instructions
     FROM interviews i JOIN interview_slots s ON i.slot_id=s.id
     WHERE i.worker_account_id=?
   `).get(req.workerId);

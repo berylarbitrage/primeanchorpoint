@@ -724,6 +724,10 @@ tr:hover td{background:var(--sky-light)}
       style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
       面试预约列表
     </button>
+    <button id="ivTabLocations" onclick="switchIvTab('locations')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
+      📍 面试地点
+    </button>
   </div>
 
   <!-- Slots pane -->
@@ -753,8 +757,11 @@ tr:hover td{background:var(--sky-light)}
       </div>
 
       <div style="margin-bottom:1rem">
-        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点</label>
-        <input type="text" id="batchLocation" placeholder="如：公司办公室 123 Main St / Zoom 线上" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试地点</label>
+        <select id="batchLocationId" onchange="onBatchLocationChange()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;margin-bottom:.4rem">
+          <option value="">— 选择预设地点 —</option>
+        </select>
+        <div id="batchLocationPreview" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.6rem .85rem;font-size:.82rem;color:var(--gray-700);line-height:1.6"></div>
       </div>
 
       <!-- Day selection with time inputs -->
@@ -788,8 +795,10 @@ tr:hover td{background:var(--sky-light)}
             <input type="number" id="ivSlotMax" value="1" min="1" max="20" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
           </div>
           <div>
-            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点（可选）</label>
-            <input type="text" id="ivSlotLocation" placeholder="如：公司会议室、Zoom" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试地点</label>
+            <select id="ivSlotLocationId" onchange="onSingleLocationChange()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+              <option value="">— 选择地点 —</option>
+            </select>
           </div>
           <button class="btn btn-blue" onclick="addInterviewSlot()" style="white-space:nowrap">添加</button>
         </div>
@@ -807,8 +816,25 @@ tr:hover td{background:var(--sky-light)}
         </select>
         <button class="btn btn-sm btn-red" onclick="clearExpiredSlots()" style="margin-left:auto">清理已过期</button>
       </div>
-      <table><thead><tr><th>日期时间</th><th>时长</th><th>地点</th><th>名额</th><th>已预约</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>日期时间</th><th>时长</th><th>地点 / 联系人</th><th>名额</th><th>已预约</th><th>操作</th></tr></thead>
       <tbody id="ivSlotsTable"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Locations pane -->
+  <div id="ivPaneLocations" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div>
+          <h3 style="margin:0">预设面试地点</h3>
+          <p style="font-size:.82rem;color:var(--gray-500);margin:.25rem 0 0">新建时间槽时可从这里选择地点，联系人和指引会自动填入</p>
+        </div>
+        <button class="btn btn-green" onclick="openLocationModal()">+ 添加地点</button>
+      </div>
+      <table>
+        <thead><tr><th>名称</th><th>地址</th><th>联系人</th><th>手机</th><th>到场指引</th><th>操作</th></tr></thead>
+        <tbody id="ivLocationsTable"></tbody>
+      </table>
     </div>
   </div>
 
@@ -831,6 +857,26 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 </div>
+
+<!-- Interview Location Modal -->
+<div class="modal-bg" id="ivLocationModal"><div class="modal" style="max-width:520px">
+  <h2 id="ivLocModalTitle">添加面试地点</h2>
+  <input type="hidden" id="ivLocId">
+  <div class="field"><label>地点名称 *</label><input id="ivLocName" placeholder="例：芝加哥主办公室、Zoom 线上面试"></div>
+  <div class="field"><label>地址</label><input id="ivLocAddress" placeholder="123 Main St, Chicago, IL 60601"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+    <div class="field"><label>联系人姓名</label><input id="ivLocContactName" placeholder="张经理"></div>
+    <div class="field"><label>联系人手机</label><input id="ivLocContactPhone" placeholder="(312) 555-0100"></div>
+  </div>
+  <div class="field">
+    <label>到场指引 <span style="color:var(--gray-400);font-weight:400;font-size:.8rem">（房间号、停车、注意事项等）</span></label>
+    <textarea id="ivLocInstructions" rows="4" placeholder="例：请到2楼前台报到，告知来面试，停车场在大楼东侧，免费停3小时。"></textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="saveLocation()">保存</button>
+    <button class="btn" onclick="closeModal('ivLocationModal')">取消</button>
+  </div>
+</div></div>
 
 <!-- Approvals Tab -->
 <div id="tab-approvals" style="display:none">
@@ -6742,23 +6788,114 @@ async function rejectAction() {
 // ── Interview Management ──
 let _allInterviews = [];
 
+let _ivLocations = [];
+
 function switchIvTab(tab) {
-  document.getElementById('ivPaneSlots').style.display = tab === 'slots' ? '' : 'none';
-  document.getElementById('ivPaneList').style.display  = tab === 'list'  ? '' : 'none';
-  document.getElementById('ivTabSlots').style.cssText  = tab === 'slots'
-    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
-    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
-  document.getElementById('ivTabList').style.cssText   = tab === 'list'
-    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
-    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
+  ['slots','list','locations'].forEach(t => {
+    document.getElementById('ivPane' + t.charAt(0).toUpperCase() + t.slice(1)).style.display = tab === t ? '' : 'none';
+    const btn = document.getElementById('ivTab' + t.charAt(0).toUpperCase() + t.slice(1));
+    const active = tab === t;
+    btn.style.cssText = `padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid ${active?'var(--sky)':'transparent'};margin-bottom:-2px;color:${active?'var(--sky)':'var(--gray-500)'}`;
+  });
   if (tab === 'list') filterInterviews();
+  if (tab === 'locations') loadIvLocations();
+}
+
+// ── Interview Locations ──
+async function loadIvLocations() {
+  _ivLocations = await api('/admin/interview-locations') || [];
+  renderIvLocations();
+  populateLocationSelects();
+}
+
+function renderIvLocations() {
+  const tbody = document.getElementById('ivLocationsTable');
+  if (!tbody) return;
+  tbody.innerHTML = _ivLocations.filter(l => l.active).map(l => `<tr>
+    <td><strong>${esc(l.name)}</strong></td>
+    <td style="font-size:.82rem">${esc(l.address||'—')}</td>
+    <td>${esc(l.contact_name||'—')}</td>
+    <td style="white-space:nowrap">${esc(l.contact_phone||'—')}</td>
+    <td style="font-size:.8rem;max-width:220px;color:var(--gray-600);white-space:pre-wrap">${esc(l.instructions||'—')}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="openLocationModal(${l.id})">编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteLocation(${l.id})">删除</button>
+    </td>
+  </tr>`).join('') || '<tr><td colspan="6" class="empty">暂无地点，请添加</td></tr>';
+}
+
+function populateLocationSelects() {
+  const active = _ivLocations.filter(l => l.active);
+  const opts = '<option value="">— 选择预设地点 —</option>' + active.map(l => `<option value="${l.id}">${esc(l.name)}${l.address?' · '+esc(l.address.slice(0,40)):''}</option>`).join('');
+  ['batchLocationId','ivSlotLocationId'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { const v = el.value; el.innerHTML = opts; el.value = v; }
+  });
+}
+
+function getLocationById(id) { return _ivLocations.find(l => l.id == id); }
+
+function onBatchLocationChange() {
+  const id = document.getElementById('batchLocationId').value;
+  const preview = document.getElementById('batchLocationPreview');
+  const loc = getLocationById(id);
+  if (loc) {
+    let html = `<strong>📍 ${esc(loc.name)}</strong>`;
+    if (loc.address) html += `<br>${esc(loc.address)}`;
+    if (loc.contact_name || loc.contact_phone) html += `<br>联系人：${esc(loc.contact_name||'')} ${esc(loc.contact_phone||'')}`.trim();
+    if (loc.instructions) html += `<br><span style="color:var(--gray-500)">${esc(loc.instructions)}</span>`;
+    preview.innerHTML = html;
+    preview.style.display = '';
+  } else {
+    preview.style.display = 'none';
+  }
+}
+
+function onSingleLocationChange() { /* preview handled by batch only */ }
+
+function openLocationModal(id) {
+  const loc = id ? getLocationById(id) : null;
+  document.getElementById('ivLocId').value = loc ? loc.id : '';
+  document.getElementById('ivLocModalTitle').textContent = loc ? '编辑面试地点' : '添加面试地点';
+  document.getElementById('ivLocName').value = loc ? loc.name : '';
+  document.getElementById('ivLocAddress').value = loc ? loc.address||'' : '';
+  document.getElementById('ivLocContactName').value = loc ? loc.contact_name||'' : '';
+  document.getElementById('ivLocContactPhone').value = loc ? loc.contact_phone||'' : '';
+  document.getElementById('ivLocInstructions').value = loc ? loc.instructions||'' : '';
+  document.getElementById('ivLocationModal').classList.add('show');
+}
+
+async function saveLocation() {
+  const id = document.getElementById('ivLocId').value;
+  const d = {
+    name: document.getElementById('ivLocName').value.trim(),
+    address: document.getElementById('ivLocAddress').value.trim(),
+    contact_name: document.getElementById('ivLocContactName').value.trim(),
+    contact_phone: document.getElementById('ivLocContactPhone').value.trim(),
+    instructions: document.getElementById('ivLocInstructions').value.trim()
+  };
+  if (!d.name) return alert('请填写地点名称');
+  if (id) await api(`/admin/interview-locations/${id}`, { method:'PUT', body: JSON.stringify(d) });
+  else await api('/admin/interview-locations', { method:'POST', body: JSON.stringify(d) });
+  closeModal('ivLocationModal');
+  await loadIvLocations();
+  showToast('✅ 地点已保存');
+}
+
+async function deleteLocation(id) {
+  if (!confirm('确认删除该面试地点？')) return;
+  await api(`/admin/interview-locations/${id}`, { method:'DELETE' });
+  await loadIvLocations();
+  showToast('✅ 地点已删除');
 }
 
 async function loadInterviews() {
-  const [slots, interviews] = await Promise.all([
+  const [slots, interviews, locs] = await Promise.all([
     api('/admin/interview-slots'),
-    api('/admin/interviews')
+    api('/admin/interviews'),
+    _ivLocations.length ? Promise.resolve(_ivLocations) : api('/admin/interview-locations')
   ]);
+  if (locs) { _ivLocations = locs; populateLocationSelects(); }
   renderSlots(slots || []);
   _allInterviews = interviews || [];
   filterInterviews();
@@ -6804,7 +6941,7 @@ function renderSlots(slots) {
       html += `<tr style="${past ? 'opacity:.55' : ''}">
         <td>${timeStr}${past ? ' <span style="color:var(--gray-400);font-size:.75rem">已过期</span>' : ''}</td>
         <td>${s.duration_min} 分钟</td>
-        <td>${esc(s.location||'—')}</td>
+        <td style="font-size:.82rem">${esc(s.location||'—')}${s.contact_name?`<br><span style="color:var(--gray-500)">${esc(s.contact_name)} ${esc(s.contact_phone||'')}</span>`:''}</td>
         <td>${s.max_bookings}</td>
         <td><span style="color:${s.total_booked>0?'var(--sky)':'var(--gray-400)'}">${s.total_booked||0}</span></td>
         <td><button class="btn btn-sm btn-red" onclick="deleteSlot(${s.id})">删除</button></td>
@@ -6817,19 +6954,21 @@ function renderSlots(slots) {
 async function addInterviewSlot() {
   const dt = document.getElementById('ivSlotDatetime').value;
   if (!dt) return showToast('❌ 请选择日期时间', 'error');
+  const locId = document.getElementById('ivSlotLocationId').value || null;
+  if (!locId) return showToast('❌ 请选择面试地点', 'error');
   const r = await api('/admin/interview-slots', {
     method: 'POST',
     body: JSON.stringify({
       slot_datetime: dt,
       duration_min: parseInt(document.getElementById('ivSlotDuration').value) || 30,
       max_bookings: parseInt(document.getElementById('ivSlotMax').value) || 1,
-      location: document.getElementById('ivSlotLocation').value.trim()
+      location_id: parseInt(locId)
     })
   });
   if (r && r.success) {
     showToast('✅ 时间槽已添加');
     document.getElementById('ivSlotDatetime').value = '';
-    document.getElementById('ivSlotLocation').value = '';
+    document.getElementById('ivSlotLocationId').value = '';
     loadInterviews();
   } else {
     showToast('❌ ' + (r && r.error || '添加失败'), 'error');
@@ -6930,7 +7069,7 @@ function collectBatchSlots() {
   const checks = grid.querySelectorAll('.batchDayCheck:checked');
   const duration = parseInt(document.getElementById('batchDuration').value) || 30;
   const maxBookings = parseInt(document.getElementById('batchMaxBookings').value) || 5;
-  const location = document.getElementById('batchLocation').value.trim();
+  const locationId = document.getElementById('batchLocationId').value ? parseInt(document.getElementById('batchLocationId').value) : null;
   const slots = [];
 
   checks.forEach(chk => {
@@ -6944,7 +7083,7 @@ function collectBatchSlots() {
         slot_datetime: `${dateStr}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`,
         duration_min: duration,
         max_bookings: maxBookings,
-        location: location
+        location_id: locationId
       });
     });
   });
@@ -6952,6 +7091,7 @@ function collectBatchSlots() {
 }
 
 async function batchCreateSlots() {
+  if (!document.getElementById('batchLocationId').value) return showToast('❌ 请先选择面试地点', 'error');
   const slots = collectBatchSlots();
   if (!slots.length) return showToast('❌ 没有可生成的时间槽，请检查日期和时间设置', 'error');
   if (!confirm(`确定生成 ${slots.length} 个面试时间槽？`)) return;

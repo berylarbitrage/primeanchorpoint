@@ -660,8 +660,10 @@ async function loadInterview() {
       <div style="display:grid;gap:.5rem;font-size:.9rem">
         <div><span style="color:var(--gray-500)">状态：</span>${statusMap[interview.status] || interview.status}</div>
         <div><span style="color:var(--gray-500)">时间：</span><strong>${dtStr}</strong></div>
-        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span>${interview.location}</div>` : ''}
+        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span><strong>${interview.location}</strong></div>` : ''}
         ${interview.duration_min ? `<div><span style="color:var(--gray-500)">时长：</span>${interview.duration_min} 分钟</div>` : ''}
+        ${interview.contact_name ? `<div><span style="color:var(--gray-500)">联系人：</span>${interview.contact_name}${interview.contact_phone ? `&nbsp;&nbsp;📞 <a href="tel:${interview.contact_phone}" style="color:#0369a1">${interview.contact_phone}</a>` : ''}</div>` : ''}
+        ${interview.instructions ? `<div style="margin-top:.4rem;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.83rem;color:#92400e;white-space:pre-wrap;line-height:1.5"><strong>📋 到场指引：</strong><br>${interview.instructions}</div>` : ''}
       </div>${extra}`;
     // Hide slot selection if already booked (not passed/failed/cancelled)
     slotsCard.style.display = (interview.status === 'scheduled') ? 'none' : '';
@@ -690,15 +692,23 @@ async function loadInterview() {
   for (const [dateKey, group] of Object.entries(grouped)) {
     const dt = group.date;
     const dateLabel = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-    // First slot's location as the day's location
-    const dayLocation = group.slots[0].location;
-    html += `<div style="margin-bottom:1.25rem">
-      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:2px solid #e0f2fe">
-        <span style="font-size:1.3rem">📅</span>
-        <span style="font-weight:700;font-size:1rem;color:#0c4a6e">${dateLabel}</span>
-        ${dayLocation ? `<span style="font-size:.8rem;color:var(--gray-500);margin-left:auto">📍 ${dayLocation}</span>` : ''}
+    // First slot's location info for the day header
+    const rep = group.slots[0];
+    const dayLocation = rep.location;
+    const dayContact = rep.contact_name;
+    const dayPhone = rep.contact_phone;
+    const dayInstr = rep.instructions;
+    html += `<div style="margin-bottom:1.5rem">
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.7rem 1rem;margin-bottom:.6rem">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:${(dayContact||dayInstr)?'.5rem':'0'}">
+          <span style="font-size:1.2rem">📅</span>
+          <span style="font-weight:700;font-size:.95rem;color:#0c4a6e">${dateLabel}</span>
+        </div>
+        ${dayLocation ? `<div style="font-size:.82rem;color:#0369a1;margin-bottom:.2rem">📍 ${dayLocation}</div>` : ''}
+        ${dayContact ? `<div style="font-size:.82rem;color:var(--gray-600)">👤 ${dayContact}${dayPhone ? `&nbsp;&nbsp;📞 ${dayPhone}` : ''}</div>` : ''}
+        ${dayInstr ? `<div style="font-size:.8rem;color:var(--gray-500);margin-top:.3rem;white-space:pre-wrap;line-height:1.5">📋 ${dayInstr}</div>` : ''}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem">`;
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">`;
 
     group.slots.forEach(s => {
       const sdt = new Date(s.slot_datetime);
