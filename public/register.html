@@ -451,14 +451,14 @@ async function registerWorker() {
       document.getElementById('verifyIcon').textContent = '📱✉️';
       document.getElementById('verifyTitle').textContent = '验证手机号和邮箱 / Verify Phone & Email';
       document.getElementById('verifyDesc').innerHTML = deliveryFailed
-        ? '电话/邮件发送失败，验证码已自动填入，请直接点击验证。<br>Delivery failed — code has been filled in automatically.'
-        : '验证码将通过语音电话和邮件发送，请接听电话并查收邮件。<br>A voice call with your code is being placed and an email has been sent.';
+        ? '短信/邮件发送失败，验证码已自动填入，请直接点击验证。<br>Delivery failed — code has been filled in automatically.'
+        : '验证码已发送到您的手机和邮箱，请输入收到的6位数验证码。<br>Verification codes have been sent to your phone and email.';
     } else if (_needsPhone) {
       document.getElementById('verifyIcon').textContent = '📱';
       document.getElementById('verifyTitle').textContent = '验证手机号 / Verify Phone';
       document.getElementById('verifyDesc').innerHTML = d.phone_code
-        ? '电话发送失败，验证码已自动填入，请直接点击验证。<br>Call delivery failed — code has been filled in automatically.'
-        : '验证码将通过语音电话发送，请接听来电。<br>A voice call with your verification code is being placed to your phone.';
+        ? '短信发送失败，验证码已自动填入，请直接点击验证。<br>SMS delivery failed — code has been filled in automatically.'
+        : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
     } else if (_needsEmail) {
       document.getElementById('verifyIcon').textContent = '✉️';
       document.getElementById('verifyTitle').textContent = '验证邮箱 / Verify Email';

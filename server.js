@@ -41,7 +41,7 @@ async function sendSMS(to, body) {
 }
 
 // ─── Twilio Verify API (for verification codes) ───
-async function sendVerifyCode(to, channel = 'call') {
+async function sendVerifyCode(to, channel = 'sms') {
   if (!twilioClient || !TWILIO_VERIFY_SID) {
     console.log(`[Verify-SKIP] Twilio Verify not configured. To: ${to}, Channel: ${channel}`);
     return false;
@@ -1320,7 +1320,7 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
     const formatted = formatPhoneE164(to);
     try {
       const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
-        .verifications.create({ to: formatted, channel: 'call' });
+        .verifications.create({ to: formatted, channel: 'sms' });
       return res.json({
         configured, accountInfo,
         method: 'verify',
@@ -2887,7 +2887,7 @@ app.post('/api/worker/forgot-password', async (req, res) => {
     const sent = await sendVerifyCode(w.phone);
     resetCodes.set('worker:' + login, { useVerify: true, phone: w.phone, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
     console.log(`[Reset] Worker ${login}: sent via Twilio Verify (sent:${sent})`);
-    return res.json({ success: true, message: '验证码将通过语音电话发送，请接听来电 / A voice call with your code is being placed' });
+    return res.json({ success: true, message: '验证码已发送到您的手机 / Code sent to your phone' });
   }
 
   // Fallback: generate our own code (log to console)
