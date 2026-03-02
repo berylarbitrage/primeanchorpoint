@@ -191,7 +191,7 @@ tr:last-child td{border-bottom:none}
     <!-- Jobs -->
     <div id="tabJobs">
       <div class="card" style="display:flex;align-items:center;gap:1rem;padding:.85rem 1.25rem">
-        <input type="text" id="jobSearchInput" placeholder="搜索职位、地点、公司..." oninput="filterJobs()" style="flex:1;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem">
+        <input type="text" id="jobSearchInput" placeholder="搜索职位、地点..." oninput="filterJobs()" style="flex:1;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem">
         <select id="jobTypeFilter" onchange="filterJobs()" style="padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem">
           <option value="">全部类型</option>
           <option value="全职">全职</option>
@@ -220,7 +220,7 @@ tr:last-child td{border-bottom:none}
     <div id="tabApplications" style="display:none">
       <div class="card">
         <h2>我的申请记录</h2>
-        <table><thead><tr><th>职位</th><th>地点</th><th>公司</th><th>薪资</th><th>申请状态</th><th>申请时间</th></tr></thead>
+        <table><thead><tr><th>职位</th><th>地点</th><th>薪资</th><th>申请状态</th><th>申请时间</th></tr></thead>
         <tbody id="applicationsTable"></tbody></table>
       </div>
     </div>
@@ -669,7 +669,7 @@ function filterJobs() {
   const q = document.getElementById('jobSearchInput').value.toLowerCase();
   const type = document.getElementById('jobTypeFilter').value;
   renderJobs(_allJobs.filter(j =>
-    (!q || (j.title+j.location+j.company_name).toLowerCase().includes(q)) &&
+    (!q || (j.title+j.location).toLowerCase().includes(q)) &&
     (!type || (j.type||'').includes(type))
   ));
 }
@@ -681,7 +681,7 @@ function renderJobs(jobs) {
       <div style="flex:1;min-width:0">
         <div class="job-title">${esc(j.title)} ${j.urgent?'<span class="badge badge-urgent">急聘</span>':''} ${j.applied?'<span class="badge badge-applied">✓ 已申请</span>':''}</div>
         <div class="job-meta">
-          ${j.company_name?`<strong>${esc(j.company_name)}</strong> · `:''}<span>${esc(j.location)}</span>
+          <span>${esc(j.location)}</span>
           ${j.pay?` · 薪资: ${esc(j.pay)}`:''}
           ${j.type?` · ${esc(j.type)}`:''}
           ${j.employment_type?` · ${esc(j.employment_type)}`:''}
@@ -715,7 +715,6 @@ async function loadApplications() {
   document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map(a=>`<tr>
     <td><strong>${esc(a.title||'')}</strong></td>
     <td>${esc(a.location||'')}</td>
-    <td>${esc(a.company_name||'')}</td>
     <td>${esc(a.pay||'')}</td>
     <td><span style="font-weight:600;${statusColor[a.status]||''}">${statusLabel[a.status]||a.status}</span></td>
     <td>${(a.created_at||'').slice(0,10)}</td>
