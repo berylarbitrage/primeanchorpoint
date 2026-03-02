@@ -89,7 +89,31 @@ tr:last-child td{border-bottom:none}
 .btn-punch-out:hover{background:#dc2626}
 .btn-punch:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
 .gps-indicator{margin-top:.75rem;font-size:.78rem;color:var(--gray-400);display:flex;align-items:center;justify-content:center;gap:.35rem}
-@media(max-width:600px){.job-card{flex-direction:column}.header h1{font-size:.9rem}}
+/* Compliance section */
+.compliance-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem}
+.compliance-item{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.25rem;position:relative}
+.compliance-item h3{font-size:.92rem;font-weight:700;color:var(--blue);margin-bottom:.5rem}
+.compliance-item .ci-status{display:inline-block;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:600}
+.ci-pending{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.ci-approved{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7}
+.ci-rejected{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.ci-not-submitted{background:var(--gray-100);color:var(--gray-500);border:1px solid var(--gray-200)}
+.compliance-item .ci-date{font-size:.75rem;color:var(--gray-400);margin-top:.35rem}
+.compliance-item .ci-note{font-size:.8rem;color:var(--red);margin-top:.35rem;font-style:italic}
+.form-section{margin-bottom:1.25rem}
+.form-section h3{font-size:.95rem;font-weight:700;color:var(--blue);margin-bottom:.75rem;border-bottom:1px solid var(--gray-200);padding-bottom:.4rem}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem}
+.form-row.full{grid-template-columns:1fr}
+.form-group{display:flex;flex-direction:column}
+.form-group label{font-size:.8rem;font-weight:600;color:var(--gray-500);margin-bottom:.25rem}
+.form-group input,.form-group select,.form-group textarea{padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem}
+.form-group input:focus,.form-group select:focus{outline:2px solid var(--sky);border-color:transparent}
+.form-group input[type="file"]{padding:.4rem;font-size:.82rem}
+.form-actions{display:flex;gap:.75rem;margin-top:1rem}
+.geo-badge{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;padding:2px 8px;border-radius:12px;font-weight:600}
+.geo-ok{background:#d1fae5;color:#065f46}
+.geo-warn{background:#fef3c7;color:#92400e}
+@media(max-width:600px){.job-card{flex-direction:column}.header h1{font-size:.9rem}.form-row{grid-template-columns:1fr}.compliance-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -159,6 +183,7 @@ tr:last-child td{border-bottom:none}
     <button class="nav-btn" onclick="showTab('interview')">预约面试</button>
     <button class="nav-btn" onclick="showTab('applications')">我的申请</button>
     <button class="nav-btn" onclick="showTab('timeclock')">我的打卡记录</button>
+    <button class="nav-btn" onclick="showTab('compliance')">合规文件</button>
     <button class="nav-btn" onclick="showTab('profile')">我的信息</button>
   </div>
   <div class="content">
@@ -215,6 +240,178 @@ tr:last-child td{border-bottom:none}
         <h2>打卡历史记录</h2>
         <table><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工作时长</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
         <tbody id="timeclockTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- Compliance 合规文件 -->
+    <div id="tabCompliance" style="display:none">
+      <!-- Overview cards -->
+      <div class="card">
+        <h2>合规文件概览 / Compliance Overview</h2>
+        <div class="compliance-grid" id="complianceOverview"></div>
+      </div>
+
+      <!-- I-9 Form -->
+      <div class="card" id="i9FormCard" style="display:none">
+        <h2>I-9 表格 / Employment Eligibility Verification</h2>
+        <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">请填写 I-9 表格第一部分（员工信息）/ Please complete Section 1 of Form I-9</p>
+        <form id="i9Form" onsubmit="submitI9(event)">
+          <div class="form-section">
+            <h3>个人信息 / Personal Information</h3>
+            <div class="form-row">
+              <div class="form-group"><label>姓 Last Name *</label><input name="last_name" required></div>
+              <div class="form-group"><label>名 First Name *</label><input name="first_name" required></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>中间名首字母 Middle Initial</label><input name="middle_initial" maxlength="2"></div>
+              <div class="form-group"><label>曾用姓 Other Last Names</label><input name="other_last_names"></div>
+            </div>
+            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required></div></div>
+            <div class="form-row">
+              <div class="form-group"><label>公寓号 Apt</label><input name="apt"></div>
+              <div class="form-group"><label>城市 City *</label><input name="city" required></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>州 State *</label>
+                <select name="state" required><option value="">选择...</option>
+                <option>AL</option><option>AK</option><option>AZ</option><option>AR</option><option>CA</option><option>CO</option><option>CT</option><option>DE</option><option>FL</option><option>GA</option><option>HI</option><option>ID</option><option>IL</option><option>IN</option><option>IA</option><option>KS</option><option>KY</option><option>LA</option><option>ME</option><option>MD</option><option>MA</option><option>MI</option><option>MN</option><option>MS</option><option>MO</option><option>MT</option><option>NE</option><option>NV</option><option>NH</option><option>NJ</option><option>NM</option><option>NY</option><option>NC</option><option>ND</option><option>OH</option><option>OK</option><option>OR</option><option>PA</option><option>RI</option><option>SC</option><option>SD</option><option>TN</option><option>TX</option><option>UT</option><option>VT</option><option>VA</option><option>WA</option><option>WV</option><option>WI</option><option>WY</option><option>DC</option>
+                </select>
+              </div>
+              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required pattern="[0-9]{5}(-[0-9]{4})?"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>出生日期 DOB *</label><input name="dob" type="date" required></div>
+              <div class="form-group"><label>SSN 后4位 (可选)</label><input name="ssn_last4" maxlength="4" pattern="[0-9]{4}"></div>
+            </div>
+          </div>
+          <div class="form-section">
+            <h3>公民身份 / Citizenship Status *</h3>
+            <div class="form-group">
+              <select name="citizenship_status" required onchange="toggleI9Fields(this.value)">
+                <option value="">选择...</option>
+                <option value="citizen">美国公民 / U.S. Citizen</option>
+                <option value="noncitizen_national">非公民国民 / Noncitizen National</option>
+                <option value="permanent_resident">永久居民 / Lawful Permanent Resident (绿卡)</option>
+                <option value="work_authorized">工作授权外国人 / Alien Authorized to Work</option>
+              </select>
+            </div>
+            <div id="i9AlienFields" style="display:none;margin-top:.75rem">
+              <div class="form-row">
+                <div class="form-group"><label>Alien Number / USCIS#</label><input name="alien_number"></div>
+                <div class="form-group"><label>I-94 入境号</label><input name="i94_number"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>护照号 Passport#</label><input name="passport_number"></div>
+                <div class="form-group"><label>护照国家</label><input name="passport_country"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>工作授权到期日</label><input name="work_auth_expiry" type="date"></div>
+              </div>
+            </div>
+          </div>
+          <div class="form-section">
+            <h3>支持文件上传 / Supporting Documents (可选)</h3>
+            <p style="font-size:.8rem;color:var(--gray-500);margin-bottom:.75rem">List A: 身份+工作授权一体文件 | List B: 身份证明 | List C: 工作授权证明</p>
+            <div class="form-row">
+              <div class="form-group"><label>List A 文件 (护照等)</label><input type="file" name="list_a_doc" accept=".pdf,.jpg,.jpeg,.png"></div>
+              <div class="form-group"><label>List B 文件 (驾照等)</label><input type="file" name="list_b_doc" accept=".pdf,.jpg,.jpeg,.png"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>List C 文件 (SSN卡等)</label><input type="file" name="list_c_doc" accept=".pdf,.jpg,.jpeg,.png"></div>
+            </div>
+          </div>
+          <div class="form-section">
+            <label style="display:flex;align-items:flex-start;gap:.5rem;font-size:.85rem;cursor:pointer">
+              <input type="checkbox" name="signature_confirm" required style="margin-top:3px">
+              <span>我确认以上信息真实准确，我在伪证处罚下签署此表格。<br>I attest, under penalty of perjury, that the information provided is true and correct.</span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-sky">提交 I-9 / Submit</button>
+            <button type="button" class="btn btn-gray" onclick="hideI9Form()">取消</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Driver's License Upload -->
+      <div class="card" id="dlFormCard" style="display:none">
+        <h2>驾照验证 / Driver's License Verification</h2>
+        <form id="dlForm" onsubmit="submitDL(event)">
+          <div class="form-row">
+            <div class="form-group"><label>驾照号 DL Number *</label><input name="dl_number" required></div>
+            <div class="form-group"><label>发行州 State *</label><input name="dl_state" required maxlength="2" placeholder="CA"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>到期日 Expiration *</label><input name="dl_expiry" type="date" required></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>正面照片 Front *</label><input type="file" name="dl_front" accept=".pdf,.jpg,.jpeg,.png" required></div>
+            <div class="form-group"><label>背面照片 Back</label><input type="file" name="dl_back" accept=".pdf,.jpg,.jpeg,.png"></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-sky">提交驾照 / Submit</button>
+            <button type="button" class="btn btn-gray" onclick="hideDLForm()">取消</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- W-9 Form -->
+      <div class="card" id="w9FormCard" style="display:none">
+        <h2>W-9 表格 / Request for TIN</h2>
+        <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">适用于1099独立承包商 / For independent contractors (1099)</p>
+        <form id="w9Form" onsubmit="submitW9(event)">
+          <div class="form-section">
+            <h3>纳税人信息 / Taxpayer Information</h3>
+            <div class="form-row full"><div class="form-group"><label>姓名 Name (as shown on income tax return) *</label><input name="name" required></div></div>
+            <div class="form-row full"><div class="form-group"><label>商业名称 Business Name (如有)</label><input name="business_name"></div></div>
+            <div class="form-row full">
+              <div class="form-group"><label>税务分类 Tax Classification *</label>
+                <select name="tax_classification" required>
+                  <option value="">选择...</option>
+                  <option value="individual">个人/独资 Individual/Sole proprietor</option>
+                  <option value="c_corp">C Corporation</option>
+                  <option value="s_corp">S Corporation</option>
+                  <option value="partnership">合伙企业 Partnership</option>
+                  <option value="llc">LLC</option>
+                  <option value="other">其他 Other</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="form-section">
+            <h3>地址 / Address</h3>
+            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required></div></div>
+            <div class="form-row">
+              <div class="form-group"><label>城市 City *</label><input name="city" required></div>
+              <div class="form-group"><label>州 State *</label><input name="state" required maxlength="2"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required></div>
+            </div>
+          </div>
+          <div class="form-section">
+            <h3>税号 / Taxpayer Identification Number (TIN)</h3>
+            <div class="form-row">
+              <div class="form-group"><label>类型 TIN Type *</label>
+                <select name="tin_type" required>
+                  <option value="ssn">SSN (社安号)</option>
+                  <option value="ein">EIN (雇主识别号)</option>
+                </select>
+              </div>
+              <div class="form-group"><label>SSN 或 EIN *</label><input name="ssn_or_ein" required placeholder="xxx-xx-xxxx 或 xx-xxxxxxx" maxlength="11"></div>
+            </div>
+          </div>
+          <div class="form-section">
+            <label style="display:flex;align-items:flex-start;gap:.5rem;font-size:.85rem;cursor:pointer">
+              <input type="checkbox" name="signature_confirm" required style="margin-top:3px">
+              <span>在伪证处罚下，我确认所填TIN正确，且我不受预扣税约束。<br>Under penalties of perjury, I certify that the TIN provided is correct.</span>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-sky">提交 W-9 / Submit</button>
+            <button type="button" class="btn btn-gray" onclick="hideW9Form()">取消</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -363,12 +560,13 @@ async function showApp() {
 }
 
 function showTab(tab) {
-  ['jobs','interview','applications','timeclock','profile'].forEach(t => {
+  ['jobs','interview','applications','timeclock','compliance','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
-  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', ['jobs','interview','applications','timeclock','profile'][i]===tab));
+  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', ['jobs','interview','applications','timeclock','compliance','profile'][i]===tab));
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
+  else if (tab === 'compliance') loadCompliance();
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
   else loadJobs();
@@ -592,7 +790,8 @@ async function doPunch() {
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { btn.disabled = false; enablePunchBtn(true); return; }
   if (r.action === 'in') {
-    showToast('✅ 上班打卡成功！', 'success');
+    const geoMsg = r.geo_verified ? (r.site_name ? ` (${r.site_name})` : ' (位置已验证)') : '';
+    showToast(`✅ 上班打卡成功！${geoMsg}`, 'success');
   } else if (r.action === 'out') {
     const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
     showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
@@ -641,6 +840,125 @@ async function loadProfile() {
       <div><span style="color:var(--gray-400)">状态</span><br>${e.status||'—'}</div>
     </div>` :
     `<p style="color:var(--gray-400)">员工档案未绑定，请联系HR</p><p style="margin-top:.5rem;font-size:.85rem">账号: <strong>${esc(me.account.username)}</strong></p>`;
+}
+
+// ─── Compliance Section ───
+const DOC_LABELS = {
+  i9: { zh: 'I-9 就业资格验证', en: 'I-9 Employment Eligibility', icon: '📋' },
+  drivers_license: { zh: '驾照验证', en: "Driver's License", icon: '🪪' },
+  w9: { zh: 'W-9 纳税人识别', en: 'W-9 Tax ID', icon: '📄' },
+  ssn_card: { zh: '社安卡', en: 'SSN Card', icon: '🔒' },
+  work_permit: { zh: '工作许可', en: 'Work Permit', icon: '📃' },
+  background_check: { zh: '背景调查', en: 'Background Check', icon: '🔍' }
+};
+
+const STATUS_LABELS = { pending: '审核中', approved: '已通过', rejected: '未通过', not_submitted: '未提交', ordered: '已下单', completed: '已完成', clear: '通过', flagged: '有记录' };
+const STATUS_CLASS = { pending: 'ci-pending', approved: 'ci-approved', rejected: 'ci-rejected', not_submitted: 'ci-not-submitted', ordered: 'ci-pending', completed: 'ci-approved', clear: 'ci-approved', flagged: 'ci-rejected' };
+
+async function loadCompliance() {
+  const data = await wApi('/compliance');
+  if (!data) return;
+  const grid = document.getElementById('complianceOverview');
+  const docs = data.documents || {};
+  const bg = data.background_check;
+
+  let html = '';
+  // Core compliance items
+  const items = [
+    { type: 'i9', doc: docs.i9, action: 'showI9Form()' },
+    { type: 'drivers_license', doc: docs.drivers_license, action: 'showDLForm()' },
+    { type: 'w9', doc: docs.w9, action: 'showW9Form()' },
+    { type: 'background_check', doc: bg ? { status: bg.result || bg.status, created_at: bg.ordered_date || bg.completed_date } : null, action: null }
+  ];
+
+  for (const item of items) {
+    const label = DOC_LABELS[item.type];
+    const d = item.doc;
+    const status = d ? (d.status || d.result || 'pending') : 'not_submitted';
+    const statusLabel = STATUS_LABELS[status] || status;
+    const statusClass = STATUS_CLASS[status] || 'ci-not-submitted';
+    const date = d && d.created_at ? d.created_at.slice(0, 10) : '';
+    const note = d && d.reviewer_notes ? `<div class="ci-note">${esc(d.reviewer_notes)}</div>` : '';
+    const canSubmit = !d || status === 'not_submitted' || status === 'rejected';
+    const actionBtn = item.action && canSubmit
+      ? `<button class="btn btn-sky" onclick="${item.action}" style="margin-top:.75rem;font-size:.8rem">${d && status === 'rejected' ? '重新提交' : '填写提交'}</button>`
+      : '';
+
+    html += `<div class="compliance-item">
+      <h3>${label.icon} ${label.zh}</h3>
+      <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:.5rem">${label.en}</div>
+      <span class="ci-status ${statusClass}">${statusLabel}</span>
+      ${date ? `<div class="ci-date">提交日期: ${date}</div>` : ''}
+      ${note}
+      ${actionBtn}
+    </div>`;
+  }
+  grid.innerHTML = html;
+
+  // Hide all forms
+  hideI9Form(); hideDLForm(); hideW9Form();
+}
+
+function showI9Form() { document.getElementById('i9FormCard').style.display = ''; }
+function hideI9Form() { document.getElementById('i9FormCard').style.display = 'none'; }
+function showDLForm() { document.getElementById('dlFormCard').style.display = ''; }
+function hideDLForm() { document.getElementById('dlFormCard').style.display = 'none'; }
+function showW9Form() { document.getElementById('w9FormCard').style.display = ''; }
+function hideW9Form() { document.getElementById('w9FormCard').style.display = 'none'; }
+
+function toggleI9Fields(val) {
+  document.getElementById('i9AlienFields').style.display = (val === 'permanent_resident' || val === 'work_authorized') ? '' : 'none';
+}
+
+async function submitI9(e) {
+  e.preventDefault();
+  const form = e.target;
+  const fd = new FormData(form);
+  fd.set('signature_confirm', form.signature_confirm.checked ? '1' : '');
+  try {
+    const r = await fetch('/api/worker/compliance/i9', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
+      body: fd
+    });
+    const data = await r.json();
+    if (data.success) { showToast('✅ I-9 已提交，等待审核'); form.reset(); loadCompliance(); }
+    else alert(data.error || '提交失败');
+  } catch { alert('网络错误'); }
+}
+
+async function submitDL(e) {
+  e.preventDefault();
+  const form = e.target;
+  const fd = new FormData(form);
+  try {
+    const r = await fetch('/api/worker/compliance/drivers-license', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
+      body: fd
+    });
+    const data = await r.json();
+    if (data.success) { showToast('✅ 驾照已提交，等待验证'); form.reset(); loadCompliance(); }
+    else alert(data.error || '提交失败');
+  } catch { alert('网络错误'); }
+}
+
+async function submitW9(e) {
+  e.preventDefault();
+  const form = e.target;
+  const body = {};
+  new FormData(form).forEach((v, k) => { body[k] = v; });
+  body.signature_confirm = form.signature_confirm.checked ? '1' : '';
+  try {
+    const r = await fetch('/api/worker/compliance/w9', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
+      body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (data.success) { showToast('✅ W-9 已提交，等待审核'); form.reset(); loadCompliance(); }
+    else alert(data.error || '提交失败');
+  } catch { alert('网络错误'); }
 }
 
 function esc(s) {

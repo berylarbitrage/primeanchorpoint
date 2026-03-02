@@ -647,6 +647,61 @@ db.exec(`CREATE TABLE IF NOT EXISTS verification_codes (
   FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id)
 )`);
 
+// ─── Job Sites (for GPS geofencing) ───
+db.exec(`CREATE TABLE IF NOT EXISTS job_sites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  address TEXT DEFAULT '',
+  latitude REAL NOT NULL,
+  longitude REAL NOT NULL,
+  radius_meters INTEGER DEFAULT 200,
+  partner_id INTEGER DEFAULT NULL,
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// ─── Worker Compliance Documents (I-9, DL, W-9, etc.) ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_compliance_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL,
+  doc_type TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  form_data TEXT DEFAULT '{}',
+  reviewer_notes TEXT DEFAULT '',
+  reviewed_by INTEGER DEFAULT NULL,
+  reviewed_at DATETIME DEFAULT NULL,
+  expires_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id)
+)`);
+
+// ─── Integration Settings (WorkBright, Checkr, Gusto, Twilio) ───
+db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT UNIQUE NOT NULL,
+  enabled INTEGER DEFAULT 0,
+  api_key TEXT DEFAULT '',
+  api_secret TEXT DEFAULT '',
+  config TEXT DEFAULT '{}',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Seed default integration rows if not present
+const intProviders = ['workbright','checkr','gusto','twilio'];
+intProviders.forEach(p => {
+  const ex = db.prepare('SELECT id FROM integration_settings WHERE provider=?').get(p);
+  if (!ex) db.prepare('INSERT INTO integration_settings (provider) VALUES (?)').run(p);
+});
+
+// Migrate: add site_id to jobs for geofencing
+try { db.exec("ALTER TABLE jobs ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
+// Migrate: add site_id to time_entries
+try { db.exec("ALTER TABLE time_entries ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN geo_verified INTEGER DEFAULT 0"); } catch {}
+
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
   .split(',').map(d => d.trim()).filter(Boolean);
@@ -840,6 +895,16 @@ function nextEmployerId(city) {
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
   return `EMER-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+}
+
+// ─── Haversine distance (GPS geofencing) ───
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000; // Earth radius in meters
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 // ─── Hours calculation (daily OT > 8h) ───
@@ -1222,18 +1287,32 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
 });
 
 // Admin: resend verification codes to unverified worker
-app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   if (w.active) return res.status(400).json({ error: 'Account already verified' });
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(w.id);
-  const phoneCode = String(Math.floor(100000 + Math.random() * 900000));
-  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  const canSMS = !!(twilioClient && TWILIO_FROM && w.phone);
+  const canEmail = !!(emailTransporter && w.email);
+  const phoneCode = canSMS ? String(Math.floor(100000 + Math.random() * 900000)) : null;
+  const emailCode = canEmail ? String(Math.floor(100000 + Math.random() * 900000)) : null;
   const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
-  db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
-  console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${phoneCode} email=${emailCode}`);
-  res.json({ success: true, phone_code: phoneCode, email_code: emailCode });
+  let smsSent = false, emailSent = false;
+  if (phoneCode) {
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
+    smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+  }
+  if (emailCode) {
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
+    emailSent = await sendEmail(w.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`);
+  }
+  console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${phoneCode||'N/A'}(sent:${smsSent}) email=${emailCode||'N/A'}(sent:${emailSent})`);
+  // Only expose codes to admin if delivery failed (so admin can tell user manually)
+  const result = { success: true, sms_sent: smsSent, email_sent: emailSent };
+  if (phoneCode && !smsSent) result.phone_code = phoneCode;
+  if (emailCode && !emailSent) result.email_code = emailCode;
+  res.json(result);
 });
 
 // ─── Customer Accounts (admin manages) ───
@@ -2681,18 +2760,41 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
 
 app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.status(400).json({ error: '账号未关联员工档案，请联系HR' });
-  const { latitude, longitude } = req.body;
+  const { latitude, longitude, site_id } = req.body;
   const now = new Date().toISOString();
+  let geoVerified = 0;
+  let matchedSiteId = site_id || null;
+
+  // GPS Geofencing: verify worker is within radius of a job site
+  if (latitude && longitude) {
+    const sites = db.prepare('SELECT * FROM job_sites WHERE active=1').all();
+    if (sites.length > 0) {
+      let nearestSite = null;
+      let nearestDist = Infinity;
+      for (const s of sites) {
+        const dist = haversineDistance(latitude, longitude, s.latitude, s.longitude);
+        if (dist < nearestDist) { nearestDist = dist; nearestSite = s; }
+      }
+      if (nearestSite && nearestDist <= nearestSite.radius_meters) {
+        geoVerified = 1;
+        matchedSiteId = nearestSite.id;
+      } else if (nearestSite) {
+        // Not within any site radius - warn but allow punch
+        console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(nearestDist)}m from nearest site "${nearestSite.name}" (max ${nearestSite.radius_meters}m)`);
+      }
+    }
+  }
+
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
   if (open) {
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, ...hrs });
+    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
   } else {
-    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude) VALUES(?,?,'open',?,?)")
-      .run(req.workerEmployeeId, now, latitude || null, longitude || null);
-    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified) VALUES(?,?,'open',?,?,?,?)")
+      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified);
+    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified, site_name: matchedSiteId ? db.prepare('SELECT name FROM job_sites WHERE id=?').get(matchedSiteId)?.name : null });
   }
 });
 
@@ -2734,6 +2836,214 @@ app.post('/api/worker/reset-password', (req, res) => {
   db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
   resetCodes.delete('worker:' + login);
   res.json({ success: true });
+});
+
+// ─── Worker Compliance Documents API ───
+const complianceUpload = multer({
+  storage: multer.diskStorage({
+    destination: docsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `compliance-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /pdf|jpg|jpeg|png|heic|heif/.test(path.extname(file.originalname).toLowerCase());
+    cb(null, ok);
+  }
+});
+
+// Get worker's compliance overview
+app.get('/api/worker/compliance', requireWorker, (req, res) => {
+  const docs = db.prepare('SELECT id, doc_type, status, file_name, expires_at, created_at, updated_at, reviewer_notes FROM worker_compliance_docs WHERE worker_account_id=? ORDER BY created_at DESC').all(req.workerId);
+  // Group by doc_type, return latest of each type
+  const byType = {};
+  for (const d of docs) {
+    if (!byType[d.doc_type]) byType[d.doc_type] = d;
+  }
+  // Check background check status via employee linkage
+  let bgCheck = null;
+  if (req.workerEmployeeId) {
+    bgCheck = db.prepare('SELECT id, check_type, status, result, ordered_date, completed_date FROM background_checks WHERE employee_id=? ORDER BY created_at DESC LIMIT 1').get(req.workerEmployeeId);
+  }
+  res.json({
+    documents: byType,
+    all_documents: docs,
+    background_check: bgCheck,
+    doc_types: ['i9', 'drivers_license', 'w9', 'ssn_card', 'work_permit', 'other']
+  });
+});
+
+// Submit I-9 form data
+app.post('/api/worker/compliance/i9', requireWorker, complianceUpload.fields([
+  { name: 'list_a_doc', maxCount: 1 },
+  { name: 'list_b_doc', maxCount: 1 },
+  { name: 'list_c_doc', maxCount: 1 }
+]), (req, res) => {
+  const formData = {};
+  const fields = ['last_name','first_name','middle_initial','other_last_names','address','apt','city','state','zip',
+    'dob','ssn_last4','email','phone','citizenship_status','alien_number','i94_number','passport_number','passport_country',
+    'work_auth_expiry','list_a_type','list_b_type','list_c_type','signature_confirm'];
+  fields.forEach(f => { if (req.body[f]) formData[f] = req.body[f]; });
+
+  // Save any uploaded supporting documents
+  const files = req.files || {};
+  const fileParts = [];
+  ['list_a_doc','list_b_doc','list_c_doc'].forEach(key => {
+    if (files[key] && files[key][0]) {
+      fileParts.push({ type: key, path: files[key][0].path, name: files[key][0].originalname });
+    }
+  });
+  formData._files = fileParts;
+
+  // Upsert I-9 record
+  const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='i9' AND status IN ('pending','rejected')").get(req.workerId);
+  if (existing) {
+    db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(JSON.stringify(formData), existing.id);
+  } else {
+    db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'i9', ?, 'pending')")
+      .run(req.workerId, JSON.stringify(formData));
+  }
+  res.json({ success: true });
+});
+
+// Upload driver's license
+app.post('/api/worker/compliance/drivers-license', requireWorker, complianceUpload.fields([
+  { name: 'dl_front', maxCount: 1 },
+  { name: 'dl_back', maxCount: 1 }
+]), (req, res) => {
+  const files = req.files || {};
+  if (!files.dl_front || !files.dl_front[0]) return res.status(400).json({ error: 'Front image required' });
+  const formData = {
+    dl_number: req.body.dl_number || '',
+    dl_state: req.body.dl_state || '',
+    dl_expiry: req.body.dl_expiry || '',
+    dl_front: { path: files.dl_front[0].path, name: files.dl_front[0].originalname },
+    dl_back: files.dl_back && files.dl_back[0] ? { path: files.dl_back[0].path, name: files.dl_back[0].originalname } : null
+  };
+  const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' AND status IN ('pending','rejected')").get(req.workerId);
+  if (existing) {
+    db.prepare("UPDATE worker_compliance_docs SET form_data=?, file_path=?, file_name=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(JSON.stringify(formData), files.dl_front[0].path, files.dl_front[0].originalname, existing.id);
+  } else {
+    db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, file_path, file_name, status) VALUES (?, 'drivers_license', ?, ?, ?, 'pending')")
+      .run(req.workerId, JSON.stringify(formData), files.dl_front[0].path, files.dl_front[0].originalname);
+  }
+  res.json({ success: true });
+});
+
+// Submit W-9 form data
+app.post('/api/worker/compliance/w9', requireWorker, (req, res) => {
+  const formData = {};
+  const fields = ['name','business_name','tax_classification','exempt_payee_code','fatca_code',
+    'address','city','state','zip','account_numbers','ssn_or_ein','signature_confirm','tin_type'];
+  fields.forEach(f => { if (req.body[f] !== undefined) formData[f] = req.body[f]; });
+
+  // Encrypt SSN/EIN if provided
+  if (req.body.ssn_or_ein) {
+    formData.ssn_or_ein_masked = req.body.ssn_or_ein.replace(/\d(?=\d{4})/g, '*');
+    formData.ssn_or_ein_encrypted = encryptSSN(req.body.ssn_or_ein);
+    delete formData.ssn_or_ein;
+  }
+
+  const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' AND status IN ('pending','rejected')").get(req.workerId);
+  if (existing) {
+    db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(JSON.stringify(formData), existing.id);
+  } else {
+    db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'pending')")
+      .run(req.workerId, JSON.stringify(formData));
+  }
+  res.json({ success: true });
+});
+
+// Upload generic compliance doc (work_permit, ssn_card, other)
+app.post('/api/worker/compliance/upload', requireWorker, complianceUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'File required' });
+  const docType = req.body.doc_type || 'other';
+  const notes = req.body.notes || '';
+  db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, file_path, file_name, form_data, status) VALUES (?, ?, ?, ?, ?, 'pending')")
+    .run(req.workerId, docType, req.file.path, req.file.originalname, JSON.stringify({ notes }));
+  res.json({ success: true });
+});
+
+// Get available job sites for worker
+app.get('/api/worker/job-sites', requireWorker, (req, res) => {
+  const sites = db.prepare('SELECT id, name, address, latitude, longitude, radius_meters FROM job_sites WHERE active=1').all();
+  res.json(sites);
+});
+
+// ─── Admin: Job Sites Management ───
+app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all());
+});
+
+app.post('/api/admin/job-sites', requireAdmin, blockManager, (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, partner_id } = req.body;
+  if (!name || !latitude || !longitude) return res.status(400).json({ error: 'Name, latitude, longitude required' });
+  const r = db.prepare('INSERT INTO job_sites (name, address, latitude, longitude, radius_meters, partner_id) VALUES (?,?,?,?,?,?)')
+    .run(name, address || '', latitude, longitude, radius_meters || 200, partner_id || null);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, active } = req.body;
+  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active) WHERE id=?')
+    .run(name, address, latitude, longitude, radius_meters, active, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
+  db.prepare('DELETE FROM job_sites WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Admin: Integration Settings ───
+app.get('/api/admin/integrations', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM integration_settings ORDER BY id').all();
+  // Mask secrets
+  res.json(rows.map(r => ({
+    ...r,
+    api_key: r.api_key ? r.api_key.slice(0, 4) + '****' + r.api_key.slice(-4) : '',
+    api_secret: r.api_secret ? '********' : ''
+  })));
+});
+
+app.put('/api/admin/integrations/:provider', requireAdmin, (req, res) => {
+  const { enabled, api_key, api_secret, config } = req.body;
+  const ex = db.prepare('SELECT * FROM integration_settings WHERE provider=?').get(req.params.provider);
+  if (!ex) return res.status(404).json({ error: 'Provider not found' });
+  db.prepare('UPDATE integration_settings SET enabled=COALESCE(?,enabled), api_key=COALESCE(?,api_key), api_secret=COALESCE(?,api_secret), config=COALESCE(?,config), updated_at=CURRENT_TIMESTAMP WHERE provider=?')
+    .run(enabled !== undefined ? (enabled ? 1 : 0) : null, api_key || null, api_secret || null, config ? JSON.stringify(config) : null, req.params.provider);
+  res.json({ success: true });
+});
+
+// ─── Admin: Worker Compliance Review ───
+app.get('/api/admin/compliance-docs', requireAdmin, (req, res) => {
+  const docs = db.prepare(`
+    SELECT c.*, w.name as worker_name, w.email as worker_email, w.phone as worker_phone
+    FROM worker_compliance_docs c
+    LEFT JOIN worker_accounts w ON c.worker_account_id = w.id
+    ORDER BY c.created_at DESC
+  `).all();
+  res.json(docs);
+});
+
+app.put('/api/admin/compliance-docs/:id/review', requireAdmin, blockManager, (req, res) => {
+  const { status, reviewer_notes } = req.body;
+  if (!['approved','rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  db.prepare('UPDATE worker_compliance_docs SET status=?, reviewer_notes=?, reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(status, reviewer_notes || '', req.adminId, req.params.id);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/compliance-docs/:id/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
+  if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
+  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
+  res.download(doc.file_path, doc.file_name || 'document');
 });
 
 // ─── Customer Portal API ───

@@ -291,9 +291,12 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
   <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
   <a onclick="showTab('interviews')" data-role="admin,staff">🗓️ 面试管理</a>
+  <a onclick="showTab('compliance')" data-role="admin,staff">📑 合规审核</a>
+  <a onclick="showTab('jobsites')" data-role="admin,staff">📍 工作地点</a>
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
   <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
   <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
+  <a onclick="showTab('integrations')" data-role="admin">🔗 集成设置</a>
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -776,6 +779,100 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Compliance Review 合规审核 -->
+<div id="tab-compliance" style="display:none">
+  <div class="top"><h1>合规文件审核</h1></div>
+  <div class="search-bar" style="margin-bottom:1rem">
+    <select id="complianceFilterType" onchange="loadComplianceDocs()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
+      <option value="">全部类型</option>
+      <option value="i9">I-9</option>
+      <option value="drivers_license">驾照</option>
+      <option value="w9">W-9</option>
+      <option value="ssn_card">SSN Card</option>
+      <option value="work_permit">工作许可</option>
+    </select>
+    <select id="complianceFilterStatus" onchange="loadComplianceDocs()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
+      <option value="">全部状态</option>
+      <option value="pending">待审核</option>
+      <option value="approved">已通过</option>
+      <option value="rejected">已拒绝</option>
+    </select>
+  </div>
+  <div class="card">
+    <table><thead><tr>
+      <th>工人</th><th>文件类型</th><th>状态</th><th>提交时间</th><th>审核备注</th><th>操作</th>
+    </tr></thead>
+    <tbody id="complianceDocsTable"></tbody></table>
+  </div>
+</div>
+
+<!-- Job Sites 工作地点 -->
+<div id="tab-jobsites" style="display:none">
+  <div class="top">
+    <h1>工作地点管理 (GPS 围栏)</h1>
+    <button class="btn btn-green" onclick="openJobSiteModal()">+ 添加地点</button>
+  </div>
+  <div class="card">
+    <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">工人打卡时系统用 Haversine 公式计算是否在指定半径内</p>
+    <table><thead><tr>
+      <th>名称</th><th>地址</th><th>坐标 (Lat, Lng)</th><th>半径</th><th>状态</th><th>操作</th>
+    </tr></thead>
+    <tbody id="jobSitesTable"></tbody></table>
+  </div>
+</div>
+
+<!-- Integration Settings 集成设置 -->
+<div id="tab-integrations" style="display:none">
+  <div class="top"><h1>第三方集成设置</h1></div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem" id="integrationsGrid"></div>
+</div>
+
+</div></div>
+
+<!-- Job Site Modal -->
+<div class="modal-bg" id="jobSiteModal"><div class="modal" style="max-width:480px">
+  <h2 id="jobSiteModalTitle">添加工作地点</h2>
+  <input type="hidden" id="siteId">
+  <div class="field"><label>名称 *</label><input id="siteName" placeholder="例: 仓库A"></div>
+  <div class="field"><label>地址</label><input id="siteAddress" placeholder="123 Main St, City, ST"></div>
+  <div class="field-row" style="display:flex;gap:1rem">
+    <div class="field" style="flex:1"><label>纬度 Latitude *</label><input id="siteLat" type="number" step="any" placeholder="40.7128"></div>
+    <div class="field" style="flex:1"><label>经度 Longitude *</label><input id="siteLng" type="number" step="any" placeholder="-74.0060"></div>
+  </div>
+  <div class="field"><label>围栏半径 (米)</label><input id="siteRadius" type="number" value="200" min="50" max="2000"></div>
+  <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:1rem">提示: 可以在 Google Maps 上右键点击获取坐标</div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="saveJobSite()">保存</button>
+    <button class="btn" onclick="closeModal('jobSiteModal')">取消</button>
+  </div>
+</div></div>
+
+<!-- Compliance Review Modal -->
+<div class="modal-bg" id="complianceReviewModal"><div class="modal" style="max-width:600px">
+  <h2>审核合规文件</h2>
+  <div id="complianceReviewContent"></div>
+  <div class="field"><label>审核备注</label><textarea id="complianceReviewNotes" rows="3" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></textarea></div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="reviewComplianceDoc('approved')">通过 Approve</button>
+    <button class="btn btn-red" onclick="reviewComplianceDoc('rejected')">拒绝 Reject</button>
+    <button class="btn" onclick="closeModal('complianceReviewModal')">取消</button>
+  </div>
+</div></div>
+
+<!-- Integration Edit Modal -->
+<div class="modal-bg" id="integrationModal"><div class="modal" style="max-width:500px">
+  <h2 id="integrationModalTitle">编辑集成</h2>
+  <input type="hidden" id="intProvider">
+  <div class="field"><label>启用</label>
+    <select id="intEnabled"><option value="1">启用</option><option value="0">禁用</option></select>
+  </div>
+  <div class="field"><label>API Key</label><input id="intApiKey" placeholder="API Key"></div>
+  <div class="field"><label>API Secret</label><input id="intApiSecret" type="password" placeholder="API Secret (留空不修改)"></div>
+  <div class="field"><label>额外配置 (JSON)</label><textarea id="intConfig" rows="3" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="{}"></textarea></div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="saveIntegration()">保存</button>
+    <button class="btn" onclick="closeModal('integrationModal')">取消</button>
+  </div>
 </div></div>
 
 <!-- Admin/Staff/Manager Account Modal -->
@@ -2103,6 +2200,9 @@ function showTab(t) {
   if (t === 'accounts')   loadAccounts();
   if (t === 'approvals')  loadApprovals();
   if (t === 'interviews') loadInterviews();
+  if (t === 'compliance') loadComplianceDocs();
+  if (t === 'jobsites')   loadJobSites();
+  if (t === 'integrations') loadIntegrations();
 }
 
 // ─── Dashboard ───
@@ -5869,10 +5969,15 @@ async function suspendWorkerAccount(id, doSuspend) {
 async function resendWorkerVerify(id) {
   const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
   if (r && r.success) {
-    const lines = ['✅ 验证码已重新生成（系统会发送通知）'];
-    if (r.phone_code) lines.push(`手机验证码: ${esc(String(r.phone_code))}`);
-    if (r.email_code) lines.push(`邮箱验证码: ${esc(String(r.email_code))}`);
-    showToast(lines.join('<br>'), 'success', 6000);
+    const msgs = [];
+    if (r.sms_sent) msgs.push('短信已发送 ✅');
+    if (r.email_sent) msgs.push('邮件已发送 ✅');
+    // Only show codes if delivery failed (so admin can tell user manually)
+    if (r.phone_code) msgs.push(`⚠️ 短信发送失败，手机验证码: ${r.phone_code}`);
+    if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
+    if (!msgs.length) msgs.push('未配置短信/邮件发送');
+    showToast('✅ 验证码已重新生成');
+    alert(msgs.join('\n'));
   }
 }
 
@@ -6261,6 +6366,207 @@ async function ivPassAndSend(id) {
   } else {
     showToast('❌ ' + (r && r.error || '操作失败'), 'error');
   }
+}
+
+// ─── Compliance Review ───
+const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'驾照', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', other:'其他' };
+const COMP_STATUS_LABELS = { pending:'待审核', approved:'已通过', rejected:'已拒绝' };
+const COMP_STATUS_COLORS = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)' };
+let _complianceDocs = [];
+let _reviewDocId = null;
+
+async function loadComplianceDocs() {
+  const docs = await api('/admin/compliance-docs');
+  if (!docs) return;
+  _complianceDocs = docs;
+  const typeFilter = document.getElementById('complianceFilterType').value;
+  const statusFilter = document.getElementById('complianceFilterStatus').value;
+  const filtered = docs.filter(d =>
+    (!typeFilter || d.doc_type === typeFilter) &&
+    (!statusFilter || d.status === statusFilter)
+  );
+  document.getElementById('complianceDocsTable').innerHTML = filtered.length ? filtered.map(d => `<tr>
+    <td><strong>${esc(d.worker_name||'')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(d.worker_email||d.worker_phone||'')}</span></td>
+    <td>${COMP_TYPE_LABELS[d.doc_type]||d.doc_type}</td>
+    <td><span style="font-weight:600;${COMP_STATUS_COLORS[d.status]||''}">${COMP_STATUS_LABELS[d.status]||d.status}</span></td>
+    <td>${(d.created_at||'').slice(0,10)}</td>
+    <td style="font-size:.8rem">${esc(d.reviewer_notes||'—')}</td>
+    <td>
+      <button class="btn btn-sm" onclick="openComplianceReview(${d.id})">查看/审核</button>
+      ${d.file_path ? `<a href="/api/admin/compliance-docs/${d.id}/download" class="btn btn-sm" style="margin-left:.3rem">下载</a>` : ''}
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:2rem">暂无记录</td></tr>';
+}
+
+function openComplianceReview(id) {
+  const doc = _complianceDocs.find(d => d.id === id);
+  if (!doc) return;
+  _reviewDocId = id;
+  let formHtml = '';
+  try {
+    const fd = JSON.parse(doc.form_data || '{}');
+    const entries = Object.entries(fd).filter(([k]) => !k.startsWith('_') && k !== 'ssn_or_ein_encrypted');
+    if (entries.length) {
+      formHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem;font-size:.85rem">' +
+        entries.map(([k,v]) => `<div><span style="color:var(--gray-400)">${k}</span><br><strong>${typeof v === 'object' ? JSON.stringify(v) : esc(String(v))}</strong></div>`).join('') +
+        '</div>';
+    }
+  } catch {}
+  document.getElementById('complianceReviewContent').innerHTML = `
+    <div style="margin-bottom:1rem">
+      <p><strong>工人:</strong> ${esc(doc.worker_name||'')} (${esc(doc.worker_email||doc.worker_phone||'')})</p>
+      <p><strong>类型:</strong> ${COMP_TYPE_LABELS[doc.doc_type]||doc.doc_type}</p>
+      <p><strong>状态:</strong> <span style="${COMP_STATUS_COLORS[doc.status]||''};font-weight:600">${COMP_STATUS_LABELS[doc.status]||doc.status}</span></p>
+      <p><strong>提交时间:</strong> ${(doc.created_at||'').slice(0,16)}</p>
+      ${doc.file_name ? `<p><strong>文件:</strong> <a href="/api/admin/compliance-docs/${doc.id}/download">${esc(doc.file_name)}</a></p>` : ''}
+    </div>
+    ${formHtml ? '<h3 style="font-size:.9rem;margin-bottom:.5rem">表单数据:</h3>' + formHtml : ''}
+  `;
+  document.getElementById('complianceReviewNotes').value = doc.reviewer_notes || '';
+  document.getElementById('complianceReviewModal').classList.add('show');
+}
+
+async function reviewComplianceDoc(status) {
+  if (!_reviewDocId) return;
+  const notes = document.getElementById('complianceReviewNotes').value;
+  await api(`/admin/compliance-docs/${_reviewDocId}/review`, {
+    method:'PUT', body: JSON.stringify({ status, reviewer_notes: notes })
+  });
+  closeModal('complianceReviewModal');
+  showToast(`✅ 已${status === 'approved' ? '通过' : '拒绝'}`);
+  loadComplianceDocs();
+}
+
+// ─── Job Sites ───
+let _jobSites = [];
+
+async function loadJobSites() {
+  const sites = await api('/admin/job-sites');
+  if (!sites) return;
+  _jobSites = sites;
+  document.getElementById('jobSitesTable').innerHTML = sites.length ? sites.map(s => `<tr>
+    <td><strong>${esc(s.name)}</strong></td>
+    <td>${esc(s.address||'—')}</td>
+    <td><a href="https://maps.google.com/?q=${s.latitude},${s.longitude}" target="_blank">${(+s.latitude).toFixed(5)}, ${(+s.longitude).toFixed(5)}</a></td>
+    <td>${s.radius_meters}m</td>
+    <td>${s.active ? '<span style="color:var(--green);font-weight:600">启用</span>' : '<span style="color:var(--gray-400)">禁用</span>'}</td>
+    <td>
+      <button class="btn btn-sm" onclick="editJobSite(${s.id})">编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteJobSite(${s.id})">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:2rem">暂无工作地点，请添加</td></tr>';
+}
+
+function openJobSiteModal() {
+  document.getElementById('siteId').value = '';
+  document.getElementById('siteName').value = '';
+  document.getElementById('siteAddress').value = '';
+  document.getElementById('siteLat').value = '';
+  document.getElementById('siteLng').value = '';
+  document.getElementById('siteRadius').value = '200';
+  document.getElementById('jobSiteModalTitle').textContent = '添加工作地点';
+  document.getElementById('jobSiteModal').classList.add('show');
+}
+
+function editJobSite(id) {
+  const s = _jobSites.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('siteId').value = s.id;
+  document.getElementById('siteName').value = s.name;
+  document.getElementById('siteAddress').value = s.address || '';
+  document.getElementById('siteLat').value = s.latitude;
+  document.getElementById('siteLng').value = s.longitude;
+  document.getElementById('siteRadius').value = s.radius_meters;
+  document.getElementById('jobSiteModalTitle').textContent = '编辑工作地点';
+  document.getElementById('jobSiteModal').classList.add('show');
+}
+
+async function saveJobSite() {
+  const id = document.getElementById('siteId').value;
+  const data = {
+    name: document.getElementById('siteName').value.trim(),
+    address: document.getElementById('siteAddress').value.trim(),
+    latitude: parseFloat(document.getElementById('siteLat').value),
+    longitude: parseFloat(document.getElementById('siteLng').value),
+    radius_meters: parseInt(document.getElementById('siteRadius').value) || 200
+  };
+  if (!data.name || isNaN(data.latitude) || isNaN(data.longitude)) return alert('请填写名称和坐标');
+  if (id) {
+    await api(`/admin/job-sites/${id}`, { method:'PUT', body: JSON.stringify(data) });
+  } else {
+    await api('/admin/job-sites', { method:'POST', body: JSON.stringify(data) });
+  }
+  closeModal('jobSiteModal');
+  showToast('✅ 已保存');
+  loadJobSites();
+}
+
+async function deleteJobSite(id) {
+  if (!confirm('确认删除此工作地点？')) return;
+  await api(`/admin/job-sites/${id}`, { method:'DELETE' });
+  showToast('✅ 已删除');
+  loadJobSites();
+}
+
+// ─── Integration Settings ───
+const INT_LABELS = {
+  workbright: { name: 'WorkBright', desc: 'I-9 / Onboarding 平台', icon: '📋' },
+  checkr: { name: 'Checkr', desc: '背景调查 Background Check', icon: '🔍' },
+  gusto: { name: 'Gusto', desc: 'Payroll / 税务 / W-2 / 1099', icon: '💰' },
+  twilio: { name: 'Twilio', desc: '短信通知 + Verify', icon: '📱' }
+};
+
+async function loadIntegrations() {
+  const rows = await api('/admin/integrations');
+  if (!rows) return;
+  document.getElementById('integrationsGrid').innerHTML = rows.map(r => {
+    const info = INT_LABELS[r.provider] || { name: r.provider, desc: '', icon: '🔗' };
+    const statusBadge = r.enabled
+      ? '<span style="color:var(--green);font-weight:600;font-size:.82rem">已启用</span>'
+      : '<span style="color:var(--gray-400);font-size:.82rem">未启用</span>';
+    return `<div class="card" style="position:relative">
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem">
+        <span style="font-size:1.5rem">${info.icon}</span>
+        <div>
+          <h3 style="font-size:1rem;font-weight:700;color:var(--blue)">${info.name}</h3>
+          <p style="font-size:.8rem;color:var(--gray-400)">${info.desc}</p>
+        </div>
+        <div style="margin-left:auto">${statusBadge}</div>
+      </div>
+      <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">
+        <p>API Key: <code>${r.api_key || '未设置'}</code></p>
+        <p>Secret: <code>${r.api_secret ? '********' : '未设置'}</code></p>
+      </div>
+      <button class="btn btn-sm" onclick="editIntegration('${r.provider}')">配置 / Configure</button>
+    </div>`;
+  }).join('');
+}
+
+function editIntegration(provider) {
+  const info = INT_LABELS[provider] || { name: provider };
+  document.getElementById('intProvider').value = provider;
+  document.getElementById('integrationModalTitle').textContent = `配置 ${info.name}`;
+  document.getElementById('intEnabled').value = '0';
+  document.getElementById('intApiKey').value = '';
+  document.getElementById('intApiSecret').value = '';
+  document.getElementById('intConfig').value = '{}';
+  document.getElementById('integrationModal').classList.add('show');
+}
+
+async function saveIntegration() {
+  const provider = document.getElementById('intProvider').value;
+  const data = {
+    enabled: document.getElementById('intEnabled').value === '1',
+    api_key: document.getElementById('intApiKey').value.trim() || undefined,
+    api_secret: document.getElementById('intApiSecret').value.trim() || undefined
+  };
+  try {
+    data.config = JSON.parse(document.getElementById('intConfig').value || '{}');
+  } catch { return alert('配置JSON格式错误'); }
+  await api(`/admin/integrations/${provider}`, { method:'PUT', body: JSON.stringify(data) });
+  closeModal('integrationModal');
+  showToast('✅ 集成设置已保存');
+  loadIntegrations();
 }
 
 </script>
