@@ -54,6 +54,15 @@ tr:hover td{background:var(--sky-light)}
 .badge-cooperated{background:#D1FAE5;color:#065F46}
 .badge-rejected{background:#FEE2E2;color:#991B1B}
 .badge-unreachable{background:#F3F4F6;color:#6B7280}
+.badge-quote_high{background:#FEF3C7;color:#92400E}
+.badge-too_small{background:#E0E7FF;color:#3730A3}
+.badge-no_match{background:#FEE2E2;color:#991B1B}
+.badge-other{background:#F3F4F6;color:#6B7280}
+.proc-reason-card{display:flex;flex-direction:column;align-items:center;gap:.3rem;padding:.65rem .5rem;border:2px solid var(--gray-200);border-radius:10px;cursor:pointer;transition:border-color .15s,background .15s;text-align:center;user-select:none}
+.proc-reason-card:hover{border-color:var(--sky);background:#f0f9ff}
+.proc-reason-card.selected{border-color:var(--sky);background:#e0f2fe}
+.proc-reason-card .proc-icon{font-size:1.4rem;line-height:1}
+.proc-reason-card .proc-label{font-size:.78rem;font-weight:600;color:var(--gray-700);line-height:1.3}
 .badge-w2{background:#D1FAE5;color:#065F46}
 .badge-contract{background:#FEF3C7;color:#92400E}
 .badge-open{background:#D1FAE5;color:#065F46}.badge-filled{background:#DBEAFE;color:#1D4ED8}.badge-on_hold{background:#FEF9C3;color:#92400E}.badge-closed{background:#F3F4F6;color:#6B7280}
@@ -386,9 +395,12 @@ tr:hover td{background:var(--sky-light)}
       <input type="text" id="inqHistSearch" placeholder="搜索姓名、电话、公司..." oninput="filterInquiryHistory()">
       <select id="inqHistStatus" onchange="filterInquiryHistory()">
         <option value="">全部结果</option>
-        <option value="cooperated">✅ 已合作</option>
-        <option value="rejected">❌ 已拒绝</option>
+        <option value="cooperated">🤝 已建立合作</option>
+        <option value="quote_high">💰 报价过高</option>
+        <option value="too_small">📦 订货量太小</option>
+        <option value="no_match">❌ 需求不匹配</option>
         <option value="unreachable">📵 联系不上</option>
+        <option value="other">💬 其他</option>
       </select>
     </div>
     <div class="card"><table><thead><tr><th>处理日期</th><th>姓名</th><th>类型</th><th>申请职位</th><th>处理结果</th><th>备注</th><th>操作</th></tr></thead><tbody id="inqHistTable"></tbody></table></div>
@@ -721,6 +733,10 @@ tr:hover td{background:var(--sky-light)}
       style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
       面试预约列表
     </button>
+    <button id="ivTabLocations" onclick="switchIvTab('locations')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
+      📍 面试地点管理
+    </button>
   </div>
 
   <!-- Slots pane -->
@@ -750,8 +766,16 @@ tr:hover td{background:var(--sky-light)}
       </div>
 
       <div style="margin-bottom:1rem">
-        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点</label>
-        <input type="text" id="batchLocation" placeholder="如：公司办公室 123 Main St / Zoom 线上" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试地点（选择预设或手动输入）</label>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <select id="batchLocationSelect" onchange="onBatchLocationSelect()" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+            <option value="">-- 选择预设地点 --</option>
+          </select>
+          <span style="color:var(--gray-400);font-size:.82rem">或</span>
+          <input type="text" id="batchLocation" placeholder="手动输入地址" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div id="batchLocationDetail" style="display:none;margin-top:.5rem;padding:.5rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:.82rem">
+        </div>
       </div>
 
       <!-- Day selection with time inputs -->
@@ -771,7 +795,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="card" style="margin-bottom:1rem">
       <details>
         <summary style="cursor:pointer;font-weight:700;font-size:.95rem;color:var(--gray-600)">➕ 单独添加时间槽</summary>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:.75rem;align-items:end;margin-top:1rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;align-items:end;margin-top:1rem">
           <div>
             <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">日期时间</label>
             <input type="datetime-local" id="ivSlotDatetime" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
@@ -784,8 +808,16 @@ tr:hover td{background:var(--sky-light)}
             <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">最大名额</label>
             <input type="number" id="ivSlotMax" value="1" min="1" max="20" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
           </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:.75rem;align-items:end;margin-top:.75rem">
           <div>
-            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点（可选）</label>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点</label>
+            <select id="ivSlotLocationSelect" onchange="onSingleLocationSelect()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+              <option value="">-- 选择预设或手动输入 --</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">或手动输入</label>
             <input type="text" id="ivSlotLocation" placeholder="如：公司会议室、Zoom" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
           </div>
           <button class="btn btn-blue" onclick="addInterviewSlot()" style="white-space:nowrap">添加</button>
@@ -804,8 +836,25 @@ tr:hover td{background:var(--sky-light)}
         </select>
         <button class="btn btn-sm btn-red" onclick="clearExpiredSlots()" style="margin-left:auto">清理已过期</button>
       </div>
-      <table><thead><tr><th>日期时间</th><th>时长</th><th>地点</th><th>名额</th><th>已预约</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>日期时间</th><th>时长</th><th>地点 / 联系人</th><th>名额</th><th>已预约</th><th>操作</th></tr></thead>
       <tbody id="ivSlotsTable"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Locations pane -->
+  <div id="ivPaneLocations" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div>
+          <h3 style="margin:0">预设面试地点</h3>
+          <p style="font-size:.82rem;color:var(--gray-500);margin:.25rem 0 0">新建时间槽时可从这里选择地点，联系人和指引会自动填入</p>
+        </div>
+        <button class="btn btn-green" onclick="openLocationModal()">+ 添加地点</button>
+      </div>
+      <table>
+        <thead><tr><th>名称</th><th>地址</th><th>联系人</th><th>手机</th><th>到场指引</th><th>操作</th></tr></thead>
+        <tbody id="ivLocationsTable"></tbody>
+      </table>
     </div>
   </div>
 
@@ -827,7 +876,67 @@ tr:hover td{background:var(--sky-light)}
       <tbody id="ivInterviewsTable"></tbody></table>
     </div>
   </div>
+
+  <!-- Locations pane -->
+  <div id="ivPaneLocations" style="display:none">
+    <div class="card" style="margin-bottom:1rem">
+      <h3 style="margin-bottom:.75rem">📍 面试地点预设</h3>
+      <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">管理常用面试地点，创建时间槽时可以快速选择。包含地址、联系人和到达指引。</p>
+
+      <div style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:1rem;margin-bottom:1rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">名称 *</label>
+            <input type="text" id="locName" placeholder="如：总部面试室、芝加哥分部" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">完整地址 *</label>
+            <input type="text" id="locAddress" placeholder="如：123 Main St, Suite 200, Chicago, IL 60601" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">联系人姓名</label>
+            <input type="text" id="locContactName" placeholder="如：张经理" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">联系人手机</label>
+            <input type="tel" id="locContactPhone" placeholder="如：(312) 555-1234" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+        </div>
+        <div style="margin-bottom:.75rem">
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">到达指引 Instructions</label>
+          <textarea id="locInstructions" rows="3" placeholder="如：从正门进入，到二楼 Suite 200，找前台登记。面试在 Conference Room B。&#10;Enter from main entrance, go to 2nd floor Suite 200, check in at front desk. Interview in Conference Room B." style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+        </div>
+        <button class="btn btn-blue" onclick="saveInterviewLocation()">保存地点</button>
+        <input type="hidden" id="locEditId" value="">
+      </div>
+
+      <table><thead><tr><th>名称</th><th>地址</th><th>联系人</th><th>电话</th><th style="min-width:200px">到达指引</th><th>操作</th></tr></thead>
+      <tbody id="ivLocationsTable"></tbody></table>
+    </div>
+  </div>
 </div>
+
+<!-- Interview Location Modal -->
+<div class="modal-bg" id="ivLocationModal"><div class="modal" style="max-width:520px">
+  <h2 id="ivLocModalTitle">添加面试地点</h2>
+  <input type="hidden" id="ivLocId">
+  <div class="field"><label>地点名称 *</label><input id="ivLocName" placeholder="例：芝加哥主办公室、Zoom 线上面试"></div>
+  <div class="field"><label>地址</label><input id="ivLocAddress" placeholder="123 Main St, Chicago, IL 60601"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+    <div class="field"><label>联系人姓名</label><input id="ivLocContactName" placeholder="张经理"></div>
+    <div class="field"><label>联系人手机</label><input id="ivLocContactPhone" placeholder="(312) 555-0100"></div>
+  </div>
+  <div class="field">
+    <label>到场指引 <span style="color:var(--gray-400);font-weight:400;font-size:.8rem">（房间号、停车、注意事项等）</span></label>
+    <textarea id="ivLocInstructions" rows="4" placeholder="例：请到2楼前台报到，告知来面试，停车场在大楼东侧，免费停3小时。"></textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="saveLocation()">保存</button>
+    <button class="btn" onclick="closeModal('ivLocationModal')">取消</button>
+  </div>
+</div></div>
 
 <!-- Approvals Tab -->
 <div id="tab-approvals" style="display:none">
@@ -868,7 +977,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>面试</th>
-      <th>合规文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>操作</th>
+      <th>合规文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -1020,6 +1129,20 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" onclick="closeModal('workerAccountModal')">取消</button>
     <button class="btn" onclick="randomFillWorkerAccount()" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">🎲 随机填充</button>
     <button class="btn btn-blue" onclick="saveWorkerAccount()">保存</button>
+  </div>
+</div></div>
+
+<!-- Onboarding Progress Modal -->
+<div class="modal-bg" id="onboardingModal"><div class="modal" style="max-width:600px">
+  <h2>🗂️ 入职进度 — <span id="onboardingWorkerName" style="color:var(--sky)"></span></h2>
+  <div id="onboardingTaskList" style="margin:.75rem 0;max-height:60vh;overflow-y:auto"></div>
+  <div style="display:flex;align-items:center;gap:.75rem;padding:.75rem 0;border-top:1px solid var(--gray-200);margin-top:.5rem;flex-wrap:wrap">
+    <span style="font-size:.88rem;font-weight:700;color:var(--blue)">派工状态：</span>
+    <span id="onboardingDispatchBadge"></span>
+    <button class="btn btn-sm" id="onboardingDispatchBtn" onclick="toggleDispatchReady()" style="margin-left:auto"></button>
+  </div>
+  <div class="modal-actions" style="margin-top:.5rem">
+    <button class="btn" onclick="closeModal('onboardingModal')">关闭</button>
   </div>
 </div></div>
 
@@ -1632,24 +1755,50 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Inquiry Process Modal -->
-<div class="modal-bg" id="procModal"><div class="modal" style="max-width:420px">
+<div class="modal-bg" id="procModal"><div class="modal" style="max-width:480px">
   <h2>标记处理结果</h2>
-  <div class="field">
-    <label>处理结果 *</label>
-    <select id="procStatus">
-      <option value="">-- 请选择 --</option>
-      <option value="cooperated">✅ 已合作</option>
-      <option value="rejected">❌ 已拒绝</option>
-      <option value="unreachable">📵 联系不上</option>
-    </select>
+  <div class="field" style="margin-bottom:1rem">
+    <label style="font-weight:600;font-size:.85rem;color:var(--gray-600);margin-bottom:.6rem;display:block">处理原因 *</label>
+    <div id="procReasonGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+      <label class="proc-reason-card" data-val="cooperated">
+        <input type="radio" name="procReason" value="cooperated" style="display:none">
+        <span class="proc-icon">🤝</span>
+        <span class="proc-label">已建立合作关系</span>
+      </label>
+      <label class="proc-reason-card" data-val="quote_high">
+        <input type="radio" name="procReason" value="quote_high" style="display:none">
+        <span class="proc-icon">💰</span>
+        <span class="proc-label">报价过高，对方不接受</span>
+      </label>
+      <label class="proc-reason-card" data-val="too_small">
+        <input type="radio" name="procReason" value="too_small" style="display:none">
+        <span class="proc-icon">📦</span>
+        <span class="proc-label">订货量太小，无法承接</span>
+      </label>
+      <label class="proc-reason-card" data-val="no_match">
+        <input type="radio" name="procReason" value="no_match" style="display:none">
+        <span class="proc-icon">❌</span>
+        <span class="proc-label">需求不匹配</span>
+      </label>
+      <label class="proc-reason-card" data-val="unreachable">
+        <input type="radio" name="procReason" value="unreachable" style="display:none">
+        <span class="proc-icon">📵</span>
+        <span class="proc-label">联系不上</span>
+      </label>
+      <label class="proc-reason-card" data-val="other">
+        <input type="radio" name="procReason" value="other" style="display:none">
+        <span class="proc-icon">💬</span>
+        <span class="proc-label">其他原因</span>
+      </label>
+    </div>
   </div>
   <div class="field">
-    <label>备注 *（必填）</label>
-    <textarea id="procNote" placeholder="例：已入职XX公司，或沟通后不符合需求..." style="height:90px"></textarea>
+    <label>补充备注 <span style="color:var(--gray-400);font-weight:400">（可选）</span></label>
+    <textarea id="procNote" placeholder="可补充具体细节，如报价金额、沟通结果等..." style="height:72px"></textarea>
   </div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
-    <button class="btn btn-green" onclick="saveProcessInquiry()">确认</button>
-    <button class="btn btn-red" onclick="guardClose('procModal')">取消</button>
+    <button class="btn btn-green" onclick="saveProcessInquiry()">确认标记</button>
+    <button class="btn" onclick="guardClose('procModal')">取消</button>
   </div>
 </div></div>
 
@@ -1674,6 +1823,7 @@ tr:hover td{background:var(--sky-light)}
     <input id="aInquiry" autocomplete="off" placeholder="搜索姓名 / 电话 / 邮箱…" oninput="filterAssignSearch('inq')">
     <div class="assign-dropdown" id="aInquiryDrop"></div>
   </div>
+  <div id="aDispatchWarn" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:.5rem .75rem;font-size:.83rem;color:#92400e;margin-top:-.25rem;margin-bottom:.5rem"></div>
 
   <div class="field" style="position:relative">
     <label>分配职位 *</label>
@@ -3256,8 +3406,8 @@ function filterInquiryHistory() {
   renderInquiryHistory(filtered);
 }
 
-const procStatusLabel = s => ({ cooperated:'已合作', rejected:'已拒绝', unreachable:'联系不上' })[s] || s;
-const procStatusIcon  = s => ({ cooperated:'✅', rejected:'❌', unreachable:'📵' })[s] || '';
+const procStatusLabel = s => ({ cooperated:'已建立合作', quote_high:'报价过高', too_small:'订货量太小', no_match:'需求不匹配', unreachable:'联系不上', other:'其他', rejected:'已拒绝' })[s] || s;
+const procStatusIcon  = s => ({ cooperated:'🤝', quote_high:'💰', too_small:'📦', no_match:'❌', unreachable:'📵', other:'💬', rejected:'❌' })[s] || '';
 
 function renderInquiries(inqs) {
   document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
@@ -3291,8 +3441,9 @@ function renderInquiryHistory(inqs) {
 
 // ── Process modal ──
 function openProcessModal() {
-  // called from detail modal
-  document.getElementById('procStatus').value = '';
+  // reset card selection
+  document.querySelectorAll('.proc-reason-card').forEach(c => c.classList.remove('selected'));
+  document.querySelectorAll('input[name=procReason]').forEach(r => r.checked = false);
   document.getElementById('procNote').value = '';
   document.getElementById('procModal').classList.add('show');
   captureModalState('procModal');
@@ -3303,20 +3454,29 @@ function openProcessModalDirect(inq) {
   openProcessModal();
 }
 
+// card click handler — highlight selected card
+document.addEventListener('click', e => {
+  const card = e.target.closest('.proc-reason-card');
+  if (!card) return;
+  document.querySelectorAll('.proc-reason-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  card.querySelector('input[type=radio]').checked = true;
+});
+
 async function saveProcessInquiry() {
   if (!currentInquiry) return;
-  const status = document.getElementById('procStatus').value;
-  if (!status) return alert('请选择处理结果');
+  const checked = document.querySelector('input[name=procReason]:checked');
+  if (!checked) return alert('请选择处理原因');
+  const status = checked.value;
   const note = document.getElementById('procNote').value.trim();
-  if (!note) return alert('请填写备注');
   await api(`/admin/inquiries/${currentInquiry.id}/process`, { method: 'PUT', body: JSON.stringify({ status, note }) });
   clearModalState('procModal');
   document.getElementById('procModal').classList.remove('show');
   document.getElementById('inqModal').classList.remove('show');
-  // refresh both lists
   allInqHistory = [];
   await loadInquiries();
   if (currentInqTab === 'history') loadInquiryHistory();
+  showToast(`✅ 已标记：${procStatusIcon(status)} ${procStatusLabel(status)}`);
 }
 
 async function undoProcessInquiry(id) {
@@ -3665,6 +3825,7 @@ async function openAssignModal(assignment) {
   document.getElementById('aJob').value = '';
   document.getElementById('aInquiryId').value = '';
   document.getElementById('aJobId').value = '';
+  document.getElementById('aDispatchWarn').style.display = 'none';
   closeAssignDropdowns();
 
   const [inqs, jobs] = await Promise.all([api('/admin/inquiries'), api('/admin/jobs')]);
@@ -3732,6 +3893,22 @@ function selectAssignItem(which, id, label) {
   document.getElementById(isInq ? 'aInquiry' : 'aJob').value = label;
   document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = id;
   document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop').classList.remove('open');
+  if (isInq) checkInquiryDispatchStatus(id);
+}
+
+async function checkInquiryDispatchStatus(inquiryId) {
+  const warn = document.getElementById('aDispatchWarn');
+  warn.style.display = 'none';
+  if (!inquiryId) return;
+  const r = await api(`/admin/inquiries/${inquiryId}/worker-status`);
+  if (!r) return;
+  if (!r.has_account) {
+    warn.innerHTML = '⚠️ 此人员尚未创建工人账户，建议先创建账户并完成入职流程后再派工。';
+    warn.style.display = '';
+  } else if (!r.dispatch_ready) {
+    warn.innerHTML = `⚠️ 该工人入职流程尚未完成，未标记"可派工"。<button class="btn btn-sm" style="margin-left:.5rem;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe" onclick="openOnboardingModalById(${r.worker_id})">查看入职进度</button>`;
+    warn.style.display = '';
+  }
 }
 
 function closeAssignDropdowns() {
@@ -3764,6 +3941,14 @@ async function saveAssignment() {
     benefits
   };
   if (!data.inquiry_id || !data.job_id) return alert('请搜索并选择人员和职位');
+  // Dispatch-ready guard
+  const ws = await api(`/admin/inquiries/${data.inquiry_id}/worker-status`).catch(()=>null);
+  if (ws && !ws.dispatch_ready) {
+    const msg = ws.has_account
+      ? '该工人尚未标记"可派工"（入职流程未完成），确定继续派工吗？'
+      : '此人员尚未创建工人账户，确定继续派工吗？';
+    if (!confirm(msg)) return;
+  }
   let assignId;
   if (id) {
     await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -6330,6 +6515,9 @@ async function loadWorkerAccounts() {
     if (w.suspended) return '<span style="color:var(--red);font-weight:600">⛔ 暂停</span>';
     return '<span style="color:var(--green);font-weight:600">✅ 正常</span>';
   };
+  const dispatchBadge = w => w.dispatch_ready
+    ? '<span style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600">✅ 可派工</span>'
+    : '<span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600">⏳ 待确认</span>';
   document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w => {
     const c = w.compliance || {};
     const skills = w.skills || [];
@@ -6337,7 +6525,7 @@ async function loadWorkerAccounts() {
     <td><strong>${esc(w.name||w.username)}</strong><br><span style="font-size:.72rem;color:var(--gray-400)">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</span></td>
     <td style="font-size:.8rem">${esc(w.phone||'')}</td>
     <td style="font-size:.78rem">${esc(w.email||'')}</td>
-    <td style="font-size:.8rem">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
+    <td style="font-size:.8rem">${WORK_STATUS_MAP[w.work_status]||statusMap[w.work_status]||esc(w.work_status||'—')}</td>
     <td style="font-size:.8rem">${w.interview_status ? IV_STATUS_MAP[w.interview_status]||w.interview_status : '<span style="color:var(--gray-300)">未安排</span>'}</td>
     <td style="white-space:nowrap">
       ${complianceBadge('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
@@ -6351,15 +6539,129 @@ async function loadWorkerAccounts() {
     <td style="font-size:.8rem">${w.our_salary_rating ? esc(w.our_salary_rating) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.75rem">${skills.length ? skills.map(s => `<div>${esc(s.skill_name)} ${skillStars(s.rating)}</div>`).join('') : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td>${workerStatus(w)}</td>
+    <td>${dispatchBadge(w)}</td>
     <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
       ${!w.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="resendWorkerVerify(${w.id})">重发验证</button>`:''}
       ${w.active?(w.suspended?`<button class="btn btn-sm btn-green" onclick="suspendWorkerAccount(${w.id},0)">恢复</button>`:`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendWorkerAccount(${w.id},1)">暂停</button>`):''}
       ${!w.employee_id?`<button class="btn btn-sm" style="background:#f0fdf4;color:var(--green);border:1px solid #bbf7d0" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>转为正式员工</button>`:''}
+      <button class="btn btn-sm" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">入职进度</button>
       <button class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">发送重置链接</button>
       <button class="btn btn-sm" onclick="openWorkerDetailModal(${w.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">删除</button>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="12" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="13" class="empty">暂无工人账户</td></tr>';
+}
+
+// ─── Onboarding Progress Modal ───
+let _onboardingWorkerId = null;
+let _onboardingDispatchReady = false;
+
+async function openOnboardingModal(workerId, workerName) {
+  _onboardingWorkerId = workerId;
+  document.getElementById('onboardingWorkerName').textContent = workerName;
+  document.getElementById('onboardingModal').classList.add('show');
+  await refreshOnboardingModal();
+}
+
+async function openOnboardingModalById(workerId) {
+  const rows = await api('/admin/worker-accounts');
+  const w = rows && rows.find(r => r.id === workerId);
+  if (w) openOnboardingModal(w.id, w.name || w.username);
+}
+
+async function refreshOnboardingModal() {
+  const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
+  const rows = await api('/admin/worker-accounts');
+  const w = rows && rows.find(r => r.id === _onboardingWorkerId);
+  _onboardingDispatchReady = !!(w && w.dispatch_ready);
+
+  const badge = document.getElementById('onboardingDispatchBadge');
+  const btn = document.getElementById('onboardingDispatchBtn');
+  if (_onboardingDispatchReady) {
+    badge.innerHTML = '<span style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;padding:2px 10px;border-radius:20px;font-size:.8rem;font-weight:600">✅ 可派工</span>';
+    btn.textContent = '撤销可派工';
+    btn.style.cssText = 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+  } else {
+    badge.innerHTML = '<span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:2px 10px;border-radius:20px;font-size:.8rem;font-weight:600">⏳ 待确认</span>';
+    btn.textContent = '标记可派工 ✅';
+    btn.style.cssText = 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+  }
+
+  if (!Array.isArray(tasks) || !tasks.length) {
+    document.getElementById('onboardingTaskList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">入职流程尚未初始化。<br><button class="btn btn-sm btn-blue" style="margin-top:.75rem" onclick="initOnboarding()">初始化入职流程</button></div>';
+    return;
+  }
+  renderOnboardingTasks(tasks);
+}
+
+function renderOnboardingTasks(tasks) {
+  const icons = { phone_verify:'📱', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
+  const sBadge = {
+    locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
+    pending:'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe',
+    submitted:'background:#fef3c7;color:#92400e;border:1px solid #fde68a',
+    completed:'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7',
+    waived:'background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff'
+  };
+  document.getElementById('onboardingTaskList').innerHTML = tasks.map(t => {
+    const s = t.status;
+    const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
+    const canWaive = (s === 'pending' || s === 'locked') && !t.required;
+    const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
+    const needsUrl = t.key === 'contract' || t.key === 'gusto';
+    return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100)">
+      <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+          <span style="font-weight:700;color:var(--blue);font-size:.9rem">${esc(t.title)}</span>
+          <span style="padding:1px 7px;border-radius:20px;font-size:.7rem;font-weight:600;${sBadge[s]||''}">${sLabel[s]||s}</span>
+          ${!t.required?'<span style="font-size:.7rem;color:var(--gray-400)">(可豁免)</span>':''}
+        </div>
+        ${t.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);font-style:italic;margin-top:.15rem">💬 ${esc(t.admin_note)}</div>`:''}
+        ${t.action_url?`<div style="font-size:.78rem;margin-top:.15rem">🔗 <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">${esc(t.action_url)}</a></div>`:''}
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
+          ${canComplete?`<button class="btn btn-sm btn-green" onclick="updateOnboardingTask('${t.key}','completed')">✅ 完成</button>`:''}
+          ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="updateOnboardingTask('${t.key}','waived')">⏭️ 豁免</button>`:''}
+          ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="updateOnboardingTask('${t.key}','pending')">↩️ 重置</button>`:''}
+          <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function initOnboarding() {
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/init-onboarding`, { method:'POST' });
+  refreshOnboardingModal();
+}
+
+async function updateOnboardingTask(key, status, note, actionUrl) {
+  const body = { status };
+  if (note !== undefined) body.admin_note = note;
+  if (actionUrl !== undefined) body.action_url = actionUrl;
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, { method:'PUT', body:JSON.stringify(body) });
+  refreshOnboardingModal();
+  loadWorkerAccounts();
+}
+
+function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
+  const note = prompt('管理员备注（发送给工人的说明）：', currentNote || '');
+  if (note === null) return;
+  let url = currentUrl;
+  if (hasUrl) {
+    url = prompt('操作链接（如 Gusto 邀请链接或合同链接）：', currentUrl || '');
+    if (url === null) return;
+  }
+  updateOnboardingTask(key, undefined, note, hasUrl ? url : undefined);
+}
+
+async function toggleDispatchReady() {
+  const newVal = _onboardingDispatchReady ? 0 : 1;
+  if (newVal && !confirm('确定将此工人标记为"可派工"？')) return;
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/dispatch-ready`, { method:'PUT', body:JSON.stringify({ dispatch_ready: newVal }) });
+  refreshOnboardingModal();
+  loadWorkerAccounts();
 }
 
 async function openWorkerAccountModal(data) {
@@ -6893,19 +7195,118 @@ async function rejectAction() {
 // ── Interview Management ──
 let _allInterviews = [];
 
+let _ivLocations = [];
+
 function switchIvTab(tab) {
-  document.getElementById('ivPaneSlots').style.display = tab === 'slots' ? '' : 'none';
-  document.getElementById('ivPaneList').style.display  = tab === 'list'  ? '' : 'none';
-  document.getElementById('ivTabSlots').style.cssText  = tab === 'slots'
-    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
-    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
-  document.getElementById('ivTabList').style.cssText   = tab === 'list'
-    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
-    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
+  ['slots','list','locations'].forEach(t => {
+    document.getElementById('ivPane' + t.charAt(0).toUpperCase() + t.slice(1)).style.display = tab === t ? '' : 'none';
+    const btn = document.getElementById('ivTab' + t.charAt(0).toUpperCase() + t.slice(1));
+    const active = tab === t;
+    btn.style.cssText = `padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid ${active?'var(--sky)':'transparent'};margin-bottom:-2px;color:${active?'var(--sky)':'var(--gray-500)'}`;
+  });
   if (tab === 'list') filterInterviews();
+  if (tab === 'locations') loadInterviewLocations();
+}
+
+// ── Interview Location Presets ──
+async function loadInterviewLocations() {
+  const locs = await api('/admin/interview-locations');
+  if (!Array.isArray(locs)) return;
+  _ivLocations = locs;
+  document.getElementById('ivLocationsTable').innerHTML = locs.length ? locs.map(l => `<tr>
+    <td><strong>${esc(l.name)}</strong></td>
+    <td style="font-size:.82rem">${esc(l.address||'—')}</td>
+    <td>${esc(l.contact_name||'—')}</td>
+    <td style="font-size:.82rem">${esc(l.contact_phone||'—')}</td>
+    <td style="font-size:.8rem;white-space:pre-line;max-width:250px">${esc(l.instructions||'—')}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editInterviewLocation(${l.id})">编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteInterviewLocation(${l.id},'${esc(l.name)}')">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无预设地点，请在上方添加</td></tr>';
+  populateLocationSelectors();
+}
+
+function populateLocationSelectors() {
+  const opts = _ivLocations.map(l => `<option value="${l.id}">${esc(l.name)} — ${esc((l.address||'').substring(0,40))}</option>`).join('');
+  const defaultOpt = '<option value="">-- 选择预设地点 --</option>';
+  const batchSel = document.getElementById('batchLocationSelect');
+  const singleSel = document.getElementById('ivSlotLocationSelect');
+  if (batchSel) batchSel.innerHTML = defaultOpt + opts;
+  if (singleSel) singleSel.innerHTML = defaultOpt + opts;
+}
+
+function onBatchLocationSelect() {
+  const sel = document.getElementById('batchLocationSelect');
+  const loc = _ivLocations.find(l => l.id == sel.value);
+  const detail = document.getElementById('batchLocationDetail');
+  if (loc) {
+    document.getElementById('batchLocation').value = loc.address || '';
+    detail.style.display = '';
+    detail.innerHTML = `<div style="font-weight:600">📍 ${esc(loc.name)}</div>
+      <div>${esc(loc.address||'')}</div>
+      ${loc.contact_name ? `<div>联系人: ${esc(loc.contact_name)} ${esc(loc.contact_phone||'')}</div>` : ''}
+      ${loc.instructions ? `<div style="margin-top:.3rem;white-space:pre-line;color:var(--gray-600)">📋 ${esc(loc.instructions)}</div>` : ''}`;
+  } else {
+    detail.style.display = 'none';
+    document.getElementById('batchLocation').value = '';
+  }
+}
+
+function onSingleLocationSelect() {
+  const sel = document.getElementById('ivSlotLocationSelect');
+  const loc = _ivLocations.find(l => l.id == sel.value);
+  if (loc) document.getElementById('ivSlotLocation').value = loc.address || '';
+}
+
+async function saveInterviewLocation() {
+  const editId = document.getElementById('locEditId').value;
+  const data = {
+    name: document.getElementById('locName').value.trim(),
+    address: document.getElementById('locAddress').value.trim(),
+    contact_name: document.getElementById('locContactName').value.trim(),
+    contact_phone: document.getElementById('locContactPhone').value.trim(),
+    instructions: document.getElementById('locInstructions').value.trim()
+  };
+  if (!data.name || !data.address) return showToast('❌ 名称和地址必填', 'error');
+  const url = editId ? `/admin/interview-locations/${editId}` : '/admin/interview-locations';
+  const method = editId ? 'PUT' : 'POST';
+  const r = await api(url, { method, body: JSON.stringify(data) });
+  if (r && (r.success || r.id)) {
+    showToast('✅ 地点已保存');
+    document.getElementById('locName').value = '';
+    document.getElementById('locAddress').value = '';
+    document.getElementById('locContactName').value = '';
+    document.getElementById('locContactPhone').value = '';
+    document.getElementById('locInstructions').value = '';
+    document.getElementById('locEditId').value = '';
+    loadInterviewLocations();
+  } else {
+    showToast('❌ ' + (r?.error || '保存失败'), 'error');
+  }
+}
+
+function editInterviewLocation(id) {
+  const loc = _ivLocations.find(l => l.id === id);
+  if (!loc) return;
+  document.getElementById('locEditId').value = id;
+  document.getElementById('locName').value = loc.name;
+  document.getElementById('locAddress').value = loc.address || '';
+  document.getElementById('locContactName').value = loc.contact_name || '';
+  document.getElementById('locContactPhone').value = loc.contact_phone || '';
+  document.getElementById('locInstructions').value = loc.instructions || '';
+  document.getElementById('ivPaneLocations').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function deleteInterviewLocation(id, name) {
+  if (!confirm(`确定删除面试地点「${name}」？`)) return;
+  const r = await api(`/admin/interview-locations/${id}`, { method: 'DELETE' });
+  if (r && r.success) { showToast('✅ 已删除'); loadInterviewLocations(); }
+  else showToast('❌ 删除失败', 'error');
 }
 
 async function loadInterviews() {
+  await loadInterviewLocations();
   const [slots, interviews] = await Promise.all([
     api('/admin/interview-slots'),
     api('/admin/interviews')
@@ -6952,10 +7353,12 @@ function renderSlots(slots) {
       const dt = new Date(s.slot_datetime);
       const past = dt <= now;
       const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+      const contactInfo = s.contact_name ? `<div style="font-size:.72rem;color:var(--gray-500)">👤 ${esc(s.contact_name)} ${esc(s.contact_phone||'')}</div>` : '';
+      const instrInfo = s.instructions ? `<div style="font-size:.72rem;color:var(--gray-500);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(s.instructions)}">📋 ${esc(s.instructions)}</div>` : '';
       html += `<tr style="${past ? 'opacity:.55' : ''}">
         <td>${timeStr}${past ? ' <span style="color:var(--gray-400);font-size:.75rem">已过期</span>' : ''}</td>
         <td>${s.duration_min} 分钟</td>
-        <td>${esc(s.location||'—')}</td>
+        <td>${esc(s.location||'—')}${contactInfo}${instrInfo}</td>
         <td>${s.max_bookings}</td>
         <td><span style="color:${s.total_booked>0?'var(--sky)':'var(--gray-400)'}">${s.total_booked||0}</span></td>
         <td><button class="btn btn-sm btn-red" onclick="deleteSlot(${s.id})">删除</button></td>
@@ -6965,22 +7368,36 @@ function renderSlots(slots) {
   tbody.innerHTML = html;
 }
 
+function getSelectedLocation(selectId, inputId) {
+  const sel = document.getElementById(selectId);
+  const loc = _ivLocations.find(l => l.id == sel?.value);
+  const manualAddr = document.getElementById(inputId)?.value?.trim() || '';
+  return {
+    location: loc ? loc.address : manualAddr,
+    contact_name: loc ? loc.contact_name : '',
+    contact_phone: loc ? loc.contact_phone : '',
+    instructions: loc ? loc.instructions : ''
+  };
+}
+
 async function addInterviewSlot() {
   const dt = document.getElementById('ivSlotDatetime').value;
   if (!dt) return showToast('❌ 请选择日期时间', 'error');
+  const locData = getSelectedLocation('ivSlotLocationSelect', 'ivSlotLocation');
   const r = await api('/admin/interview-slots', {
     method: 'POST',
     body: JSON.stringify({
       slot_datetime: dt,
       duration_min: parseInt(document.getElementById('ivSlotDuration').value) || 30,
       max_bookings: parseInt(document.getElementById('ivSlotMax').value) || 1,
-      location: document.getElementById('ivSlotLocation').value.trim()
+      ...locData
     })
   });
   if (r && r.success) {
     showToast('✅ 时间槽已添加');
     document.getElementById('ivSlotDatetime').value = '';
     document.getElementById('ivSlotLocation').value = '';
+    if (document.getElementById('ivSlotLocationSelect')) document.getElementById('ivSlotLocationSelect').value = '';
     loadInterviews();
   } else {
     showToast('❌ ' + (r && r.error || '添加失败'), 'error');
@@ -7081,7 +7498,7 @@ function collectBatchSlots() {
   const checks = grid.querySelectorAll('.batchDayCheck:checked');
   const duration = parseInt(document.getElementById('batchDuration').value) || 30;
   const maxBookings = parseInt(document.getElementById('batchMaxBookings').value) || 5;
-  const location = document.getElementById('batchLocation').value.trim();
+  const locData = getSelectedLocation('batchLocationSelect', 'batchLocation');
   const slots = [];
 
   checks.forEach(chk => {
@@ -7095,7 +7512,7 @@ function collectBatchSlots() {
         slot_datetime: `${dateStr}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`,
         duration_min: duration,
         max_bookings: maxBookings,
-        location: location
+        ...locData
       });
     });
   });
@@ -7103,6 +7520,7 @@ function collectBatchSlots() {
 }
 
 async function batchCreateSlots() {
+  if (!document.getElementById('batchLocationSelect')?.value && !document.getElementById('batchLocation')?.value?.trim()) return showToast('❌ 请先选择或输入面试地点', 'error');
   const slots = collectBatchSlots();
   if (!slots.length) return showToast('❌ 没有可生成的时间槽，请检查日期和时间设置', 'error');
   if (!confirm(`确定生成 ${slots.length} 个面试时间槽？`)) return;
