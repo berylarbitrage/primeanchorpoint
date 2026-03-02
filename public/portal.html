@@ -127,6 +127,7 @@ tr:last-child td{border-bottom:none}
 .geo-warn{background:#fef3c7;color:#92400e}
 @media(max-width:600px){.job-card{flex-direction:column}.header h1{font-size:.9rem}.form-row{grid-template-columns:1fr}.compliance-grid{grid-template-columns:1fr}}
 </style>
+<script src="https://cdn.withpersona.com/dist/persona-v5.5.0.js" defer></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -143,6 +144,52 @@ tr:last-child td{border-bottom:none}
     <div class="login-extra">
       <a href="javascript:void(0)" onclick="showForgotPassword()">忘记密码？</a>
       <a href="/register?type=worker">注册 / Register</a>
+    </div>
+  </div>
+</div>
+
+<!-- Apply for Job Modal -->
+<div class="modal-overlay" id="applyModal">
+  <div class="modal-box" style="max-width:460px;width:94%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+      <h2 style="margin:0">申请职位 / Apply for Position</h2>
+      <button onclick="closeApplyModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+    <p id="applyJobLabel" style="font-size:.85rem;color:var(--sky);font-weight:600;margin-bottom:1.25rem"></p>
+
+    <!-- Work auth question — shown only when job requires gc or citizen -->
+    <div id="applyWorkAuthField" style="display:none;margin-bottom:1.1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem">
+      <p style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.5rem">🪪 该职位要求 <span id="applyWorkAuthRequired"></span></p>
+      <p style="font-size:.78rem;color:#92400e;margin-bottom:.6rem">请确认您的工作身份</p>
+      <div style="display:flex;gap:.6rem">
+        <label style="flex:1;display:flex;align-items:center;gap:.4rem;cursor:pointer;padding:.45rem .6rem;border:1px solid #fde68a;border-radius:8px;background:#fff;font-size:.85rem;font-weight:600">
+          <input type="radio" name="applyWorkAuth" value="yes" style="accent-color:var(--green)"> ✅ 是，我符合
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:.4rem;cursor:pointer;padding:.45rem .6rem;border:1px solid #fde68a;border-radius:8px;background:#fff;font-size:.85rem;font-weight:600">
+          <input type="radio" name="applyWorkAuth" value="no" style="accent-color:var(--red)"> ❌ 暂不符合
+        </label>
+      </div>
+    </div>
+
+    <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">📅 面试时间 / Interview Availability <span style="color:#dc2626">*</span></label>
+      <input type="text" id="applyAvailability" placeholder="例：周一至周五 9am–5pm，或具体日期 / e.g. Weekdays 9am–5pm" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💰 期望薪资 / Expected Pay</label>
+      <input type="text" id="applyExpectedPay" placeholder="例：$18/hr 或 $3,500/月" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 想对我们说的话 / Message to HR</label>
+      <textarea id="applyMessage" rows="3" placeholder="介绍一下您的相关经验、期望，或任何想告诉我们的 / Introduce yourself, share your expectations, or anything you'd like us to know" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit;outline:none"></textarea>
+    </div>
+
+    <div class="modal-msg error" id="applyModalError"></div>
+    <div style="display:flex;gap:.6rem;margin-top:.75rem">
+      <button onclick="closeApplyModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消 / Cancel</button>
+      <button onclick="submitApply()" id="applySubmitBtn" class="modal-btn modal-btn-primary" style="flex:2">提交申请 / Submit</button>
     </div>
   </div>
 </div>
@@ -178,44 +225,6 @@ tr:last-child td{border-bottom:none}
     </div>
 
     <button class="modal-btn modal-btn-secondary" onclick="closeForgotPassword()">关闭 / Close</button>
-  </div>
-</div>
-
-<!-- Apply Job Modal -->
-<div class="modal-overlay" id="applyModal" style="display:none;align-items:center;justify-content:center">
-  <div class="modal-box" style="max-width:460px;width:92%">
-    <h3 style="margin:0 0 .25rem;color:var(--blue);font-size:1.05rem">申请职位 / Apply for Position</h3>
-    <div id="applyJobLabel" style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem"></div>
-    <div class="modal-msg" id="applyMsg"></div>
-
-    <div style="margin-bottom:.9rem">
-      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
-        📅 面试时间 / Interview Availability <span style="color:#dc2626">*</span>
-      </label>
-      <input id="applyAvailability" type="text" placeholder="例：周一至周五 9am–5pm，或具体日期 / e.g. Weekdays 9am–5pm"
-        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
-    </div>
-
-    <div style="margin-bottom:.9rem">
-      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
-        💰 期望薪资 / Expected Pay
-      </label>
-      <input id="applyExpectedPay" type="text" placeholder="例：$18/hr 或 $3,500/月 / e.g. $18/hr or $3,500/mo"
-        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
-    </div>
-
-    <div style="margin-bottom:1.1rem">
-      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
-        💬 想对我们说的话 / Message to HR
-      </label>
-      <textarea id="applyMessage" rows="3" placeholder="介绍一下您的相关经验、期待，或任何想告诉我们的 / Introduce yourself, share your expectations, or anything you'd like us to know"
-        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none;resize:vertical;line-height:1.5"></textarea>
-    </div>
-
-    <div style="display:flex;gap:.6rem;justify-content:flex-end">
-      <button class="modal-btn modal-btn-secondary" onclick="closeApplyModal()">取消 / Cancel</button>
-      <button class="modal-btn modal-btn-primary" id="applySubmitBtn" onclick="submitApply()">提交申请 / Submit</button>
-    </div>
   </div>
 </div>
 
@@ -384,26 +393,40 @@ tr:last-child td{border-bottom:none}
         </form>
       </div>
 
-      <!-- Driver's License Upload -->
+      <!-- Driver's License / ID Verification (Persona) -->
       <div class="card" id="dlFormCard" style="display:none">
-        <h2>驾照验证 / Driver's License Verification</h2>
-        <form id="dlForm" onsubmit="submitDL(event)">
-          <div class="form-row">
-            <div class="form-group"><label>驾照号 DL Number *</label><input name="dl_number" required></div>
-            <div class="form-group"><label>发行州 State *</label><input name="dl_state" required maxlength="2" placeholder="CA"></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>到期日 Expiration *</label><input name="dl_expiry" type="date" required></div>
-          </div>
-          <div class="form-row">
-            <div class="form-group"><label>正面照片 Front *</label><input type="file" name="dl_front" accept=".pdf,.jpg,.jpeg,.png" required></div>
-            <div class="form-group"><label>背面照片 Back</label><input type="file" name="dl_back" accept=".pdf,.jpg,.jpeg,.png"></div>
-          </div>
-          <div class="form-actions">
-            <button type="submit" class="btn btn-sky">提交驾照 / Submit</button>
-            <button type="button" class="btn btn-gray" onclick="hideDLForm()">取消</button>
-          </div>
-        </form>
+        <h2>🪪 身份证件验证 / ID Verification</h2>
+        <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">
+          使用 Persona 安全验证您的驾照或身份证件。点击下方按钮开始，按照提示拍照即可自动验证。<br>
+          <span style="font-size:.8rem">Securely verify your driver's license or government ID via Persona. Click below to start.</span>
+        </p>
+        <div id="personaStatusBox" style="display:none;padding:1rem;border-radius:8px;margin-bottom:1rem"></div>
+        <div id="personaActions">
+          <button class="btn btn-sky" onclick="startPersonaVerification()" id="personaStartBtn" style="font-size:.95rem;padding:.7rem 1.5rem">
+            开始验证 / Start Verification
+          </button>
+          <button type="button" class="btn btn-gray" onclick="hideDLForm()" style="margin-left:.5rem">取消</button>
+        </div>
+        <!-- Fallback for manual upload if Persona not configured -->
+        <div id="dlManualFallback" style="display:none;margin-top:1rem;border-top:1px solid var(--gray-200);padding-top:1rem">
+          <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">Persona 未配置，请手动上传驾照</p>
+          <form id="dlForm" onsubmit="submitDL(event)">
+            <div class="form-row">
+              <div class="form-group"><label>驾照号 DL Number *</label><input name="dl_number" required></div>
+              <div class="form-group"><label>发行州 State *</label><input name="dl_state" required maxlength="2" placeholder="CA"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>到期日 Expiration *</label><input name="dl_expiry" type="date" required></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>正面照片 Front *</label><input type="file" name="dl_front" accept=".pdf,.jpg,.jpeg,.png" required></div>
+              <div class="form-group"><label>背面照片 Back</label><input type="file" name="dl_back" accept=".pdf,.jpg,.jpeg,.png"></div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-sky">提交驾照 / Submit</button>
+            </div>
+          </form>
+        </div>
       </div>
 
       <!-- W-9 Form -->
@@ -478,8 +501,44 @@ tr:last-child td{border-bottom:none}
     <!-- Profile -->
     <div id="tabProfile" style="display:none">
       <div class="card" id="profileCard">
-        <h2>我的档案</h2>
+        <h2>我的信息 / My Info</h2>
         <div id="profileContent"></div>
+      </div>
+
+      <!-- Change phone/email modal -->
+      <div id="changeContactOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:none;align-items:center;justify-content:center">
+        <div style="background:#fff;border-radius:12px;padding:1.5rem;max-width:420px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,.2)">
+          <h3 id="ccTitle" style="margin-bottom:.75rem">更换联系方式</h3>
+          <!-- Step 1: Enter new value -->
+          <div id="ccStep1">
+            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem" id="ccDesc">更换后新旧号码都需要验证</p>
+            <div class="field" style="margin-bottom:1rem">
+              <label id="ccNewLabel">新号码/邮箱</label>
+              <input type="text" id="ccNewValue" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+            </div>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn btn-sky" onclick="sendChangeVerification()">发送验证码</button>
+              <button class="btn btn-gray" onclick="closeChangeContact()">取消</button>
+            </div>
+          </div>
+          <!-- Step 2: Enter both codes -->
+          <div id="ccStep2" style="display:none">
+            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">验证码已发送到<strong>旧</strong>和<strong>新</strong>的联系方式，请分别输入：</p>
+            <div class="field" style="margin-bottom:.75rem">
+              <label>旧号码/邮箱验证码</label>
+              <input type="text" id="ccOldCode" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:3px;font-size:1.1rem;text-align:center">
+            </div>
+            <div class="field" style="margin-bottom:1rem">
+              <label>新号码/邮箱验证码</label>
+              <input type="text" id="ccNewCode" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:3px;font-size:1.1rem;text-align:center">
+            </div>
+            <div id="ccError" style="display:none;color:var(--red);font-size:.82rem;margin-bottom:.5rem"></div>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn btn-sky" onclick="confirmChangeContact()">确认更换</button>
+              <button class="btn btn-gray" onclick="closeChangeContact()">取消</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -681,15 +740,16 @@ async function loadInterview() {
     } else if (interview.status === 'failed') {
       extra = `<div style="margin-top:.75rem;font-size:.83rem;color:#dc2626">如有疑问请联系 HR。</div>`;
     }
+    const contactLine = interview.contact_name ? `<div><span style="color:var(--gray-500)">联系人：</span>${esc(interview.contact_name)} ${interview.contact_phone ? esc(interview.contact_phone) : ''}</div>` : '';
+    const instrBlock = interview.instructions ? `<div style="margin-top:.5rem;padding:.6rem .8rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:.84rem;white-space:pre-line"><strong>📋 到达指引：</strong><br>${esc(interview.instructions)}</div>` : '';
     statusContent.innerHTML = `
       <div style="display:grid;gap:.5rem;font-size:.9rem">
         <div><span style="color:var(--gray-500)">状态：</span>${statusMap[interview.status] || interview.status}</div>
         <div><span style="color:var(--gray-500)">时间：</span><strong>${dtStr}</strong></div>
-        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span><strong>${interview.location}</strong></div>` : ''}
+        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span>${esc(interview.location)}</div>` : ''}
+        ${contactLine}
         ${interview.duration_min ? `<div><span style="color:var(--gray-500)">时长：</span>${interview.duration_min} 分钟</div>` : ''}
-        ${interview.contact_name ? `<div><span style="color:var(--gray-500)">联系人：</span>${interview.contact_name}${interview.contact_phone ? `&nbsp;&nbsp;📞 <a href="tel:${interview.contact_phone}" style="color:#0369a1">${interview.contact_phone}</a>` : ''}</div>` : ''}
-        ${interview.instructions ? `<div style="margin-top:.4rem;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.83rem;color:#92400e;white-space:pre-wrap;line-height:1.5"><strong>📋 到场指引：</strong><br>${interview.instructions}</div>` : ''}
-      </div>${extra}`;
+      </div>${instrBlock}${extra}`;
     // Hide slot selection if already booked (not passed/failed/cancelled)
     slotsCard.style.display = (interview.status === 'scheduled') ? 'none' : '';
   } else {
@@ -805,58 +865,88 @@ function renderJobs(jobs) {
     </div>`).join('') : '<div class="empty">暂无在招职位</div>';
 }
 
-let _applyJobId = null;
+let _currentApplyJob = null;
 
 function applyJob(jobId) {
-  _applyJobId = jobId;
-  // Fill in job label from cached list
   const job = (_allJobs || []).find(j => j.id === jobId);
-  document.getElementById('applyJobLabel').textContent = job
-    ? `${job.title}${job.company_name ? '  ·  ' + job.company_name : ''}${job.location ? '  ·  ' + job.location : ''}`
-    : '';
+  if (!job) return;
+  _currentApplyJob = job;
+
+  document.getElementById('applyJobLabel').textContent =
+    [job.title, job.company_name, job.location].filter(Boolean).join('  ·  ');
   document.getElementById('applyAvailability').value = '';
   document.getElementById('applyExpectedPay').value = '';
   document.getElementById('applyMessage').value = '';
-  document.getElementById('applyMsg').className = 'modal-msg';
-  document.getElementById('applyModal').style.display = 'flex';
+  document.querySelectorAll('[name="applyWorkAuth"]').forEach(r => r.checked = false);
+  const errEl = document.getElementById('applyModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+  const btn = document.getElementById('applySubmitBtn');
+  btn.disabled = false; btn.textContent = '提交申请 / Submit';
+
+  const authField = document.getElementById('applyWorkAuthField');
+  const authReqEl = document.getElementById('applyWorkAuthRequired');
+  if (job.work_auth === 'gc') {
+    authField.style.display = '';
+    authReqEl.textContent = '绿卡或公民（Green Card or Citizen）';
+  } else if (job.work_auth === 'citizen') {
+    authField.style.display = '';
+    authReqEl.textContent = '仅限美国公民（US Citizen Only）';
+  } else {
+    authField.style.display = 'none';
+  }
+
+  document.getElementById('applyModal').classList.add('show');
   setTimeout(() => document.getElementById('applyAvailability').focus(), 100);
 }
 
 function closeApplyModal() {
-  document.getElementById('applyModal').style.display = 'none';
-  _applyJobId = null;
+  document.getElementById('applyModal').classList.remove('show');
+  _currentApplyJob = null;
 }
 
 async function submitApply() {
-  const availability = document.getElementById('applyAvailability').value.trim();
-  if (!availability) {
-    const el = document.getElementById('applyMsg');
-    el.className = 'modal-msg show error';
-    el.textContent = '请填写面试时间 / Please enter your interview availability';
+  if (!_currentApplyJob) return;
+  const job = _currentApplyJob;
+  const errEl = document.getElementById('applyModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+
+  const interview_availability = document.getElementById('applyAvailability').value.trim();
+  if (!interview_availability) {
+    errEl.textContent = '请填写面试时间 / Please enter your interview availability';
+    errEl.classList.add('show');
     return;
   }
+
+  const expected_pay = document.getElementById('applyExpectedPay').value.trim();
+  const applicant_message = document.getElementById('applyMessage').value.trim();
+
+  let work_auth_confirmed = '';
+  if (job.work_auth === 'gc' || job.work_auth === 'citizen') {
+    const sel = document.querySelector('[name="applyWorkAuth"]:checked');
+    if (!sel) {
+      errEl.textContent = '请选择您的工作身份状态 / Please select your work authorization status';
+      errEl.classList.add('show');
+      return;
+    }
+    work_auth_confirmed = sel.value;
+  }
+
   const btn = document.getElementById('applySubmitBtn');
-  btn.disabled = true;
-  btn.textContent = '提交中…';
-  const r = await wApi(`/apply/${_applyJobId}`, {
+  btn.disabled = true; btn.textContent = '提交中…';
+
+  const r = await wApi(`/apply/${job.id}`, {
     method: 'POST',
-    body: JSON.stringify({
-      interview_availability: availability,
-      expected_pay: document.getElementById('applyExpectedPay').value.trim(),
-      applicant_message: document.getElementById('applyMessage').value.trim()
-    })
+    body: JSON.stringify({ interview_availability, expected_pay, applicant_message, work_auth_confirmed })
   });
-  btn.disabled = false;
-  btn.textContent = '提交申请 / Submit';
-  if (!r) return;
+  if (!r) { btn.disabled = false; btn.textContent = '提交申请 / Submit'; return; }
   if (r.success) {
     closeApplyModal();
     showToast('✅ 申请成功！HR将与您联系');
     loadJobs();
   } else {
-    const el = document.getElementById('applyMsg');
-    el.className = 'modal-msg show error';
-    el.textContent = r.error || '申请失败';
+    errEl.textContent = r.error || '申请失败';
+    errEl.classList.add('show');
+    btn.disabled = false; btn.textContent = '提交申请 / Submit';
   }
 }
 
@@ -1008,26 +1098,129 @@ async function loadTimeclock() {
   }).join('') : '<tr><td colspan="8" class="empty">暂无打卡记录</td></tr>';
 }
 
+const WORK_STATUS_LABELS = { citizen:'🇺🇸 美国公民', green_card:'🟢 绿卡', ead:'📄 EAD工卡', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'其他' };
+const DOC_STATUS_ZH = { pending:'审核中', approved:'已通过', rejected:'未通过' };
+
 async function loadProfile() {
   const me = await wApi('/me');
   if (!me) return;
+  const a = me.account;
   const e = me.employee;
-  document.getElementById('profileContent').innerHTML = e ? `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;font-size:.9rem">
-      <div><span style="color:var(--gray-400)">姓名</span><br><strong>${esc(e.first_name+' '+e.last_name)}</strong></div>
-      <div><span style="color:var(--gray-400)">工号</span><br><strong>${esc(e.employee_id||'')}</strong></div>
-      <div><span style="color:var(--gray-400)">职位</span><br>${esc(e.position||'—')}</div>
-      <div><span style="color:var(--gray-400)">部门</span><br>${esc(e.department||'—')}</div>
-      <div><span style="color:var(--gray-400)">薪资</span><br>${e.pay_rate ? '$'+e.pay_rate+'/'+e.pay_type : '—'}</div>
-      <div><span style="color:var(--gray-400)">状态</span><br>${e.status||'—'}</div>
-    </div>` :
-    `<p style="color:var(--gray-400)">员工档案未绑定，请联系HR</p><p style="margin-top:.5rem;font-size:.85rem">账号: <strong>${esc(me.account.username)}</strong></p>`;
+  const docs = me.compliance_docs || [];
+
+  // Build compliance doc summary
+  const docMap = {};
+  docs.forEach(d => { docMap[d.doc_type] = d; });
+  const docBadge = (type, label) => {
+    const d = docMap[type];
+    if (!d) return `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;background:#f3f4f6;color:var(--gray-400)">${label}: 未提交</span>`;
+    const colors = { approved:'background:#dcfce7;color:#15803d', pending:'background:#fef3c7;color:#92400e', rejected:'background:#fef2f2;color:#dc2626' };
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:600;${colors[d.status]||''}">${label}: ${DOC_STATUS_ZH[d.status]||d.status}</span>`;
+  };
+
+  let html = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem .5rem;font-size:.88rem;margin-bottom:1.25rem">
+      <div><span style="color:var(--gray-400);font-size:.78rem">姓名 Name</span><br><strong>${esc(a.name||a.username)}</strong></div>
+      <div><span style="color:var(--gray-400);font-size:.78rem">用户名 Username</span><br><strong>${esc(a.username)}</strong></div>
+      <div>
+        <span style="color:var(--gray-400);font-size:.78rem">手机号 Phone</span><br>
+        <strong>${esc(a.phone||'未设置')}</strong>
+        <button class="btn btn-sm" onclick="openChangeContact('phone','${esc(a.phone||'')}')" style="margin-left:.5rem;font-size:.72rem;padding:1px 6px">更换</button>
+      </div>
+      <div>
+        <span style="color:var(--gray-400);font-size:.78rem">邮箱 Email</span><br>
+        <strong>${esc(a.email||'未设置')}</strong>
+        <button class="btn btn-sm" onclick="openChangeContact('email','${esc(a.email||'')}')" style="margin-left:.5rem;font-size:.72rem;padding:1px 6px">更换</button>
+      </div>
+      <div><span style="color:var(--gray-400);font-size:.78rem">出生日期 DOB</span><br>${esc(a.dob||'—')}</div>
+      <div><span style="color:var(--gray-400);font-size:.78rem">身份状态 Status</span><br>${WORK_STATUS_LABELS[a.work_status]||esc(a.work_status||'—')}</div>
+    </div>`;
+
+  // Employee info if linked
+  if (e) {
+    html += `<div style="border-top:1px solid var(--gray-200);padding-top:.75rem;margin-bottom:1rem">
+      <h3 style="font-size:.88rem;color:var(--sky);margin-bottom:.5rem">员工信息 Employee Info</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.85rem">
+        <div><span style="color:var(--gray-400);font-size:.78rem">姓名</span><br>${esc(e.first_name+' '+e.last_name)}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">工号</span><br>${esc(e.employee_id||'—')}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">职位</span><br>${esc(e.position||'—')}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">部门</span><br>${esc(e.department||'—')}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">薪资</span><br>${e.pay_rate ? '$'+e.pay_rate+'/'+e.pay_type : '—'}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">状态</span><br>${e.status||'—'}</div>
+      </div>
+    </div>`;
+  }
+
+  // Compliance docs summary
+  html += `<div style="border-top:1px solid var(--gray-200);padding-top:.75rem">
+    <h3 style="font-size:.88rem;color:var(--sky);margin-bottom:.5rem">合规文件 Compliance Docs</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:.4rem">
+      ${docBadge('i9','I-9')}
+      ${docBadge('drivers_license','驾照/ID')}
+      ${docBadge('w9','W-9')}
+      ${docBadge('ssn_card','SSN')}
+      ${docBadge('work_permit','工作许可')}
+    </div>
+  </div>`;
+
+  document.getElementById('profileContent').innerHTML = html;
+}
+
+// ── Change phone/email ──
+let _ccField = '';
+
+function openChangeContact(field, currentVal) {
+  _ccField = field;
+  const isPhone = field === 'phone';
+  document.getElementById('ccTitle').textContent = isPhone ? '更换手机号 / Change Phone' : '更换邮箱 / Change Email';
+  document.getElementById('ccDesc').textContent = `更换后旧${isPhone?'号码':'邮箱'}和新${isPhone?'号码':'邮箱'}都需要验证`;
+  document.getElementById('ccNewLabel').textContent = isPhone ? '新手机号 New Phone' : '新邮箱 New Email';
+  document.getElementById('ccNewValue').value = '';
+  document.getElementById('ccNewValue').type = isPhone ? 'tel' : 'email';
+  document.getElementById('ccNewValue').placeholder = isPhone ? '(312) 555-1234' : 'new@email.com';
+  document.getElementById('ccStep1').style.display = '';
+  document.getElementById('ccStep2').style.display = 'none';
+  document.getElementById('ccError').style.display = 'none';
+  document.getElementById('changeContactOverlay').style.display = 'flex';
+}
+
+function closeChangeContact() {
+  document.getElementById('changeContactOverlay').style.display = 'none';
+}
+
+async function sendChangeVerification() {
+  const newVal = document.getElementById('ccNewValue').value.trim();
+  if (!newVal) return alert(_ccField === 'phone' ? '请输入新手机号' : '请输入新邮箱');
+  const r = await wApi('/me', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: _ccField, new_value: newVal }) });
+  if (!r || !r.success) { alert(r?.error || '发送失败'); return; }
+  // If codes couldn't be sent, show them directly
+  if (r.old_code || r.new_code) {
+    alert(`验证码（短信/邮件未发送成功）:\n旧: ${r.old_code || '已发送'}\n新: ${r.new_code || '已发送'}`);
+  }
+  document.getElementById('ccStep1').style.display = 'none';
+  document.getElementById('ccStep2').style.display = '';
+  showToast('验证码已发送');
+}
+
+async function confirmChangeContact() {
+  const oldCode = document.getElementById('ccOldCode').value.trim();
+  const newCode = document.getElementById('ccNewCode').value.trim();
+  if (!oldCode || !newCode) { document.getElementById('ccError').textContent = '请输入两个验证码'; document.getElementById('ccError').style.display = ''; return; }
+  const r = await wApi('/me/verify-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: _ccField, old_code: oldCode, new_code: newCode }) });
+  if (r && r.success) {
+    closeChangeContact();
+    showToast('✅ 更换成功');
+    loadProfile();
+  } else {
+    document.getElementById('ccError').textContent = r?.error || '验证失败';
+    document.getElementById('ccError').style.display = '';
+  }
 }
 
 // ─── Compliance Section ───
 const DOC_LABELS = {
   i9: { zh: 'I-9 就业资格验证', en: 'I-9 Employment Eligibility', icon: '📋' },
-  drivers_license: { zh: '驾照验证', en: "Driver's License", icon: '🪪' },
+  drivers_license: { zh: '身份证件验证', en: "ID Verification (Persona)", icon: '🪪' },
   w9: { zh: 'W-9 纳税人识别', en: 'W-9 Tax ID', icon: '📄' },
   ssn_card: { zh: '社安卡', en: 'SSN Card', icon: '🔒' },
   work_permit: { zh: '工作许可', en: 'Work Permit', icon: '📃' },
@@ -1091,10 +1284,107 @@ async function loadCompliance() {
 
 function showI9Form() { document.getElementById('i9FormCard').style.display = ''; }
 function hideI9Form() { document.getElementById('i9FormCard').style.display = 'none'; }
-function showDLForm() { document.getElementById('dlFormCard').style.display = ''; }
+async function showDLForm() {
+  document.getElementById('dlFormCard').style.display = '';
+  // Check if Persona is configured
+  const config = await wApi('/persona/config');
+  if (config && config.enabled) {
+    document.getElementById('personaActions').style.display = '';
+    document.getElementById('dlManualFallback').style.display = 'none';
+    // Check current status
+    const status = await wApi('/persona/status');
+    const box = document.getElementById('personaStatusBox');
+    if (status && status.persona_inquiry_id && status.status !== 'rejected') {
+      if (status.status === 'approved') {
+        box.style.display = '';
+        box.style.background = '#f0fdf4';
+        box.style.border = '1px solid #86efac';
+        box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
+        document.getElementById('personaStartBtn').style.display = 'none';
+      } else if (status.status === 'pending') {
+        box.style.display = '';
+        box.style.background = '#fefce8';
+        box.style.border = '1px solid #fde047';
+        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Verification in progress</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">Persona 正在自动验证您的证件，请稍候。</div>';
+        document.getElementById('personaStartBtn').textContent = '重新验证 / Re-verify';
+      }
+    }
+  } else {
+    // Fallback to manual upload
+    document.getElementById('personaActions').style.display = 'none';
+    document.getElementById('dlManualFallback').style.display = '';
+  }
+}
 function hideDLForm() { document.getElementById('dlFormCard').style.display = 'none'; }
 function showW9Form() { document.getElementById('w9FormCard').style.display = ''; }
 function hideW9Form() { document.getElementById('w9FormCard').style.display = 'none'; }
+
+// ── Persona Verification ──
+let _personaClient = null;
+
+async function startPersonaVerification() {
+  if (typeof Persona === 'undefined') {
+    showToast('❌ Persona SDK 加载失败，请刷新页面重试', 'error');
+    return;
+  }
+  const btn = document.getElementById('personaStartBtn');
+  btn.disabled = true;
+  btn.textContent = '加载中...';
+
+  try {
+    // Create inquiry on backend first
+    const r = await wApi('/persona/inquiry', { method: 'POST' });
+    if (!r || !r.inquiry_id) {
+      showToast('❌ ' + (r?.error || '创建验证失败'), 'error');
+      btn.disabled = false;
+      btn.textContent = '开始验证 / Start Verification';
+      return;
+    }
+
+    // Open Persona embedded flow
+    if (_personaClient) { try { _personaClient.destroy(); } catch {} }
+
+    _personaClient = new Persona.Client({
+      inquiryId: r.inquiry_id,
+      onReady: () => {
+        _personaClient.open();
+        btn.disabled = false;
+        btn.textContent = '开始验证 / Start Verification';
+      },
+      onComplete: ({ inquiryId, status, fields }) => {
+        console.log('[Persona] Complete:', inquiryId, status);
+        const box = document.getElementById('personaStatusBox');
+        box.style.display = '';
+        if (status === 'completed') {
+          box.style.background = '#fefce8';
+          box.style.border = '1px solid #fde047';
+          box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Processing...</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">证件已提交，系统正在自动验证。通过后状态会自动更新。</div>';
+        } else {
+          box.style.background = '#f0fdf4';
+          box.style.border = '1px solid #86efac';
+          box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 验证已提交 / Submitted</div>';
+        }
+        showToast('✅ 证件已提交验证');
+        loadCompliance();
+      },
+      onCancel: ({ inquiryId }) => {
+        console.log('[Persona] Cancelled:', inquiryId);
+        showToast('验证已取消', 'error');
+      },
+      onError: (error) => {
+        console.error('[Persona] Error:', error);
+        showToast('❌ 验证出错，请重试', 'error');
+        btn.disabled = false;
+        btn.textContent = '开始验证 / Start Verification';
+      }
+    });
+  } catch (e) {
+    console.error('[Persona] Init error:', e);
+    showToast('❌ 初始化失败: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.textContent = '开始验证 / Start Verification';
+  }
+}
 
 function toggleI9Fields(val) {
   document.getElementById('i9AlienFields').style.display = (val === 'permanent_resident' || val === 'work_authorized') ? '' : 'none';
