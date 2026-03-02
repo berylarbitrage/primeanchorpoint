@@ -194,14 +194,6 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       </div>
 
       <div class="field">
-        <label>关联合作公司 / Select Your Company *</label>
-        <select id="ePartner">
-          <option value="">加载中… / Loading…</option>
-        </select>
-        <div class="field-hint">请选择您所在的公司 / Select the company you work for</div>
-      </div>
-
-      <div class="field">
         <label>企业名称 / Company Name *</label>
         <input type="text" id="eName" placeholder="请输入公司全称 / Full company name">
       </div>
@@ -214,18 +206,24 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 
       <div class="field-row">
         <div class="field">
-          <label>联系人 / Contact Name *</label>
-          <input type="text" id="eContact" placeholder="联系人姓名">
+          <label>联系人姓 / Last Name *</label>
+          <input type="text" id="eContactLast" placeholder="姓 / Last name">
         </div>
         <div class="field">
-          <label>联系电话 / Phone</label>
-          <input type="tel" id="ePhone" placeholder="(312) 555-1234">
+          <label>联系人名 / First Name *</label>
+          <input type="text" id="eContactFirst" placeholder="名 / First name">
         </div>
       </div>
 
-      <div class="field">
-        <label>邮箱 / Email * (用于登录)</label>
-        <input type="email" id="eEmail" placeholder="contact@company.com">
+      <div class="field-row">
+        <div class="field">
+          <label>联系电话 / Phone * <span style="color:#dc2626">（必填）</span></label>
+          <input type="tel" id="ePhone" placeholder="(312) 555-1234">
+        </div>
+        <div class="field">
+          <label>邮箱 / Email * (用于登录)</label>
+          <input type="email" id="eEmail" placeholder="contact@company.com">
+        </div>
       </div>
 
       <div class="field">
@@ -241,12 +239,18 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 
       <div class="field">
         <label>设置密码 / Password *</label>
-        <input type="password" id="ePassword" placeholder="至少6位 / At least 6 characters">
+        <div style="position:relative">
+          <input type="password" id="ePassword" placeholder="至少6位 / At least 6 characters" style="padding-right:2.5rem;width:100%;box-sizing:border-box">
+          <span onclick="togglePwd('ePassword','eEyeIcon')" id="eEyeIcon" style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);cursor:pointer;user-select:none;font-size:1rem">👁</span>
+        </div>
       </div>
 
       <div class="field">
         <label>确认密码 / Confirm Password *</label>
-        <input type="password" id="ePassword2" placeholder="请再次输入密码 / Re-enter password">
+        <div style="position:relative">
+          <input type="password" id="ePassword2" placeholder="请再次输入密码 / Re-enter password" style="padding-right:2.5rem;width:100%;box-sizing:border-box">
+          <span onclick="togglePwd('ePassword2','eEyeIcon2')" id="eEyeIcon2" style="position:absolute;right:.75rem;top:50%;transform:translateY(-50%);cursor:pointer;user-select:none;font-size:1rem">👁</span>
+        </div>
       </div>
 
       <button class="btn btn-submit" onclick="registerEnterprise()">提交注册 / Submit Registration</button>
@@ -309,12 +313,12 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 
     <div class="success-screen" id="enterpriseSuccess">
       <div class="success-icon">📨</div>
-      <div class="success-title">注册已提交！/ Registration Submitted!</div>
+      <div class="success-title">验证成功，待审核！/ Verified — Pending Approval!</div>
       <div class="success-body">
-        您的企业账号申请已提交，管理员审核通过后会通知您。<br>
+        手机和邮箱验证通过，您的企业账号正在等待管理员审核。<br>
         审核通过后请前往 <a href="/customer">企业门户</a> 登录。<br><br>
-        Your enterprise registration has been submitted.<br>
-        You will be notified once an admin approves your account.
+        Phone and email verified. Your enterprise account is pending admin approval.<br>
+        You will be notified once approved.
       </div>
     </div>
 
@@ -472,18 +476,12 @@ const posHtml = POSITIONS.map(p =>
 document.getElementById('posGrid').innerHTML = posHtml;
 document.getElementById('ePosGrid').innerHTML = posHtml;
 
-// Load partner list for enterprise registration
-fetch('/api/public/partners').then(r => r.json()).then(partners => {
-  const sel = document.getElementById('ePartner');
-  if (!partners.length) {
-    sel.innerHTML = '<option value="">— 暂无可选公司，请联系管理员 / No companies available —</option>';
-  } else {
-    sel.innerHTML = '<option value="">— 请选择您所在的公司 / Select your company —</option>' +
-      partners.map(p => `<option value="${p.id}">${p.name}${p.industry ? ' · ' + p.industry : ''}</option>`).join('');
-  }
-}).catch(() => {
-  document.getElementById('ePartner').innerHTML = '<option value="">— 加载失败，请刷新重试 / Load failed —</option>';
-});
+function togglePwd(inputId, iconId) {
+  const inp = document.getElementById(inputId);
+  const icon = document.getElementById(iconId);
+  if (inp.type === 'password') { inp.type = 'text'; icon.textContent = '🙈'; }
+  else { inp.type = 'password'; icon.textContent = '👁'; }
+}
 
 // Auto-select type based on URL parameter
 const urlParams = new URLSearchParams(window.location.search);
@@ -737,6 +735,7 @@ function showEmailStep(regData) {
 
 async function verifyStep(type) {
   hideError();
+  if (_isEnterpriseFlow) return verifyEnterpriseStep(type);
   const code = type === 'phone'
     ? document.getElementById('vPhoneCode').value.trim()
     : document.getElementById('vEmailCode').value.trim();
@@ -755,8 +754,38 @@ async function verifyStep(type) {
       document.getElementById('workerSuccess').style.display = '';
       setTimeout(() => { window.location.href = '/portal'; }, 2000);
     } else {
-      // Move to next step
       if (d.next_steps && d.next_steps.includes('email')) showEmailStep(null);
+    }
+  } catch (e) {
+    showError('网络错误，请重试 / Network error, please try again');
+  }
+}
+
+async function verifyEnterpriseStep(type) {
+  const code = type === 'phone'
+    ? document.getElementById('vPhoneCode').value.trim()
+    : document.getElementById('vEmailCode').value.trim();
+  if (!code) return showError(type === 'phone' ? '请输入手机验证码 / Please enter phone code' : '请输入邮箱验证码 / Please enter email code');
+  try {
+    const r = await fetch('/api/register/enterprise-verify-step', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: _pendingEnterpriseId, type, code })
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) return showError(d.error || '验证失败 / Verification failed');
+    if (d.all_done) {
+      document.getElementById('workerVerify').style.display = 'none';
+      document.getElementById('enterpriseSuccess').style.display = '';
+    } else {
+      // Move to email step
+      document.getElementById('phoneCodeSection').style.display = 'none';
+      document.getElementById('phoneResendSection').style.display = 'none';
+      document.getElementById('emailCodeSection').style.display = '';
+      document.getElementById('emailResendSection').style.display = '';
+      document.getElementById('verifyBtn').textContent = '确认验证 / Verify & Complete';
+      document.getElementById('verifyIcon').textContent = '✉️';
+      document.getElementById('verifyTitle').textContent = '第2步：验证邮箱 / Step 2: Verify Email';
+      document.getElementById('verifyDesc').innerHTML = '验证码已发送到您的邮箱，请检查收件箱（或垃圾邮件文件夹）。<br>A verification code has been sent to your email. Check your inbox (or spam folder).';
     }
   } catch (e) {
     showError('网络错误，请重试 / Network error, please try again');
@@ -766,6 +795,11 @@ async function verifyStep(type) {
 // Fallback for single-channel verify (kept for compatibility)
 async function verifyWorker() {
   hideError();
+  if (_isEnterpriseFlow) {
+    // In enterprise flow, "verifyBtn" routes to whichever step is visible
+    const phoneVisible = document.getElementById('phoneCodeSection').style.display !== 'none';
+    return verifyEnterpriseStep(phoneVisible ? 'phone' : 'email');
+  }
   if (_needsPhone && _needsEmail && !_verifyPhoneDone) {
     // Phone step: validate and advance to email step
     const phoneCode = document.getElementById('vPhoneCode').value.trim();
@@ -806,6 +840,21 @@ async function verifyWorker() {
 }
 
 async function resendCode(type) {
+  if (_isEnterpriseFlow) {
+    if (!_pendingEnterpriseId) return;
+    try {
+      const r = await fetch('/api/register/enterprise-resend', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: _pendingEnterpriseId, type })
+      });
+      const d = await r.json();
+      document.getElementById('verifyHint').textContent = r.ok
+        ? (type==='phone' ? '手机' : '邮箱') + '验证码已重新发送 / Code resent'
+        : (d.error || 'Failed to resend');
+      setTimeout(()=>{ document.getElementById('verifyHint').textContent='验证码15分钟内有效 / Codes expire in 15 minutes'; }, 3000);
+    } catch(e) { showError('网络错误 / Network error'); }
+    return;
+  }
   if (!_pendingAccountId) return;
   try {
     const r = await fetch('/api/register/resend-code', {
@@ -829,50 +878,61 @@ async function resendCode(type) {
   }
 }
 
+let _isEnterpriseFlow = false;
+let _pendingEnterpriseId = null;
+
 async function registerEnterprise() {
   hideError();
-  const partner_id = document.getElementById('ePartner').value;
-  const company_name = document.getElementById('eName').value.trim();
-  const contact_name = document.getElementById('eContact').value.trim();
-  const email = document.getElementById('eEmail').value.trim();
-  const phone = document.getElementById('ePhone').value.trim();
-  const ein = document.getElementById('eEin').value.trim();
-  const notes = document.getElementById('eNeeds').value.trim();
-  const password = document.getElementById('ePassword').value;
-  const password2 = document.getElementById('ePassword2').value;
+  const company_name      = document.getElementById('eName').value.trim();
+  const contact_last_name = document.getElementById('eContactLast').value.trim();
+  const contact_first_name= document.getElementById('eContactFirst').value.trim();
+  const email             = document.getElementById('eEmail').value.trim();
+  const phone             = document.getElementById('ePhone').value.trim();
+  const ein               = document.getElementById('eEin').value.trim();
+  const notes             = document.getElementById('eNeeds').value.trim();
+  const password          = document.getElementById('ePassword').value;
+  const password2         = document.getElementById('ePassword2').value;
+  const position_needs    = Array.from(document.querySelectorAll('#ePosGrid input:checked')).map(c => c.value);
 
-  const position_needs = Array.from(document.querySelectorAll('#ePosGrid input:checked')).map(c => c.value);
-
-  if (!partner_id) return showError('请选择您所在的合作公司 / Please select your company');
-  if (!company_name) return showError('请输入企业名称 / Company name is required');
-  if (!contact_name) return showError('请输入联系人 / Contact name is required');
-  if (!email) return showError('请输入邮箱 / Email is required');
+  if (!company_name)         return showError('请输入企业名称 / Company name is required');
+  if (!contact_last_name)    return showError('请输入联系人姓 / Contact last name is required');
+  if (!contact_first_name)   return showError('请输入联系人名 / Contact first name is required');
+  if (!phone)                return showError('请输入联系电话 / Phone is required');
+  if (!/^\d{10,11}$/.test(phone.replace(/[\s\-()]+/g,''))) return showError('手机号格式不正确，请输入10-11位数字 / Please enter a valid phone number');
+  if (!email)                return showError('请输入邮箱 / Email is required');
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError('邮箱格式不正确 / Please enter a valid email address');
-  if (phone && !/^\d{10,11}$/.test(phone.replace(/[\s\-()]+/g, ''))) return showError('手机号格式不正确，请输入10-11位数字 / Please enter a valid phone number (10-11 digits)');
-  if (ein && !/^\d{2}-\d{7}$/.test(ein)) return showError('EIN 格式应为 XX-XXXXXXX（9位数字）/ EIN must be in XX-XXXXXXX format');
+  if (ein && !/^\d{2}-\d{7}$/.test(ein)) return showError('EIN 格式应为 XX-XXXXXXX / EIN must be XX-XXXXXXX');
   if (!password || password.length < 6) return showError('密码至少6位 / Password must be at least 6 characters');
   if (password !== password2) return showError('两次密码不一致 / Passwords do not match');
 
-  // Combine position_needs and notes into staffing_needs
-  const posLabels = position_needs.map(k => {
-    const p = POSITIONS.find(pp => pp.key === k);
-    return p ? p.zh + '/' + p.en : k;
-  });
-  const staffing_needs = (posLabels.length ? '工种需求: ' + posLabels.join(', ') + '\n' : '') + notes;
+  const posLabels = position_needs.map(k => { const p = POSITIONS.find(pp=>pp.key===k); return p ? p.zh+'/'+p.en : k; });
+  const staffing_needs = (posLabels.length ? '工种需求: '+posLabels.join(', ')+'\n' : '') + notes;
 
   try {
     const r = await fetch('/api/register/enterprise', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_name, contact_name, email, phone, ein, staffing_needs, password, partner_id })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_name, contact_first_name, contact_last_name, email, phone, ein, staffing_needs, password })
     });
     const d = await r.json();
-    if (!r.ok || d.error) return showError(d.error || '注册失败，请稍后重试 / Registration failed, please try again');
+    if (!r.ok || d.error) return showError(d.error || '注册失败，请稍后重试 / Registration failed');
+    // Show verification step
+    _isEnterpriseFlow = true;
+    _pendingEnterpriseId = d.account_id;
     document.getElementById('formEnterprise').style.display = 'none';
-    const ts = document.getElementById('typeSelector');
-    if (ts) ts.style.display = 'none';
+    document.getElementById('typeSelector') && (document.getElementById('typeSelector').style.display = 'none');
     document.getElementById('loginLinks').style.display = 'none';
-    document.getElementById('enterpriseSuccess').style.display = '';
+    document.getElementById('workerVerify').style.display = 'block';
+    // Two-step: phone first
+    document.getElementById('phoneCodeSection').style.display = '';
+    document.getElementById('phoneResendSection').style.display = '';
+    document.getElementById('emailCodeSection').style.display = 'none';
+    document.getElementById('emailResendSection').style.display = 'none';
+    document.getElementById('verifyBtn').textContent = '下一步：验证邮箱 / Next: Verify Email';
+    document.getElementById('verifyIcon').textContent = '📱';
+    document.getElementById('verifyTitle').textContent = '第1步：验证手机号 / Step 1: Verify Phone';
+    document.getElementById('verifyDesc').innerHTML = '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
+    document.getElementById('vPhoneCode').value = '';
+    document.getElementById('vEmailCode').value = '';
   } catch (e) {
     showError('网络错误，请重试 / Network error, please try again');
   }
