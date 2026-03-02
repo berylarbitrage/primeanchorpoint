@@ -2117,10 +2117,16 @@ async function runEmailCodeTest() {
     out += `Transporter:  ${cfg.transporter_ready ? '✅ 就绪' : '❌ 未就绪'}\n`;
     out += '\n── 发送结果 ──\n';
     if (d.sent) {
-      out += `✅ 验证码邮件已发送！\n发送到: ${to}\n\n`;
-      out += '收到邮件说明 SendGrid/SMTP 配置正确。';
+      out += `✅ 验证码邮件已发送！\n发送到: ${to}\n`;
+      if (d.messageId) out += `Message-ID: ${d.messageId}\n`;
+      if (d.response) out += `SMTP响应: ${d.response}\n`;
+      out += '\n收到邮件说明 SendGrid/SMTP 配置正确。\n没收到请检查垃圾邮件文件夹。';
     } else {
       out += `❌ 发送失败\n错误: ${d.error || '未知错误'}`;
+      if (d.smtp_responseCode) out += `\nSMTP 响应码: ${d.smtp_responseCode}`;
+      if (d.smtp_response) out += `\nSMTP 响应: ${d.smtp_response}`;
+      if (d.smtp_code) out += `\n错误类型: ${d.smtp_code}`;
+      out += '\n\n常见原因：\n• EMAIL_FROM 未在 SendGrid 中验证（Sender Authentication）\n• API Key 缺少 Mail Send 权限';
     }
     resultEl.style.background = d.sent ? '#f0fff4' : '#fff5f5';
     resultEl.style.border = `1px solid ${d.sent ? '#9ae6b4' : '#feb2b2'}`;
