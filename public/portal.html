@@ -471,8 +471,44 @@ tr:last-child td{border-bottom:none}
     <!-- Profile -->
     <div id="tabProfile" style="display:none">
       <div class="card" id="profileCard">
-        <h2>我的档案</h2>
+        <h2>我的信息 / My Info</h2>
         <div id="profileContent"></div>
+      </div>
+
+      <!-- Change phone/email modal -->
+      <div id="changeContactOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:none;align-items:center;justify-content:center">
+        <div style="background:#fff;border-radius:12px;padding:1.5rem;max-width:420px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,.2)">
+          <h3 id="ccTitle" style="margin-bottom:.75rem">更换联系方式</h3>
+          <!-- Step 1: Enter new value -->
+          <div id="ccStep1">
+            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem" id="ccDesc">更换后新旧号码都需要验证</p>
+            <div class="field" style="margin-bottom:1rem">
+              <label id="ccNewLabel">新号码/邮箱</label>
+              <input type="text" id="ccNewValue" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+            </div>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn btn-sky" onclick="sendChangeVerification()">发送验证码</button>
+              <button class="btn btn-gray" onclick="closeChangeContact()">取消</button>
+            </div>
+          </div>
+          <!-- Step 2: Enter both codes -->
+          <div id="ccStep2" style="display:none">
+            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">验证码已发送到<strong>旧</strong>和<strong>新</strong>的联系方式，请分别输入：</p>
+            <div class="field" style="margin-bottom:.75rem">
+              <label>旧号码/邮箱验证码</label>
+              <input type="text" id="ccOldCode" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:3px;font-size:1.1rem;text-align:center">
+            </div>
+            <div class="field" style="margin-bottom:1rem">
+              <label>新号码/邮箱验证码</label>
+              <input type="text" id="ccNewCode" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:3px;font-size:1.1rem;text-align:center">
+            </div>
+            <div id="ccError" style="display:none;color:var(--red);font-size:.82rem;margin-bottom:.5rem"></div>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn btn-sky" onclick="confirmChangeContact()">确认更换</button>
+              <button class="btn btn-gray" onclick="closeChangeContact()">取消</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -671,13 +707,16 @@ async function loadInterview() {
     } else if (interview.status === 'failed') {
       extra = `<div style="margin-top:.75rem;font-size:.83rem;color:#dc2626">如有疑问请联系 HR。</div>`;
     }
+    const contactLine = interview.contact_name ? `<div><span style="color:var(--gray-500)">联系人：</span>${esc(interview.contact_name)} ${interview.contact_phone ? esc(interview.contact_phone) : ''}</div>` : '';
+    const instrBlock = interview.instructions ? `<div style="margin-top:.5rem;padding:.6rem .8rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:.84rem;white-space:pre-line"><strong>📋 到达指引：</strong><br>${esc(interview.instructions)}</div>` : '';
     statusContent.innerHTML = `
       <div style="display:grid;gap:.5rem;font-size:.9rem">
         <div><span style="color:var(--gray-500)">状态：</span>${statusMap[interview.status] || interview.status}</div>
         <div><span style="color:var(--gray-500)">时间：</span><strong>${dtStr}</strong></div>
-        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span>${interview.location}</div>` : ''}
+        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span>${esc(interview.location)}</div>` : ''}
+        ${contactLine}
         ${interview.duration_min ? `<div><span style="color:var(--gray-500)">时长：</span>${interview.duration_min} 分钟</div>` : ''}
-      </div>${extra}`;
+      </div>${instrBlock}${extra}`;
     // Hide slot selection if already booked (not passed/failed/cancelled)
     slotsCard.style.display = (interview.status === 'scheduled') ? 'none' : '';
   } else {
@@ -988,20 +1027,123 @@ async function loadTimeclock() {
   }).join('') : '<tr><td colspan="8" class="empty">暂无打卡记录</td></tr>';
 }
 
+const WORK_STATUS_LABELS = { citizen:'🇺🇸 美国公民', green_card:'🟢 绿卡', ead:'📄 EAD工卡', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'其他' };
+const DOC_STATUS_ZH = { pending:'审核中', approved:'已通过', rejected:'未通过' };
+
 async function loadProfile() {
   const me = await wApi('/me');
   if (!me) return;
+  const a = me.account;
   const e = me.employee;
-  document.getElementById('profileContent').innerHTML = e ? `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;font-size:.9rem">
-      <div><span style="color:var(--gray-400)">姓名</span><br><strong>${esc(e.first_name+' '+e.last_name)}</strong></div>
-      <div><span style="color:var(--gray-400)">工号</span><br><strong>${esc(e.employee_id||'')}</strong></div>
-      <div><span style="color:var(--gray-400)">职位</span><br>${esc(e.position||'—')}</div>
-      <div><span style="color:var(--gray-400)">部门</span><br>${esc(e.department||'—')}</div>
-      <div><span style="color:var(--gray-400)">薪资</span><br>${e.pay_rate ? '$'+e.pay_rate+'/'+e.pay_type : '—'}</div>
-      <div><span style="color:var(--gray-400)">状态</span><br>${e.status||'—'}</div>
-    </div>` :
-    `<p style="color:var(--gray-400)">员工档案未绑定，请联系HR</p><p style="margin-top:.5rem;font-size:.85rem">账号: <strong>${esc(me.account.username)}</strong></p>`;
+  const docs = me.compliance_docs || [];
+
+  // Build compliance doc summary
+  const docMap = {};
+  docs.forEach(d => { docMap[d.doc_type] = d; });
+  const docBadge = (type, label) => {
+    const d = docMap[type];
+    if (!d) return `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;background:#f3f4f6;color:var(--gray-400)">${label}: 未提交</span>`;
+    const colors = { approved:'background:#dcfce7;color:#15803d', pending:'background:#fef3c7;color:#92400e', rejected:'background:#fef2f2;color:#dc2626' };
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:600;${colors[d.status]||''}">${label}: ${DOC_STATUS_ZH[d.status]||d.status}</span>`;
+  };
+
+  let html = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem .5rem;font-size:.88rem;margin-bottom:1.25rem">
+      <div><span style="color:var(--gray-400);font-size:.78rem">姓名 Name</span><br><strong>${esc(a.name||a.username)}</strong></div>
+      <div><span style="color:var(--gray-400);font-size:.78rem">用户名 Username</span><br><strong>${esc(a.username)}</strong></div>
+      <div>
+        <span style="color:var(--gray-400);font-size:.78rem">手机号 Phone</span><br>
+        <strong>${esc(a.phone||'未设置')}</strong>
+        <button class="btn btn-sm" onclick="openChangeContact('phone','${esc(a.phone||'')}')" style="margin-left:.5rem;font-size:.72rem;padding:1px 6px">更换</button>
+      </div>
+      <div>
+        <span style="color:var(--gray-400);font-size:.78rem">邮箱 Email</span><br>
+        <strong>${esc(a.email||'未设置')}</strong>
+        <button class="btn btn-sm" onclick="openChangeContact('email','${esc(a.email||'')}')" style="margin-left:.5rem;font-size:.72rem;padding:1px 6px">更换</button>
+      </div>
+      <div><span style="color:var(--gray-400);font-size:.78rem">出生日期 DOB</span><br>${esc(a.dob||'—')}</div>
+      <div><span style="color:var(--gray-400);font-size:.78rem">身份状态 Status</span><br>${WORK_STATUS_LABELS[a.work_status]||esc(a.work_status||'—')}</div>
+    </div>`;
+
+  // Employee info if linked
+  if (e) {
+    html += `<div style="border-top:1px solid var(--gray-200);padding-top:.75rem;margin-bottom:1rem">
+      <h3 style="font-size:.88rem;color:var(--sky);margin-bottom:.5rem">员工信息 Employee Info</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.85rem">
+        <div><span style="color:var(--gray-400);font-size:.78rem">姓名</span><br>${esc(e.first_name+' '+e.last_name)}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">工号</span><br>${esc(e.employee_id||'—')}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">职位</span><br>${esc(e.position||'—')}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">部门</span><br>${esc(e.department||'—')}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">薪资</span><br>${e.pay_rate ? '$'+e.pay_rate+'/'+e.pay_type : '—'}</div>
+        <div><span style="color:var(--gray-400);font-size:.78rem">状态</span><br>${e.status||'—'}</div>
+      </div>
+    </div>`;
+  }
+
+  // Compliance docs summary
+  html += `<div style="border-top:1px solid var(--gray-200);padding-top:.75rem">
+    <h3 style="font-size:.88rem;color:var(--sky);margin-bottom:.5rem">合规文件 Compliance Docs</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:.4rem">
+      ${docBadge('i9','I-9')}
+      ${docBadge('drivers_license','驾照/ID')}
+      ${docBadge('w9','W-9')}
+      ${docBadge('ssn_card','SSN')}
+      ${docBadge('work_permit','工作许可')}
+    </div>
+  </div>`;
+
+  document.getElementById('profileContent').innerHTML = html;
+}
+
+// ── Change phone/email ──
+let _ccField = '';
+
+function openChangeContact(field, currentVal) {
+  _ccField = field;
+  const isPhone = field === 'phone';
+  document.getElementById('ccTitle').textContent = isPhone ? '更换手机号 / Change Phone' : '更换邮箱 / Change Email';
+  document.getElementById('ccDesc').textContent = `更换后旧${isPhone?'号码':'邮箱'}和新${isPhone?'号码':'邮箱'}都需要验证`;
+  document.getElementById('ccNewLabel').textContent = isPhone ? '新手机号 New Phone' : '新邮箱 New Email';
+  document.getElementById('ccNewValue').value = '';
+  document.getElementById('ccNewValue').type = isPhone ? 'tel' : 'email';
+  document.getElementById('ccNewValue').placeholder = isPhone ? '(312) 555-1234' : 'new@email.com';
+  document.getElementById('ccStep1').style.display = '';
+  document.getElementById('ccStep2').style.display = 'none';
+  document.getElementById('ccError').style.display = 'none';
+  document.getElementById('changeContactOverlay').style.display = 'flex';
+}
+
+function closeChangeContact() {
+  document.getElementById('changeContactOverlay').style.display = 'none';
+}
+
+async function sendChangeVerification() {
+  const newVal = document.getElementById('ccNewValue').value.trim();
+  if (!newVal) return alert(_ccField === 'phone' ? '请输入新手机号' : '请输入新邮箱');
+  const r = await wApi('/me', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: _ccField, new_value: newVal }) });
+  if (!r || !r.success) { alert(r?.error || '发送失败'); return; }
+  // If codes couldn't be sent, show them directly
+  if (r.old_code || r.new_code) {
+    alert(`验证码（短信/邮件未发送成功）:\n旧: ${r.old_code || '已发送'}\n新: ${r.new_code || '已发送'}`);
+  }
+  document.getElementById('ccStep1').style.display = 'none';
+  document.getElementById('ccStep2').style.display = '';
+  showToast('验证码已发送');
+}
+
+async function confirmChangeContact() {
+  const oldCode = document.getElementById('ccOldCode').value.trim();
+  const newCode = document.getElementById('ccNewCode').value.trim();
+  if (!oldCode || !newCode) { document.getElementById('ccError').textContent = '请输入两个验证码'; document.getElementById('ccError').style.display = ''; return; }
+  const r = await wApi('/me/verify-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: _ccField, old_code: oldCode, new_code: newCode }) });
+  if (r && r.success) {
+    closeChangeContact();
+    showToast('✅ 更换成功');
+    loadProfile();
+  } else {
+    document.getElementById('ccError').textContent = r?.error || '验证失败';
+    document.getElementById('ccError').style.display = '';
+  }
 }
 
 // ─── Compliance Section ───
