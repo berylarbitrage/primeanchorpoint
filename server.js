@@ -1310,13 +1310,34 @@ app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, 
     account_sid: process.env.TWILIO_ACCOUNT_SID ? process.env.TWILIO_ACCOUNT_SID.slice(0, 8) + '...' : null,
     auth_token: !!process.env.TWILIO_AUTH_TOKEN,
     phone_number: process.env.TWILIO_PHONE_NUMBER || null,
+    verify_sid: TWILIO_VERIFY_SID ? TWILIO_VERIFY_SID.slice(0, 8) + '...' : null,
     client_ready: !!twilioClient,
   };
-  const [result, accountInfo] = await Promise.all([
-    sendSMSWithDetail(to, '[Prime Anchorpoint] 测试短信 / SMS Test: Twilio is working!'),
-    getTwilioAccountType(),
-  ]);
-  res.json({ configured, result, accountInfo });
+  const accountInfo = await getTwilioAccountType();
+
+  // Prefer Twilio Verify API for test
+  if (twilioClient && TWILIO_VERIFY_SID) {
+    const formatted = formatPhoneE164(to);
+    try {
+      const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
+        .verifications.create({ to: formatted, channel: 'sms' });
+      return res.json({
+        configured, accountInfo,
+        method: 'verify',
+        result: { ok: true, status: v.status, sid: v.sid, to: formatted, channel: v.channel }
+      });
+    } catch (e) {
+      return res.json({
+        configured, accountInfo,
+        method: 'verify',
+        result: { ok: false, error: e.message, code: e.code, to: formatted }
+      });
+    }
+  }
+
+  // Fallback to regular SMS
+  const result = await sendSMSWithDetail(to, '[Prime Anchorpoint] 测试短信 / SMS Test: Twilio is working!');
+  res.json({ configured, result, accountInfo, method: 'sms' });
 });
 
 // Admin: resend verification codes to unverified worker
