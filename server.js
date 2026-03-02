@@ -105,8 +105,11 @@ const emailTransporter = process.env.SMTP_HOST
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
     })
   : null;
-// Gmail/Google Workspace requires FROM to match the authenticated SMTP_USER
-const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@primeanchorpoint.com';
+// EMAIL_FROM must be a verified sender (SendGrid: verified sender; Gmail: must match SMTP_USER)
+const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
+if (emailTransporter && !process.env.EMAIL_FROM) {
+  console.warn('[EMAIL-WARN] EMAIL_FROM not set — emails may be rejected. Set EMAIL_FROM to your verified sender address.');
+}
 
 if (emailTransporter) {
   emailTransporter.verify().then(() => {
@@ -1453,6 +1456,32 @@ app.post('/api/admin/test-email', requireAdmin, requireRole('admin'), async (req
     return res.json({ configured, sent: false, error: `SMTP connection failed: ${e.message}` });
   }
   const sent = await sendEmail(to, 'Prime Anchorpoint SMTP Test', `SMTP is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
+  res.json({ configured, sent, error: sent ? null : 'sendMail failed — check server logs for [EMAIL-ERR]' });
+});
+
+// Admin: test email verification code (sends a real 6-digit code in the same format as registration)
+app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async (req, res) => {
+  const { to } = req.body;
+  if (!to) return res.status(400).json({ error: 'Missing email address' });
+  const configured = {
+    smtp_host: process.env.SMTP_HOST || null,
+    smtp_port: process.env.SMTP_PORT || '587',
+    smtp_secure: process.env.SMTP_SECURE || 'false',
+    smtp_user: process.env.SMTP_USER || null,
+    smtp_pass_set: !!process.env.SMTP_PASS,
+    email_from: EMAIL_FROM,
+    transporter_ready: !!emailTransporter,
+  };
+  if (!emailTransporter) return res.json({ configured, sent: false, error: 'SMTP not configured (SMTP_HOST missing)' });
+  try { await emailTransporter.verify(); } catch (e) {
+    return res.json({ configured, sent: false, error: `SMTP connection failed: ${e.message}` });
+  }
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const sent = await sendEmail(
+    to,
+    'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`
+  );
   res.json({ configured, sent, error: sent ? null : 'sendMail failed — check server logs for [EMAIL-ERR]' });
 });
 
