@@ -712,6 +712,10 @@ tr:hover td{background:var(--sky-light)}
       style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
       面试预约列表
     </button>
+    <button id="ivTabLocations" onclick="switchIvTab('locations')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
+      📍 面试地点管理
+    </button>
   </div>
 
   <!-- Slots pane -->
@@ -745,6 +749,23 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
+  <!-- Locations pane -->
+  <div id="ivPaneLocations" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div>
+          <h3 style="margin:0">预设面试地点</h3>
+          <p style="font-size:.82rem;color:var(--gray-500);margin:.25rem 0 0">管理常用面试地点，创建时间槽时可快速选择</p>
+        </div>
+        <button class="btn btn-green" onclick="openLocationModal()">+ 添加地点</button>
+      </div>
+      <table>
+        <thead><tr><th>名称</th><th>地址</th><th>联系人</th><th>手机</th><th>到场指引</th><th>操作</th></tr></thead>
+        <tbody id="ivLocationsTable"></tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- Interviews pane -->
   <div id="ivPaneList" style="display:none">
     <div class="card">
@@ -764,6 +785,26 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 </div>
+
+<!-- Interview Location Modal -->
+<div class="modal-bg" id="ivLocationModal"><div class="modal" style="max-width:520px">
+  <h2 id="ivLocModalTitle">添加面试地点</h2>
+  <input type="hidden" id="ivLocId">
+  <div class="field"><label>地点名称 *</label><input id="ivLocName" placeholder="例：芝加哥主办公室、Zoom 线上面试"></div>
+  <div class="field"><label>地址</label><input id="ivLocAddress" placeholder="123 Main St, Chicago, IL 60601"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+    <div class="field"><label>联系人姓名</label><input id="ivLocContactName" placeholder="张经理"></div>
+    <div class="field"><label>联系人手机</label><input id="ivLocContactPhone" placeholder="(312) 555-0100"></div>
+  </div>
+  <div class="field">
+    <label>到场指引 <span style="color:var(--gray-400);font-weight:400;font-size:.8rem">（房间号、停车、注意事项等）</span></label>
+    <textarea id="ivLocInstructions" rows="4" placeholder="例：请到2楼前台报到，告知来面试，停车场在大楼东侧，免费停3小时。"></textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="saveLocation()">保存</button>
+    <button class="btn" onclick="closeModal('ivLocationModal')">取消</button>
+  </div>
+</div></div>
 
 <!-- Approvals Tab -->
 <div id="tab-approvals" style="display:none">
@@ -6524,17 +6565,81 @@ async function rejectAction() {
 
 // ── Interview Management ──
 let _allInterviews = [];
+let _ivLocations = [];
 
 function switchIvTab(tab) {
-  document.getElementById('ivPaneSlots').style.display = tab === 'slots' ? '' : 'none';
-  document.getElementById('ivPaneList').style.display  = tab === 'list'  ? '' : 'none';
-  document.getElementById('ivTabSlots').style.cssText  = tab === 'slots'
-    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
-    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
-  document.getElementById('ivTabList').style.cssText   = tab === 'list'
-    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
-    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
-  if (tab === 'list') filterInterviews();
+  ['slots','list','locations'].forEach(t => {
+    const paneId = 'ivPane' + t.charAt(0).toUpperCase() + t.slice(1);
+    const btnId  = 'ivTab'  + t.charAt(0).toUpperCase() + t.slice(1);
+    document.getElementById(paneId).style.display = tab === t ? '' : 'none';
+    const active = tab === t;
+    document.getElementById(btnId).style.cssText =
+      `padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid ${active?'var(--sky)':'transparent'};margin-bottom:-2px;color:${active?'var(--sky)':'var(--gray-500)'}`;
+  });
+  if (tab === 'list')      filterInterviews();
+  if (tab === 'locations') loadInterviewLocations();
+}
+
+// ── Interview Location Presets ──
+async function loadInterviewLocations() {
+  const locs = await api('/admin/interview-locations');
+  if (!Array.isArray(locs)) return;
+  _ivLocations = locs;
+  document.getElementById('ivLocationsTable').innerHTML = locs.length ? locs.map(l => `<tr>
+    <td><strong>${esc(l.name)}</strong></td>
+    <td style="font-size:.82rem">${esc(l.address||'—')}</td>
+    <td>${esc(l.contact_name||'—')}</td>
+    <td style="font-size:.82rem">${esc(l.contact_phone||'—')}</td>
+    <td style="font-size:.8rem;white-space:pre-line;max-width:250px">${esc(l.instructions||'—')}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editInterviewLocation(${l.id})">编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteInterviewLocation(${l.id},'${esc(l.name).replace(/'/g,"\\'")}')">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无预设地点，点击「+ 添加地点」创建</td></tr>';
+}
+
+function openLocationModal(id) {
+  const loc = id ? _ivLocations.find(l => l.id === id) : null;
+  document.getElementById('ivLocModalTitle').textContent = loc ? '编辑面试地点' : '添加面试地点';
+  document.getElementById('ivLocId').value            = loc ? loc.id : '';
+  document.getElementById('ivLocName').value          = loc ? loc.name : '';
+  document.getElementById('ivLocAddress').value       = loc ? (loc.address||'') : '';
+  document.getElementById('ivLocContactName').value   = loc ? (loc.contact_name||'') : '';
+  document.getElementById('ivLocContactPhone').value  = loc ? (loc.contact_phone||'') : '';
+  document.getElementById('ivLocInstructions').value  = loc ? (loc.instructions||'') : '';
+  document.getElementById('ivLocationModal').classList.add('show');
+}
+
+function editInterviewLocation(id) { openLocationModal(id); }
+
+async function saveLocation() {
+  const id   = document.getElementById('ivLocId').value;
+  const data = {
+    name:          document.getElementById('ivLocName').value.trim(),
+    address:       document.getElementById('ivLocAddress').value.trim(),
+    contact_name:  document.getElementById('ivLocContactName').value.trim(),
+    contact_phone: document.getElementById('ivLocContactPhone').value.trim(),
+    instructions:  document.getElementById('ivLocInstructions').value.trim()
+  };
+  if (!data.name) return showToast('❌ 地点名称必填', 'error');
+  const r = await api(id ? `/admin/interview-locations/${id}` : '/admin/interview-locations', {
+    method: id ? 'PUT' : 'POST',
+    body: JSON.stringify(data)
+  });
+  if (r && (r.success || r.id)) {
+    showToast('✅ 地点已保存');
+    closeModal('ivLocationModal');
+    loadInterviewLocations();
+  } else {
+    showToast('❌ ' + (r?.error || '保存失败'), 'error');
+  }
+}
+
+async function deleteInterviewLocation(id, name) {
+  if (!confirm(`确定删除面试地点「${name}」？`)) return;
+  const r = await api(`/admin/interview-locations/${id}`, { method: 'DELETE' });
+  if (r && r.success) { showToast('✅ 已删除'); loadInterviewLocations(); }
+  else showToast('❌ 删除失败', 'error');
 }
 
 async function loadInterviews() {

@@ -3916,6 +3916,41 @@ app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
 
 // ─── Interview System ───
 
+// ── Interview Location Presets ──
+try { db.exec(`CREATE TABLE IF NOT EXISTS interview_locations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  address TEXT DEFAULT '',
+  contact_name TEXT DEFAULT '',
+  contact_phone TEXT DEFAULT '',
+  instructions TEXT DEFAULT '',
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch {}
+
+app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM interview_locations WHERE active=1 ORDER BY name').all());
+});
+app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
+  const { name, address, contact_name, contact_phone, instructions } = req.body;
+  if (!name) return res.status(400).json({ error: '地点名称必填 / name required' });
+  const r = db.prepare('INSERT INTO interview_locations (name,address,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?)')
+    .run(name, address||'', contact_name||'', contact_phone||'', instructions||'');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
+  const loc = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(req.params.id);
+  if (!loc) return res.status(404).json({ error: 'Not found' });
+  const { name, address, contact_name, contact_phone, instructions } = req.body;
+  db.prepare('UPDATE interview_locations SET name=?,address=?,contact_name=?,contact_phone=?,instructions=? WHERE id=?')
+    .run(name??loc.name, address??loc.address, contact_name??loc.contact_name, contact_phone??loc.contact_phone, instructions??loc.instructions, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
+  db.prepare('UPDATE interview_locations SET active=0 WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 // Admin: list all slots
 app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
   const slots = db.prepare(`
