@@ -3208,8 +3208,17 @@ function filterAssignments() {
 }
 
 const payTypeLabel = t => ({ hourly:'时薪', salary:'月薪', annual:'年薪', per_piece:'计件' }[t] || t);
+const DS_STATUS_LABELS = { sent:'已发送(待签)', delivered:'已送达', completed:'双方已签', declined:'已拒签', voided:'已撤销' };
+const DS_STATUS_COLORS = { sent:'#F59E0B', delivered:'#3B82F6', completed:'#10B981', declined:'#EF4444', voided:'#6B7280' };
+
 function renderAssignments(assigns) {
-  document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => `<tr>
+  document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => {
+    const dsLabel = a.ds_status ? (DS_STATUS_LABELS[a.ds_status] || a.ds_status) : '';
+    const dsColor = DS_STATUS_COLORS[a.ds_status] || '#6B7280';
+    const dsBadge = a.ds_envelope_id
+      ? `<br><span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer" onclick="refreshDsStatus('assignment',${a.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
+      : (a.contract_file ? `<br><button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-top:2px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('assignment',${a.id},'${esc(a.inquiry_email||'')}','${esc(a.inquiry_name||'')}')">✍ DocuSign</button>` : '');
+    return `<tr>
     <td>${new Date(a.assigned_at).toLocaleDateString()}${a.start_date ? '<br><span style="font-size:.72rem;color:var(--gray-400)">开始：' + a.start_date + '</span>' : ''}</td>
     <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
     <td>${esc(a.job_title || '未知职位')}<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(a.job_location || '')}</span></td>
@@ -3217,6 +3226,7 @@ function renderAssignments(assigns) {
       <span class="badge" style="background:${a.contract_type==='1099'?'var(--orange-light,#fff3e0)':'var(--sky-light)'};color:${a.contract_type==='1099'?'#e65100':'var(--blue)'};font-weight:700">${esc(a.contract_type||'W2')}</span>
       ${a.pay_rate ? '<br><span style="font-size:.8rem;font-weight:600">' + esc(a.pay_rate) + '</span>' : ''}
       ${a.pay_type ? '<br><span style="font-size:.72rem;color:var(--gray-400)">' + payTypeLabel(a.pay_type) + '</span>' : ''}
+      ${dsBadge}
     </td>
     <td style="font-size:.78rem;max-width:160px;white-space:normal">${esc(a.benefits || '—')}</td>
     <td><span class="badge badge-${a.status}">${statusLabel(a.status)}</span></td>
@@ -3224,7 +3234,40 @@ function renderAssignments(assigns) {
       <button class="btn btn-sm" onclick='editAssignment(${JSON.stringify(a).replace(/'/g,"&#39;")})'>编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteAssignment(${a.id})">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+  </tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+}
+
+async function sendForDocuSign(type, id, defaultEmail, defaultName) {
+  const email = prompt(`请输入${type === 'assignment' ? '工人' : '合作方'}的邮箱地址：`, defaultEmail || '');
+  if (email === null) return;
+  if (!email.trim()) return alert('邮箱不能为空');
+  const name = prompt('请输入姓名（可选）：', defaultName || '');
+  if (name === null) return;
+  const url = type === 'assignment' ? `/admin/assignments/${id}/send-docusign` : `/admin/partner-files/${id}/send-docusign`;
+  const body = type === 'assignment' ? { worker_email: email.trim(), worker_name: name.trim() } : { partner_email: email.trim(), partner_name: name.trim() };
+  try {
+    const r = await api(url, { method: 'POST', body: JSON.stringify(body) });
+    if (r.success) {
+      alert(`DocuSign 已发送！签署邀请已发至双方邮箱。\nEnvelope ID: ${r.envelopeId}`);
+      if (type === 'assignment') loadAssignments();
+    } else { alert('发送失败：' + (r.error || '未知错误')); }
+  } catch (e) { alert('发送失败：' + e.message); }
+}
+
+async function refreshDsStatus(type, id, badgeEl) {
+  const url = type === 'assignment' ? `/admin/assignments/${id}/docusign-status` : `/admin/partner-files/${id}/docusign-status`;
+  try {
+    const prev = badgeEl ? badgeEl.textContent : '';
+    if (badgeEl) badgeEl.textContent = '⟳ 刷新中…';
+    const r = await api(url);
+    const label = DS_STATUS_LABELS[r.status] || r.status || '未知';
+    const color = DS_STATUS_COLORS[r.status] || '#6B7280';
+    const s1 = r.workerSigned || r.partnerSigned ? '✓ 一方已签' : '○ 待签署';
+    const s2 = r.companySigned ? '✓ 公司已签' : '○ 公司待签';
+    if (badgeEl) { badgeEl.style.color = color; badgeEl.style.background = color + '20'; badgeEl.textContent = `✍ ${label}`; badgeEl.title = `${s1} | ${s2}  (点击刷新)`; }
+    if (r.status === 'completed') alert(`双方均已签署完成！\n一方: ${r.workerSigned || r.partnerSigned || '—'}\n公司: ${r.companySigned || '—'}`);
+  } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
 }
 
 // Cache for assignment search
@@ -3670,12 +3713,20 @@ function closePartnerModal() { guardClose('partnerModal'); }
 async function loadPartnerFiles(pid) {
   const files = await api(`/admin/partners/${pid}/files`);
   const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
-  document.getElementById('pFilesList').innerHTML = files.length ? files.map(f=>
-    `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||'文件')}</a>
+  const signable = new Set(['contract','agreement']);
+  document.getElementById('pFilesList').innerHTML = files.length ? files.map(f=>{
+    const dsLabel = f.ds_status ? (DS_STATUS_LABELS[f.ds_status] || f.ds_status) : '';
+    const dsColor = DS_STATUS_COLORS[f.ds_status] || '#6B7280';
+    const dsBtn = f.ds_envelope_id
+      ? `<span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer;margin-left:.4rem" onclick="refreshDsStatus('partnerfile',${f.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
+      : (signable.has(f.file_type) && f.file_path ? `<button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-left:.4rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('partnerfile',${f.id},'','')">✍ DocuSign</button>` : '');
+    return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||'文件')}</a>
       <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span>
       <span style="font-size:.72rem;color:var(--gray-400)">${esc(f.file_label)}</span>
+      ${dsBtn}
       <button class="btn btn-sm btn-red" style="margin-left:auto" onclick="deletePartnerFile(${f.id},${pid})">删除</button>
-    </div>`).join('') : '<p style="font-size:.82rem;color:var(--gray-400)">暂无文件</p>';
+    </div>`;
+  }).join('') : '<p style="font-size:.82rem;color:var(--gray-400)">暂无文件</p>';
 }
 
 async function uploadPartnerFile() {
