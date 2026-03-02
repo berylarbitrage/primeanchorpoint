@@ -501,6 +501,9 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFA
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
 // Migrate: suspended flag for worker accounts (distinct from unverified)
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
+// Migrate: richer fields on job_applications
+try { db.exec("ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE job_applications ADD COLUMN work_auth_confirmed TEXT DEFAULT ''"); } catch {}
 
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
@@ -2503,10 +2506,15 @@ app.get('/api/worker/jobs', requireWorker, (req, res) => {
 });
 
 app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
-  const job = db.prepare('SELECT id FROM jobs WHERE id=? AND active=1').get(req.params.jobId);
+  const job = db.prepare('SELECT id, work_auth FROM jobs WHERE id=? AND active=1').get(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found or no longer active' });
+  const { notes, expected_pay, work_auth_confirmed } = req.body || {};
+  // If job requires gc/citizen, applicant must confirm work auth status
+  if ((job.work_auth === 'gc' || job.work_auth === 'citizen') && !work_auth_confirmed)
+    return res.status(400).json({ error: '请选择您的工作身份状态' });
   try {
-    db.prepare('INSERT INTO job_applications (job_id, worker_account_id, notes) VALUES (?,?,?)').run(req.params.jobId, req.workerId, req.body.notes || '');
+    db.prepare('INSERT INTO job_applications (job_id, worker_account_id, notes, expected_pay, work_auth_confirmed) VALUES (?,?,?,?,?)')
+      .run(req.params.jobId, req.workerId, notes || '', expected_pay || '', work_auth_confirmed || '');
     res.json({ success: true });
   } catch { res.status(400).json({ error: 'Already applied to this job' }); }
 });
