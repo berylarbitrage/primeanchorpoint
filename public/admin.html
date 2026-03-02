@@ -253,6 +253,7 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('time')">⏱ 工时打卡</a>
   <a onclick="showTab('ts-verify')" data-role="admin,staff">📋 工时核对</a>
   <a onclick="showTab('ts-payment')" data-role="admin,staff">💰 待付款</a>
+  <a onclick="showTab('ts-dividend')" data-role="staff">🎯 待分红</a>
   <a onclick="showTab('ts-history')" data-role="admin,staff">📚 工时历史</a>
   <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
   <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
@@ -514,6 +515,23 @@ tr:hover td{background:var(--sky-light)}
     <table>
       <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>上报时间</th><th>客户付款</th><th>劳务付款</th></tr></thead>
       <tbody id="tsPaymentTable"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ════════════════════ 待分红 TAB ════════════════════ -->
+<div id="tab-ts-dividend" style="display:none">
+  <div class="top">
+    <h1>待分红</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadTsDividend()">刷新</button>
+    </div>
+  </div>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">客户与劳务均已付款的工时单。全部 Staff 投票「无异议」后，再各自确认「已分红」即可归档至工时历史。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>无异议投票</th><th>已分红确认</th><th>操作</th></tr></thead>
+      <tbody id="tsDividendTable"></tbody>
     </table>
   </div>
 </div>
@@ -835,7 +853,7 @@ tr:hover td{background:var(--sky-light)}
   <p id="empDocLinkTarget" style="font-weight:600;color:var(--blue);margin-bottom:1rem"></p>
   <input type="hidden" id="empDocLinkEmpId">
 
-  <div style="display:flex;gap:1rem;flex-wrap:wrap">
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
     <div class="field" style="flex:1;min-width:140px"><label>语言 / Language</label>
       <select id="docReqLang">
         <option value="zh">中文</option>
@@ -843,16 +861,30 @@ tr:hover td{background:var(--sky-light)}
         <option value="es">Español</option>
       </select>
     </div>
-    <div class="field" style="flex:1;min-width:180px"><label>发送方式</label>
-      <select id="docReqSendVia" onchange="updateDocReqSendTarget()">
-        <option value="phone">手机短信 (SMS)</option>
-        <option value="email">邮箱 (Email)</option>
-      </select>
+    <div class="field" style="flex:1;min-width:180px"><label>发送方式（可多选）</label>
+      <div style="display:flex;gap:1rem;margin-top:.3rem">
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+          <input type="checkbox" id="docReqViaPhone" checked onchange="toggleDocContactSection()" style="width:15px;height:15px"> 手机短信
+        </label>
+        <label style="display:flex;align-items:center;gap:.4rem;font-size:.88rem;font-weight:400;text-transform:none;cursor:pointer">
+          <input type="checkbox" id="docReqViaEmail" onchange="toggleDocContactSection()" style="width:15px;height:15px"> 邮箱
+        </label>
+      </div>
     </div>
   </div>
-  <div class="field" id="docReqSendTarget" style="margin-top:-.2rem">
-    <label id="docReqSendLabel">发送至手机</label>
-    <input type="text" id="docReqSendValue" readonly style="background:var(--gray-100);color:var(--gray-600)">
+
+  <!-- Phone numbers section -->
+  <div class="field" id="docReqPhoneSection" style="margin-top:-.2rem">
+    <label>手机号码</label>
+    <div id="docReqPhoneList" style="display:flex;flex-direction:column;gap:.35rem"></div>
+    <button type="button" class="btn btn-sm" onclick="addDocContactField('phone')" style="margin-top:.35rem;font-size:.76rem">+ 添加手机号</button>
+  </div>
+
+  <!-- Email section -->
+  <div class="field" id="docReqEmailSection" style="display:none;margin-top:-.2rem">
+    <label>邮箱地址</label>
+    <div id="docReqEmailList" style="display:flex;flex-direction:column;gap:.35rem"></div>
+    <button type="button" class="btn btn-sm" onclick="addDocContactField('email')" style="margin-top:.35rem;font-size:.76rem">+ 添加邮箱</button>
   </div>
 
   <div class="field"><label>选择需要收集的材料（多选）</label>
@@ -1545,6 +1577,7 @@ tr:hover td{background:var(--sky-light)}
 let TOKEN = '';
 let USER_ROLE = '';
 let USER_NAME = '';
+let _currentUserId = 0;
 const API = '/api';
 
 
@@ -1602,6 +1635,7 @@ async function doLogin() {
     TOKEN = r.token;
     USER_ROLE = r.role || 'staff';
     USER_NAME = r.username || '';
+    _currentUserId = r.user_id || 0;
     document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
     document.getElementById('loginWrap').style.display = 'none';
     document.getElementById('app').classList.add('show');
@@ -1636,6 +1670,7 @@ function logout() {
       .then(u => {
         USER_ROLE = u.role || 'staff';
         USER_NAME = u.username || '';
+        _currentUserId = u.id || 0;
         document.getElementById('loginWrap').style.display = 'none';
         document.getElementById('app').classList.add('show');
         applyRoleUI();
@@ -1661,8 +1696,9 @@ function showTab(t) {
   if (t === 'employees')  { loadEmployees(); loadOnboardSubmissions(); }
   if (t === 'time')       { populateTimeEmpFilter(); loadTimeEntries(); }
   if (t === 'ts-verify')  loadTsVerify();
-  if (t === 'ts-payment') loadTsPayment();
-  if (t === 'ts-history') loadTsHistory();
+  if (t === 'ts-payment')  loadTsPayment();
+  if (t === 'ts-dividend') loadTsDividend();
+  if (t === 'ts-history')  loadTsHistory();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')   loadAccounts();
@@ -3238,7 +3274,7 @@ async function viewEmployee(id) {
       <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
       <div>
         <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
-        <div class="emp-meta">${esc(emp.employee_id)} · ${esc(emp.position||'')} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+        <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
       </div>
     </div>
     <div class="form-section">
@@ -3246,8 +3282,7 @@ async function viewEmployee(id) {
       ${cols([
         ['邮箱',emp.email],['电话',emp.phone],['出生日期',emp.dob],
         ['地址',[emp.address,emp.city,emp.state,emp.zip].filter(Boolean).join(', ')],
-        ['入职日期',emp.hire_date],['薪资','$'+(emp.pay_rate||0)+'  ('+PAY_TYPE_LABEL[emp.pay_type]+')'],
-        ['部门',emp.department],
+        ['注册时间',emp.created_at ? new Date(emp.created_at).toLocaleDateString() : '—'],
         ['SSN','•••••'+esc(emp.ssn_last4||'????')+(emp.ssn_full?'  <strong style="color:var(--red)">'+esc(emp.ssn_full.replace(/(\d{3})(\d{2})(\d{4})/,'$1-$2-$3'))+'</strong>':'')]
       ])}
     </div>
@@ -3532,12 +3567,25 @@ function toggleDocPositions() {
   }
 }
 
-let _empDocPhone = '', _empDocEmail = '';
+let _empDocOrigPhones = [], _empDocOrigEmails = [];
+let _empDocCurrentEmpId = null;
+
 function sendEmpDocLink(empId, empName) {
-  // Look up phone/email from employee data
   const empObj = allEmployees.find(e => e.id === empId);
-  _empDocPhone = (empObj && empObj.phone) || '';
-  _empDocEmail = (empObj && empObj.email) || '';
+  _empDocCurrentEmpId = empId;
+  // Build phone list: primary + extras
+  const phones = [];
+  if (empObj && empObj.phone) phones.push(empObj.phone);
+  try { const ex = JSON.parse((empObj && empObj.extra_phones) || '[]'); phones.push(...ex); } catch(e) {}
+  if (!phones.length) phones.push('');
+  // Build email list: primary + extras
+  const emails = [];
+  if (empObj && empObj.email) emails.push(empObj.email);
+  try { const ex = JSON.parse((empObj && empObj.extra_emails) || '[]'); emails.push(...ex); } catch(e) {}
+  if (!emails.length) emails.push('');
+  _empDocOrigPhones = [...phones];
+  _empDocOrigEmails = [...emails];
+
   document.getElementById('empDocLinkEmpId').value = empId;
   document.getElementById('empDocLinkTarget').textContent = empName || ((empObj && empObj.first_name + ' ' + empObj.last_name) || '');
   document.getElementById('empDocLinkResult').style.display = 'none';
@@ -3548,27 +3596,105 @@ function sendEmpDocLink(empId, empName) {
   document.getElementById('docReqLang').value = 'zh';
   document.getElementById('docReqIncludePositions').checked = false;
   document.getElementById('docReqPositionsBlock').style.display = 'none';
-  document.getElementById('docReqSendVia').value = 'phone';
-  updateDocReqSendTarget();
+  document.getElementById('docReqViaPhone').checked = true;
+  document.getElementById('docReqViaEmail').checked = false;
+  // Populate contact fields
+  renderDocContactFields('phone', phones);
+  renderDocContactFields('email', emails);
+  toggleDocContactSection();
   document.getElementById('btnGenDocLink').disabled = false;
   document.getElementById('btnGenDocLink').textContent = '生成链接';
   document.getElementById('empDocLinkModal').classList.add('show');
 }
-function updateDocReqSendTarget() {
-  const via = document.getElementById('docReqSendVia').value;
-  const label = document.getElementById('docReqSendLabel');
-  const input = document.getElementById('docReqSendValue');
-  if (via === 'phone') { label.textContent = '发送至手机'; input.value = _empDocPhone || '（未填写手机号）'; }
-  else { label.textContent = '发送至邮箱'; input.value = _empDocEmail || '（未填写邮箱）'; }
+
+function renderDocContactFields(type, values) {
+  const container = document.getElementById(type === 'phone' ? 'docReqPhoneList' : 'docReqEmailList');
+  container.innerHTML = '';
+  values.forEach((val, idx) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:.4rem;align-items:center';
+    const inp = document.createElement('input');
+    inp.type = type === 'phone' ? 'tel' : 'email';
+    inp.value = val;
+    inp.placeholder = type === 'phone' ? '输入手机号码' : '输入邮箱地址';
+    inp.className = 'doc-contact-input';
+    inp.dataset.contactType = type;
+    inp.style.cssText = 'flex:1;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem';
+    row.appendChild(inp);
+    if (values.length > 1) {
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.textContent = '×';
+      delBtn.title = '移除';
+      delBtn.style.cssText = 'background:var(--red);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:.9rem;line-height:1;display:flex;align-items:center;justify-content:center';
+      delBtn.onclick = () => { row.remove(); };
+      row.appendChild(delBtn);
+    }
+    container.appendChild(row);
+  });
+}
+
+function addDocContactField(type) {
+  const container = document.getElementById(type === 'phone' ? 'docReqPhoneList' : 'docReqEmailList');
+  const allRows = container.querySelectorAll('div');
+  // Add delete buttons to existing single row if needed
+  if (allRows.length === 1 && !allRows[0].querySelector('button')) {
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.textContent = '×';
+    delBtn.title = '移除';
+    delBtn.style.cssText = 'background:var(--red);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:.9rem;line-height:1;display:flex;align-items:center;justify-content:center';
+    delBtn.onclick = () => { delBtn.parentElement.remove(); };
+    allRows[0].appendChild(delBtn);
+  }
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:.4rem;align-items:center';
+  const inp = document.createElement('input');
+  inp.type = type === 'phone' ? 'tel' : 'email';
+  inp.placeholder = type === 'phone' ? '输入手机号码' : '输入邮箱地址';
+  inp.className = 'doc-contact-input';
+  inp.dataset.contactType = type;
+  inp.style.cssText = 'flex:1;padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem';
+  row.appendChild(inp);
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.textContent = '×';
+  delBtn.title = '移除';
+  delBtn.style.cssText = 'background:var(--red);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:.9rem;line-height:1;display:flex;align-items:center;justify-content:center';
+  delBtn.onclick = () => { row.remove(); };
+  row.appendChild(delBtn);
+  container.appendChild(row);
+  inp.focus();
+}
+
+function toggleDocContactSection() {
+  const phoneChecked = document.getElementById('docReqViaPhone').checked;
+  const emailChecked = document.getElementById('docReqViaEmail').checked;
+  document.getElementById('docReqPhoneSection').style.display = phoneChecked ? '' : 'none';
+  document.getElementById('docReqEmailSection').style.display = emailChecked ? '' : 'none';
+}
+
+function getDocContactValues(type) {
+  const container = document.getElementById(type === 'phone' ? 'docReqPhoneList' : 'docReqEmailList');
+  return Array.from(container.querySelectorAll('input')).map(i => i.value.trim()).filter(Boolean);
 }
 
 async function generateEmpDocLink() {
   const btn = document.getElementById('btnGenDocLink');
   const empId = document.getElementById('empDocLinkEmpId').value;
   if (!empId) return alert('员工信息缺失，请关闭后重试');
-  const note  = document.getElementById('empDocAdminNote').value;
-  const lang  = document.getElementById('docReqLang').value;
-  const sendVia = document.getElementById('docReqSendVia').value;
+
+  const phoneChecked = document.getElementById('docReqViaPhone').checked;
+  const emailChecked = document.getElementById('docReqViaEmail').checked;
+  if (!phoneChecked && !emailChecked) return alert('请至少选择一种发送方式');
+
+  const phones = phoneChecked ? getDocContactValues('phone') : [];
+  const emails = emailChecked ? getDocContactValues('email') : [];
+  if (phoneChecked && !phones.length) return alert('请填写至少一个手机号码');
+  if (emailChecked && !emails.length) return alert('请填写至少一个邮箱地址');
+
+  const note = document.getElementById('empDocAdminNote').value;
+  const lang = document.getElementById('docReqLang').value;
   const docIds = { gov_id: 'docReqGovId', ssn: 'docReqSsn', work_card: 'docReqWorkCard' };
   const requestedDocs = Object.entries(docIds).filter(([,id]) => document.getElementById(id).checked).map(([k]) => k);
   if (!requestedDocs.length) return alert('请至少选择一种材料');
@@ -3576,6 +3702,40 @@ async function generateEmpDocLink() {
   const positions = includePos
     ? Array.from(document.querySelectorAll('.docPosCheck:checked')).map(c => c.value)
     : [];
+
+  // Check if contact info was modified
+  const phonesChanged = JSON.stringify(phones) !== JSON.stringify(_empDocOrigPhones.filter(Boolean));
+  const emailsChanged = JSON.stringify(emails) !== JSON.stringify(_empDocOrigEmails.filter(Boolean));
+  if (phonesChanged || emailsChanged) {
+    const choice = confirm('联系方式已修改。\n\n点击「确定」将更新员工档案中的电话/邮箱。\n点击「取消」仅本次使用，不更新员工信息。');
+    if (choice) {
+      try {
+        await api(`/admin/employees/${empId}/contacts`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            phone: phones[0] || '',
+            extra_phones: phones.slice(1),
+            email: emails[0] || '',
+            extra_emails: emails.slice(1)
+          })
+        });
+        // Update local cache
+        const empObj = allEmployees.find(e => e.id == empId);
+        if (empObj) {
+          empObj.phone = phones[0] || '';
+          empObj.extra_phones = JSON.stringify(phones.slice(1));
+          empObj.email = emails[0] || '';
+          empObj.extra_emails = JSON.stringify(emails.slice(1));
+        }
+        _empDocOrigPhones = [...phones];
+        _empDocOrigEmails = [...emails];
+      } catch(e) {
+        alert('更新联系方式失败：' + (e.message || '网络错误'));
+      }
+    }
+  }
+
+
   btn.disabled = true;
   btn.textContent = '生成中…';
   try {
@@ -3588,9 +3748,12 @@ async function generateEmpDocLink() {
       document.getElementById('empDocLinkResult').style.display = '';
       document.getElementById('empDocLinkCopied').style.display = 'none';
       btn.textContent = '已生成';
-      const target = sendVia === 'phone' ? _empDocPhone : _empDocEmail;
-      if (target) {
-        document.getElementById('empDocLinkCopied').textContent = sendVia === 'phone' ? '请复制链接通过短信发送至 ' + target : '请复制链接通过邮件发送至 ' + target;
+      // Show send-to summary
+      const targets = [];
+      if (phoneChecked && phones.length) targets.push('短信: ' + phones.join(', '));
+      if (emailChecked && emails.length) targets.push('邮箱: ' + emails.join(', '));
+      if (targets.length) {
+        document.getElementById('empDocLinkCopied').textContent = '请复制链接发送至 ' + targets.join(' / ');
         document.getElementById('empDocLinkCopied').style.display = '';
         document.getElementById('empDocLinkCopied').style.color = 'var(--blue)';
       }
@@ -4176,14 +4339,72 @@ async function loadTsPayment() {
 
 async function markClientPaid(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/client-paid`, { method:'PUT', body:'{}' });
-  showToast(r.completed ? '✅ 双方付款完成，已移入历史' : '✅ 已标记客户付款');
+  showToast(r.completed ? '✅ 双方付款完成，已进入待分红' : '✅ 已标记客户付款');
   loadTsPayment();
 }
 
 async function markLaborPaid(id) {
   const r = await api(`/admin/timesheet-sheets/${id}/labor-paid`, { method:'PUT', body:'{}' });
-  showToast(r.completed ? '✅ 双方付款完成，已移入历史' : '✅ 已标记劳务付款');
+  showToast(r.completed ? '✅ 双方付款完成，已进入待分红' : '✅ 已标记劳务付款');
   loadTsPayment();
+}
+
+// ─── 待分红 ───
+async function loadTsDividend() {
+  const rows = await api('/admin/timesheet-sheets?stage=dividend');
+  const tbody = document.getElementById('tsDividendTable');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">暂无待分红工时单</td></tr>'; return; }
+  // Fetch votes for each sheet in parallel
+  const votesMap = {};
+  await Promise.all(rows.map(async r => { votesMap[r.id] = await api(`/admin/timesheet-sheets/${r.id}/votes`); }));
+  tbody.innerHTML = rows.map(r => {
+    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+    const vi = votesMap[r.id] || { votes: [], staff_count: 0 };
+    const approves = vi.votes.filter(v => v.vote_type === 'approve');
+    const dists = vi.votes.filter(v => v.vote_type === 'distributed');
+    const allApproved = approves.length >= vi.staff_count && vi.staff_count > 0;
+    const myApproved = approves.some(v => v.user_id === _currentUserId);
+    const myDistributed = dists.some(v => v.user_id === _currentUserId);
+    const approveCell = `<span class="badge ${allApproved?'badge-green':'badge-yellow'}">${approves.length}/${vi.staff_count}</span>`
+      + (approves.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${approves.map(v=>v.display_name||v.username).join(', ')}</div>` : '');
+    const distCell = allApproved
+      ? `<span class="badge ${dists.length>=vi.staff_count?'badge-green':'badge-yellow'}">${dists.length}/${vi.staff_count}</span>`
+        + (dists.length ? `<div style="font-size:.7rem;color:var(--gray-400);margin-top:2px">${dists.map(v=>v.display_name||v.username).join(', ')}</div>` : '')
+      : '<span style="font-size:.78rem;color:var(--gray-500)">等待全部无异议</span>';
+    let actionBtn = '';
+    if (!myApproved) {
+      actionBtn = `<button class="btn btn-sm btn-green" onclick="voteDividendApprove(${r.id})">无异议</button>`;
+    } else if (allApproved && !myDistributed) {
+      actionBtn = `<button class="btn btn-sm btn-accent" onclick="voteDividendDistributed(${r.id})">已分红</button>`;
+    } else if (myApproved && !allApproved) {
+      actionBtn = '<span class="badge badge-green">已投票</span>';
+    } else {
+      actionBtn = '<span class="badge badge-green">已确认</span>';
+    }
+    return `<tr>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td>${approveCell}</td>
+      <td>${distCell}</td>
+      <td>${actionBtn}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function voteDividendApprove(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/vote-approve`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_approved ? '✅ 全部无异议通过！可以确认分红' : `✅ 已投无异议 (${r.approve_count}/${r.staff_count})`);
+  loadTsDividend();
+}
+
+async function voteDividendDistributed(id) {
+  const r = await api(`/admin/timesheet-sheets/${id}/vote-distributed`, { method:'POST', body:'{}' });
+  if (r.error) { alert(r.error); return; }
+  showToast(r.all_distributed ? '✅ 全部确认分红，已归档至工时历史' : `✅ 已确认分红 (${r.dist_count}/${r.staff_count})`);
+  loadTsDividend();
 }
 
 // ─── 工时历史 ───
