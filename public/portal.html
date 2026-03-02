@@ -182,6 +182,64 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Interview Booking Confirm Modal -->
+<div class="modal-overlay" id="bookConfirmModal">
+  <div class="modal-box" style="max-width:500px;width:96%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h2 style="margin:0;font-size:1.05rem">📅 确认面试预约 / Confirm Interview</h2>
+      <button onclick="closeBookModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+
+    <!-- Slot details -->
+    <div id="bookSlotDetails" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.88rem;line-height:1.9">
+    </div>
+
+    <!-- Required documents -->
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem">
+      <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.55rem">📋 请携带以下证件 / Please Bring the Following Documents</div>
+      <div style="font-size:.82rem;color:#78350f;line-height:1.8" id="bookDocList">
+        <div>🪪 SSN 社会安全卡（Social Security Card）</div>
+        <div>🪪 驾照（Driver's License）或州政府颁发 ID</div>
+        <div>📄 EAD 工卡（如适用 / If applicable）</div>
+        <div>🛂 护照（Passport）或其他有效身份证明</div>
+        <div>📋 任何工作授权证明（Work Authorization Documents）</div>
+      </div>
+      <div style="font-size:.76rem;color:#92400e;margin-top:.6rem;padding-top:.5rem;border-top:1px solid #fde68a">
+        ⚠️ 如无法找到相关人员，请致电或发邮件联系我们：<br>
+        If you can't reach anyone, contact us at:<br>
+        <strong>📞 (847) 737-9888</strong> &nbsp;·&nbsp; <strong>✉️ info@primeanchorpoint.com</strong>
+      </div>
+    </div>
+
+    <!-- Confirm contact info -->
+    <div style="margin-bottom:.85rem">
+      <div style="font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.5rem">📱 确认您的联系方式 / Confirm Your Contact Info</div>
+      <div style="display:flex;gap:.6rem">
+        <div style="flex:1">
+          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">手机号 / Phone</label>
+          <input type="tel" id="bookPhone" placeholder="(312) 555-1234" style="width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
+        </div>
+        <div style="flex:1">
+          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">邮箱 / Email</label>
+          <input type="email" id="bookEmail" placeholder="you@email.com" style="width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
+        </div>
+      </div>
+    </div>
+
+    <!-- Message -->
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 有什么想告诉我们的？/ Anything you'd like to share?</label>
+      <textarea id="bookNote" rows="3" placeholder="例：我没有驾照，只有护照 / e.g. I only have a passport, no driver's license" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
+    </div>
+
+    <div class="modal-msg error" id="bookModalError"></div>
+    <div style="display:flex;gap:.6rem;margin-top:.5rem">
+      <button onclick="closeBookModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消 / Cancel</button>
+      <button onclick="confirmBookSlot()" id="bookConfirmBtn" class="modal-btn modal-btn-primary" style="flex:2">✅ 确认预约 / Confirm Booking</button>
+    </div>
+  </div>
+</div>
+
 <!-- Forgot Password Modal -->
 <div class="modal-overlay" id="forgotModal">
   <div class="modal-box">
@@ -611,12 +669,15 @@ async function resetPassword() {
 }
 
 let _interviewPassed = false;
+let _workerInfo = null;
+let _pendingSlot = null;
 
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   const [me, interview] = await Promise.all([wApi('/me'), wApi('/interview')]);
   if (!me) return;
+  _workerInfo = me;
   const name = me.employee ? `${me.employee.first_name} ${me.employee.last_name}` : me.account.username;
   document.getElementById('workerNameDisplay').textContent = name;
 
@@ -641,10 +702,12 @@ function showTab(tab) {
 }
 
 async function loadInterview() {
-  const [interview, slots] = await Promise.all([
+  const [interview, slots, me] = await Promise.all([
     wApi('/interview'),
-    wApi('/interview-slots')
+    wApi('/interview-slots'),
+    wApi('/me')
   ]);
+  if (me) _workerInfo = me;
 
   // Update compliance tab visibility
   _interviewPassed = interview && interview.status === 'passed';
@@ -700,6 +763,10 @@ async function loadInterview() {
     return;
   }
 
+  // Cache slots for modal
+  _pendingSlotMap = {};
+  slots.forEach(s => { _pendingSlotMap[s.id] = s; });
+
   // Group slots by date
   const grouped = {};
   slots.forEach(s => {
@@ -741,14 +808,82 @@ async function loadInterview() {
   list.innerHTML = html;
 }
 
-async function bookSlot(slotId) {
-  const r = await wApi('/interviews', { method:'POST', body: JSON.stringify({ slot_id: slotId }) });
+function bookSlot(slotId) {
+  // Find slot data from the rendered list
+  const slot = _pendingSlotMap && _pendingSlotMap[slotId];
+  openBookModal(slotId, slot);
+}
+
+let _pendingSlotMap = {};
+
+function openBookModal(slotId, slot) {
+  _pendingSlot = slotId;
+
+  // Fill slot details
+  const details = document.getElementById('bookSlotDetails');
+  if (slot) {
+    const dt = new Date(slot.slot_datetime);
+    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+    details.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:.4rem 1.5rem">
+        <span>🕐 <strong>${dateStr} ${timeStr}</strong></span>
+        ${slot.location ? `<span>📍 <strong>${esc(slot.location)}</strong></span>` : ''}
+        ${slot.duration_min ? `<span>⏱ <strong>${slot.duration_min} 分钟</strong></span>` : ''}
+      </div>`;
+  } else {
+    details.innerHTML = '<span style="color:var(--gray-400)">加载面试信息…</span>';
+  }
+
+  // Pre-fill contact info from worker account
+  const acc = _workerInfo && _workerInfo.account;
+  document.getElementById('bookPhone').value = (acc && acc.phone) || '';
+  document.getElementById('bookEmail').value = (acc && acc.email) || '';
+  document.getElementById('bookNote').value = '';
+
+  const errEl = document.getElementById('bookModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+  const btn = document.getElementById('bookConfirmBtn');
+  btn.disabled = false; btn.textContent = '✅ 确认预约 / Confirm Booking';
+
+  document.getElementById('bookConfirmModal').classList.add('show');
+}
+
+function closeBookModal() {
+  document.getElementById('bookConfirmModal').classList.remove('show');
+  _pendingSlot = null;
+}
+
+async function confirmBookSlot() {
+  if (!_pendingSlot) return;
+  const errEl = document.getElementById('bookModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+
+  const phone = document.getElementById('bookPhone').value.trim();
+  const email = document.getElementById('bookEmail').value.trim();
+  const note  = document.getElementById('bookNote').value.trim();
+
+  if (!phone && !email) {
+    errEl.textContent = '请至少填写一种联系方式 / Please provide at least one contact method';
+    errEl.classList.add('show'); return;
+  }
+
+  const btn = document.getElementById('bookConfirmBtn');
+  btn.disabled = true; btn.textContent = '预约中…';
+
+  const r = await wApi('/interviews', {
+    method: 'POST',
+    body: JSON.stringify({ slot_id: _pendingSlot, confirm_phone: phone, confirm_email: email, note })
+  });
+  btn.disabled = false; btn.textContent = '✅ 确认预约 / Confirm Booking';
   if (!r) return;
   if (r.success) {
-    showToast('✅ 面试已预约！请准时参加');
+    closeBookModal();
+    showToast('✅ 面试已预约！请准时携带证件参加');
     loadInterview();
   } else {
-    showToast('❌ ' + (r.error || '预约失败'), 'error');
+    errEl.textContent = r.error || '预约失败';
+    errEl.classList.add('show');
   }
 }
 

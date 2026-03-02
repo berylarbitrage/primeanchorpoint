@@ -461,6 +461,9 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN close_note TEXT DEFAULT ''`); } catch
 try { db.exec(`ALTER TABLE jobs ADD COLUMN headcount INTEGER DEFAULT 1`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN pay_period TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_availability TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_phone TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_email TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE interviews ADD COLUMN applicant_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN applicant_message TEXT DEFAULT ''`); } catch(e) {}
 // Backfill job_status from active flag for existing rows
@@ -3230,7 +3233,7 @@ app.post('/api/worker/login', (req, res) => {
 });
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
-  const w = db.prepare('SELECT id, username, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
+  const w = db.prepare('SELECT id, username, phone, email, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
   const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   res.json({ account: w, employee: emp });
 });
@@ -4345,7 +4348,7 @@ app.get('/api/worker/interview', requireWorker, (req, res) => {
 
 // Worker: book a slot
 app.post('/api/worker/interviews', requireWorker, (req, res) => {
-  const { slot_id } = req.body;
+  const { slot_id, confirm_phone, confirm_email, note } = req.body;
   if (!slot_id) return res.status(400).json({ error: 'slot_id required' });
   // Check not already booked
   const existing = db.prepare(`SELECT id, status FROM interviews WHERE worker_account_id=?`).get(req.workerId);
@@ -4357,9 +4360,11 @@ app.post('/api/worker/interviews', requireWorker, (req, res) => {
 
   try {
     if (existing && existing.status === 'cancelled') {
-      db.prepare(`UPDATE interviews SET slot_id=?, status='scheduled', admin_notes='', doc_request_token='', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(slot_id, existing.id);
+      db.prepare(`UPDATE interviews SET slot_id=?, status='scheduled', admin_notes='', doc_request_token='', confirm_phone=?, confirm_email=?, applicant_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+        .run(slot_id, confirm_phone||'', confirm_email||'', note||'', existing.id);
     } else {
-      db.prepare(`INSERT INTO interviews (worker_account_id, slot_id) VALUES (?,?)`).run(req.workerId, slot_id);
+      db.prepare(`INSERT INTO interviews (worker_account_id, slot_id, confirm_phone, confirm_email, applicant_note) VALUES (?,?,?,?,?)`)
+        .run(req.workerId, slot_id, confirm_phone||'', confirm_email||'', note||'');
     }
     db.prepare(`UPDATE interview_slots SET booked_count = booked_count+1 WHERE id=?`).run(slot_id);
     res.json({ success: true });
