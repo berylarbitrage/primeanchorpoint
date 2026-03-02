@@ -893,6 +893,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
 
+// ─── Worker Skills ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id),
+  skill_name TEXT NOT NULL,
+  rating INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // ─── Integration Settings (WorkBright, Checkr, Gusto, Twilio) ───
 db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1527,24 +1536,15 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     FROM worker_accounts w LEFT JOIN employees e ON w.employee_id=e.id ORDER BY w.id DESC
   `).all();
 
-  // Enrich each worker with interview, compliance, and skill data
-  const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
-  const getCompDocs = db.prepare(`SELECT doc_type, status FROM worker_compliance_docs WHERE worker_account_id=?`);
-  const getSkills = db.prepare(`SELECT skill_name, rating FROM worker_skills WHERE worker_account_id=?`);
-
-  // Ensure worker_skills table exists
-  try { db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id),
-    skill_name TEXT NOT NULL,
-    rating INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`); } catch {}
-
   // Add expected_salary, payment_method columns if missing
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN expected_salary TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
+
+  // Enrich each worker with interview, compliance, and skill data
+  const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
+  const getCompDocs = db.prepare(`SELECT doc_type, status FROM worker_compliance_docs WHERE worker_account_id=?`);
+  const getSkills = db.prepare(`SELECT skill_name, rating FROM worker_skills WHERE worker_account_id=?`);
 
   const enriched = workers.map(w => {
     const interview = getInterview.get(w.id);
