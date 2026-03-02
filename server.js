@@ -1477,12 +1477,24 @@ app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async
     return res.json({ configured, sent: false, error: `SMTP connection failed: ${e.message}` });
   }
   const code = String(Math.floor(100000 + Math.random() * 900000));
-  const sent = await sendEmail(
-    to,
-    'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
-    `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`
-  );
-  res.json({ configured, sent, error: sent ? null : 'sendMail failed — check server logs for [EMAIL-ERR]' });
+  try {
+    const info = await emailTransporter.sendMail({
+      from: EMAIL_FROM,
+      to,
+      subject: 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      text: `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`
+    });
+    res.json({ configured, sent: true, messageId: info.messageId, response: info.response });
+  } catch (e) {
+    res.json({
+      configured,
+      sent: false,
+      error: e.message,
+      smtp_code: e.code || null,
+      smtp_response: e.response || null,
+      smtp_responseCode: e.responseCode || null,
+    });
+  }
 });
 
 // Admin: resend verification codes to unverified worker
