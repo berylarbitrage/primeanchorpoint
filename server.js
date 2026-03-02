@@ -3808,6 +3808,24 @@ app.post('/api/admin/interview-slots', requireAdmin, (req, res) => {
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
+// Admin: batch create slots for a week
+app.post('/api/admin/interview-slots/batch', requireAdmin, (req, res) => {
+  const { slots } = req.body;
+  if (!Array.isArray(slots) || !slots.length) return res.status(400).json({ error: 'slots array required' });
+  const insert = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes) VALUES (?,?,?,?,?)`);
+  const tx = db.transaction((items) => {
+    let count = 0;
+    for (const s of items) {
+      if (!s.slot_datetime) continue;
+      insert.run(s.slot_datetime, s.duration_min || 30, s.max_bookings || 1, s.location || '', s.notes || '');
+      count++;
+    }
+    return count;
+  });
+  const created = tx(slots);
+  res.json({ success: true, created });
+});
+
 // Admin: delete a slot
 app.delete('/api/admin/interview-slots/:id', requireAdmin, (req, res) => {
   const booked = db.prepare(`SELECT id FROM interviews WHERE slot_id=? AND status='scheduled'`).get(req.params.id);

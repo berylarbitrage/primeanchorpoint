@@ -698,30 +698,85 @@ tr:hover td{background:var(--sky-light)}
 
   <!-- Slots pane -->
   <div id="ivPaneSlots">
+    <!-- Batch Weekly Scheduling -->
     <div class="card" style="margin-bottom:1rem">
-      <h3 style="margin-bottom:1rem">添加面试时间槽</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:.75rem;align-items:end">
+      <h3 style="margin-bottom:.5rem">📅 每周面试排班</h3>
+      <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">快速为一周设置面试时间。选择日期范围、勾选日期、设置时间段，一键生成。</p>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.75rem;align-items:end;margin-bottom:1rem">
         <div>
-          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">日期时间</label>
-          <input type="datetime-local" id="ivSlotDatetime" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">开始日期</label>
+          <input type="date" id="batchStartDate" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">结束日期</label>
+          <input type="date" id="batchEndDate" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">每个时段名额</label>
+          <input type="number" id="batchMaxBookings" value="5" min="1" max="50" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
         </div>
         <div>
           <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">时长（分钟）</label>
-          <input type="number" id="ivSlotDuration" value="30" min="10" max="120" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <input type="number" id="batchDuration" value="30" min="10" max="120" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
         </div>
-        <div>
-          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">最大名额</label>
-          <input type="number" id="ivSlotMax" value="1" min="1" max="20" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+      </div>
+
+      <div style="margin-bottom:1rem">
+        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点</label>
+        <input type="text" id="batchLocation" placeholder="如：公司办公室 123 Main St / Zoom 线上" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+      </div>
+
+      <!-- Day selection with time inputs -->
+      <div style="margin-bottom:1rem">
+        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.5rem">选择工作日和时间段</label>
+        <div id="batchDaysGrid" style="display:grid;gap:.5rem">
         </div>
-        <div>
-          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点（可选）</label>
-          <input type="text" id="ivSlotLocation" placeholder="如：公司会议室、Zoom" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-        </div>
-        <button class="btn btn-blue" onclick="addInterviewSlot()" style="white-space:nowrap">添加时间槽</button>
+      </div>
+
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <button class="btn btn-blue" onclick="batchCreateSlots()" style="white-space:nowrap">批量生成面试时间</button>
+        <span id="batchPreviewCount" style="font-size:.82rem;color:var(--gray-500)"></span>
       </div>
     </div>
+
+    <!-- Single slot add (keep for quick additions) -->
+    <div class="card" style="margin-bottom:1rem">
+      <details>
+        <summary style="cursor:pointer;font-weight:700;font-size:.95rem;color:var(--gray-600)">➕ 单独添加时间槽</summary>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:.75rem;align-items:end;margin-top:1rem">
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">日期时间</label>
+            <input type="datetime-local" id="ivSlotDatetime" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">时长（分钟）</label>
+            <input type="number" id="ivSlotDuration" value="30" min="10" max="120" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">最大名额</label>
+            <input type="number" id="ivSlotMax" value="1" min="1" max="20" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点（可选）</label>
+            <input type="text" id="ivSlotLocation" placeholder="如：公司会议室、Zoom" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+          <button class="btn btn-blue" onclick="addInterviewSlot()" style="white-space:nowrap">添加</button>
+        </div>
+      </details>
+    </div>
+
     <div class="card">
       <h3 style="margin-bottom:1rem">现有时间槽</h3>
+      <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center">
+        <select id="ivSlotWeekFilter" onchange="loadInterviews()" style="padding:.4rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <option value="">全部时间</option>
+          <option value="thisweek">本周</option>
+          <option value="nextweek">下周</option>
+          <option value="future">未来全部</option>
+        </select>
+        <button class="btn btn-sm btn-red" onclick="clearExpiredSlots()" style="margin-left:auto">清理已过期</button>
+      </div>
       <table><thead><tr><th>日期时间</th><th>时长</th><th>地点</th><th>名额</th><th>已预约</th><th>操作</th></tr></thead>
       <tbody id="ivSlotsTable"></tbody></table>
     </div>
@@ -2294,7 +2349,7 @@ function showTab(t) {
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')   loadAccounts();
   if (t === 'approvals')  loadApprovals();
-  if (t === 'interviews') loadInterviews();
+  if (t === 'interviews') { loadInterviews(); initBatchDays(); }
   if (t === 'compliance') loadComplianceDocs();
   if (t === 'jobsites')   loadJobSites();
   if (t === 'integrations') loadIntegrations();
@@ -6409,19 +6464,52 @@ async function loadInterviews() {
 
 function renderSlots(slots) {
   const tbody = document.getElementById('ivSlotsTable');
-  if (!slots.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无时间槽</td></tr>'; return; }
-  tbody.innerHTML = slots.map(s => {
-    const dt = new Date(s.slot_datetime);
-    const past = dt <= new Date();
-    return `<tr style="${past ? 'opacity:.55' : ''}">
-      <td>${dt.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}${past ? ' <span style="color:var(--gray-400);font-size:.75rem">已过期</span>' : ''}</td>
-      <td>${s.duration_min} 分钟</td>
-      <td>${esc(s.location||'—')}</td>
-      <td>${s.max_bookings}</td>
-      <td><span style="color:${s.total_booked>0?'var(--sky)':'var(--gray-400)'}">${s.total_booked||0}</span></td>
-      <td><button class="btn btn-sm btn-red" onclick="deleteSlot(${s.id})">删除</button></td>
-    </tr>`;
-  }).join('');
+  // Apply week filter
+  const filter = document.getElementById('ivSlotWeekFilter')?.value || '';
+  const now = new Date();
+  let filtered = slots;
+  if (filter === 'thisweek') {
+    const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0,0,0,0);
+    const endOfWeek = new Date(startOfWeek); endOfWeek.setDate(startOfWeek.getDate() + 7);
+    filtered = slots.filter(s => { const d = new Date(s.slot_datetime); return d >= startOfWeek && d < endOfWeek; });
+  } else if (filter === 'nextweek') {
+    const startOfNext = new Date(now); startOfNext.setDate(now.getDate() - now.getDay() + 7);
+    startOfNext.setHours(0,0,0,0);
+    const endOfNext = new Date(startOfNext); endOfNext.setDate(startOfNext.getDate() + 7);
+    filtered = slots.filter(s => { const d = new Date(s.slot_datetime); return d >= startOfNext && d < endOfNext; });
+  } else if (filter === 'future') {
+    filtered = slots.filter(s => new Date(s.slot_datetime) > now);
+  }
+
+  if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无时间槽</td></tr>'; return; }
+
+  // Group by date
+  const grouped = {};
+  filtered.forEach(s => {
+    const dateKey = new Date(s.slot_datetime).toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short' });
+    if (!grouped[dateKey]) grouped[dateKey] = [];
+    grouped[dateKey].push(s);
+  });
+
+  let html = '';
+  for (const [dateLabel, daySlots] of Object.entries(grouped)) {
+    html += `<tr><td colspan="6" style="background:#f0f4ff;font-weight:700;font-size:.85rem;color:var(--sky);padding:.4rem .8rem">${dateLabel}</td></tr>`;
+    daySlots.forEach(s => {
+      const dt = new Date(s.slot_datetime);
+      const past = dt <= now;
+      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+      html += `<tr style="${past ? 'opacity:.55' : ''}">
+        <td>${timeStr}${past ? ' <span style="color:var(--gray-400);font-size:.75rem">已过期</span>' : ''}</td>
+        <td>${s.duration_min} 分钟</td>
+        <td>${esc(s.location||'—')}</td>
+        <td>${s.max_bookings}</td>
+        <td><span style="color:${s.total_booked>0?'var(--sky)':'var(--gray-400)'}">${s.total_booked||0}</span></td>
+        <td><button class="btn btn-sm btn-red" onclick="deleteSlot(${s.id})">删除</button></td>
+      </tr>`;
+    });
+  }
+  tbody.innerHTML = html;
 }
 
 async function addInterviewSlot() {
@@ -6450,6 +6538,132 @@ async function deleteSlot(id) {
   const r = await api(`/admin/interview-slots/${id}`, { method: 'DELETE' });
   if (r && r.success) { showToast('✅ 已删除'); loadInterviews(); }
   else showToast('❌ ' + (r && r.error || '删除失败'), 'error');
+}
+
+async function clearExpiredSlots() {
+  if (!confirm('确定清理所有已过期且无预约的时间槽？')) return;
+  const slots = await api('/admin/interview-slots');
+  if (!slots) return;
+  const now = new Date();
+  let cleared = 0;
+  for (const s of slots) {
+    if (new Date(s.slot_datetime) < now && (!s.total_booked || s.total_booked === 0)) {
+      await api(`/admin/interview-slots/${s.id}`, { method: 'DELETE' });
+      cleared++;
+    }
+  }
+  showToast(`✅ 已清理 ${cleared} 个过期时间槽`);
+  loadInterviews();
+}
+
+// ── Batch Weekly Scheduling ──
+const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+function initBatchDays() {
+  // Default: start from next Monday, end on Friday
+  const today = new Date();
+  const dayOfWeek = today.getDay();
+  const daysUntilMon = dayOfWeek === 0 ? 1 : (8 - dayOfWeek);
+  const nextMon = new Date(today);
+  nextMon.setDate(today.getDate() + daysUntilMon);
+  const nextFri = new Date(nextMon);
+  nextFri.setDate(nextMon.getDate() + 4);
+
+  const startEl = document.getElementById('batchStartDate');
+  const endEl = document.getElementById('batchEndDate');
+  startEl.value = nextMon.toISOString().split('T')[0];
+  endEl.value = nextFri.toISOString().split('T')[0];
+  startEl.addEventListener('change', renderBatchDays);
+  endEl.addEventListener('change', renderBatchDays);
+  renderBatchDays();
+}
+
+function renderBatchDays() {
+  const startStr = document.getElementById('batchStartDate').value;
+  const endStr = document.getElementById('batchEndDate').value;
+  const grid = document.getElementById('batchDaysGrid');
+  if (!startStr || !endStr) { grid.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem">请选择日期范围</div>'; return; }
+
+  const start = new Date(startStr + 'T00:00:00');
+  const end = new Date(endStr + 'T00:00:00');
+  if (end < start) { grid.innerHTML = '<div style="color:var(--red);font-size:.85rem">结束日期不能早于开始日期</div>'; return; }
+
+  const days = [];
+  const cur = new Date(start);
+  while (cur <= end) {
+    days.push(new Date(cur));
+    cur.setDate(cur.getDate() + 1);
+  }
+  if (days.length > 14) { grid.innerHTML = '<div style="color:var(--red);font-size:.85rem">日期范围不能超过14天</div>'; return; }
+
+  grid.innerHTML = days.map((d, idx) => {
+    const dateStr = d.toISOString().split('T')[0];
+    const label = `${d.getMonth()+1}/${d.getDate()} ${WEEKDAY_NAMES[d.getDay()]}`;
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+    return `<div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;border:1px solid var(--gray-200);border-radius:8px;background:${isWeekend?'#fef3c7':'#fff'}">
+      <label style="display:flex;align-items:center;gap:.4rem;min-width:100px;font-weight:600;font-size:.88rem;cursor:pointer">
+        <input type="checkbox" class="batchDayCheck" data-date="${dateStr}" ${!isWeekend?'checked':''}>
+        ${label}
+      </label>
+      <div style="display:flex;align-items:center;gap:.3rem;flex:1;flex-wrap:wrap">
+        <input type="text" class="batchDayTimes" data-date="${dateStr}" value="${!isWeekend?'09:00, 10:00, 11:00, 14:00, 15:00':''}" placeholder="时间段，逗号分隔 如: 09:00, 10:00, 14:00" style="flex:1;min-width:200px;padding:.35rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+      </div>
+    </div>`;
+  }).join('');
+  updateBatchPreview();
+  // Add event listeners for preview
+  grid.querySelectorAll('.batchDayCheck, .batchDayTimes').forEach(el => {
+    el.addEventListener('change', updateBatchPreview);
+    el.addEventListener('input', updateBatchPreview);
+  });
+}
+
+function updateBatchPreview() {
+  const slots = collectBatchSlots();
+  document.getElementById('batchPreviewCount').textContent = `将生成 ${slots.length} 个面试时间槽`;
+}
+
+function collectBatchSlots() {
+  const grid = document.getElementById('batchDaysGrid');
+  const checks = grid.querySelectorAll('.batchDayCheck:checked');
+  const duration = parseInt(document.getElementById('batchDuration').value) || 30;
+  const maxBookings = parseInt(document.getElementById('batchMaxBookings').value) || 5;
+  const location = document.getElementById('batchLocation').value.trim();
+  const slots = [];
+
+  checks.forEach(chk => {
+    const dateStr = chk.dataset.date;
+    const timesInput = grid.querySelector(`.batchDayTimes[data-date="${dateStr}"]`);
+    if (!timesInput) return;
+    const times = timesInput.value.split(/[,，;；\s]+/).map(t => t.trim()).filter(t => /^\d{1,2}:\d{2}$/.test(t));
+    times.forEach(time => {
+      const [h, m] = time.split(':');
+      slots.push({
+        slot_datetime: `${dateStr}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`,
+        duration_min: duration,
+        max_bookings: maxBookings,
+        location: location
+      });
+    });
+  });
+  return slots;
+}
+
+async function batchCreateSlots() {
+  const slots = collectBatchSlots();
+  if (!slots.length) return showToast('❌ 没有可生成的时间槽，请检查日期和时间设置', 'error');
+  if (!confirm(`确定生成 ${slots.length} 个面试时间槽？`)) return;
+
+  const r = await api('/admin/interview-slots/batch', {
+    method: 'POST',
+    body: JSON.stringify({ slots })
+  });
+  if (r && r.success) {
+    showToast(`✅ 已成功生成 ${r.created} 个面试时间槽`);
+    loadInterviews();
+  } else {
+    showToast('❌ ' + (r && r.error || '批量创建失败'), 'error');
+  }
 }
 
 function filterInterviews() {
