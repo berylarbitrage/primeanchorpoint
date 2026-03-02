@@ -534,6 +534,7 @@ try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN staff_note TEXT DEFAULT '
 try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 
 // DocuSign columns
@@ -2600,11 +2601,11 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   if (d.pin) { pin_salt = crypto.randomBytes(16).toString('hex'); pin_hash = hashPin(d.pin, pin_salt); }
   try {
     const r = db.prepare(`INSERT INTO employees
-      (employee_id,first_name,last_name,email,phone,address,city,state,zip,dob,
+      (employee_id,first_name,last_name,email,phone,address,street2,city,state,zip,dob,
        emergency_name,emergency_phone,emergency_relation,hire_date,position,department,
        pay_rate,pay_type,status,pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,notes)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      empId,d.first_name,d.last_name,d.email||'',d.phone||'',d.address||'',
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      empId,d.first_name,d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
       d.city||'',d.state||'',d.zip||'',d.dob||'',
       d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
       d.hire_date||'',d.position||'',d.department||'',
@@ -2645,12 +2646,12 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     pin_hash = hashPin(d.pin, pin_salt);
   }
   db.prepare(`UPDATE employees SET
-    employee_id=?,first_name=?,last_name=?,email=?,phone=?,address=?,city=?,state=?,zip=?,dob=?,
+    employee_id=?,first_name=?,last_name=?,email=?,phone=?,address=?,street2=?,city=?,state=?,zip=?,dob=?,
     emergency_name=?,emergency_phone=?,emergency_relation=?,hire_date=?,position=?,department=?,
     pay_rate=?,pay_type=?,status=?,pin_hash=?,pin_salt=?,ssn_encrypted=?,ssn_iv=?,ssn_last4=?,notes=?,
     extra_phones=?,extra_emails=?
     WHERE id=?`).run(
-    d.employee_id||emp.employee_id,d.first_name,d.last_name,d.email||'',d.phone||'',d.address||'',
+    d.employee_id||emp.employee_id,d.first_name,d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
     d.city||'',d.state||'',d.zip||'',d.dob||'',
     d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
     d.hire_date||'',d.position||'',d.department||'',
