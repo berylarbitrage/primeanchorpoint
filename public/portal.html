@@ -674,6 +674,21 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
 
+    <!-- Interview Booking Modal (inline in todos) -->
+    <div class="modal-overlay" id="interviewBookModal" style="display:none">
+      <div class="modal-box" style="max-width:600px;width:96%;max-height:85vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h2 style="margin:0;font-size:1.05rem">🗓️ 预约面试 / Book Interview</h2>
+          <button onclick="closeInterviewBookModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">&times;</button>
+        </div>
+        <!-- Current interview status (if any) -->
+        <div id="interviewModalStatus" style="display:none;margin-bottom:1rem"></div>
+        <!-- Available slots -->
+        <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1rem">请选择一个方便的时间进行面试。<br><span style="font-size:.78rem">Select a convenient time for your interview.</span></p>
+        <div id="interviewModalSlots"></div>
+      </div>
+    </div>
+
     <!-- Profile -->
     <div id="tabProfile" style="display:none">
       <!-- Basic info -->
@@ -2036,7 +2051,7 @@ async function loadOnboarding() {
     list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
     return;
   }
-  const icons = { phone_verify:'📱', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadgeStyle = {
     locked:'color:var(--gray-400);background:var(--gray-100);border:1px solid var(--gray-200)',
@@ -2050,7 +2065,7 @@ async function loadOnboarding() {
     let actionHtml = '';
     if (s === 'pending') {
       if (t.key === 'interview') {
-        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('interview')">去预约面试</button>`;
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openInterviewBookModal()">去预约面试</button>`;
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">去提交文件 →</button>`;
       } else if ((t.key === 'contract' || t.key === 'gusto') && t.action_url) {
@@ -2081,6 +2096,110 @@ async function submitOnboardingTask(key) {
   if (r && r.success) { showToast('✅ 已提交，等待 HR 审核'); loadOnboarding(); }
   else alert(r?.error || '提交失败');
 }
+
+// ── Interview Booking Modal (inline in todos) ──
+function openInterviewBookModal() {
+  document.getElementById('interviewBookModal').style.display = 'flex';
+  loadInterviewModalSlots();
+}
+
+function closeInterviewBookModal() {
+  document.getElementById('interviewBookModal').style.display = 'none';
+}
+
+async function loadInterviewModalSlots() {
+  const slotsDiv = document.getElementById('interviewModalSlots');
+  const statusDiv = document.getElementById('interviewModalStatus');
+  slotsDiv.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中...</div>';
+
+  const [interview, slots] = await Promise.all([wApi('/interview'), wApi('/interview-slots')]);
+
+  // Show current interview status if exists
+  if (interview && interview.status !== 'cancelled') {
+    statusDiv.style.display = '';
+    const dt = new Date(interview.slot_datetime);
+    const dtStr = dt.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const statusMap = {
+      scheduled: '<span style="color:#d97706;font-weight:700">⏳ 已预约</span>',
+      completed: '<span style="color:#6366f1;font-weight:700">✔ 面试完成</span>',
+      passed:    '<span style="color:#16a34a;font-weight:700">✅ 面试通过</span>',
+      failed:    '<span style="color:#dc2626;font-weight:700">❌ 未通过</span>',
+    };
+    statusDiv.innerHTML = `<div style="padding:.85rem 1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;font-size:.88rem">
+      <div style="font-weight:700;margin-bottom:.4rem">📋 我的面试预约</div>
+      <div>状态：${statusMap[interview.status] || interview.status}</div>
+      <div>时间：<strong>${dtStr}</strong></div>
+      ${interview.location ? `<div>地点：${esc(interview.location)}</div>` : ''}
+      ${interview.contact_name ? `<div>联系人：${esc(interview.contact_name)} ${interview.contact_phone || ''}</div>` : ''}
+    </div>`;
+    if (interview.status === 'scheduled') {
+      slotsDiv.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">您已有面试预约，如需更改请联系 HR。</div>';
+      return;
+    }
+  } else {
+    statusDiv.style.display = 'none';
+  }
+
+  // Render available slots
+  if (!slots || !slots.length) {
+    slotsDiv.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无可用面试时间，请稍后再查看或联系 HR。</div>';
+    return;
+  }
+
+  const grouped = {};
+  slots.forEach(s => {
+    const dt = new Date(s.slot_datetime);
+    const dateKey = dt.toISOString().split('T')[0];
+    if (!grouped[dateKey]) grouped[dateKey] = { date: dt, slots: [] };
+    grouped[dateKey].slots.push(s);
+  });
+
+  let html = '';
+  for (const [dateKey, group] of Object.entries(grouped)) {
+    const dt = group.date;
+    const dateLabel = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+    const dayLocation = group.slots[0].location;
+    html += `<div style="margin-bottom:1.25rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:2px solid #e0f2fe">
+        <span style="font-size:1.3rem">📅</span>
+        <span style="font-weight:700;font-size:1rem;color:#0c4a6e">${dateLabel}</span>
+        ${dayLocation ? `<span style="font-size:.8rem;color:var(--gray-500);margin-left:auto">📍 ${dayLocation}</span>` : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">`;
+    group.slots.forEach(s => {
+      const sdt = new Date(s.slot_datetime);
+      const timeStr = sdt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+      const remaining = s.max_bookings - s.booked_count;
+      const full = remaining <= 0;
+      html += `<button onclick="${full ? '' : `modalBookSlot(${s.id})`}" ${full ? 'disabled' : ''}
+        style="padding:.7rem .5rem;border:1px solid ${full?'var(--gray-200)':'#bae6fd'};border-radius:10px;background:${full?'#f9fafb':'#f0f9ff'};cursor:${full?'not-allowed':'pointer'};text-align:center;transition:all .15s">
+        <div style="font-weight:700;font-size:1rem;color:${full?'var(--gray-400)':'#0369a1'}">${timeStr}</div>
+        <div style="font-size:.75rem;color:${full?'var(--gray-400)':'#d97706'};margin-top:.2rem">${full ? '已满' : `剩余 ${remaining} 名额`}</div>
+        <div style="font-size:.72rem;color:var(--gray-400);margin-top:.1rem">${s.duration_min}分钟</div>
+      </button>`;
+    });
+    html += `</div></div>`;
+  }
+  slotsDiv.innerHTML = html;
+}
+
+async function modalBookSlot(slotId) {
+  const r = await wApi('/interviews', { method:'POST', body: JSON.stringify({ slot_id: slotId }) });
+  if (!r) return;
+  if (r.success) {
+    showToast('✅ 面试已预约！请准时参加');
+    closeInterviewBookModal();
+    loadOnboarding();
+    loadInterview(); // also refresh the interview tab
+  } else {
+    showToast('❌ ' + (r.error || '预约失败'), 'error');
+  }
+}
+
+// Close modal on overlay click
+document.addEventListener('click', (e) => {
+  if (e.target.id === 'interviewBookModal') closeInterviewBookModal();
+});
 
 function esc(s) {
   const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML;
