@@ -1861,15 +1861,14 @@ tr:hover td{background:var(--sky-light)}
         <option value="active">在职</option><option value="inactive">停职</option><option value="terminated">已离职</option>
       </select></div>
     </div>
-    <div class="field-row">
-      <div class="field"><label>职位</label><input id="ePos" placeholder="例：仓库分拣员"></div>
-      <div class="field"><label>部门</label><input id="eDept" placeholder="例：Warehouse"></div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label>薪资 ($/hr 或 $/yr)</label><input id="ePayRate" type="number" step="0.01" placeholder="18.50"></div>
-      <div class="field"><label>薪资类型</label><select id="ePayType">
-        <option value="hourly">小时工 (Hourly)</option><option value="salary">固定薪资 (Salary)</option>
-      </select></div>
+    <div style="margin-top:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+        <label style="font-size:.75rem;font-weight:600;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">就业记录 / Job Records</label>
+        <button type="button" class="btn btn-sm btn-green" id="addJobRecordBtn" onclick="openAssignJobFromEdit()" style="display:none;padding:.25rem .7rem;font-size:.78rem">+ 添加记录</button>
+      </div>
+      <div id="editEmpJobList" style="font-size:.83rem">
+        <span style="color:var(--gray-400);font-size:.8rem">（新增员工后可在此添加就业记录）</span>
+      </div>
     </div>
   </div>
   <div class="form-section">
@@ -4302,10 +4301,8 @@ function openEmpModal(id) {
     document.getElementById('eZip').value      = e.zip||'';
     document.getElementById('eHire').value     = e.hire_date||'';
     document.getElementById('eStatus').value   = e.status||'active';
-    document.getElementById('ePos').value      = e.position||'';
-    document.getElementById('eDept').value     = e.department||'';
-    document.getElementById('ePayRate').value  = e.pay_rate||'';
-    document.getElementById('ePayType').value  = e.pay_type||'hourly';
+    document.getElementById('addJobRecordBtn').style.display = '';
+    loadEditEmpJobRecords(id);
     document.getElementById('eEmgName').value  = e.emergency_name||'';
     document.getElementById('eEmgPhone').value = e.emergency_phone||'';
     document.getElementById('eEmgRel').value   = e.emergency_relation||'';
@@ -4314,15 +4311,68 @@ function openEmpModal(id) {
     document.getElementById('ePin').value      = '';
   } else {
     ['eFirst','eLast','eEmpId','eDob','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
-     'eHire','ePos','eDept','ePayRate','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin'].forEach(id=>document.getElementById(id).value='');
+     'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
-    document.getElementById('ePayType').value = 'hourly';
+    document.getElementById('addJobRecordBtn').style.display = 'none';
+    document.getElementById('editEmpJobList').innerHTML = '<span style="color:var(--gray-400);font-size:.8rem">（新增员工后可在此添加就业记录）</span>';
   }
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
 function closeEmpModal() { _convertFromWorkerId = null; guardClose('empModal'); }
+
+// ── Job records within employee edit modal ──
+async function loadEditEmpJobRecords(empId) {
+  const list = document.getElementById('editEmpJobList');
+  list.innerHTML = '<span style="color:var(--gray-400);font-size:.8rem">加载中…</span>';
+  try {
+    const records = await api(`/admin/employees/${empId}/job-records`);
+    if (!Array.isArray(records) || !records.length) {
+      list.innerHTML = '<span style="color:var(--gray-400);font-size:.8rem">暂无就业记录，点击右侧「+ 添加记录」</span>';
+      return;
+    }
+    list.innerHTML = records.map(r => {
+      const company = r.partner_name || r.company_name || '';
+      const loc = r.location || '';
+      const meta = [company, loc].filter(Boolean).map(esc).join(' · ');
+      const dates = `${r.start_date||'—'} → ${r.end_date||'至今'}`;
+      const pay = r.emp_hourly_rate ? ` · $${r.emp_hourly_rate}/hr` : '';
+      return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:.35rem;background:#fafcff">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:.88rem">${esc(r.job_title||r.job_title_live||'未知职位')}</div>
+          ${meta?`<div style="font-size:.75rem;color:var(--gray-500)">${meta}</div>`:''}
+          <div style="font-size:.75rem;color:var(--gray-400)">${dates}${pay}</div>
+        </div>
+        <button class="btn btn-sm" onclick="editJobRecordFromEdit(${empId},${r.job_id})" style="padding:.2rem .5rem;font-size:.75rem;flex-shrink:0">编辑</button>
+        <button class="btn btn-sm btn-red" onclick="removeJobRecordFromEdit(${empId},${r.job_id})" style="padding:.2rem .5rem;font-size:.75rem;flex-shrink:0">×</button>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = '<span style="color:var(--red);font-size:.8rem">加载失败，请重试</span>';
+  }
+}
+
+function openAssignJobFromEdit() {
+  const empId = document.getElementById('empId').value;
+  if (!empId) return;
+  const name = `${document.getElementById('eFirst').value.trim()} ${document.getElementById('eLast').value.trim()}`.trim();
+  openAssignJobModal(empId, name || '员工');
+}
+
+function editJobRecordFromEdit(empId, jobId) {
+  const name = `${document.getElementById('eFirst').value.trim()} ${document.getElementById('eLast').value.trim()}`.trim();
+  // Open modal; user clicks the chip shown in "已有职位" to prefill the form
+  openAssignJobModal(empId, name || '员工');
+}
+
+async function removeJobRecordFromEdit(empId, jobId) {
+  if (!confirm('确认删除该就业记录？')) return;
+  await api(`/admin/employees/${empId}/assign-job/${jobId}`, { method: 'DELETE' });
+  loadEditEmpJobRecords(empId);
+  loadEmployees();
+  showToast('✅ 就业记录已删除');
+}
 
 function randomFillEmployee() {
   const firsts = ['John','Maria','Wei','Carlos','Anna','David','Linh','Ahmed','Sofia','James','Yuki','Jose','Emily','Marco','Mei'];
@@ -4350,10 +4400,6 @@ function randomFillEmployee() {
   fillStateSelect(document.getElementById('eState'), 'IL');
   document.getElementById('eZip').value = String(rnd(60601,60699));
   document.getElementById('eHire').value = hire;
-  document.getElementById('ePos').value = pick(positions);
-  document.getElementById('eDept').value = pick(depts);
-  document.getElementById('ePayRate').value = (rnd(1550,2800)/100).toFixed(2);
-  document.getElementById('ePayType').value = 'hourly';
   const efn2 = pick(firsts), eln2 = pick(lasts);
   document.getElementById('eEmgName').value = `${efn2} ${eln2}`;
   document.getElementById('eEmgPhone').value = `(${rnd(312,847)}) ${rnd(100,999)}-${rnd(1000,9999)}`;
@@ -4476,10 +4522,6 @@ async function saveEmployee() {
     zip: document.getElementById('eZip').value.trim(),
     hire_date: document.getElementById('eHire').value,
     status: document.getElementById('eStatus').value,
-    position: document.getElementById('ePos').value.trim(),
-    department: document.getElementById('eDept').value.trim(),
-    pay_rate: document.getElementById('ePayRate').value,
-    pay_type: document.getElementById('ePayType').value,
     emergency_name: document.getElementById('eEmgName').value.trim(),
     emergency_phone: document.getElementById('eEmgPhone').value.trim(),
     emergency_relation: document.getElementById('eEmgRel').value.trim(),
@@ -5254,6 +5296,8 @@ async function confirmAssignJob() {
     _allJobsCache = null;
     loadEmployees();
     if (currentEmpForDetail && currentEmpForDetail.id == empId) viewEmployee(empId);
+    // Refresh job records list in employee edit modal if open
+    if (document.getElementById('empModal').classList.contains('show') && document.getElementById('empId').value == empId) loadEditEmpJobRecords(empId);
   } catch(e) {
     alert('请求失败：' + (e.message || '网络错误'));
   }

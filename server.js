@@ -703,6 +703,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS enterprise_verification_codes (
 )`);
 // Migrate: suspended flag for worker accounts (distinct from unverified)
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
+// Migrate: richer fields on job_applications
+try { db.exec("ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE job_applications ADD COLUMN work_auth_confirmed TEXT DEFAULT ''"); } catch {}
 
 // ─── Interview system ───
 db.exec(`CREATE TABLE IF NOT EXISTS interview_slots (
@@ -2734,6 +2737,9 @@ app.post('/api/admin/employees/:id/assign-job', requireAdmin, (req, res) => {
            client_hourly_rate||0, client_total_billed||0,
            perf_efficiency||0, perf_quality||0, perf_attendance||0,
            perf_safety||0, perf_teamwork||0, perf_skills||0, notes||'');
+    // Sync employee's displayed position from latest active job record
+    const sync = db.prepare(`SELECT job_title, emp_hourly_rate FROM employee_jobs WHERE employee_id=? AND status='active' ORDER BY start_date DESC, assigned_at DESC LIMIT 1`).get(req.params.id);
+    if (sync) db.prepare('UPDATE employees SET position=?, pay_rate=? WHERE id=?').run(sync.job_title||'', sync.emp_hourly_rate||0, req.params.id);
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ error: e.message });
@@ -2743,6 +2749,9 @@ app.post('/api/admin/employees/:id/assign-job', requireAdmin, (req, res) => {
 // Remove a job assignment from employee
 app.delete('/api/admin/employees/:id/assign-job/:jobId', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM employee_jobs WHERE employee_id=? AND job_id=?').run(req.params.id, req.params.jobId);
+  // Sync employee's displayed position from the next latest active record
+  const sync = db.prepare(`SELECT job_title, emp_hourly_rate FROM employee_jobs WHERE employee_id=? AND status='active' ORDER BY start_date DESC, assigned_at DESC LIMIT 1`).get(req.params.id);
+  db.prepare('UPDATE employees SET position=?, pay_rate=? WHERE id=?').run(sync ? sync.job_title||'' : '', sync ? sync.emp_hourly_rate||0 : 0, req.params.id);
   res.json({ success: true });
 });
 
@@ -3240,12 +3249,15 @@ app.get('/api/worker/jobs', requireWorker, (req, res) => {
 });
 
 app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
-  const job = db.prepare('SELECT id FROM jobs WHERE id=? AND active=1').get(req.params.jobId);
+  const job = db.prepare('SELECT id, work_auth FROM jobs WHERE id=? AND active=1').get(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found or no longer active' });
+  const { notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed } = req.body || {};
+  // If job requires gc/citizen, applicant must confirm work auth status
+  if ((job.work_auth === 'gc' || job.work_auth === 'citizen') && !work_auth_confirmed)
+    return res.status(400).json({ error: '请选择您的工作身份状态' });
   try {
-    const { notes, interview_availability, expected_pay, applicant_message } = req.body;
-    db.prepare(`INSERT INTO job_applications (job_id, worker_account_id, notes, interview_availability, expected_pay, applicant_message)
-      VALUES (?,?,?,?,?,?)`).run(req.params.jobId, req.workerId, notes||'', interview_availability||'', expected_pay||'', applicant_message||'');
+    db.prepare(`INSERT INTO job_applications (job_id, worker_account_id, notes, interview_availability, expected_pay, applicant_message, work_auth_confirmed) VALUES (?,?,?,?,?,?,?)`)
+      .run(req.params.jobId, req.workerId, notes||'', interview_availability||'', expected_pay||'', applicant_message||'', work_auth_confirmed||'');
     res.json({ success: true });
   } catch { res.status(400).json({ error: 'Already applied to this job' }); }
 });

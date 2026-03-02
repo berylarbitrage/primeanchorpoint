@@ -136,6 +136,52 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Apply for Job Modal -->
+<div class="modal-overlay" id="applyModal">
+  <div class="modal-box" style="max-width:460px;width:94%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+      <h2 style="margin:0">申请职位 / Apply for Position</h2>
+      <button onclick="closeApplyModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+    <p id="applyJobLabel" style="font-size:.85rem;color:var(--sky);font-weight:600;margin-bottom:1.25rem"></p>
+
+    <!-- Work auth question — shown only when job requires gc or citizen -->
+    <div id="applyWorkAuthField" style="display:none;margin-bottom:1.1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem">
+      <p style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.5rem">🪪 该职位要求 <span id="applyWorkAuthRequired"></span></p>
+      <p style="font-size:.78rem;color:#92400e;margin-bottom:.6rem">请确认您的工作身份</p>
+      <div style="display:flex;gap:.6rem">
+        <label style="flex:1;display:flex;align-items:center;gap:.4rem;cursor:pointer;padding:.45rem .6rem;border:1px solid #fde68a;border-radius:8px;background:#fff;font-size:.85rem;font-weight:600">
+          <input type="radio" name="applyWorkAuth" value="yes" style="accent-color:var(--green)"> ✅ 是，我符合
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:.4rem;cursor:pointer;padding:.45rem .6rem;border:1px solid #fde68a;border-radius:8px;background:#fff;font-size:.85rem;font-weight:600">
+          <input type="radio" name="applyWorkAuth" value="no" style="accent-color:var(--red)"> ❌ 暂不符合
+        </label>
+      </div>
+    </div>
+
+    <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">📅 面试时间 / Interview Availability <span style="color:#dc2626">*</span></label>
+      <input type="text" id="applyAvailability" placeholder="例：周一至周五 9am–5pm，或具体日期 / e.g. Weekdays 9am–5pm" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💰 期望薪资 / Expected Pay</label>
+      <input type="text" id="applyExpectedPay" placeholder="例：$18/hr 或 $3,500/月" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 想对我们说的话 / Message to HR</label>
+      <textarea id="applyMessage" rows="3" placeholder="介绍一下您的相关经验、期望，或任何想告诉我们的 / Introduce yourself, share your expectations, or anything you'd like us to know" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit;outline:none"></textarea>
+    </div>
+
+    <div class="modal-msg error" id="applyModalError"></div>
+    <div style="display:flex;gap:.6rem;margin-top:.75rem">
+      <button onclick="closeApplyModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消 / Cancel</button>
+      <button onclick="submitApply()" id="applySubmitBtn" class="modal-btn modal-btn-primary" style="flex:2">提交申请 / Submit</button>
+    </div>
+  </div>
+</div>
+
 <!-- Forgot Password Modal -->
 <div class="modal-overlay" id="forgotModal">
   <div class="modal-box">
@@ -167,44 +213,6 @@ tr:last-child td{border-bottom:none}
     </div>
 
     <button class="modal-btn modal-btn-secondary" onclick="closeForgotPassword()">关闭 / Close</button>
-  </div>
-</div>
-
-<!-- Apply Job Modal -->
-<div class="modal-overlay" id="applyModal" style="display:none;align-items:center;justify-content:center">
-  <div class="modal-box" style="max-width:460px;width:92%">
-    <h3 style="margin:0 0 .25rem;color:var(--blue);font-size:1.05rem">申请职位 / Apply for Position</h3>
-    <div id="applyJobLabel" style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem"></div>
-    <div class="modal-msg" id="applyMsg"></div>
-
-    <div style="margin-bottom:.9rem">
-      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
-        📅 面试时间 / Interview Availability <span style="color:#dc2626">*</span>
-      </label>
-      <input id="applyAvailability" type="text" placeholder="例：周一至周五 9am–5pm，或具体日期 / e.g. Weekdays 9am–5pm"
-        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
-    </div>
-
-    <div style="margin-bottom:.9rem">
-      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
-        💰 期望薪资 / Expected Pay
-      </label>
-      <input id="applyExpectedPay" type="text" placeholder="例：$18/hr 或 $3,500/月 / e.g. $18/hr or $3,500/mo"
-        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
-    </div>
-
-    <div style="margin-bottom:1.1rem">
-      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
-        💬 想对我们说的话 / Message to HR
-      </label>
-      <textarea id="applyMessage" rows="3" placeholder="介绍一下您的相关经验、期待，或任何想告诉我们的 / Introduce yourself, share your expectations, or anything you'd like us to know"
-        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none;resize:vertical;line-height:1.5"></textarea>
-    </div>
-
-    <div style="display:flex;gap:.6rem;justify-content:flex-end">
-      <button class="modal-btn modal-btn-secondary" onclick="closeApplyModal()">取消 / Cancel</button>
-      <button class="modal-btn modal-btn-primary" id="applySubmitBtn" onclick="submitApply()">提交申请 / Submit</button>
-    </div>
   </div>
 </div>
 
@@ -785,58 +793,88 @@ function renderJobs(jobs) {
     </div>`).join('') : '<div class="empty">暂无在招职位</div>';
 }
 
-let _applyJobId = null;
+let _currentApplyJob = null;
 
 function applyJob(jobId) {
-  _applyJobId = jobId;
-  // Fill in job label from cached list
   const job = (_allJobs || []).find(j => j.id === jobId);
-  document.getElementById('applyJobLabel').textContent = job
-    ? `${job.title}${job.company_name ? '  ·  ' + job.company_name : ''}${job.location ? '  ·  ' + job.location : ''}`
-    : '';
+  if (!job) return;
+  _currentApplyJob = job;
+
+  document.getElementById('applyJobLabel').textContent =
+    [job.title, job.company_name, job.location].filter(Boolean).join('  ·  ');
   document.getElementById('applyAvailability').value = '';
   document.getElementById('applyExpectedPay').value = '';
   document.getElementById('applyMessage').value = '';
-  document.getElementById('applyMsg').className = 'modal-msg';
-  document.getElementById('applyModal').style.display = 'flex';
+  document.querySelectorAll('[name="applyWorkAuth"]').forEach(r => r.checked = false);
+  const errEl = document.getElementById('applyModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+  const btn = document.getElementById('applySubmitBtn');
+  btn.disabled = false; btn.textContent = '提交申请 / Submit';
+
+  const authField = document.getElementById('applyWorkAuthField');
+  const authReqEl = document.getElementById('applyWorkAuthRequired');
+  if (job.work_auth === 'gc') {
+    authField.style.display = '';
+    authReqEl.textContent = '绿卡或公民（Green Card or Citizen）';
+  } else if (job.work_auth === 'citizen') {
+    authField.style.display = '';
+    authReqEl.textContent = '仅限美国公民（US Citizen Only）';
+  } else {
+    authField.style.display = 'none';
+  }
+
+  document.getElementById('applyModal').classList.add('show');
   setTimeout(() => document.getElementById('applyAvailability').focus(), 100);
 }
 
 function closeApplyModal() {
-  document.getElementById('applyModal').style.display = 'none';
-  _applyJobId = null;
+  document.getElementById('applyModal').classList.remove('show');
+  _currentApplyJob = null;
 }
 
 async function submitApply() {
-  const availability = document.getElementById('applyAvailability').value.trim();
-  if (!availability) {
-    const el = document.getElementById('applyMsg');
-    el.className = 'modal-msg show error';
-    el.textContent = '请填写面试时间 / Please enter your interview availability';
+  if (!_currentApplyJob) return;
+  const job = _currentApplyJob;
+  const errEl = document.getElementById('applyModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+
+  const interview_availability = document.getElementById('applyAvailability').value.trim();
+  if (!interview_availability) {
+    errEl.textContent = '请填写面试时间 / Please enter your interview availability';
+    errEl.classList.add('show');
     return;
   }
+
+  const expected_pay = document.getElementById('applyExpectedPay').value.trim();
+  const applicant_message = document.getElementById('applyMessage').value.trim();
+
+  let work_auth_confirmed = '';
+  if (job.work_auth === 'gc' || job.work_auth === 'citizen') {
+    const sel = document.querySelector('[name="applyWorkAuth"]:checked');
+    if (!sel) {
+      errEl.textContent = '请选择您的工作身份状态 / Please select your work authorization status';
+      errEl.classList.add('show');
+      return;
+    }
+    work_auth_confirmed = sel.value;
+  }
+
   const btn = document.getElementById('applySubmitBtn');
-  btn.disabled = true;
-  btn.textContent = '提交中…';
-  const r = await wApi(`/apply/${_applyJobId}`, {
+  btn.disabled = true; btn.textContent = '提交中…';
+
+  const r = await wApi(`/apply/${job.id}`, {
     method: 'POST',
-    body: JSON.stringify({
-      interview_availability: availability,
-      expected_pay: document.getElementById('applyExpectedPay').value.trim(),
-      applicant_message: document.getElementById('applyMessage').value.trim()
-    })
+    body: JSON.stringify({ interview_availability, expected_pay, applicant_message, work_auth_confirmed })
   });
-  btn.disabled = false;
-  btn.textContent = '提交申请 / Submit';
-  if (!r) return;
+  if (!r) { btn.disabled = false; btn.textContent = '提交申请 / Submit'; return; }
   if (r.success) {
     closeApplyModal();
     showToast('✅ 申请成功！HR将与您联系');
     loadJobs();
   } else {
-    const el = document.getElementById('applyMsg');
-    el.className = 'modal-msg show error';
-    el.textContent = r.error || '申请失败';
+    errEl.textContent = r.error || '申请失败';
+    errEl.classList.add('show');
+    btn.disabled = false; btn.textContent = '提交申请 / Submit';
   }
 }
 
