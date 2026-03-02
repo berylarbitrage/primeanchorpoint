@@ -1998,6 +1998,9 @@ app.post('/api/admin/employees/:id/assign-job', requireAdmin, (req, res) => {
            client_hourly_rate||0, client_total_billed||0,
            perf_efficiency||0, perf_quality||0, perf_attendance||0,
            perf_safety||0, perf_teamwork||0, perf_skills||0, notes||'');
+    // Sync employee's displayed position from latest active job record
+    const sync = db.prepare(`SELECT job_title, emp_hourly_rate FROM employee_jobs WHERE employee_id=? AND status='active' ORDER BY start_date DESC, assigned_at DESC LIMIT 1`).get(req.params.id);
+    if (sync) db.prepare('UPDATE employees SET position=?, pay_rate=? WHERE id=?').run(sync.job_title||'', sync.emp_hourly_rate||0, req.params.id);
     res.json({ success: true });
   } catch(e) {
     res.status(500).json({ error: e.message });
@@ -2007,6 +2010,9 @@ app.post('/api/admin/employees/:id/assign-job', requireAdmin, (req, res) => {
 // Remove a job assignment from employee
 app.delete('/api/admin/employees/:id/assign-job/:jobId', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM employee_jobs WHERE employee_id=? AND job_id=?').run(req.params.id, req.params.jobId);
+  // Sync employee's displayed position from the next latest active record
+  const sync = db.prepare(`SELECT job_title, emp_hourly_rate FROM employee_jobs WHERE employee_id=? AND status='active' ORDER BY start_date DESC, assigned_at DESC LIMIT 1`).get(req.params.id);
+  db.prepare('UPDATE employees SET position=?, pay_rate=? WHERE id=?').run(sync ? sync.job_title||'' : '', sync ? sync.emp_hourly_rate||0 : 0, req.params.id);
   res.json({ success: true });
 });
 
