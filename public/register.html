@@ -71,17 +71,35 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 .login-links{text-align:center;margin-top:1.25rem;font-size:.85rem;color:var(--gray-400)}
 .login-links a{color:var(--sky);text-decoration:none;font-weight:600}
 .login-links a:hover{text-decoration:underline}
+
+/* Password visibility toggle */
+.pw-wrap{position:relative;display:flex;align-items:center}
+.pw-wrap input{flex:1;padding-right:2.5rem}
+.pw-eye{position:absolute;right:.6rem;background:none;border:none;cursor:pointer;font-size:1.1rem;padding:0;line-height:1;color:var(--gray-400)}
+.pw-eye:hover{color:var(--gray-500)}
+
+/* Language selector */
+.lang-bar{display:flex;justify-content:flex-end;gap:.4rem;margin-bottom:1rem}
+.lang-btn{padding:3px 10px;border:1px solid var(--gray-200);border-radius:20px;background:#fff;font-size:.75rem;font-weight:600;cursor:pointer;color:var(--gray-500);transition:all .15s}
+.lang-btn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="logo">
     <h1>Prime <span>Anchor</span>Point</h1>
-    <p>账号注册 / Account Registration</p>
+    <p id="logoSubtitle">账号注册 / Account Registration</p>
   </div>
 
   <div class="card" id="regCard">
-    <div class="type-selector">
+
+    <div class="lang-bar">
+      <button class="lang-btn active" onclick="setLang('zh')">中文</button>
+      <button class="lang-btn" onclick="setLang('en')">English</button>
+      <button class="lang-btn" onclick="setLang('es')">Español</button>
+    </div>
+
+    <div class="type-selector" id="typeSelector">
       <div class="type-btn active" id="typeWorker" onclick="selectType('worker')">
         <div class="type-icon">👷</div>
         <div class="type-label">工人注册</div>
@@ -98,58 +116,72 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 
     <!-- Worker Registration -->
     <div class="form-section active" id="formWorker">
-      <h2>👷 工人注册 / Worker Registration</h2>
+      <h2 id="workerFormTitle">👷 工人注册</h2>
 
-      <div class="field">
-        <label>姓名 / Full Name *</label>
-        <input type="text" id="wName" placeholder="请输入您的全名 / Your full name">
+      <div class="field-row">
+        <div class="field">
+          <label id="lLastName">姓 *</label>
+          <input type="text" id="wLastName" placeholder="请输入姓氏">
+        </div>
+        <div class="field">
+          <label id="lFirstName">名 *</label>
+          <input type="text" id="wFirstName" placeholder="请输入名字">
+        </div>
       </div>
 
       <div class="field-row">
         <div class="field">
-          <label>手机号 / Phone *</label>
-          <input type="tel" id="wPhone" placeholder="(312) 555-1234">
+          <label id="lPhone">手机号 *</label>
+          <input type="tel" id="wPhone" placeholder="(312) 555-1234" onblur="checkDuplicate('phone')">
+          <div class="field-hint" id="dupPhone" style="color:var(--red);display:none">该手机号已注册</div>
         </div>
         <div class="field">
-          <label>邮箱 / Email *</label>
-          <input type="email" id="wEmail" placeholder="you@email.com">
+          <label id="lEmail">邮箱 *</label>
+          <input type="email" id="wEmail" placeholder="you@email.com" onblur="checkDuplicate('email')">
+          <div class="field-hint" id="dupEmail" style="color:var(--red);display:none">该邮箱已注册</div>
         </div>
       </div>
 
       <div class="field">
-        <label>出生日期 / Date of Birth *</label>
+        <label id="lDob">出生日期 *</label>
         <input type="date" id="wDob">
       </div>
 
       <div class="field">
-        <label>身份状态 / Work Authorization Status *</label>
+        <label id="lStatus">身份状态 *</label>
         <div class="status-options" id="wStatusOptions">
-          <div class="status-opt" onclick="selectStatus('citizen')">🇺🇸 公民 / Citizen</div>
-          <div class="status-opt" onclick="selectStatus('green_card')">💚 绿卡 / Green Card</div>
-          <div class="status-opt" onclick="selectStatus('ead')">📋 EAD 工卡</div>
+          <div class="status-opt" onclick="selectStatus('citizen')">🇺🇸 公民</div>
+          <div class="status-opt" onclick="selectStatus('green_card')">💚 绿卡</div>
+          <div class="status-opt" onclick="selectStatus('ead')">📋 EAD</div>
           <div class="status-opt" onclick="selectStatus('h1b')">📄 H-1B</div>
           <div class="status-opt" onclick="selectStatus('opt')">🎓 OPT/CPT</div>
-          <div class="status-opt" onclick="selectStatus('other')">其他 / Other</div>
+          <div class="status-opt" onclick="selectStatus('other')" id="statusOther">其他</div>
         </div>
       </div>
 
       <div class="field">
-        <label>感兴趣的工种 / Positions of Interest</label>
+        <label id="lPositions">感兴趣的工种</label>
         <div class="pos-grid" id="posGrid"></div>
-        <div class="field-hint">选择您有兴趣或有经验的工种 / Select positions you're interested in or experienced with</div>
+        <div class="field-hint" id="hintPositions">可多选</div>
       </div>
 
       <div class="field">
-        <label>设置密码 / Password *</label>
-        <input type="password" id="wPassword" placeholder="至少6位 / At least 6 characters">
+        <label id="lPw">设置密码 *</label>
+        <div class="pw-wrap">
+          <input type="password" id="wPassword" placeholder="至少6位">
+          <button type="button" class="pw-eye" onclick="togglePw('wPassword',this)" tabindex="-1">&#128065;</button>
+        </div>
       </div>
 
       <div class="field">
-        <label>确认密码 / Confirm Password *</label>
-        <input type="password" id="wPassword2" placeholder="请再次输入密码 / Re-enter password">
+        <label id="lPw2">确认密码 *</label>
+        <div class="pw-wrap">
+          <input type="password" id="wPassword2" placeholder="请再次输入密码">
+          <button type="button" class="pw-eye" onclick="togglePw('wPassword2',this)" tabindex="-1">&#128065;</button>
+        </div>
       </div>
 
-      <button class="btn btn-submit" onclick="registerWorker()">注册 / Register</button>
+      <button class="btn btn-submit" id="btnRegisterWorker" onclick="registerWorker()">注册</button>
     </div>
 
     <!-- Enterprise Registration -->
@@ -162,14 +194,22 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       </div>
 
       <div class="field">
+        <label>关联合作公司 / Select Your Company *</label>
+        <select id="ePartner">
+          <option value="">加载中… / Loading…</option>
+        </select>
+        <div class="field-hint">请选择您所在的公司 / Select the company you work for</div>
+      </div>
+
+      <div class="field">
         <label>企业名称 / Company Name *</label>
         <input type="text" id="eName" placeholder="请输入公司全称 / Full company name">
       </div>
 
       <div class="field">
         <label>EIN (雇主识别号码)</label>
-        <input type="text" id="eEin" placeholder="XX-XXXXXXX">
-        <div class="field-hint">Employer Identification Number (optional)</div>
+        <input type="text" id="eEin" placeholder="XX-XXXXXXX" maxlength="10" oninput="formatEin(this)">
+        <div class="field-hint">9位数字，格式 XX-XXXXXXX / 9 digits, format XX-XXXXXXX (optional)</div>
       </div>
 
       <div class="field-row">
@@ -189,8 +229,14 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       </div>
 
       <div class="field">
-        <label>用工需求 / Staffing Needs</label>
-        <textarea id="eNeeds" placeholder="请描述您的用工需求：需要什么工种、多少人、工作地点等&#10;Describe your staffing needs: positions, headcount, location, etc."></textarea>
+        <label>工种需求 / Position Needs</label>
+        <div class="pos-grid" id="ePosGrid"></div>
+        <div class="field-hint">可多选 / Select all positions you need workers for</div>
+      </div>
+
+      <div class="field">
+        <label>其他需求说明 / Additional Notes</label>
+        <textarea id="eNeeds" placeholder="需要多少人、工作地点、时间要求等&#10;Headcount, location, schedule, etc."></textarea>
       </div>
 
       <div class="field">
@@ -206,13 +252,58 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <button class="btn btn-submit" onclick="registerEnterprise()">提交注册 / Submit Registration</button>
     </div>
 
+    <!-- Verification step -->
+    <div id="workerVerify" style="display:none">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <div style="font-size:2rem;margin-bottom:.5rem" id="verifyIcon">📱</div>
+        <div id="verifyStepIndicator" style="font-size:.78rem;color:#aaa;margin-bottom:.4rem"></div>
+        <h2 style="color:var(--blue);margin:0 0 .5rem" id="verifyTitle">验证手机号 / Verify Phone</h2>
+        <p style="color:#666;font-size:.9rem" id="verifyDesc">
+          验证码已发送到您的手机，请输入收到的6位数验证码。<br>
+          A verification code has been sent to your phone.
+        </p>
+      </div>
+      <!-- Phone step -->
+      <div id="phoneCodeSection" style="display:none">
+        <div class="field">
+          <label>手机验证码 / Phone Code</label>
+          <input type="text" id="vPhoneCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem" oninput="this.value=this.value.replace(/\D/g,'')">
+        </div>
+        <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
+          <a href="#" onclick="resendCode('phone');return false" style="font-size:.82rem;color:var(--sky)">重新发送手机验证码 / Resend phone code</a>
+        </div>
+        <button class="btn btn-submit" onclick="verifyStep('phone')">下一步 / Next</button>
+      </div>
+      <!-- Email step -->
+      <div id="emailCodeSection" style="display:none">
+        <div class="field">
+          <label>邮箱验证码 / Email Code</label>
+          <input type="text" id="vEmailCode" placeholder="输入6位验证码" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem" oninput="this.value=this.value.replace(/\D/g,'')">
+        </div>
+        <div id="emailCodeHint" style="font-size:.82rem;color:#e07b00;margin:-.25rem 0 .75rem;display:none;padding:.5rem .75rem;background:#fff8e6;border-radius:6px"></div>
+        <div style="text-align:right;margin-top:-.25rem;margin-bottom:1rem">
+          <a href="#" onclick="resendCode('email');return false" style="font-size:.82rem;color:var(--sky)">重新发送邮箱验证码 / Resend email code</a>
+        </div>
+        <button class="btn btn-submit" onclick="verifyStep('email')">完成验证 / Complete</button>
+      </div>
+      <!-- Single-step (only one channel) -->
+      <div id="singleStepSection" style="display:none">
+        <button class="btn btn-submit" onclick="verifyWorker()">确认验证 / Verify & Complete</button>
+      </div>
+      <div id="emailResendSection" style="text-align:right;margin-top:-.5rem;margin-bottom:1rem;display:none">
+        <a href="#" onclick="resendCode('email');return false" style="font-size:.82rem;color:var(--sky)">重新发送邮箱验证码 / Resend email code</a>
+      </div>
+      <button class="btn btn-submit" id="verifyBtn" onclick="verifyWorker()">确认验证 / Verify & Complete</button>
+      <p id="verifyHint" style="text-align:center;font-size:.82rem;color:#999;margin-top:.75rem">验证码15分钟内有效 / Codes expire in 15 minutes</p>
+    </div>
+
     <!-- Success screens -->
-    <div class="success-screen" id="workerSuccess">
+    <div class="success-screen" id="workerSuccess" style="display:none">
       <div class="success-icon">🎉</div>
       <div class="success-title">注册成功！/ Registration Successful!</div>
       <div class="success-body">
-        您的工人账号已创建，正在跳转到工人门户…<br>
-        Your worker account has been created. Redirecting to Worker Portal...
+        验证通过，正在跳转到工人门户…<br>
+        Verified! Redirecting to Worker Portal...
       </div>
     </div>
 
@@ -227,7 +318,7 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       </div>
     </div>
 
-    <div class="login-links">
+    <div class="login-links" id="loginLinks">
       已有账号？/ Already have an account?<br>
       <a href="/portal">工人登录 / Worker Login</a> &nbsp;·&nbsp;
       <a href="/customer">企业登录 / Enterprise Login</a>
@@ -238,6 +329,117 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 <script>
 let _selectedType = 'worker';
 let _selectedStatus = '';
+let _lang = 'zh';
+
+const LANGS = {
+  zh: {
+    workerBtn: '工人注册', workerDesc: 'Worker Registration',
+    enterpriseBtn: '企业注册', enterpriseDesc: 'Enterprise Registration',
+    workerTitle: '👷 工人注册',
+    labelLastName: '姓 *', labelFirstName: '名 *',
+    phLastName: '请输入姓氏', phFirstName: '请输入名字',
+    labelPhone: '手机号 *', phPhone: '(312) 555-1234',
+    labelEmail: '邮箱 *', phEmail: 'you@email.com',
+    labelDob: '出生日期 *',
+    labelStatus: '身份状态 *',
+    labelPositions: '感兴趣的工种', hintPositions: '可多选',
+    labelPw: '设置密码 *', phPw: '至少6位',
+    labelPw2: '确认密码 *', phPw2: '请再次输入密码',
+    btnRegister: '注册',
+    dupPhone: '该手机号已注册', dupEmail: '该邮箱已注册',
+    errLastName: '请输入姓', errFirstName: '请输入名',
+    errPhone: '请输入手机号', errPhoneFmt: '手机号格式不正确，请输入10-11位数字',
+    errEmail: '请输入邮箱', errEmailFmt: '邮箱格式不正确',
+    errDob: '请选择出生日期', errStatus: '请选择身份状态',
+    errPw: '密码至少6位', errPw2: '两次密码不一致',
+    alreadyHave: '已有账号？', workerLogin: '工人登录', enterpriseLogin: '企业登录',
+  },
+  en: {
+    workerBtn: 'Worker', workerDesc: 'Worker Registration',
+    enterpriseBtn: 'Enterprise', enterpriseDesc: 'Enterprise Registration',
+    workerTitle: '👷 Worker Registration',
+    labelLastName: 'Last Name *', labelFirstName: 'First Name *',
+    phLastName: 'Last name', phFirstName: 'First name',
+    labelPhone: 'Phone *', phPhone: '(312) 555-1234',
+    labelEmail: 'Email *', phEmail: 'you@email.com',
+    labelDob: 'Date of Birth *',
+    labelStatus: 'Work Authorization Status *',
+    labelPositions: 'Positions of Interest', hintPositions: 'Select all that apply',
+    labelPw: 'Password *', phPw: 'At least 6 characters',
+    labelPw2: 'Confirm Password *', phPw2: 'Re-enter password',
+    btnRegister: 'Register',
+    dupPhone: 'Phone number already registered', dupEmail: 'Email already registered',
+    errLastName: 'Last name is required', errFirstName: 'First name is required',
+    errPhone: 'Phone is required', errPhoneFmt: 'Please enter a valid phone number (10-11 digits)',
+    errEmail: 'Email is required', errEmailFmt: 'Please enter a valid email address',
+    errDob: 'Date of birth is required', errStatus: 'Work status is required',
+    errPw: 'Password must be at least 6 characters', errPw2: 'Passwords do not match',
+    alreadyHave: 'Already have an account?', workerLogin: 'Worker Login', enterpriseLogin: 'Enterprise Login',
+  },
+  es: {
+    workerBtn: 'Trabajador', workerDesc: 'Registro de Trabajador',
+    enterpriseBtn: 'Empresa', enterpriseDesc: 'Registro de Empresa',
+    workerTitle: '👷 Registro de Trabajador',
+    labelLastName: 'Apellido *', labelFirstName: 'Nombre *',
+    phLastName: 'Apellido', phFirstName: 'Nombre',
+    labelPhone: 'Teléfono *', phPhone: '(312) 555-1234',
+    labelEmail: 'Correo electrónico *', phEmail: 'tu@correo.com',
+    labelDob: 'Fecha de nacimiento *',
+    labelStatus: 'Estado de autorización de trabajo *',
+    labelPositions: 'Puestos de interés', hintPositions: 'Seleccione todos los que apliquen',
+    labelPw: 'Contraseña *', phPw: 'Mínimo 6 caracteres',
+    labelPw2: 'Confirmar contraseña *', phPw2: 'Vuelva a ingresar la contraseña',
+    btnRegister: 'Registrarse',
+    dupPhone: 'Este teléfono ya está registrado', dupEmail: 'Este correo ya está registrado',
+    errLastName: 'El apellido es requerido', errFirstName: 'El nombre es requerido',
+    errPhone: 'El teléfono es requerido', errPhoneFmt: 'Ingrese un número de teléfono válido (10-11 dígitos)',
+    errEmail: 'El correo es requerido', errEmailFmt: 'Ingrese un correo electrónico válido',
+    errDob: 'La fecha de nacimiento es requerida', errStatus: 'El estado de trabajo es requerido',
+    errPw: 'La contraseña debe tener al menos 6 caracteres', errPw2: 'Las contraseñas no coinciden',
+    alreadyHave: '¿Ya tiene cuenta?', workerLogin: 'Ingreso Trabajador', enterpriseLogin: 'Ingreso Empresa',
+  }
+};
+
+const STATUS_LABELS = {
+  zh: { citizen:'🇺🇸 公民', green_card:'💚 绿卡', ead:'📋 EAD', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'其他' },
+  en: { citizen:'🇺🇸 Citizen', green_card:'💚 Green Card', ead:'📋 EAD', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'Other' },
+  es: { citizen:'🇺🇸 Ciudadano', green_card:'💚 Tarjeta Verde', ead:'📋 EAD', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'Otro' },
+};
+
+function setLang(lang) {
+  _lang = lang;
+  document.querySelectorAll('.lang-btn').forEach(b => {
+    b.classList.toggle('active', (b.textContent === '中文' && lang === 'zh') ||
+      (b.textContent === 'English' && lang === 'en') || (b.textContent === 'Español' && lang === 'es'));
+  });
+  const T = LANGS[lang];
+  const S = STATUS_LABELS[lang];
+  document.querySelector('#typeWorker .type-label').textContent = T.workerBtn;
+  document.querySelector('#typeWorker .type-desc').textContent = T.workerDesc;
+  document.querySelector('#typeEnterprise .type-label').textContent = T.enterpriseBtn;
+  document.querySelector('#typeEnterprise .type-desc').textContent = T.enterpriseDesc;
+  document.getElementById('workerFormTitle').textContent = T.workerTitle;
+  setLabel('lLastName', T.labelLastName); setPlaceholder('wLastName', T.phLastName);
+  setLabel('lFirstName', T.labelFirstName); setPlaceholder('wFirstName', T.phFirstName);
+  setLabel('lPhone', T.labelPhone); setPlaceholder('wPhone', T.phPhone);
+  setLabel('lEmail', T.labelEmail); setPlaceholder('wEmail', T.phEmail);
+  setLabel('lDob', T.labelDob);
+  setLabel('lStatus', T.labelStatus);
+  setLabel('lPositions', T.labelPositions);
+  document.getElementById('hintPositions').textContent = T.hintPositions;
+  setLabel('lPw', T.labelPw); setPlaceholder('wPassword', T.phPw);
+  setLabel('lPw2', T.labelPw2); setPlaceholder('wPassword2', T.phPw2);
+  document.getElementById('btnRegisterWorker').textContent = T.btnRegister;
+  // Status option labels
+  const opts = document.querySelectorAll('#wStatusOptions .status-opt');
+  const keys = ['citizen','green_card','ead','h1b','opt','other'];
+  opts.forEach((el, i) => { if (keys[i]) el.textContent = S[keys[i]]; });
+  // Login links
+  document.getElementById('loginLinks').innerHTML =
+    T.alreadyHave + '<br><a href="/portal">' + T.workerLogin + '</a> &nbsp;·&nbsp; <a href="/customer">' + T.enterpriseLogin + '</a>';
+}
+function setLabel(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
+function setPlaceholder(id, text) { const el = document.getElementById(id); if (el) el.placeholder = text; }
 
 const POSITIONS = [
   { key:'warehouse_sorter', zh:'仓库分拣员', en:'Warehouse Sorter' },
@@ -262,10 +464,53 @@ const POSITIONS = [
   { key:'welder',           zh:'焊接工',     en:'Welder' },
 ];
 
-// Build position checkboxes
-document.getElementById('posGrid').innerHTML = POSITIONS.map(p =>
+const posHtml = POSITIONS.map(p =>
   `<label class="pos-check"><input type="checkbox" value="${p.key}"> ${p.zh} <span style="color:var(--gray-400);font-size:.72rem">${p.en}</span></label>`
 ).join('');
+
+// Build position checkboxes for both worker and enterprise forms
+document.getElementById('posGrid').innerHTML = posHtml;
+document.getElementById('ePosGrid').innerHTML = posHtml;
+
+// Load partner list for enterprise registration
+fetch('/api/public/partners').then(r => r.json()).then(partners => {
+  const sel = document.getElementById('ePartner');
+  if (!partners.length) {
+    sel.innerHTML = '<option value="">— 暂无可选公司，请联系管理员 / No companies available —</option>';
+  } else {
+    sel.innerHTML = '<option value="">— 请选择您所在的公司 / Select your company —</option>' +
+      partners.map(p => `<option value="${p.id}">${p.name}${p.industry ? ' · ' + p.industry : ''}</option>`).join('');
+  }
+}).catch(() => {
+  document.getElementById('ePartner').innerHTML = '<option value="">— 加载失败，请刷新重试 / Load failed —</option>';
+});
+
+// Auto-select type based on URL parameter
+const urlParams = new URLSearchParams(window.location.search);
+const typeParam = urlParams.get('type');
+if (typeParam === 'enterprise') {
+  selectType('enterprise');
+  // Hide type selector - enterprise only
+  document.getElementById('typeSelector').style.display = 'none';
+  document.getElementById('logoSubtitle').textContent = '企业注册 / Enterprise Registration';
+  document.getElementById('loginLinks').innerHTML = '已有账号？/ Already have an account?<br><a href="/customer">企业登录 / Enterprise Login</a>';
+} else if (typeParam === 'worker') {
+  selectType('worker');
+  // Hide type selector - worker only
+  document.getElementById('typeSelector').style.display = 'none';
+  document.getElementById('logoSubtitle').textContent = '工人注册 / Worker Registration';
+  document.getElementById('loginLinks').innerHTML = '已有账号？/ Already have an account?<br><a href="/portal">工人登录 / Worker Login</a>';
+}
+
+function formatEin(el) {
+  // Only keep digits, auto-insert dash after 2nd digit
+  let digits = el.value.replace(/\D/g, '').slice(0, 9);
+  if (digits.length > 2) {
+    el.value = digits.slice(0, 2) + '-' + digits.slice(2);
+  } else {
+    el.value = digits;
+  }
+}
 
 function selectType(type) {
   _selectedType = type;
@@ -299,22 +544,63 @@ function hideError() {
   document.getElementById('errorMsg').classList.remove('show');
 }
 
+async function checkDuplicate(field) {
+  const T = LANGS[_lang];
+  if (field === 'phone') {
+    const val = document.getElementById('wPhone').value.trim();
+    if (!val) return;
+    try {
+      const r = await fetch('/api/register/check?phone=' + encodeURIComponent(val.replace(/[\s\-()+]/g, '')));
+      const d = await r.json();
+      const el = document.getElementById('dupPhone');
+      el.style.display = d.taken ? '' : 'none';
+      el.textContent = d.taken ? T.dupPhone : '';
+      document.getElementById('wPhone').style.borderColor = d.taken ? 'var(--red)' : '';
+    } catch {}
+  } else if (field === 'email') {
+    const val = document.getElementById('wEmail').value.trim();
+    if (!val) return;
+    try {
+      const r = await fetch('/api/register/check?email=' + encodeURIComponent(val));
+      const d = await r.json();
+      const el = document.getElementById('dupEmail');
+      el.style.display = d.taken ? '' : 'none';
+      el.textContent = d.taken ? T.dupEmail : '';
+      document.getElementById('wEmail').style.borderColor = d.taken ? 'var(--red)' : '';
+    } catch {}
+  }
+}
+
+function togglePw(id, btn) {
+  const inp = document.getElementById(id);
+  if (inp.type === 'password') { inp.type = 'text'; btn.style.opacity = '1'; }
+  else { inp.type = 'password'; btn.style.opacity = '.45'; }
+}
+
 async function registerWorker() {
   hideError();
-  const name = document.getElementById('wName').value.trim();
+  const lastName = document.getElementById('wLastName').value.trim();
+  const firstName = document.getElementById('wFirstName').value.trim();
+  const name = (lastName + ' ' + firstName).trim();
   const phone = document.getElementById('wPhone').value.trim();
   const email = document.getElementById('wEmail').value.trim();
   const dob = document.getElementById('wDob').value;
   const password = document.getElementById('wPassword').value;
   const password2 = document.getElementById('wPassword2').value;
+  const T = LANGS[_lang];
 
-  if (!name) return showError('请输入姓名 / Name is required');
-  if (!phone) return showError('请输入手机号 / Phone is required');
-  if (!email) return showError('请输入邮箱 / Email is required');
-  if (!dob) return showError('请选择出生日期 / Date of birth is required');
-  if (!_selectedStatus) return showError('请选择身份状态 / Work status is required');
-  if (!password || password.length < 6) return showError('密码至少6位 / Password must be at least 6 characters');
-  if (password !== password2) return showError('两次密码不一致 / Passwords do not match');
+  if (!lastName) return showError(T.errLastName);
+  if (!firstName) return showError(T.errFirstName);
+  if (!phone) return showError(T.errPhone);
+  if (!/^\d{10,11}$/.test(phone.replace(/[\s\-()]+/g, ''))) return showError(T.errPhoneFmt);
+  if (!email) return showError(T.errEmail);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError(T.errEmailFmt);
+  if (!dob) return showError(T.errDob);
+  if (!_selectedStatus) return showError(T.errStatus);
+  if (!password || password.length < 6) return showError(T.errPw);
+  if (password !== password2) return showError(T.errPw2);
+  if (document.getElementById('dupPhone').style.display !== 'none') return showError(T.dupPhone);
+  if (document.getElementById('dupEmail').style.display !== 'none') return showError(T.dupEmail);
 
   const interests = Array.from(document.querySelectorAll('#posGrid input:checked')).map(c => c.value);
 
@@ -325,47 +611,267 @@ async function registerWorker() {
       body: JSON.stringify({ name, phone, email, dob, work_status: _selectedStatus, position_interests: interests, password })
     });
     const d = await r.json();
-    if (!r.ok || d.error) return showError(d.error || 'Registration failed');
-    // Auto-login: save token and redirect
+    if (!r.ok || d.error) {
+      if (d.pending_account_id) return _initVerifyUI({ ...d, account_id: d.pending_account_id });
+      return showError(d.error || '注册失败，请稍后重试 / Registration failed, please try again');
+    }
+
+    // If no verification needed, go directly to portal
+    if (!d.needs_verification) {
+      if (d.token) localStorage.setItem('pa_worker_token', d.token);
+      document.getElementById('formWorker').style.display = 'none';
+      const ts = document.getElementById('typeSelector');
+      if (ts) ts.style.display = 'none';
+      document.getElementById('loginLinks').style.display = 'none';
+      document.getElementById('workerSuccess').style.display = 'block';
+      setTimeout(() => { window.location.href = '/portal'; }, 2000);
+      return;
+    }
+
+    _initVerifyUI(d);
+  } catch (e) {
+    showError('网络错误，请重试 / Network error, please try again');
+  }
+}
+
+let _pendingAccountId = null;
+let _needsPhone = false;
+let _needsEmail = false;
+let _emailCodeFallback = null;
+let _verifyPhoneDone = false;
+
+function _initVerifyUI(d) {
+  _pendingAccountId = d.account_id;
+  _needsPhone = !!d.needs_phone;
+  _needsEmail = !!d.needs_email;
+  _emailCodeFallback = d.email_code || null;
+  _verifyPhoneDone = false;
+  document.getElementById('vPhoneCode').value = '';
+  document.getElementById('vEmailCode').value = '';
+  document.getElementById('formWorker').style.display = 'none';
+  const ts = document.getElementById('typeSelector');
+  if (ts) ts.style.display = 'none';
+  document.getElementById('loginLinks').style.display = 'none';
+  document.getElementById('workerVerify').style.display = 'block';
+  if (_needsPhone && _needsEmail) {
+    document.getElementById('phoneCodeSection').style.display = '';
+    document.getElementById('phoneResendSection').style.display = '';
+    document.getElementById('emailCodeSection').style.display = 'none';
+    document.getElementById('emailResendSection').style.display = 'none';
+    document.getElementById('verifyBtn').textContent = '下一步：验证邮箱 / Next: Verify Email';
+    document.getElementById('verifyIcon').textContent = '📱';
+    document.getElementById('verifyTitle').textContent = '第1步：验证手机号 / Step 1: Verify Phone';
+    document.getElementById('verifyDesc').innerHTML = d.sms_sent === false
+      ? '短信发送失败，请点击"重新发送手机验证码"。<br>SMS delivery failed — click Resend to get a new code.'
+      : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
+  } else if (_needsPhone) {
+    document.getElementById('phoneCodeSection').style.display = '';
+    document.getElementById('phoneResendSection').style.display = '';
+    document.getElementById('emailCodeSection').style.display = 'none';
+    document.getElementById('emailResendSection').style.display = 'none';
+    document.getElementById('verifyBtn').textContent = '确认验证 / Verify & Complete';
+    document.getElementById('verifyIcon').textContent = '📱';
+    document.getElementById('verifyTitle').textContent = '验证手机号 / Verify Phone';
+    document.getElementById('verifyDesc').innerHTML = d.sms_sent === false
+      ? '短信发送失败，请点击"重新发送手机验证码"。<br>SMS delivery failed — click Resend to get a new code.'
+      : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
+  } else {
+    document.getElementById('phoneCodeSection').style.display = 'none';
+    document.getElementById('phoneResendSection').style.display = 'none';
+    document.getElementById('emailCodeSection').style.display = '';
+    document.getElementById('emailResendSection').style.display = '';
+    document.getElementById('verifyBtn').textContent = '确认验证 / Verify & Complete';
+    document.getElementById('verifyIcon').textContent = '✉️';
+    document.getElementById('verifyTitle').textContent = '验证邮箱 / Verify Email';
+    document.getElementById('verifyDesc').innerHTML = d.email_sent === false
+      ? '邮件发送失败，请点击"重新发送邮箱验证码"。<br>Email delivery failed — click Resend to get a new code.'
+      : '验证码已发送到您的邮箱，请输入收到的6位数验证码。<br>A verification code has been sent to your email.';
+  }
+}
+
+function showVerifyStep(type, regData) {
+  // Hide all step sections first
+  document.getElementById('phoneCodeSection').style.display = 'none';
+  document.getElementById('emailCodeSection').style.display = 'none';
+  document.getElementById('singleStepSection').style.display = 'none';
+
+  const total = (_needsPhone ? 1 : 0) + (_needsEmail ? 1 : 0);
+  if (type === 'phone') {
+    const stepNum = 1;
+    document.getElementById('verifyStepIndicator').textContent = total > 1 ? `步骤 ${stepNum}/${total} · Step ${stepNum}/${total}` : '';
+    document.getElementById('verifyIcon').textContent = '📱';
+    document.getElementById('verifyTitle').textContent = '验证手机号 / Verify Phone';
+    document.getElementById('verifyDesc').innerHTML = (regData && regData.phone_code)
+      ? '短信发送失败，验证码已自动填入，请直接点击下一步。<br>SMS delivery failed — code has been filled in automatically.'
+      : '验证码已发送到您的手机，请输入收到的6位数验证码。<br>A verification code has been sent to your phone.';
+    document.getElementById('phoneCodeSection').style.display = '';
+    if (regData && regData.phone_code) document.getElementById('vPhoneCode').value = regData.phone_code;
+  } else {
+    showEmailStep(regData);
+  }
+}
+
+function showEmailStep(regData) {
+  document.getElementById('phoneCodeSection').style.display = 'none';
+  document.getElementById('singleStepSection').style.display = 'none';
+
+  const total = (_needsPhone ? 1 : 0) + (_needsEmail ? 1 : 0);
+  const stepNum = _needsPhone ? 2 : 1;
+  document.getElementById('verifyStepIndicator').textContent = total > 1 ? `步骤 ${stepNum}/${total} · Step ${stepNum}/${total}` : '';
+  document.getElementById('verifyIcon').textContent = '✉️';
+  document.getElementById('verifyTitle').textContent = '验证邮箱 / Verify Email';
+
+  const fallback = (regData && regData.email_code) || _emailCodeFallback;
+  if (fallback) {
+    document.getElementById('verifyDesc').innerHTML = '邮件发送失败，请使用下方验证码完成验证。<br>Email delivery failed — use the code below to verify.';
+    document.getElementById('vEmailCode').value = fallback;
+    const hint = document.getElementById('emailCodeHint');
+    hint.style.display = '';
+    hint.innerHTML = `📋 邮箱验证码 / Email Code: <strong style="font-size:1.1rem;letter-spacing:.15rem">${fallback}</strong>`;
+  } else {
+    document.getElementById('verifyDesc').innerHTML = '验证码已发送到您的邮箱，请检查收件箱（或垃圾邮件文件夹）。<br>A verification code has been sent to your email. Check your inbox (or spam folder).';
+    document.getElementById('emailCodeHint').style.display = 'none';
+  }
+  document.getElementById('emailCodeSection').style.display = '';
+}
+
+async function verifyStep(type) {
+  hideError();
+  const code = type === 'phone'
+    ? document.getElementById('vPhoneCode').value.trim()
+    : document.getElementById('vEmailCode').value.trim();
+  if (!code) return showError(type === 'phone' ? '请输入手机验证码 / Please enter phone code' : '请输入邮箱验证码 / Please enter email code');
+  try {
+    const r = await fetch('/api/register/verify-step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: _pendingAccountId, type, code })
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) return showError(d.error || 'Verification failed');
+    if (d.all_done) {
+      if (d.token) localStorage.setItem('pa_worker_token', d.token);
+      document.getElementById('workerVerify').style.display = 'none';
+      document.getElementById('workerSuccess').style.display = '';
+      setTimeout(() => { window.location.href = '/portal'; }, 2000);
+    } else {
+      // Move to next step
+      if (d.next_steps && d.next_steps.includes('email')) showEmailStep(null);
+    }
+  } catch (e) {
+    showError('网络错误，请重试 / Network error, please try again');
+  }
+}
+
+// Fallback for single-channel verify (kept for compatibility)
+async function verifyWorker() {
+  hideError();
+  if (_needsPhone && _needsEmail && !_verifyPhoneDone) {
+    // Phone step: validate and advance to email step
+    const phoneCode = document.getElementById('vPhoneCode').value.trim();
+    if (!phoneCode) return showError('请输入手机验证码 / Please enter phone code');
+    _verifyPhoneDone = true;
+    document.getElementById('phoneCodeSection').style.display = 'none';
+    document.getElementById('phoneResendSection').style.display = 'none';
+    document.getElementById('emailCodeSection').style.display = '';
+    document.getElementById('emailResendSection').style.display = '';
+    document.getElementById('verifyBtn').textContent = '确认验证 / Verify & Complete';
+    document.getElementById('verifyIcon').textContent = '✉️';
+    document.getElementById('verifyTitle').textContent = '第2步：验证邮箱 / Step 2: Verify Email';
+    document.getElementById('verifyDesc').innerHTML = '验证码已发送到您的邮箱，请输入收到的6位数验证码。<br>A verification code has been sent to your email.';
+    return;
+  }
+  const phoneCode = document.getElementById('vPhoneCode').value.trim();
+  const emailCode = document.getElementById('vEmailCode').value.trim();
+  if (_needsPhone && !phoneCode) return showError('请输入手机验证码 / Please enter phone code');
+  if (_needsEmail && !emailCode) return showError('请输入邮箱验证码 / Please enter email code');
+  try {
+    const payload = { account_id: _pendingAccountId };
+    if (_needsPhone) payload.phone_code = phoneCode;
+    if (_needsEmail) payload.email_code = emailCode;
+    const r = await fetch('/api/register/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) return showError(d.error || 'Verification failed');
     if (d.token) localStorage.setItem('pa_worker_token', d.token);
-    document.getElementById('formWorker').style.display = 'none';
-    document.querySelector('.type-selector').style.display = 'none';
-    document.querySelector('.login-links').style.display = 'none';
-    document.getElementById('workerSuccess').style.display = '';
+    document.getElementById('workerVerify').style.display = 'none';
+    document.getElementById('workerSuccess').style.display = 'block';
     setTimeout(() => { window.location.href = '/portal'; }, 2000);
   } catch (e) {
     showError('网络错误，请重试 / Network error, please try again');
   }
 }
 
+async function resendCode(type) {
+  if (!_pendingAccountId) return;
+  try {
+    const r = await fetch('/api/register/resend-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: _pendingAccountId, type })
+    });
+    const d = await r.json();
+    if (r.ok) {
+      if (!d.sent) {
+        document.getElementById('verifyHint').textContent = '发送失败，请稍后再试 / Delivery failed — please try again later';
+      } else {
+        document.getElementById('verifyHint').textContent = (type === 'phone' ? '手机' : '邮箱') + '验证码已重新发送 / Code resent';
+      }
+      setTimeout(() => { document.getElementById('verifyHint').textContent = '验证码15分钟内有效 / Codes expire in 15 minutes'; }, 3000);
+    } else {
+      showError(d.error || 'Failed to resend');
+    }
+  } catch (e) {
+    showError('网络错误 / Network error');
+  }
+}
+
 async function registerEnterprise() {
   hideError();
+  const partner_id = document.getElementById('ePartner').value;
   const company_name = document.getElementById('eName').value.trim();
   const contact_name = document.getElementById('eContact').value.trim();
   const email = document.getElementById('eEmail').value.trim();
   const phone = document.getElementById('ePhone').value.trim();
   const ein = document.getElementById('eEin').value.trim();
-  const staffing_needs = document.getElementById('eNeeds').value.trim();
+  const notes = document.getElementById('eNeeds').value.trim();
   const password = document.getElementById('ePassword').value;
   const password2 = document.getElementById('ePassword2').value;
 
+  const position_needs = Array.from(document.querySelectorAll('#ePosGrid input:checked')).map(c => c.value);
+
+  if (!partner_id) return showError('请选择您所在的合作公司 / Please select your company');
   if (!company_name) return showError('请输入企业名称 / Company name is required');
   if (!contact_name) return showError('请输入联系人 / Contact name is required');
   if (!email) return showError('请输入邮箱 / Email is required');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError('邮箱格式不正确 / Please enter a valid email address');
+  if (phone && !/^\d{10,11}$/.test(phone.replace(/[\s\-()]+/g, ''))) return showError('手机号格式不正确，请输入10-11位数字 / Please enter a valid phone number (10-11 digits)');
+  if (ein && !/^\d{2}-\d{7}$/.test(ein)) return showError('EIN 格式应为 XX-XXXXXXX（9位数字）/ EIN must be in XX-XXXXXXX format');
   if (!password || password.length < 6) return showError('密码至少6位 / Password must be at least 6 characters');
   if (password !== password2) return showError('两次密码不一致 / Passwords do not match');
+
+  // Combine position_needs and notes into staffing_needs
+  const posLabels = position_needs.map(k => {
+    const p = POSITIONS.find(pp => pp.key === k);
+    return p ? p.zh + '/' + p.en : k;
+  });
+  const staffing_needs = (posLabels.length ? '工种需求: ' + posLabels.join(', ') + '\n' : '') + notes;
 
   try {
     const r = await fetch('/api/register/enterprise', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_name, contact_name, email, phone, ein, staffing_needs, password })
+      body: JSON.stringify({ company_name, contact_name, email, phone, ein, staffing_needs, password, partner_id })
     });
     const d = await r.json();
-    if (!r.ok || d.error) return showError(d.error || 'Registration failed');
+    if (!r.ok || d.error) return showError(d.error || '注册失败，请稍后重试 / Registration failed, please try again');
     document.getElementById('formEnterprise').style.display = 'none';
-    document.querySelector('.type-selector').style.display = 'none';
-    document.querySelector('.login-links').style.display = 'none';
+    const ts = document.getElementById('typeSelector');
+    if (ts) ts.style.display = 'none';
+    document.getElementById('loginLinks').style.display = 'none';
     document.getElementById('enterpriseSuccess').style.display = '';
   } catch (e) {
     showError('网络错误，请重试 / Network error, please try again');

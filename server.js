@@ -1,14 +1,196 @@
+require('dotenv').config();
 const express = require('express');
 const Database = require('better-sqlite3');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
+const nodemailer = require('nodemailer');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ─── Twilio SMS ───
+const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+  ? require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+  : null;
+const TWILIO_FROM = process.env.TWILIO_PHONE_NUMBER || '';
+const TWILIO_VERIFY_SID = process.env.TWILIO_VERIFY_SERVICE_SID || '';
+
+function formatPhoneE164(phone) {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('1') && digits.length === 11) return '+' + digits;
+  if (digits.length === 10) return '+1' + digits;
+  return '+' + digits; // fallback: prepend + and hope for the best
+}
+
+async function sendSMS(to, body) {
+  if (!twilioClient || !TWILIO_FROM) {
+    console.log(`[SMS-SKIP] Twilio not configured. To: ${to}, Body: ${body}`);
+    return false;
+  }
+  const formatted = formatPhoneE164(to);
+  try {
+    await twilioClient.messages.create({ body, from: TWILIO_FROM, to: formatted });
+    console.log(`[SMS] Sent to ${formatted}`);
+    return true;
+  } catch (e) {
+    console.error(`[SMS-ERR] Failed to send to ${formatted}:`, e.message);
+    return false;
+  }
+}
+
+// ─── Twilio Verify API (for verification codes) ───
+async function sendVerifyCode(to, channel = 'sms') {
+  if (!twilioClient || !TWILIO_VERIFY_SID) {
+    console.log(`[Verify-SKIP] Twilio Verify not configured. To: ${to}, Channel: ${channel}`);
+    return false;
+  }
+  const formatted = formatPhoneE164(to);
+  try {
+    const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
+      .verifications.create({ to: formatted, channel });
+    console.log(`[Verify] Sent ${channel} to ${formatted}, status: ${v.status}`);
+    return true;
+  } catch (e) {
+    console.error(`[Verify-ERR] Failed to send to ${formatted}:`, e.message);
+    return false;
+  }
+}
+
+async function checkVerifyCode(to, code) {
+  if (!twilioClient || !TWILIO_VERIFY_SID) return false;
+  const formatted = formatPhoneE164(to);
+  try {
+    const check = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
+      .verificationChecks.create({ to: formatted, code });
+    console.log(`[Verify] Check ${formatted}: ${check.status}`);
+    return check.status === 'approved';
+  } catch (e) {
+    console.error(`[Verify-ERR] Check failed for ${formatted}:`, e.message);
+    return false;
+  }
+}
+
+// Returns detailed Twilio status for diagnostics (used by admin test endpoint)
+async function sendSMSWithDetail(to, body) {
+  if (!twilioClient) return { ok: false, error: 'TWILIO_ACCOUNT_SID 或 TWILIO_AUTH_TOKEN 未配置' };
+  if (!TWILIO_FROM) return { ok: false, error: 'TWILIO_PHONE_NUMBER 未配置' };
+  const formatted = formatPhoneE164(to);
+  try {
+    const msg = await twilioClient.messages.create({ body, from: TWILIO_FROM, to: formatted });
+    // Wait 3s then fetch real delivery status (queued → sent/failed/undelivered)
+    await new Promise(r => setTimeout(r, 3000));
+    const updated = await twilioClient.messages(msg.sid).fetch();
+    return { ok: true, sid: msg.sid, status: updated.status, errorCode: updated.errorCode, errorMessage: updated.errorMessage, to: formatted, from: TWILIO_FROM };
+  } catch (e) {
+    return { ok: false, error: e.message, code: e.code, to: formatted, from: TWILIO_FROM };
+  }
+}
+
+async function getTwilioAccountType() {
+  if (!twilioClient) return null;
+  try {
+    const account = await twilioClient.api.accounts(process.env.TWILIO_ACCOUNT_SID).fetch();
+    return { type: account.type, status: account.status, friendlyName: account.friendlyName };
+  } catch (e) { return { error: e.message }; }
+}
+
+// ─── Email ───
+// Prefer SendGrid HTTP API (works through firewalls that block SMTP ports).
+// Set SENDGRID_API_KEY, or reuse SMTP_PASS when SMTP_USER=apikey (SendGrid SMTP creds).
+const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@primeanchorpoint.com';
+const _sgKey = process.env.SENDGRID_API_KEY ||
+  (process.env.SMTP_USER === 'apikey' ? process.env.SMTP_PASS : null);
+
+// Fallback: generic SMTP via nodemailer (non-SendGrid providers only)
+const emailTransporter = (!_sgKey && process.env.SMTP_HOST)
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+    })
+  : null;
+
+if (!_sgKey && !emailTransporter) {
+  console.warn('[EMAIL-WARN] No email transport configured. Set SENDGRID_API_KEY (recommended) or SMTP_HOST.');
+}
+if (_sgKey) {
+  console.log(`[EMAIL] SendGrid HTTP API ready (from: ${EMAIL_FROM})`);
+} else if (emailTransporter) {
+  emailTransporter.verify()
+    .then(() => console.log(`[EMAIL] SMTP connection verified OK (from: ${EMAIL_FROM})`))
+    .catch(e => console.error(`[EMAIL-ERR] SMTP connection failed at startup: ${e.message}`));
+}
+
+function verificationCodeHtml(code, isAdminTest = false) {
+  const label = isAdminTest ? '管理员测试 / Admin Test' : '邮箱验证 / Email Verification';
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 0">
+<tr><td align="center">
+<table width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+<tr><td style="background:#1a1a2e;padding:24px 32px">
+  <p style="margin:0;color:#fff;font-size:18px;font-weight:600">Prime Anchorpoint</p>
+  <p style="margin:4px 0 0;color:#a0aec0;font-size:12px">${label}</p>
+</td></tr>
+<tr><td style="padding:32px">
+  <p style="margin:0 0 8px;color:#374151;font-size:15px">您的验证码 / Your verification code:</p>
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:20px;text-align:center;margin:16px 0">
+    <span style="font-size:36px;font-weight:700;letter-spacing:8px;color:#1a1a2e;font-family:monospace">${code}</span>
+  </div>
+  <p style="margin:0;color:#6b7280;font-size:13px">验证码15分钟内有效。请勿分享给他人。<br>This code expires in 15 minutes. Do not share it with anyone.</p>
+</td></tr>
+<tr><td style="padding:0 32px 24px;border-top:1px solid #f3f4f6">
+  <p style="margin:16px 0 0;color:#9ca3af;font-size:11px">如非本人操作请忽略此邮件。If you did not request this, please ignore this email.</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+}
+
+async function sendEmail(to, subject, text, html) {
+  if (_sgKey) {
+    try {
+      const content = [{ type: 'text/plain', value: text }];
+      if (html) content.push({ type: 'text/html', value: html });
+      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: { email: EMAIL_FROM },
+          subject,
+          content,
+        }),
+      });
+      if (r.status === 202) { console.log(`[EMAIL] Sent to ${to}`); return true; }
+      const body = await r.text();
+      console.error(`[EMAIL-ERR] SendGrid API ${r.status}: ${body}`);
+      return false;
+    } catch (e) {
+      console.error(`[EMAIL-ERR] SendGrid API fetch failed: ${e.message}`);
+      return false;
+    }
+  }
+  if (!emailTransporter) { console.log(`[EMAIL-SKIP] No transport. To: ${to}`); return false; }
+  try {
+    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text, html });
+    console.log(`[EMAIL] Sent to ${to}`);
+    return true;
+  } catch (e) {
+    console.error(`[EMAIL-ERR] Failed to send to ${to}: ${e.message} (code: ${e.code}, response: ${e.response})`);
+    return false;
+  }
+}
+
 // ─── Database Setup ───
-const dataDir = process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
+const dataDir = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
 const uploadsDir = path.join(dataDir, 'uploads');
@@ -277,6 +459,10 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN job_status TEXT DEFAULT 'open'`); } c
 try { db.exec(`ALTER TABLE jobs ADD COLUMN close_reason TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN close_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN headcount INTEGER DEFAULT 1`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN pay_period TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_availability TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE job_applications ADD COLUMN applicant_message TEXT DEFAULT ''`); } catch(e) {}
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
@@ -349,6 +535,42 @@ try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'z
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
+
+// DocuSign columns
+['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
+['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
+
+db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  job_id INTEGER NOT NULL,
+  company_name TEXT DEFAULT '',
+  job_title TEXT DEFAULT '',
+  status TEXT DEFAULT 'active',
+  assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (employee_id) REFERENCES employees(id),
+  FOREIGN KEY (job_id) REFERENCES jobs(id),
+  UNIQUE(employee_id, job_id)
+)`);
+
+// Migrate employee_jobs: add date, financial, and performance columns
+[
+  "ALTER TABLE employee_jobs ADD COLUMN start_date TEXT DEFAULT ''",
+  "ALTER TABLE employee_jobs ADD COLUMN end_date TEXT DEFAULT ''",
+  "ALTER TABLE employee_jobs ADD COLUMN emp_hourly_rate REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN emp_total_hours REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN emp_total_pay REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN client_hourly_rate REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN client_total_billed REAL DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_efficiency INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_quality INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_attendance INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_safety INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_teamwork INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN perf_skills INTEGER DEFAULT 0",
+  "ALTER TABLE employee_jobs ADD COLUMN notes TEXT DEFAULT ''"
+].forEach(sql => { try { db.exec(sql); } catch {} });
 
 db.exec(`CREATE TABLE IF NOT EXISTS dividend_votes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -444,6 +666,7 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFA
 // Migrate: add lang/positions to employee_doc_requests
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
+try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN expires_at DATETIME DEFAULT NULL"); } catch {}
 // Migrate: add GPS fields to time_entries
 try { db.exec("ALTER TABLE time_entries ADD COLUMN latitude REAL DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN longitude REAL DEFAULT NULL"); } catch {}
@@ -468,6 +691,33 @@ try { db.exec("ALTER TABLE worker_accounts ADD COLUMN position_interests TEXT DE
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN ein TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
+// Migrate: suspended flag for worker accounts (distinct from unverified)
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
+
+// ─── Interview system ───
+db.exec(`CREATE TABLE IF NOT EXISTS interview_slots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  slot_datetime TEXT NOT NULL,
+  duration_min INTEGER DEFAULT 30,
+  max_bookings INTEGER DEFAULT 1,
+  booked_count INTEGER DEFAULT 0,
+  location TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS interviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id),
+  slot_id INTEGER NOT NULL REFERENCES interview_slots(id),
+  status TEXT DEFAULT 'scheduled',
+  admin_notes TEXT DEFAULT '',
+  doc_request_token TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(worker_account_id)
+)`);
 
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
@@ -493,6 +743,73 @@ const WORKER_POSITIONS = [
 ];
 // Add quote_request column to inquiries if not already present (migration)
 try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
+
+// Verification codes table for registration
+db.exec(`CREATE TABLE IF NOT EXISTS verification_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  verified INTEGER DEFAULT 0,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id)
+)`);
+
+// ─── Job Sites (for GPS geofencing) ───
+db.exec(`CREATE TABLE IF NOT EXISTS job_sites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  address TEXT DEFAULT '',
+  latitude REAL NOT NULL,
+  longitude REAL NOT NULL,
+  radius_meters INTEGER DEFAULT 200,
+  partner_id INTEGER DEFAULT NULL,
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// ─── Worker Compliance Documents (I-9, DL, W-9, etc.) ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_compliance_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL,
+  doc_type TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  form_data TEXT DEFAULT '{}',
+  reviewer_notes TEXT DEFAULT '',
+  reviewed_by INTEGER DEFAULT NULL,
+  reviewed_at DATETIME DEFAULT NULL,
+  expires_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id)
+)`);
+
+// ─── Integration Settings (WorkBright, Checkr, Gusto, Twilio) ───
+db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT UNIQUE NOT NULL,
+  enabled INTEGER DEFAULT 0,
+  api_key TEXT DEFAULT '',
+  api_secret TEXT DEFAULT '',
+  config TEXT DEFAULT '{}',
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Seed default integration rows if not present
+const intProviders = ['workbright','checkr','gusto','twilio'];
+intProviders.forEach(p => {
+  const ex = db.prepare('SELECT id FROM integration_settings WHERE provider=?').get(p);
+  if (!ex) db.prepare('INSERT INTO integration_settings (provider) VALUES (?)').run(p);
+});
+
+// Migrate: add site_id to jobs for geofencing
+try { db.exec("ALTER TABLE jobs ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
+// Migrate: add site_id to time_entries
+try { db.exec("ALTER TABLE time_entries ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN geo_verified INTEGER DEFAULT 0"); } catch {}
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -689,6 +1006,16 @@ function nextEmployerId(city) {
   return `EMER-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
 }
 
+// ─── Haversine distance (GPS geofencing) ───
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000; // Earth radius in meters
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 // ─── Hours calculation (daily OT > 8h) ───
 function calcHours(clockIn, clockOut, breakMin) {
   if (!clockOut) return { total: 0, regular: 0, overtime: 0 };
@@ -705,6 +1032,87 @@ function hashPassword(password, salt) {
 function verifyPassword(password, salt, hash) {
   const derived = crypto.scryptSync(password, salt, 64).toString('hex');
   return crypto.timingSafeEqual(Buffer.from(derived, 'hex'), Buffer.from(hash, 'hex'));
+}
+
+// ─── DocuSign eSignature Integration ───
+const https = require('https');
+let _dsToken = null, _dsTokenExpiry = 0;
+
+function dsEnabled() {
+  return !!(process.env.DOCUSIGN_INTEGRATION_KEY && process.env.DOCUSIGN_USER_ID &&
+    process.env.DOCUSIGN_ACCOUNT_ID && process.env.DOCUSIGN_PRIVATE_KEY);
+}
+
+function dsMakeJWT() {
+  const isProd = process.env.DOCUSIGN_ENVIRONMENT === 'production';
+  const aud = isProd ? 'account.docusign.com' : 'account-d.docusign.com';
+  const now = Math.floor(Date.now() / 1000);
+  const b64u = (s) => Buffer.from(s).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const hdr = b64u(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const pay = b64u(JSON.stringify({ iss: process.env.DOCUSIGN_INTEGRATION_KEY, sub: process.env.DOCUSIGN_USER_ID, aud, iat: now, exp: now + 3600, scope: 'signature impersonation' }));
+  const unsigned = `${hdr}.${pay}`;
+  const pem = (process.env.DOCUSIGN_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  const signer = crypto.createSign('RSA-SHA256');
+  signer.update(unsigned);
+  const sig = signer.sign(pem, 'base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `${unsigned}.${sig}`;
+}
+
+async function getDsToken() {
+  if (_dsToken && _dsTokenExpiry > Date.now()) return _dsToken;
+  const isProd = process.env.DOCUSIGN_ENVIRONMENT === 'production';
+  const host = isProd ? 'account.docusign.com' : 'account-d.docusign.com';
+  const jwt = dsMakeJWT();
+  const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
+  const result = await new Promise((resolve, reject) => {
+    const req = https.request({ hostname: host, path: '/oauth/token', method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } }, (res) => {
+      let d = ''; res.on('data', c => d += c); res.on('end', () => { try { resolve(JSON.parse(d)); } catch { reject(new Error(d)); } });
+    });
+    req.on('error', reject); req.write(body); req.end();
+  });
+  if (!result.access_token) throw new Error('DocuSign auth failed: ' + JSON.stringify(result));
+  _dsToken = result.access_token;
+  _dsTokenExpiry = Date.now() + (result.expires_in - 60) * 1000;
+  return _dsToken;
+}
+
+async function dsApiCall(method, apiPath, body) {
+  const token = await getDsToken();
+  const baseUri = (process.env.DOCUSIGN_BASE_URI || 'https://demo.docusign.net').replace(/\/$/, '');
+  const hostname = new URL(baseUri).hostname;
+  const bodyStr = body ? JSON.stringify(body) : null;
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname, path: apiPath, method, headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json', ...(bodyStr ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } : {}) } }, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => { try { resolve({ status: res.statusCode, data: JSON.parse(d) }); } catch { resolve({ status: res.statusCode, data: d }); } });
+    });
+    req.on('error', reject); if (bodyStr) req.write(bodyStr); req.end();
+  });
+}
+
+// Build a signHere tab using anchor string (preferred) with absolute fallback
+function dsSignTab(anchorStr, fallX, fallY) {
+  return { anchorString: anchorStr, anchorIgnoreIfNotPresent: 'true', anchorXOffset: '0', anchorYOffset: '0', xPosition: String(fallX), yPosition: String(fallY), pageNumber: '1', documentId: '1' };
+}
+
+async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
+  const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+  const docBase64 = fs.readFileSync(docPath).toString('base64');
+  const fileExt = path.extname(docName).replace('.', '') || 'pdf';
+  const envelope = {
+    emailSubject,
+    documents: [{ documentBase64: docBase64, name: docName, fileExtension: fileExt, documentId: '1' }],
+    recipients: {
+      signers: [
+        { email: signer1.email, name: signer1.name, recipientId: '1', routingOrder: '1', tabs: { signHereTabs: [dsSignTab('/sig1/', 50, 680)], dateSignedTabs: [{ ...dsSignTab('/date1/', 50, 715), tabLabel: 'date1' }] } },
+        { email: signer2.email, name: signer2.name, recipientId: '2', routingOrder: '2', tabs: { signHereTabs: [dsSignTab('/sig2/', 320, 680)], dateSignedTabs: [{ ...dsSignTab('/date2/', 320, 715), tabLabel: 'date2' }] } }
+      ]
+    },
+    status: 'sent'
+  };
+  const result = await dsApiCall('POST', `/restapi/v2.1/accounts/${accountId}/envelopes`, envelope);
+  if (result.status !== 201) throw new Error(`DocuSign ${result.status}: ${JSON.stringify(result.data)}`);
+  return result.data;
 }
 
 // Seed default admin into admin_users table if empty
@@ -799,6 +1207,7 @@ function managerPartnerIds(req) {
 // ─── Worker / Customer portal auth ───
 const workerSessions = new Map();
 const customerSessions = new Map();
+const resetCodes = new Map(); // key: "worker:login" or "customer:login", value: { code, expires }
 
 function requireWorker(req, res, next) {
   let token = null;
@@ -884,6 +1293,23 @@ app.post('/api/inquiry', upload.single('resume'), (req, res) => {
   }
 });
 
+// POST /api/jobs/:id/apply - apply for a specific job
+app.post('/api/jobs/:id/apply', (req, res) => {
+  try {
+    const job = db.prepare('SELECT id, title FROM jobs WHERE id=? AND active=1').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const d = req.body;
+    if (!d.name) return res.status(400).json({ error: 'Name required' });
+    if (!d.phone) return res.status(400).json({ error: 'Phone required' });
+    const result = db.prepare(`INSERT INTO inquiries (name, email, phone, type, positions, experience, comments, job_id) VALUES (?, ?, ?, 'Job Seeker', ?, ?, ?, ?)`).run(
+      d.name, d.email || '', d.phone, job.title, d.experience || '', d.comments || '', job.id
+    );
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/quote - submit supply quote request
 app.post('/api/quote', (req, res) => {
   try {
@@ -905,13 +1331,28 @@ app.post('/api/admin/login', (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
-  if (!user || !user.active) return res.status(401).json({ error: 'Invalid username or password' });
-  if (user && verifyPassword(password, user.salt, user.password_hash)) {
-    const token = createSession(user);
-    res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
-  } else {
-    res.status(401).json({ error: 'Invalid username or password' });
-  }
+  if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+  if (!verifyPassword(password, user.salt, user.password_hash)) return res.status(401).json({ error: 'Invalid username or password' });
+  // Password correct but account not yet self-verified — prompt user to set own password
+  if (!user.active) return res.json({ needs_activation: true, username });
+  const token = createSession(user);
+  res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
+});
+
+// Self-activation: user verifies identity with temp password and sets their own password
+app.post('/api/auth/activate', (req, res) => {
+  const { username, current_password, new_password } = req.body;
+  if (!username || !current_password || !new_password) return res.status(400).json({ error: 'Missing fields' });
+  if (new_password.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+  const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username);
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+  if (!verifyPassword(current_password, user.salt, user.password_hash)) return res.status(401).json({ error: 'Invalid credentials' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(new_password, salt);
+  db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
+  const updatedUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(user.id);
+  const token = createSession(updatedUser);
+  res.json({ success: true, token, user_id: updatedUser.id, role: updatedUser.role || 'staff', username: updatedUser.username, display_name: updatedUser.display_name || '' });
 });
 
 app.post('/api/admin/logout', requireAdmin, (req, res) => {
@@ -938,27 +1379,31 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   const { username, password, role, display_name, assigned_partner_ids } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
-  const existing = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(username);
-  if (existing) return res.status(400).json({ error: 'Username already exists' });
+  const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
+  if (existing && existing.active) return res.status(400).json({ error: 'Username already exists' });
+  // Overwrite unverified (inactive) account with same username
+  if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids) VALUES (?, ?, ?, ?, ?, ?)')
+  // New accounts start inactive (active=0); user must self-verify to activate
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active) VALUES (?, ?, ?, ?, ?, ?, 0)')
     .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '');
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, active, assigned_partner_ids } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids } = req.body;
   if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (password) {
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(password, salt);
-    db.prepare('UPDATE admin_users SET password_hash=?, salt=? WHERE id=?').run(hash, salt, req.params.id);
+    db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, active=?, assigned_partner_ids=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, active !== undefined ? active : user.active, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), req.params.id);
+  // active field is intentionally excluded — only the user themselves can activate via self-verification
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), req.params.id);
   res.json({ success: true });
 });
 
@@ -989,21 +1434,145 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active } = req.body;
+  const { password, employee_id, active, suspended } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   if (password) {
     const salt = crypto.randomBytes(16).toString('hex');
     db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hashPassword(password, salt), salt, req.params.id);
   }
-  db.prepare('UPDATE worker_accounts SET employee_id=?, active=? WHERE id=?')
-    .run(employee_id !== undefined ? employee_id : w.employee_id, active !== undefined ? active : w.active, req.params.id);
+  db.prepare('UPDATE worker_accounts SET employee_id=?, active=?, suspended=? WHERE id=?')
+    .run(employee_id !== undefined ? employee_id : w.employee_id, active !== undefined ? active : w.active, suspended !== undefined ? suspended : (w.suspended||0), req.params.id);
   res.json({ success: true });
 });
 
 app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  db.prepare('DELETE FROM worker_accounts WHERE id=?').run(req.params.id);
-  res.json({ success: true });
+  try {
+    const id = req.params.id;
+    db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(id);
+    db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(id);
+    db.prepare('DELETE FROM worker_accounts WHERE id=?').run(id);
+    res.json({ success: true });
+  } catch (e) {
+    console.error('[DELETE worker-account]', e.message);
+    res.status(500).json({ error: '删除失败：' + e.message });
+  }
+});
+
+// Admin: test Twilio SMS configuration
+app.post('/api/admin/test-sms', requireAdmin, requireRole('admin'), async (req, res) => {
+  const { to } = req.body;
+  if (!to) return res.status(400).json({ error: 'Missing phone number' });
+  const configured = {
+    account_sid: process.env.TWILIO_ACCOUNT_SID ? process.env.TWILIO_ACCOUNT_SID.slice(0, 8) + '...' : null,
+    auth_token: !!process.env.TWILIO_AUTH_TOKEN,
+    phone_number: process.env.TWILIO_PHONE_NUMBER || null,
+    verify_sid: TWILIO_VERIFY_SID ? TWILIO_VERIFY_SID.slice(0, 8) + '...' : null,
+    client_ready: !!twilioClient,
+  };
+  const accountInfo = await getTwilioAccountType();
+
+  // Prefer Twilio Verify API for test
+  if (twilioClient && TWILIO_VERIFY_SID) {
+    const formatted = formatPhoneE164(to);
+    try {
+      const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
+        .verifications.create({ to: formatted, channel: 'sms' });
+      return res.json({
+        configured, accountInfo,
+        method: 'verify',
+        result: { ok: true, status: v.status, sid: v.sid, to: formatted, channel: v.channel }
+      });
+    } catch (e) {
+      return res.json({
+        configured, accountInfo,
+        method: 'verify',
+        result: { ok: false, error: e.message, code: e.code, to: formatted }
+      });
+    }
+  }
+
+  // Fallback to regular SMS
+  const result = await sendSMSWithDetail(to, '[Prime Anchorpoint] 测试短信 / SMS Test: Twilio is working!');
+  res.json({ configured, result, accountInfo, method: 'sms' });
+});
+
+// Admin: test email configuration
+app.post('/api/admin/test-email', requireAdmin, requireRole('admin'), async (req, res) => {
+  const { to } = req.body;
+  if (!to) return res.status(400).json({ error: 'Missing email address' });
+  const configured = {
+    sendgrid_api: !!_sgKey,
+    smtp_host: process.env.SMTP_HOST || null,
+    smtp_port: process.env.SMTP_PORT || '587',
+    smtp_user: process.env.SMTP_USER || null,
+    smtp_pass_set: !!process.env.SMTP_PASS,
+    email_from: EMAIL_FROM,
+    transport: _sgKey ? 'sendgrid-api' : emailTransporter ? 'smtp' : 'none',
+  };
+  if (!_sgKey && !emailTransporter) return res.json({ configured, sent: false, error: 'No email transport configured' });
+  const sent = await sendEmail(to, 'Prime Anchorpoint Email Test', `Email is working!\n\nFrom: ${EMAIL_FROM}\nTo: ${to}\nTime: ${new Date().toISOString()}`);
+  res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
+});
+
+// Admin: test email verification code (sends a real 6-digit code in the same format as registration)
+app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async (req, res) => {
+  const { to } = req.body;
+  if (!to) return res.status(400).json({ error: 'Missing email address' });
+  const configured = {
+    sendgrid_api: !!_sgKey,
+    smtp_host: process.env.SMTP_HOST || null,
+    smtp_port: process.env.SMTP_PORT || '587',
+    smtp_user: process.env.SMTP_USER || null,
+    smtp_pass_set: !!process.env.SMTP_PASS,
+    email_from: EMAIL_FROM,
+    transport: _sgKey ? 'sendgrid-api' : emailTransporter ? 'smtp' : 'none',
+  };
+  if (!_sgKey && !emailTransporter) return res.json({ configured, sent: false, error: 'No email transport configured' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const sent = await sendEmail(
+    to,
+    'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+    `[管理员测试 / Admin Test]\n\n您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+    verificationCodeHtml(code, true)
+  );
+  res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
+});
+
+// Admin: resend verification codes to unverified worker
+app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  if (w.active) return res.status(400).json({ error: 'Account already verified' });
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(w.id);
+
+  const canVerifyPhone = !!(twilioClient && TWILIO_VERIFY_SID && w.phone);
+  const canSMSFallback = !!(twilioClient && TWILIO_FROM && w.phone && !TWILIO_VERIFY_SID);
+  const canEmail = !!(_sgKey || emailTransporter) && !!w.email;
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  let smsSent = false, emailSent = false;
+  let phoneCode = null, emailCode = null;
+
+  // Phone: prefer Twilio Verify
+  if (canVerifyPhone) {
+    smsSent = await sendVerifyCode(w.phone);
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', '__twilio_verify__', expires);
+  } else if (canSMSFallback) {
+    phoneCode = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'phone', phoneCode, expires);
+    smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+  }
+  // Email
+  if (canEmail) {
+    emailCode = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(w.id, 'email', emailCode, expires);
+    emailSent = await sendEmail(w.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+      verificationCodeHtml(emailCode));
+  }
+  console.log(`[Admin Resend Verify] Worker ${w.id} (${w.name||w.username}): phone=${canVerifyPhone?'TwilioVerify':phoneCode||'N/A'}(sent:${smsSent}) email=${emailCode||'N/A'}(sent:${emailSent})`);
+  const result = { success: true, sms_sent: smsSent, email_sent: emailSent };
+  res.json(result);
 });
 
 // ─── Customer Accounts (admin manages) ───
@@ -1039,6 +1608,19 @@ app.put('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), 
 app.delete('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM customer_accounts WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Clear all test data (worker accounts, customer accounts, verification codes, job applications)
+app.post('/api/admin/clear-test-data', requireAdmin, requireRole('admin'), (req, res) => {
+  const { confirm_text } = req.body;
+  if (confirm_text !== 'I confirm') return res.status(400).json({ error: 'Please type "I confirm" to proceed' });
+  const wDel = db.prepare('DELETE FROM worker_accounts').run();
+  const cDel = db.prepare('DELETE FROM customer_accounts').run();
+  db.prepare('DELETE FROM verification_codes').run();
+  db.prepare('DELETE FROM job_applications').run();
+  db.prepare('DELETE FROM customer_job_posts').run();
+  console.log(`[Admin] Cleared test data: ${wDel.changes} worker accounts, ${cDel.changes} customer accounts`);
+  res.json({ success: true, deleted_workers: wDel.changes, deleted_customers: cDel.changes });
 });
 
 // ─── Job Applications (admin view) ───
@@ -1139,13 +1721,13 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   const jobStatus = d.job_status || 'open';
   const stmt = db.prepare(`INSERT INTO jobs
-    (partner_id, title, type, location, pay, lang, lang_name, description, urgent,
+    (partner_id, title, type, location, pay, pay_period, lang, lang_name, description, urgent,
      work_auth, benefits, schedule, company_id, company_name, employment_type,
      work_days, work_start, work_end, schedule_days, schedule_start, schedule_end,
      job_status, active, close_reason, close_note, headcount)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
-    d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+    d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
     d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
     d.company_id||null, d.company_name||'', d.employment_type||'',
     d.work_days||'', d.work_start||'', d.work_end||'',
@@ -1160,13 +1742,13 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
   const d = req.body;
   const old = db.prepare('SELECT * FROM jobs WHERE id=?').get(req.params.id);
   const jobStatus = d.job_status || 'open';
-  db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, lang=?, lang_name=?,
+  db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, pay_period=?, lang=?, lang_name=?,
     description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
     company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?,
     schedule_days=?, schedule_start=?, schedule_end=?,
     job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
     .run(
-      d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.lang||'en', d.lang_name||'English',
+      d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
       d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
       d.work_auth||'', d.benefits||'', d.schedule||'',
       d.company_id||null, d.company_name||'', d.employment_type||'',
@@ -1430,6 +2012,62 @@ app.get('/api/admin/partner-files/:id/download', (req, res, next) => {
   res.download(fp, f.file_name || f.file_path);
 });
 
+// POST /api/admin/partner-files/:id/send-docusign — send partner contract to both parties for e-signing
+app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置，请在环境变量中设置 DOCUSIGN_* 参数' });
+  try {
+    const f = db.prepare(`SELECT pf.*, p.name as partner_name, p.email as partner_email, p.contacts as partner_contacts FROM partner_files pf LEFT JOIN partners p ON pf.partner_id=p.id WHERE pf.id=?`).get(req.params.id);
+    if (!f) return res.status(404).json({ error: 'File not found' });
+    if (!f.file_path) return res.status(400).json({ error: '文件不存在' });
+    // Partner signer: use req.body override, else partner contacts, else partner email
+    let partnerEmail = req.body.partner_email || f.partner_email || '';
+    let partnerName = req.body.partner_name || f.partner_name || '合作方';
+    if (!partnerEmail) {
+      try {
+        const contacts = JSON.parse(f.partner_contacts || '[]');
+        const c = contacts.find(c => c.email);
+        if (c) { partnerEmail = c.email; partnerName = [c.first_name, c.last_name].filter(Boolean).join(' ') || partnerName; }
+      } catch {}
+    }
+    if (!partnerEmail) return res.status(400).json({ error: '合作方邮箱未找到，请在请求体中传 partner_email' });
+    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
+    const docPath = path.join(docsDir, f.file_path);
+    if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
+    const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: partnerEmail, name: partnerName }, signer2: { email: companyEmail, name: companyName } });
+    db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent' WHERE id=?").run(result.envelopeId, f.id);
+    res.json({ success: true, envelopeId: result.envelopeId });
+  } catch (e) {
+    console.error('[DocuSign PartnerFile]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/partner-files/:id/docusign-status — refresh signing status from DocuSign
+app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManager, async (req, res) => {
+  const f = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_partner_signed_at, ds_company_signed_at FROM partner_files WHERE id=?").get(req.params.id);
+  if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+  if (!dsEnabled()) return res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at });
+  try {
+    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+    const [envRes, rcpRes] = await Promise.all([
+      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
+      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
+    ]);
+    const status = envRes.data?.status || f.ds_status;
+    let partnerSigned = f.ds_partner_signed_at, companySigned = f.ds_company_signed_at;
+    for (const s of (rcpRes.data?.signers || [])) {
+      if (s.status === 'completed' && s.signedDateTime) {
+        if (s.recipientId === '1') partnerSigned = s.signedDateTime;
+        if (s.recipientId === '2') companySigned = s.signedDateTime;
+      }
+    }
+    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=? WHERE id=?").run(status, partnerSigned, companySigned, f.id);
+    res.json({ status, partnerSigned, companySigned });
+  } catch (e) { res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, error: e.message }); }
+});
+
 // Assignments CRUD
 app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare(`
@@ -1487,20 +2125,74 @@ app.get('/api/admin/assignments/:id/contract', (req, res, next) => {
   res.download(fp, a.contract_filename || a.contract_file);
 });
 
+// POST /api/admin/assignments/:id/send-docusign — send contract to both parties for e-signing
+app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置，请在环境变量中设置 DOCUSIGN_* 参数' });
+  try {
+    const a = db.prepare(`SELECT a.*, i.name as inquiry_name, i.email as inquiry_email FROM assignments a LEFT JOIN inquiries i ON a.inquiry_id=i.id WHERE a.id=?`).get(req.params.id);
+    if (!a) return res.status(404).json({ error: 'Assignment not found' });
+    if (!a.contract_file) return res.status(400).json({ error: '请先上传合同文件再发送签署' });
+    const workerEmail = req.body.worker_email || a.inquiry_email || '';
+    const workerName = req.body.worker_name || a.inquiry_name || '工人';
+    if (!workerEmail) return res.status(400).json({ error: '工人邮箱未找到，请在请求体中传 worker_email' });
+    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
+    const docPath = path.join(docsDir, a.contract_file);
+    if (!fs.existsSync(docPath)) return res.status(404).json({ error: '合同文件不存在' });
+    const result = await dsSendEnvelope({ docPath, docName: a.contract_filename || a.contract_file, emailSubject: `请签署雇用合同 - ${a.inquiry_name || ''}`, signer1: { email: workerEmail, name: workerName }, signer2: { email: companyEmail, name: companyName } });
+    db.prepare("UPDATE assignments SET ds_envelope_id=?, ds_status='sent' WHERE id=?").run(result.envelopeId, a.id);
+    res.json({ success: true, envelopeId: result.envelopeId });
+  } catch (e) {
+    console.error('[DocuSign Assignment]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/assignments/:id/docusign-status — refresh signing status from DocuSign
+app.get('/api/admin/assignments/:id/docusign-status', requireAdmin, blockManager, async (req, res) => {
+  const a = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_worker_signed_at, ds_company_signed_at FROM assignments WHERE id=?").get(req.params.id);
+  if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+  if (!dsEnabled()) return res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at });
+  try {
+    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+    const [envRes, rcpRes] = await Promise.all([
+      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${a.ds_envelope_id}`),
+      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${a.ds_envelope_id}/recipients`)
+    ]);
+    const status = envRes.data?.status || a.ds_status;
+    let workerSigned = a.ds_worker_signed_at, companySigned = a.ds_company_signed_at;
+    for (const s of (rcpRes.data?.signers || [])) {
+      if (s.status === 'completed' && s.signedDateTime) {
+        if (s.recipientId === '1') workerSigned = s.signedDateTime;
+        if (s.recipientId === '2') companySigned = s.signedDateTime;
+      }
+    }
+    db.prepare("UPDATE assignments SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=? WHERE id=?").run(status, workerSigned, companySigned, a.id);
+    res.json({ status, workerSigned, companySigned });
+  } catch (e) { res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at, error: e.message }); }
+});
+
 // ─── Employee Doc Requests (私密材料链接) ───
 
 // Admin: create / get link for an employee
 app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
-  const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
-  if (!emp) return res.status(404).json({ error: 'Employee not found' });
-  const existing = db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? AND status="pending"').get(emp.id);
-  if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true });
-  const token = crypto.randomBytes(28).toString('hex');
-  const { admin_note, requested_docs, lang, positions } = req.body;
-  db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions) VALUES (?,?,?,?,?,?)')
-    .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']),
-        lang || 'zh', JSON.stringify(positions || []));
-  res.json({ token, status: 'pending' });
+  try {
+    const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+    const existing = db.prepare("SELECT * FROM employee_doc_requests WHERE employee_id=? AND status='pending' AND (expires_at IS NULL OR expires_at > datetime('now'))").get(emp.id);
+    if (existing) return res.json({ token: existing.token, status: 'pending', already_exists: true, expires_at: existing.expires_at });
+    const token = crypto.randomBytes(28).toString('hex');
+    const { admin_note, requested_docs, lang, positions } = req.body;
+    const expiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    db.prepare('INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions, expires_at) VALUES (?,?,?,?,?,?,?)')
+      .run(token, emp.id, admin_note || '', JSON.stringify(requested_docs || ['gov_id','ssn','work_card']),
+          lang || 'zh', JSON.stringify(positions || []), expiresAt);
+    res.json({ token, status: 'pending', expires_at: expiresAt });
+  } catch(e) {
+    console.error('doc-request error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.get('/api/admin/employees/:id/doc-requests', requireAdmin, (req, res) => {
@@ -1519,6 +2211,9 @@ app.get('/api/emp-docs/:token', (req, res) => {
     FROM employee_doc_requests r JOIN employees e ON r.employee_id = e.id
     WHERE r.token=?`).get(req.params.token);
   if (!row) return res.status(404).json({ error: '链接无效或已过期' });
+  if (row.expires_at && new Date(row.expires_at) < new Date()) {
+    return res.status(410).json({ error: '链接已过期（有效期3天）/ Link expired (valid for 3 days)' });
+  }
   res.json({
     status: row.status,
     name: `${row.first_name} ${row.last_name}`,
@@ -1549,14 +2244,15 @@ const empDocReqUpload = multer({
 app.post('/api/emp-docs/:token/submit', empDocReqUpload.fields([
   { name: 'gov_id', maxCount: 1 },
   { name: 'ssn', maxCount: 1 },
-  { name: 'work_card', maxCount: 1 }
+  { name: 'work_card', maxCount: 1 },
+  { name: 'w9', maxCount: 1 }
 ]), (req, res) => {
   const row = db.prepare('SELECT * FROM employee_doc_requests WHERE token=?').get(req.params.token);
   if (!row) return res.status(404).json({ error: '链接无效或已过期' });
   if (row.status === 'completed') return res.status(400).json({ error: '已提交，无法重复提交' });
   const files = req.files || {};
   if (!Object.keys(files).length) return res.status(400).json({ error: '请至少上传一份文件' });
-  const DOC_LABEL = { gov_id: '政府身份证件', ssn: '社安卡', work_card: '工卡 / 工作许可证' };
+  const DOC_LABEL = { gov_id: '政府身份证件', ssn: '社安卡', work_card: '工卡 / 工作许可证', w9: 'W-9 税表' };
   for (const [docType, fileArr] of Object.entries(files)) {
     if (fileArr && fileArr[0]) {
       const f = fileArr[0];
@@ -1688,7 +2384,34 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
     params.push(...pids);
   }
   sql += ' ORDER BY e.last_name, e.first_name';
-  res.json(db.prepare(sql).all(...params).map(safeEmp));
+  const rows = db.prepare(sql).all(...params);
+  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets)
+  const explicitJobs = db.prepare(`
+    SELECT ej.employee_id, ej.job_id, ej.company_name, ej.job_title
+    FROM employee_jobs ej WHERE ej.status='active'
+  `).all();
+  const tsJobs = db.prepare(`
+    SELECT s.employee_id, s.job_id, s.company_name, j.title AS job_title
+    FROM timesheet_sheets s
+    LEFT JOIN jobs j ON s.job_id = j.id
+    WHERE s.id IN (
+      SELECT MAX(id) FROM timesheet_sheets GROUP BY employee_id, COALESCE(job_id, company_name)
+    )
+    ORDER BY s.period_end DESC
+  `).all();
+  const jobMap = {};
+  for (const j of explicitJobs) {
+    if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
+    jobMap[j.employee_id].push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
+  }
+  for (const j of tsJobs) {
+    if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
+    const existing = jobMap[j.employee_id];
+    if (!existing.some(e => e.job_id === j.job_id)) {
+      existing.push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
+    }
+  }
+  res.json(rows.map(e => ({ ...safeEmp(e), current_jobs: jobMap[e.id] || [] })));
 });
 
 app.get('/api/admin/employees/export', (req, res, next) => {
@@ -1836,6 +2559,65 @@ app.put('/api/admin/employees/:id/contacts', requireAdmin, (req, res) => {
     JSON.stringify(extra_emails || []),
     req.params.id
   );
+  res.json({ success: true });
+});
+
+// Get job records for an employee (with financial + performance data)
+app.get('/api/admin/employees/:id/job-records', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT ej.*, j.title AS job_title_live, j.location, j.pay AS job_pay,
+           p.name AS partner_name
+    FROM employee_jobs ej
+    LEFT JOIN jobs j ON ej.job_id = j.id
+    LEFT JOIN partners p ON j.partner_id = p.id
+    WHERE ej.employee_id = ?
+    ORDER BY ej.assigned_at DESC
+  `).all(req.params.id);
+  res.json(rows);
+});
+
+// Assign / update a job record for an employee
+app.post('/api/admin/employees/:id/assign-job', requireAdmin, (req, res) => {
+  const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(req.params.id);
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+  const { job_id, start_date, end_date,
+          emp_hourly_rate, emp_total_hours, emp_total_pay,
+          client_hourly_rate, client_total_billed,
+          perf_efficiency, perf_quality, perf_attendance,
+          perf_safety, perf_teamwork, perf_skills, notes } = req.body;
+  const job = db.prepare('SELECT id, title, company_name FROM jobs WHERE id=?').get(job_id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  try {
+    db.prepare(`INSERT INTO employee_jobs
+      (employee_id, job_id, company_name, job_title, status,
+       start_date, end_date, emp_hourly_rate, emp_total_hours, emp_total_pay,
+       client_hourly_rate, client_total_billed,
+       perf_efficiency, perf_quality, perf_attendance, perf_safety, perf_teamwork, perf_skills, notes)
+      VALUES (?,?,?,?,'active',?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(employee_id, job_id) DO UPDATE SET
+        status='active', start_date=excluded.start_date, end_date=excluded.end_date,
+        emp_hourly_rate=excluded.emp_hourly_rate, emp_total_hours=excluded.emp_total_hours,
+        emp_total_pay=excluded.emp_total_pay, client_hourly_rate=excluded.client_hourly_rate,
+        client_total_billed=excluded.client_total_billed,
+        perf_efficiency=excluded.perf_efficiency, perf_quality=excluded.perf_quality,
+        perf_attendance=excluded.perf_attendance, perf_safety=excluded.perf_safety,
+        perf_teamwork=excluded.perf_teamwork, perf_skills=excluded.perf_skills,
+        notes=excluded.notes`)
+      .run(req.params.id, job.id, job.company_name||'', job.title||'',
+           start_date||'', end_date||'',
+           emp_hourly_rate||0, emp_total_hours||0, emp_total_pay||0,
+           client_hourly_rate||0, client_total_billed||0,
+           perf_efficiency||0, perf_quality||0, perf_attendance||0,
+           perf_safety||0, perf_teamwork||0, perf_skills||0, notes||'');
+    res.json({ success: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Remove a job assignment from employee
+app.delete('/api/admin/employees/:id/assign-job/:jobId', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM employee_jobs WHERE employee_id=? AND job_id=?').run(req.params.id, req.params.jobId);
   res.json({ success: true });
 });
 
@@ -2297,10 +3079,17 @@ app.get('/admin', (req, res) => {
 
 // ─── Worker Portal API ───
 app.post('/api/worker/login', (req, res) => {
-  const { username, password } = req.body;
-  const w = db.prepare('SELECT * FROM worker_accounts WHERE username=? AND active=1').get(username);
+  const { login, username, password } = req.body;
+  const identifier = (login || username || '').trim();
+  if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
+  // Try matching by email, phone, or username
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(identifier, identifier, identifier);
   if (!w || !verifyPassword(password, w.salt, w.password_hash))
-    return res.status(401).json({ error: 'Invalid username or password' });
+    return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
+  if (!w.active)
+    return res.status(403).json({ error: '账号尚未验证，请先完成手机和邮箱验证 / Account not verified. Please complete phone and email verification first.' });
+  if (w.suspended)
+    return res.status(403).json({ error: '账号已被暂停，请联系管理员 / Account suspended. Please contact admin.' });
   const token = crypto.randomBytes(32).toString('hex');
   workerSessions.set(token, { created: Date.now(), workerId: w.id, employeeId: w.employee_id });
   res.json({ token, employee_id: w.employee_id });
@@ -2313,7 +3102,14 @@ app.get('/api/worker/me', requireWorker, (req, res) => {
 });
 
 app.get('/api/worker/jobs', requireWorker, (req, res) => {
-  const jobs = db.prepare('SELECT id, title, type, location, pay, work_auth, benefits, work_days, work_start, work_end, employment_type, company_name, description, urgent FROM jobs WHERE active=1 ORDER BY created_at DESC').all();
+  const jobs = db.prepare(`
+    SELECT j.id, j.title, j.type, j.location, j.pay, j.pay_period,
+           j.work_auth, j.benefits, j.work_days, j.work_start, j.work_end,
+           j.employment_type, j.description, j.urgent,
+           COALESCE(NULLIF(j.company_name,''), p.name, '') AS company_name
+    FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id
+    WHERE j.active=1 ORDER BY j.created_at DESC
+  `).all();
   const applied = db.prepare('SELECT job_id FROM job_applications WHERE worker_account_id=?').all(req.workerId).map(r => r.job_id);
   res.json(jobs.map(j => ({ ...j, applied: applied.includes(j.id) })));
 });
@@ -2322,7 +3118,9 @@ app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
   const job = db.prepare('SELECT id FROM jobs WHERE id=? AND active=1').get(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found or no longer active' });
   try {
-    db.prepare('INSERT INTO job_applications (job_id, worker_account_id, notes) VALUES (?,?,?)').run(req.params.jobId, req.workerId, req.body.notes || '');
+    const { notes, interview_availability, expected_pay, applicant_message } = req.body;
+    db.prepare(`INSERT INTO job_applications (job_id, worker_account_id, notes, interview_availability, expected_pay, applicant_message)
+      VALUES (?,?,?,?,?,?)`).run(req.params.jobId, req.workerId, notes||'', interview_availability||'', expected_pay||'', applicant_message||'');
     res.json({ success: true });
   } catch { res.status(400).json({ error: 'Already applied to this job' }); }
 });
@@ -2335,25 +3133,53 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
 
 app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.status(400).json({ error: '账号未关联员工档案，请联系HR' });
-  const { latitude, longitude } = req.body;
+  const { latitude, longitude, site_id } = req.body;
   const now = new Date().toISOString();
+  let geoVerified = 0;
+  let matchedSiteId = site_id || null;
+
+  // GPS Geofencing: verify worker is within radius of a job site
+  if (latitude && longitude) {
+    const sites = db.prepare('SELECT * FROM job_sites WHERE active=1').all();
+    if (sites.length > 0) {
+      let nearestSite = null;
+      let nearestDist = Infinity;
+      for (const s of sites) {
+        const dist = haversineDistance(latitude, longitude, s.latitude, s.longitude);
+        if (dist < nearestDist) { nearestDist = dist; nearestSite = s; }
+      }
+      if (nearestSite && nearestDist <= nearestSite.radius_meters) {
+        geoVerified = 1;
+        matchedSiteId = nearestSite.id;
+      } else if (nearestSite) {
+        // Not within any site radius - warn but allow punch
+        console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(nearestDist)}m from nearest site "${nearestSite.name}" (max ${nearestSite.radius_meters}m)`);
+      }
+    }
+  }
+
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
   if (open) {
+    // Clock out — always allowed regardless of job status
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, ...hrs });
+    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
   } else {
-    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude) VALUES(?,?,'open',?,?)")
-      .run(req.workerEmployeeId, now, latitude || null, longitude || null);
-    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+    // Clock in — requires an active job assignment
+    const activeJob = db.prepare("SELECT ej.id, j.title FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1").get(req.workerEmployeeId);
+    if (!activeJob) return res.status(400).json({ error: '当前没有有效的工作安排，无法打卡。请联系HR。/ No active job assignment. Please contact HR.' });
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified) VALUES(?,?,'open',?,?,?,?)")
+      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified);
+    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified, site_name: matchedSiteId ? db.prepare('SELECT name FROM job_sites WHERE id=?').get(matchedSiteId)?.name : null });
   }
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
-  if (!req.workerEmployeeId) return res.json({ clocked_in: false });
+  if (!req.workerEmployeeId) return res.json({ clocked_in: false, no_employee: true });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
-  res.json({ clocked_in: !!open, open_entry: open || null });
+  const activeJob = db.prepare("SELECT ej.id, j.title, j.company_name FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1").get(req.workerEmployeeId);
+  res.json({ clocked_in: !!open, open_entry: open || null, has_active_job: !!activeJob, active_job: activeJob || null });
 });
 
 app.get('/api/worker/assignments', requireWorker, (req, res) => {
@@ -2365,17 +3191,279 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
   res.json(apps);
 });
 
+// ─── Worker Forgot / Reset Password ───
+app.post('/api/worker/forgot-password', async (req, res) => {
+  const { login } = req.body;
+  if (!login) return res.status(400).json({ error: '请输入邮箱或手机号' });
+  const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(login, login, login);
+  if (!w) return res.status(404).json({ error: '未找到该账号 / Account not found' });
+
+  // Prefer Twilio Verify for phone-based reset
+  if (w.phone && twilioClient && TWILIO_VERIFY_SID) {
+    const sent = await sendVerifyCode(w.phone);
+    resetCodes.set('worker:' + login, { useVerify: true, phone: w.phone, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
+    console.log(`[Reset] Worker ${login}: sent via Twilio Verify (sent:${sent})`);
+    return res.json({ success: true, message: '验证码已发送到您的手机 / Code sent to your phone' });
+  }
+
+  // Fallback: generate our own code (log to console)
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  resetCodes.set('worker:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: w.id });
+  // Try to send via SMS or email
+  if (w.phone && twilioClient && TWILIO_FROM) {
+    await sendSMS(w.phone, `[Prime Anchorpoint] 重置密码验证码: ${code}，10分钟内有效。Reset code: ${code}`);
+  } else if (w.email && emailTransporter) {
+    await sendEmail(w.email, 'Prime Anchorpoint 重置密码 / Password Reset',
+      `您的重置密码验证码: ${code}\nYour password reset code: ${code}\n\n10分钟内有效 / Valid for 10 minutes.`);
+  }
+  console.log(`[Reset Code] Worker account ${login}: ${code}`);
+  res.json({ success: true, message: '验证码已发送 / Code sent' });
+});
+
+app.post('/api/worker/reset-password', async (req, res) => {
+  const { login, code, new_password } = req.body;
+  if (!login || !code || !new_password) return res.status(400).json({ error: '请填写完整信息' });
+  if (new_password.length < 6) return res.status(400).json({ error: '密码至少6位' });
+  const entry = resetCodes.get('worker:' + login);
+  if (!entry) return res.status(400).json({ error: '请先发送验证码 / Please request a code first' });
+  if (Date.now() > entry.expires) { resetCodes.delete('worker:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
+
+  // Check code: Twilio Verify or local
+  if (entry.useVerify) {
+    const ok = await checkVerifyCode(entry.phone, code);
+    if (!ok) return res.status(400).json({ error: '验证码错误或已过期 / Invalid or expired code' });
+  } else {
+    if (entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
+  }
+
+  const { hash, salt } = hashPassword(new_password);
+  db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  resetCodes.delete('worker:' + login);
+  res.json({ success: true });
+});
+
+// ─── Worker Compliance Documents API ───
+const complianceUpload = multer({
+  storage: multer.diskStorage({
+    destination: docsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `compliance-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /pdf|jpg|jpeg|png|heic|heif/.test(path.extname(file.originalname).toLowerCase());
+    cb(null, ok);
+  }
+});
+
+// Get worker's compliance overview
+app.get('/api/worker/compliance', requireWorker, (req, res) => {
+  const docs = db.prepare('SELECT id, doc_type, status, file_name, expires_at, created_at, updated_at, reviewer_notes FROM worker_compliance_docs WHERE worker_account_id=? ORDER BY created_at DESC').all(req.workerId);
+  // Group by doc_type, return latest of each type
+  const byType = {};
+  for (const d of docs) {
+    if (!byType[d.doc_type]) byType[d.doc_type] = d;
+  }
+  // Check background check status via employee linkage
+  let bgCheck = null;
+  if (req.workerEmployeeId) {
+    bgCheck = db.prepare('SELECT id, check_type, status, result, ordered_date, completed_date FROM background_checks WHERE employee_id=? ORDER BY created_at DESC LIMIT 1').get(req.workerEmployeeId);
+  }
+  res.json({
+    documents: byType,
+    all_documents: docs,
+    background_check: bgCheck,
+    doc_types: ['i9', 'drivers_license', 'w9', 'ssn_card', 'work_permit', 'other']
+  });
+});
+
+// Submit I-9 form data
+app.post('/api/worker/compliance/i9', requireWorker, complianceUpload.fields([
+  { name: 'list_a_doc', maxCount: 1 },
+  { name: 'list_b_doc', maxCount: 1 },
+  { name: 'list_c_doc', maxCount: 1 }
+]), (req, res) => {
+  const formData = {};
+  const fields = ['last_name','first_name','middle_initial','other_last_names','address','apt','city','state','zip',
+    'dob','ssn_last4','email','phone','citizenship_status','alien_number','i94_number','passport_number','passport_country',
+    'work_auth_expiry','list_a_type','list_b_type','list_c_type','signature_confirm'];
+  fields.forEach(f => { if (req.body[f]) formData[f] = req.body[f]; });
+
+  // Save any uploaded supporting documents
+  const files = req.files || {};
+  const fileParts = [];
+  ['list_a_doc','list_b_doc','list_c_doc'].forEach(key => {
+    if (files[key] && files[key][0]) {
+      fileParts.push({ type: key, path: files[key][0].path, name: files[key][0].originalname });
+    }
+  });
+  formData._files = fileParts;
+
+  // Upsert I-9 record
+  const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='i9' AND status IN ('pending','rejected')").get(req.workerId);
+  if (existing) {
+    db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(JSON.stringify(formData), existing.id);
+  } else {
+    db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'i9', ?, 'pending')")
+      .run(req.workerId, JSON.stringify(formData));
+  }
+  res.json({ success: true });
+});
+
+// Upload driver's license
+app.post('/api/worker/compliance/drivers-license', requireWorker, complianceUpload.fields([
+  { name: 'dl_front', maxCount: 1 },
+  { name: 'dl_back', maxCount: 1 }
+]), (req, res) => {
+  const files = req.files || {};
+  if (!files.dl_front || !files.dl_front[0]) return res.status(400).json({ error: 'Front image required' });
+  const formData = {
+    dl_number: req.body.dl_number || '',
+    dl_state: req.body.dl_state || '',
+    dl_expiry: req.body.dl_expiry || '',
+    dl_front: { path: files.dl_front[0].path, name: files.dl_front[0].originalname },
+    dl_back: files.dl_back && files.dl_back[0] ? { path: files.dl_back[0].path, name: files.dl_back[0].originalname } : null
+  };
+  const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' AND status IN ('pending','rejected')").get(req.workerId);
+  if (existing) {
+    db.prepare("UPDATE worker_compliance_docs SET form_data=?, file_path=?, file_name=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(JSON.stringify(formData), files.dl_front[0].path, files.dl_front[0].originalname, existing.id);
+  } else {
+    db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, file_path, file_name, status) VALUES (?, 'drivers_license', ?, ?, ?, 'pending')")
+      .run(req.workerId, JSON.stringify(formData), files.dl_front[0].path, files.dl_front[0].originalname);
+  }
+  res.json({ success: true });
+});
+
+// Submit W-9 form data
+app.post('/api/worker/compliance/w9', requireWorker, (req, res) => {
+  const formData = {};
+  const fields = ['name','business_name','tax_classification','exempt_payee_code','fatca_code',
+    'address','city','state','zip','account_numbers','ssn_or_ein','signature_confirm','tin_type'];
+  fields.forEach(f => { if (req.body[f] !== undefined) formData[f] = req.body[f]; });
+
+  // Encrypt SSN/EIN if provided
+  if (req.body.ssn_or_ein) {
+    formData.ssn_or_ein_masked = req.body.ssn_or_ein.replace(/\d(?=\d{4})/g, '*');
+    formData.ssn_or_ein_encrypted = encryptSSN(req.body.ssn_or_ein);
+    delete formData.ssn_or_ein;
+  }
+
+  const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' AND status IN ('pending','rejected')").get(req.workerId);
+  if (existing) {
+    db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(JSON.stringify(formData), existing.id);
+  } else {
+    db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'pending')")
+      .run(req.workerId, JSON.stringify(formData));
+  }
+  res.json({ success: true });
+});
+
+// Upload generic compliance doc (work_permit, ssn_card, other)
+app.post('/api/worker/compliance/upload', requireWorker, complianceUpload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'File required' });
+  const docType = req.body.doc_type || 'other';
+  const notes = req.body.notes || '';
+  db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, file_path, file_name, form_data, status) VALUES (?, ?, ?, ?, ?, 'pending')")
+    .run(req.workerId, docType, req.file.path, req.file.originalname, JSON.stringify({ notes }));
+  res.json({ success: true });
+});
+
+// Get available job sites for worker
+app.get('/api/worker/job-sites', requireWorker, (req, res) => {
+  const sites = db.prepare('SELECT id, name, address, latitude, longitude, radius_meters FROM job_sites WHERE active=1').all();
+  res.json(sites);
+});
+
+// ─── Admin: Job Sites Management ───
+app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all());
+});
+
+app.post('/api/admin/job-sites', requireAdmin, blockManager, (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, partner_id } = req.body;
+  if (!name || !latitude || !longitude) return res.status(400).json({ error: 'Name, latitude, longitude required' });
+  const r = db.prepare('INSERT INTO job_sites (name, address, latitude, longitude, radius_meters, partner_id) VALUES (?,?,?,?,?,?)')
+    .run(name, address || '', latitude, longitude, radius_meters || 200, partner_id || null);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, active } = req.body;
+  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active) WHERE id=?')
+    .run(name, address, latitude, longitude, radius_meters, active, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
+  db.prepare('DELETE FROM job_sites WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Admin: Integration Settings ───
+app.get('/api/admin/integrations', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM integration_settings ORDER BY id').all();
+  // Mask secrets
+  res.json(rows.map(r => ({
+    ...r,
+    api_key: r.api_key ? r.api_key.slice(0, 4) + '****' + r.api_key.slice(-4) : '',
+    api_secret: r.api_secret ? '********' : ''
+  })));
+});
+
+app.put('/api/admin/integrations/:provider', requireAdmin, (req, res) => {
+  const { enabled, api_key, api_secret, config } = req.body;
+  const ex = db.prepare('SELECT * FROM integration_settings WHERE provider=?').get(req.params.provider);
+  if (!ex) return res.status(404).json({ error: 'Provider not found' });
+  db.prepare('UPDATE integration_settings SET enabled=COALESCE(?,enabled), api_key=COALESCE(?,api_key), api_secret=COALESCE(?,api_secret), config=COALESCE(?,config), updated_at=CURRENT_TIMESTAMP WHERE provider=?')
+    .run(enabled !== undefined ? (enabled ? 1 : 0) : null, api_key || null, api_secret || null, config ? JSON.stringify(config) : null, req.params.provider);
+  res.json({ success: true });
+});
+
+// ─── Admin: Worker Compliance Review ───
+app.get('/api/admin/compliance-docs', requireAdmin, (req, res) => {
+  const docs = db.prepare(`
+    SELECT c.*, w.name as worker_name, w.email as worker_email, w.phone as worker_phone
+    FROM worker_compliance_docs c
+    LEFT JOIN worker_accounts w ON c.worker_account_id = w.id
+    ORDER BY c.created_at DESC
+  `).all();
+  res.json(docs);
+});
+
+app.put('/api/admin/compliance-docs/:id/review', requireAdmin, blockManager, (req, res) => {
+  const { status, reviewer_notes } = req.body;
+  if (!['approved','rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  db.prepare('UPDATE worker_compliance_docs SET status=?, reviewer_notes=?, reviewed_by=?, reviewed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(status, reviewer_notes || '', req.adminId, req.params.id);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/compliance-docs/:id/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
+  if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
+  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
+  res.download(doc.file_path, doc.file_name || 'document');
+});
+
 // ─── Customer Portal API ───
 app.post('/api/customer/login', (req, res) => {
-  const { email, password } = req.body;
-  const cAny = db.prepare('SELECT * FROM customer_accounts WHERE email=?').get(email);
+  const { login, email, password } = req.body;
+  const identifier = (login || email || '').trim();
+  if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
+  // Try matching by email or phone
+  const cAny = db.prepare('SELECT * FROM customer_accounts WHERE email=? OR phone=?').get(identifier, identifier);
   if (cAny && cAny.approval_status === 'pending')
     return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
   if (cAny && cAny.approval_status === 'rejected')
     return res.status(403).json({ error: '您的企业注册已被拒绝，请联系管理员 / Your registration was rejected. Please contact admin' });
-  const c = db.prepare('SELECT * FROM customer_accounts WHERE email=? AND active=1').get(email);
+  const c = db.prepare('SELECT * FROM customer_accounts WHERE (email=? OR phone=?) AND active=1').get(identifier, identifier);
   if (!c || !verifyPassword(password, c.salt, c.password_hash))
-    return res.status(401).json({ error: 'Invalid email or password' });
+    return res.status(401).json({ error: '邮箱/电话或密码错误 / Invalid email/phone or password' });
   const token = crypto.randomBytes(32).toString('hex');
   customerSessions.set(token, { created: Date.now(), customerId: c.id, partnerId: c.partner_id });
   res.json({ token, company_name: c.company_name });
@@ -2414,34 +3502,259 @@ app.get('/api/customer/my-workers', requireCustomer, (req, res) => {
   res.json(rows);
 });
 
+// ─── Customer Forgot / Reset Password ───
+app.post('/api/customer/forgot-password', (req, res) => {
+  const { login } = req.body;
+  if (!login) return res.status(400).json({ error: '请输入邮箱或电话' });
+  const c = db.prepare('SELECT id, email, phone FROM customer_accounts WHERE email=? OR phone=?').get(login, login);
+  if (!c) return res.status(404).json({ error: '未找到该账号 / Account not found' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  resetCodes.set('customer:' + login, { code, expires: Date.now() + 10 * 60 * 1000, accountId: c.id });
+  console.log(`[Reset Code] Customer account ${login}: ${code}`);
+  res.json({ success: true, message: '验证码已发送 / Code sent' });
+});
+
+app.post('/api/customer/reset-password', (req, res) => {
+  const { login, code, new_password } = req.body;
+  if (!login || !code || !new_password) return res.status(400).json({ error: '请填写完整信息' });
+  if (new_password.length < 6) return res.status(400).json({ error: '密码至少6位' });
+  const entry = resetCodes.get('customer:' + login);
+  if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
+  if (Date.now() > entry.expires) { resetCodes.delete('customer:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
+  const { hash, salt } = hashPassword(new_password);
+  db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  resetCodes.delete('customer:' + login);
+  res.json({ success: true });
+});
+
 // ─── Public Registration ───
-app.post('/api/register/worker', (req, res) => {
+
+// Real-time duplicate check (phone or email)
+app.get('/api/register/check', (req, res) => {
+  const { phone, email } = req.query;
+  if (phone) {
+    const clean = phone.replace(/[\s\-()+]/g, '');
+    const row = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=?').get(clean);
+    if (row && row.active) return res.json({ taken: true, field: 'phone' });
+  }
+  if (email) {
+    const row = db.prepare('SELECT id, active FROM worker_accounts WHERE email=?').get(email.toLowerCase().trim());
+    if (row && row.active) return res.json({ taken: true, field: 'email' });
+  }
+  res.json({ taken: false });
+});
+
+app.post('/api/register/worker', async (req, res) => {
+  try {
   const { name, phone, email, dob, work_status, position_interests, password } = req.body;
   if (!name || !phone || !email || !password)
-    return res.status(400).json({ error: 'Name, phone, email, and password are required' });
-  // Check phone or email uniqueness
-  const existing = db.prepare('SELECT id FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
-  if (existing) return res.status(400).json({ error: 'An account with this phone or email already exists' });
-  const { hash, salt } = hashPassword(password);
+    return res.status(400).json({ error: '请填写姓名、手机号、邮箱和密码 / Name, phone, email, and password are required' });
+  // Check phone or email uniqueness; allow re-registration only if previous account was never verified AND codes have expired
+  const existing = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
+  if (existing && existing.active) return res.status(400).json({ error: '该手机号或邮箱已注册 / An account with this phone or email already exists' });
+  if (existing && !existing.active) {
+    // Unverified account — check if any verification codes are still valid
+    const now = new Date().toISOString();
+    const validCode = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND expires_at>?').get(existing.id, now);
+    if (validCode) {
+      // Codes still active — redirect the user to complete the pending verification
+      const phoneRow = db.prepare("SELECT code FROM verification_codes WHERE worker_account_id=? AND type='phone' AND expires_at>?").get(existing.id, now);
+      const emailRow = db.prepare("SELECT code FROM verification_codes WHERE worker_account_id=? AND type='email' AND expires_at>?").get(existing.id, now);
+      // Try to resend so the user gets fresh codes in their inbox
+      let phoneSent = false, emailSent = false;
+      if (phoneRow && phoneRow.code !== '__twilio_verify__' && existing.phone)
+        phoneSent = await sendSMS(existing.phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneRow.code}，15分钟内有效。Your verification code: ${phoneRow.code}`);
+      if (emailRow && existing.email)
+        emailSent = await sendEmail(existing.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+          `您的邮箱验证码是: ${emailRow.code}\nYour email verification code: ${emailRow.code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+          verificationCodeHtml(emailRow.code));
+      const pendingResp = {
+        error: '该手机号或邮箱已有待验证的注册，验证码已重新发送，请输入验证码完成注册。 / A pending registration exists. Verification codes have been resent — please enter them below.',
+        pending_account_id: existing.id,
+        needs_phone: !!phoneRow,
+        needs_email: !!emailRow
+      };
+      return res.status(400).json(pendingResp);
+    }
+    // All codes expired — clean up and allow fresh registration
+    db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_accounts WHERE id=?').run(existing.id);
+  }
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+
+  // Determine which verification channels are available
+  const canVerifyPhone = !!(twilioClient && TWILIO_VERIFY_SID); // Twilio Verify API
+  const canSMSFallback = !!(twilioClient && TWILIO_FROM && !TWILIO_VERIFY_SID); // Legacy SMS (only if Verify not configured)
+  const canSMS = canVerifyPhone || canSMSFallback;
+  const canEmail = !!(_sgKey || emailTransporter);
+  const needsVerification = canSMS || canEmail;
+
   const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
-    VALUES (?,?,?,?,?,?,?,?,?,1)`)
-    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), );
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), needsVerification ? 0 : 1);
+  const accountId = r.lastInsertRowid;
+
+  if (!needsVerification) {
+    // No verification channels configured — activate immediately and auto-login
+    const token = crypto.randomBytes(32).toString('hex');
+    workerSessions.set(token, { created: Date.now(), workerId: accountId, employeeId: null });
+    console.log(`[Register] Worker #${accountId} activated immediately (no verification channels configured)`);
+    return res.json({ success: true, account_id: accountId, needs_verification: false, token });
+  }
+
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(accountId);
+
+  let smsSent = false, emailSent = false;
+  let phoneCode = null, emailCode = null;
+
+  // Phone: prefer Twilio Verify API, fallback to regular SMS
+  if (canVerifyPhone) {
+    smsSent = await sendVerifyCode(phone);
+    // Mark that we used Twilio Verify (no local code needed)
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', '__twilio_verify__', expires);
+  } else if (canSMSFallback) {
+    phoneCode = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'phone', phoneCode, expires);
+    smsSent = await sendSMS(phone, `[Prime Anchorpoint] 您的手机验证码是: ${phoneCode}，15分钟内有效。Your verification code: ${phoneCode}`);
+  }
+  // Email: always use our own codes via SMTP
+  if (canEmail) {
+    emailCode = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId, 'email', emailCode, expires);
+    emailSent = await sendEmail(email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      `您的邮箱验证码是: ${emailCode}\nYour email verification code: ${emailCode}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+      verificationCodeHtml(emailCode));
+  }
+  console.log(`[Verify] Worker #${accountId} phone: ${canVerifyPhone ? 'Twilio Verify' : phoneCode || 'N/A'} (sent:${smsSent}), email: ${emailCode || 'N/A'} (sent:${emailSent})`);
+  const resp = { success: true, account_id: accountId, needs_verification: true, needs_phone: canSMS, needs_email: canEmail, sms_sent: smsSent, email_sent: emailSent };
+  res.json(resp);
+  } catch (e) {
+    console.error('[Register Worker]', e.message);
+    res.status(500).json({ error: '注册失败，请稍后重试 / Registration failed: ' + e.message });
+  }
+});
+
+// Resend verification code
+app.post('/api/register/resend-code', async (req, res) => {
+  const { account_id, type } = req.body;
+  if (!account_id || !['phone', 'email'].includes(type))
+    return res.status(400).json({ error: 'account_id and type (phone/email) required' });
+  const acc = db.prepare('SELECT id, active, phone, email FROM worker_accounts WHERE id=?').get(account_id);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  if (acc.active) return res.status(400).json({ error: 'Account already verified' });
+
+  let sent = false;
+  let code = null;
+  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
+
+  if (type === 'phone') {
+    // Prefer Twilio Verify API
+    if (twilioClient && TWILIO_VERIFY_SID) {
+      sent = await sendVerifyCode(acc.phone);
+      db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'phone', '__twilio_verify__', expires);
+      console.log(`[Verify] Resend phone via Twilio Verify for Worker #${account_id} (sent:${sent})`);
+    } else {
+      code = String(Math.floor(100000 + Math.random() * 900000));
+      db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'phone', code, expires);
+      sent = await sendSMS(acc.phone, `[Prime Anchorpoint] 您的手机验证码是: ${code}，15分钟内有效。Your verification code: ${code}`);
+      console.log(`[Verify] Resend phone SMS for Worker #${account_id}: ${code} (sent:${sent})`);
+    }
+  } else {
+    code = String(Math.floor(100000 + Math.random() * 900000));
+    db.prepare('INSERT INTO verification_codes (worker_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id, 'email', code, expires);
+    sent = await sendEmail(acc.email, 'Prime Anchorpoint 邮箱验证码 / Email Verification Code',
+      `您的邮箱验证码是: ${code}\nYour email verification code: ${code}\n\n验证码15分钟内有效 / This code expires in 15 minutes.`,
+      verificationCodeHtml(code));
+    console.log(`[Verify] Resend email for Worker #${account_id}: ${code} (sent:${sent})`);
+  }
+  res.json({ success: true, sent });
+});
+
+// Verify codes and activate account
+app.post('/api/register/verify', async (req, res) => {
+  const { account_id, phone_code, email_code } = req.body;
+  if (!account_id) return res.status(400).json({ error: 'account_id required' });
+  const acc = db.prepare('SELECT id, active, employee_id, phone FROM worker_accounts WHERE id=?').get(account_id);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  if (acc.active) return res.status(400).json({ error: 'Account already verified' });
+  const now = new Date().toISOString();
+  // Check which verification codes exist for this account
+  const pendingPhone = db.prepare('SELECT id, code FROM verification_codes WHERE worker_account_id=? AND type=?').get(account_id, 'phone');
+  const pendingEmail = db.prepare('SELECT id FROM verification_codes WHERE worker_account_id=? AND type=?').get(account_id, 'email');
+  // Validate phone code
+  if (pendingPhone) {
+    if (!phone_code) return res.status(400).json({ error: '请输入手机验证码 / Phone verification code required' });
+    if (pendingPhone.code === '__twilio_verify__') {
+      // Check via Twilio Verify API
+      const ok = await checkVerifyCode(acc.phone, phone_code);
+      if (!ok) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+    } else {
+      // Check against local DB
+      const pv = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'phone', phone_code, now);
+      if (!pv) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+    }
+  }
+  // Validate email code (always local DB)
+  if (pendingEmail) {
+    if (!email_code) return res.status(400).json({ error: '请输入邮箱验证码 / Email verification code required' });
+    const ev = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?').get(account_id, 'email', email_code, now);
+    if (!ev) return res.status(400).json({ error: '邮箱验证码错误或已过期 / Invalid or expired email code' });
+  }
+  // Activate account
+  db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(account_id);
   // Auto-login
   const token = crypto.randomBytes(32).toString('hex');
-  workerSessions.set(token, { created: Date.now(), workerId: r.lastInsertRowid, employeeId: null });
-  res.json({ success: true, token, message: 'Registration successful' });
+  workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+  res.json({ success: true, token, message: 'Verification successful' });
+});
+
+// Verify one step at a time (phone first, then email)
+app.post('/api/register/verify-step', (req, res) => {
+  const { account_id, type, code } = req.body;
+  if (!account_id || !type || !code) return res.status(400).json({ error: 'account_id, type, and code required' });
+  if (!['phone', 'email'].includes(type)) return res.status(400).json({ error: 'type must be phone or email' });
+  const acc = db.prepare('SELECT id, active, employee_id FROM worker_accounts WHERE id=?').get(account_id);
+  if (!acc) return res.status(404).json({ error: 'Account not found' });
+  if (acc.active) return res.status(400).json({ error: 'Account already verified' });
+  const now = new Date().toISOString();
+  const vc = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?')
+    .get(account_id, type, code, now);
+  if (!vc) return res.status(400).json({
+    error: type === 'phone'
+      ? '手机验证码错误或已过期 / Invalid or expired phone code'
+      : '邮箱验证码错误或已过期 / Invalid or expired email code'
+  });
+  // This step verified — remove its code
+  db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
+  // Check remaining steps
+  const remaining = db.prepare('SELECT type FROM verification_codes WHERE worker_account_id=?').all(account_id);
+  if (remaining.length === 0) {
+    // All done — activate account and auto-login
+    db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
+    const token = crypto.randomBytes(32).toString('hex');
+    workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+    return res.json({ success: true, all_done: true, token });
+  }
+  return res.json({ success: true, all_done: false, next_steps: remaining.map(r => r.type) });
 });
 
 app.post('/api/register/enterprise', (req, res) => {
-  const { company_name, contact_name, email, phone, ein, staffing_needs, password } = req.body;
+  const { company_name, contact_name, email, phone, ein, staffing_needs, password, partner_id } = req.body;
   if (!company_name || !contact_name || !email || !password)
-    return res.status(400).json({ error: 'Company name, contact name, email, and password are required' });
+    return res.status(400).json({ error: '请填写企业名称、联系人、邮箱和密码 / Company name, contact name, email, and password are required' });
+  if (!partner_id) return res.status(400).json({ error: '请选择您所在的合作公司 / Please select your company' });
   const existing = db.prepare('SELECT id FROM customer_accounts WHERE email=?').get(email);
-  if (existing) return res.status(400).json({ error: 'An account with this email already exists' });
-  const { hash, salt } = hashPassword(password);
-  db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status)
-    VALUES (?,?,?,?,?,?,?,?,0,'pending')`)
-    .run(company_name, contact_name, email, phone || '', hash, salt, ein || '', staffing_needs || '');
+  if (existing) return res.status(400).json({ error: '该邮箱已注册 / An account with this email already exists' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  db.prepare(`INSERT INTO customer_accounts (company_name, contact_name, email, phone, password_hash, salt, ein, staffing_needs, active, approval_status, partner_id)
+    VALUES (?,?,?,?,?,?,?,?,0,'pending',?)`)
+    .run(company_name, contact_name, email, phone || '', hash, salt, ein || '', staffing_needs || '', partner_id);
   res.json({ success: true, message: 'Registration submitted. Your account will be activated after admin approval.' });
 });
 
@@ -2452,13 +3765,20 @@ app.get('/api/admin/pending-enterprises', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/approve-enterprise/:id', requireAdmin, (req, res) => {
-  db.prepare("UPDATE customer_accounts SET active=1, approval_status='approved' WHERE id=?").run(req.params.id);
+  const { partner_id } = req.body || {};
+  if (!partner_id) return res.status(400).json({ error: '请选择关联的合作公司档案 / Partner is required for approval' });
+  db.prepare("UPDATE customer_accounts SET active=1, approval_status='approved', partner_id=? WHERE id=?").run(partner_id, req.params.id);
   res.json({ success: true });
 });
 
 app.put('/api/admin/reject-enterprise/:id', requireAdmin, (req, res) => {
   db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected' WHERE id=?").run(req.params.id);
   res.json({ success: true });
+});
+
+// Public: active partner list for enterprise registration
+app.get('/api/public/partners', (req, res) => {
+  res.json(db.prepare('SELECT id, name, industry FROM partners WHERE active=1 ORDER BY name').all());
 });
 
 // ─── Portal & Customer & Register pages ───
@@ -2470,6 +3790,196 @@ app.get('/customer', (req, res) => {
 });
 app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+
+// POST /api/docusign/webhook — DocuSign Connect event notifications
+app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
+  try {
+    const hmacSecret = process.env.DOCUSIGN_WEBHOOK_HMAC;
+    if (hmacSecret) {
+      const sig = req.headers['x-docusign-signature-1'] || '';
+      const rawBody = JSON.stringify(req.body);
+      const expected = crypto.createHmac('sha256', hmacSecret).update(rawBody).digest('base64');
+      if (sig !== expected) return res.status(401).json({ error: 'Invalid signature' });
+    }
+    const event = req.body;
+    const envelopeId = event?.data?.envelopeId || event?.envelopeId;
+    const status = event?.data?.envelopeSummary?.status || event?.status;
+    if (envelopeId && status) {
+      const asgn = db.prepare("SELECT id FROM assignments WHERE ds_envelope_id=?").get(envelopeId);
+      if (asgn) db.prepare("UPDATE assignments SET ds_status=? WHERE id=?").run(status, asgn.id);
+      const pf = db.prepare("SELECT id FROM partner_files WHERE ds_envelope_id=?").get(envelopeId);
+      if (pf) db.prepare("UPDATE partner_files SET ds_status=? WHERE id=?").run(status, pf.id);
+      for (const s of (event?.data?.envelopeSummary?.recipients?.signers || [])) {
+        if (s.status === 'completed' && s.signedDateTime) {
+          if (asgn) {
+            if (s.recipientId === '1') db.prepare("UPDATE assignments SET ds_worker_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
+            if (s.recipientId === '2') db.prepare("UPDATE assignments SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
+          }
+          if (pf) {
+            if (s.recipientId === '1') db.prepare("UPDATE partner_files SET ds_partner_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
+            if (s.recipientId === '2') db.prepare("UPDATE partner_files SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
+          }
+        }
+      }
+    }
+    res.json({ received: true });
+  } catch (e) {
+    console.error('[DocuSign Webhook]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── Interview System ───
+
+// Admin: list all slots
+app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
+  const slots = db.prepare(`
+    SELECT s.*, COUNT(i.id) AS total_booked
+    FROM interview_slots s
+    LEFT JOIN interviews i ON i.slot_id = s.id AND i.status != 'cancelled'
+    GROUP BY s.id ORDER BY s.slot_datetime ASC
+  `).all();
+  res.json(slots);
+});
+
+// Admin: create a slot
+app.post('/api/admin/interview-slots', requireAdmin, (req, res) => {
+  const { slot_datetime, duration_min, max_bookings, location, notes } = req.body;
+  if (!slot_datetime) return res.status(400).json({ error: 'slot_datetime required' });
+  const r = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes)
+    VALUES (?,?,?,?,?)`).run(slot_datetime, duration_min || 30, max_bookings || 1, location || '', notes || '');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+// Admin: batch create slots for a week
+app.post('/api/admin/interview-slots/batch', requireAdmin, (req, res) => {
+  const { slots } = req.body;
+  if (!Array.isArray(slots) || !slots.length) return res.status(400).json({ error: 'slots array required' });
+  const insert = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes) VALUES (?,?,?,?,?)`);
+  const tx = db.transaction((items) => {
+    let count = 0;
+    for (const s of items) {
+      if (!s.slot_datetime) continue;
+      insert.run(s.slot_datetime, s.duration_min || 30, s.max_bookings || 1, s.location || '', s.notes || '');
+      count++;
+    }
+    return count;
+  });
+  const created = tx(slots);
+  res.json({ success: true, created });
+});
+
+// Admin: delete a slot
+app.delete('/api/admin/interview-slots/:id', requireAdmin, (req, res) => {
+  const booked = db.prepare(`SELECT id FROM interviews WHERE slot_id=? AND status='scheduled'`).get(req.params.id);
+  if (booked) return res.status(400).json({ error: '该时间槽已有预约，请先取消面试再删除' });
+  db.prepare('DELETE FROM interview_slots WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Admin: list all interviews
+app.get('/api/admin/interviews', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT i.*, s.slot_datetime, s.duration_min, s.location,
+      w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.work_status, w.position_interests
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+    ORDER BY s.slot_datetime DESC
+  `).all();
+  res.json(rows);
+});
+
+// Admin: update interview status / notes
+app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
+  const { status, admin_notes } = req.body;
+  const row = db.prepare('SELECT * FROM interviews WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE interviews SET status=?, admin_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(status ?? row.status, admin_notes ?? row.admin_notes, req.params.id);
+  // If cancelled, free the slot count
+  if (status === 'cancelled' && row.status !== 'cancelled') {
+    db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
+  }
+  res.json({ success: true });
+});
+
+// Admin: mark passed + generate doc-request link
+app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
+  const interview = db.prepare(`
+    SELECT i.*, w.employee_id FROM interviews i JOIN worker_accounts w ON i.worker_account_id=w.id WHERE i.id=?
+  `).get(req.params.id);
+  if (!interview) return res.status(404).json({ error: 'Interview not found' });
+  if (!interview.employee_id) return res.status(400).json({ error: '该工人账号尚未关联员工档案，请先在员工管理中关联' });
+
+  // Check for existing pending doc request
+  const existing = db.prepare(`SELECT token FROM employee_doc_requests WHERE employee_id=? AND status='pending' AND (expires_at IS NULL OR expires_at > datetime('now'))`).get(interview.employee_id);
+  if (existing) {
+    db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(existing.token, req.params.id);
+    return res.json({ token: existing.token, already_exists: true });
+  }
+
+  const token = crypto.randomBytes(28).toString('hex');
+  const { admin_note, lang } = req.body;
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare(`INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions, expires_at)
+    VALUES (?,?,?,?,?,?,?)`).run(token, interview.employee_id, admin_note || '', JSON.stringify(['gov_id','ssn','work_card','w9']), lang || 'zh', '[]', expiresAt);
+  db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(token, req.params.id);
+  res.json({ token, expires_at: expiresAt });
+});
+
+// Worker: list available slots
+app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
+  const slots = db.prepare(`
+    SELECT id, slot_datetime, duration_min, location, notes, max_bookings, booked_count
+    FROM interview_slots
+    WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+    ORDER BY slot_datetime ASC
+  `).all();
+  res.json(slots);
+});
+
+// Worker: get my interview
+app.get('/api/worker/interview', requireWorker, (req, res) => {
+  const row = db.prepare(`
+    SELECT i.*, s.slot_datetime, s.duration_min, s.location
+    FROM interviews i JOIN interview_slots s ON i.slot_id=s.id
+    WHERE i.worker_account_id=?
+  `).get(req.workerId);
+  res.json(row || null);
+});
+
+// Worker: book a slot
+app.post('/api/worker/interviews', requireWorker, (req, res) => {
+  const { slot_id } = req.body;
+  if (!slot_id) return res.status(400).json({ error: 'slot_id required' });
+  // Check not already booked
+  const existing = db.prepare(`SELECT id, status FROM interviews WHERE worker_account_id=?`).get(req.workerId);
+  if (existing && existing.status !== 'cancelled') return res.status(400).json({ error: '您已有面试预约，如需更改请联系HR' });
+  const slot = db.prepare(`SELECT * FROM interview_slots WHERE id=? AND active=1`).get(slot_id);
+  if (!slot) return res.status(404).json({ error: '时间槽不存在' });
+  if (slot.booked_count >= slot.max_bookings) return res.status(400).json({ error: '该时间槽已满，请选择其他时间' });
+  if (new Date(slot.slot_datetime) <= new Date()) return res.status(400).json({ error: '该时间槽已过期' });
+
+  try {
+    if (existing && existing.status === 'cancelled') {
+      db.prepare(`UPDATE interviews SET slot_id=?, status='scheduled', admin_notes='', doc_request_token='', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(slot_id, existing.id);
+    } else {
+      db.prepare(`INSERT INTO interviews (worker_account_id, slot_id) VALUES (?,?)`).run(req.workerId, slot_id);
+    }
+    db.prepare(`UPDATE interview_slots SET booked_count = booked_count+1 WHERE id=?`).run(slot_id);
+    res.json({ success: true });
+  } catch(e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Global error handler — return JSON instead of Express's default HTML error page
+app.use((err, req, res, next) => {
+  console.error('[Unhandled Error]', err.message);
+  res.status(500).json({ error: '服务器内部错误：' + err.message });
 });
 
 // ─── Start ───
