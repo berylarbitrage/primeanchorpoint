@@ -3146,11 +3146,15 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
   if (open) {
+    // Clock out — always allowed regardless of job status
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
     res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
   } else {
+    // Clock in — requires an active job assignment
+    const activeJob = db.prepare("SELECT ej.id, j.title FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1").get(req.workerEmployeeId);
+    if (!activeJob) return res.status(400).json({ error: '当前没有有效的工作安排，无法打卡。请联系HR。/ No active job assignment. Please contact HR.' });
     const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified) VALUES(?,?,'open',?,?,?,?)")
       .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified);
     res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified, site_name: matchedSiteId ? db.prepare('SELECT name FROM job_sites WHERE id=?').get(matchedSiteId)?.name : null });
@@ -3158,9 +3162,10 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
-  if (!req.workerEmployeeId) return res.json({ clocked_in: false });
+  if (!req.workerEmployeeId) return res.json({ clocked_in: false, no_employee: true });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
-  res.json({ clocked_in: !!open, open_entry: open || null });
+  const activeJob = db.prepare("SELECT ej.id, j.title, j.company_name FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1").get(req.workerEmployeeId);
+  res.json({ clocked_in: !!open, open_entry: open || null, has_active_job: !!activeJob, active_job: activeJob || null });
 });
 
 app.get('/api/worker/assignments', requireWorker, (req, res) => {

@@ -769,15 +769,35 @@ async function loadPunchStatus() {
   const statusEl = document.getElementById('punchStatus');
   const timeEl = document.getElementById('punchTime');
   const subEl = document.getElementById('punchSub');
+  const btn = document.getElementById('btnPunch');
+
+  if (s.no_employee) {
+    statusEl.innerHTML = '<span style="color:var(--red)">⚠ 账号未关联员工档案</span>';
+    timeEl.textContent = '—';
+    subEl.textContent = '请联系HR关联您的员工档案后方可打卡';
+    btn.disabled = true;
+    btn.textContent = '账号未关联，无法打卡';
+    btn.className = 'btn-punch';
+    return;
+  }
+
   if (s.clocked_in && s.open_entry) {
     const ci = new Date(s.open_entry.clock_in);
     statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
     timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+  } else if (!s.has_active_job) {
+    statusEl.innerHTML = '<span style="color:var(--orange)">● 未在班</span>';
+    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    subEl.textContent = '当前无有效工作安排';
+    btn.disabled = true;
+    btn.textContent = '暂无工作安排，无法打卡';
+    btn.className = 'btn-punch';
+    return;
   } else {
     statusEl.innerHTML = '<span style="color:var(--gray-400)">● 未在班</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = new Date().toLocaleDateString();
+    subEl.textContent = s.active_job ? s.active_job.title || new Date().toLocaleDateString() : new Date().toLocaleDateString();
   }
   enablePunchBtn(_gpsCoords !== null || document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
 }
@@ -789,6 +809,12 @@ async function doPunch() {
   const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null };
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { btn.disabled = false; enablePunchBtn(true); return; }
+  if (r.error) {
+    showToast('❌ ' + r.error, 'error');
+    btn.disabled = false;
+    await loadPunchStatus();
+    return;
+  }
   if (r.action === 'in') {
     const geoMsg = r.geo_verified ? (r.site_name ? ` (${r.site_name})` : ' (位置已验证)') : '';
     showToast(`✅ 上班打卡成功！${geoMsg}`, 'success');
@@ -809,6 +835,10 @@ async function loadTimeclock() {
   await loadPunchStatus();
   const entries = await wApi('/timeclock');
   if (!entries) return;
+  if (!Array.isArray(entries)) {
+    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="8" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录</td></tr>';
+    return;
+  }
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t=>{
     const ci = t.clock_in ? new Date(t.clock_in) : null;
     const co = t.clock_out ? new Date(t.clock_out) : null;
