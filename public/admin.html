@@ -6619,13 +6619,15 @@ function renderOnboardingTasks(tasks) {
     const canWaive = (s === 'pending' || s === 'locked') && !t.required;
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
-    return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100)">
+    const isVisible = t.visible_to_worker !== 0;
+    return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100);${!isVisible?'opacity:.55':''}">
       <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--blue);font-size:.9rem">${esc(t.title)}</span>
           <span style="padding:1px 7px;border-radius:20px;font-size:.7rem;font-weight:600;${sBadge[s]||''}">${sLabel[s]||s}</span>
           ${!t.required?'<span style="font-size:.7rem;color:var(--gray-400)">(可豁免)</span>':''}
+          ${!isVisible?'<span style="font-size:.7rem;color:#dc2626;font-weight:600">（工人不可见）</span>':''}
         </div>
         ${t.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);font-style:italic;margin-top:.15rem">💬 ${esc(t.admin_note)}</div>`:''}
         ${t.action_url?`<div style="font-size:.78rem;margin-top:.15rem">🔗 <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">${esc(t.action_url)}</a></div>`:''}
@@ -6634,6 +6636,7 @@ function renderOnboardingTasks(tasks) {
           ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="updateOnboardingTask('${t.key}','waived')">⏭️ 豁免</button>`:''}
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="updateOnboardingTask('${t.key}','pending')">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
+          <button class="btn btn-sm" style="${isVisible?'background:#fff7ed;color:#c2410c;border:1px solid #fed7aa':'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'🙈 对工人隐藏':'👁️ 对工人显示'}</button>
         </div>
       </div>
     </div>`;
@@ -6642,6 +6645,11 @@ function renderOnboardingTasks(tasks) {
 
 async function initOnboarding() {
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/init-onboarding`, { method:'POST' });
+  refreshOnboardingModal();
+}
+
+async function toggleOnboardingVisibility(key, visible) {
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}/visibility`, { method:'PUT', body:JSON.stringify({ visible }) });
   refreshOnboardingModal();
 }
 
