@@ -3230,9 +3230,107 @@ app.post('/api/worker/login', (req, res) => {
 });
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
-  const w = db.prepare('SELECT id, username, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
+  const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
   const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
-  res.json({ account: w, employee: emp });
+  const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
+  res.json({ account: w, employee: emp, compliance_docs: docs });
+});
+
+// Worker: update profile (phone/email change triggers re-verification)
+app.put('/api/worker/me', requireWorker, async (req, res) => {
+  const { field, new_value } = req.body;
+  if (!field || !new_value) return res.status(400).json({ error: 'field and new_value required' });
+  if (!['phone', 'email'].includes(field)) return res.status(400).json({ error: 'Only phone or email can be changed' });
+
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+
+  // Check for duplicates
+  const dup = db.prepare(`SELECT id FROM worker_accounts WHERE ${field}=? AND id!=?`).get(new_value, req.workerId);
+  if (dup) return res.status(400).json({ error: `该${field === 'phone' ? '手机号' : '邮箱'}已被其他账户使用` });
+
+  // Generate verification codes for both old and new
+  const oldCode = String(Math.floor(100000 + Math.random() * 900000));
+  const newCode = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+
+  // Store pending change
+  try { db.exec(`CREATE TABLE IF NOT EXISTS pending_profile_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    worker_account_id INTEGER NOT NULL,
+    field_name TEXT NOT NULL,
+    old_value TEXT NOT NULL,
+    new_value TEXT NOT NULL,
+    old_code TEXT NOT NULL,
+    new_code TEXT NOT NULL,
+    old_verified INTEGER DEFAULT 0,
+    new_verified INTEGER DEFAULT 0,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`); } catch {}
+
+  // Remove any existing pending change for this worker+field
+  db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=? AND field_name=?').run(req.workerId, field);
+
+  db.prepare(`INSERT INTO pending_profile_changes (worker_account_id, field_name, old_value, new_value, old_code, new_code, expires_at)
+    VALUES (?,?,?,?,?,?,?)`).run(req.workerId, field, w[field] || '', new_value, oldCode, newCode, expiresAt);
+
+  const results = { old_sent: false, new_sent: false };
+
+  // Send codes
+  if (field === 'phone') {
+    // Send to old phone
+    if (w.phone && process.env.TWILIO_ACCOUNT_SID) {
+      try {
+        const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+        await twilio.messages.create({ body: `Prime Anchorpoint 旧号码验证码: ${oldCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: w.phone });
+        results.old_sent = true;
+      } catch (e) { console.error('[Change phone] SMS to old:', e.message); }
+    }
+    // Send to new phone
+    if (process.env.TWILIO_ACCOUNT_SID) {
+      try {
+        const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+        await twilio.messages.create({ body: `Prime Anchorpoint 新号码验证码: ${newCode} (15分钟有效)`, from: process.env.TWILIO_PHONE_NUMBER, to: new_value });
+        results.new_sent = true;
+      } catch (e) { console.error('[Change phone] SMS to new:', e.message); }
+    }
+  } else if (field === 'email') {
+    const nodemailer = require('nodemailer');
+    const t = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: parseInt(process.env.SMTP_PORT)||587, secure: process.env.SMTP_SECURE==='true', auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS} });
+    // Send to old email
+    if (w.email) {
+      try {
+        await t.sendMail({ from: process.env.EMAIL_FROM, to: w.email, subject: 'Prime Anchorpoint - 旧邮箱验证码', html: `<p>您的旧邮箱验证码: <strong>${oldCode}</strong></p><p>15分钟内有效。</p>` });
+        results.old_sent = true;
+      } catch (e) { console.error('[Change email] to old:', e.message); }
+    }
+    // Send to new email
+    try {
+      await t.sendMail({ from: process.env.EMAIL_FROM, to: new_value, subject: 'Prime Anchorpoint - 新邮箱验证码', html: `<p>您的新邮箱验证码: <strong>${newCode}</strong></p><p>15分钟内有效。</p>` });
+      results.new_sent = true;
+    } catch (e) { console.error('[Change email] to new:', e.message); }
+  }
+
+  res.json({ success: true, ...results, old_code: results.old_sent ? undefined : oldCode, new_code: results.new_sent ? undefined : newCode });
+});
+
+// Worker: verify profile change (old + new codes)
+app.post('/api/worker/me/verify-change', requireWorker, (req, res) => {
+  const { field, old_code, new_code } = req.body;
+  if (!field || !old_code || !new_code) return res.status(400).json({ error: 'Missing required fields' });
+
+  const pending = db.prepare('SELECT * FROM pending_profile_changes WHERE worker_account_id=? AND field_name=? AND expires_at > datetime(?)').get(req.workerId, field, new Date().toISOString());
+  if (!pending) return res.status(400).json({ error: '无待验证的更改请求或已过期' });
+
+  if (pending.old_code !== old_code) return res.status(400).json({ error: '旧号码/邮箱验证码错误', field: 'old' });
+  if (pending.new_code !== new_code) return res.status(400).json({ error: '新号码/邮箱验证码错误', field: 'new' });
+
+  // Both verified, apply the change
+  db.prepare(`UPDATE worker_accounts SET ${field}=? WHERE id=?`).run(pending.new_value, req.workerId);
+  db.prepare('DELETE FROM pending_profile_changes WHERE id=?').run(pending.id);
+
+  res.json({ success: true });
 });
 
 app.get('/api/worker/jobs', requireWorker, (req, res) => {
@@ -4222,7 +4320,54 @@ app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
   }
 });
 
+// ─── Interview Location Presets ───
+try { db.exec(`CREATE TABLE IF NOT EXISTS interview_locations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  address TEXT NOT NULL,
+  contact_name TEXT DEFAULT '',
+  contact_phone TEXT DEFAULT '',
+  instructions TEXT DEFAULT '',
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch {}
+
+// Admin: list interview locations
+app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM interview_locations WHERE active=1 ORDER BY name').all());
+});
+
+// Admin: create interview location
+app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
+  const { name, address, contact_name, contact_phone, instructions } = req.body;
+  if (!name || !address) return res.status(400).json({ error: 'name and address required' });
+  const r = db.prepare('INSERT INTO interview_locations (name, address, contact_name, contact_phone, instructions) VALUES (?,?,?,?,?)')
+    .run(name, address, contact_name || '', contact_phone || '', instructions || '');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+// Admin: update interview location
+app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
+  const loc = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(req.params.id);
+  if (!loc) return res.status(404).json({ error: 'Not found' });
+  const { name, address, contact_name, contact_phone, instructions } = req.body;
+  db.prepare('UPDATE interview_locations SET name=?, address=?, contact_name=?, contact_phone=?, instructions=? WHERE id=?')
+    .run(name ?? loc.name, address ?? loc.address, contact_name ?? loc.contact_name, contact_phone ?? loc.contact_phone, instructions ?? loc.instructions, req.params.id);
+  res.json({ success: true });
+});
+
+// Admin: delete interview location
+app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
+  db.prepare('UPDATE interview_locations SET active=0 WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 // ─── Interview System ───
+
+// Add contact/instruction columns to slots if missing
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
 
 // Admin: list all slots
 app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
@@ -4237,10 +4382,10 @@ app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
 
 // Admin: create a slot
 app.post('/api/admin/interview-slots', requireAdmin, (req, res) => {
-  const { slot_datetime, duration_min, max_bookings, location, notes } = req.body;
+  const { slot_datetime, duration_min, max_bookings, location, notes, contact_name, contact_phone, instructions } = req.body;
   if (!slot_datetime) return res.status(400).json({ error: 'slot_datetime required' });
-  const r = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes)
-    VALUES (?,?,?,?,?)`).run(slot_datetime, duration_min || 30, max_bookings || 1, location || '', notes || '');
+  const r = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes, contact_name, contact_phone, instructions)
+    VALUES (?,?,?,?,?,?,?,?)`).run(slot_datetime, duration_min || 30, max_bookings || 1, location || '', notes || '', contact_name || '', contact_phone || '', instructions || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -4248,12 +4393,12 @@ app.post('/api/admin/interview-slots', requireAdmin, (req, res) => {
 app.post('/api/admin/interview-slots/batch', requireAdmin, (req, res) => {
   const { slots } = req.body;
   if (!Array.isArray(slots) || !slots.length) return res.status(400).json({ error: 'slots array required' });
-  const insert = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes) VALUES (?,?,?,?,?)`);
+  const insert = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, notes, contact_name, contact_phone, instructions) VALUES (?,?,?,?,?,?,?,?)`);
   const tx = db.transaction((items) => {
     let count = 0;
     for (const s of items) {
       if (!s.slot_datetime) continue;
-      insert.run(s.slot_datetime, s.duration_min || 30, s.max_bookings || 1, s.location || '', s.notes || '');
+      insert.run(s.slot_datetime, s.duration_min || 30, s.max_bookings || 1, s.location || '', s.notes || '', s.contact_name || '', s.contact_phone || '', s.instructions || '');
       count++;
     }
     return count;
@@ -4325,7 +4470,8 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
 // Worker: list available slots
 app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
   const slots = db.prepare(`
-    SELECT id, slot_datetime, duration_min, location, notes, max_bookings, booked_count
+    SELECT id, slot_datetime, duration_min, location, notes, max_bookings, booked_count,
+      contact_name, contact_phone, instructions
     FROM interview_slots
     WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
     ORDER BY slot_datetime ASC
@@ -4336,7 +4482,7 @@ app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
 // Worker: get my interview
 app.get('/api/worker/interview', requireWorker, (req, res) => {
   const row = db.prepare(`
-    SELECT i.*, s.slot_datetime, s.duration_min, s.location
+    SELECT i.*, s.slot_datetime, s.duration_min, s.location, s.contact_name, s.contact_phone, s.instructions
     FROM interviews i JOIN interview_slots s ON i.slot_id=s.id
     WHERE i.worker_account_id=?
   `).get(req.workerId);
