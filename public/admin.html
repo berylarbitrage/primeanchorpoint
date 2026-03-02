@@ -254,6 +254,22 @@ tr:hover td{background:var(--sky-light)}
 </div>
 </div>
 
+<!-- Email Code Test Modal -->
+<div class="modal-bg" id="emailCodeTestModal">
+<div class="modal" style="max-width:460px">
+  <h2>✉️ 测试邮箱验证码</h2>
+  <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">输入一个邮箱地址，测试 SendGrid/SMTP 是否能成功发送验证码邮件。</p>
+  <div class="field"><label>发送到邮箱</label>
+    <input type="email" id="emailCodeTestAddr" placeholder="test@example.com">
+  </div>
+  <div id="emailCodeTestResult" style="display:none;margin-top:.75rem;padding:.75rem 1rem;border-radius:8px;font-size:.83rem;font-family:monospace;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto"></div>
+  <div class="modal-actions">
+    <button class="btn" onclick="document.getElementById('emailCodeTestModal').classList.remove('show')">关闭</button>
+    <button class="btn btn-blue" id="emailCodeTestBtn" onclick="runEmailCodeTest()">发送验证码</button>
+  </div>
+</div>
+</div>
+
 <!-- Activation Modal (self-verification on first login) -->
 <div class="modal-bg" id="activationModal" style="z-index:9999">
 <div class="modal" style="max-width:420px">
@@ -753,6 +769,7 @@ tr:hover td{background:var(--sky-light)}
       <button id="accTabCustomer" onclick="setAccTab('customer')">客户账户 Customer</button>
     </div>
     <div style="margin-left:auto;display:flex;gap:.5rem">
+      <button class="btn" style="background:#f0fff4;color:#2f9e44;border:1px solid #b2f2bb" onclick="openEmailCodeTestModal()">✉️ 测试邮箱</button>
       <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
       <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
@@ -2066,6 +2083,56 @@ async function doActivate() {
   } else {
     errEl.textContent = r.error || '激活失败，请检查密码';
   }
+}
+
+function openEmailCodeTestModal() {
+  document.getElementById('emailCodeTestAddr').value = '';
+  document.getElementById('emailCodeTestResult').style.display = 'none';
+  document.getElementById('emailCodeTestResult').textContent = '';
+  document.getElementById('emailCodeTestModal').classList.add('show');
+}
+
+async function runEmailCodeTest() {
+  const to = document.getElementById('emailCodeTestAddr').value.trim();
+  if (!to) { alert('请输入邮箱地址'); return; }
+  const btn = document.getElementById('emailCodeTestBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const resultEl = document.getElementById('emailCodeTestResult');
+  resultEl.style.display = 'none';
+  try {
+    const res = await fetch(API + '/admin/test-email-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+      body: JSON.stringify({ to })
+    });
+    const d = await res.json();
+    const cfg = d.configured || {};
+    let out = '── SMTP 配置状态 ──\n';
+    out += `SMTP Host:    ${cfg.smtp_host || '❌ 未设置'}\n`;
+    out += `SMTP Port:    ${cfg.smtp_port || '-'}\n`;
+    out += `SMTP Secure:  ${cfg.smtp_secure}\n`;
+    out += `SMTP User:    ${cfg.smtp_user || '❌ 未设置'}\n`;
+    out += `SMTP Pass:    ${cfg.smtp_pass_set ? '✅ 已设置' : '❌ 未设置'}\n`;
+    out += `EMAIL_FROM:   ${cfg.email_from || '❌ 未设置'}\n`;
+    out += `Transporter:  ${cfg.transporter_ready ? '✅ 就绪' : '❌ 未就绪'}\n`;
+    out += '\n── 发送结果 ──\n';
+    if (d.sent) {
+      out += `✅ 验证码邮件已发送！\n发送到: ${to}\n\n`;
+      out += '收到邮件说明 SendGrid/SMTP 配置正确。';
+    } else {
+      out += `❌ 发送失败\n错误: ${d.error || '未知错误'}`;
+    }
+    resultEl.style.background = d.sent ? '#f0fff4' : '#fff5f5';
+    resultEl.style.border = `1px solid ${d.sent ? '#9ae6b4' : '#feb2b2'}`;
+    resultEl.textContent = out;
+    resultEl.style.display = 'block';
+  } catch (e) {
+    resultEl.style.background = '#fff5f5';
+    resultEl.style.border = '1px solid #feb2b2';
+    resultEl.textContent = '网络错误：' + e.message;
+    resultEl.style.display = 'block';
+  }
+  btn.disabled = false; btn.textContent = '发送验证码';
 }
 
 function openSmsTestModal() {
