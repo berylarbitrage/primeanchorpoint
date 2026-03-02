@@ -6869,7 +6869,7 @@ async function ivPassAndSend(id) {
 }
 
 // ─── Compliance Review ───
-const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'驾照', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', other:'其他' };
+const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'身份证件(Persona)', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', other:'其他' };
 const COMP_STATUS_LABELS = { pending:'待审核', approved:'已通过', rejected:'已拒绝' };
 const COMP_STATUS_COLORS = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)' };
 let _complianceDocs = [];
@@ -6885,9 +6885,15 @@ async function loadComplianceDocs() {
     (!typeFilter || d.doc_type === typeFilter) &&
     (!statusFilter || d.status === statusFilter)
   );
-  document.getElementById('complianceDocsTable').innerHTML = filtered.length ? filtered.map(d => `<tr>
+  document.getElementById('complianceDocsTable').innerHTML = filtered.length ? filtered.map(d => {
+    let personaBadge = '';
+    try {
+      const fd = JSON.parse(d.form_data || '{}');
+      if (fd.persona_inquiry_id) personaBadge = ' <span style="font-size:.68rem;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px">Persona</span>';
+    } catch {}
+    return `<tr>
     <td><strong>${esc(d.worker_name||'')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(d.worker_email||d.worker_phone||'')}</span></td>
-    <td>${COMP_TYPE_LABELS[d.doc_type]||d.doc_type}</td>
+    <td>${COMP_TYPE_LABELS[d.doc_type]||d.doc_type}${personaBadge}</td>
     <td><span style="font-weight:600;${COMP_STATUS_COLORS[d.status]||''}">${COMP_STATUS_LABELS[d.status]||d.status}</span></td>
     <td>${(d.created_at||'').slice(0,10)}</td>
     <td style="font-size:.8rem">${esc(d.reviewer_notes||'—')}</td>
@@ -6895,7 +6901,7 @@ async function loadComplianceDocs() {
       <button class="btn btn-sm" onclick="openComplianceReview(${d.id})">查看/审核</button>
       ${d.file_path ? `<a href="/api/admin/compliance-docs/${d.id}/download" class="btn btn-sm" style="margin-left:.3rem">下载</a>` : ''}
     </td>
-  </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:2rem">暂无记录</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:2rem">暂无记录</td></tr>';
 }
 
 function openComplianceReview(id) {
@@ -6905,11 +6911,32 @@ function openComplianceReview(id) {
   let formHtml = '';
   try {
     const fd = JSON.parse(doc.form_data || '{}');
-    const entries = Object.entries(fd).filter(([k]) => !k.startsWith('_') && k !== 'ssn_or_ein_encrypted');
-    if (entries.length) {
-      formHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem;font-size:.85rem">' +
-        entries.map(([k,v]) => `<div><span style="color:var(--gray-400)">${k}</span><br><strong>${typeof v === 'object' ? JSON.stringify(v) : esc(String(v))}</strong></div>`).join('') +
-        '</div>';
+    // Persona-specific display
+    if (fd.persona_inquiry_id) {
+      const personaFields = [
+        ['Persona Inquiry ID', fd.persona_inquiry_id],
+        ['Persona 状态', fd.persona_status || '—'],
+        ['事件', fd.persona_event || '—'],
+        ...(fd.dl_first_name ? [['名 First Name', fd.dl_first_name]] : []),
+        ...(fd.dl_last_name ? [['姓 Last Name', fd.dl_last_name]] : []),
+        ...(fd.dl_dob ? [['出生日期 DOB', fd.dl_dob]] : []),
+        ...(fd.dl_number ? [['证件号码', fd.dl_number]] : []),
+        ...(fd.dl_state ? [['发行州', fd.dl_state]] : []),
+        ...(fd.dl_expiry ? [['到期日', fd.dl_expiry]] : []),
+        ...(fd.id_class ? [['证件类型', fd.id_class]] : []),
+        ...(fd.decline_reasons ? [['拒绝原因', JSON.stringify(fd.decline_reasons)]] : [])
+      ];
+      formHtml = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem;margin-bottom:1rem"><div style="font-weight:700;color:#1d4ed8;font-size:.85rem;margin-bottom:.5rem">🔐 Persona 自动验证数据</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.82rem">' +
+        personaFields.map(([k,v]) => `<div><span style="color:var(--gray-400)">${k}</span><br><strong>${esc(String(v))}</strong></div>`).join('') +
+        '</div></div>';
+    } else {
+      const entries = Object.entries(fd).filter(([k]) => !k.startsWith('_') && k !== 'ssn_or_ein_encrypted');
+      if (entries.length) {
+        formHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem;font-size:.85rem">' +
+          entries.map(([k,v]) => `<div><span style="color:var(--gray-400)">${k}</span><br><strong>${typeof v === 'object' ? JSON.stringify(v) : esc(String(v))}</strong></div>`).join('') +
+          '</div>';
+      }
     }
   } catch {}
   document.getElementById('complianceReviewContent').innerHTML = `

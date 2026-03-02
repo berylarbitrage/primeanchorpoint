@@ -3312,7 +3312,7 @@ app.post('/api/worker/compliance/i9', requireWorker, complianceUpload.fields([
   res.json({ success: true });
 });
 
-// Upload driver's license
+// Upload driver's license (manual fallback - kept for backward compat)
 app.post('/api/worker/compliance/drivers-license', requireWorker, complianceUpload.fields([
   { name: 'dl_front', maxCount: 1 },
   { name: 'dl_back', maxCount: 1 }
@@ -3335,6 +3335,186 @@ app.post('/api/worker/compliance/drivers-license', requireWorker, complianceUplo
       .run(req.workerId, JSON.stringify(formData), files.dl_front[0].path, files.dl_front[0].originalname);
   }
   res.json({ success: true });
+});
+
+// ── Persona Identity Verification ──
+
+// Worker: create a Persona inquiry for ID verification
+app.post('/api/worker/persona/inquiry', requireWorker, async (req, res) => {
+  const apiKey = process.env.PERSONA_API_KEY;
+  const templateId = process.env.PERSONA_TEMPLATE_ID;
+  if (!apiKey || !templateId) return res.status(500).json({ error: 'Persona not configured' });
+
+  const worker = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!worker) return res.status(404).json({ error: 'Worker not found' });
+
+  try {
+    const resp = await fetch('https://api.withpersona.com/api/v1/inquiries', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Persona-Version': '2023-01-05',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        data: {
+          attributes: {
+            'inquiry-template-id': templateId,
+            'reference-id': `worker-${req.workerId}`,
+            fields: {
+              'name-first': (worker.name || '').split(' ')[0] || '',
+              'name-last': (worker.name || '').split(' ').slice(1).join(' ') || '',
+              ...(worker.dob ? { birthdate: worker.dob } : {}),
+              ...(worker.email ? { 'email-address': worker.email } : {}),
+              ...(worker.phone ? { 'phone-number': worker.phone } : {})
+            }
+          }
+        }
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      console.error('[Persona] Create inquiry failed:', JSON.stringify(data));
+      return res.status(resp.status).json({ error: 'Persona API error', details: data });
+    }
+    const inquiryId = data.data?.id;
+    // Store the inquiry in compliance docs
+    const formData = JSON.stringify({ persona_inquiry_id: inquiryId, persona_status: 'created' });
+    const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(req.workerId);
+    if (existing) {
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .run(formData, existing.id);
+    } else {
+      db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'drivers_license', ?, 'pending')")
+        .run(req.workerId, formData);
+    }
+    res.json({ success: true, inquiry_id: inquiryId });
+  } catch (e) {
+    console.error('[Persona] Error:', e.message);
+    res.status(500).json({ error: 'Failed to create Persona inquiry: ' + e.message });
+  }
+});
+
+// Worker: get Persona config (template ID + environment) for embedded flow
+app.get('/api/worker/persona/config', requireWorker, (req, res) => {
+  const templateId = process.env.PERSONA_TEMPLATE_ID;
+  const environment = process.env.PERSONA_ENVIRONMENT || 'sandbox';
+  if (!templateId) return res.json({ enabled: false });
+  res.json({ enabled: true, templateId, environment });
+});
+
+// Worker: check Persona verification status
+app.get('/api/worker/persona/status', requireWorker, (req, res) => {
+  const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
+  if (!doc) return res.json({ status: 'not_started' });
+  try {
+    const formData = JSON.parse(doc.form_data || '{}');
+    res.json({
+      status: doc.status,
+      persona_inquiry_id: formData.persona_inquiry_id || null,
+      persona_status: formData.persona_status || null,
+      reviewer_notes: doc.reviewer_notes || ''
+    });
+  } catch {
+    res.json({ status: doc.status });
+  }
+});
+
+// Persona webhook - receives verification results
+app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (req, res) => {
+  const webhookSecret = process.env.PERSONA_WEBHOOK_SECRET;
+
+  // Verify webhook signature if secret is configured
+  if (webhookSecret) {
+    const sigHeader = req.headers['persona-signature'];
+    if (!sigHeader) return res.status(401).json({ error: 'Missing signature' });
+    try {
+      const parts = sigHeader.split(',');
+      const timestamp = parts.find(p => p.startsWith('t=')).slice(2);
+      const signature = parts.find(p => p.startsWith('v1=')).slice(3);
+      const payload = `${timestamp}.${req.body}`;
+      const expected = crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex');
+      if (!crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'))) {
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
+    } catch (e) {
+      console.error('[Persona Webhook] Signature verification error:', e.message);
+      return res.status(401).json({ error: 'Signature verification failed' });
+    }
+  }
+
+  try {
+    const event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const eventType = event.data?.attributes?.name || '';
+    const inquiryData = event.data?.attributes?.payload?.data;
+    const inquiryId = inquiryData?.id;
+    const inquiryStatus = inquiryData?.attributes?.status;
+    const referenceId = inquiryData?.attributes?.['reference-id'] || '';
+
+    console.log(`[Persona Webhook] Event: ${eventType}, Inquiry: ${inquiryId}, Status: ${inquiryStatus}`);
+
+    if (!inquiryId) return res.json({ received: true });
+
+    // Extract worker ID from reference-id (format: "worker-123")
+    const workerIdMatch = referenceId.match(/^worker-(\d+)$/);
+    let docRow = null;
+    if (workerIdMatch) {
+      docRow = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(parseInt(workerIdMatch[1]));
+    }
+    if (!docRow) {
+      // Fallback: search by inquiry ID in form_data
+      const allDocs = db.prepare("SELECT * FROM worker_compliance_docs WHERE doc_type='drivers_license'").all();
+      docRow = allDocs.find(d => {
+        try { return JSON.parse(d.form_data || '{}').persona_inquiry_id === inquiryId; } catch { return false; }
+      });
+    }
+    if (!docRow) {
+      console.warn(`[Persona Webhook] No compliance doc found for inquiry ${inquiryId}`);
+      return res.json({ received: true });
+    }
+
+    // Update compliance doc based on event
+    const existingForm = JSON.parse(docRow.form_data || '{}');
+    existingForm.persona_inquiry_id = inquiryId;
+    existingForm.persona_status = inquiryStatus;
+    existingForm.persona_event = eventType;
+
+    // Extract verification fields if available
+    const included = event.data?.attributes?.payload?.included || [];
+    const govIdVerification = included.find(i => i.type === 'verification/government-id');
+    if (govIdVerification) {
+      const attrs = govIdVerification.attributes || {};
+      existingForm.dl_number = attrs['id-number'] || '';
+      existingForm.dl_state = attrs['address-subdivision'] || '';
+      existingForm.dl_expiry = attrs['expiration-date'] || '';
+      existingForm.dl_first_name = attrs['name-first'] || '';
+      existingForm.dl_last_name = attrs['name-last'] || '';
+      existingForm.dl_dob = attrs['birthdate'] || '';
+      existingForm.id_class = attrs['id-class'] || '';
+    }
+
+    let newStatus = docRow.status;
+    if (eventType === 'inquiry.approved' || inquiryStatus === 'approved') {
+      newStatus = 'approved';
+    } else if (eventType === 'inquiry.declined' || inquiryStatus === 'declined') {
+      newStatus = 'rejected';
+      existingForm.decline_reasons = inquiryData?.attributes?.['decision-reasons'] || [];
+    } else if (eventType === 'inquiry.completed' || inquiryStatus === 'completed') {
+      newStatus = 'pending'; // awaiting auto-approval or manual review
+    } else if (eventType === 'inquiry.failed' || inquiryStatus === 'failed') {
+      newStatus = 'rejected';
+    }
+
+    db.prepare("UPDATE worker_compliance_docs SET form_data=?, status=?, reviewer_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(JSON.stringify(existingForm), newStatus, `Persona: ${eventType}`, docRow.id);
+
+    console.log(`[Persona Webhook] Updated doc ${docRow.id} → status=${newStatus}`);
+    res.json({ received: true });
+  } catch (e) {
+    console.error('[Persona Webhook] Error processing:', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Submit W-9 form data
