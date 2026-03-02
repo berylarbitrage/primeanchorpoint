@@ -79,6 +79,18 @@ tr:last-child td{border-bottom:none}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
+/* Onboarding steps */
+.ob-step{display:flex;align-items:flex-start;gap:1rem;padding:.85rem 0;border-bottom:1px solid var(--gray-100)}
+.ob-step:last-child{border-bottom:none}
+.ob-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;margin-top:2px}
+.ob-done{background:#d1fae5;color:#065f46}
+.ob-submitted{background:#fef3c7;color:#92400e}
+.ob-pending{background:#dbeafe;color:#1d4ed8}
+.ob-locked{background:var(--gray-100);color:var(--gray-400)}
+.ob-waived{background:#f3e8ff;color:#7c3aed}
+.ob-title{font-weight:700;font-size:.95rem;color:var(--blue)}
+.ob-badge{display:inline-block;padding:1px 8px;border-radius:20px;font-size:.72rem;font-weight:600;margin-left:.4rem;vertical-align:middle}
+.ob-note{font-size:.8rem;color:var(--gray-500);margin-top:.2rem;font-style:italic}
 /* Punch card */
 .punch-card{text-align:center;padding:1.5rem}
 .punch-status{font-size:.9rem;color:var(--gray-500);margin-bottom:1rem}
@@ -138,6 +150,157 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Apply for Job Modal -->
+<div class="modal-overlay" id="applyModal">
+  <div class="modal-box" style="max-width:460px;width:94%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+      <h2 style="margin:0">申请职位 / Apply for Position</h2>
+      <button onclick="closeApplyModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+    <p id="applyJobLabel" style="font-size:.85rem;color:var(--sky);font-weight:600;margin-bottom:1.25rem"></p>
+
+    <!-- Work auth question — shown only when job requires gc or citizen -->
+    <div id="applyWorkAuthField" style="display:none;margin-bottom:1.1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem">
+      <p style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.5rem">🪪 该职位要求 <span id="applyWorkAuthRequired"></span></p>
+      <p style="font-size:.78rem;color:#92400e;margin-bottom:.6rem">请确认您的工作身份</p>
+      <div style="display:flex;gap:.6rem">
+        <label style="flex:1;display:flex;align-items:center;gap:.4rem;cursor:pointer;padding:.45rem .6rem;border:1px solid #fde68a;border-radius:8px;background:#fff;font-size:.85rem;font-weight:600">
+          <input type="radio" name="applyWorkAuth" value="yes" style="accent-color:var(--green)"> ✅ 是，我符合
+        </label>
+        <label style="flex:1;display:flex;align-items:center;gap:.4rem;cursor:pointer;padding:.45rem .6rem;border:1px solid #fde68a;border-radius:8px;background:#fff;font-size:.85rem;font-weight:600">
+          <input type="radio" name="applyWorkAuth" value="no" style="accent-color:var(--red)"> ❌ 暂不符合
+        </label>
+      </div>
+    </div>
+
+    <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">📅 面试时间 / Interview Availability <span style="color:#dc2626">*</span></label>
+      <input type="text" id="applyAvailability" placeholder="例：周一至周五 9am–5pm，或具体日期 / e.g. Weekdays 9am–5pm" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💰 期望薪资 / Expected Pay</label>
+      <input type="text" id="applyExpectedPay" placeholder="例：$18/hr 或 $3,500/月" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
+    </div>
+
+    <div style="margin-bottom:.85rem">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 想对我们说的话 / Message to HR</label>
+      <textarea id="applyMessage" rows="3" placeholder="介绍一下您的相关经验、期望，或任何想告诉我们的 / Introduce yourself, share your expectations, or anything you'd like us to know" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit;outline:none"></textarea>
+    </div>
+
+    <div class="modal-msg error" id="applyModalError"></div>
+    <div style="display:flex;gap:.6rem;margin-top:.75rem">
+      <button onclick="closeApplyModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消 / Cancel</button>
+      <button onclick="submitApply()" id="applySubmitBtn" class="modal-btn modal-btn-primary" style="flex:2">提交申请 / Submit</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change Contact (Phone / Email) Modal -->
+<div class="modal-overlay" id="changeContactModal">
+  <div class="modal-box" style="max-width:440px;width:96%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+      <h2 style="margin:0;font-size:1rem" id="changeContactTitle"></h2>
+      <button onclick="closeContactModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+
+    <!-- Step 1: enter new value -->
+    <div id="contactStep1">
+      <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:.85rem" id="changeContactDesc"></p>
+      <div style="margin-bottom:.85rem">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="changeContactLabel"></label>
+        <input id="changeContactNewVal" type="text" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.92rem">
+      </div>
+      <div class="modal-msg error" id="contactStep1Error"></div>
+      <div style="display:flex;gap:.6rem">
+        <button onclick="closeContactModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消</button>
+        <button onclick="requestContactChange()" id="btnRequestChange" class="modal-btn modal-btn-primary" style="flex:2">发送验证码</button>
+      </div>
+    </div>
+
+    <!-- Step 2: enter old + new codes -->
+    <div id="contactStep2" style="display:none">
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.7rem .9rem;font-size:.82rem;color:#0c4a6e;margin-bottom:1rem" id="contactCodeHint"></div>
+
+      <div style="margin-bottom:.85rem">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelOldCode"></label>
+        <input id="oldContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+      </div>
+      <div style="margin-bottom:.85rem">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelNewCode"></label>
+        <input id="newContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+      </div>
+      <div style="text-align:right;margin-top:-.4rem;margin-bottom:.75rem">
+        <a href="#" onclick="requestContactChange();return false" style="font-size:.8rem;color:var(--sky)">重新发送验证码</a>
+      </div>
+
+      <div class="modal-msg error" id="contactStep2Error"></div>
+      <div style="display:flex;gap:.6rem">
+        <button onclick="closeContactModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消</button>
+        <button onclick="confirmContactChange()" id="btnConfirmChange" class="modal-btn modal-btn-primary" style="flex:2">确认更换</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Interview Booking Confirm Modal -->
+<div class="modal-overlay" id="bookConfirmModal">
+  <div class="modal-box" style="max-width:500px;width:96%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h2 style="margin:0;font-size:1.05rem">📅 确认面试预约 / Confirm Interview</h2>
+      <button onclick="closeBookModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+
+    <!-- Slot details -->
+    <div id="bookSlotDetails" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.88rem;line-height:1.9">
+    </div>
+
+    <!-- Required documents -->
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem">
+      <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.55rem">📋 请携带以下证件 / Please Bring the Following Documents</div>
+      <div style="font-size:.82rem;color:#78350f;line-height:1.8" id="bookDocList">
+        <div>🪪 SSN 社会安全卡（Social Security Card）</div>
+        <div>🪪 驾照（Driver's License）或州政府颁发 ID</div>
+        <div>📄 EAD 工卡（如适用 / If applicable）</div>
+        <div>🛂 护照（Passport）或其他有效身份证明</div>
+        <div>📋 任何工作授权证明（Work Authorization Documents）</div>
+      </div>
+      <div style="font-size:.76rem;color:#92400e;margin-top:.6rem;padding-top:.5rem;border-top:1px solid #fde68a">
+        ⚠️ 如无法找到相关人员，请致电或发邮件联系我们：<br>
+        If you can't reach anyone, contact us at:<br>
+        <strong>📞 (847) 737-9888</strong> &nbsp;·&nbsp; <strong>✉️ info@primeanchorpoint.com</strong>
+      </div>
+    </div>
+
+    <!-- Confirm contact info -->
+    <div style="margin-bottom:.85rem">
+      <div style="font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.5rem">📱 确认您的联系方式 / Confirm Your Contact Info</div>
+      <div style="display:flex;gap:.6rem">
+        <div style="flex:1">
+          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">手机号 / Phone</label>
+          <input type="tel" id="bookPhone" placeholder="(312) 555-1234" style="width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
+        </div>
+        <div style="flex:1">
+          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">邮箱 / Email</label>
+          <input type="email" id="bookEmail" placeholder="you@email.com" style="width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
+        </div>
+      </div>
+    </div>
+
+    <!-- Message -->
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 有什么想告诉我们的？/ Anything you'd like to share?</label>
+      <textarea id="bookNote" rows="3" placeholder="例：我没有驾照，只有护照 / e.g. I only have a passport, no driver's license" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
+    </div>
+
+    <div class="modal-msg error" id="bookModalError"></div>
+    <div style="display:flex;gap:.6rem;margin-top:.5rem">
+      <button onclick="closeBookModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消 / Cancel</button>
+      <button onclick="confirmBookSlot()" id="bookConfirmBtn" class="modal-btn modal-btn-primary" style="flex:2">✅ 确认预约 / Confirm Booking</button>
+    </div>
+  </div>
+</div>
+
 <!-- Forgot Password Modal -->
 <div class="modal-overlay" id="forgotModal">
   <div class="modal-box">
@@ -172,44 +335,6 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
-<!-- Apply Job Modal -->
-<div class="modal-overlay" id="applyModal" style="display:none;align-items:center;justify-content:center">
-  <div class="modal-box" style="max-width:460px;width:92%">
-    <h3 style="margin:0 0 .25rem;color:var(--blue);font-size:1.05rem">申请职位 / Apply for Position</h3>
-    <div id="applyJobLabel" style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem"></div>
-    <div class="modal-msg" id="applyMsg"></div>
-
-    <div style="margin-bottom:.9rem">
-      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
-        📅 面试时间 / Interview Availability <span style="color:#dc2626">*</span>
-      </label>
-      <input id="applyAvailability" type="text" placeholder="例：周一至周五 9am–5pm，或具体日期 / e.g. Weekdays 9am–5pm"
-        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
-    </div>
-
-    <div style="margin-bottom:.9rem">
-      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
-        💰 期望薪资 / Expected Pay
-      </label>
-      <input id="applyExpectedPay" type="text" placeholder="例：$18/hr 或 $3,500/月 / e.g. $18/hr or $3,500/mo"
-        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none">
-    </div>
-
-    <div style="margin-bottom:1.1rem">
-      <label style="display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem">
-        💬 想对我们说的话 / Message to HR
-      </label>
-      <textarea id="applyMessage" rows="3" placeholder="介绍一下您的相关经验、期待，或任何想告诉我们的 / Introduce yourself, share your expectations, or anything you'd like us to know"
-        style="width:100%;box-sizing:border-box;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;outline:none;resize:vertical;line-height:1.5"></textarea>
-    </div>
-
-    <div style="display:flex;gap:.6rem;justify-content:flex-end">
-      <button class="modal-btn modal-btn-secondary" onclick="closeApplyModal()">取消 / Cancel</button>
-      <button class="modal-btn modal-btn-primary" id="applySubmitBtn" onclick="submitApply()">提交申请 / Submit</button>
-    </div>
-  </div>
-</div>
-
 <!-- App -->
 <div id="app">
   <div class="header">
@@ -225,6 +350,7 @@ tr:last-child td{border-bottom:none}
     <button class="nav-btn" data-tab="applications" onclick="showTab('applications')">我的申请</button>
     <button class="nav-btn" data-tab="timeclock" onclick="showTab('timeclock')">我的打卡记录</button>
     <button class="nav-btn" data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none">合规文件</button>
+    <button class="nav-btn" data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none">📋 待办事项</button>
     <button class="nav-btn" data-tab="profile" onclick="showTab('profile')">我的信息</button>
   </div>
   <div class="content">
@@ -539,11 +665,37 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
 
+    <!-- Todos / Onboarding -->
+    <div id="tabTodos" style="display:none">
+      <div class="card">
+        <h2>📋 我的入职待办事项</h2>
+        <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1.25rem">请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。</p>
+        <div id="onboardingList"></div>
+      </div>
+    </div>
+
     <!-- Profile -->
     <div id="tabProfile" style="display:none">
-      <div class="card" id="profileCard">
-        <h2>我的信息 / My Info</h2>
-        <div id="profileContent"></div>
+      <!-- Basic info -->
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:1rem">👤 我的信息</h2>
+        <div id="profileBasic"></div>
+      </div>
+      <!-- Contact info -->
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:1rem">📱 联系方式</h2>
+        <div id="profileContact"></div>
+      </div>
+      <!-- Identity Verification -->
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:.3rem">🪪 身份验证</h2>
+        <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">由HR发起 · 驾照 + 自拍 + SSN核验 · 通过Persona平台</p>
+        <div id="profileIdentity"><p style="color:var(--gray-400);font-size:.88rem">加载中...</p></div>
+      </div>
+      <!-- Uploaded documents -->
+      <div class="card">
+        <h2 style="margin-bottom:1rem">📂 我的文件</h2>
+        <div id="profileDocs"></div>
       </div>
 
       <!-- Change phone/email modal -->
@@ -710,24 +862,29 @@ async function resetPassword() {
 }
 
 let _interviewPassed = false;
+let _workerInfo = null;
+let _pendingSlot = null;
 
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   const [me, interview] = await Promise.all([wApi('/me'), wApi('/interview')]);
   if (!me) return;
+  _workerInfo = me;
   const name = me.employee ? `${me.employee.first_name} ${me.employee.last_name}` : me.account.username;
   document.getElementById('workerNameDisplay').textContent = name;
 
   // Only show compliance tab if interview passed
   _interviewPassed = interview && interview.status === 'passed';
   document.getElementById('navCompliance').style.display = _interviewPassed ? '' : 'none';
+  // Show todos tab (always visible for logged-in workers)
+  document.getElementById('navTodos').style.display = '';
 
   loadJobs();
 }
 
 function showTab(tab) {
-  ['jobs','interview','applications','timeclock','compliance','profile'].forEach(t => {
+  ['jobs','interview','applications','timeclock','compliance','todos','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -736,14 +893,17 @@ function showTab(tab) {
   else if (tab === 'compliance') loadCompliance();
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
+  else if (tab === 'todos') loadOnboarding();
   else loadJobs();
 }
 
 async function loadInterview() {
-  const [interview, slots] = await Promise.all([
+  const [interview, slots, me] = await Promise.all([
     wApi('/interview'),
-    wApi('/interview-slots')
+    wApi('/interview-slots'),
+    wApi('/me')
   ]);
+  if (me) _workerInfo = me;
 
   // Update compliance tab visibility
   _interviewPassed = interview && interview.status === 'passed';
@@ -802,6 +962,10 @@ async function loadInterview() {
     return;
   }
 
+  // Cache slots for modal
+  _pendingSlotMap = {};
+  slots.forEach(s => { _pendingSlotMap[s.id] = s; });
+
   // Group slots by date
   const grouped = {};
   slots.forEach(s => {
@@ -815,15 +979,23 @@ async function loadInterview() {
   for (const [dateKey, group] of Object.entries(grouped)) {
     const dt = group.date;
     const dateLabel = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-    // First slot's location as the day's location
-    const dayLocation = group.slots[0].location;
-    html += `<div style="margin-bottom:1.25rem">
-      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:2px solid #e0f2fe">
-        <span style="font-size:1.3rem">📅</span>
-        <span style="font-weight:700;font-size:1rem;color:#0c4a6e">${dateLabel}</span>
-        ${dayLocation ? `<span style="font-size:.8rem;color:var(--gray-500);margin-left:auto">📍 ${dayLocation}</span>` : ''}
+    // First slot's location info for the day header
+    const rep = group.slots[0];
+    const dayLocation = rep.location;
+    const dayContact = rep.contact_name;
+    const dayPhone = rep.contact_phone;
+    const dayInstr = rep.instructions;
+    html += `<div style="margin-bottom:1.5rem">
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.7rem 1rem;margin-bottom:.6rem">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:${(dayContact||dayInstr)?'.5rem':'0'}">
+          <span style="font-size:1.2rem">📅</span>
+          <span style="font-weight:700;font-size:.95rem;color:#0c4a6e">${dateLabel}</span>
+        </div>
+        ${dayLocation ? `<div style="font-size:.82rem;color:#0369a1;margin-bottom:.2rem">📍 ${dayLocation}</div>` : ''}
+        ${dayContact ? `<div style="font-size:.82rem;color:var(--gray-600)">👤 ${dayContact}${dayPhone ? `&nbsp;&nbsp;📞 ${dayPhone}` : ''}</div>` : ''}
+        ${dayInstr ? `<div style="font-size:.8rem;color:var(--gray-500);margin-top:.3rem;white-space:pre-wrap;line-height:1.5">📋 ${dayInstr}</div>` : ''}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem">`;
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">`;
 
     group.slots.forEach(s => {
       const sdt = new Date(s.slot_datetime);
@@ -843,14 +1015,82 @@ async function loadInterview() {
   list.innerHTML = html;
 }
 
-async function bookSlot(slotId) {
-  const r = await wApi('/interviews', { method:'POST', body: JSON.stringify({ slot_id: slotId }) });
+function bookSlot(slotId) {
+  // Find slot data from the rendered list
+  const slot = _pendingSlotMap && _pendingSlotMap[slotId];
+  openBookModal(slotId, slot);
+}
+
+let _pendingSlotMap = {};
+
+function openBookModal(slotId, slot) {
+  _pendingSlot = slotId;
+
+  // Fill slot details
+  const details = document.getElementById('bookSlotDetails');
+  if (slot) {
+    const dt = new Date(slot.slot_datetime);
+    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+    details.innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:.4rem 1.5rem">
+        <span>🕐 <strong>${dateStr} ${timeStr}</strong></span>
+        ${slot.location ? `<span>📍 <strong>${esc(slot.location)}</strong></span>` : ''}
+        ${slot.duration_min ? `<span>⏱ <strong>${slot.duration_min} 分钟</strong></span>` : ''}
+      </div>`;
+  } else {
+    details.innerHTML = '<span style="color:var(--gray-400)">加载面试信息…</span>';
+  }
+
+  // Pre-fill contact info from worker account
+  const acc = _workerInfo && _workerInfo.account;
+  document.getElementById('bookPhone').value = (acc && acc.phone) || '';
+  document.getElementById('bookEmail').value = (acc && acc.email) || '';
+  document.getElementById('bookNote').value = '';
+
+  const errEl = document.getElementById('bookModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+  const btn = document.getElementById('bookConfirmBtn');
+  btn.disabled = false; btn.textContent = '✅ 确认预约 / Confirm Booking';
+
+  document.getElementById('bookConfirmModal').classList.add('show');
+}
+
+function closeBookModal() {
+  document.getElementById('bookConfirmModal').classList.remove('show');
+  _pendingSlot = null;
+}
+
+async function confirmBookSlot() {
+  if (!_pendingSlot) return;
+  const errEl = document.getElementById('bookModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+
+  const phone = document.getElementById('bookPhone').value.trim();
+  const email = document.getElementById('bookEmail').value.trim();
+  const note  = document.getElementById('bookNote').value.trim();
+
+  if (!phone && !email) {
+    errEl.textContent = '请至少填写一种联系方式 / Please provide at least one contact method';
+    errEl.classList.add('show'); return;
+  }
+
+  const btn = document.getElementById('bookConfirmBtn');
+  btn.disabled = true; btn.textContent = '预约中…';
+
+  const r = await wApi('/interviews', {
+    method: 'POST',
+    body: JSON.stringify({ slot_id: _pendingSlot, confirm_phone: phone, confirm_email: email, note })
+  });
+  btn.disabled = false; btn.textContent = '✅ 确认预约 / Confirm Booking';
   if (!r) return;
   if (r.success) {
-    showToast('✅ 面试已预约！请准时参加');
+    closeBookModal();
+    showToast('✅ 面试已预约！请准时携带证件参加');
     loadInterview();
   } else {
-    showToast('❌ ' + (r.error || '预约失败'), 'error');
+    errEl.textContent = r.error || '预约失败';
+    errEl.classList.add('show');
   }
 }
 
@@ -895,58 +1135,88 @@ function renderJobs(jobs) {
     </div>`).join('') : '<div class="empty">暂无在招职位</div>';
 }
 
-let _applyJobId = null;
+let _currentApplyJob = null;
 
 function applyJob(jobId) {
-  _applyJobId = jobId;
-  // Fill in job label from cached list
   const job = (_allJobs || []).find(j => j.id === jobId);
-  document.getElementById('applyJobLabel').textContent = job
-    ? `${job.title}${job.company_name ? '  ·  ' + job.company_name : ''}${job.location ? '  ·  ' + job.location : ''}`
-    : '';
+  if (!job) return;
+  _currentApplyJob = job;
+
+  document.getElementById('applyJobLabel').textContent =
+    [job.title, job.company_name, job.location].filter(Boolean).join('  ·  ');
   document.getElementById('applyAvailability').value = '';
   document.getElementById('applyExpectedPay').value = '';
   document.getElementById('applyMessage').value = '';
-  document.getElementById('applyMsg').className = 'modal-msg';
-  document.getElementById('applyModal').style.display = 'flex';
+  document.querySelectorAll('[name="applyWorkAuth"]').forEach(r => r.checked = false);
+  const errEl = document.getElementById('applyModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+  const btn = document.getElementById('applySubmitBtn');
+  btn.disabled = false; btn.textContent = '提交申请 / Submit';
+
+  const authField = document.getElementById('applyWorkAuthField');
+  const authReqEl = document.getElementById('applyWorkAuthRequired');
+  if (job.work_auth === 'gc') {
+    authField.style.display = '';
+    authReqEl.textContent = '绿卡或公民（Green Card or Citizen）';
+  } else if (job.work_auth === 'citizen') {
+    authField.style.display = '';
+    authReqEl.textContent = '仅限美国公民（US Citizen Only）';
+  } else {
+    authField.style.display = 'none';
+  }
+
+  document.getElementById('applyModal').classList.add('show');
   setTimeout(() => document.getElementById('applyAvailability').focus(), 100);
 }
 
 function closeApplyModal() {
-  document.getElementById('applyModal').style.display = 'none';
-  _applyJobId = null;
+  document.getElementById('applyModal').classList.remove('show');
+  _currentApplyJob = null;
 }
 
 async function submitApply() {
-  const availability = document.getElementById('applyAvailability').value.trim();
-  if (!availability) {
-    const el = document.getElementById('applyMsg');
-    el.className = 'modal-msg show error';
-    el.textContent = '请填写面试时间 / Please enter your interview availability';
+  if (!_currentApplyJob) return;
+  const job = _currentApplyJob;
+  const errEl = document.getElementById('applyModalError');
+  errEl.textContent = ''; errEl.classList.remove('show');
+
+  const interview_availability = document.getElementById('applyAvailability').value.trim();
+  if (!interview_availability) {
+    errEl.textContent = '请填写面试时间 / Please enter your interview availability';
+    errEl.classList.add('show');
     return;
   }
+
+  const expected_pay = document.getElementById('applyExpectedPay').value.trim();
+  const applicant_message = document.getElementById('applyMessage').value.trim();
+
+  let work_auth_confirmed = '';
+  if (job.work_auth === 'gc' || job.work_auth === 'citizen') {
+    const sel = document.querySelector('[name="applyWorkAuth"]:checked');
+    if (!sel) {
+      errEl.textContent = '请选择您的工作身份状态 / Please select your work authorization status';
+      errEl.classList.add('show');
+      return;
+    }
+    work_auth_confirmed = sel.value;
+  }
+
   const btn = document.getElementById('applySubmitBtn');
-  btn.disabled = true;
-  btn.textContent = '提交中…';
-  const r = await wApi(`/apply/${_applyJobId}`, {
+  btn.disabled = true; btn.textContent = '提交中…';
+
+  const r = await wApi(`/apply/${job.id}`, {
     method: 'POST',
-    body: JSON.stringify({
-      interview_availability: availability,
-      expected_pay: document.getElementById('applyExpectedPay').value.trim(),
-      applicant_message: document.getElementById('applyMessage').value.trim()
-    })
+    body: JSON.stringify({ interview_availability, expected_pay, applicant_message, work_auth_confirmed })
   });
-  btn.disabled = false;
-  btn.textContent = '提交申请 / Submit';
-  if (!r) return;
+  if (!r) { btn.disabled = false; btn.textContent = '提交申请 / Submit'; return; }
   if (r.success) {
     closeApplyModal();
     showToast('✅ 申请成功！HR将与您联系');
     loadJobs();
   } else {
-    const el = document.getElementById('applyMsg');
-    el.className = 'modal-msg show error';
-    el.textContent = r.error || '申请失败';
+    errEl.textContent = r.error || '申请失败';
+    errEl.classList.add('show');
+    btn.disabled = false; btn.textContent = '提交申请 / Submit';
   }
 }
 
@@ -1102,119 +1372,206 @@ const WORK_STATUS_LABELS = { citizen:'🇺🇸 美国公民', green_card:'🟢 �
 const DOC_STATUS_ZH = { pending:'审核中', approved:'已通过', rejected:'未通过' };
 
 async function loadProfile() {
-  const me = await wApi('/me');
+  const [me, docs, idStatus] = await Promise.all([wApi('/me'), wApi('/compliance'), wApi('/identity/status')]);
   if (!me) return;
-  const a = me.account;
-  const e = me.employee;
-  const docs = me.compliance_docs || [];
 
-  // Build compliance doc summary
-  const docMap = {};
-  docs.forEach(d => { docMap[d.doc_type] = d; });
-  const docBadge = (type, label) => {
-    const d = docMap[type];
-    if (!d) return `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;background:#f3f4f6;color:var(--gray-400)">${label}: 未提交</span>`;
-    const colors = { approved:'background:#dcfce7;color:#15803d', pending:'background:#fef3c7;color:#92400e', rejected:'background:#fef2f2;color:#dc2626' };
-    return `<span style="display:inline-block;padding:2px 8px;border-radius:12px;font-size:.75rem;font-weight:600;${colors[d.status]||''}">${label}: ${DOC_STATUS_ZH[d.status]||d.status}</span>`;
+  // ── Identity verification ──
+  const idEl = document.getElementById('profileIdentity');
+  if (idEl) {
+    const st = idStatus?.status || 'not_sent';
+    const sentAt = idStatus?.sent_at ? new Date(idStatus.sent_at).toLocaleDateString('zh-CN') : '';
+    const statusMap = {
+      not_sent: { icon:'⬜', label:'未发起', color:'var(--gray-400)', desc:'HR 面试通过后会为您发送验证链接' },
+      pending:  { icon:'🕐', label:'待完成', color:'#854d0e', desc:`验证链接已于 ${sentAt} 发送到您的手机和邮箱` },
+      completed:{ icon:'⏳', label:'待审批', color:'#1d4ed8', desc:'您的资料已提交，等待系统审核' },
+      approved: { icon:'✅', label:'已通过', color:'#15803d', desc:`身份验证已于 ${sentAt} 通过` },
+      declined: { icon:'❌', label:'未通过', color:'#dc2626', desc:'验证失败，请联系 HR 重新发送链接' },
+    };
+    const s = statusMap[st] || statusMap.not_sent;
+    const startBtn = (st === 'pending' && idStatus?.link)
+      ? `<a href="${idStatus.link}" target="_blank" rel="noopener noreferrer"
+           style="display:inline-flex;align-items:center;gap:.4rem;margin-top:.75rem;padding:.55rem 1.2rem;background:#1a7ed4;color:#fff;border-radius:8px;font-size:.88rem;font-weight:700;text-decoration:none">
+           🪪 开始身份验证
+         </a>` : '';
+    idEl.innerHTML = `
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <span style="font-size:1.6rem">${s.icon}</span>
+        <div>
+          <div style="font-size:.95rem;font-weight:700;color:${s.color}">${s.label}</div>
+          <div style="font-size:.8rem;color:var(--gray-400);margin-top:.1rem">${s.desc}</div>
+        </div>
+      </div>
+      ${startBtn}`;
+  }
+  _workerInfo = me;
+  const e = me.employee;
+  const a = me.account;
+
+  // ── Basic info ──
+  let basicHtml = '';
+  if (e) {
+    basicHtml = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;font-size:.88rem">
+        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">姓名</div><strong>${esc(e.first_name+' '+e.last_name)}</strong></div>
+        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">工号</div><strong>${esc(e.employee_id||'—')}</strong></div>
+        ${e.position ? `<div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">职位</div>${esc(e.position)}</div>` : ''}
+        ${e.department ? `<div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">部门</div>${esc(e.department)}</div>` : ''}
+        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">状态</div>${esc(e.status||'—')}</div>
+      </div>`;
+  } else {
+    basicHtml = `<div style="display:flex;align-items:center;gap:.6rem">
+      <span style="font-size:.88rem;color:var(--gray-400)">员工档案未绑定，如有疑问请联系 HR</span>
+    </div>
+    <div style="margin-top:.6rem;font-size:.85rem;color:var(--gray-500)">账号：<strong>${esc(a.username)}</strong></div>`;
+  }
+  document.getElementById('profileBasic').innerHTML = basicHtml;
+
+  // ── Contact info ──
+  const rowStyle = 'display:flex;align-items:center;justify-content:space-between;padding:.65rem 0;border-bottom:1px solid var(--gray-100)';
+  const labelStyle = 'font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.15rem';
+  const changeBtn = (field) => `<button onclick="openContactModal('${field}')" style="background:none;border:1px solid var(--sky);color:var(--sky);border-radius:6px;padding:.28rem .7rem;font-size:.78rem;font-weight:600;cursor:pointer">更换</button>`;
+
+  document.getElementById('profileContact').innerHTML = `
+    <div style="${rowStyle}">
+      <div>
+        <div style="${labelStyle}">手机号 / Phone</div>
+        <div style="font-size:.92rem;font-weight:600">${a.phone ? esc(a.phone) : '<span style="color:var(--gray-400)">未设置</span>'}</div>
+      </div>
+      ${changeBtn('phone')}
+    </div>
+    <div style="${rowStyle.replace('border-bottom:1px solid var(--gray-100)','border-bottom:none')}">
+      <div>
+        <div style="${labelStyle}">邮箱 / Email</div>
+        <div style="font-size:.92rem;font-weight:600">${a.email ? esc(a.email) : '<span style="color:var(--gray-400)">未设置</span>'}</div>
+      </div>
+      ${changeBtn('email')}
+    </div>`;
+
+  // ── Documents ──
+  const docTypeLabel = {
+    i9: { icon:'📋', zh:'I-9 就业资格验证' },
+    drivers_license: { icon:'🪪', zh:'身份证件（Persona）' },
+    w9: { icon:'📄', zh:'W-9 纳税人识别' },
+    ssn_card: { icon:'🔒', zh:'社安卡 SSN Card' },
+    work_permit: { icon:'📃', zh:'工作许可' },
+    background_check: { icon:'🔍', zh:'背景调查' },
+  };
+  const statusBadge = (s) => {
+    const map = {approved:'background:#dcfce7;color:#15803d', pending:'background:#fef9c3;color:#854d0e', rejected:'background:#fee2e2;color:#dc2626', not_submitted:'background:#f1f5f9;color:#64748b'};
+    const label = {approved:'已通过',pending:'审核中',rejected:'未通过',not_submitted:'未提交'};
+    const style = map[s] || map.not_submitted;
+    return `<span style="${style};padding:.15rem .55rem;border-radius:20px;font-size:.72rem;font-weight:700">${label[s]||s}</span>`;
   };
 
-  let html = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem .5rem;font-size:.88rem;margin-bottom:1.25rem">
-      <div><span style="color:var(--gray-400);font-size:.78rem">姓名 Name</span><br><strong>${esc(a.name||a.username)}</strong></div>
-      <div><span style="color:var(--gray-400);font-size:.78rem">用户名 Username</span><br><strong>${esc(a.username)}</strong></div>
-      <div>
-        <span style="color:var(--gray-400);font-size:.78rem">手机号 Phone</span><br>
-        <strong>${esc(a.phone||'未设置')}</strong>
-        <button class="btn btn-sm" onclick="openChangeContact('phone','${esc(a.phone||'')}')" style="margin-left:.5rem;font-size:.72rem;padding:1px 6px">更换</button>
-      </div>
-      <div>
-        <span style="color:var(--gray-400);font-size:.78rem">邮箱 Email</span><br>
-        <strong>${esc(a.email||'未设置')}</strong>
-        <button class="btn btn-sm" onclick="openChangeContact('email','${esc(a.email||'')}')" style="margin-left:.5rem;font-size:.72rem;padding:1px 6px">更换</button>
-      </div>
-      <div><span style="color:var(--gray-400);font-size:.78rem">出生日期 DOB</span><br>${esc(a.dob||'—')}</div>
-      <div><span style="color:var(--gray-400);font-size:.78rem">身份状态 Status</span><br>${WORK_STATUS_LABELS[a.work_status]||esc(a.work_status||'—')}</div>
-    </div>`;
-
-  // Employee info if linked
-  if (e) {
-    html += `<div style="border-top:1px solid var(--gray-200);padding-top:.75rem;margin-bottom:1rem">
-      <h3 style="font-size:.88rem;color:var(--sky);margin-bottom:.5rem">员工信息 Employee Info</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;font-size:.85rem">
-        <div><span style="color:var(--gray-400);font-size:.78rem">姓名</span><br>${esc(e.first_name+' '+e.last_name)}</div>
-        <div><span style="color:var(--gray-400);font-size:.78rem">工号</span><br>${esc(e.employee_id||'—')}</div>
-        <div><span style="color:var(--gray-400);font-size:.78rem">职位</span><br>${esc(e.position||'—')}</div>
-        <div><span style="color:var(--gray-400);font-size:.78rem">部门</span><br>${esc(e.department||'—')}</div>
-        <div><span style="color:var(--gray-400);font-size:.78rem">薪资</span><br>${e.pay_rate ? '$'+e.pay_rate+'/'+e.pay_type : '—'}</div>
-        <div><span style="color:var(--gray-400);font-size:.78rem">状态</span><br>${e.status||'—'}</div>
-      </div>
-    </div>`;
+  const docEl = document.getElementById('profileDocs');
+  if (!docs || !docs.documents) {
+    docEl.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">暂无文件记录</p>';
+    return;
   }
-
-  // Compliance docs summary
-  html += `<div style="border-top:1px solid var(--gray-200);padding-top:.75rem">
-    <h3 style="font-size:.88rem;color:var(--sky);margin-bottom:.5rem">合规文件 Compliance Docs</h3>
-    <div style="display:flex;flex-wrap:wrap;gap:.4rem">
-      ${docBadge('i9','I-9')}
-      ${docBadge('drivers_license','驾照/ID')}
-      ${docBadge('w9','W-9')}
-      ${docBadge('ssn_card','SSN')}
-      ${docBadge('work_permit','工作许可')}
-    </div>
-  </div>`;
-
-  document.getElementById('profileContent').innerHTML = html;
+  const submitted = Object.entries(docs.documents).filter(([,d]) => d && d.status !== 'not_submitted');
+  if (!submitted.length) {
+    docEl.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">暂无已提交文件，请前往"合规文件"标签上传。</p>';
+    return;
+  }
+  docEl.innerHTML = submitted.map(([type, d]) => {
+    const meta = docTypeLabel[type] || { icon:'📄', zh: type };
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--gray-100)">
+      <div style="display:flex;align-items:center;gap:.6rem">
+        <span style="font-size:1.25rem">${meta.icon}</span>
+        <div>
+          <div style="font-size:.88rem;font-weight:600">${meta.zh}</div>
+          ${d.file_name ? `<div style="font-size:.73rem;color:var(--gray-400)">${esc(d.file_name)}</div>` : ''}
+        </div>
+      </div>
+      ${statusBadge(d.status)}
+    </div>`;
+  }).join('');
 }
 
-// ── Change phone/email ──
-let _ccField = '';
+// ─── Contact change modal ───
+let _changeContactField = null;
 
-function openChangeContact(field, currentVal) {
-  _ccField = field;
+function openContactModal(field) {
+  _changeContactField = field;
   const isPhone = field === 'phone';
-  document.getElementById('ccTitle').textContent = isPhone ? '更换手机号 / Change Phone' : '更换邮箱 / Change Email';
-  document.getElementById('ccDesc').textContent = `更换后旧${isPhone?'号码':'邮箱'}和新${isPhone?'号码':'邮箱'}都需要验证`;
-  document.getElementById('ccNewLabel').textContent = isPhone ? '新手机号 New Phone' : '新邮箱 New Email';
-  document.getElementById('ccNewValue').value = '';
-  document.getElementById('ccNewValue').type = isPhone ? 'tel' : 'email';
-  document.getElementById('ccNewValue').placeholder = isPhone ? '(312) 555-1234' : 'new@email.com';
-  document.getElementById('ccStep1').style.display = '';
-  document.getElementById('ccStep2').style.display = 'none';
-  document.getElementById('ccError').style.display = 'none';
-  document.getElementById('changeContactOverlay').style.display = 'flex';
+  document.getElementById('changeContactTitle').textContent = isPhone ? '更换手机号' : '更换邮箱';
+  document.getElementById('changeContactDesc').textContent = isPhone
+    ? '请输入新手机号。我们将分别向您的旧手机号和新手机号各发送一条验证码，两个都需要输入才能完成更换。'
+    : '请输入新邮箱地址。我们将分别向旧邮箱和新邮箱各发送一条验证码，两个都需要输入才能完成更换。';
+  document.getElementById('changeContactLabel').textContent = isPhone ? '新手机号 *' : '新邮箱地址 *';
+  document.getElementById('changeContactNewVal').value = '';
+  document.getElementById('changeContactNewVal').type = isPhone ? 'tel' : 'email';
+
+  const errEl = document.getElementById('contactStep1Error');
+  errEl.textContent = ''; errEl.classList.remove('show');
+  document.getElementById('contactStep1').style.display = '';
+  document.getElementById('contactStep2').style.display = 'none';
+  document.getElementById('changeContactModal').classList.add('show');
+  setTimeout(() => document.getElementById('changeContactNewVal').focus(), 100);
 }
 
-function closeChangeContact() {
-  document.getElementById('changeContactOverlay').style.display = 'none';
+function closeContactModal() {
+  document.getElementById('changeContactModal').classList.remove('show');
+  _changeContactField = null;
 }
 
-async function sendChangeVerification() {
-  const newVal = document.getElementById('ccNewValue').value.trim();
-  if (!newVal) return alert(_ccField === 'phone' ? '请输入新手机号' : '请输入新邮箱');
-  const r = await wApi('/me', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: _ccField, new_value: newVal }) });
-  if (!r || !r.success) { alert(r?.error || '发送失败'); return; }
-  // If codes couldn't be sent, show them directly
-  if (r.old_code || r.new_code) {
-    alert(`验证码（短信/邮件未发送成功）:\n旧: ${r.old_code || '已发送'}\n新: ${r.new_code || '已发送'}`);
-  }
-  document.getElementById('ccStep1').style.display = 'none';
-  document.getElementById('ccStep2').style.display = '';
-  showToast('验证码已发送');
+async function requestContactChange() {
+  const field = _changeContactField;
+  const newVal = document.getElementById('changeContactNewVal').value.trim();
+  const errEl = document.getElementById('contactStep1Error');
+  errEl.textContent = ''; errEl.classList.remove('show');
+
+  if (!newVal) { errEl.textContent = '请填写新' + (field==='phone'?'手机号':'邮箱'); errEl.classList.add('show'); return; }
+
+  const btn = document.getElementById('btnRequestChange');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const r = await wApi('/contact/request-change', { method:'POST', body: JSON.stringify({ field, new_value: newVal }) });
+  btn.disabled = false; btn.textContent = '发送验证码';
+  if (!r) return;
+  if (r.error) { errEl.textContent = r.error; errEl.classList.add('show'); return; }
+
+  // Switch to step 2
+  const acc = _workerInfo && _workerInfo.account;
+  const oldMasked = field === 'phone'
+    ? (acc && acc.phone ? acc.phone.slice(0,3) + '****' + acc.phone.slice(-2) : '旧手机号')
+    : (acc && acc.email ? acc.email.replace(/(.{2}).*(@.*)/, '$1****$2') : '旧邮箱');
+  const newMasked = field === 'phone'
+    ? (newVal.slice(0,3) + '****' + newVal.slice(-2))
+    : (newVal.replace(/(.{2}).*(@.*)/, '$1****$2'));
+
+  document.getElementById('contactCodeHint').innerHTML =
+    `验证码已发送到：<br>• 旧${field==='phone'?'手机号':'邮箱'} <strong>${oldMasked}</strong><br>• 新${field==='phone'?'手机号':'邮箱'} <strong>${newMasked}</strong>`;
+  document.getElementById('labelOldCode').textContent = `旧${field==='phone'?'手机号':'邮箱'}收到的验证码 *`;
+  document.getElementById('labelNewCode').textContent = `新${field==='phone'?'手机号':'邮箱'}收到的验证码 *`;
+  document.getElementById('oldContactCode').value = '';
+  document.getElementById('newContactCode').value = '';
+  const err2 = document.getElementById('contactStep2Error');
+  err2.textContent = ''; err2.classList.remove('show');
+
+  document.getElementById('contactStep1').style.display = 'none';
+  document.getElementById('contactStep2').style.display = '';
+  setTimeout(() => document.getElementById('oldContactCode').focus(), 100);
 }
 
-async function confirmChangeContact() {
-  const oldCode = document.getElementById('ccOldCode').value.trim();
-  const newCode = document.getElementById('ccNewCode').value.trim();
-  if (!oldCode || !newCode) { document.getElementById('ccError').textContent = '请输入两个验证码'; document.getElementById('ccError').style.display = ''; return; }
-  const r = await wApi('/me/verify-change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field: _ccField, old_code: oldCode, new_code: newCode }) });
-  if (r && r.success) {
-    closeChangeContact();
-    showToast('✅ 更换成功');
-    loadProfile();
-  } else {
-    document.getElementById('ccError').textContent = r?.error || '验证失败';
-    document.getElementById('ccError').style.display = '';
-  }
+async function confirmContactChange() {
+  const field = _changeContactField;
+  const oldCode = document.getElementById('oldContactCode').value.trim();
+  const newCode = document.getElementById('newContactCode').value.trim();
+  const errEl = document.getElementById('contactStep2Error');
+  errEl.textContent = ''; errEl.classList.remove('show');
+
+  if (!oldCode || !newCode) { errEl.textContent = '请输入两个验证码'; errEl.classList.add('show'); return; }
+
+  const btn = document.getElementById('btnConfirmChange');
+  btn.disabled = true; btn.textContent = '验证中…';
+  const r = await wApi('/contact/confirm-change', { method:'POST', body: JSON.stringify({ field, old_code: oldCode, new_code: newCode }) });
+  btn.disabled = false; btn.textContent = '确认更换';
+  if (!r) return;
+  if (r.error) { errEl.textContent = r.error; errEl.classList.add('show'); return; }
+
+  closeContactModal();
+  showToast(`✅ ${field==='phone'?'手机号':'邮箱'}已成功更换`);
+  loadProfile();
 }
 
 // ─── Compliance Section ───
@@ -1668,6 +2025,61 @@ async function submitW9(e) {
     if (data.success) { showToast('✅ W-9 已提交，等待审核'); form.reset(); loadCompliance(); }
     else alert(data.error || '提交失败');
   } catch { alert('网络错误'); }
+}
+
+// ─── Onboarding / 待办事项 ───
+async function loadOnboarding() {
+  const tasks = await wApi('/onboarding');
+  const list = document.getElementById('onboardingList');
+  if (!tasks) return;
+  if (!tasks.length) {
+    list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
+    return;
+  }
+  const icons = { phone_verify:'📱', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
+  const sBadgeStyle = {
+    locked:'color:var(--gray-400);background:var(--gray-100);border:1px solid var(--gray-200)',
+    pending:'color:#1d4ed8;background:#dbeafe;border:1px solid #bfdbfe',
+    submitted:'color:#92400e;background:#fef3c7;border:1px solid #fde68a',
+    completed:'color:#065f46;background:#d1fae5;border:1px solid #6ee7b7',
+    waived:'color:#7c3aed;background:#f3e8ff;border:1px solid #e9d5ff'
+  };
+  list.innerHTML = tasks.map(t => {
+    const s = t.status;
+    let actionHtml = '';
+    if (s === 'pending') {
+      if (t.key === 'interview') {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('interview')">去预约面试</button>`;
+      } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">去提交文件 →</button>`;
+      } else if ((t.key === 'contract' || t.key === 'gusto') && t.action_url) {
+        const label = t.key === 'gusto' ? '填写 Gusto 信息 →' : '查看/签署合同 →';
+        actionHtml = `<a class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;text-decoration:none;display:inline-block" href="${esc(t.action_url)}" target="_blank">${label}</a>`;
+      } else if (t.key !== 'phone_verify') {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="submitOnboardingTask('${t.key}')">标记已提交</button>`;
+      }
+    } else if (s === 'submitted') {
+      actionHtml = `<div style="font-size:.8rem;color:var(--orange);margin-top:.4rem">已提交，等待 HR 审核中…</div>`;
+    }
+    return `<div class="ob-step">
+      <div class="ob-icon ob-${s==='completed'?'done':s==='waived'?'waived':s==='submitted'?'submitted':s==='pending'?'pending':'locked'}">${icons[t.key]||'📌'}</div>
+      <div style="flex:1">
+        <div><span class="ob-title">${esc(t.title)}</span>
+          <span class="ob-badge" style="${sBadgeStyle[s]||''}">${sLabel[s]||s}</span>
+          ${!t.required?'<span style="font-size:.72rem;color:var(--gray-400);margin-left:.35rem">(可豁免)</span>':''}
+        </div>
+        ${t.admin_note ? `<div class="ob-note">💬 ${esc(t.admin_note)}</div>` : ''}
+        ${actionHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function submitOnboardingTask(key) {
+  const r = await wApi(`/onboarding/${key}/submit`, { method:'POST', body:'{}' });
+  if (r && r.success) { showToast('✅ 已提交，等待 HR 审核'); loadOnboarding(); }
+  else alert(r?.error || '提交失败');
 }
 
 function esc(s) {
