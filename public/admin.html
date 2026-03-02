@@ -4193,7 +4193,7 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
-function closeEmpModal() { guardClose('empModal'); }
+function closeEmpModal() { _convertFromWorkerId = null; guardClose('empModal'); }
 
 function randomFillEmployee() {
   const firsts = ['John','Maria','Wei','Carlos','Anna','David','Linh','Ahmed','Sofia','James','Yuki','Jose','Emily','Marco','Mei'];
@@ -4370,9 +4370,21 @@ async function saveEmployee() {
       clearModalState('empModal');
       closeEmpModal();
       await loadEmployees();
-      showToast(id
-        ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
-        : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r2.employee_id}`);
+      // If this was a "convert worker → employee" action, link the account
+      if (!id && _convertFromWorkerId && r2.id) {
+        await api(`/admin/worker-accounts/${_convertFromWorkerId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ employee_id: r2.id })
+        });
+        _convertFromWorkerId = null;
+        await loadWorkerAccounts();
+        showToast(`✅ 员工「${data.first_name} ${data.last_name}」创建成功（员工号：${r2.employee_id}），工人账户已自动绑定`);
+      } else {
+        _convertFromWorkerId = null;
+        showToast(id
+          ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
+          : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r2.employee_id}`);
+      }
     } else alert(r2.error || '保存失败');
   }
   const r = await doSave(data);
@@ -6083,6 +6095,7 @@ async function loadWorkerAccounts() {
     <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
       ${!w.active?`<button class="btn btn-sm btn-green" onclick="activateWorkerAccount(${w.id})">激活</button><button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="resendWorkerVerify(${w.id})">重发验证</button>`:''}
       ${w.active?(w.suspended?`<button class="btn btn-sm btn-green" onclick="suspendWorkerAccount(${w.id},0)">恢复</button>`:`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendWorkerAccount(${w.id},1)">暂停</button>`):''}
+      ${!w.employee_id?`<button class="btn btn-sm" style="background:var(--green-light,#f0fdf4);color:var(--green);border:1px solid #bbf7d0" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>转为正式员工</button>`:''}
       <button class="btn btn-sm btn-blue" onclick="openResetPwdModal('worker',${w.id},'${esc(w.name||w.username)}')">改密码</button>
       <button class="btn btn-sm" onclick="editWorkerAccount(${w.id})">编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">删除</button>
@@ -6107,6 +6120,38 @@ async function editWorkerAccount(id) {
   const rows = await api('/admin/worker-accounts');
   const w = rows.find(r=>r.id===id);
   if (w) openWorkerAccountModal(w);
+}
+
+let _convertFromWorkerId = null;
+
+function convertWorkerToEmployee(w) {
+  _convertFromWorkerId = w.id;
+
+  // Smart name split: space → English order; no space → Chinese (first char = surname)
+  const fullName = (w.name || w.username || '').trim();
+  let firstName = '', lastName = '';
+  if (fullName.includes(' ')) {
+    const parts = fullName.split(/\s+/);
+    lastName  = parts[parts.length - 1];
+    firstName = parts.slice(0, -1).join(' ');
+  } else if (fullName.length >= 2) {
+    lastName  = fullName[0];
+    firstName = fullName.slice(1);
+  } else {
+    firstName = fullName;
+  }
+
+  // Open new-employee modal and pre-fill known fields
+  openEmpModal(null);
+  document.getElementById('eFirst').value = firstName;
+  document.getElementById('eLast').value  = lastName;
+  document.getElementById('ePhone').value = w.phone || '';
+  document.getElementById('eEmail').value = w.email || '';
+  document.getElementById('eDob').value   = w.dob   || '';
+  document.getElementById('eHire').value  = new Date().toISOString().slice(0, 10);
+
+  // Update modal title to signal origin
+  document.getElementById('empModalTitle').textContent = '新增正式员工（来自工人账户）';
 }
 
 async function saveWorkerAccount() {
