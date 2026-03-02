@@ -2100,11 +2100,17 @@ async function runEmailCodeTest() {
   const resultEl = document.getElementById('emailCodeTestResult');
   resultEl.style.display = 'none';
   try {
-    const res = await fetch(API + '/admin/test-email-code', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
-      body: JSON.stringify({ to })
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
+    let res;
+    try {
+      res = await fetch(API + '/admin/test-email-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TOKEN}` },
+        body: JSON.stringify({ to }),
+        signal: ctrl.signal
+      });
+    } finally { clearTimeout(timer); }
     const d = await res.json();
     const cfg = d.configured || {};
     let out = '── SMTP 配置状态 ──\n';
@@ -2135,7 +2141,10 @@ async function runEmailCodeTest() {
   } catch (e) {
     resultEl.style.background = '#fff5f5';
     resultEl.style.border = '1px solid #feb2b2';
-    resultEl.textContent = '网络错误：' + e.message;
+    const isTimeout = e.name === 'AbortError';
+    resultEl.textContent = isTimeout
+      ? '❌ 请求超时（25秒无响应）\n\n可能原因：\n• 服务器无法连接 SendGrid SMTP（被防火墙拦截）\n• 检查 SMTP_HOST / SMTP_PORT 是否正确\n• SendGrid SMTP: smtp.sendgrid.net:587'
+      : '网络错误：' + e.message;
     resultEl.style.display = 'block';
   }
   btn.disabled = false; btn.textContent = '发送验证码';
