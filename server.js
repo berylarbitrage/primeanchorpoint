@@ -915,6 +915,23 @@ try { db.exec("ALTER TABLE jobs ADD COLUMN site_id INTEGER DEFAULT NULL"); } cat
 // Migrate: add site_id to time_entries
 try { db.exec("ALTER TABLE time_entries ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN geo_verified INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN job_id INTEGER DEFAULT NULL"); } catch {}
+
+// Worker payments ledger
+db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  payment_date TEXT NOT NULL,
+  payment_method TEXT DEFAULT 'cash',
+  period_start TEXT DEFAULT '',
+  period_end TEXT DEFAULT '',
+  job_id INTEGER DEFAULT NULL,
+  notes TEXT DEFAULT '',
+  created_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`);
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -1867,6 +1884,35 @@ app.post('/api/admin/test-email-code', requireAdmin, requireRole('admin'), async
     verificationCodeHtml(code, true)
   );
   res.json({ configured, sent, error: sent ? null : 'sendEmail failed — check server logs for [EMAIL-ERR]' });
+});
+
+// Admin: payment records for a worker
+app.get('/api/admin/worker-accounts/:id/payments', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const w = db.prepare('SELECT employee_id FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w || !w.employee_id) return res.json([]);
+  const payments = db.prepare(`
+    SELECT p.*, j.title AS job_title
+    FROM worker_payments p LEFT JOIN jobs j ON p.job_id = j.id
+    WHERE p.employee_id = ? ORDER BY p.payment_date DESC, p.created_at DESC
+  `).all(w.employee_id);
+  res.json(payments);
+});
+
+app.post('/api/admin/worker-accounts/:id/payments', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const w = db.prepare('SELECT employee_id FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w || !w.employee_id) return res.status(400).json({ error: '账号未关联员工档案' });
+  const { amount, payment_date, payment_method, period_start, period_end, job_id, notes } = req.body;
+  if (!amount || !payment_date) return res.status(400).json({ error: 'amount and payment_date required' });
+  const r = db.prepare(`INSERT INTO worker_payments
+    (employee_id, amount, payment_date, payment_method, period_start, period_end, job_id, notes, created_by)
+    VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(w.employee_id, amount, payment_date, payment_method || 'cash', period_start || '', period_end || '', job_id || null, notes || '', req.userName || '');
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+
+app.delete('/api/admin/worker-accounts/:id/payments/:pid', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM worker_payments WHERE id=?').run(req.params.pid);
+  res.json({ success: true });
 });
 
 // Admin: resend verification codes to unverified worker
@@ -3647,59 +3693,76 @@ app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
 
 app.get('/api/worker/timeclock', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json([]);
-  const entries = db.prepare('SELECT * FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 60').all(req.workerEmployeeId);
+  const entries = db.prepare(`
+    SELECT t.*, j.title AS job_title, j.company_name AS job_company
+    FROM time_entries t LEFT JOIN jobs j ON t.job_id = j.id
+    WHERE t.employee_id = ? ORDER BY t.clock_in DESC LIMIT 200
+  `).all(req.workerEmployeeId);
   res.json(entries);
 });
 
 app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.status(400).json({ error: '账号未关联员工档案，请联系HR' });
-  const { latitude, longitude, site_id } = req.body;
+  const { latitude, longitude, job_id } = req.body;
   const now = new Date().toISOString();
   let geoVerified = 0;
-  let matchedSiteId = site_id || null;
-
-  // GPS Geofencing: verify worker is within radius of a job site
-  if (latitude && longitude) {
-    const sites = db.prepare('SELECT * FROM job_sites WHERE active=1').all();
-    if (sites.length > 0) {
-      let nearestSite = null;
-      let nearestDist = Infinity;
-      for (const s of sites) {
-        const dist = haversineDistance(latitude, longitude, s.latitude, s.longitude);
-        if (dist < nearestDist) { nearestDist = dist; nearestSite = s; }
-      }
-      if (nearestSite && nearestDist <= nearestSite.radius_meters) {
-        geoVerified = 1;
-        matchedSiteId = nearestSite.id;
-      } else if (nearestSite) {
-        // Not within any site radius - warn but allow punch
-        console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(nearestDist)}m from nearest site "${nearestSite.name}" (max ${nearestSite.radius_meters}m)`);
-      }
-    }
-  }
+  let matchedSiteId = null;
 
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
   if (open) {
-    // Clock out — always allowed regardless of job status
+    // Clock out — always allowed
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
     res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
   } else {
-    // Clock in — requires an active job assignment
-    const activeJob = db.prepare("SELECT ej.id, j.title FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1").get(req.workerEmployeeId);
-    if (!activeJob) return res.status(400).json({ error: '当前没有有效的工作安排，无法打卡。请联系HR。/ No active job assignment. Please contact HR.' });
-    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified) VALUES(?,?,'open',?,?,?,?)")
-      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified);
-    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified, site_name: matchedSiteId ? db.prepare('SELECT name FROM job_sites WHERE id=?').get(matchedSiteId)?.name : null });
+    // Clock in — validate against selected job
+    if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
+    const activeJob = db.prepare(`
+      SELECT ej.id, ej.job_id, j.title, j.site_id,
+             js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+      FROM employee_jobs ej
+      JOIN jobs j ON ej.job_id = j.id
+      LEFT JOIN job_sites js ON j.site_id = js.id
+      WHERE ej.employee_id = ? AND ej.job_id = ? AND ej.status = 'active'
+    `).get(req.workerEmployeeId, job_id);
+    if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
+
+    // GPS Geofencing: check against this job's site only
+    if (latitude && longitude && activeJob.js_id) {
+      const dist = haversineDistance(latitude, longitude, activeJob.site_lat, activeJob.site_lng);
+      if (dist <= activeJob.radius_meters) {
+        geoVerified = 1;
+        matchedSiteId = activeJob.js_id;
+      } else {
+        console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(dist)}m from site "${activeJob.site_name}" (max ${activeJob.radius_meters}m)`);
+      }
+    }
+
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id) VALUES(?,?,'open',?,?,?,?,?)")
+      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id);
+    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified, site_name: activeJob.site_name || null, job_title: activeJob.title });
   }
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json({ clocked_in: false, no_employee: true });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
-  const activeJob = db.prepare("SELECT ej.id, j.title, j.company_name FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1").get(req.workerEmployeeId);
-  res.json({ clocked_in: !!open, open_entry: open || null, has_active_job: !!activeJob, active_job: activeJob || null });
+  const activeJobs = db.prepare(`
+    SELECT ej.id, ej.job_id, j.title, j.company_name, j.site_id,
+           js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+    FROM employee_jobs ej
+    JOIN jobs j ON ej.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    WHERE ej.employee_id = ? AND ej.status = 'active'
+  `).all(req.workerEmployeeId);
+  res.json({
+    clocked_in: !!open,
+    open_entry: open || null,
+    has_active_job: activeJobs.length > 0,
+    active_jobs: activeJobs,
+    active_job: activeJobs[0] || null
+  });
 });
 
 app.get('/api/worker/assignments', requireWorker, (req, res) => {
@@ -3709,6 +3772,36 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
     WHERE a.worker_account_id=? ORDER BY a.created_at DESC
   `).all(req.workerId);
   res.json(apps);
+});
+
+// Worker: get currently dispatched (active) jobs with site info
+app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json([]);
+  const jobs = db.prepare(`
+    SELECT ej.id, ej.job_id, ej.status, ej.start_date, ej.end_date, ej.emp_hourly_rate,
+           j.title, j.location, j.pay, j.pay_period, j.company_name, j.site_id,
+           js.name AS site_name, js.address AS site_address,
+           js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+    FROM employee_jobs ej
+    JOIN jobs j ON ej.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    WHERE ej.employee_id = ? AND ej.status = 'active'
+    ORDER BY ej.assigned_at DESC
+  `).all(req.workerEmployeeId);
+  res.json(jobs);
+});
+
+// Worker: get payment records
+app.get('/api/worker/payments', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json([]);
+  const payments = db.prepare(`
+    SELECT p.*, j.title AS job_title
+    FROM worker_payments p
+    LEFT JOIN jobs j ON p.job_id = j.id
+    WHERE p.employee_id = ?
+    ORDER BY p.payment_date DESC, p.created_at DESC
+  `).all(req.workerEmployeeId);
+  res.json(payments);
 });
 
 // ─── Worker Forgot / Reset Password ───
