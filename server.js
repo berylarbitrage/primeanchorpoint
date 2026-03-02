@@ -893,6 +893,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
 
+// ─── Worker Skills ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id),
+  skill_name TEXT NOT NULL,
+  rating INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // ─── Integration Settings (WorkBright, Checkr, Gusto, Twilio) ───
 db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1544,24 +1553,15 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     FROM worker_accounts w LEFT JOIN employees e ON w.employee_id=e.id ORDER BY w.id DESC
   `).all();
 
-  // Enrich each worker with interview, compliance, and skill data
-  const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
-  const getCompDocs = db.prepare(`SELECT doc_type, status FROM worker_compliance_docs WHERE worker_account_id=?`);
-  const getSkills = db.prepare(`SELECT skill_name, rating FROM worker_skills WHERE worker_account_id=?`);
-
-  // Ensure worker_skills table exists
-  try { db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id),
-    skill_name TEXT NOT NULL,
-    rating INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`); } catch {}
-
   // Add expected_salary, payment_method columns if missing
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN expected_salary TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
+
+  // Enrich each worker with interview, compliance, and skill data
+  const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
+  const getCompDocs = db.prepare(`SELECT doc_type, status FROM worker_compliance_docs WHERE worker_account_id=?`);
+  const getSkills = db.prepare(`SELECT skill_name, rating FROM worker_skills WHERE worker_account_id=?`);
 
   const enriched = workers.map(w => {
     const interview = getInterview.get(w.id);
@@ -5075,6 +5075,18 @@ app.post('/api/worker/interviews', requireWorker, (req, res) => {
   } catch(e) {
     res.status(400).json({ error: e.message });
   }
+});
+
+// Worker: cancel my interview
+app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
+  const row = db.prepare(`SELECT id, slot_id, status FROM interviews WHERE worker_account_id=?`).get(req.workerId);
+  if (!row) return res.status(404).json({ error: '没有找到面试预约' });
+  if (row.status !== 'scheduled') return res.status(400).json({ error: '当前状态无法取消' });
+  db.prepare(`UPDATE interviews SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(row.id);
+  db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
+  // Reset onboarding interview task back to pending
+  db.prepare(`UPDATE worker_onboarding SET status='pending', completed_at=NULL WHERE worker_account_id=? AND task_key='interview' AND status IN ('submitted','completed')`).run(req.workerId);
+  res.json({ success: true });
 });
 
 // Global error handler — return JSON instead of Express's default HTML error page

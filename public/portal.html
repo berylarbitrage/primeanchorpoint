@@ -984,6 +984,14 @@ async function loadInterview() {
         ${contactLine}
         ${interview.duration_min ? `<div><span style="color:var(--gray-500)">时长：</span>${interview.duration_min} 分钟</div>` : ''}
       </div>${instrBlock}${extra}`;
+    // Add cancel / reschedule buttons for scheduled interviews
+    if (interview.status === 'scheduled') {
+      statusContent.innerHTML += `
+        <div style="display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap">
+          <button class="btn btn-sky" style="font-size:.85rem;padding:.45rem 1rem" onclick="rescheduleInterview()">🔄 更改预约时间 / Reschedule</button>
+          <button class="btn" style="font-size:.85rem;padding:.45rem 1rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:8px;cursor:pointer" onclick="cancelInterview()">✖ 取消预约 / Cancel</button>
+        </div>`;
+    }
     // Hide slot selection if already booked (not passed/failed/cancelled)
     slotsCard.style.display = (interview.status === 'scheduled') ? 'none' : '';
   } else {
@@ -2190,6 +2198,33 @@ async function submitOnboardingTask(key) {
   else alert(r?.error || '提交失败');
 }
 
+// ── Cancel / Reschedule Interview ──
+async function cancelInterview() {
+  if (!confirm('确认取消面试预约吗？\nAre you sure you want to cancel your interview booking?')) return;
+  const r = await wApi('/interview/cancel', { method: 'POST', body: '{}' });
+  if (!r) return;
+  if (r.success) {
+    showToast('✅ 面试预约已取消 / Interview cancelled');
+    loadInterview();
+    loadOnboarding();
+  } else {
+    showToast('❌ ' + (r.error || '取消失败'), 'error');
+  }
+}
+
+function rescheduleInterview() {
+  if (!confirm('更改预约时间将取消当前预约，然后您可以选择新的时间。\nRescheduling will cancel your current booking, then you can pick a new time.\n\n继续？Continue?')) return;
+  wApi('/interview/cancel', { method: 'POST', body: '{}' }).then(r => {
+    if (r && r.success) {
+      showToast('当前预约已取消，请选择新时间 / Booking cancelled, please select a new time');
+      loadInterview();
+      loadOnboarding();
+    } else {
+      showToast('❌ ' + (r?.error || '操作失败'), 'error');
+    }
+  });
+}
+
 // ── Interview Booking Modal (inline in todos) ──
 function openInterviewBookModal() {
   document.getElementById('interviewBookModal').style.display = 'flex';
@@ -2226,7 +2261,13 @@ async function loadInterviewModalSlots() {
       ${interview.contact_name ? `<div>联系人：${esc(interview.contact_name)} ${interview.contact_phone || ''}</div>` : ''}
     </div>`;
     if (interview.status === 'scheduled') {
-      slotsDiv.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">您已有面试预约，如需更改请联系 HR。</div>';
+      slotsDiv.innerHTML = `<div style="text-align:center;padding:1.5rem">
+        <div style="color:var(--gray-500);margin-bottom:1rem;font-size:.88rem">您已有面试预约。如需更改，可取消后重新选择时间。</div>
+        <div style="display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-sky" style="font-size:.85rem;padding:.45rem 1rem" onclick="rescheduleInterview()">🔄 更改预约时间 / Reschedule</button>
+          <button class="btn" style="font-size:.85rem;padding:.45rem 1rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:8px;cursor:pointer" onclick="cancelInterview()">✖ 取消预约 / Cancel</button>
+        </div>
+      </div>`;
       return;
     }
   } else {
