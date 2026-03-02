@@ -3238,6 +3238,89 @@ app.get('/api/worker/me', requireWorker, (req, res) => {
   res.json({ account: w, employee: emp });
 });
 
+// ─── Contact Change (phone / email) with dual verification ───
+const _pendingContactChange = new Map(); // key: `${workerId}_${field}`
+
+app.post('/api/worker/contact/request-change', requireWorker, async (req, res) => {
+  const { field, new_value } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  if (!new_value || !new_value.trim()) return res.status(400).json({ error: '请填写新' + (field==='phone'?'手机号':'邮箱') });
+
+  const val = new_value.trim();
+  const w = db.prepare('SELECT id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+
+  // Check not already in use by another account
+  const taken = field === 'phone'
+    ? db.prepare('SELECT id FROM worker_accounts WHERE phone=? AND id!=?').get(val, req.workerId)
+    : db.prepare('SELECT id FROM worker_accounts WHERE email=? AND id!=?').get(val, req.workerId);
+  if (taken) return res.status(400).json({ error: field==='phone' ? '该手机号已被其他账号使用' : '该邮箱已被其他账号注册' });
+
+  const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
+  const oldCode = code6(), newCode = code6();
+  const expires = Date.now() + 15 * 60 * 1000;
+
+  _pendingContactChange.set(`${req.workerId}_${field}`, { new_value: val, old_code: oldCode, new_code: newCode, expires });
+
+  let oldSent = false, newSent = false;
+
+  if (field === 'phone') {
+    const oldPhone = w.phone;
+    const canVerify = !!(twilioClient && TWILIO_VERIFY_SID);
+    if (oldPhone) {
+      if (canVerify) { await sendVerifyCode(oldPhone); oldSent = true; }
+      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchorpoint] 验证旧手机号，验证码：${oldCode}，15分钟有效`); }
+    }
+    if (canVerify) { await sendVerifyCode(val); newSent = true; }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] 验证新手机号，验证码：${newCode}，15分钟有效`); }
+  } else {
+    const oldEmail = w.email;
+    if (oldEmail) {
+      oldSent = await sendEmail(oldEmail, 'Prime Anchorpoint 更换邮箱验证', `您正在更换绑定邮箱，旧邮箱验证码：${oldCode}，15分钟内有效。\nYou are changing your email. Old email verification code: ${oldCode}`);
+    }
+    newSent = await sendEmail(val, 'Prime Anchorpoint 新邮箱验证', `您正在绑定此邮箱，新邮箱验证码：${newCode}，15分钟内有效。\nVerification code for new email: ${newCode}`);
+  }
+
+  console.log(`[ContactChange] Worker ${req.workerId} field=${field} old_sent=${oldSent} new_sent=${newSent} old_code=${oldCode} new_code=${newCode}`);
+  res.json({ success: true, old_sent: oldSent, new_sent: newSent });
+});
+
+app.post('/api/worker/contact/confirm-change', requireWorker, async (req, res) => {
+  const { field, old_code, new_code } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const key = `${req.workerId}_${field}`;
+  const pending = _pendingContactChange.get(key);
+  if (!pending || Date.now() > pending.expires) return res.status(400).json({ error: '验证码已过期，请重新发送 / Code expired, please request again' });
+
+  const w = db.prepare('SELECT phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+
+  // Verify old contact
+  let oldOk = false;
+  if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID && w.phone) {
+    oldOk = await checkVerifyCode(w.phone, old_code);
+  } else {
+    oldOk = (old_code && old_code.trim() === pending.old_code);
+  }
+  if (!oldOk && w[field]) return res.status(400).json({ error: field==='phone' ? '旧手机号验证码不正确' : '旧邮箱验证码不正确' });
+
+  // Verify new contact
+  let newOk = false;
+  if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID) {
+    newOk = await checkVerifyCode(pending.new_value, new_code);
+  } else {
+    newOk = (new_code && new_code.trim() === pending.new_code);
+  }
+  if (!newOk) return res.status(400).json({ error: field==='phone' ? '新手机号验证码不正确' : '新邮箱验证码不正确' });
+
+  // Apply change
+  if (field === 'phone') {
+    db.prepare('UPDATE worker_accounts SET phone=? WHERE id=?').run(pending.new_value, req.workerId);
+  } else {
+    db.prepare('UPDATE worker_accounts SET email=? WHERE id=?').run(pending.new_value, req.workerId);
+  }
+  _pendingContactChange.delete(key);
+  res.json({ success: true });
+});
+
 app.get('/api/worker/jobs', requireWorker, (req, res) => {
   const jobs = db.prepare(`
     SELECT j.id, j.title, j.type, j.location, j.pay, j.pay_period,

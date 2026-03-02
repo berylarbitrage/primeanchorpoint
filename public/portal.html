@@ -182,6 +182,53 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Change Contact (Phone / Email) Modal -->
+<div class="modal-overlay" id="changeContactModal">
+  <div class="modal-box" style="max-width:440px;width:96%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+      <h2 style="margin:0;font-size:1rem" id="changeContactTitle"></h2>
+      <button onclick="closeContactModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+
+    <!-- Step 1: enter new value -->
+    <div id="contactStep1">
+      <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:.85rem" id="changeContactDesc"></p>
+      <div style="margin-bottom:.85rem">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="changeContactLabel"></label>
+        <input id="changeContactNewVal" type="text" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.92rem">
+      </div>
+      <div class="modal-msg error" id="contactStep1Error"></div>
+      <div style="display:flex;gap:.6rem">
+        <button onclick="closeContactModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消</button>
+        <button onclick="requestContactChange()" id="btnRequestChange" class="modal-btn modal-btn-primary" style="flex:2">发送验证码</button>
+      </div>
+    </div>
+
+    <!-- Step 2: enter old + new codes -->
+    <div id="contactStep2" style="display:none">
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.7rem .9rem;font-size:.82rem;color:#0c4a6e;margin-bottom:1rem" id="contactCodeHint"></div>
+
+      <div style="margin-bottom:.85rem">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelOldCode"></label>
+        <input id="oldContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+      </div>
+      <div style="margin-bottom:.85rem">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelNewCode"></label>
+        <input id="newContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+      </div>
+      <div style="text-align:right;margin-top:-.4rem;margin-bottom:.75rem">
+        <a href="#" onclick="requestContactChange();return false" style="font-size:.8rem;color:var(--sky)">重新发送验证码</a>
+      </div>
+
+      <div class="modal-msg error" id="contactStep2Error"></div>
+      <div style="display:flex;gap:.6rem">
+        <button onclick="closeContactModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消</button>
+        <button onclick="confirmContactChange()" id="btnConfirmChange" class="modal-btn modal-btn-primary" style="flex:2">确认更换</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Interview Booking Confirm Modal -->
 <div class="modal-overlay" id="bookConfirmModal">
   <div class="modal-box" style="max-width:500px;width:96%">
@@ -536,9 +583,20 @@ tr:last-child td{border-bottom:none}
 
     <!-- Profile -->
     <div id="tabProfile" style="display:none">
-      <div class="card" id="profileCard">
-        <h2>我的档案</h2>
-        <div id="profileContent"></div>
+      <!-- Basic info -->
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:1rem">👤 我的信息</h2>
+        <div id="profileBasic"></div>
+      </div>
+      <!-- Contact info -->
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:1rem">📱 联系方式</h2>
+        <div id="profileContact"></div>
+      </div>
+      <!-- Uploaded documents -->
+      <div class="card">
+        <h2 style="margin-bottom:1rem">📂 我的文件</h2>
+        <div id="profileDocs"></div>
       </div>
     </div>
 
@@ -1162,19 +1220,177 @@ async function loadTimeclock() {
 }
 
 async function loadProfile() {
-  const me = await wApi('/me');
+  const [me, docs] = await Promise.all([wApi('/me'), wApi('/compliance')]);
   if (!me) return;
+  _workerInfo = me;
   const e = me.employee;
-  document.getElementById('profileContent').innerHTML = e ? `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;font-size:.9rem">
-      <div><span style="color:var(--gray-400)">姓名</span><br><strong>${esc(e.first_name+' '+e.last_name)}</strong></div>
-      <div><span style="color:var(--gray-400)">工号</span><br><strong>${esc(e.employee_id||'')}</strong></div>
-      <div><span style="color:var(--gray-400)">职位</span><br>${esc(e.position||'—')}</div>
-      <div><span style="color:var(--gray-400)">部门</span><br>${esc(e.department||'—')}</div>
-      <div><span style="color:var(--gray-400)">薪资</span><br>${e.pay_rate ? '$'+e.pay_rate+'/'+e.pay_type : '—'}</div>
-      <div><span style="color:var(--gray-400)">状态</span><br>${e.status||'—'}</div>
-    </div>` :
-    `<p style="color:var(--gray-400)">员工档案未绑定，请联系HR</p><p style="margin-top:.5rem;font-size:.85rem">账号: <strong>${esc(me.account.username)}</strong></p>`;
+  const a = me.account;
+
+  // ── Basic info ──
+  let basicHtml = '';
+  if (e) {
+    basicHtml = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;font-size:.88rem">
+        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">姓名</div><strong>${esc(e.first_name+' '+e.last_name)}</strong></div>
+        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">工号</div><strong>${esc(e.employee_id||'—')}</strong></div>
+        ${e.position ? `<div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">职位</div>${esc(e.position)}</div>` : ''}
+        ${e.department ? `<div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">部门</div>${esc(e.department)}</div>` : ''}
+        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">状态</div>${esc(e.status||'—')}</div>
+      </div>`;
+  } else {
+    basicHtml = `<div style="display:flex;align-items:center;gap:.6rem">
+      <span style="font-size:.88rem;color:var(--gray-400)">员工档案未绑定，如有疑问请联系 HR</span>
+    </div>
+    <div style="margin-top:.6rem;font-size:.85rem;color:var(--gray-500)">账号：<strong>${esc(a.username)}</strong></div>`;
+  }
+  document.getElementById('profileBasic').innerHTML = basicHtml;
+
+  // ── Contact info ──
+  const rowStyle = 'display:flex;align-items:center;justify-content:space-between;padding:.65rem 0;border-bottom:1px solid var(--gray-100)';
+  const labelStyle = 'font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.15rem';
+  const changeBtn = (field) => `<button onclick="openContactModal('${field}')" style="background:none;border:1px solid var(--sky);color:var(--sky);border-radius:6px;padding:.28rem .7rem;font-size:.78rem;font-weight:600;cursor:pointer">更换</button>`;
+
+  document.getElementById('profileContact').innerHTML = `
+    <div style="${rowStyle}">
+      <div>
+        <div style="${labelStyle}">手机号 / Phone</div>
+        <div style="font-size:.92rem;font-weight:600">${a.phone ? esc(a.phone) : '<span style="color:var(--gray-400)">未设置</span>'}</div>
+      </div>
+      ${changeBtn('phone')}
+    </div>
+    <div style="${rowStyle.replace('border-bottom:1px solid var(--gray-100)','border-bottom:none')}">
+      <div>
+        <div style="${labelStyle}">邮箱 / Email</div>
+        <div style="font-size:.92rem;font-weight:600">${a.email ? esc(a.email) : '<span style="color:var(--gray-400)">未设置</span>'}</div>
+      </div>
+      ${changeBtn('email')}
+    </div>`;
+
+  // ── Documents ──
+  const docTypeLabel = {
+    i9: { icon:'📋', zh:'I-9 就业资格验证' },
+    drivers_license: { icon:'🪪', zh:'身份证件（Persona）' },
+    w9: { icon:'📄', zh:'W-9 纳税人识别' },
+    ssn_card: { icon:'🔒', zh:'社安卡 SSN Card' },
+    work_permit: { icon:'📃', zh:'工作许可' },
+    background_check: { icon:'🔍', zh:'背景调查' },
+  };
+  const statusBadge = (s) => {
+    const map = {approved:'background:#dcfce7;color:#15803d', pending:'background:#fef9c3;color:#854d0e', rejected:'background:#fee2e2;color:#dc2626', not_submitted:'background:#f1f5f9;color:#64748b'};
+    const label = {approved:'已通过',pending:'审核中',rejected:'未通过',not_submitted:'未提交'};
+    const style = map[s] || map.not_submitted;
+    return `<span style="${style};padding:.15rem .55rem;border-radius:20px;font-size:.72rem;font-weight:700">${label[s]||s}</span>`;
+  };
+
+  const docEl = document.getElementById('profileDocs');
+  if (!docs || !docs.documents) {
+    docEl.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">暂无文件记录</p>';
+    return;
+  }
+  const submitted = Object.entries(docs.documents).filter(([,d]) => d && d.status !== 'not_submitted');
+  if (!submitted.length) {
+    docEl.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">暂无已提交文件，请前往"合规文件"标签上传。</p>';
+    return;
+  }
+  docEl.innerHTML = submitted.map(([type, d]) => {
+    const meta = docTypeLabel[type] || { icon:'📄', zh: type };
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-bottom:1px solid var(--gray-100)">
+      <div style="display:flex;align-items:center;gap:.6rem">
+        <span style="font-size:1.25rem">${meta.icon}</span>
+        <div>
+          <div style="font-size:.88rem;font-weight:600">${meta.zh}</div>
+          ${d.file_name ? `<div style="font-size:.73rem;color:var(--gray-400)">${esc(d.file_name)}</div>` : ''}
+        </div>
+      </div>
+      ${statusBadge(d.status)}
+    </div>`;
+  }).join('');
+}
+
+// ─── Contact change modal ───
+let _changeContactField = null;
+
+function openContactModal(field) {
+  _changeContactField = field;
+  const isPhone = field === 'phone';
+  document.getElementById('changeContactTitle').textContent = isPhone ? '更换手机号' : '更换邮箱';
+  document.getElementById('changeContactDesc').textContent = isPhone
+    ? '请输入新手机号。我们将分别向您的旧手机号和新手机号各发送一条验证码，两个都需要输入才能完成更换。'
+    : '请输入新邮箱地址。我们将分别向旧邮箱和新邮箱各发送一条验证码，两个都需要输入才能完成更换。';
+  document.getElementById('changeContactLabel').textContent = isPhone ? '新手机号 *' : '新邮箱地址 *';
+  document.getElementById('changeContactNewVal').value = '';
+  document.getElementById('changeContactNewVal').type = isPhone ? 'tel' : 'email';
+
+  const errEl = document.getElementById('contactStep1Error');
+  errEl.textContent = ''; errEl.classList.remove('show');
+  document.getElementById('contactStep1').style.display = '';
+  document.getElementById('contactStep2').style.display = 'none';
+  document.getElementById('changeContactModal').classList.add('show');
+  setTimeout(() => document.getElementById('changeContactNewVal').focus(), 100);
+}
+
+function closeContactModal() {
+  document.getElementById('changeContactModal').classList.remove('show');
+  _changeContactField = null;
+}
+
+async function requestContactChange() {
+  const field = _changeContactField;
+  const newVal = document.getElementById('changeContactNewVal').value.trim();
+  const errEl = document.getElementById('contactStep1Error');
+  errEl.textContent = ''; errEl.classList.remove('show');
+
+  if (!newVal) { errEl.textContent = '请填写新' + (field==='phone'?'手机号':'邮箱'); errEl.classList.add('show'); return; }
+
+  const btn = document.getElementById('btnRequestChange');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const r = await wApi('/contact/request-change', { method:'POST', body: JSON.stringify({ field, new_value: newVal }) });
+  btn.disabled = false; btn.textContent = '发送验证码';
+  if (!r) return;
+  if (r.error) { errEl.textContent = r.error; errEl.classList.add('show'); return; }
+
+  // Switch to step 2
+  const acc = _workerInfo && _workerInfo.account;
+  const oldMasked = field === 'phone'
+    ? (acc && acc.phone ? acc.phone.slice(0,3) + '****' + acc.phone.slice(-2) : '旧手机号')
+    : (acc && acc.email ? acc.email.replace(/(.{2}).*(@.*)/, '$1****$2') : '旧邮箱');
+  const newMasked = field === 'phone'
+    ? (newVal.slice(0,3) + '****' + newVal.slice(-2))
+    : (newVal.replace(/(.{2}).*(@.*)/, '$1****$2'));
+
+  document.getElementById('contactCodeHint').innerHTML =
+    `验证码已发送到：<br>• 旧${field==='phone'?'手机号':'邮箱'} <strong>${oldMasked}</strong><br>• 新${field==='phone'?'手机号':'邮箱'} <strong>${newMasked}</strong>`;
+  document.getElementById('labelOldCode').textContent = `旧${field==='phone'?'手机号':'邮箱'}收到的验证码 *`;
+  document.getElementById('labelNewCode').textContent = `新${field==='phone'?'手机号':'邮箱'}收到的验证码 *`;
+  document.getElementById('oldContactCode').value = '';
+  document.getElementById('newContactCode').value = '';
+  const err2 = document.getElementById('contactStep2Error');
+  err2.textContent = ''; err2.classList.remove('show');
+
+  document.getElementById('contactStep1').style.display = 'none';
+  document.getElementById('contactStep2').style.display = '';
+  setTimeout(() => document.getElementById('oldContactCode').focus(), 100);
+}
+
+async function confirmContactChange() {
+  const field = _changeContactField;
+  const oldCode = document.getElementById('oldContactCode').value.trim();
+  const newCode = document.getElementById('newContactCode').value.trim();
+  const errEl = document.getElementById('contactStep2Error');
+  errEl.textContent = ''; errEl.classList.remove('show');
+
+  if (!oldCode || !newCode) { errEl.textContent = '请输入两个验证码'; errEl.classList.add('show'); return; }
+
+  const btn = document.getElementById('btnConfirmChange');
+  btn.disabled = true; btn.textContent = '验证中…';
+  const r = await wApi('/contact/confirm-change', { method:'POST', body: JSON.stringify({ field, old_code: oldCode, new_code: newCode }) });
+  btn.disabled = false; btn.textContent = '确认更换';
+  if (!r) return;
+  if (r.error) { errEl.textContent = r.error; errEl.classList.add('show'); return; }
+
+  closeContactModal();
+  showToast(`✅ ${field==='phone'?'手机号':'邮箱'}已成功更换`);
+  loadProfile();
 }
 
 // ─── Compliance Section ───
