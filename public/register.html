@@ -132,12 +132,12 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <div class="field-row">
         <div class="field">
           <label id="lPhone">手机号 *</label>
-          <input type="tel" id="wPhone" placeholder="(312) 555-1234" onblur="checkDuplicate('phone')">
+          <input type="tel" id="wPhone" placeholder="(312) 555-1234" onblur="checkDuplicate('phone')" autocomplete="tel">
           <div class="field-hint" id="dupPhone" style="color:var(--red);display:none">该手机号已注册</div>
         </div>
         <div class="field">
           <label id="lEmail">邮箱 *</label>
-          <input type="email" id="wEmail" placeholder="you@email.com" onblur="checkDuplicate('email')">
+          <input type="email" id="wEmail" placeholder="you@email.com" onblur="checkDuplicate('email')" autocomplete="new-email">
           <div class="field-hint" id="dupEmail" style="color:var(--red);display:none">该邮箱已注册</div>
         </div>
       </div>
@@ -168,7 +168,7 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <div class="field">
         <label id="lPw">设置密码 *</label>
         <div class="pw-wrap">
-          <input type="password" id="wPassword" placeholder="至少6位">
+          <input type="password" id="wPassword" placeholder="至少6位" autocomplete="new-password">
           <button type="button" class="pw-eye" onclick="togglePw('wPassword',this)" tabindex="-1">&#128065;</button>
         </div>
       </div>
@@ -176,7 +176,7 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <div class="field">
         <label id="lPw2">确认密码 *</label>
         <div class="pw-wrap">
-          <input type="password" id="wPassword2" placeholder="请再次输入密码">
+          <input type="password" id="wPassword2" placeholder="请再次输入密码" autocomplete="new-password">
           <button type="button" class="pw-eye" onclick="togglePw('wPassword2',this)" tabindex="-1">&#128065;</button>
         </div>
       </div>
