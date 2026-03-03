@@ -4340,7 +4340,7 @@ async function saveAssignment() {
     benefits,
     work_schedule: getSchedJson()
   };
-  if (!data.inquiry_id || !data.job_id) return alert('请搜索并选择人员和职位');
+  if (!id && (!data.inquiry_id || !data.job_id)) return alert('请搜索并选择人员和职位');
   // Dispatch-ready guard
   const ws = await api(`/admin/inquiries/${data.inquiry_id}/worker-status`).catch(()=>null);
   if (ws && !ws.dispatch_ready) {
