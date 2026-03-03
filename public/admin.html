@@ -1997,7 +1997,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="form-section" style="margin-top:.75rem">
     <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">排班时间</label>
     <table class="sched-table" id="aSchedTable">
-      <thead><tr><th>星期</th><th>上班</th><th>下班</th><th>休息次数</th><th>每次时长</th><th>休息日</th><th></th></tr></thead>
+      <thead><tr><th>星期</th><th>上班</th><th>下班</th><th>休息次数</th><th>休息日</th><th></th></tr></thead>
       <tbody id="aSchedBody"></tbody>
     </table>
   </div>
@@ -4075,9 +4075,6 @@ function initSchedTable(schedJson) {
       <td><input type="number" id="sched-breaks-${key}" min="0" max="9" value="${d.breaks??''}" placeholder="0"
         style="${SCHED_INP};width:54px;text-align:center" ${dis}
         oninput="renderBreakTimes('${key}')"></td>
-      <td style="white-space:nowrap"><input type="number" id="sched-bmin-${key}" min="0" max="120" value="${d.bmin??''}" placeholder="0"
-        style="${SCHED_INP};width:54px;text-align:center" ${dis}>
-        <span style="font-size:.78rem;color:var(--gray-500)">分钟</span></td>
       <td><label class="sched-day-off">
         <input type="checkbox" id="sched-off-${key}" onchange="toggleSchedOff('${key}')" ${off ? 'checked' : ''}>
         休息
@@ -4133,7 +4130,7 @@ function renderBreakTimes(key, savedTimes) {
 function toggleSchedOff(key) {
   const off = document.getElementById('sched-off-' + key).checked;
   document.getElementById('sched-row-' + key).classList.toggle('is-off', off);
-  ['sched-start-','sched-end-','sched-breaks-','sched-bmin-'].forEach(p => {
+  ['sched-start-','sched-end-','sched-breaks-'].forEach(p => {
     document.getElementById(p + key).disabled = off;
   });
   // Also toggle break time inputs in sub-row
@@ -4165,7 +4162,6 @@ function getSchedJson() {
       start:  off ? '' : (document.getElementById('sched-start-' + key).value || ''),
       end:    off ? '' : (document.getElementById('sched-end-' + key).value || ''),
       breaks: off ? '' : (document.getElementById('sched-breaks-' + key).value || ''),
-      bmin:   off ? '' : (document.getElementById('sched-bmin-' + key).value || ''),
       break_times,
       off
     };
@@ -4220,27 +4216,48 @@ function schedCopySelectAll() {
 function schedCopyApply() {
   const fromKey = _schedCopyFrom;
   if (!fromKey) return;
-  const start  = document.getElementById('sched-start-'  + fromKey).value;
-  const end    = document.getElementById('sched-end-'    + fromKey).value;
-  const breaks = document.getElementById('sched-breaks-' + fromKey).value;
-  const bmin   = document.getElementById('sched-bmin-'   + fromKey).value;
-  const count  = parseInt(breaks) || 0;
-  const bts = [];
-  for (let i = 0; i < count; i++) {
-    const s = document.getElementById(`sched-bt-s-${fromKey}-${i}`);
-    const e = document.getElementById(`sched-bt-e-${fromKey}-${i}`);
-    bts.push({ start: s ? s.value : '', end: e ? e.value : '' });
+
+  // Read all source values up-front
+  const srcStart  = document.getElementById('sched-start-'  + fromKey).value;
+  const srcEnd    = document.getElementById('sched-end-'    + fromKey).value;
+  const srcBreaks = document.getElementById('sched-breaks-' + fromKey).value;
+  const srcCount  = parseInt(srcBreaks) || 0;
+  const srcBts = [];
+  for (let i = 0; i < srcCount; i++) {
+    const bs = document.getElementById(`sched-bt-s-${fromKey}-${i}`);
+    const be = document.getElementById(`sched-bt-e-${fromKey}-${i}`);
+    srcBts.push({ start: bs ? bs.value : '', end: be ? be.value : '' });
   }
+
+  const copied = [];
   document.querySelectorAll('.sched-copy-cb:checked').forEach(cb => {
     const toKey = cb.value;
     if (document.getElementById('sched-off-' + toKey).checked) return;
-    document.getElementById('sched-start-'  + toKey).value = start;
-    document.getElementById('sched-end-'    + toKey).value = end;
-    document.getElementById('sched-breaks-' + toKey).value = breaks;
-    document.getElementById('sched-bmin-'   + toKey).value = bmin;
-    renderBreakTimes(toKey, bts);
+
+    // Temporarily un-disable so programmatic value assignment works in all browsers
+    const elStart  = document.getElementById('sched-start-'  + toKey);
+    const elEnd    = document.getElementById('sched-end-'    + toKey);
+    const elBreaks = document.getElementById('sched-breaks-' + toKey);
+    [elStart, elEnd, elBreaks].forEach(el => { el.disabled = false; });
+
+    elStart.value  = srcStart;
+    elEnd.value    = srcEnd;
+    elBreaks.value = srcBreaks;
+    renderBreakTimes(toKey, srcBts);
+
+    copied.push(toKey);
   });
+
   schedCopyClose();
+
+  // Flash copied rows green as visual confirmation
+  copied.forEach(toKey => {
+    const row = document.getElementById('sched-row-' + toKey);
+    if (!row) return;
+    row.style.transition = 'background .1s';
+    row.style.background = '#d1fae5';
+    setTimeout(() => { row.style.background = ''; }, 700);
+  });
 }
 
 function schedCopyClose() {
