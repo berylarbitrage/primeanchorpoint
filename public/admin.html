@@ -4080,7 +4080,7 @@ function initSchedTable(schedJson) {
         休息
       </label></td>
       <td style="width:1px;padding-left:.2rem">
-        <button id="sched-copy-btn-${key}" onclick="schedCopyOpen('${key}',event)" title="复制到其他天" ${dis}
+        <button id="sched-copy-btn-${key}" onclick="schedCopyOpen('${key}',this)" title="复制到其他天" ${dis}
           style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:3px;border-radius:4px;line-height:1;display:block">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -4117,10 +4117,10 @@ function renderBreakTimes(key, savedTimes) {
     html += `<span style="display:inline-flex;align-items:center;gap:.3rem;background:var(--sky-light);border:1px solid var(--gray-200);border-radius:6px;padding:.25rem .5rem;font-size:.8rem">
       <span style="color:var(--gray-500);white-space:nowrap">休息${i+1}</span>
       <input type="time" step="60" id="sched-bt-s-${key}-${i}" value="${s}" ${dis}
-        style="${SCHED_INP};width:88px">
+        style="${SCHED_INP}">
       <span style="color:var(--gray-400)">—</span>
       <input type="time" step="60" id="sched-bt-e-${key}-${i}" value="${e}" ${dis}
-        style="${SCHED_INP};width:88px">
+        style="${SCHED_INP}">
     </span>`;
   }
   html += '</div>';
@@ -4170,62 +4170,92 @@ function getSchedJson() {
 }
 // ── Sched row copy ────────────────────────────────────────────────
 let _schedCopyFrom = null;
+let _schedCopyOutsideFn = null;
 
-function _schedCopyCloseHandler(e) {
-  const pop = document.getElementById('schedCopyPop');
-  if (pop && !pop.contains(e.target)) schedCopyClose();
-}
-
-function schedCopyOpen(fromKey, event) {
-  event.stopPropagation();
-  // Toggle off if clicking the same row again
+function schedCopyOpen(fromKey, btn) {
   if (_schedCopyFrom === fromKey) { schedCopyClose(); return; }
-  schedCopyClose(); // remove any existing popover first
+  schedCopyClose();
 
   _schedCopyFrom = fromKey;
+
   const pop = document.createElement('div');
   pop.id = 'schedCopyPop';
-  pop.onclick = e => e.stopPropagation();
   pop.style.cssText = 'position:fixed;background:#fff;border:1px solid var(--gray-200);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:.7rem .9rem;z-index:99999;min-width:148px';
 
-  const btnS = 'flex:1;font-size:.78rem;padding:.28rem .4rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;color:var(--gray-700)';
-  const days = SCHED_DAYS.filter(d => d.key !== fromKey)
-    .map(d => `<label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;padding:.12rem 0;cursor:pointer">
-      <input type="checkbox" value="${d.key}">${d.label}</label>`).join('');
+  // Header
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'font-weight:600;font-size:.8rem;color:var(--gray-600);margin-bottom:.4rem';
+  hdr.textContent = '复制到';
+  pop.appendChild(hdr);
 
-  pop.innerHTML = `
-    <div style="font-weight:600;font-size:.8rem;color:var(--gray-600);margin-bottom:.4rem">复制到</div>
-    <div id="schedCopyDays" style="margin-bottom:.5rem">${days}</div>
-    <div style="display:flex;gap:.35rem">
-      <button style="${btnS};background:var(--gray-50)" onclick="schedCopySelectAll()">全选</button>
-      <button style="${btnS};background:#dbeafe;font-weight:600" onclick="schedCopyApply()">确定</button>
-      <button style="${btnS};background:var(--gray-50)" onclick="schedCopyClose()">取消</button>
-    </div>`;
+  // Day checkboxes
+  const daysDiv = document.createElement('div');
+  daysDiv.id = 'schedCopyDays';
+  daysDiv.style.marginBottom = '.5rem';
+  SCHED_DAYS.filter(d => d.key !== fromKey).forEach(d => {
+    const lbl = document.createElement('label');
+    lbl.style.cssText = 'display:flex;align-items:center;gap:.4rem;font-size:.84rem;padding:.12rem 0;cursor:pointer';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = d.key;
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(d.label));
+    daysDiv.appendChild(lbl);
+  });
+  pop.appendChild(daysDiv);
 
+  // Buttons
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:.35rem';
+  const bs = 'flex:1;font-size:.78rem;padding:.28rem .4rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;color:var(--gray-700)';
+
+  const bAll = document.createElement('button');
+  bAll.type = 'button';
+  bAll.textContent = '全选';
+  bAll.style.cssText = bs + ';background:var(--gray-50)';
+  bAll.addEventListener('click', e => {
+    e.stopPropagation();
+    const cbs = daysDiv.querySelectorAll('input');
+    const all = [...cbs].every(c => c.checked);
+    cbs.forEach(c => c.checked = !all);
+  });
+
+  const bOk = document.createElement('button');
+  bOk.type = 'button';
+  bOk.textContent = '确定';
+  bOk.style.cssText = bs + ';background:#dbeafe;font-weight:600';
+  bOk.addEventListener('click', e => {
+    e.stopPropagation();
+    schedCopyApply(daysDiv);
+  });
+
+  const bCancel = document.createElement('button');
+  bCancel.type = 'button';
+  bCancel.textContent = '取消';
+  bCancel.style.cssText = bs + ';background:var(--gray-50)';
+  bCancel.addEventListener('click', e => { e.stopPropagation(); schedCopyClose(); });
+
+  btnRow.append(bAll, bOk, bCancel);
+  pop.appendChild(btnRow);
   document.body.appendChild(pop);
 
-  const btn = event.currentTarget;
+  // Position below button
   const rect = btn.getBoundingClientRect();
-  pop.style.top  = Math.min(rect.bottom + 5, window.innerHeight - 240) + 'px';
+  pop.style.top  = Math.min(rect.bottom + 5, window.innerHeight - 250) + 'px';
   pop.style.left = Math.max(8, rect.right - 152) + 'px';
 
-  // Delay adding outside-click listener so this click doesn't immediately close it
-  setTimeout(() => document.addEventListener('click', _schedCopyCloseHandler), 0);
+  // Outside-click to close (defer so this click doesn't immediately fire it)
+  _schedCopyOutsideFn = e => { if (!pop.contains(e.target) && e.target !== btn) schedCopyClose(); };
+  setTimeout(() => document.addEventListener('click', _schedCopyOutsideFn), 0);
 }
 
-function schedCopySelectAll() {
-  const cbs = document.querySelectorAll('#schedCopyDays input[type=checkbox]');
-  const all = [...cbs].every(c => c.checked);
-  cbs.forEach(c => c.checked = !all);
-}
-
-function schedCopyApply() {
+function schedCopyApply(daysDiv) {
   const fromKey = _schedCopyFrom;
   if (!fromKey) return;
 
-  const srcStart  = (document.getElementById('sched-start-'  + fromKey).value || '').slice(0, 5);
-  const srcEnd    = (document.getElementById('sched-end-'    + fromKey).value || '').slice(0, 5);
-  const srcBreaks = document.getElementById('sched-breaks-' + fromKey).value;
+  const srcStart  = (document.getElementById('sched-start-'  + fromKey).value || '').slice(0,5);
+  const srcEnd    = (document.getElementById('sched-end-'    + fromKey).value || '').slice(0,5);
+  const srcBreaks = document.getElementById('sched-breaks-' + fromKey).value || '0';
   const srcCount  = parseInt(srcBreaks) || 0;
   const srcBts = [];
   for (let i = 0; i < srcCount; i++) {
@@ -4234,9 +4264,12 @@ function schedCopyApply() {
     srcBts.push({ start: (bs ? bs.value : '').slice(0,5), end: (be ? be.value : '').slice(0,5) });
   }
 
+  // Collect selections before closing (removes daysDiv from DOM)
+  const toKeys = [...daysDiv.querySelectorAll('input:checked')].map(c => c.value);
+  schedCopyClose();
+
   const copied = [];
-  document.querySelectorAll('#schedCopyDays input[type=checkbox]:checked').forEach(cb => {
-    const toKey = cb.value;
+  toKeys.forEach(toKey => {
     if (document.getElementById('sched-off-' + toKey).checked) return;
     document.getElementById('sched-start-'  + toKey).value = srcStart;
     document.getElementById('sched-end-'    + toKey).value = srcEnd;
@@ -4245,7 +4278,6 @@ function schedCopyApply() {
     copied.push(toKey);
   });
 
-  schedCopyClose();
   copied.forEach(key => {
     const row = document.getElementById('sched-row-' + key);
     if (!row) return;
@@ -4256,7 +4288,10 @@ function schedCopyApply() {
 }
 
 function schedCopyClose() {
-  document.removeEventListener('click', _schedCopyCloseHandler);
+  if (_schedCopyOutsideFn) {
+    document.removeEventListener('click', _schedCopyOutsideFn);
+    _schedCopyOutsideFn = null;
+  }
   const pop = document.getElementById('schedCopyPop');
   if (pop) pop.remove();
   _schedCopyFrom = null;
