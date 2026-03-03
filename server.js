@@ -110,7 +110,7 @@ async function createPersonaInquiry(workerId, workerName, workerPhone) {
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Persona-Version': '2023-01-05' },
       body: JSON.stringify({ data: { attributes: {
         'inquiry-template-id': templateId,
-        'reference-id': String(workerId),
+        'reference-id': `worker-${workerId}`,
         fields: { 'name-first': firstName, 'name-last': lastName, 'phone-number': formatPhoneE164(workerPhone || '') || undefined }
       }}})
     });
@@ -4436,8 +4436,8 @@ app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (re
 
     if (!inquiryId) return res.json({ received: true });
 
-    // Extract worker ID from reference-id (format: "worker-123")
-    const workerIdMatch = referenceId.match(/^worker-(\d+)$/);
+    // Extract worker ID from reference-id (format: "worker-123" or legacy plain "123")
+    const workerIdMatch = referenceId.match(/^(?:worker-)?(\d+)$/);
     let docRow = null;
     if (workerIdMatch) {
       docRow = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(parseInt(workerIdMatch[1]));
@@ -4481,7 +4481,7 @@ app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (re
       newStatus = 'rejected';
       existingForm.decline_reasons = inquiryData?.attributes?.['decision-reasons'] || [];
     } else if (eventType === 'inquiry.completed' || inquiryStatus === 'completed') {
-      newStatus = 'pending'; // awaiting auto-approval or manual review
+      newStatus = 'submitted'; // user completed verification, awaiting auto-approval or manual review
     } else if (eventType === 'inquiry.failed' || inquiryStatus === 'failed') {
       newStatus = 'rejected';
     }
@@ -4499,11 +4499,17 @@ app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (re
     if (identityStatus) {
       db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
       console.log(`[Persona Webhook] Updated worker_accounts identity_status → ${identityStatus}`);
-      if (identityStatus === 'approved') {
-        const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(inquiryId);
-        if (w) {
+      const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(inquiryId);
+      if (w) {
+        if (identityStatus === 'approved') {
           db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
           console.log(`[Persona Webhook] Auto-completed persona_verify onboarding for worker ${w.id}`);
+        } else if (identityStatus === 'completed') {
+          db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
+          console.log(`[Persona Webhook] Updated persona_verify to submitted for worker ${w.id}`);
+        } else if (identityStatus === 'declined') {
+          db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
+          console.log(`[Persona Webhook] Persona verification declined for worker ${w.id}`);
         }
       }
     }

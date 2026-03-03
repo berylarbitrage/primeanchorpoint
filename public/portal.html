@@ -1827,6 +1827,8 @@ async function personaOpenNewTab() {
     }
     window.open(_personaHostedUrl, '_blank');
     showPersonaSendStatus('✅ 已在新标签页中打开验证页面 / Verification opened in new tab', 'ok');
+    // Start polling since we can't detect when user finishes in new tab
+    startPersonaStatusPoll();
   } catch (e) {
     showPersonaSendStatus('❌ ' + e.message, 'error');
   }
@@ -1891,6 +1893,9 @@ async function startPersonaVerification() {
         showToast('✅ 证件已提交验证');
         _personaHostedUrl = null; // reset after completion
         loadCompliance();
+        loadOnboarding();
+        // Poll for status update from webhook (Persona webhook may take a few seconds)
+        startPersonaStatusPoll();
       },
       onCancel: ({ inquiryId }) => {
         console.log('[Persona] Cancelled:', inquiryId);
@@ -1931,8 +1936,37 @@ function showPersonaSendStatus(msg, type) {
   setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
 
-// Send verification link via SMS
+// Poll Persona status after verification completion (webhook may take a few seconds)
+let _personaPollTimer = null;
+function startPersonaStatusPoll() {
+  if (_personaPollTimer) clearInterval(_personaPollTimer);
+  let attempts = 0;
+  _personaPollTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > 12) { clearInterval(_personaPollTimer); _personaPollTimer = null; return; } // stop after ~60s
+    const st = await wApi('/persona/status');
+    if (st && (st.status === 'approved' || st.status === 'submitted' || st.persona_status === 'approved' || st.persona_status === 'completed')) {
+      clearInterval(_personaPollTimer);
+      _personaPollTimer = null;
+      loadOnboarding();
+      loadCompliance();
+    }
+  }, 5000);
+}
+
+// Send verification link via SMS - with phone confirmation
 async function personaSendSMS() {
+  const acc = _workerInfo && _workerInfo.account;
+  const phone = acc && acc.phone;
+  if (!phone) {
+    showPersonaSendStatus('❌ 未设置手机号，请先在"个人信息"页面添加手机号 / No phone number set, please add one in Profile first', 'error');
+    return;
+  }
+  // Show masked phone and ask for confirmation
+  const maskedPhone = phone.slice(0, 3) + '****' + phone.slice(-4);
+  const confirmed = confirm(`将发送验证链接到以下手机号 / Verification link will be sent to:\n\n📱 ${maskedPhone}\n\n是否确认发送？ / Confirm send?`);
+  if (!confirmed) return;
+
   const btn = document.getElementById('personaSmsBtn');
   btn.disabled = true;
   btn.textContent = '发送中...';
@@ -1946,7 +1980,7 @@ async function personaSendSMS() {
     }
     const r = await wApi('/persona/send-sms', { method: 'POST', body: JSON.stringify({}) });
     if (r && r.success) {
-      showPersonaSendStatus('✅ 短信已发送到您的手机 / SMS sent to your phone', 'ok');
+      showPersonaSendStatus(`✅ 短信已发送到 ${maskedPhone} / SMS sent to ${maskedPhone}`, 'ok');
     } else {
       showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
     }
@@ -1956,8 +1990,19 @@ async function personaSendSMS() {
   btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS';
 }
 
-// Send verification link via email
+// Send verification link via email - with email confirmation
 async function personaSendEmail() {
+  const acc = _workerInfo && _workerInfo.account;
+  const email = acc && acc.email;
+  if (!email) {
+    showPersonaSendStatus('❌ 未设置邮箱，请先在"个人信息"页面添加邮箱 / No email set, please add one in Profile first', 'error');
+    return;
+  }
+  // Show masked email and ask for confirmation
+  const maskedEmail = email.replace(/(.{2}).*(@.*)/, '$1****$2');
+  const confirmed = confirm(`将发送验证链接到以下邮箱 / Verification link will be sent to:\n\n📧 ${maskedEmail}\n\n是否确认发送？ / Confirm send?`);
+  if (!confirmed) return;
+
   const btn = document.getElementById('personaEmailBtn');
   btn.disabled = true;
   btn.textContent = '发送中...';
@@ -1971,7 +2016,7 @@ async function personaSendEmail() {
     }
     const r = await wApi('/persona/send-email', { method: 'POST', body: JSON.stringify({}) });
     if (r && r.success) {
-      showPersonaSendStatus('✅ 邮件已发送 / Email sent', 'ok');
+      showPersonaSendStatus(`✅ 邮件已发送到 ${maskedEmail} / Email sent to ${maskedEmail}`, 'ok');
     } else {
       showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
     }
