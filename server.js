@@ -4490,6 +4490,24 @@ app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (re
       .run(JSON.stringify(existingForm), newStatus, `Persona: ${eventType}`, docRow.id);
 
     console.log(`[Persona Webhook] Updated doc ${docRow.id} → status=${newStatus}`);
+
+    // Also update worker_accounts.identity_status and auto-complete onboarding
+    let identityStatus = '';
+    if (inquiryStatus === 'approved' || eventType.includes('approved')) identityStatus = 'approved';
+    else if (inquiryStatus === 'declined' || eventType.includes('declined') || eventType.includes('failed')) identityStatus = 'declined';
+    else if (inquiryStatus === 'completed' || eventType.includes('completed')) identityStatus = 'completed';
+    if (identityStatus) {
+      db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
+      console.log(`[Persona Webhook] Updated worker_accounts identity_status → ${identityStatus}`);
+      if (identityStatus === 'approved') {
+        const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(inquiryId);
+        if (w) {
+          db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
+          console.log(`[Persona Webhook] Auto-completed persona_verify onboarding for worker ${w.id}`);
+        }
+      }
+    }
+
     res.json({ received: true });
   } catch (e) {
     console.error('[Persona Webhook] Error processing:', e.message);
@@ -5343,43 +5361,8 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Persona webhook — called by Persona when verification status changes
-app.post('/api/webhooks/persona', express.raw({ type: '*/*' }), (req, res) => {
-  try {
-    const rawBody = req.body.toString('utf8');
-    const sig = req.headers['persona-signature'];
-    if (!verifyPersonaWebhook(rawBody, sig)) {
-      console.warn('[Persona Webhook] Signature mismatch');
-      return res.status(400).json({ error: 'Invalid signature' });
-    }
-    const event = JSON.parse(rawBody);
-    // Persona sends the inquiry object nested under payload.data
-    const payload = event.data?.attributes?.payload?.data || event.data;
-    const inquiryId = payload?.id;
-    const eventName = event.data?.attributes?.name || '';
-    const status = payload?.attributes?.status || '';
-    console.log(`[Persona Webhook] ${eventName} | inquiry=${inquiryId} | status=${status}`);
-    if (inquiryId) {
-      let identityStatus = '';
-      if (status === 'approved' || eventName.includes('approved')) identityStatus = 'approved';
-      else if (status === 'declined' || eventName.includes('declined') || eventName.includes('failed')) identityStatus = 'declined';
-      else if (status === 'completed' || eventName.includes('completed')) identityStatus = 'completed';
-      if (identityStatus) {
-        db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
-        console.log(`[Persona Webhook] Updated ${inquiryId} → ${identityStatus}`);
-        // Auto-complete persona_verify onboarding step when approved
-        if (identityStatus === 'approved') {
-          const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(inquiryId);
-          if (w) {
-            db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
-            console.log(`[Persona Webhook] Auto-completed persona_verify onboarding for worker ${w.id}`);
-          }
-        }
-      }
-    }
-    res.json({ received: true });
-  } catch (e) { console.error('[Persona Webhook]', e.message); res.status(500).json({ error: e.message }); }
-});
+// NOTE: Duplicate Persona webhook handler was removed.
+// All Persona webhook logic is now consolidated in the handler above (around line 4405).
 
 // Worker: get own identity verification status + fresh session link
 app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
