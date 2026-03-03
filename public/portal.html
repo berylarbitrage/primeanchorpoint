@@ -2212,7 +2212,7 @@ async function _doVerifyI9Addr(silent) {
       street, street2: form.apt ? form.apt.value.trim() : '',
       city, state: form.state.value, zip
     }, { silent });
-    if (result.skipped) { statusEl.textContent = ''; return; }
+    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
     if (!result.proceed) { _setPortalAddrStatus('i9AddrStatus', false); return; }
     if (result.standardized) {
       const s = result.standardized;
@@ -2247,7 +2247,7 @@ async function _doVerifyW9Addr(silent) {
   statusEl.textContent = '验证中…'; statusEl.style.color = '#94a3b8';
   try {
     const result = await validateAddress({ street, city, state: form.state.value.trim(), zip }, { silent });
-    if (result.skipped) { statusEl.textContent = ''; return; }
+    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
     if (!result.proceed) { _setPortalAddrStatus('w9AddrStatus', false); return; }
     if (result.standardized) {
       const s = result.standardized;

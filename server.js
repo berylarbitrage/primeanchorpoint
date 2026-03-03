@@ -5671,4 +5671,6 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
+  console.log(`[Address Validation] GOOGLE_MAPS_API_KEY: ${process.env.GOOGLE_MAPS_API_KEY ? 'SET (' + process.env.GOOGLE_MAPS_API_KEY.substring(0, 8) + '...)' : 'NOT SET — address validation will be skipped'}`);
+
 });
