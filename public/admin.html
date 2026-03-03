@@ -1943,15 +1943,17 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="field" style="position:relative">
     <label>选择人员 *</label>
-    <input id="aInquiry" autocomplete="off" placeholder="搜索姓名 / 电话 / 邮箱…" oninput="filterAssignSearch('inq')">
+    <input id="aInquiry" autocomplete="off" placeholder="搜索姓名 / 电话 / 邮箱…" oninput="filterAssignSearch('inq');clearFieldErr('aInquiry','aInquiryErr')">
     <div class="assign-dropdown" id="aInquiryDrop"></div>
+    <div id="aInquiryErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请搜索并选择人员</div>
   </div>
   <div id="aDispatchWarn" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:.5rem .75rem;font-size:.83rem;color:#92400e;margin-top:-.25rem;margin-bottom:.5rem"></div>
 
   <div class="field" style="position:relative">
     <label>分配职位 *</label>
-    <input id="aJob" autocomplete="off" placeholder="搜索职位名称 / 地点…" oninput="filterAssignSearch('job')">
+    <input id="aJob" autocomplete="off" placeholder="搜索职位名称 / 地点…" oninput="filterAssignSearch('job');clearFieldErr('aJob','aJobErr')">
     <div class="assign-dropdown" id="aJobDrop"></div>
+    <div id="aJobErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请搜索并选择职位</div>
   </div>
 
   <div class="field"><label>状态</label><select id="aStatus">
@@ -4264,6 +4266,11 @@ function schedCopyClose() {
 }
 // ─────────────────────────────────────────────────────────────────
 
+function clearFieldErr(inputId, errId) {
+  document.getElementById(inputId).style.borderColor = '';
+  document.getElementById(errId).style.display = 'none';
+}
+
 function filterAssignSearch(which) {
   const isInq = which === 'inq';
   const q = document.getElementById(isInq ? 'aInquiry' : 'aJob').value.toLowerCase();
@@ -4349,8 +4356,10 @@ async function saveAssignment() {
   };
   // Only require person/job selection for brand-new assignments
   if (isNew && (!data.inquiry_id || !data.job_id)) {
+    if (!data.inquiry_id) { document.getElementById('aInquiry').style.borderColor='#dc2626'; document.getElementById('aInquiryErr').style.display=''; }
+    if (!data.job_id)     { document.getElementById('aJob').style.borderColor='#dc2626';     document.getElementById('aJobErr').style.display=''; }
     document.getElementById('assignModal').querySelector('.modal').scrollTop = 0;
-    return alert('请先选择人员和职位');
+    return;
   }
   // Dispatch-ready guard
   const ws = await api(`/admin/inquiries/${data.inquiry_id}/worker-status`).catch(()=>null);
