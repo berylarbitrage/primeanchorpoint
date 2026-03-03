@@ -2378,7 +2378,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div style="display:flex;gap:.65rem;justify-content:flex-end">
-    <button class="btn btn-outline" onclick="closeGenericConfirm()">取消</button>
+    <button class="btn btn-outline" id="gcmCancelBtn" onclick="closeGenericConfirm()">取消</button>
     <button class="btn" id="gcmBtn" onclick="execGenericConfirm()">确认</button>
   </div>
 </div></div>
@@ -2407,7 +2407,7 @@ tr:hover td{background:var(--sky-light)}
 
 <script>
 let _gcmCallback = null;
-function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor) {
+function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor, cancelText) {
   const colors = {
     blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
     green: { bg:'#D1FAE5', stroke:'#059669', title:'#065F46' },
@@ -2424,6 +2424,7 @@ function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor) 
   btn.textContent = btnText;
   btn.className = 'btn ' + (btnClass || 'btn-green');
   _gcmCallback = onConfirm;
+  document.getElementById('gcmCancelBtn').textContent = cancelText || '取消';
   document.getElementById('genericConfirmModal').classList.add('show');
 }
 function closeGenericConfirm() { document.getElementById('genericConfirmModal').classList.remove('show'); _gcmCallback = null; }
@@ -5078,15 +5079,15 @@ async function saveEmployee() {
     const fieldLabel = r.field === 'phone' ? '手机号' : '邮箱';
     const emp = r.existing;
     const empName = `${emp.first_name} ${emp.last_name}（员工号：${emp.employee_id}）`;
-    const openExisting = confirm(`该${fieldLabel}已登记在员工「${empName}」名下。\n\n点击「确定」打开该员工档案查看，点击「取消」忽略重复继续保存当前信息。`);
-    if (openExisting) {
-      clearModalState('empModal');
-      closeEmpModal();
-      await loadEmployees();
-      openEmpModal(emp.id);
-    } else {
-      await finishSave(await doSave({ ...data, force: true }));
-    }
+    showConfirmModal(
+      `${fieldLabel}重复 / Duplicate ${r.field === 'phone' ? 'Phone' : 'Email'}`,
+      `该${fieldLabel}已登记在员工「${empName}」名下，不允许重复。请查看已有档案后修改再保存。`,
+      '查看员工档案 / View Employee',
+      'btn',
+      async () => { clearModalState('empModal'); closeEmpModal(); await loadEmployees(); openEmpModal(emp.id); },
+      'amber',
+      '关闭 / Close'
+    );
     return;
   }
   await finishSave(r);
