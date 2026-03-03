@@ -7261,15 +7261,18 @@ async function rejectAction() {
 
 // ── Interview Management ──
 let _allInterviews = [];
+let _ivLocations = [];
 
 let _ivLocations = [];
 
 function switchIvTab(tab) {
   ['slots','list','locations'].forEach(t => {
-    document.getElementById('ivPane' + t.charAt(0).toUpperCase() + t.slice(1)).style.display = tab === t ? '' : 'none';
-    const btn = document.getElementById('ivTab' + t.charAt(0).toUpperCase() + t.slice(1));
+    const paneId = 'ivPane' + t.charAt(0).toUpperCase() + t.slice(1);
+    const btnId  = 'ivTab'  + t.charAt(0).toUpperCase() + t.slice(1);
+    document.getElementById(paneId).style.display = tab === t ? '' : 'none';
     const active = tab === t;
-    btn.style.cssText = `padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid ${active?'var(--sky)':'transparent'};margin-bottom:-2px;color:${active?'var(--sky)':'var(--gray-500)'}`;
+    document.getElementById(btnId).style.cssText =
+      `padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid ${active?'var(--sky)':'transparent'};margin-bottom:-2px;color:${active?'var(--sky)':'var(--gray-500)'}`;
   });
   if (tab === 'list') filterInterviews();
   if (tab === 'locations') loadInterviewLocations();
@@ -7288,81 +7291,46 @@ async function loadInterviewLocations() {
     <td style="font-size:.8rem;white-space:pre-line;max-width:250px">${esc(l.instructions||'—')}</td>
     <td style="white-space:nowrap">
       <button class="btn btn-sm" onclick="editInterviewLocation(${l.id})">编辑</button>
-      <button class="btn btn-sm btn-red" onclick="deleteInterviewLocation(${l.id},'${esc(l.name)}')">删除</button>
+      <button class="btn btn-sm btn-red" onclick="deleteInterviewLocation(${l.id},'${esc(l.name).replace(/'/g,"\\'")}')">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无预设地点，请在上方添加</td></tr>';
-  populateLocationSelectors();
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无预设地点，点击「+ 添加地点」创建</td></tr>';
 }
 
-function populateLocationSelectors() {
-  const opts = _ivLocations.map(l => `<option value="${l.id}">${esc(l.name)} — ${esc((l.address||'').substring(0,40))}</option>`).join('');
-  const defaultOpt = '<option value="">-- 选择预设地点 --</option>';
-  const batchSel = document.getElementById('batchLocationSelect');
-  const singleSel = document.getElementById('ivSlotLocationSelect');
-  if (batchSel) batchSel.innerHTML = defaultOpt + opts;
-  if (singleSel) singleSel.innerHTML = defaultOpt + opts;
+function openLocationModal(id) {
+  const loc = id ? _ivLocations.find(l => l.id === id) : null;
+  document.getElementById('ivLocModalTitle').textContent = loc ? '编辑面试地点' : '添加面试地点';
+  document.getElementById('ivLocId').value            = loc ? loc.id : '';
+  document.getElementById('ivLocName').value          = loc ? loc.name : '';
+  document.getElementById('ivLocAddress').value       = loc ? (loc.address||'') : '';
+  document.getElementById('ivLocContactName').value   = loc ? (loc.contact_name||'') : '';
+  document.getElementById('ivLocContactPhone').value  = loc ? (loc.contact_phone||'') : '';
+  document.getElementById('ivLocInstructions').value  = loc ? (loc.instructions||'') : '';
+  document.getElementById('ivLocationModal').classList.add('show');
 }
 
-function onBatchLocationSelect() {
-  const sel = document.getElementById('batchLocationSelect');
-  const loc = _ivLocations.find(l => l.id == sel.value);
-  const detail = document.getElementById('batchLocationDetail');
-  if (loc) {
-    document.getElementById('batchLocation').value = loc.address || '';
-    detail.style.display = '';
-    detail.innerHTML = `<div style="font-weight:600">📍 ${esc(loc.name)}</div>
-      <div>${esc(loc.address||'')}</div>
-      ${loc.contact_name ? `<div>联系人: ${esc(loc.contact_name)} ${esc(loc.contact_phone||'')}</div>` : ''}
-      ${loc.instructions ? `<div style="margin-top:.3rem;white-space:pre-line;color:var(--gray-600)">📋 ${esc(loc.instructions)}</div>` : ''}`;
-  } else {
-    detail.style.display = 'none';
-    document.getElementById('batchLocation').value = '';
-  }
-}
+function editInterviewLocation(id) { openLocationModal(id); }
 
-function onSingleLocationSelect() {
-  const sel = document.getElementById('ivSlotLocationSelect');
-  const loc = _ivLocations.find(l => l.id == sel.value);
-  if (loc) document.getElementById('ivSlotLocation').value = loc.address || '';
-}
-
-async function saveInterviewLocation() {
-  const editId = document.getElementById('locEditId').value;
+async function saveLocation() {
+  const id   = document.getElementById('ivLocId').value;
   const data = {
-    name: document.getElementById('locName').value.trim(),
-    address: document.getElementById('locAddress').value.trim(),
-    contact_name: document.getElementById('locContactName').value.trim(),
-    contact_phone: document.getElementById('locContactPhone').value.trim(),
-    instructions: document.getElementById('locInstructions').value.trim()
+    name:          document.getElementById('ivLocName').value.trim(),
+    address:       document.getElementById('ivLocAddress').value.trim(),
+    contact_name:  document.getElementById('ivLocContactName').value.trim(),
+    contact_phone: document.getElementById('ivLocContactPhone').value.trim(),
+    instructions:  document.getElementById('ivLocInstructions').value.trim()
   };
-  if (!data.name || !data.address) return showToast('❌ 名称和地址必填', 'error');
-  const url = editId ? `/admin/interview-locations/${editId}` : '/admin/interview-locations';
-  const method = editId ? 'PUT' : 'POST';
-  const r = await api(url, { method, body: JSON.stringify(data) });
+  if (!data.name) return showToast('❌ 地点名称必填', 'error');
+  const r = await api(id ? `/admin/interview-locations/${id}` : '/admin/interview-locations', {
+    method: id ? 'PUT' : 'POST',
+    body: JSON.stringify(data)
+  });
   if (r && (r.success || r.id)) {
     showToast('✅ 地点已保存');
-    document.getElementById('locName').value = '';
-    document.getElementById('locAddress').value = '';
-    document.getElementById('locContactName').value = '';
-    document.getElementById('locContactPhone').value = '';
-    document.getElementById('locInstructions').value = '';
-    document.getElementById('locEditId').value = '';
+    closeModal('ivLocationModal');
     loadInterviewLocations();
   } else {
     showToast('❌ ' + (r?.error || '保存失败'), 'error');
   }
-}
-
-function editInterviewLocation(id) {
-  const loc = _ivLocations.find(l => l.id === id);
-  if (!loc) return;
-  document.getElementById('locEditId').value = id;
-  document.getElementById('locName').value = loc.name;
-  document.getElementById('locAddress').value = loc.address || '';
-  document.getElementById('locContactName').value = loc.contact_name || '';
-  document.getElementById('locContactPhone').value = loc.contact_phone || '';
-  document.getElementById('locInstructions').value = loc.instructions || '';
-  document.getElementById('ivPaneLocations').scrollIntoView({ behavior: 'smooth' });
 }
 
 async function deleteInterviewLocation(id, name) {

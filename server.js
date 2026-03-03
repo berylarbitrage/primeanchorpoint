@@ -4826,35 +4826,45 @@ app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
 
 // ─── Interview System ───
 
-// Add contact/instruction columns to slots if missing
-try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_name TEXT DEFAULT ''"); } catch {}
-try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT ''"); } catch {}
-try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
+// ── Interview Location Presets ──
+try { db.exec(`CREATE TABLE IF NOT EXISTS interview_locations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  address TEXT DEFAULT '',
+  contact_name TEXT DEFAULT '',
+  contact_phone TEXT DEFAULT '',
+  instructions TEXT DEFAULT '',
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`); } catch {}
 
-// Admin: list all slots
-// ── Interview Locations (presets) ──
 app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
-  res.json(db.prepare('SELECT * FROM interview_locations ORDER BY name ASC').all());
+  res.json(db.prepare('SELECT * FROM interview_locations WHERE active=1 ORDER BY name').all());
 });
 app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
   const { name, address, contact_name, contact_phone, instructions } = req.body;
-  if (!name) return res.status(400).json({ error: 'name required' });
-  const r = db.prepare(`INSERT INTO interview_locations (name,address,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?)`)
+  if (!name) return res.status(400).json({ error: '地点名称必填 / name required' });
+  const r = db.prepare('INSERT INTO interview_locations (name,address,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?)')
     .run(name, address||'', contact_name||'', contact_phone||'', instructions||'');
-  res.json({ success:true, id: r.lastInsertRowid });
+  res.json({ success: true, id: r.lastInsertRowid });
 });
 app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
-  const { name, address, contact_name, contact_phone, instructions, active } = req.body;
   const loc = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(req.params.id);
   if (!loc) return res.status(404).json({ error: 'Not found' });
-  db.prepare(`UPDATE interview_locations SET name=?,address=?,contact_name=?,contact_phone=?,instructions=?,active=? WHERE id=?`)
+  const { name, address, contact_name, contact_phone, instructions, active } = req.body;
+  db.prepare('UPDATE interview_locations SET name=?,address=?,contact_name=?,contact_phone=?,instructions=?,active=? WHERE id=?')
     .run(name??loc.name, address??loc.address, contact_name??loc.contact_name, contact_phone??loc.contact_phone, instructions??loc.instructions, active??loc.active, req.params.id);
-  res.json({ success:true });
+  res.json({ success: true });
 });
 app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
   db.prepare('UPDATE interview_locations SET active=0 WHERE id=?').run(req.params.id);
-  res.json({ success:true });
+  res.json({ success: true });
 });
+
+// Add contact/instruction columns to interview_slots if missing
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
 
 app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
   const slots = db.prepare(`
