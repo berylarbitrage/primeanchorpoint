@@ -4726,7 +4726,7 @@ async function _doVerifyEmpAddr(silent) {
   statusEl.style.color = 'var(--gray-400)';
   try {
     const result = await validateAddress({ street, street2, city, state, zip }, { silent });
-    if (result.skipped) { statusEl.textContent = ''; return; }
+    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
     if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
     if (result.standardized) {
       const s = result.standardized;
@@ -4769,7 +4769,7 @@ async function _doVerifyPartnerAddr(row, silent) {
     const result = await validateAddress({
       street, street2: street2El ? street2El.value.trim() : '', city, state: stateEl.value, zip
     }, { silent });
-    if (result.skipped) { if (statusEl) statusEl.textContent = ''; return; }
+    if (result.skipped) { if (!silent && statusEl) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else if (statusEl) statusEl.textContent = ''; return; }
     if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
     if (result.standardized) {
       const s = result.standardized;
@@ -4805,7 +4805,7 @@ async function _doVerifySingleAddr(inputId, statusId, silent) {
   statusEl.style.color = 'var(--gray-400)';
   try {
     const result = await validateAddressSingleField(input.value.trim(), { silent });
-    if (result.skipped) { statusEl.textContent = ''; return; }
+    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
     if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
     if (result.standardized) input.value = result.standardized;
     _setAddrStatus(statusEl, result.verified === true);
