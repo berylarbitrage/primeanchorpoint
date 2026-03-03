@@ -4791,6 +4791,7 @@ app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'ter
 app.get('/background-check-disclosure', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-disclosure.html')));
 app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-consent.html')));
 app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'public', 'data-deletion.html')));
+app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
 
 // POST /api/docusign/webhook — DocuSign Connect event notifications
 app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
