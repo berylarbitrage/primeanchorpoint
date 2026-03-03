@@ -892,7 +892,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
 )`);
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
-try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 1"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 
 // ─── Worker Skills ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
@@ -1636,7 +1636,7 @@ const ONBOARDING_STEPS = [
 function initWorkerOnboarding(workerId) {
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
   if (!w) return;
-  const insert = db.prepare(`INSERT OR IGNORE INTO worker_onboarding (worker_account_id, task_key, status) VALUES (?,?,?)`);
+  const insert = db.prepare(`INSERT OR IGNORE INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker) VALUES (?,?,?,0)`);
   const tx = db.transaction(() => {
     for (const s of ONBOARDING_STEPS) {
       insert.run(workerId, s.key, 'pending');
@@ -1660,7 +1660,7 @@ function getOnboardingTasks(workerId) {
   const rowMap = {};
   rows.forEach(r => { rowMap[r.task_key] = r; });
   return ONBOARDING_STEPS.map((s, idx) => {
-    const row = rowMap[s.key] || { status: 'not_initialized', admin_note: '', action_url: '', completed_at: null, visible_to_worker: 1 };
+    const row = rowMap[s.key] || { status: 'not_initialized', admin_note: '', action_url: '', completed_at: null, visible_to_worker: 0 };
     // compute locked: previous REQUIRED step must be completed/waived
     let locked = false;
     if (idx > 0) {
