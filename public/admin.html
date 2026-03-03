@@ -6963,7 +6963,7 @@ async function loadWorkerAccounts() {
     <td>${dispatchBadge(w)}</td>
     <td style="white-space:nowrap">
       <div class="wa-actions">
-        <button class="btn btn-sm wa-abtn-primary" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">📋 入职</button>
+        ${!(w.dispatch_ready && w.employee_id) ? `<button class="btn btn-sm wa-abtn-primary" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">📋 入职</button>` : ''}
         <button class="btn btn-sm wa-abtn-edit" onclick="openWorkerDetailModal(${w.id})">✏️ 编辑</button>
         ${extraBtns}
       </div>
