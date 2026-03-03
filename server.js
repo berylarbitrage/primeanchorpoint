@@ -1756,8 +1756,8 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
 });
 
 app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res) => {
-  const { ready } = req.body;
-  db.prepare('UPDATE worker_accounts SET dispatch_ready=? WHERE id=?').run(ready ? 1 : 0, req.params.id);
+  const { dispatch_ready } = req.body;
+  db.prepare('UPDATE worker_accounts SET dispatch_ready=? WHERE id=?').run(dispatch_ready ? 1 : 0, req.params.id);
   res.json({ success: true });
 });
 
