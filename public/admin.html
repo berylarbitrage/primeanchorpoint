@@ -104,7 +104,7 @@ tr:hover td{background:var(--sky-light)}
 .sched-table th{font-weight:600;color:var(--gray-500);font-size:.75rem;text-transform:uppercase;padding:.3rem .5rem;text-align:left;border-bottom:1px solid var(--gray-200)}
 .sched-table td{padding:.35rem .5rem;vertical-align:middle;border-bottom:1px solid var(--gray-100)}
 .sched-table tr:last-child td{border-bottom:none}
-.sched-table input[type=time]{border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem;width:90px;color:var(--gray-700)}
+.sched-table input[type=time]{border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem;color:var(--gray-700)}
 .sched-table input[type=time]:disabled{background:var(--gray-100);color:var(--gray-400);border-color:var(--gray-100)}
 .sched-day-off{display:flex;align-items:center;gap:.35rem;font-size:.8rem;color:var(--gray-500);cursor:pointer;user-select:none}
 .sched-table tr.is-off td:not(:first-child):not(:last-child){opacity:.35}
@@ -4168,88 +4168,77 @@ function getSchedJson() {
   });
   return JSON.stringify(out);
 }
-// ── Sched row copy ────────────────────────────────────────────────
+// ── Sched row copy (inline sub-row, no floating popover) ──────────
 let _schedCopyFrom = null;
-let _schedCopyOutsideFn = null;
 
 function schedCopyOpen(fromKey, btn) {
   if (_schedCopyFrom === fromKey) { schedCopyClose(); return; }
   schedCopyClose();
-
   _schedCopyFrom = fromKey;
 
-  const pop = document.createElement('div');
-  pop.id = 'schedCopyPop';
-  pop.style.cssText = 'position:fixed;background:#fff;border:1px solid var(--gray-200);border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.15);padding:.7rem .9rem;z-index:99999;min-width:148px';
+  // Build sub-row inserted right after the source row
+  const srcRow = document.getElementById('sched-row-' + fromKey);
+  const colCount = srcRow.cells.length;
 
-  // Header
-  const hdr = document.createElement('div');
-  hdr.style.cssText = 'font-weight:600;font-size:.8rem;color:var(--gray-600);margin-bottom:.4rem';
-  hdr.textContent = '复制到';
-  pop.appendChild(hdr);
+  const tr = document.createElement('tr');
+  tr.id = 'sched-copy-row';
+  tr.style.cssText = 'background:#f0f9ff';
 
-  // Day checkboxes
-  const daysDiv = document.createElement('div');
-  daysDiv.id = 'schedCopyDays';
-  daysDiv.style.marginBottom = '.5rem';
+  const td = document.createElement('td');
+  td.colSpan = colCount;
+  td.style.cssText = 'padding:.5rem .75rem';
+
+  // Label
+  const lbl = document.createElement('span');
+  lbl.textContent = '复制到：';
+  lbl.style.cssText = 'font-size:.8rem;font-weight:600;color:var(--gray-600);margin-right:.4rem';
+  td.appendChild(lbl);
+
+  // One checkbox per other day, inline
+  const cbMap = {};
   SCHED_DAYS.filter(d => d.key !== fromKey).forEach(d => {
-    const lbl = document.createElement('label');
-    lbl.style.cssText = 'display:flex;align-items:center;gap:.4rem;font-size:.84rem;padding:.12rem 0;cursor:pointer';
+    const label = document.createElement('label');
+    label.style.cssText = 'display:inline-flex;align-items:center;gap:.25rem;font-size:.83rem;margin-right:.6rem;cursor:pointer';
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.value = d.key;
-    lbl.appendChild(cb);
-    lbl.appendChild(document.createTextNode(d.label));
-    daysDiv.appendChild(lbl);
+    cbMap[d.key] = cb;
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(d.label));
+    td.appendChild(label);
   });
-  pop.appendChild(daysDiv);
 
   // Buttons
-  const btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display:flex;gap:.35rem';
-  const bs = 'flex:1;font-size:.78rem;padding:.28rem .4rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;color:var(--gray-700)';
+  const bs = 'font-size:.78rem;padding:.22rem .55rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;margin-left:.35rem';
 
   const bAll = document.createElement('button');
   bAll.type = 'button';
   bAll.textContent = '全选';
-  bAll.style.cssText = bs + ';background:var(--gray-50)';
-  bAll.addEventListener('click', e => {
-    e.stopPropagation();
-    const cbs = daysDiv.querySelectorAll('input');
-    const all = [...cbs].every(c => c.checked);
+  bAll.style.cssText = bs + ';background:var(--gray-50);color:var(--gray-700)';
+  bAll.onclick = () => {
+    const cbs = Object.values(cbMap);
+    const all = cbs.every(c => c.checked);
     cbs.forEach(c => c.checked = !all);
-  });
+  };
 
   const bOk = document.createElement('button');
   bOk.type = 'button';
   bOk.textContent = '确定';
-  bOk.style.cssText = bs + ';background:#dbeafe;font-weight:600';
-  bOk.addEventListener('click', e => {
-    e.stopPropagation();
-    schedCopyApply(daysDiv);
-  });
+  bOk.style.cssText = bs + ';background:#dbeafe;font-weight:600;color:var(--gray-800)';
+  bOk.onclick = () => schedCopyApply(cbMap);
 
   const bCancel = document.createElement('button');
   bCancel.type = 'button';
   bCancel.textContent = '取消';
-  bCancel.style.cssText = bs + ';background:var(--gray-50)';
-  bCancel.addEventListener('click', e => { e.stopPropagation(); schedCopyClose(); });
+  bCancel.style.cssText = bs + ';background:var(--gray-50);color:var(--gray-700)';
+  bCancel.onclick = schedCopyClose;
 
-  btnRow.append(bAll, bOk, bCancel);
-  pop.appendChild(btnRow);
-  document.body.appendChild(pop);
-
-  // Position below button
-  const rect = btn.getBoundingClientRect();
-  pop.style.top  = Math.min(rect.bottom + 5, window.innerHeight - 250) + 'px';
-  pop.style.left = Math.max(8, rect.right - 152) + 'px';
-
-  // Outside-click to close (defer so this click doesn't immediately fire it)
-  _schedCopyOutsideFn = e => { if (!pop.contains(e.target) && e.target !== btn) schedCopyClose(); };
-  setTimeout(() => document.addEventListener('click', _schedCopyOutsideFn), 0);
+  td.append(bAll, bOk, bCancel);
+  tr.appendChild(td);
+  srcRow.insertAdjacentElement('afterend', tr);
 }
 
-function schedCopyApply(daysDiv) {
+function schedCopyApply(cbMap) {
   const fromKey = _schedCopyFrom;
   if (!fromKey) return;
 
@@ -4264,36 +4253,27 @@ function schedCopyApply(daysDiv) {
     srcBts.push({ start: (bs ? bs.value : '').slice(0,5), end: (be ? be.value : '').slice(0,5) });
   }
 
-  // Collect selections before closing (removes daysDiv from DOM)
-  const toKeys = [...daysDiv.querySelectorAll('input:checked')].map(c => c.value);
+  const toKeys = Object.values(cbMap).filter(c => c.checked).map(c => c.value);
   schedCopyClose();
 
-  const copied = [];
   toKeys.forEach(toKey => {
     if (document.getElementById('sched-off-' + toKey).checked) return;
     document.getElementById('sched-start-'  + toKey).value = srcStart;
     document.getElementById('sched-end-'    + toKey).value = srcEnd;
     document.getElementById('sched-breaks-' + toKey).value = srcBreaks;
     renderBreakTimes(toKey, srcBts);
-    copied.push(toKey);
-  });
-
-  copied.forEach(key => {
-    const row = document.getElementById('sched-row-' + key);
-    if (!row) return;
-    row.style.transition = 'background .15s';
-    row.style.background = '#d1fae5';
-    setTimeout(() => { row.style.background = ''; }, 800);
+    const row = document.getElementById('sched-row-' + toKey);
+    if (row) {
+      row.style.transition = 'background .15s';
+      row.style.background = '#d1fae5';
+      setTimeout(() => { row.style.background = ''; }, 800);
+    }
   });
 }
 
 function schedCopyClose() {
-  if (_schedCopyOutsideFn) {
-    document.removeEventListener('click', _schedCopyOutsideFn);
-    _schedCopyOutsideFn = null;
-  }
-  const pop = document.getElementById('schedCopyPop');
-  if (pop) pop.remove();
+  const tr = document.getElementById('sched-copy-row');
+  if (tr) tr.remove();
   _schedCopyFrom = null;
 }
 // ─────────────────────────────────────────────────────────────────
