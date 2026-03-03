@@ -1810,6 +1810,10 @@ app.post('/api/admin/worker-accounts/:id/send-reset-link', requireAdmin, require
 app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   try {
     const id = req.params.id;
+    // Invalidate all active sessions for this worker
+    for (const [token, session] of workerSessions.entries()) {
+      if (String(session.workerId) === String(id)) workerSessions.delete(token);
+    }
     db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(id);
@@ -1996,7 +2000,12 @@ app.put('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), 
 });
 
 app.delete('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  db.prepare('DELETE FROM customer_accounts WHERE id=?').run(req.params.id);
+  const id = req.params.id;
+  // Invalidate all active sessions for this customer
+  for (const [token, session] of customerSessions.entries()) {
+    if (String(session.customerId) === String(id)) customerSessions.delete(token);
+  }
+  db.prepare('DELETE FROM customer_accounts WHERE id=?').run(id);
   res.json({ success: true });
 });
 
@@ -2004,6 +2013,9 @@ app.delete('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'
 app.post('/api/admin/clear-test-data', requireAdmin, requireRole('admin'), (req, res) => {
   const { confirm_text } = req.body;
   if (confirm_text !== 'I confirm') return res.status(400).json({ error: 'Please type "I confirm" to proceed' });
+  // Invalidate all worker and customer sessions
+  workerSessions.clear();
+  customerSessions.clear();
   const wDel = db.prepare('DELETE FROM worker_accounts').run();
   const cDel = db.prepare('DELETE FROM customer_accounts').run();
   db.prepare('DELETE FROM verification_codes').run();
