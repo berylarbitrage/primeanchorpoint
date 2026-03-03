@@ -378,18 +378,6 @@ tr:last-child td{border-bottom:none}
         <h2>📅 今日安排</h2>
         <div id="todayScheduleContent" style="margin-top:.75rem"></div>
       </div>
-      <!-- Interview section (only shown for pre-hire workers) -->
-      <div id="interviewSection">
-        <div class="card" id="interviewStatusCard" style="display:none">
-          <h2>📋 我的面试预约</h2>
-          <div id="interviewStatusContent"></div>
-        </div>
-        <div class="card" id="interviewSlotsCard">
-          <h2>🗓️ 选择面试时间</h2>
-          <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1rem">请选择一个方便您的时间段进行面试。面试通过后将收到文件提交链接。</p>
-          <div id="interviewSlotsList"></div>
-        </div>
-      </div>
     </div>
 
     <!-- My Applications -->
@@ -942,19 +930,12 @@ function showTab(tab) {
 }
 
 async function loadInterview() {
-  const [interview, slots, me, punchStatus] = await Promise.all([
-    wApi('/interview'),
-    wApi('/interview-slots'),
+  const [me, punchStatus] = await Promise.all([
     wApi('/me'),
     wApi('/punch/status')
   ]);
   if (me) _workerInfo = me;
 
-  // Update compliance tab visibility
-  _interviewPassed = interview && interview.status === 'passed';
-  document.getElementById('navCompliance').style.display = _interviewPassed ? '' : 'none';
-
-  // ── Today's Schedule ──
   const scheduleEl = document.getElementById('todayScheduleContent');
   const DAY_MAP = { 0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat' };
   const DAY_ZH  = { Mon:'周一',Tue:'周二',Wed:'周三',Thu:'周四',Fri:'周五',Sat:'周六',Sun:'周日' };
@@ -990,128 +971,13 @@ async function loadInterview() {
         </div>
         ${workDays.length ? `<div style="font-size:.8rem;color:var(--gray-400)">本职位工作日：${workDays.map(d=>DAY_ZH[d]||d).join('、')}</div>` : ''}`;
     }
-    document.getElementById('interviewSection').style.display = 'none';
   } else {
     scheduleEl.innerHTML = `
       <div style="padding:.9rem 0;color:var(--gray-500);font-size:.9rem">
         <div style="margin-bottom:.4rem">${todayStr}</div>
-        <div>暂无有效工作安排。面试通过后 HR 将为您分配工作。</div>
+        <div>暂无有效工作安排，请联系 HR。</div>
       </div>`;
-    document.getElementById('interviewSection').style.display = '';
   }
-
-  // Status card
-  const statusCard = document.getElementById('interviewStatusCard');
-  const statusContent = document.getElementById('interviewStatusContent');
-  const slotsCard = document.getElementById('interviewSlotsCard');
-
-  if (interview && interview.status !== 'cancelled') {
-    statusCard.style.display = '';
-    const dt = new Date(interview.slot_datetime);
-    const dtStr = dt.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
-    const statusMap = {
-      scheduled: '<span style="color:#d97706;font-weight:700">⏳ 已预约</span>',
-      completed: '<span style="color:#6366f1;font-weight:700">✔ 面试完成</span>',
-      passed:    '<span style="color:#16a34a;font-weight:700">✅ 面试通过</span>',
-      failed:    '<span style="color:#dc2626;font-weight:700">❌ 未通过</span>',
-      cancelled: '<span style="color:#9ca3af;font-weight:700">已取消</span>',
-    };
-    let extra = '';
-    if (interview.status === 'passed' && interview.doc_request_token) {
-      extra = `<div style="margin-top:1rem;padding:1rem;background:#f0fdf4;border:1px solid #86efac;border-radius:8px">
-        <div style="font-weight:700;color:#15803d;margin-bottom:.5rem">🎉 恭喜通过面试！</div>
-        <div style="font-size:.85rem;color:#166534;margin-bottom:.75rem">请点击下方链接提交您的工作材料（SSN、工卡、驾照、W-9 税表）。</div>
-        <a href="/emp-docs?token=${interview.doc_request_token}" target="_blank"
-          style="display:inline-block;padding:.6rem 1.2rem;background:#16a34a;color:#fff;border-radius:8px;font-weight:700;font-size:.9rem;text-decoration:none">
-          📎 提交工作材料 →
-        </a>
-      </div>`;
-    } else if (interview.status === 'failed') {
-      extra = `<div style="margin-top:.75rem;font-size:.83rem;color:#dc2626">如有疑问请联系 HR。</div>`;
-    }
-    const contactLine = interview.contact_name ? `<div><span style="color:var(--gray-500)">联系人：</span>${esc(interview.contact_name)} ${interview.contact_phone ? esc(interview.contact_phone) : ''}</div>` : '';
-    const instrBlock = interview.instructions ? `<div style="margin-top:.5rem;padding:.6rem .8rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:.84rem;white-space:pre-line"><strong>📋 到达指引：</strong><br>${esc(interview.instructions)}</div>` : '';
-    statusContent.innerHTML = `
-      <div style="display:grid;gap:.5rem;font-size:.9rem">
-        <div><span style="color:var(--gray-500)">状态：</span>${statusMap[interview.status] || interview.status}</div>
-        <div><span style="color:var(--gray-500)">时间：</span><strong>${dtStr}</strong></div>
-        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span>${esc(interview.location)}</div>` : ''}
-        ${contactLine}
-        ${interview.duration_min ? `<div><span style="color:var(--gray-500)">时长：</span>${interview.duration_min} 分钟</div>` : ''}
-      </div>${instrBlock}${extra}`;
-    // Add cancel / reschedule buttons for scheduled interviews
-    if (interview.status === 'scheduled') {
-      statusContent.innerHTML += `
-        <div style="display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap">
-          <button class="btn btn-sky" style="font-size:.85rem;padding:.45rem 1rem" onclick="rescheduleInterview()">🔄 更改预约时间 / Reschedule</button>
-          <button class="btn" style="font-size:.85rem;padding:.45rem 1rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:8px;cursor:pointer" onclick="cancelInterview()">✖ 取消预约 / Cancel</button>
-        </div>`;
-    }
-    // Hide slot selection if already booked (not passed/failed/cancelled)
-    slotsCard.style.display = (interview.status === 'scheduled') ? 'none' : '';
-  } else {
-    statusCard.style.display = 'none';
-    slotsCard.style.display = '';
-  }
-
-  // Slots list - grouped by date
-  const list = document.getElementById('interviewSlotsList');
-  if (!slots || !slots.length) {
-    list.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无可用面试时间，请稍后再查看或联系 HR。</div>';
-    return;
-  }
-
-  // Cache slots for modal
-  _pendingSlotMap = {};
-  slots.forEach(s => { _pendingSlotMap[s.id] = s; });
-
-  // Group slots by date
-  const grouped = {};
-  slots.forEach(s => {
-    const dt = new Date(s.slot_datetime);
-    const dateKey = dt.toISOString().split('T')[0];
-    if (!grouped[dateKey]) grouped[dateKey] = { date: dt, slots: [] };
-    grouped[dateKey].slots.push(s);
-  });
-
-  let html = '';
-  for (const [dateKey, group] of Object.entries(grouped)) {
-    const dt = group.date;
-    const dateLabel = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-    // First slot's location info for the day header
-    const rep = group.slots[0];
-    const dayLocation = rep.location;
-    const dayContact = rep.contact_name;
-    const dayPhone = rep.contact_phone;
-    const dayInstr = rep.instructions;
-    html += `<div style="margin-bottom:1.5rem">
-      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.7rem 1rem;margin-bottom:.6rem">
-        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:${(dayContact||dayInstr)?'.5rem':'0'}">
-          <span style="font-size:1.2rem">📅</span>
-          <span style="font-weight:700;font-size:.95rem;color:#0c4a6e">${dateLabel}</span>
-        </div>
-        ${dayLocation ? `<div style="font-size:.82rem;color:#0369a1;margin-bottom:.2rem">📍 ${dayLocation}</div>` : ''}
-        ${dayContact ? `<div style="font-size:.82rem;color:var(--gray-600)">👤 ${dayContact}${dayPhone ? `&nbsp;&nbsp;📞 ${dayPhone}` : ''}</div>` : ''}
-        ${dayInstr ? `<div style="font-size:.8rem;color:var(--gray-500);margin-top:.3rem;white-space:pre-wrap;line-height:1.5">📋 ${dayInstr}</div>` : ''}
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">`;
-
-    group.slots.forEach(s => {
-      const sdt = new Date(s.slot_datetime);
-      const timeStr = sdt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
-      const remaining = s.max_bookings - s.booked_count;
-      const full = remaining <= 0;
-      html += `<button onclick="${full ? '' : `bookSlot(${s.id})`}" ${full ? 'disabled' : ''}
-        style="padding:.7rem .5rem;border:1px solid ${full?'var(--gray-200)':'#bae6fd'};border-radius:10px;background:${full?'#f9fafb':'#f0f9ff'};cursor:${full?'not-allowed':'pointer'};text-align:center;transition:all .15s">
-        <div style="font-weight:700;font-size:1rem;color:${full?'var(--gray-400)':'#0369a1'}">${timeStr}</div>
-        <div style="font-size:.75rem;color:${full?'var(--gray-400)':'#d97706'};margin-top:.2rem">${full ? '已满' : `剩余 ${remaining} 名额`}</div>
-        <div style="font-size:.72rem;color:var(--gray-400);margin-top:.1rem">${s.duration_min}分钟</div>
-      </button>`;
-    });
-
-    html += `</div></div>`;
-  }
-  list.innerHTML = html;
 }
 
 function bookSlot(slotId) {
