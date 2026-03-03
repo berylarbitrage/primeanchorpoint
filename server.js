@@ -1667,7 +1667,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   const workers = db.prepare(`
     SELECT w.*, e.first_name, e.last_name, e.employee_id as emp_code,
       e.pay_rate, e.pay_type, e.position, e.department,
-      (SELECT id FROM inquiries WHERE phone=w.phone OR (w.email!='' AND email=w.email) ORDER BY id DESC LIMIT 1) as linked_inquiry_id
+      COALESCE(w.linked_inquiry_id,
+        (SELECT id FROM inquiries WHERE phone=w.phone OR (w.email!='' AND email=w.email) ORDER BY id DESC LIMIT 1)
+      ) as linked_inquiry_id
     FROM worker_accounts w LEFT JOIN employees e ON w.employee_id=e.id ORDER BY w.id DESC
   `).all();
 
@@ -3122,7 +3124,8 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
     SELECT e.*,
       (SELECT COUNT(*) FROM time_entries t WHERE t.employee_id = e.id) as time_count,
       (SELECT COUNT(*) FROM employee_documents d WHERE d.employee_id = e.id) as doc_count,
-      (SELECT COUNT(*) FROM background_checks b WHERE b.employee_id = e.id) as bg_count
+      (SELECT COUNT(*) FROM background_checks b WHERE b.employee_id = e.id) as bg_count,
+      (SELECT worker_code FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as worker_code
     FROM employees e`;
   const params = [];
   if (req.userRole === 'manager' && pids.length) {
