@@ -30,7 +30,7 @@ async function validateAddress({ street, street2, city, state, zip }, { silent =
  * @param {string} address
  * @returns {Promise<{ proceed: boolean, standardized?: string }>}
  */
-async function validateAddressSingleField(address) {
+async function validateAddressSingleField(address, { silent = false } = {}) {
   if (!address || !address.trim()) return { proceed: true };
   try {
     const res = await fetch('/api/validate-address', {
@@ -40,7 +40,7 @@ async function validateAddressSingleField(address) {
     });
     if (!res.ok) return { proceed: true };
     const data = await res.json();
-    const result = _handleResult(data, { street: address.trim() });
+    const result = _handleResult(data, { street: address.trim() }, { silent });
     if (result.standardized) {
       const std = result.standardized;
       const parts = [std.street];
@@ -48,7 +48,7 @@ async function validateAddressSingleField(address) {
       const cityStateLine = [std.city, std.state].filter(Boolean).join(', ');
       const zipFull = std.zip + (std.zip4 ? '-' + std.zip4 : '');
       if (cityStateLine || zipFull) parts.push(cityStateLine + (cityStateLine && zipFull ? ' ' : '') + zipFull);
-      return { proceed: true, standardized: parts.join(', ') };
+      return { proceed: true, verified: true, standardized: parts.join(', ') };
     }
     return result;
   } catch (e) {
