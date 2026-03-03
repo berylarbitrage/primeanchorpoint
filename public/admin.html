@@ -243,7 +243,7 @@ tr:hover td{background:var(--sky-light)}
 #onboardingTaskList::-webkit-scrollbar-thumb:hover{background:#94a3b8}
 
 /* ── Worker table beautification ── */
-#accPanelWorker table{border-spacing:0 4px;border-collapse:separate;min-width:1600px}
+#accPanelWorker table{border-spacing:0 4px;border-collapse:separate;min-width:1900px}
 #accPanelWorker thead th{position:sticky;top:0;background:var(--white);z-index:1;padding:8px 10px;font-size:.7rem;white-space:nowrap}
 #accPanelWorker tbody td{padding:8px 10px;vertical-align:middle;font-size:.82rem}
 #accPanelWorker tbody tr{transition:box-shadow .15s}
@@ -267,6 +267,16 @@ tr:hover td{background:var(--sky-light)}
 .wa-abtn-primary:hover{background:#ddd6fe}
 .wa-abtn-edit{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
 .wa-abtn-edit:hover{background:#dbeafe}
+.wa-abtn-warn{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
+.wa-abtn-warn:hover{background:#ffedd5}
+.wa-abtn-green{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.wa-abtn-green:hover{background:#d1fae5}
+.wa-abtn-convert{background:#faf5ff;color:#7c3aed;border:1px solid #e9d5ff}
+.wa-abtn-convert:hover{background:#f3e8ff}
+.wa-abtn-reset{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
+.wa-abtn-reset:hover{background:#e0f2fe}
+.wa-abtn-del{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+.wa-abtn-del:hover{background:#fee2e2}
 .wa-more-wrap{position:relative}
 .wa-more-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--gray-200);background:var(--white);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--gray-600);transition:all .15s}
 .wa-more-btn:hover{background:var(--gray-100);border-color:var(--gray-400)}
@@ -6591,15 +6601,14 @@ async function loadWorkerAccounts() {
   document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w => {
     const c = w.compliance || {};
     const skills = w.skills || [];
-    // Build dropdown items
-    let menuItems = '';
-    if (!w.active) menuItems += `<button class="wa-dropdown-item" onclick="resendWorkerVerify(${w.id})">📨 重发验证</button>`;
-    if (w.active && w.suspended) menuItems += `<button class="wa-dropdown-item" onclick="suspendWorkerAccount(${w.id},0)">▶️ 恢复账户</button>`;
-    if (w.active && !w.suspended) menuItems += `<button class="wa-dropdown-item" onclick="suspendWorkerAccount(${w.id},1)">⏸️ 暂停账户</button>`;
-    if (!w.employee_id) menuItems += `<button class="wa-dropdown-item" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>🔄 转为正式员工</button>`;
-    menuItems += `<button class="wa-dropdown-item" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">🔑 发送重置链接</button>`;
-    menuItems += `<div class="wa-dropdown-sep"></div>`;
-    menuItems += `<button class="wa-dropdown-item danger" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除账户</button>`;
+    // Build inline action buttons
+    let extraBtns = '';
+    if (!w.active) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="resendWorkerVerify(${w.id})">📨 重发验证</button>`;
+    if (w.active && w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-green" onclick="suspendWorkerAccount(${w.id},0)">▶️ 恢复</button>`;
+    if (w.active && !w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="suspendWorkerAccount(${w.id},1)">⏸️ 暂停</button>`;
+    if (!w.employee_id) extraBtns += `<button class="btn btn-sm wa-abtn-convert" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>🔄 转员工</button>`;
+    extraBtns += `<button class="btn btn-sm wa-abtn-reset" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">🔑 重置</button>`;
+    extraBtns += `<button class="btn btn-sm wa-abtn-del" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除</button>`;
     return `<tr>
     <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div></td>
     <td style="font-size:.8rem;white-space:nowrap">${esc(w.phone||'—')}</td>
@@ -6623,10 +6632,7 @@ async function loadWorkerAccounts() {
       <div class="wa-actions">
         <button class="btn btn-sm wa-abtn-primary" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">📋 入职</button>
         <button class="btn btn-sm wa-abtn-edit" onclick="openWorkerDetailModal(${w.id})">✏️ 编辑</button>
-        <div class="wa-more-wrap">
-          <button class="wa-more-btn" onclick="toggleWorkerMenu(this)" title="更多操作">⋯</button>
-          <div class="wa-dropdown">${menuItems}</div>
-        </div>
+        ${extraBtns}
       </div>
     </td>
   </tr>`;}).join('') : '<tr><td colspan="13" class="empty">暂无工人账户</td></tr>';
