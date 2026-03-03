@@ -5,9 +5,10 @@
 /**
  * Validate structured address fields.
  * @param {{ street, street2, city, state, zip }} fields
- * @returns {Promise<{ proceed: boolean, standardized?: { street, street2, city, state, zip } }>}
+ * @param {{ silent?: boolean }} opts  silent=true suppresses the "not found" dialog
+ * @returns {Promise<{ proceed: boolean, skipped?: boolean, verified?: boolean, standardized?: object }>}
  */
-async function validateAddress({ street, street2, city, state, zip }) {
+async function validateAddress({ street, street2, city, state, zip }, { silent = false } = {}) {
   if (!street && !city && !zip) return { proceed: true };
   try {
     const res = await fetch('/api/validate-address', {
@@ -17,7 +18,7 @@ async function validateAddress({ street, street2, city, state, zip }) {
     });
     if (!res.ok) return { proceed: true };
     const data = await res.json();
-    return _handleResult(data, { street, city, state, zip });
+    return _handleResult(data, { street, city, state, zip }, { silent });
   } catch (e) {
     console.warn('[Google Address Validation] Error:', e);
     return { proceed: true };
@@ -56,14 +57,14 @@ async function validateAddressSingleField(address) {
   }
 }
 
-function _handleResult(data, original) {
-  if (data.skipped) return { proceed: true };
+function _handleResult(data, original, { silent = false } = {}) {
+  if (data.skipped) return { proceed: true, skipped: true };
 
   if (!data.valid) {
-    const addrStr = [original.street, original.city, original.state, original.zip].filter(Boolean).join(', ');
+    if (silent) return { proceed: true, verified: false };
     const proceed = confirm(
       '⚠️ 地址无法验证 / Address could not be verified\n\n' +
-      '输入地址 / Entered: ' + addrStr + '\n\n' +
+      '输入地址 / Entered: ' + [original.street, original.city, original.state, original.zip].filter(Boolean).join(', ') + '\n\n' +
       '该地址在 USPS 数据库中未找到匹配。\n' +
       'No match found in the USPS database.\n\n' +
       '是否仍要继续提交？/ Continue submitting anyway?'
@@ -98,6 +99,7 @@ function _handleResult(data, original) {
     if (useStd) {
       return {
         proceed: true,
+        verified: true,
         standardized: {
           street:  std.street  || '',
           street2: std.street2 || '',
@@ -109,5 +111,5 @@ function _handleResult(data, original) {
     }
   }
 
-  return { proceed: true };
+  return { proceed: true, verified: true };
 }

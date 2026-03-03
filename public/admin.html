@@ -2090,16 +2090,20 @@ tr:hover td{background:var(--sky-light)}
       <div class="field"><label>电话</label><input id="ePhone" placeholder="(555) 000-0000"></div>
       <div class="field"><label>邮箱</label><input id="eEmail" type="email" placeholder="email@example.com"></div>
     </div>
-    <div class="field"><label>街道地址 Street Address</label><input id="eAddr" placeholder="e.g. 123 Main St"></div>
-    <div class="field"><label>单元 / 楼层 Unit / Suite <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="eStreet2" placeholder="e.g. Apt 2B, Suite 100"></div>
+    <div class="field"><label>街道地址 Street Address</label><input id="eAddr" placeholder="e.g. 123 Main St" oninput="clearEmpAddrStatus()"></div>
+    <div class="field"><label>单元 / 楼层 Unit / Suite <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="eStreet2" placeholder="e.g. Apt 2B, Suite 100" oninput="clearEmpAddrStatus()"></div>
     <div class="field-row3">
-      <div class="field"><label>城市 City</label><input id="eCity" placeholder="Chicago"></div>
+      <div class="field"><label>城市 City</label><input id="eCity" placeholder="Chicago" oninput="clearEmpAddrStatus()"></div>
       <div class="field"><label>州 State</label>
-        <select id="eState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
+        <select id="eState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%" onchange="clearEmpAddrStatus()">
           <option value="">-- 州 --</option>
         </select>
       </div>
-      <div class="field"><label>邮编 ZIP</label><input id="eZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'')"></div>
+      <div class="field"><label>邮编 ZIP</label><input id="eZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');clearEmpAddrStatus()" onblur="autoVerifyEmpAddr()"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem">
+      <button type="button" class="btn btn-sm btn-outline" onclick="verifyEmpAddr()">🔍 验证地址 Verify</button>
+      <span id="eAddrStatus" style="font-size:.8rem;font-weight:600"></span>
     </div>
   </div>
   <div class="form-section">
@@ -4292,14 +4296,18 @@ function addPartnerAddr(addr) {
       <span style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em">地址</span>
       <button class="btn-rm" onclick="this.closest('.pa-addr-row').remove()" title="删除">✕</button>
     </div>
-    ${inp('pa-street','街道地址 *  e.g. 123 Main St',street)}
-    ${inp('pa-street2','单元 / 楼层  e.g. Ste 200（选填）',street2)}
+    ${inp('pa-street','街道地址 *  e.g. 123 Main St',street,'oninput="clearPartnerAddrStatus(this)"')}
+    ${inp('pa-street2','单元 / 楼层  e.g. Ste 200（选填）',street2,'oninput="clearPartnerAddrStatus(this)"')}
     <div style="display:grid;grid-template-columns:1fr 72px 100px;gap:.5rem">
-      ${inp('pa-city','城市 *  e.g. Chicago',city)}
-      <select class="pa-state" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
+      ${inp('pa-city','城市 *  e.g. Chicago',city,'oninput="clearPartnerAddrStatus(this)"')}
+      <select class="pa-state" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%" onchange="clearPartnerAddrStatus(this)">
         <option value="">州 *</option>${stateOptions}
       </select>
-      ${inp('pa-zip','ZIP *',zip,'maxlength="10" oninput="this.value=this.value.replace(/[^\\d-]/g,\'\')"')}
+      ${inp('pa-zip','ZIP *',zip,'maxlength="10" oninput="this.value=this.value.replace(/[^\\d-]/g,\'\');clearPartnerAddrStatus(this)" onblur="autoVerifyPartnerAddr(this)"')}
+    </div>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem">
+      <button type="button" class="btn btn-sm btn-outline" onclick="verifyPartnerAddr(this)">🔍 验证地址 Verify</button>
+      <span class="pa-addr-status" style="font-size:.8rem;font-weight:600"></span>
     </div>
     <div class="pa-err" style="color:var(--red);font-size:.78rem;display:none"></div>`;
   document.getElementById('pAddrList').appendChild(div);
@@ -4671,10 +4679,98 @@ function openEmpModal(id) {
     document.getElementById('addJobRecordBtn').style.display = 'none';
     document.getElementById('editEmpJobList').innerHTML = '<span style="color:var(--gray-400);font-size:.8rem">（新增员工后可在此添加就业记录）</span>';
   }
+  clearEmpAddrStatus();
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
 function closeEmpModal() { _convertFromWorkerId = null; guardClose('empModal'); }
+
+// ── Address verify helpers ──
+function _setAddrStatus(el, verified) {
+  if (!el) return;
+  if (verified === null || verified === undefined) { el.textContent = ''; return; }
+  if (verified) {
+    el.textContent = '✓ 已验证';
+    el.style.color = '#16a34a';
+  } else {
+    el.textContent = '⚠ 未能验证';
+    el.style.color = '#d97706';
+  }
+}
+
+function clearEmpAddrStatus() {
+  _setAddrStatus(document.getElementById('eAddrStatus'), null);
+}
+
+async function _doVerifyEmpAddr(silent) {
+  const street  = document.getElementById('eAddr').value.trim();
+  const street2 = document.getElementById('eStreet2').value.trim();
+  const city    = document.getElementById('eCity').value.trim();
+  const state   = document.getElementById('eState').value;
+  const zip     = document.getElementById('eZip').value.trim();
+  if (!street && !city && !zip) return;
+  const statusEl = document.getElementById('eAddrStatus');
+  statusEl.textContent = '验证中…';
+  statusEl.style.color = 'var(--gray-400)';
+  const result = await validateAddress({ street, street2, city, state, zip }, { silent });
+  if (result.skipped) { statusEl.textContent = ''; return; }
+  if (!result.proceed) { statusEl.textContent = ''; return; }
+  if (result.verified === false) { _setAddrStatus(statusEl, false); return; }
+  if (result.standardized) {
+    const s = result.standardized;
+    document.getElementById('eAddr').value  = s.street;
+    document.getElementById('eCity').value  = s.city;
+    document.getElementById('eZip').value   = s.zip;
+    fillStateSelect(document.getElementById('eState'), s.state);
+  }
+  _setAddrStatus(statusEl, true);
+}
+
+function verifyEmpAddr()    { _doVerifyEmpAddr(false); }
+function autoVerifyEmpAddr() {
+  if (!document.getElementById('eAddr').value.trim()) return;
+  _doVerifyEmpAddr(true);
+}
+
+function clearPartnerAddrStatus(el) {
+  const row = el.closest('.pa-addr-row');
+  if (row) _setAddrStatus(row.querySelector('.pa-addr-status'), null);
+}
+
+async function _doVerifyPartnerAddr(row, silent) {
+  const streetEl  = row.querySelector('.pa-street');
+  const street2El = row.querySelector('.pa-street2');
+  const cityEl    = row.querySelector('.pa-city');
+  const stateEl   = row.querySelector('.pa-state');
+  const zipEl     = row.querySelector('.pa-zip');
+  const statusEl  = row.querySelector('.pa-addr-status');
+  const street = streetEl.value.trim();
+  const city   = cityEl.value.trim();
+  const zip    = zipEl.value.trim();
+  if (!street && !city && !zip) return;
+  if (statusEl) { statusEl.textContent = '验证中…'; statusEl.style.color = 'var(--gray-400)'; }
+  const result = await validateAddress({
+    street, street2: street2El ? street2El.value.trim() : '', city, state: stateEl.value, zip
+  }, { silent });
+  if (result.skipped) { if (statusEl) statusEl.textContent = ''; return; }
+  if (!result.proceed) { if (statusEl) statusEl.textContent = ''; return; }
+  if (result.verified === false) { _setAddrStatus(statusEl, false); return; }
+  if (result.standardized) {
+    const s = result.standardized;
+    streetEl.value = s.street;
+    cityEl.value   = s.city;
+    stateEl.value  = s.state;
+    zipEl.value    = s.zip;
+  }
+  _setAddrStatus(statusEl, true);
+}
+
+function verifyPartnerAddr(btn) { _doVerifyPartnerAddr(btn.closest('.pa-addr-row'), false); }
+function autoVerifyPartnerAddr(zipInput) {
+  const row = zipInput.closest('.pa-addr-row');
+  if (!row.querySelector('.pa-street').value.trim()) return;
+  _doVerifyPartnerAddr(row, true);
+}
 
 // ── Job records within employee edit modal ──
 async function loadEditEmpJobRecords(empId) {
