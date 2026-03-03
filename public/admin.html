@@ -2328,6 +2328,21 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- ── Danger Confirm Modal ── -->
+<!-- Generic Confirm Modal -->
+<div class="modal-bg" id="genericConfirmModal"><div class="modal" style="max-width:400px">
+  <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.1rem">
+    <div id="gcmIcon" style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"></div>
+    <div>
+      <h2 id="gcmTitle" style="margin:0;font-size:1.05rem"></h2>
+      <p id="gcmDesc" style="margin:.25rem 0 0;font-size:.84rem;color:var(--gray-600)"></p>
+    </div>
+  </div>
+  <div style="display:flex;gap:.65rem;justify-content:flex-end">
+    <button class="btn btn-outline" onclick="closeGenericConfirm()">取消</button>
+    <button class="btn" id="gcmBtn" onclick="execGenericConfirm()">确认</button>
+  </div>
+</div></div>
+
 <div class="modal-bg" id="dangerConfirmModal"><div class="modal" style="max-width:420px">
   <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.1rem">
     <div style="width:44px;height:44px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -2351,6 +2366,29 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <script>
+let _gcmCallback = null;
+function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor) {
+  const colors = {
+    blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
+    green: { bg:'#D1FAE5', stroke:'#059669', title:'#065F46' },
+    red:   { bg:'#FEE2E2', stroke:'#DC2626', title:'#B91C1C' },
+    amber: { bg:'#FEF3C7', stroke:'#D97706', title:'#92400E' }
+  };
+  const c = colors[iconColor] || colors.blue;
+  document.getElementById('gcmIcon').style.background = c.bg;
+  document.getElementById('gcmIcon').innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c.stroke}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+  document.getElementById('gcmTitle').textContent = title;
+  document.getElementById('gcmTitle').style.color = c.title;
+  document.getElementById('gcmDesc').textContent = desc;
+  const btn = document.getElementById('gcmBtn');
+  btn.textContent = btnText;
+  btn.className = 'btn ' + (btnClass || 'btn-green');
+  _gcmCallback = onConfirm;
+  document.getElementById('genericConfirmModal').classList.add('show');
+}
+function closeGenericConfirm() { document.getElementById('genericConfirmModal').classList.remove('show'); _gcmCallback = null; }
+async function execGenericConfirm() { const cb = _gcmCallback; closeGenericConfirm(); if (cb) await cb(); }
+
 let TOKEN = '';
 let USER_ROLE = '';
 let USER_NAME = '';
@@ -6725,13 +6763,18 @@ async function initOnboarding() {
   refreshOnboardingModal();
 }
 
-async function toggleOnboardingVisibility(key, visible) {
-  const msg = visible
-    ? '确认要将此任务发送给工人吗？\nSend this task to the worker?'
-    : '确认要取消发送（对工人隐藏）吗？\nHide this task from the worker?';
-  if (!confirm(msg)) return;
-  await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}/visibility`, { method:'PUT', body:JSON.stringify({ visible }) });
-  refreshOnboardingModal();
+function toggleOnboardingVisibility(key, visible) {
+  if (visible) {
+    showConfirmModal('发送给工人', '确认要将此任务发送给工人吗？工人将可以在门户中看到此任务。', '确认发送', 'btn-green', async () => {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}/visibility`, { method:'PUT', body:JSON.stringify({ visible: 1 }) });
+      refreshOnboardingModal();
+    }, 'green');
+  } else {
+    showConfirmModal('取消发送', '确认要对工人隐藏此任务吗？工人将无法在门户中看到此任务。', '确认隐藏', 'btn-red', async () => {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}/visibility`, { method:'PUT', body:JSON.stringify({ visible: 0 }) });
+      refreshOnboardingModal();
+    }, 'amber');
+  }
 }
 
 async function updateOnboardingTask(key, status, note, actionUrl) {
