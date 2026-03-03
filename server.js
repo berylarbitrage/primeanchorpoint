@@ -1772,26 +1772,48 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
     const result = await createPersonaInquiry(workerId, w.name || w.username, w.phone);
     if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
-    if (!result.link) return res.status(500).json({ error: 'Persona 验证已创建但未获取到 session token，无法生成验证链接' });
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(result.inquiryId, workerId);
+    // Store in worker_compliance_docs so worker portal compliance tab can pick it up
+    const compFormData = JSON.stringify({ persona_inquiry_id: result.inquiryId, persona_status: 'created', persona_session_token: result.sessionToken || '', persona_hosted_url: result.link || '' });
+    const existingDoc = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(workerId);
+    if (existingDoc) {
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .run(compFormData, existingDoc.id);
+    } else {
+      db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'drivers_license', ?, 'pending')")
+        .run(workerId, compFormData);
+    }
     // Mark onboarding step as pending + visible
     db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
       VALUES (?,'persona_verify','pending',1,?,?,CURRENT_TIMESTAMP)
-      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, updated_at=CURRENT_TIMESTAMP`)
-      .run(workerId, '已发送 Persona 验证链接', result.link);
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, '已发送 Persona 验证链接', result.link || '');
     // Send SMS
-    const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照+自拍+SSN）以继续入职流程。点击链接在手机完成：${result.link}`;
-    const smsSent = await sendSMS(w.phone, smsText);
+    let smsSent = false;
+    if (w.phone) {
+      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照+自拍+SSN）以继续入职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      smsSent = await sendSMS(w.phone, smsText);
+    }
     // Send email
+    let emailSent = false;
     if (w.email) {
-      await sendEmail(w.email,
+      const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+      emailSent = await sendEmail(w.email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证：${result.link}`,
-        `<p>您好 ${w.name||w.username||''}，</p><p>HR 已为您发起身份验证。请在手机上点击以下链接，按提示上传驾照、完成自拍及 SSN 核验：</p><p><a href="${result.link}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.link}</p>`
+        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
+        `<p>您好 ${w.name||w.username||''}，</p>
+         <p>HR 已为您发起身份验证（驾照 + 自拍 + SSN 核验）。您可以通过以下任一方式完成：</p>
+         <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
+           <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
+           ${result.link ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${result.link}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
+           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.link}</span></td></tr>` : ''}
+         </table>`
       );
     }
-    res.json({ success: true, smsSent, inquiryId: result.inquiryId, link: result.link });
+    res.json({ success: true, smsSent, emailSent, portalReady: true, inquiryId: result.inquiryId, link: result.link || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -5098,19 +5120,46 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
     const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
     if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
-    if (!result.link) return res.status(500).json({ error: 'Persona 验证已创建但未获取到 session token，无法生成验证链接' });
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(result.inquiryId, interview.worker_id);
-    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍+SSN）以继续求职流程。点击链接在手机完成：${result.link}`;
-    const smsSent = await sendSMS(interview.worker_phone, smsText);
+    // Sync to worker_compliance_docs for portal
+    const compFormData = JSON.stringify({ persona_inquiry_id: result.inquiryId, persona_status: 'created', persona_session_token: result.sessionToken || '', persona_hosted_url: result.link || '' });
+    const existingDoc = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(interview.worker_id);
+    if (existingDoc) {
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(compFormData, existingDoc.id);
+    } else {
+      db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'drivers_license', ?, 'pending')").run(interview.worker_id, compFormData);
+    }
+    // Sync onboarding
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
+      VALUES (?,'persona_verify','pending',1,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(interview.worker_id, '已发送 Persona 验证链接', result.link || '');
+    // Send SMS
+    let smsSent = false;
+    if (interview.worker_phone) {
+      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍+SSN）以继续求职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      smsSent = await sendSMS(interview.worker_phone, smsText);
+    }
+    // Send email
+    let emailSent = false;
     if (interview.worker_email) {
-      await sendEmail(interview.worker_email,
+      const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+      emailSent = await sendEmail(interview.worker_email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证：${result.link}`,
-        `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请在手机上点击以下链接，按提示上传驾照、完成自拍及 SSN 核验：</p><p><a href="${result.link}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.link}</p>`
+        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
+        `<p>您好 ${interview.worker_name||''}，</p>
+         <p>HR 已为您发起身份验证（驾照 + 自拍 + SSN 核验）。您可以通过以下任一方式完成：</p>
+         <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
+           <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
+           ${result.link ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${result.link}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
+           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.link}</span></td></tr>` : ''}
+         </table>`
       );
     }
-    res.json({ success: true, smsSent, inquiryId: result.inquiryId, link: result.link });
+    res.json({ success: true, smsSent, emailSent, portalReady: true, inquiryId: result.inquiryId, link: result.link || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
