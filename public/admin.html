@@ -4330,11 +4330,14 @@ function editAssignment(a) { openAssignModal(a); }
 async function saveAssignment() {
   // Use module-level _editingAssignment as authoritative source for IDs
   const ea = _editingAssignment;
-  const id = document.getElementById('assignId').value || (ea ? ea.id : '');
+  // id: hidden field first, fall back to stored assignment
+  const id = document.getElementById('assignId').value || (ea ? String(ea.id) : '');
+  const isNew = !id;
   const benefits = [...document.querySelectorAll('#aBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const data = {
-    inquiry_id: document.getElementById('aInquiryId').value || (ea ? ea.inquiry_id : ''),
-    job_id:     document.getElementById('aJobId').value     || (ea ? ea.job_id     : ''),
+    // For editing, always use stored IDs as definitive source
+    inquiry_id: isNew ? document.getElementById('aInquiryId').value : (ea ? ea.inquiry_id : document.getElementById('aInquiryId').value),
+    job_id:     isNew ? document.getElementById('aJobId').value     : (ea ? ea.job_id     : document.getElementById('aJobId').value),
     status: document.getElementById('aStatus').value,
     notes: document.getElementById('aNotes').value,
     start_date: document.getElementById('aStartDate').value,
@@ -4344,7 +4347,11 @@ async function saveAssignment() {
     benefits,
     work_schedule: getSchedJson()
   };
-  if (!id && (!data.inquiry_id || !data.job_id)) return alert('请搜索并选择人员和职位');
+  // Only require person/job selection for brand-new assignments
+  if (isNew && (!data.inquiry_id || !data.job_id)) {
+    document.getElementById('assignModal').querySelector('.modal').scrollTop = 0;
+    return alert('请先选择人员和职位');
+  }
   // Dispatch-ready guard
   const ws = await api(`/admin/inquiries/${data.inquiry_id}/worker-status`).catch(()=>null);
   if (ws && !ws.dispatch_ready) {
