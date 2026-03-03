@@ -4846,6 +4846,13 @@ app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
 });
 
+// ─── Legal pages ───
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
+app.get('/background-check-disclosure', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-disclosure.html')));
+app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-consent.html')));
+app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'public', 'data-deletion.html')));
+
 // POST /api/docusign/webhook — DocuSign Connect event notifications
 app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
   try {
