@@ -1689,13 +1689,19 @@ async function loadCompliance() {
     const label = DOC_LABELS[item.type];
     const d = item.doc;
     const status = d ? (d.status || d.result || 'pending') : 'not_submitted';
-    const statusLabel = STATUS_LABELS[status] || status;
-    const statusClass = STATUS_CLASS[status] || 'ci-not-submitted';
+    // For drivers_license (Persona): if inquiry created but user hasn't completed verification,
+    // show "待验证" status and allow action button
+    const personaAwaitingUser = item.type === 'drivers_license' && status === 'pending'
+      && pStatus && pStatus.persona_status === 'created';
+    const statusLabel = personaAwaitingUser ? '待验证' : (STATUS_LABELS[status] || status);
+    const statusClass = personaAwaitingUser ? 'ci-pending' : (STATUS_CLASS[status] || 'ci-not-submitted');
     const date = d && d.created_at ? d.created_at.slice(0, 10) : '';
     const note = d && d.reviewer_notes ? `<div class="ci-note">${esc(d.reviewer_notes)}</div>` : '';
-    const canSubmit = !d || status === 'not_submitted' || status === 'rejected';
+    const canSubmit = !d || status === 'not_submitted' || status === 'rejected' || personaAwaitingUser;
+    let actionBtnLabel = d && status === 'rejected' ? '重新提交' : '填写提交';
+    if (personaAwaitingUser) actionBtnLabel = '开始验证';
     const actionBtn = item.action && canSubmit
-      ? `<button class="btn btn-sky" onclick="${item.action}" style="margin-top:.75rem;font-size:.8rem">${d && status === 'rejected' ? '重新提交' : '填写提交'}</button>`
+      ? `<button class="btn btn-sky" onclick="${item.action}" style="margin-top:.75rem;font-size:.8rem">${actionBtnLabel}</button>`
       : '';
 
     html += `<div class="compliance-item">
@@ -1742,6 +1748,13 @@ async function showDLForm() {
         document.getElementById('personaChoiceScreen').style.display = 'none';
         document.getElementById('personaEmbeddedScreen').style.display = 'none';
         document.getElementById('personaOtherPlatformScreen').style.display = 'none';
+      } else if (status.status === 'pending' && status.persona_status === 'created') {
+        // Inquiry created but user hasn't completed verification yet
+        box.style.display = '';
+        box.style.background = '#eff6ff';
+        box.style.border = '1px solid #93c5fd';
+        box.innerHTML = '<div style="color:#1d4ed8;font-weight:700">📋 请完成身份验证 / Please Complete ID Verification</div><div style="font-size:.82rem;color:#1e40af;margin-top:.3rem">HR 已为您发起身份验证，请选择以下方式完成验证。<br>HR has initiated identity verification. Please choose a method below to complete it.</div>';
+        document.getElementById('personaStartBtn').textContent = '🖥️ 开始验证 / Start Verification';
       } else if (status.status === 'pending') {
         box.style.display = '';
         box.style.background = '#fefce8';
