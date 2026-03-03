@@ -1773,6 +1773,13 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
     const result = await createPersonaInquiry(workerId, w.name || w.username, w.phone);
     if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    // Auto-add drivers_license to assigned_tasks so compliance tab shows it
+    let curTasks = [];
+    try { curTasks = JSON.parse(w.assigned_tasks || '[]'); } catch {}
+    if (!curTasks.includes('drivers_license')) {
+      curTasks.push('drivers_license');
+      db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(curTasks), workerId);
+    }
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(result.inquiryId, workerId);
     // Store in worker_compliance_docs so worker portal compliance tab can pick it up
@@ -5140,6 +5147,14 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
     const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
     if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    // Auto-add drivers_license to assigned_tasks
+    const wAcct = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(interview.worker_id);
+    let curTasks = [];
+    try { curTasks = JSON.parse(wAcct?.assigned_tasks || '[]'); } catch {}
+    if (!curTasks.includes('drivers_license')) {
+      curTasks.push('drivers_license');
+      db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(curTasks), interview.worker_id);
+    }
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(result.inquiryId, interview.worker_id);
     // Sync to worker_compliance_docs for portal
