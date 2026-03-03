@@ -950,6 +950,24 @@ async function showApp() {
   const name = me.employee ? `${me.employee.first_name} ${me.employee.last_name}` : me.account.username;
   document.getElementById('workerNameDisplay').textContent = name;
 
+  // If persona verification is still pending, actively check Persona API for latest status
+  if (personaStatus && personaStatus.status === 'pending') {
+    wApi('/persona/poll-status', { method: 'POST' }).then(pollResult => {
+      if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted' || pollResult.updated)) {
+        // Status changed — refresh UI
+        const _pInit2 = true;
+        document.getElementById('navCompliance').style.display = '';
+        // Refresh active tab if on todos or compliance
+        const activeTab = document.querySelector('.nav-btn.active');
+        if (activeTab) {
+          const t = activeTab.dataset.tab;
+          if (t === 'todos') loadOnboarding();
+          else if (t === 'compliance') loadCompliance();
+        }
+      }
+    });
+  }
+
   // Show compliance tab if interview passed OR persona verification has been initiated
   _interviewPassed = interview && interview.status === 'passed';
   const _personaInitiated = personaStatus && personaStatus.status !== 'not_started';
@@ -1681,7 +1699,14 @@ const STATUS_CLASS = { pending: 'ci-pending', approved: 'ci-approved', rejected:
 async function loadCompliance() {
   const grid = document.getElementById('complianceOverview');
   // Check if persona verification has been initiated
-  const pStatus = await wApi('/persona/status');
+  let pStatus = await wApi('/persona/status');
+  // If still pending, actively check Persona API for latest status
+  if (pStatus && pStatus.status === 'pending') {
+    const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
+    if (pollResult && pollResult.updated) {
+      pStatus = { ...pStatus, status: pollResult.status, persona_status: pollResult.persona_status };
+    }
+  }
   const personaInitiated = pStatus && pStatus.status !== 'not_started';
   if (!_interviewPassed && !personaInitiated) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2.5rem 1rem">
@@ -2204,12 +2229,22 @@ async function submitW9(e) {
 
 // ─── Onboarding / 待办事项 ───
 async function loadOnboarding() {
-  const tasks = await wApi('/onboarding');
+  let tasks = await wApi('/onboarding');
   const list = document.getElementById('onboardingList');
   if (!tasks) return;
   if (!tasks.length) {
     list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
     return;
+  }
+  // If persona_verify is still pending, actively check Persona API for latest status
+  const personaTask = tasks.find(t => t.key === 'persona_verify' && t.status === 'pending');
+  if (personaTask) {
+    const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
+    if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted' || pollResult.updated)) {
+      // Status was updated — reload tasks to get fresh data
+      tasks = await wApi('/onboarding');
+      if (!tasks) return;
+    }
   }
   const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
