@@ -117,8 +117,8 @@ async function createPersonaInquiry(workerId, workerName, workerPhone) {
     if (!resp.ok) { console.error('[Persona] Create inquiry failed:', await resp.text()); return null; }
     const d = await resp.json();
     const inqId = d.data.id;
-    const token = d.data.attributes['session-token'];
-    return { inquiryId: inqId, sessionToken: token, link: `https://withpersona.com/verify?inquiry-id=${inqId}&session-token=${token}` };
+    const token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'] || '';
+    return { inquiryId: inqId, sessionToken: token, link: token ? `https://withpersona.com/verify?inquiry-id=${inqId}&session-token=${token}` : '' };
   } catch (e) { console.error('[Persona] createPersonaInquiry error:', e.message); return null; }
 }
 
@@ -132,7 +132,7 @@ async function resumePersonaInquiry(inquiryId) {
     });
     if (!resp.ok) return null;
     const d = await resp.json();
-    const token = d.data?.attributes?.['session-token'];
+    const token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'];
     return token ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${token}` : null;
   } catch (e) { return null; }
 }
@@ -1763,6 +1763,7 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
     const result = await createPersonaInquiry(workerId, w.name || w.username, w.phone);
     if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    if (!result.link) return res.status(500).json({ error: 'Persona 验证已创建但未获取到 session token，无法生成验证链接' });
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(result.inquiryId, workerId);
     // Mark onboarding step as pending + visible
@@ -5080,6 +5081,7 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
     const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
     if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    if (!result.link) return res.status(500).json({ error: 'Persona 验证已创建但未获取到 session token，无法生成验证链接' });
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(result.inquiryId, interview.worker_id);
     const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍+SSN）以继续求职流程。点击链接在手机完成：${result.link}`;
