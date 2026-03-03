@@ -779,6 +779,19 @@ db.exec(`CREATE TABLE IF NOT EXISTS enterprise_verification_codes (
 // Migrate: suspended flag for worker accounts (distinct from unverified)
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN assigned_tasks TEXT DEFAULT '[]'"); } catch {}
+// Migrate: city / state / worker_code / linked_inquiry_id (stored)
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN city TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN state TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN worker_code TEXT DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN linked_inquiry_id INTEGER DEFAULT NULL"); } catch {}
+// Backfill: assign worker_code + linked_inquiry_id to existing verified workers
+// (runs once on startup; activateWorkerAccount is idempotent — skips if code already set)
+setTimeout(() => {
+  try {
+    const unlinked = db.prepare("SELECT id FROM worker_accounts WHERE active=1 AND worker_code IS NULL").all();
+    unlinked.forEach(w => { try { activateWorkerAccount(w.id); } catch {} });
+  } catch {}
+}, 0);
 // Migrate: richer fields on job_applications
 try { db.exec("ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE job_applications ADD COLUMN work_auth_confirmed TEXT DEFAULT ''"); } catch {}
@@ -1156,6 +1169,60 @@ function nextEmployeeId(city, hireDate) {
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
   return `EMEE-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+}
+
+// ─── Auto-generate worker code: WORKER-CITY-MMDDYY-000001 ───
+function generateWorkerCode(city) {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const dateStr = mm + dd + yy;
+  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
+  const last = db.prepare("SELECT worker_code FROM worker_accounts WHERE worker_code LIKE 'WORKER-%' ORDER BY id DESC LIMIT 1").get();
+  let num = 1;
+  if (last) {
+    const parts = last.worker_code.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) num = lastNum + 1;
+  }
+  return `WORKER-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+}
+
+// ─── On verification: assign worker_code + ensure linked inquiry exists ───
+function activateWorkerAccount(accountId) {
+  const acc = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(accountId);
+  if (!acc) return;
+  // Generate worker_code if not already set
+  if (!acc.worker_code) {
+    const code = generateWorkerCode(acc.city);
+    db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
+  }
+  // Ensure a linked inquiry exists (by phone → email → name → create)
+  const normPhone = s => (s || '').replace(/\D/g, '');
+  const wPhone = normPhone(acc.phone);
+  const wEmail = (acc.email || '').toLowerCase();
+  const wName  = (acc.name || '').trim();
+  let inqId = null;
+  if (wPhone) {
+    const row = db.prepare('SELECT id FROM inquiries WHERE REPLACE(REPLACE(REPLACE(phone,\' \',\'\'),\'-\',\'\'),\'(\',\'\') LIKE ?').get('%' + wPhone + '%');
+    if (row) inqId = row.id;
+  }
+  if (!inqId && wEmail) {
+    const row = db.prepare('SELECT id FROM inquiries WHERE lower(email)=?').get(wEmail);
+    if (row) inqId = row.id;
+  }
+  if (!inqId && wName) {
+    const row = db.prepare('SELECT id FROM inquiries WHERE lower(trim(name))=?').get(wName.toLowerCase());
+    if (row) inqId = row.id;
+  }
+  if (!inqId) {
+    // No existing inquiry — create one so dispatch always works
+    const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
+    inqId = r.lastInsertRowid;
+  }
+  // Persist the link directly on the worker account
+  db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inqId, accountId);
 }
 
 // ─── Auto-generate employer ID: EMER-CITY-MMDDYY-000001 ───
@@ -4858,9 +4925,11 @@ app.get('/api/register/check', (req, res) => {
 
 app.post('/api/register/worker', async (req, res) => {
   try {
-  const { name, phone, email, dob, work_status, position_interests, password } = req.body;
+  const { name, phone, email, dob, work_status, position_interests, password, city, state } = req.body;
   if (!name || !phone || !email || !password)
     return res.status(400).json({ error: '请填写姓名、手机号、邮箱和密码 / Name, phone, email, and password are required' });
+  if (!city || !state)
+    return res.status(400).json({ error: '请填写城市和州 / City and state are required' });
   // Check phone or email uniqueness; allow re-registration only if previous account was never verified AND codes have expired
   const existing = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
   if (existing && existing.active) return res.status(400).json({ error: '该手机号或邮箱已注册 / An account with this phone or email already exists' });
@@ -4903,13 +4972,14 @@ app.post('/api/register/worker', async (req, res) => {
   const canEmail = !!(_sgKey || emailTransporter);
   const needsVerification = canSMS || canEmail;
 
-  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`)
-    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), needsVerification ? 0 : 1);
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, city, state, active)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1);
   const accountId = r.lastInsertRowid;
 
   if (!needsVerification) {
     // No verification channels configured — activate immediately and auto-login
+    activateWorkerAccount(accountId);
     const token = crypto.randomBytes(32).toString('hex');
     workerSessions.set(token, { created: Date.now(), workerId: accountId, employeeId: null });
     console.log(`[Register] Worker #${accountId} activated immediately (no verification channels configured)`);
@@ -5019,6 +5089,7 @@ app.post('/api/register/verify', async (req, res) => {
   // Activate account
   db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(account_id);
+  activateWorkerAccount(account_id);
   // Auto-login
   const token = crypto.randomBytes(32).toString('hex');
   workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
@@ -5059,6 +5130,7 @@ app.post('/api/register/verify-step', async (req, res) => {
   if (remaining.length === 0) {
     // All done — activate account and auto-login
     db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
+    activateWorkerAccount(account_id);
     const token = crypto.randomBytes(32).toString('hex');
     workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
     return res.json({ success: true, all_done: true, token });
