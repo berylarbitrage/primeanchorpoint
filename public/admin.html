@@ -1775,8 +1775,8 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field-row">
-    <div class="field"><label>上班时间</label><input type="time" id="jWorkStart"></div>
-    <div class="field"><label>下班时间</label><input type="time" id="jWorkEnd"></div>
+    <div class="field"><label>上班时间</label><input type="time" step="60" id="jWorkStart"></div>
+    <div class="field"><label>下班时间</label><input type="time" step="60" id="jWorkEnd"></div>
   </div>
 
   <div class="field">
@@ -4070,8 +4070,8 @@ function initSchedTable(schedJson) {
     const dis = off ? 'disabled' : '';
     return `<tr id="sched-row-${key}" class="${off ? 'is-off' : ''}">
       <td style="font-weight:600;white-space:nowrap">${label}</td>
-      <td><input type="time" id="sched-start-${key}" value="${d.start||''}" ${dis}></td>
-      <td><input type="time" id="sched-end-${key}" value="${d.end||''}" ${dis}></td>
+      <td><input type="time" step="60" id="sched-start-${key}" value="${(d.start||'').slice(0,5)}" ${dis}></td>
+      <td><input type="time" step="60" id="sched-end-${key}" value="${(d.end||'').slice(0,5)}" ${dis}></td>
       <td><input type="number" id="sched-breaks-${key}" min="0" max="9" value="${d.breaks??''}" placeholder="0"
         style="${SCHED_INP};width:54px;text-align:center" ${dis}
         oninput="renderBreakTimes('${key}')"></td>
@@ -4112,14 +4112,14 @@ function renderBreakTimes(key, savedTimes) {
   const dis = off ? 'disabled' : '';
   let html = '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">';
   for (let i = 0; i < count; i++) {
-    const s = (savedTimes && savedTimes[i]) ? savedTimes[i].start || '' : '';
-    const e = (savedTimes && savedTimes[i]) ? savedTimes[i].end   || '' : '';
+    const s = ((savedTimes && savedTimes[i]) ? savedTimes[i].start || '' : '').slice(0, 5);
+    const e = ((savedTimes && savedTimes[i]) ? savedTimes[i].end   || '' : '').slice(0, 5);
     html += `<span style="display:inline-flex;align-items:center;gap:.3rem;background:var(--sky-light);border:1px solid var(--gray-200);border-radius:6px;padding:.25rem .5rem;font-size:.8rem">
       <span style="color:var(--gray-500);white-space:nowrap">休息${i+1}</span>
-      <input type="time" id="sched-bt-s-${key}-${i}" value="${s}" ${dis}
+      <input type="time" step="60" id="sched-bt-s-${key}-${i}" value="${s}" ${dis}
         style="${SCHED_INP};width:88px">
       <span style="color:var(--gray-400)">—</span>
-      <input type="time" id="sched-bt-e-${key}-${i}" value="${e}" ${dis}
+      <input type="time" step="60" id="sched-bt-e-${key}-${i}" value="${e}" ${dis}
         style="${SCHED_INP};width:88px">
     </span>`;
   }
@@ -4218,15 +4218,18 @@ function schedCopyApply() {
   if (!fromKey) return;
 
   // Read all source values up-front
-  const srcStart  = document.getElementById('sched-start-'  + fromKey).value;
-  const srcEnd    = document.getElementById('sched-end-'    + fromKey).value;
+  const srcStart  = (document.getElementById('sched-start-'  + fromKey).value || '').slice(0, 5);
+  const srcEnd    = (document.getElementById('sched-end-'    + fromKey).value || '').slice(0, 5);
   const srcBreaks = document.getElementById('sched-breaks-' + fromKey).value;
   const srcCount  = parseInt(srcBreaks) || 0;
   const srcBts = [];
   for (let i = 0; i < srcCount; i++) {
     const bs = document.getElementById(`sched-bt-s-${fromKey}-${i}`);
     const be = document.getElementById(`sched-bt-e-${fromKey}-${i}`);
-    srcBts.push({ start: bs ? bs.value : '', end: be ? be.value : '' });
+    srcBts.push({
+      start: (bs ? bs.value : '').slice(0, 5),
+      end:   (be ? be.value : '').slice(0, 5)
+    });
   }
 
   const copied = [];
@@ -6397,10 +6400,10 @@ function buildTsRows() {
     const dateLabel = `${d.getMonth()+1}/${d.getDate()}`;
     html += `<tr data-date="${dateStr}">
       <td class="day-label">${label}<small>${dateLabel} ${dateStr}</small></td>
-      <td><input type="time" class="ts-in" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
-      <td><input type="time" class="ts-out" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
-      <td><input type="time" class="ts-lunch-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
-      <td><input type="time" class="ts-lunch-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" step="60" class="ts-in" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" step="60" class="ts-out" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" step="60" class="ts-lunch-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td><input type="time" step="60" class="ts-lunch-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
       <td class="ts-hours">—</td>
       <td class="ts-hours">—</td>
       <td class="ts-ot">—</td>
