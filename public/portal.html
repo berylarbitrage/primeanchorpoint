@@ -903,15 +903,16 @@ let _pendingSlot = null;
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  const [me, interview] = await Promise.all([wApi('/me'), wApi('/interview')]);
+  const [me, interview, personaStatus] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status')]);
   if (!me) return;
   _workerInfo = me;
   const name = me.employee ? `${me.employee.first_name} ${me.employee.last_name}` : me.account.username;
   document.getElementById('workerNameDisplay').textContent = name;
 
-  // Only show compliance tab if interview passed
+  // Show compliance tab if interview passed OR persona verification has been initiated
   _interviewPassed = interview && interview.status === 'passed';
-  document.getElementById('navCompliance').style.display = _interviewPassed ? '' : 'none';
+  const _personaInitiated = personaStatus && personaStatus.status !== 'not_started';
+  document.getElementById('navCompliance').style.display = (_interviewPassed || _personaInitiated) ? '' : 'none';
   // Show todos tab (always visible for logged-in workers)
   document.getElementById('navTodos').style.display = '';
 
@@ -941,9 +942,11 @@ async function loadInterview() {
   ]);
   if (me) _workerInfo = me;
 
-  // Update compliance tab visibility
+  // Update compliance tab visibility (also show if persona verification initiated)
   _interviewPassed = interview && interview.status === 'passed';
-  document.getElementById('navCompliance').style.display = _interviewPassed ? '' : 'none';
+  const _pStatus = await wApi('/persona/status');
+  const _pInit = _pStatus && _pStatus.status !== 'not_started';
+  document.getElementById('navCompliance').style.display = (_interviewPassed || _pInit) ? '' : 'none';
 
   // Status card
   const statusCard = document.getElementById('interviewStatusCard');
@@ -1707,7 +1710,10 @@ const STATUS_CLASS = { pending: 'ci-pending', approved: 'ci-approved', rejected:
 
 async function loadCompliance() {
   const grid = document.getElementById('complianceOverview');
-  if (!_interviewPassed) {
+  // Check if persona verification has been initiated
+  const pStatus = await wApi('/persona/status');
+  const personaInitiated = pStatus && pStatus.status !== 'not_started';
+  if (!_interviewPassed && !personaInitiated) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2.5rem 1rem">
       <div style="font-size:2.5rem;margin-bottom:.75rem">🔒</div>
       <div style="font-weight:700;font-size:1.05rem;color:var(--gray-600);margin-bottom:.5rem">合规文件尚未开放</div>
@@ -1828,6 +1834,13 @@ async function showDLForm() {
 function hideDLForm() { document.getElementById('dlFormCard').style.display = 'none'; }
 function showW9Form() { document.getElementById('w9FormCard').style.display = ''; }
 function hideW9Form() { document.getElementById('w9FormCard').style.display = 'none'; }
+
+// Open Persona verification from onboarding tab — switch to compliance and auto-show DL form
+async function openPersonaInPortal() {
+  showTab('compliance');
+  // Wait a tick for loadCompliance to finish, then open DL form
+  setTimeout(() => showDLForm(), 300);
+}
 
 // ── Persona Verification ──
 let _personaClient = null;
@@ -2169,7 +2182,7 @@ async function loadOnboarding() {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openInterviewBookModal()">去预约面试</button>`;
       } else if (t.key === 'persona_verify') {
         actionHtml = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
-          <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="showTab('compliance')">🖥️ 在Portal中验证</button>
+          <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="openPersonaInPortal()">🖥️ 在Portal中验证</button>
           ${t.action_url ? `<a class="btn" style="font-size:.8rem;padding:.3rem .75rem;text-decoration:none;display:inline-block;background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5" href="${esc(t.action_url)}" target="_blank">🔗 打开链接验证</a>` : ''}
         </div>`;
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
