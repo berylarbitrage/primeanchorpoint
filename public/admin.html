@@ -99,14 +99,12 @@ tr:hover td{background:var(--sky-light)}
 .assign-dropdown .adrop-item:hover,.assign-dropdown .adrop-item.focused{background:var(--sky-light)}
 .assign-dropdown .adrop-item small{display:block;color:var(--gray-500);font-size:.75rem}
 /* Dispatch job picker floating dropdown */
-#dispatchJobPicker{position:fixed;z-index:3000;background:#fff;border:1px solid var(--gray-300);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.14);min-width:240px;max-width:320px;max-height:300px;overflow-y:auto;display:none}
-#dispatchJobPicker.open{display:block}
-#dispatchJobPicker .djp-header{padding:.55rem .85rem;font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--gray-500);border-bottom:1px solid var(--gray-100);letter-spacing:.04em}
-#dispatchJobPicker .djp-item{padding:.55rem .85rem;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.84rem}
-#dispatchJobPicker .djp-item:last-child{border-bottom:none}
-#dispatchJobPicker .djp-item:hover{background:var(--sky-light)}
-#dispatchJobPicker .djp-item strong{display:block}
-#dispatchJobPicker .djp-item small{color:var(--gray-500);font-size:.75rem}
+.djp-item{padding:.75rem 1.5rem;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.88rem;transition:background .1s}
+.djp-item:last-child{border-bottom:none}
+.djp-item:hover{background:var(--sky-light)}
+.djp-item strong{display:block;margin-bottom:.15rem}
+.djp-item small{color:var(--gray-500);font-size:.78rem}
+.djp-empty{padding:1.5rem;text-align:center;color:var(--gray-400);font-size:.88rem}
 /* ── Toast notifications ── */
 #toastContainer{position:fixed;top:1.25rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
 .toast{display:flex;align-items:center;gap:.7rem;padding:.7rem 1.2rem;border-radius:12px;font-size:.9rem;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);pointer-events:auto;animation:toastIn .25s cubic-bezier(.34,1.56,.64,1) both}
@@ -4093,7 +4091,6 @@ function closeAssignDropdowns() {
 document.addEventListener('click', e => {
   if (!e.target.closest('#assignModal')) closeAssignDropdowns();
   if (!e.target.closest('#jPartnerDrop') && !e.target.closest('#jPartnerSearch')) document.getElementById('jPartnerDrop').classList.remove('open');
-  if (!e.target.closest('#dispatchJobPicker') && !e.target.closest('[onclick*="showDispatchJobPicker"]')) closeDispatchJobPicker();
 });
 
 function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
@@ -6979,7 +6976,7 @@ async function loadWorkerAccounts() {
       <div class="wa-actions">
         ${!w.dispatch_ready
           ? `<button class="btn btn-sm wa-abtn-primary" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">📋 入职</button>`
-          : `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick='showDispatchJobPicker(${JSON.stringify(w).replace(/'/g,"&#39;")}, this)'>📤 派工</button>`}
+          : `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick='showDispatchJobPicker(${JSON.stringify(w).replace(/'/g,"&#39;")})'>📤 派工</button>`}
         <button class="btn btn-sm wa-abtn-edit" onclick="openWorkerDetailModal(${w.id})">✏️ 编辑</button>
         ${extraBtns}
       </div>
@@ -7169,33 +7166,29 @@ function convertCurrentWorker() {
   if (_onboardingWorkerData) convertWorkerToEmployee(_onboardingWorkerData);
 }
 
-async function showDispatchJobPicker(w, btn) {
-  closeDispatchJobPicker();
-  const picker = document.getElementById('dispatchJobPicker');
-  picker.innerHTML = '<div class="djp-header">选择派工职位</div><div class="djp-item" style="color:var(--gray-400);font-size:.82rem;cursor:default">加载中…</div>';
-  const rect = btn.getBoundingClientRect();
-  picker.style.top = (rect.bottom + 6) + 'px';
-  picker.style.left = Math.min(rect.left, window.innerWidth - 340) + 'px';
-  picker.classList.add('open');
+async function showDispatchJobPicker(w) {
+  const list = document.getElementById('dispatchJobPickerList');
+  list.innerHTML = '<div class="djp-empty">加载中…</div>';
+  document.getElementById('dispatchJobPickerModal').classList.add('show');
+  document.getElementById('dispatchJobPickerModal')._worker = w;
 
   const allJobs = await api('/admin/jobs');
   const jobs = allJobs.filter(j => j.active);
   if (!jobs.length) {
-    picker.innerHTML = '<div class="djp-header">选择派工职位</div><div class="djp-item" style="color:var(--gray-400);font-size:.82rem;cursor:default">暂无已发布职位</div>';
+    list.innerHTML = '<div class="djp-empty">暂无已发布职位</div>';
     return;
   }
   const wJson = JSON.stringify(w).replace(/'/g, "&#39;");
-  picker.innerHTML = '<div class="djp-header">选择派工职位</div>' +
-    jobs.map(j =>
-      `<div class="djp-item" onclick='pickDispatchJob(${wJson}, ${j.id})'>
-        <strong>${esc(j.title)}</strong>
-        <small>${esc(j.location || '')}${j.pay ? ' · ' + esc(j.pay) : ''}${j.employment_type ? ' · ' + esc(j.employment_type) : ''}</small>
-      </div>`
-    ).join('');
+  list.innerHTML = jobs.map(j =>
+    `<div class="djp-item" onclick='pickDispatchJob(${wJson}, ${j.id})'>
+      <strong>${esc(j.title)}</strong>
+      <small>${esc(j.location || '')}${j.pay ? ' · ' + esc(j.pay) : ''}${j.employment_type ? ' · ' + esc(j.employment_type) : ''}</small>
+    </div>`
+  ).join('');
 }
 
 function closeDispatchJobPicker() {
-  document.getElementById('dispatchJobPicker').classList.remove('open');
+  document.getElementById('dispatchJobPickerModal').classList.remove('show');
 }
 
 async function pickDispatchJob(w, jobId) {
@@ -8442,7 +8435,13 @@ async function saveIntegration() {
 }
 
 </script>
-<!-- Dispatch job picker floating dropdown -->
-<div id="dispatchJobPicker"></div>
+<!-- Dispatch Job Picker Modal -->
+<div class="modal-bg" id="dispatchJobPickerModal">
+  <div class="modal" style="max-width:460px;padding-bottom:1.5rem">
+    <h2>选择派工职位</h2>
+    <div id="dispatchJobPickerList" style="max-height:380px;overflow-y:auto;margin:-.5rem -1.5rem 1.5rem;border-top:1px solid var(--gray-100)"></div>
+    <button class="btn btn-red" onclick="closeDispatchJobPicker()">取消</button>
+  </div>
+</div>
 </body>
 </html>
