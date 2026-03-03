@@ -523,6 +523,7 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN close_reason TEXT DEFAULT ''`); } cat
 try { db.exec(`ALTER TABLE jobs ADD COLUMN close_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN headcount INTEGER DEFAULT 1`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN pay_period TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN required_skills TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_availability TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_phone TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_email TEXT DEFAULT ''`); } catch(e) {}
@@ -3891,8 +3892,8 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json({ clocked_in: false, no_employee: true });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
   const activeJobs = db.prepare(`
-    SELECT ej.id, ej.job_id, j.title, j.company_name, j.site_id,
-           js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+    SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end, j.location, j.pay,
+           j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
     FROM employee_jobs ej
     JOIN jobs j ON ej.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
@@ -4727,21 +4728,32 @@ app.post('/api/register/verify', async (req, res) => {
 });
 
 // Verify one step at a time (phone first, then email)
-app.post('/api/register/verify-step', (req, res) => {
+app.post('/api/register/verify-step', async (req, res) => {
   const { account_id, type, code } = req.body;
   if (!account_id || !type || !code) return res.status(400).json({ error: 'account_id, type, and code required' });
   if (!['phone', 'email'].includes(type)) return res.status(400).json({ error: 'type must be phone or email' });
-  const acc = db.prepare('SELECT id, active, employee_id FROM worker_accounts WHERE id=?').get(account_id);
+  const acc = db.prepare('SELECT id, active, employee_id, phone FROM worker_accounts WHERE id=?').get(account_id);
   if (!acc) return res.status(404).json({ error: 'Account not found' });
   if (acc.active) return res.status(400).json({ error: 'Account already verified' });
   const now = new Date().toISOString();
-  const vc = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?')
-    .get(account_id, type, code, now);
+  const vc = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND expires_at>?')
+    .get(account_id, type, now);
   if (!vc) return res.status(400).json({
     error: type === 'phone'
       ? '手机验证码错误或已过期 / Invalid or expired phone code'
       : '邮箱验证码错误或已过期 / Invalid or expired email code'
   });
+  // Twilio Verify for phone
+  if (type === 'phone' && vc.code === '__twilio_verify__') {
+    const ok = await checkVerifyCode(acc.phone, code);
+    if (!ok) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+  } else if (vc.code !== code) {
+    return res.status(400).json({
+      error: type === 'phone'
+        ? '手机验证码错误或已过期 / Invalid or expired phone code'
+        : '邮箱验证码错误或已过期 / Invalid or expired email code'
+    });
+  }
   // This step verified — remove its code
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
   // Check remaining steps
@@ -4879,6 +4891,14 @@ app.get('/customer', (req, res) => {
 app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
 });
+
+// ─── Legal pages ───
+app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
+app.get('/terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'terms.html')));
+app.get('/background-check-disclosure', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-disclosure.html')));
+app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-consent.html')));
+app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'public', 'data-deletion.html')));
+app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
 
 // POST /api/docusign/webhook — DocuSign Connect event notifications
 app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {

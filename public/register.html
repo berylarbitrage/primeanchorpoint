@@ -157,6 +157,13 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
         </div>
       </div>
 
+      <div style="margin:.75rem 0 1rem;font-size:.8rem;color:var(--gray-500);line-height:1.5;padding:.75rem 1rem;background:#f8faff;border:1px solid #e0eaff;border-radius:8px">
+        <label style="display:flex;gap:.6rem;align-items:flex-start;cursor:pointer">
+          <input type="checkbox" id="wSmsConsent" style="margin-top:.2rem;flex-shrink:0">
+          <span id="lSmsConsent">By providing your phone number and checking this box, you consent to receive text messages (SMS) from Prime Anchorpoint at the number provided, including verification codes, job assignment alerts, schedule reminders, and HR notifications. Msg &amp; data rates may apply. Frequency varies. Reply STOP to unsubscribe, HELP for help. See <a href="/sms-terms" target="_blank" style="color:var(--sky)">SMS Terms</a> &amp; <a href="/privacy" target="_blank" style="color:var(--sky)">Privacy Policy</a>.</span>
+        </label>
+      </div>
+
       <button class="btn btn-submit" id="btnRegW" onclick="registerWorker()"></button>
     </div>
 
@@ -223,29 +230,45 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <button class="btn btn-submit" id="btnRegE" onclick="registerEnterprise()"></button>
     </div>
 
-    <!-- Verification step -->
-    <div id="workerVerify" style="display:none">
+    <!-- Step 1: Phone Verification -->
+    <div id="workerVerifyPhone" style="display:none">
       <div style="text-align:center;margin-bottom:1.5rem">
-        <div style="font-size:2rem;margin-bottom:.5rem">📱✉️</div>
-        <h2 id="verifyTitle" style="color:var(--blue);margin:0 0 .5rem"></h2>
-        <p id="verifyDesc" style="color:#666;font-size:.9rem"></p>
+        <div style="font-size:2rem;margin-bottom:.5rem">📱</div>
+        <h2 id="verifyPhoneTitle" style="color:var(--blue);margin:0 0 .5rem"></h2>
+        <p id="verifyPhoneDesc" style="color:#666;font-size:.9rem"></p>
       </div>
       <div class="field">
         <label id="lVPhone"></label>
-        <input type="text" id="vPhoneCode" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem">
+        <input type="text" id="vPhoneCode" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem" inputmode="numeric">
       </div>
       <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
         <a href="#" id="resendPhoneA" onclick="resendCode('phone');return false" style="font-size:.82rem;color:var(--sky)"></a>
       </div>
+      <button class="btn btn-submit" id="btnVerifyPhone" onclick="verifyStep('phone')"></button>
+      <p id="verifyPhoneHint" style="text-align:center;font-size:.82rem;color:#999;margin-top:.75rem"></p>
+    </div>
+
+    <!-- Step 2: Email Verification -->
+    <div id="workerVerifyEmail" style="display:none">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <div style="font-size:2rem;margin-bottom:.5rem">✉️</div>
+        <h2 id="verifyEmailTitle" style="color:var(--blue);margin:0 0 .5rem"></h2>
+        <p id="verifyEmailDesc" style="color:#666;font-size:.9rem"></p>
+      </div>
       <div class="field">
         <label id="lVEmail"></label>
-        <input type="text" id="vEmailCode" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem">
+        <input type="text" id="vEmailCode" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem" inputmode="numeric">
       </div>
       <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
         <a href="#" id="resendEmailA" onclick="resendCode('email');return false" style="font-size:.82rem;color:var(--sky)"></a>
       </div>
-      <button class="btn btn-submit" id="btnVerify" onclick="verifyWorker()"></button>
-      <p id="verifyHint" style="text-align:center;font-size:.82rem;color:#999;margin-top:.75rem"></p>
+      <button class="btn btn-submit" id="btnVerifyEmail" onclick="verifyStep('email')"></button>
+      <p id="verifyEmailHint" style="text-align:center;font-size:.82rem;color:#999;margin-top:.75rem"></p>
+    </div>
+
+    <!-- Legacy combined verify (hidden, kept for fallback) -->
+    <div id="workerVerify" style="display:none">
+      <p id="verifyHint"></p>
     </div>
 
     <!-- Success screens -->
@@ -313,10 +336,16 @@ const L = {
 
     verifyTitle:      '验证手机号和邮箱',
     verifyDesc:       '验证码已发送到您的手机和邮箱，请输入收到的6位数验证码。',
+    verifyPhoneTitle: '验证手机号',
+    verifyPhoneDesc:  '验证码已发送到您的手机，请输入收到的6位数验证码。',
+    verifyEmailTitle: '验证邮箱',
+    verifyEmailDesc:  '验证码已发送到您的邮箱，请输入收到的6位数验证码。',
     lVPhone:          '手机验证码',
     lVEmail:          '邮箱验证码',
     resendPhone:      '重新发送手机验证码',
     resendEmail:      '重新发送邮箱验证码',
+    btnVerifyPhone:   '验证手机号',
+    btnVerifyEmail:   '验证邮箱并完成注册',
     btnVerify:        '确认验证',
     verifyExpiry:     '验证码15分钟内有效',
     resendOkPhone:    '手机验证码已重新发送',
@@ -414,10 +443,16 @@ const L = {
 
     verifyTitle:      'Verify Phone & Email',
     verifyDesc:       'Verification codes have been sent to your phone and email. Please enter the 6-digit codes.',
+    verifyPhoneTitle: 'Verify Phone Number',
+    verifyPhoneDesc:  'A verification code has been sent to your phone. Please enter the 6-digit code.',
+    verifyEmailTitle: 'Verify Email Address',
+    verifyEmailDesc:  'A verification code has been sent to your email. Please enter the 6-digit code.',
     lVPhone:          'Phone Code',
     lVEmail:          'Email Code',
     resendPhone:      'Resend phone code',
     resendEmail:      'Resend email code',
+    btnVerifyPhone:   'Verify Phone',
+    btnVerifyEmail:   'Verify Email & Complete',
     btnVerify:        'Verify & Complete',
     verifyExpiry:     'Codes expire in 15 minutes',
     resendOkPhone:    'Phone code resent',
@@ -515,10 +550,16 @@ const L = {
 
     verifyTitle:      'Verificar Teléfono y Correo',
     verifyDesc:       'Se han enviado códigos de verificación a su teléfono y correo. Por favor ingrese los códigos de 6 dígitos.',
+    verifyPhoneTitle: 'Verificar Número de Teléfono',
+    verifyPhoneDesc:  'Se ha enviado un código de verificación a su teléfono. Por favor ingrese el código de 6 dígitos.',
+    verifyEmailTitle: 'Verificar Correo Electrónico',
+    verifyEmailDesc:  'Se ha enviado un código de verificación a su correo. Por favor ingrese el código de 6 dígitos.',
     lVPhone:          'Código de Teléfono',
     lVEmail:          'Código de Correo',
     resendPhone:      'Reenviar código de teléfono',
     resendEmail:      'Reenviar código de correo',
+    btnVerifyPhone:   'Verificar Teléfono',
+    btnVerifyEmail:   'Verificar Correo y Completar',
     btnVerify:        'Verificar y Completar',
     verifyExpiry:     'Los códigos expiran en 15 minutos',
     resendOkPhone:    'Código de teléfono reenviado',
@@ -710,15 +751,19 @@ function setLang(lang) {
   setText('lEPwd2', 'lPwd2');       setPh('ePassword2', 'phPwd2');
   setText('btnRegE', 'btnE');
 
-  // Verification step
-  setText('verifyTitle', 'verifyTitle');
-  setText('verifyDesc', 'verifyDesc');
+  // Verification steps
+  setText('verifyPhoneTitle', 'verifyPhoneTitle');
+  setText('verifyPhoneDesc', 'verifyPhoneDesc');
+  setText('verifyEmailTitle', 'verifyEmailTitle');
+  setText('verifyEmailDesc', 'verifyEmailDesc');
   setText('lVPhone', 'lVPhone');    setPh('vPhoneCode', 'phCode');
   setText('lVEmail', 'lVEmail');    setPh('vEmailCode', 'phCode');
   setText('resendPhoneA', 'resendPhone');
   setText('resendEmailA', 'resendEmail');
-  setText('btnVerify', 'btnVerify');
-  setText('verifyHint', 'verifyExpiry');
+  setText('btnVerifyPhone', 'btnVerifyPhone');
+  setText('btnVerifyEmail', 'btnVerifyEmail');
+  setText('verifyPhoneHint', 'verifyExpiry');
+  setText('verifyEmailHint', 'verifyExpiry');
 
   // Success screens
   setText('successWTitle', 'successWTitle');
@@ -868,29 +913,55 @@ async function registerWorker() {
     const ts = document.getElementById('typeSelector');
     if (ts) ts.style.display = 'none';
     document.getElementById('loginLinks').style.display = 'none';
-    document.getElementById('workerVerify').style.display = '';
+    // Show phone step first, or email step if no phone needed
+    if (d.needs_phone !== false) {
+      document.getElementById('workerVerifyPhone').style.display = 'block';
+    } else if (d.needs_email !== false) {
+      document.getElementById('workerVerifyEmail').style.display = 'block';
+    }
   } catch { showError(t('errNetwork')); }
 }
 
-async function verifyWorker() {
+// Keep old verifyWorker for backwards compat (no longer used)
+function verifyWorker() { verifyStep('phone'); }
+
+async function verifyStep(type) {
   hideError();
-  const phoneCode = document.getElementById('vPhoneCode').value.trim();
-  const emailCode = document.getElementById('vEmailCode').value.trim();
-  if (!phoneCode) return showError(t('errPhoneCode'));
-  if (!emailCode) return showError(t('errEmailCode'));
+  const codeEl = document.getElementById(type === 'phone' ? 'vPhoneCode' : 'vEmailCode');
+  const code = codeEl.value.trim();
+  if (!code) return showError(t(type === 'phone' ? 'errPhoneCode' : 'errEmailCode'));
+  const btn = document.getElementById(type === 'phone' ? 'btnVerifyPhone' : 'btnVerifyEmail');
+  btn.disabled = true;
   try {
-    const r = await fetch('/api/register/verify', {
+    const r = await fetch('/api/register/verify-step', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: _pendingAccountId, phone_code: phoneCode, email_code: emailCode })
+      body: JSON.stringify({ account_id: _pendingAccountId, type, code })
     });
     const d = await r.json();
+    btn.disabled = false;
     if (!r.ok || d.error) return showError(d.error || 'Verification failed');
-    if (d.token) localStorage.setItem('pa_worker_token', d.token);
-    document.getElementById('workerVerify').style.display = 'none';
-    document.getElementById('workerSuccess').style.display = '';
-    setTimeout(() => { window.location.href = '/portal'; }, 2000);
-  } catch { showError(t('errNetwork')); }
+    if (d.all_done) {
+      // All verified — show success
+      if (d.token) localStorage.setItem('pa_worker_token', d.token);
+      document.getElementById('workerVerifyPhone').style.display = 'none';
+      document.getElementById('workerVerifyEmail').style.display = 'none';
+      document.getElementById('workerSuccess').style.display = 'block';
+      setTimeout(() => { window.location.href = '/portal'; }, 2000);
+    } else {
+      // Move to next step
+      document.getElementById('workerVerifyPhone').style.display = 'none';
+      document.getElementById('workerVerifyEmail').style.display = 'none';
+      const nextSteps = d.next_steps || [];
+      if (nextSteps.includes('email')) {
+        document.getElementById('vEmailCode').value = '';
+        document.getElementById('workerVerifyEmail').style.display = 'block';
+      } else if (nextSteps.includes('phone')) {
+        document.getElementById('vPhoneCode').value = '';
+        document.getElementById('workerVerifyPhone').style.display = 'block';
+      }
+    }
+  } catch { btn.disabled = false; showError(t('errNetwork')); }
 }
 
 async function resendCode(type) {
@@ -902,7 +973,7 @@ async function resendCode(type) {
       body: JSON.stringify({ account_id: _pendingAccountId, type })
     });
     const d = await r.json();
-    const hint = document.getElementById('verifyHint');
+    const hint = document.getElementById(type === 'phone' ? 'verifyPhoneHint' : 'verifyEmailHint');
     if (r.ok) {
       hint.textContent = t(type === 'phone' ? 'resendOkPhone' : 'resendOkEmail');
       setTimeout(() => { hint.textContent = t('verifyExpiry'); }, 3000);
