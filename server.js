@@ -5560,53 +5560,83 @@ app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
   res.json({ success: true });
 });
 
-// ─── Smarty Address Validation ───
+// ─── Google Address Validation ───
 app.post('/api/validate-address', async (req, res) => {
-  const authId    = process.env.SMARTY_AUTH_ID;
-  const authToken = process.env.SMARTY_AUTH_TOKEN;
-  if (!authId || !authToken) {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
     return res.json({ skipped: true });
   }
   const { street, street2, city, state, zip } = req.body || {};
   if (!street) return res.status(400).json({ error: 'street is required' });
-  const params = new URLSearchParams({
-    'auth-id':    authId,
-    'auth-token': authToken,
-    street:       street,
-    candidates:   '1'
-  });
-  if (street2) params.set('street2', street2);
-  if (city)    params.set('city', city);
-  if (state)   params.set('state', state);
-  if (zip)     params.set('zipcode', zip);
-  const url = `https://us-street.api.smarty.com/street-address?${params.toString()}`;
+
+  const addressLines = [street];
+  if (street2) addressLines.push(street2);
+
+  const payload = {
+    address: {
+      regionCode: 'US',
+      addressLines,
+      ...(city  && { locality: city }),
+      ...(state && { administrativeArea: state }),
+      ...(zip   && { postalCode: zip })
+    }
+  };
+
+  const url = `https://addressvalidation.googleapis.com/v1:validateAddress?key=${apiKey}`;
   try {
     const https = require('https');
-    const candidates = await new Promise((resolve, reject) => {
-      https.get(url, r => {
-        let body = '';
-        r.on('data', chunk => body += chunk);
-        r.on('end', () => { try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON from Smarty')); } });
-      }).on('error', reject);
+    const raw = await new Promise((resolve, reject) => {
+      const body = JSON.stringify(payload);
+      const opts = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      };
+      const req2 = https.request(url, opts, r => {
+        let data = '';
+        r.on('data', chunk => data += chunk);
+        r.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid JSON from Google')); } });
+      });
+      req2.on('error', reject);
+      req2.write(body);
+      req2.end();
     });
-    if (!Array.isArray(candidates) || candidates.length === 0) {
+
+    if (raw.error) {
+      console.error('[Google Address Validation] API error:', raw.error.message);
+      return res.status(500).json({ error: 'Address validation service error' });
+    }
+
+    const result = raw.result || {};
+    const verdict = result.verdict || {};
+    const postalAddress = result.address?.postalAddress || {};
+    const uspsData = result.uspsData || {};
+
+    const dpv = uspsData.dpvConfirmation;
+    const granularity = verdict.validationGranularity;
+    const undeliverable = dpv === 'N' || granularity === 'OTHER' || granularity === 'ROUTE';
+
+    if (undeliverable) {
       return res.json({ valid: false });
     }
-    const c = candidates[0];
+
+    const addrLines = postalAddress.addressLines || [];
+    const fullZip = postalAddress.postalCode || zip || '';
+    const zipParts = fullZip.replace('-', '').match(/^(\d{5})(\d{4})?$/);
+
     return res.json({
       valid: true,
-      dpv_match_code: c.analysis?.dpv_match_code,
+      dpv_match_code: dpv,
       standardized: {
-        street:  c.delivery_line_1 || '',
-        street2: c.delivery_line_2 || '',
-        city:    c.components?.city_name || '',
-        state:   c.components?.state_abbreviation || '',
-        zip:     c.components?.zipcode || '',
-        zip4:    c.components?.plus4_code || ''
+        street:  addrLines[0] || street,
+        street2: addrLines[1] || '',
+        city:    postalAddress.locality || city || '',
+        state:   postalAddress.administrativeArea || state || '',
+        zip:     zipParts ? zipParts[1] : fullZip.substring(0, 5),
+        zip4:    zipParts ? (zipParts[2] || '') : ''
       }
     });
   } catch (e) {
-    console.error('[Smarty] Error:', e.message);
+    console.error('[Google Address Validation] Error:', e.message);
     return res.status(500).json({ error: 'Address validation service error' });
   }
 });
