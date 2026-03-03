@@ -4175,21 +4175,32 @@ app.post('/api/register/verify', async (req, res) => {
 });
 
 // Verify one step at a time (phone first, then email)
-app.post('/api/register/verify-step', (req, res) => {
+app.post('/api/register/verify-step', async (req, res) => {
   const { account_id, type, code } = req.body;
   if (!account_id || !type || !code) return res.status(400).json({ error: 'account_id, type, and code required' });
   if (!['phone', 'email'].includes(type)) return res.status(400).json({ error: 'type must be phone or email' });
-  const acc = db.prepare('SELECT id, active, employee_id FROM worker_accounts WHERE id=?').get(account_id);
+  const acc = db.prepare('SELECT id, active, employee_id, phone FROM worker_accounts WHERE id=?').get(account_id);
   if (!acc) return res.status(404).json({ error: 'Account not found' });
   if (acc.active) return res.status(400).json({ error: 'Account already verified' });
   const now = new Date().toISOString();
-  const vc = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND code=? AND expires_at>?')
-    .get(account_id, type, code, now);
+  const vc = db.prepare('SELECT * FROM verification_codes WHERE worker_account_id=? AND type=? AND expires_at>?')
+    .get(account_id, type, now);
   if (!vc) return res.status(400).json({
     error: type === 'phone'
       ? '手机验证码错误或已过期 / Invalid or expired phone code'
       : '邮箱验证码错误或已过期 / Invalid or expired email code'
   });
+  // Twilio Verify for phone
+  if (type === 'phone' && vc.code === '__twilio_verify__') {
+    const ok = await checkVerifyCode(acc.phone, code);
+    if (!ok) return res.status(400).json({ error: '手机验证码错误或已过期 / Invalid or expired phone code' });
+  } else if (vc.code !== code) {
+    return res.status(400).json({
+      error: type === 'phone'
+        ? '手机验证码错误或已过期 / Invalid or expired phone code'
+        : '邮箱验证码错误或已过期 / Invalid or expired email code'
+    });
+  }
   // This step verified — remove its code
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=? AND type=?').run(account_id, type);
   // Check remaining steps
