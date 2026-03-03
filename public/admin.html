@@ -241,6 +241,45 @@ tr:hover td{background:var(--sky-light)}
 #onboardingTaskList::-webkit-scrollbar-track{background:transparent}
 #onboardingTaskList::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
 #onboardingTaskList::-webkit-scrollbar-thumb:hover{background:#94a3b8}
+
+/* ── Worker table beautification ── */
+#accPanelWorker table{border-spacing:0 4px;border-collapse:separate}
+#accPanelWorker thead th{position:sticky;top:0;background:var(--white);z-index:1;padding:8px 10px;font-size:.7rem;white-space:nowrap}
+#accPanelWorker tbody td{padding:8px 10px;vertical-align:middle;font-size:.82rem}
+#accPanelWorker tbody tr{transition:box-shadow .15s}
+#accPanelWorker tbody tr:hover td{background:#f0f5ff}
+.wa-name{font-weight:700;color:var(--blue);font-size:.88rem;white-space:nowrap}
+.wa-sub{font-size:.7rem;color:var(--gray-400);margin-top:1px}
+.wa-compliance{display:flex;gap:3px;flex-wrap:wrap}
+.wa-cbadge{display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:700;letter-spacing:.3px}
+.wa-cbadge.ok{background:#dcfce7;color:#15803d}.wa-cbadge.pend{background:#fef3c7;color:#92400e}
+.wa-cbadge.fail{background:#fef2f2;color:#dc2626}.wa-cbadge.na{background:var(--gray-100);color:var(--gray-300)}
+.wa-status{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:700;white-space:nowrap}
+.wa-status.active{background:#d1fae5;color:#065f46;border:1px solid #a7f3d0}
+.wa-status.pending{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
+.wa-status.suspended{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+.wa-dispatch{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:700;white-space:nowrap}
+.wa-dispatch.yes{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7}
+.wa-dispatch.no{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.wa-actions{display:flex;gap:4px;align-items:center;position:relative}
+.wa-actions .btn-sm{padding:4px 10px;font-size:.72rem;border-radius:6px;white-space:nowrap}
+.wa-abtn-primary{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe}
+.wa-abtn-primary:hover{background:#ddd6fe}
+.wa-abtn-edit{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+.wa-abtn-edit:hover{background:#dbeafe}
+.wa-more-wrap{position:relative}
+.wa-more-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--gray-200);background:var(--white);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--gray-600);transition:all .15s}
+.wa-more-btn:hover{background:var(--gray-100);border-color:var(--gray-400)}
+.wa-dropdown{display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--white);border:1px solid var(--gray-200);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:160px;z-index:50;padding:4px 0;animation:waFadeIn .12s ease}
+.wa-dropdown.show{display:block}
+@keyframes waFadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.wa-dropdown-item{display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:.78rem;cursor:pointer;color:var(--gray-600);transition:background .1s;white-space:nowrap;border:none;background:none;width:100%;text-align:left}
+.wa-dropdown-item:hover{background:var(--sky-light);color:var(--blue)}
+.wa-dropdown-item.danger{color:var(--red)}
+.wa-dropdown-item.danger:hover{background:#fef2f2;color:#dc2626}
+.wa-dropdown-sep{height:1px;background:var(--gray-200);margin:4px 0}
+.wa-skill-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-size:.7rem;background:#f0f5ff;color:var(--blue);margin:1px 0;white-space:nowrap}
+.wa-skill-pill .stars{color:#f59e0b;font-size:.65rem}
 </style>
 </head>
 <body>
@@ -6510,59 +6549,85 @@ const WORK_STATUS_MAP = { citizen:'🇺🇸 公民', green_card:'🟢 绿卡', e
 const IV_STATUS_MAP = { scheduled:'⏳ 已约', completed:'✔ 面试完成', passed:'✅ 通过', failed:'❌ 未通过', cancelled:'取消' };
 const PAY_METHOD_LABELS = { check:'✅ 支票', cash:'💵 现金', direct_deposit:'🏦 直接存款' };
 
-function complianceBadge(type, status) {
-  if (!status) return `<span style="color:var(--gray-300);font-size:.72rem">—</span>`;
-  const colors = { approved:'background:#dcfce7;color:#15803d', pending:'background:#fef3c7;color:#92400e', rejected:'background:#fef2f2;color:#dc2626' };
-  return `<span style="display:inline-block;padding:0 4px;border-radius:3px;font-size:.68rem;font-weight:600;${colors[status]||''}">${type}</span>`;
+function complianceBadge2(type, status) {
+  if (!status) return `<span class="wa-cbadge na">${type}</span>`;
+  const cls = { approved:'ok', pending:'pend', rejected:'fail' };
+  return `<span class="wa-cbadge ${cls[status]||'na'}">${type}</span>`;
 }
 
-function skillStars(rating) {
+function skillPills(skills) {
+  if (!skills || !skills.length) return '<span style="color:var(--gray-300)">—</span>';
   const max = 5;
-  const r = Math.min(max, Math.max(0, parseInt(rating) || 0));
-  return '<span style="color:#f59e0b;font-size:.75rem">' + '★'.repeat(r) + '<span style="color:#e5e7eb">' + '☆'.repeat(max - r) + '</span></span>';
+  return skills.map(s => {
+    const r = Math.min(max, Math.max(0, parseInt(s.rating) || 0));
+    return `<span class="wa-skill-pill">${esc(s.skill_name)} <span class="stars">${'★'.repeat(r)}${'☆'.repeat(max-r)}</span></span>`;
+  }).join(' ');
+}
+
+// Close any open dropdown when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.wa-more-wrap')) {
+    document.querySelectorAll('.wa-dropdown.show').forEach(d => d.classList.remove('show'));
+  }
+});
+function toggleWorkerMenu(btn) {
+  const dd = btn.nextElementSibling;
+  const wasOpen = dd.classList.contains('show');
+  document.querySelectorAll('.wa-dropdown.show').forEach(d => d.classList.remove('show'));
+  if (!wasOpen) dd.classList.add('show');
 }
 
 async function loadWorkerAccounts() {
   const rows = await api('/admin/worker-accounts');
   if (!Array.isArray(rows)) return;
   const workerStatus = w => {
-    if (!w.active) return '<span style="color:var(--orange);font-weight:600">⏳ 待验证</span>';
-    if (w.suspended) return '<span style="color:var(--red);font-weight:600">⛔ 暂停</span>';
-    return '<span style="color:var(--green);font-weight:600">✅ 正常</span>';
+    if (!w.active) return '<span class="wa-status pending">⏳ 待验证</span>';
+    if (w.suspended) return '<span class="wa-status suspended">⛔ 暂停</span>';
+    return '<span class="wa-status active">✅ 正常</span>';
   };
   const dispatchBadge = w => w.dispatch_ready
-    ? '<span style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600">✅ 可派工</span>'
-    : '<span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600">⏳ 待确认</span>';
+    ? '<span class="wa-dispatch yes">✅ 可派工</span>'
+    : '<span class="wa-dispatch no">⏳ 待确认</span>';
   document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w => {
     const c = w.compliance || {};
     const skills = w.skills || [];
+    // Build dropdown items
+    let menuItems = '';
+    if (!w.active) menuItems += `<button class="wa-dropdown-item" onclick="resendWorkerVerify(${w.id})">📨 重发验证</button>`;
+    if (w.active && w.suspended) menuItems += `<button class="wa-dropdown-item" onclick="suspendWorkerAccount(${w.id},0)">▶️ 恢复账户</button>`;
+    if (w.active && !w.suspended) menuItems += `<button class="wa-dropdown-item" onclick="suspendWorkerAccount(${w.id},1)">⏸️ 暂停账户</button>`;
+    if (!w.employee_id) menuItems += `<button class="wa-dropdown-item" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>🔄 转为正式员工</button>`;
+    menuItems += `<button class="wa-dropdown-item" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">🔑 发送重置链接</button>`;
+    menuItems += `<div class="wa-dropdown-sep"></div>`;
+    menuItems += `<button class="wa-dropdown-item danger" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除账户</button>`;
     return `<tr>
-    <td><strong>${esc(w.name||w.username)}</strong><br><span style="font-size:.72rem;color:var(--gray-400)">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</span></td>
-    <td style="font-size:.8rem">${esc(w.phone||'')}</td>
-    <td style="font-size:.78rem">${esc(w.email||'')}</td>
-    <td style="font-size:.8rem">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
-    <td style="font-size:.8rem">${w.interview_status ? IV_STATUS_MAP[w.interview_status]||w.interview_status : '<span style="color:var(--gray-300)">未安排</span>'}</td>
-    <td style="white-space:nowrap">
-      ${complianceBadge('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
-      ${complianceBadge('SSN', c.ssn_card)}
-      ${complianceBadge('DL', c.drivers_license)}
-      ${complianceBadge('W9', c.w9)}
-      ${complianceBadge('I9', c.i9)}
-    </td>
-    <td style="font-size:.8rem">${PAY_METHOD_LABELS[w.payment_method]||'💵 现金'}</td>
+    <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div></td>
+    <td style="font-size:.8rem;white-space:nowrap">${esc(w.phone||'—')}</td>
+    <td style="font-size:.78rem">${esc(w.email||'—')}</td>
+    <td style="font-size:.8rem;white-space:nowrap">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
+    <td style="font-size:.8rem;white-space:nowrap">${w.interview_status ? IV_STATUS_MAP[w.interview_status]||w.interview_status : '<span style="color:var(--gray-300)">未安排</span>'}</td>
+    <td><div class="wa-compliance">
+      ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
+      ${complianceBadge2('SSN', c.ssn_card)}
+      ${complianceBadge2('DL', c.drivers_license)}
+      ${complianceBadge2('W9', c.w9)}
+      ${complianceBadge2('I9', c.i9)}
+    </div></td>
+    <td style="font-size:.8rem;white-space:nowrap">${PAY_METHOD_LABELS[w.payment_method]||'💵 现金'}</td>
     <td style="font-size:.8rem">${w.expected_salary ? '$'+esc(w.expected_salary) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.8rem">${w.our_salary_rating ? esc(w.our_salary_rating) : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td style="font-size:.75rem">${skills.length ? skills.map(s => `<div>${esc(s.skill_name)} ${skillStars(s.rating)}</div>`).join('') : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="max-width:160px">${skillPills(skills)}</td>
     <td>${workerStatus(w)}</td>
     <td>${dispatchBadge(w)}</td>
-    <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
-      ${!w.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="resendWorkerVerify(${w.id})">重发验证</button>`:''}
-      ${w.active?(w.suspended?`<button class="btn btn-sm btn-green" onclick="suspendWorkerAccount(${w.id},0)">恢复</button>`:`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendWorkerAccount(${w.id},1)">暂停</button>`):''}
-      ${!w.employee_id?`<button class="btn btn-sm" style="background:#f0fdf4;color:var(--green);border:1px solid #bbf7d0" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>转为正式员工</button>`:''}
-      <button class="btn btn-sm" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">入职进度</button>
-      <button class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">发送重置链接</button>
-      <button class="btn btn-sm" onclick="openWorkerDetailModal(${w.id})">编辑</button>
-      <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">删除</button>
+    <td>
+      <div class="wa-actions">
+        <button class="btn btn-sm wa-abtn-primary" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">📋 入职</button>
+        <button class="btn btn-sm wa-abtn-edit" onclick="openWorkerDetailModal(${w.id})">✏️ 编辑</button>
+        <div class="wa-more-wrap">
+          <button class="wa-more-btn" onclick="toggleWorkerMenu(this)" title="更多操作">⋯</button>
+          <div class="wa-dropdown">${menuItems}</div>
+        </div>
+      </div>
     </td>
   </tr>`;}).join('') : '<tr><td colspan="13" class="empty">暂无工人账户</td></tr>';
 }
@@ -7261,8 +7326,6 @@ async function rejectAction() {
 
 // ── Interview Management ──
 let _allInterviews = [];
-let _ivLocations = [];
-
 let _ivLocations = [];
 
 function switchIvTab(tab) {
