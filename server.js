@@ -532,6 +532,10 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN persona_inquiry_id TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN identity_status TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN identity_sent_at TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN checkr_candidate_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN checkr_invitation_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN checkr_report_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN bgcheck_status TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN applicant_message TEXT DEFAULT ''`); } catch(e) {}
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
@@ -1668,7 +1672,8 @@ const ONBOARDING_STEPS = [
   { key: 'phone_verify', title: '手机号验证',      desc: '必须通过手机号验证才能继续',                     required: true  },
   { key: 'email_verify', title: '邮箱验证',        desc: '必须通过邮箱验证才能继续',                       required: true  },
   { key: 'interview',    title: '完成面试',          desc: '预约并参加 HR 面试',                              required: true  },
-  { key: 'persona_verify', title: '身份验证 (Persona)', desc: '驾照 + 自拍 + SSN 核验 · 由 HR 发起 · 通过 Persona 平台', required: true },
+  { key: 'persona_verify', title: '身份验证 (Persona)', desc: '驾照 + 自拍核验 · 由 HR 发起 · 通过 Persona 平台', required: true },
+  { key: 'background_check', title: '背景调查 (Checkr)', desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台', required: true },
   { key: 'ead_upload',   title: 'EAD / 工卡上传',    desc: 'EAD 工卡（如适用）',                              required: false },
   { key: 'i9',           title: 'I-9 就业资格',      desc: '填写并提交 I-9 就业资格验证表',                  required: true  },
   { key: 'w9',           title: 'W-9 税表',           desc: '独立承包商 W-9 税务信息表',                      required: true  },
@@ -1699,6 +1704,10 @@ function initWorkerOnboarding(workerId) {
   // auto-complete persona_verify if identity already approved
   if (w.identity_status === 'approved') {
     db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify' AND status='pending'`).run(workerId);
+  }
+  // auto-complete background_check if Checkr already clear
+  if (w.bgcheck_status === 'clear') {
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check' AND status='pending'`).run(workerId);
   }
 }
 
@@ -1800,7 +1809,7 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
     // Send SMS
     let smsSent = false;
     if (w.phone) {
-      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照+自拍+SSN）以继续入职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照+自拍）以继续入职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
       smsSent = await sendSMS(w.phone, smsText);
     }
     // Send email
@@ -1811,7 +1820,7 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
         `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
         `<p>您好 ${w.name||w.username||''}，</p>
-         <p>HR 已为您发起身份验证（驾照 + 自拍 + SSN 核验）。您可以通过以下任一方式完成：</p>
+         <p>HR 已为您发起身份验证（驾照 + 自拍核验）。您可以通过以下任一方式完成：</p>
          <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
            <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
            <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
@@ -1822,6 +1831,142 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
       );
     }
     res.json({ success: true, smsSent, emailSent, portalReady: true, inquiryId: result.inquiryId, link: result.link || '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Checkr Background Check Integration ──
+async function checkrApiCall(method, path, body) {
+  const settings = db.prepare("SELECT * FROM integration_settings WHERE provider='checkr'").get();
+  const apiKey = settings?.api_key || process.env.CHECKR_API_KEY;
+  if (!apiKey) throw new Error('Checkr API key not configured');
+  const url = `https://api.checkr.com/v1${path}`;
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${Buffer.from(apiKey + ':').toString('base64')}` },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(url, opts);
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Checkr API ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
+
+// Admin: send Checkr background check invitation to worker
+app.post('/api/admin/worker-accounts/:id/send-checkr', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    if (!w.email) return res.status(400).json({ error: '该工人没有邮箱地址，无法发送 Checkr 邀请' });
+
+    const settings = db.prepare("SELECT * FROM integration_settings WHERE provider='checkr'").get();
+    const apiKey = settings?.api_key || process.env.CHECKR_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'Checkr 未配置，请先在集成设置中配置 Checkr API Key' });
+
+    const config = JSON.parse(settings?.config || '{}');
+    const packageSlug = config.package || process.env.CHECKR_PACKAGE || 'tasker_standard';
+
+    // Create candidate
+    let candidateId = w.checkr_candidate_id;
+    if (!candidateId) {
+      const candidate = await checkrApiCall('POST', '/candidates', {
+        first_name: (w.name || w.username || '').split(' ')[0] || w.username,
+        last_name: (w.name || '').split(' ').slice(1).join(' ') || '',
+        email: w.email,
+        phone: w.phone || undefined,
+        dob: w.dob || undefined,
+      });
+      candidateId = candidate.id;
+      db.prepare('UPDATE worker_accounts SET checkr_candidate_id=? WHERE id=?').run(candidateId, workerId);
+    }
+
+    // Create invitation (Checkr sends email to candidate with SSN + consent collection)
+    const invitation = await checkrApiCall('POST', '/invitations', {
+      candidate_id: candidateId,
+      package: packageSlug,
+    });
+
+    db.prepare('UPDATE worker_accounts SET checkr_invitation_id=?, bgcheck_status=? WHERE id=?')
+      .run(invitation.id, 'invitation_sent', workerId);
+
+    // Mark onboarding step as pending + visible
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
+      VALUES (?,'background_check','pending',1,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, '已发送 Checkr 背景调查邀请', invitation.invitation_url || '');
+
+    // Notify worker via SMS
+    let smsSent = false;
+    if (w.phone) {
+      smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，我们已通过 Checkr 向您的邮箱 (${w.email}) 发送了背景调查邀请，请查收邮件并完成。`);
+    }
+
+    res.json({ success: true, smsSent, candidateId, invitationId: invitation.id, invitationUrl: invitation.invitation_url || '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Checkr webhook — called when background check status changes
+app.post('/api/webhooks/checkr', express.json(), (req, res) => {
+  try {
+    const event = req.body;
+    const eventType = event.type || '';
+    console.log(`[Checkr Webhook] ${eventType}`);
+
+    if (eventType === 'invitation.completed') {
+      // Candidate completed the invitation (provided SSN, consent, etc.)
+      const candidateId = event.data?.object?.candidate_id;
+      if (candidateId) {
+        const w = db.prepare('SELECT id FROM worker_accounts WHERE checkr_candidate_id=?').get(candidateId);
+        if (w) {
+          db.prepare('UPDATE worker_accounts SET bgcheck_status=? WHERE id=?').run('pending', w.id);
+          db.prepare(`UPDATE worker_onboarding SET admin_note='工人已提交信息，等待 Checkr 审核…', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
+        }
+      }
+    } else if (eventType === 'report.completed') {
+      const reportId = event.data?.object?.id;
+      const candidateId = event.data?.object?.candidate_id;
+      const result = event.data?.object?.result; // 'clear' or 'consider'
+      if (candidateId) {
+        const w = db.prepare('SELECT id FROM worker_accounts WHERE checkr_candidate_id=?').get(candidateId);
+        if (w) {
+          const status = result === 'clear' ? 'clear' : 'review';
+          db.prepare('UPDATE worker_accounts SET checkr_report_id=?, bgcheck_status=? WHERE id=?').run(reportId || '', status, w.id);
+          if (status === 'clear') {
+            db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='Checkr: Clear ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
+            console.log(`[Checkr Webhook] Auto-completed background_check for worker ${w.id}`);
+          } else {
+            db.prepare(`UPDATE worker_onboarding SET admin_note='Checkr: 需人工审核 (consider)', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
+            console.log(`[Checkr Webhook] Report needs review for worker ${w.id}`);
+          }
+        }
+      }
+    } else if (eventType === 'report.suspended' || eventType === 'report.disputed') {
+      const candidateId = event.data?.object?.candidate_id;
+      if (candidateId) {
+        const w = db.prepare('SELECT id FROM worker_accounts WHERE checkr_candidate_id=?').get(candidateId);
+        if (w) {
+          db.prepare('UPDATE worker_accounts SET bgcheck_status=? WHERE id=?').run('suspended', w.id);
+          db.prepare(`UPDATE worker_onboarding SET admin_note='Checkr: 调查暂停/有争议', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
+        }
+      }
+    }
+
+    res.json({ received: true });
+  } catch (e) { console.error('[Checkr Webhook]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Admin: check Checkr status for a worker
+app.get('/api/admin/worker-accounts/:id/checkr-status', requireAdmin, async (req, res) => {
+  try {
+    const w = db.prepare('SELECT checkr_candidate_id, checkr_invitation_id, checkr_report_id, bgcheck_status FROM worker_accounts WHERE id=?').get(req.params.id);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    let report = null;
+    if (w.checkr_report_id) {
+      try { report = await checkrApiCall('GET', `/reports/${w.checkr_report_id}`); } catch {}
+    }
+    res.json({ ...w, report });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -5173,7 +5318,7 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     // Send SMS
     let smsSent = false;
     if (interview.worker_phone) {
-      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍+SSN）以继续求职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍）以继续求职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
       smsSent = await sendSMS(interview.worker_phone, smsText);
     }
     // Send email
@@ -5184,7 +5329,7 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
         `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
         `<p>您好 ${interview.worker_name||''}，</p>
-         <p>HR 已为您发起身份验证（驾照 + 自拍 + SSN 核验）。您可以通过以下任一方式完成：</p>
+         <p>HR 已为您发起身份验证（驾照 + 自拍核验）。您可以通过以下任一方式完成：</p>
          <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
            <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
            <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
