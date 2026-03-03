@@ -947,7 +947,11 @@ tr:hover td{background:var(--sky-light)}
           </div>
           <div>
             <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">完整地址 *</label>
-            <input type="text" id="locAddress" placeholder="如：123 Main St, Suite 200, Chicago, IL 60601" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+            <input type="text" id="locAddress" placeholder="如：123 Main St, Suite 200, Chicago, IL 60601" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem" oninput="clearAddrStatus('locAddrStatus')" onblur="autoVerifySingleAddr('locAddress','locAddrStatus')">
+            <div style="display:flex;align-items:center;gap:.5rem;margin-top:.3rem">
+              <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('locAddress','locAddrStatus')">🔍 验证地址 Verify</button>
+              <span id="locAddrStatus" style="font-size:.8rem;font-weight:600"></span>
+            </div>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
@@ -979,7 +983,11 @@ tr:hover td{background:var(--sky-light)}
   <h2 id="ivLocModalTitle">添加面试地点</h2>
   <input type="hidden" id="ivLocId">
   <div class="field"><label>地点名称 *</label><input id="ivLocName" placeholder="例：芝加哥主办公室、Zoom 线上面试"></div>
-  <div class="field"><label>地址</label><input id="ivLocAddress" placeholder="123 Main St, Chicago, IL 60601"></div>
+  <div class="field"><label>地址</label><input id="ivLocAddress" placeholder="123 Main St, Chicago, IL 60601" oninput="clearAddrStatus('ivLocAddrStatus')" onblur="autoVerifySingleAddr('ivLocAddress','ivLocAddrStatus')"></div>
+  <div style="display:flex;align-items:center;gap:.5rem;margin-top:-.25rem;margin-bottom:.5rem">
+    <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('ivLocAddress','ivLocAddrStatus')">🔍 验证地址 Verify</button>
+    <span id="ivLocAddrStatus" style="font-size:.8rem;font-weight:600"></span>
+  </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
     <div class="field"><label>联系人姓名</label><input id="ivLocContactName" placeholder="张经理"></div>
     <div class="field"><label>联系人手机</label><input id="ivLocContactPhone" placeholder="(312) 555-0100"></div>
@@ -1101,7 +1109,11 @@ tr:hover td{background:var(--sky-light)}
   <h2 id="jobSiteModalTitle">添加工作地点</h2>
   <input type="hidden" id="siteId">
   <div class="field"><label>名称 *</label><input id="siteName" placeholder="例: 仓库A"></div>
-  <div class="field"><label>地址</label><input id="siteAddress" placeholder="123 Main St, City, ST"></div>
+  <div class="field"><label>地址</label><input id="siteAddress" placeholder="123 Main St, City, ST" oninput="clearAddrStatus('siteAddrStatus')" onblur="autoVerifySingleAddr('siteAddress','siteAddrStatus')"></div>
+  <div style="display:flex;align-items:center;gap:.5rem;margin-top:-.25rem;margin-bottom:.5rem">
+    <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('siteAddress','siteAddrStatus')">🔍 验证地址 Verify</button>
+    <span id="siteAddrStatus" style="font-size:.8rem;font-weight:600"></span>
+  </div>
   <div class="field-row" style="display:flex;gap:1rem">
     <div class="field" style="flex:1"><label>纬度 Latitude *</label><input id="siteLat" type="number" step="any" placeholder="40.7128"></div>
     <div class="field" style="flex:1"><label>经度 Longitude *</label><input id="siteLng" type="number" step="any" placeholder="-74.0060"></div>
@@ -4771,6 +4783,28 @@ function autoVerifyPartnerAddr(zipInput) {
   if (!row.querySelector('.pa-street').value.trim()) return;
   _doVerifyPartnerAddr(row, true);
 }
+
+// Single-line address verify (Interview Locations, Job Sites)
+function clearAddrStatus(statusId) {
+  _setAddrStatus(document.getElementById(statusId), null);
+}
+
+async function _doVerifySingleAddr(inputId, statusId, silent) {
+  const input    = document.getElementById(inputId);
+  const statusEl = document.getElementById(statusId);
+  if (!input || !input.value.trim()) return;
+  statusEl.textContent = '验证中…';
+  statusEl.style.color = 'var(--gray-400)';
+  const result = await validateAddressSingleField(input.value.trim(), { silent });
+  if (result.skipped) { statusEl.textContent = ''; return; }
+  if (!result.proceed) { statusEl.textContent = ''; return; }
+  if (result.verified === false) { _setAddrStatus(statusEl, false); return; }
+  if (result.standardized) input.value = result.standardized;
+  _setAddrStatus(statusEl, true);
+}
+
+function verifySingleAddr(inputId, statusId)     { _doVerifySingleAddr(inputId, statusId, false); }
+function autoVerifySingleAddr(inputId, statusId) { _doVerifySingleAddr(inputId, statusId, true);  }
 
 // ── Job records within employee edit modal ──
 async function loadEditEmpJobRecords(empId) {
