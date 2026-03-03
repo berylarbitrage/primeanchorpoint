@@ -2236,15 +2236,17 @@ async function loadOnboarding() {
     list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
     return;
   }
-  // If persona_verify is still pending, actively check Persona API for latest status
+  // If persona_verify is still pending, actively check for latest status (Persona API or identity_status fallback)
   const personaTask = tasks.find(t => t.key === 'persona_verify' && t.status === 'pending');
   if (personaTask) {
-    const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
-    if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted' || pollResult.updated)) {
-      // Status was updated — reload tasks to get fresh data
-      tasks = await wApi('/onboarding');
-      if (!tasks) return;
-    }
+    try {
+      const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
+      if (pollResult && !pollResult.error && (pollResult.status === 'approved' || pollResult.status === 'submitted' || pollResult.updated)) {
+        // Status was updated — reload tasks to get fresh data
+        tasks = await wApi('/onboarding');
+        if (!tasks) return;
+      }
+    } catch (e) { /* poll-status unavailable, backend /onboarding already handles sync */ }
   }
   const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
