@@ -4031,7 +4031,7 @@ async function openAssignModal(assignment) {
 
   if (assignment) {
     const inq = inqs.find(i => i.id == assignment.inquiry_id);
-    const job = _assignJobs.find(j => j.id == assignment.job_id);
+    const job = jobs.find(j => j.id == assignment.job_id);   // all jobs incl. inactive
     if (inq) { document.getElementById('aInquiry').value = inq.name + (inq.phone ? ' · ' + inq.phone : ''); document.getElementById('aInquiryId').value = inq.id; }
     if (job) { document.getElementById('aJob').value = job.title + ' - ' + job.location; document.getElementById('aJobId').value = job.id; }
   }
