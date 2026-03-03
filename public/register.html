@@ -130,6 +130,17 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
         <input type="date" id="wDob">
       </div>
 
+      <div class="field-row">
+        <div class="field">
+          <label id="lWCity"></label>
+          <input type="text" id="wCity" placeholder="Chicago" autocomplete="address-level2">
+        </div>
+        <div class="field" style="max-width:130px">
+          <label id="lWState"></label>
+          <input type="text" id="wState" placeholder="IL" maxlength="2" autocomplete="address-level1" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+        </div>
+      </div>
+
       <div class="field">
         <label id="lWStatus"></label>
         <div class="status-options" id="wStatusOptions"></div>
@@ -312,6 +323,8 @@ const L = {
     lPhone:           '手机号 *',
     lEmail:           '邮箱 *',
     lDob:             '出生日期 *',
+    lCity:            '城市 *',
+    lState:           '州 *',
     lStatus:          '身份状态 *',
     lPos:             '感兴趣的工种',
     hPos:             '可多选',
@@ -391,6 +404,8 @@ const L = {
     errEmail:    '请输入邮箱',
     errEmailFmt: '邮箱格式不正确',
     errDob:      '请选择出生日期',
+    errCity:     '请输入城市',
+    errState:    '请输入州（2个字母，如 IL）',
     errStatus:   '请选择身份状态',
     errPwd:      '密码至少6位',
     errPwdMatch: '两次密码不一致',
@@ -492,12 +507,16 @@ const L = {
     statOPT:     '🎓 OPT/CPT',
     statOther:   'Other',
 
+    lCity:       'City *',
+    lState:      'State *',
     errName:     'Name is required',
     errPhone:    'Phone is required',
     errPhoneFmt: 'Please enter a valid phone number (10-11 digits)',
     errEmail:    'Email is required',
     errEmailFmt: 'Please enter a valid email address',
     errDob:      'Date of birth is required',
+    errCity:     'City is required',
+    errState:    'State is required (2-letter, e.g. IL)',
     errStatus:   'Work status is required',
     errPwd:      'Password must be at least 6 characters',
     errPwdMatch: 'Passwords do not match',
@@ -729,6 +748,8 @@ function setLang(lang) {
   setText('lWPhone', 'lPhone'); setPh('wPhone', 'phPhone');
   setText('lWEmail', 'lEmail'); setPh('wEmail', 'phEmail');
   setText('lWDob', 'lDob');
+  setText('lWCity', 'lCity');
+  setText('lWState', 'lState');
   setText('lWStatus', 'lStatus');
   setText('lWPos', 'lPos');     setText('hWPos', 'hPos');
   setText('lWPwd', 'lPwd');     setPh('wPassword', 'phPwd');
@@ -883,6 +904,8 @@ async function registerWorker() {
   const phone = document.getElementById('wPhone').value.trim();
   const email = document.getElementById('wEmail').value.trim();
   const dob   = document.getElementById('wDob').value;
+  const city  = document.getElementById('wCity').value.trim();
+  const state = document.getElementById('wState').value.trim().toUpperCase();
   const pwd   = document.getElementById('wPassword').value;
   const pwd2  = document.getElementById('wPassword2').value;
 
@@ -892,6 +915,8 @@ async function registerWorker() {
   if (!email) return showError(t('errEmail'));
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError(t('errEmailFmt'));
   if (!dob)   return showError(t('errDob'));
+  if (!city)  return showError(t('errCity'));
+  if (!state || state.length !== 2) return showError(t('errState'));
   if (!_selectedStatus) return showError(t('errStatus'));
   if (!pwd || pwd.length < 6) return showError(t('errPwd'));
   if (pwd !== pwd2) return showError(t('errPwdMatch'));
@@ -904,7 +929,7 @@ async function registerWorker() {
     const r = await fetch('/api/register/worker', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, phone, email, dob, work_status: _selectedStatus, position_interests: interests, password: pwd })
+      body: JSON.stringify({ name, phone, email, dob, city, state, work_status: _selectedStatus, position_interests: interests, password: pwd })
     });
     const d = await r.json();
     if (!r.ok || d.error) return showError(d.error || 'Registration failed');
