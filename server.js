@@ -895,6 +895,28 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 
+// Migrate old id_verify + ssn_verify → persona_verify
+try {
+  const oldRows = db.prepare(`SELECT DISTINCT worker_account_id FROM worker_onboarding WHERE task_key IN ('id_verify','ssn_verify')`).all();
+  if (oldRows.length) {
+    const tx = db.transaction(() => {
+      for (const r of oldRows) {
+        const id_row = db.prepare(`SELECT * FROM worker_onboarding WHERE worker_account_id=? AND task_key='id_verify'`).get(r.worker_account_id);
+        const ssn_row = db.prepare(`SELECT * FROM worker_onboarding WHERE worker_account_id=? AND task_key='ssn_verify'`).get(r.worker_account_id);
+        // Use the best status: completed > submitted > pending
+        const statusOrder = { completed: 3, waived: 3, submitted: 2, pending: 1, locked: 0 };
+        const bestStatus = (statusOrder[id_row?.status]||0) >= (statusOrder[ssn_row?.status]||0) ? (id_row?.status||'pending') : (ssn_row?.status||'pending');
+        const visible = (id_row?.visible_to_worker || ssn_row?.visible_to_worker) ? 1 : 0;
+        db.prepare(`INSERT OR IGNORE INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker) VALUES (?,'persona_verify',?,?)`)
+          .run(r.worker_account_id, bestStatus, visible);
+      }
+      db.prepare(`DELETE FROM worker_onboarding WHERE task_key IN ('id_verify','ssn_verify')`).run();
+    });
+    tx();
+    console.log(`[Migration] Migrated ${oldRows.length} workers from id_verify+ssn_verify → persona_verify`);
+  }
+} catch (e) { console.warn('[Migration] id_verify+ssn_verify → persona_verify:', e.message); }
+
 // ─── Worker Skills ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1637,8 +1659,7 @@ const ONBOARDING_STEPS = [
   { key: 'phone_verify', title: '手机号验证',      desc: '必须通过手机号验证才能继续',                     required: true  },
   { key: 'email_verify', title: '邮箱验证',        desc: '必须通过邮箱验证才能继续',                       required: true  },
   { key: 'interview',    title: '完成面试',          desc: '预约并参加 HR 面试',                              required: true  },
-  { key: 'id_verify',    title: 'ID 证件认证',       desc: '上传护照、驾照或州 ID 卡等政府颁发证件',         required: true  },
-  { key: 'ssn_verify',   title: 'SSN 社安号验证',    desc: 'HR 核实社会安全号码',                             required: true  },
+  { key: 'persona_verify', title: '身份验证 (Persona)', desc: '驾照 + 自拍 + SSN 核验 · 由 HR 发起 · 通过 Persona 平台', required: true },
   { key: 'ead_upload',   title: 'EAD / 工卡上传',    desc: 'EAD 工卡（如适用）',                              required: false },
   { key: 'i9',           title: 'I-9 就业资格',      desc: '填写并提交 I-9 就业资格验证表',                  required: true  },
   { key: 'w9',           title: 'W-9 税表',           desc: '独立承包商 W-9 税务信息表',                      required: true  },
@@ -1665,6 +1686,10 @@ function initWorkerOnboarding(workerId) {
   const passed = db.prepare(`SELECT i.id FROM interviews i WHERE i.worker_account_id=? AND i.status='passed'`).get(workerId);
   if (passed) {
     db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status='pending'`).run(workerId);
+  }
+  // auto-complete persona_verify if identity already approved
+  if (w.identity_status === 'approved') {
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify' AND status='pending'`).run(workerId);
   }
 }
 
@@ -1724,6 +1749,41 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmi
   db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
     .run(visible ? 1 : 0, req.params.id, req.params.key);
   res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
+});
+
+// Admin: send Persona identity verification from onboarding modal
+app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
+      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    const { force } = req.body || {};
+    if (w.identity_status === 'approved' && !force)
+      return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
+    const result = await createPersonaInquiry(workerId, w.name || w.username, w.phone);
+    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(result.inquiryId, workerId);
+    // Mark onboarding step as pending + visible
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
+      VALUES (?,'persona_verify','pending',1,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, '已发送 Persona 验证链接', result.link);
+    // Send SMS
+    const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照+自拍+SSN）以继续入职流程。点击链接在手机完成：${result.link}`;
+    const smsSent = await sendSMS(w.phone, smsText);
+    // Send email
+    if (w.email) {
+      await sendEmail(w.email,
+        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        `请完成身份验证：${result.link}`,
+        `<p>您好 ${w.name||w.username||''}，</p><p>HR 已为您发起身份验证。请在手机上点击以下链接，按提示上传驾照、完成自拍及 SSN 核验：</p><p><a href="${result.link}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.link}</p>`
+      );
+    }
+    res.json({ success: true, smsSent, inquiryId: result.inquiryId, link: result.link });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Worker: view own onboarding tasks (only visible ones)
@@ -5071,6 +5131,14 @@ app.post('/api/webhooks/persona', express.raw({ type: '*/*' }), (req, res) => {
       if (identityStatus) {
         db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
         console.log(`[Persona Webhook] Updated ${inquiryId} → ${identityStatus}`);
+        // Auto-complete persona_verify onboarding step when approved
+        if (identityStatus === 'approved') {
+          const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(inquiryId);
+          if (w) {
+            db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
+            console.log(`[Persona Webhook] Auto-completed persona_verify onboarding for worker ${w.id}`);
+          }
+        }
       }
     }
     res.json({ received: true });

@@ -6750,7 +6750,7 @@ async function refreshOnboardingModal() {
 }
 
 function renderOnboardingTasks(tasks) {
-  const icons = { phone_verify:'📱', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
     locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
@@ -6782,7 +6782,9 @@ function renderOnboardingTasks(tasks) {
           ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="updateOnboardingTask('${t.key}','waived')">⏭️ 豁免</button>`:''}
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="updateOnboardingTask('${t.key}','pending')">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
-          <button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>
+          ${t.key==='persona_verify'
+            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="sendPersonaFromOnboarding()">🪪 ${s==='completed'?'已完成':'发送 Persona 验证'}</button>`
+            : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
     </div>`;
@@ -6826,6 +6828,18 @@ function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
     if (url === null) return;
   }
   updateOnboardingTask(key, undefined, note, hasUrl ? url : undefined);
+}
+
+async function sendPersonaFromOnboarding() {
+  if (!_onboardingWorkerId) return;
+  if (!confirm('确定向该工人发送 Persona 身份验证（驾照+自拍+SSN）？\n验证链接将通过短信和邮件发送给工人。')) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-persona`, { method:'POST', body:JSON.stringify({}) });
+  if (r && r.success) {
+    showToast(`✅ 身份验证已发送${r.smsSent ? '（短信已发）' : '（短信未发，请检查 Twilio 配置）'}`, 'success', 5000);
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '发送失败'), 'error', 5000);
+  }
 }
 
 async function toggleDispatchReady() {
