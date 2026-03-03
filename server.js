@@ -117,8 +117,17 @@ async function createPersonaInquiry(workerId, workerName, workerPhone) {
     if (!resp.ok) { console.error('[Persona] Create inquiry failed:', await resp.text()); return null; }
     const d = await resp.json();
     const inqId = d.data.id;
-    const token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'] || '';
-    return { inquiryId: inqId, sessionToken: token, link: token ? `https://withpersona.com/verify?inquiry-id=${inqId}&session-token=${token}` : '' };
+    let token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'] || '';
+    // Persona may not return session-token on create; call /resume to obtain it
+    if (!token) {
+      const resumeLink = await resumePersonaInquiry(inqId);
+      if (resumeLink) {
+        const m = resumeLink.match(/session-token=([^&]+)/);
+        if (m) token = m[1];
+      }
+    }
+    const link = token ? `https://withpersona.com/verify?inquiry-id=${inqId}&session-token=${token}` : '';
+    return { inquiryId: inqId, sessionToken: token, link };
   } catch (e) { console.error('[Persona] createPersonaInquiry error:', e.message); return null; }
 }
 
@@ -4103,7 +4112,15 @@ app.post('/api/worker/persona/inquiry', requireWorker, async (req, res) => {
       return res.status(resp.status).json({ error: 'Persona API error', details: data });
     }
     const inquiryId = data.data?.id;
-    const sessionToken = data.meta?.['session-token'] || '';
+    let sessionToken = data.meta?.['session-token'] || data.data?.attributes?.['session-token'] || '';
+    // Persona may not return session-token on create; call /resume to obtain it
+    if (!sessionToken && inquiryId) {
+      const resumeLink = await resumePersonaInquiry(inquiryId);
+      if (resumeLink) {
+        const m = resumeLink.match(/session-token=([^&]+)/);
+        if (m) sessionToken = m[1];
+      }
+    }
     // Build hosted flow URL for link/QR sharing
     const hostedUrl = sessionToken
       ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${sessionToken}`
