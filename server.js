@@ -3174,7 +3174,12 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       d.hire_date||'',d.position||'',d.department||'',
       parseFloat(d.pay_rate)||0,d.pay_type||'hourly',d.status||'active',
       pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'');
-    res.json({ success: true, id: r.lastInsertRowid, employee_id: empId });
+    const newId = r.lastInsertRowid;
+    if (d.force) {
+      if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), newId);
+      if (d.email && d.email.trim()) db.prepare('UPDATE employees SET email=? WHERE email=? AND id!=?').run('', d.email.trim(), newId);
+    }
+    res.json({ success: true, id: newId, employee_id: empId });
   } catch(e) {
     if (e.message.includes('UNIQUE')) return res.status(400).json({ error: '员工编号已存在' });
     res.status(500).json({ error: e.message });
@@ -3223,6 +3228,10 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     JSON.stringify(d.extra_phones || JSON.parse(emp.extra_phones || '[]')),
     JSON.stringify(d.extra_emails || JSON.parse(emp.extra_emails || '[]')),
     req.params.id);
+  if (d.force) {
+    if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), req.params.id);
+    if (d.email && d.email.trim()) db.prepare('UPDATE employees SET email=? WHERE email=? AND id!=?').run('', d.email.trim(), req.params.id);
+  }
   res.json({ success: true });
 });
 

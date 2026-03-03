@@ -2407,6 +2407,7 @@ tr:hover td{background:var(--sky-light)}
 
 <script>
 let _gcmCallback = null;
+let _pendingDupSave = null; // { data, empId, fieldLabel, existingEmpName }
 function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor, cancelText) {
   const colors = {
     blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
@@ -4696,7 +4697,13 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
-function closeEmpModal() { _convertFromWorkerId = null; guardClose('empModal'); }
+function closeEmpModal() {
+  _convertFromWorkerId = null;
+  guardClose('empModal');
+  if (!document.getElementById('empModal').classList.contains('show') && _pendingDupSave) {
+    setTimeout(_showDupResolutionModal, 150);
+  }
+}
 
 // ── Address verify helpers ──
 function _setAddrStatus(el, verified) {
@@ -5003,6 +5010,33 @@ function randomFillPartner() {
   document.getElementById('pNotes').value = pick(notes);
 }
 
+async function _forceSaveEmployee(p) {
+  const r = await api(
+    p.empId ? `/admin/employees/${p.empId}` : '/admin/employees',
+    { method: p.empId ? 'PUT' : 'POST', body: JSON.stringify({ ...p.data, force: true }) }
+  );
+  if (r.success || r.id) {
+    await loadEmployees();
+    showToast(`✅ 员工「${p.data.first_name} ${p.data.last_name}」信息已保存，${p.fieldLabel}已转移`);
+  } else {
+    showToast(`❌ ${r.error || '保存失败'}`, 'error');
+  }
+}
+
+function _showDupResolutionModal() {
+  const p = _pendingDupSave;
+  _pendingDupSave = null;
+  showConfirmModal(
+    `如何处理${p.fieldLabel}冲突？`,
+    `你已查看了员工「${p.existingEmpName}」的档案。\n\n选择「更新成新信息」将把该${p.fieldLabel}转给正在编辑的员工，原员工档案中该字段将被清空。`,
+    `更新成新信息 / Use New Info`,
+    'btn',
+    () => _forceSaveEmployee(p),
+    'amber',
+    '保留原员工信息 / Keep Original'
+  );
+}
+
 async function saveEmployee() {
   const id = document.getElementById('empId').value;
   const data = {
@@ -5084,7 +5118,10 @@ async function saveEmployee() {
       `该${fieldLabel}已登记在员工「${empName}」名下，不允许重复。请查看已有档案后修改再保存。`,
       '查看员工档案 / View Employee',
       'btn',
-      async () => { clearModalState('empModal'); closeEmpModal(); await loadEmployees(); openEmpModal(emp.id); },
+      async () => {
+        _pendingDupSave = { data, empId: id || null, fieldLabel, existingEmpName: empName };
+        clearModalState('empModal'); closeEmpModal(); await loadEmployees(); openEmpModal(emp.id);
+      },
       'amber',
       '关闭 / Close'
     );
