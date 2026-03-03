@@ -769,6 +769,18 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Generic Confirm / Alert Modal -->
+<div class="modal-overlay" id="customDialogModal">
+  <div class="modal-box" style="max-width:400px;width:92%">
+    <div style="text-align:center;margin-bottom:1rem">
+      <div id="customDialogIcon" style="width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.5rem;margin-bottom:.6rem"></div>
+      <h2 id="customDialogTitle" style="font-size:1.05rem;font-weight:700;color:var(--blue);margin:0"></h2>
+    </div>
+    <div id="customDialogBody" style="font-size:.88rem;color:var(--gray-500);line-height:1.6;text-align:center;margin-bottom:1.25rem;white-space:pre-line"></div>
+    <div id="customDialogBtns" style="display:flex;gap:.6rem"></div>
+  </div>
+</div>
+
 <script>
 let WORKER_TOKEN = localStorage.getItem('pa_worker_token') || '';
 let _allJobs = [];
@@ -784,6 +796,39 @@ function showToast(msg, type='success') {
   setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 300); }, 3000);
 }
 
+// ─── Custom Dialog (replaces native alert/confirm) ───
+let _dialogResolve = null;
+function customAlert(msg, title = '提示', icon = 'ℹ️') {
+  return new Promise(resolve => {
+    _dialogResolve = resolve;
+    const modal = document.getElementById('customDialogModal');
+    document.getElementById('customDialogIcon').textContent = icon;
+    document.getElementById('customDialogIcon').style.background = '#DBEAFE';
+    document.getElementById('customDialogTitle').textContent = title;
+    document.getElementById('customDialogBody').textContent = msg;
+    document.getElementById('customDialogBtns').innerHTML = `<button class="modal-btn modal-btn-primary" onclick="_closeDialog(true)" style="flex:1">确定 / OK</button>`;
+    modal.classList.add('show');
+  });
+}
+function customConfirm(msg, title = '确认', icon = '❓') {
+  return new Promise(resolve => {
+    _dialogResolve = resolve;
+    const modal = document.getElementById('customDialogModal');
+    document.getElementById('customDialogIcon').textContent = icon;
+    document.getElementById('customDialogIcon').style.background = '#FEF3C7';
+    document.getElementById('customDialogTitle').textContent = title;
+    document.getElementById('customDialogBody').textContent = msg;
+    document.getElementById('customDialogBtns').innerHTML = `
+      <button class="modal-btn modal-btn-secondary" onclick="_closeDialog(false)" style="flex:1">取消 / Cancel</button>
+      <button class="modal-btn modal-btn-primary" onclick="_closeDialog(true)" style="flex:1">确认 / Confirm</button>`;
+    modal.classList.add('show');
+  });
+}
+function _closeDialog(result) {
+  document.getElementById('customDialogModal').classList.remove('show');
+  if (_dialogResolve) { _dialogResolve(result); _dialogResolve = null; }
+}
+
 async function wApi(path, opts={}) {
   const r = await fetch('/api/worker' + path, {
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
@@ -796,13 +841,13 @@ async function wApi(path, opts={}) {
 async function workerLogin() {
   const login = document.getElementById('wLogin').value.trim();
   const password = document.getElementById('wPassword').value;
-  if (!login || !password) return alert('请输入邮箱/手机号和密码');
+  if (!login || !password) { await customAlert('请输入邮箱/手机号和密码', '登录提示', '⚠️'); return; }
   const r = await fetch('/api/worker/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ login, password })
   });
-  if (!r.ok) { const e = await r.json(); return alert(e.error || '登录失败'); }
+  if (!r.ok) { const e = await r.json(); await customAlert(e.error || '登录失败', '登录失败', '❌'); return; }
   const data = await r.json();
   WORKER_TOKEN = data.token;
   localStorage.setItem('pa_worker_token', WORKER_TOKEN);
@@ -1877,25 +1922,31 @@ async function startPersonaVerification() {
         btn.disabled = false;
         btn.textContent = '🖥️ 开始验证 / Start Verification';
       },
-      onComplete: ({ inquiryId, status, fields }) => {
+      onComplete: async ({ inquiryId, status, fields }) => {
         console.log('[Persona] Complete:', inquiryId, status);
         const box = document.getElementById('personaStatusBox');
         box.style.display = '';
-        if (status === 'completed') {
-          box.style.background = '#fefce8';
-          box.style.border = '1px solid #fde047';
-          box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Processing...</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">证件已提交，系统正在自动验证。通过后状态会自动更新。</div>';
-        } else {
-          box.style.background = '#f0fdf4';
-          box.style.border = '1px solid #86efac';
-          box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 验证已提交 / Submitted</div>';
-        }
+        box.style.background = '#fefce8';
+        box.style.border = '1px solid #fde047';
+        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Processing...</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">证件已提交，系统正在自动验证。通过后状态会自动更新。<br>Verification submitted. Status will update automatically.</div>';
         showToast('✅ 证件已提交验证');
         _personaHostedUrl = null; // reset after completion
+        // Immediately trigger active poll to fetch latest status from Persona API
+        const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
         loadCompliance();
         loadOnboarding();
-        // Poll for status update from webhook (Persona webhook may take a few seconds)
-        startPersonaStatusPoll();
+        if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted')) {
+          if (pollResult.status === 'approved') {
+            box.style.background = '#f0fdf4';
+            box.style.border = '1px solid #86efac';
+            box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
+          } else {
+            box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证已提交，等待审核 / Submitted, Pending Review</div>';
+          }
+        } else {
+          // Continue polling if not yet updated
+          startPersonaStatusPoll();
+        }
       },
       onCancel: ({ inquiryId }) => {
         console.log('[Persona] Cancelled:', inquiryId);
@@ -1936,20 +1987,26 @@ function showPersonaSendStatus(msg, type) {
   setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
 
-// Poll Persona status after verification completion (webhook may take a few seconds)
+// Poll Persona status after verification completion — actively queries Persona API
 let _personaPollTimer = null;
 function startPersonaStatusPoll() {
   if (_personaPollTimer) clearInterval(_personaPollTimer);
   let attempts = 0;
   _personaPollTimer = setInterval(async () => {
     attempts++;
-    if (attempts > 12) { clearInterval(_personaPollTimer); _personaPollTimer = null; return; } // stop after ~60s
-    const st = await wApi('/persona/status');
-    if (st && (st.status === 'approved' || st.status === 'submitted' || st.persona_status === 'approved' || st.persona_status === 'completed')) {
+    if (attempts > 20) { clearInterval(_personaPollTimer); _personaPollTimer = null; return; } // stop after ~100s
+    // Use active poll endpoint that queries Persona API directly (not just local DB)
+    const st = await wApi('/persona/poll-status', { method: 'POST' });
+    if (st && (st.status === 'approved' || st.status === 'submitted' || st.persona_status === 'approved' || st.persona_status === 'completed' || st.persona_status === 'needs_review')) {
       clearInterval(_personaPollTimer);
       _personaPollTimer = null;
       loadOnboarding();
       loadCompliance();
+      if (st.status === 'approved') {
+        showToast('✅ 身份验证已通过！');
+      } else {
+        showToast('✅ 验证已提交，等待审核');
+      }
     }
   }, 5000);
 }
@@ -1964,8 +2021,7 @@ async function personaSendSMS() {
   }
   // Show masked phone and ask for confirmation
   const maskedPhone = phone.slice(0, 3) + '****' + phone.slice(-4);
-  const confirmed = confirm(`将发送验证链接到以下手机号 / Verification link will be sent to:\n\n📱 ${maskedPhone}\n\n是否确认发送？ / Confirm send?`);
-  if (!confirmed) return;
+  if (!await customConfirm(`将发送验证链接到以下手机号 / Verification link will be sent to:\n\n📱 ${maskedPhone}\n\n是否确认发送？ / Confirm send?`, '发送短信', '📱')) return;
 
   const btn = document.getElementById('personaSmsBtn');
   btn.disabled = true;
@@ -2000,8 +2056,7 @@ async function personaSendEmail() {
   }
   // Show masked email and ask for confirmation
   const maskedEmail = email.replace(/(.{2}).*(@.*)/, '$1****$2');
-  const confirmed = confirm(`将发送验证链接到以下邮箱 / Verification link will be sent to:\n\n📧 ${maskedEmail}\n\n是否确认发送？ / Confirm send?`);
-  if (!confirmed) return;
+  if (!await customConfirm(`将发送验证链接到以下邮箱 / Verification link will be sent to:\n\n📧 ${maskedEmail}\n\n是否确认发送？ / Confirm send?`, '发送邮件', '📧')) return;
 
   const btn = document.getElementById('personaEmailBtn');
   btn.disabled = true;
@@ -2109,8 +2164,8 @@ async function submitI9(e) {
     });
     const data = await r.json();
     if (data.success) { showToast('✅ I-9 已提交，等待审核'); form.reset(); loadCompliance(); }
-    else alert(data.error || '提交失败');
-  } catch { alert('网络错误'); }
+    else customAlert(data.error || '提交失败', '提交失败', '❌');
+  } catch { customAlert('网络错误', '错误', '❌'); }
 }
 
 async function submitDL(e) {
@@ -2125,8 +2180,8 @@ async function submitDL(e) {
     });
     const data = await r.json();
     if (data.success) { showToast('✅ 驾照已提交，等待验证'); form.reset(); loadCompliance(); }
-    else alert(data.error || '提交失败');
-  } catch { alert('网络错误'); }
+    else customAlert(data.error || '提交失败', '提交失败', '❌');
+  } catch { customAlert('网络错误', '错误', '❌'); }
 }
 
 async function submitW9(e) {
@@ -2143,8 +2198,8 @@ async function submitW9(e) {
     });
     const data = await r.json();
     if (data.success) { showToast('✅ W-9 已提交，等待审核'); form.reset(); loadCompliance(); }
-    else alert(data.error || '提交失败');
-  } catch { alert('网络错误'); }
+    else customAlert(data.error || '提交失败', '提交失败', '❌');
+  } catch { customAlert('网络错误', '错误', '❌'); }
 }
 
 // ─── Onboarding / 待办事项 ───
@@ -2206,12 +2261,12 @@ async function loadOnboarding() {
 async function submitOnboardingTask(key) {
   const r = await wApi(`/onboarding/${key}/submit`, { method:'POST', body:'{}' });
   if (r && r.success) { showToast('✅ 已提交，等待 HR 审核'); loadOnboarding(); }
-  else alert(r?.error || '提交失败');
+  else customAlert(r?.error || '提交失败', '提交失败', '❌');
 }
 
 // ── Cancel / Reschedule Interview ──
 async function cancelInterview() {
-  if (!confirm('确认取消面试预约吗？\nAre you sure you want to cancel your interview booking?')) return;
+  if (!await customConfirm('确认取消面试预约吗？\nAre you sure you want to cancel your interview booking?', '取消面试', '📅')) return;
   const r = await wApi('/interview/cancel', { method: 'POST', body: '{}' });
   if (!r) return;
   if (r.success) {
@@ -2223,8 +2278,8 @@ async function cancelInterview() {
   }
 }
 
-function rescheduleInterview() {
-  if (!confirm('更改预约时间将取消当前预约，然后您可以选择新的时间。\nRescheduling will cancel your current booking, then you can pick a new time.\n\n继续？Continue?')) return;
+async function rescheduleInterview() {
+  if (!await customConfirm('更改预约时间将取消当前预约，然后您可以选择新的时间。\nRescheduling will cancel your current booking, then you can pick a new time.\n\n继续？Continue?', '更改预约', '🔄')) return;
   wApi('/interview/cancel', { method: 'POST', body: '{}' }).then(r => {
     if (r && r.success) {
       showToast('当前预约已取消，请选择新时间 / Booking cancelled, please select a new time');
@@ -2344,6 +2399,7 @@ async function modalBookSlot(slotId) {
 // Close modal on overlay click
 document.addEventListener('click', (e) => {
   if (e.target.id === 'interviewBookModal') closeInterviewBookModal();
+  if (e.target.id === 'customDialogModal') _closeDialog(false);
 });
 
 function esc(s) {

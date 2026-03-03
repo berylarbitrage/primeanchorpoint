@@ -4521,6 +4521,86 @@ app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (re
   }
 });
 
+// Worker: actively poll Persona API for latest inquiry status (does not rely on webhook)
+app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
+  const apiKey = process.env.PERSONA_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'Persona not configured' });
+  const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
+  if (!doc) return res.json({ status: 'not_started' });
+  let formData;
+  try { formData = JSON.parse(doc.form_data || '{}'); } catch { formData = {}; }
+  const inquiryId = formData.persona_inquiry_id;
+  if (!inquiryId) return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+
+  try {
+    const resp = await fetch(`https://withpersona.com/api/v1/inquiries/${inquiryId}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Persona-Version': '2023-01-05', 'Accept': 'application/json' }
+    });
+    if (!resp.ok) {
+      console.error('[Persona Poll] API error:', resp.status);
+      return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+    }
+    const data = await resp.json();
+    const inquiryStatus = data.data?.attributes?.status;
+    if (!inquiryStatus || inquiryStatus === formData.persona_status) {
+      return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+    }
+
+    // Status changed — update local DB (mirrors webhook logic)
+    formData.persona_status = inquiryStatus;
+    formData.persona_polled_at = new Date().toISOString();
+
+    // Extract verification fields if included
+    const included = data.included || [];
+    const govIdVerification = included.find(i => i.type === 'verification/government-id');
+    if (govIdVerification) {
+      const attrs = govIdVerification.attributes || {};
+      formData.dl_number = attrs['id-number'] || formData.dl_number || '';
+      formData.dl_state = attrs['address-subdivision'] || formData.dl_state || '';
+      formData.dl_expiry = attrs['expiration-date'] || formData.dl_expiry || '';
+      formData.dl_first_name = attrs['name-first'] || formData.dl_first_name || '';
+      formData.dl_last_name = attrs['name-last'] || formData.dl_last_name || '';
+      formData.dl_dob = attrs['birthdate'] || formData.dl_dob || '';
+      formData.id_class = attrs['id-class'] || formData.id_class || '';
+    }
+
+    let newStatus = doc.status;
+    if (inquiryStatus === 'approved') newStatus = 'approved';
+    else if (inquiryStatus === 'declined') newStatus = 'rejected';
+    else if (inquiryStatus === 'completed') newStatus = 'submitted';
+    else if (inquiryStatus === 'failed') newStatus = 'rejected';
+    else if (inquiryStatus === 'needs_review') newStatus = 'submitted';
+
+    if (newStatus !== doc.status || inquiryStatus !== (formData.persona_status_prev || '')) {
+      formData.persona_status_prev = inquiryStatus;
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, status=?, reviewer_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .run(JSON.stringify(formData), newStatus, `Persona poll: ${inquiryStatus}`, doc.id);
+
+      // Also update worker_accounts and onboarding (same as webhook)
+      let identityStatus = '';
+      if (inquiryStatus === 'approved') identityStatus = 'approved';
+      else if (inquiryStatus === 'declined' || inquiryStatus === 'failed') identityStatus = 'declined';
+      else if (inquiryStatus === 'completed' || inquiryStatus === 'needs_review') identityStatus = 'completed';
+      if (identityStatus) {
+        db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE id=?`).run(identityStatus, req.workerId);
+        if (identityStatus === 'approved') {
+          db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+        } else if (identityStatus === 'completed') {
+          db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+        } else if (identityStatus === 'declined') {
+          db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+        }
+      }
+      console.log(`[Persona Poll] Updated worker ${req.workerId} → doc.status=${newStatus}, persona_status=${inquiryStatus}`);
+    }
+
+    res.json({ status: newStatus, persona_status: inquiryStatus, updated: true });
+  } catch (e) {
+    console.error('[Persona Poll] Error:', e.message);
+    res.json({ status: doc.status, persona_status: formData.persona_status || null });
+  }
+});
+
 // Submit W-9 form data
 app.post('/api/worker/compliance/w9', requireWorker, (req, res) => {
   const formData = {};
