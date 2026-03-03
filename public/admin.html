@@ -4020,8 +4020,9 @@ async function openAssignModal(assignment) {
   } else { fileInfo.textContent = ''; }
   document.getElementById('aInquiry').value = '';
   document.getElementById('aJob').value = '';
-  document.getElementById('aInquiryId').value = '';
-  document.getElementById('aJobId').value = '';
+  // Set IDs immediately from assignment data — don't wait for API lookup
+  document.getElementById('aInquiryId').value = assignment ? (assignment.inquiry_id || '') : '';
+  document.getElementById('aJobId').value      = assignment ? (assignment.job_id      || '') : '';
   document.getElementById('aDispatchWarn').style.display = 'none';
   closeAssignDropdowns();
 
@@ -4030,8 +4031,9 @@ async function openAssignModal(assignment) {
   _assignJobs = jobs.filter(j => j.active);
 
   if (assignment) {
+    // Update display text; IDs are already set above
     const inq = inqs.find(i => i.id == assignment.inquiry_id);
-    const job = jobs.find(j => j.id == assignment.job_id);   // all jobs incl. inactive
+    const job = jobs.find(j => j.id == assignment.job_id);
     if (inq) { document.getElementById('aInquiry').value = inq.name + (inq.phone ? ' · ' + inq.phone : ''); document.getElementById('aInquiryId').value = inq.id; }
     if (job) { document.getElementById('aJob').value = job.title + ' - ' + job.location; document.getElementById('aJobId').value = job.id; }
   }
