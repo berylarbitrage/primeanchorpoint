@@ -1775,9 +1775,17 @@ function hideW9Form() { document.getElementById('w9FormCard').style.display = 'n
 
 // Open Persona verification from onboarding tab — switch to compliance and auto-show DL form
 async function openPersonaInPortal() {
-  showTab('compliance');
-  // Wait a tick for loadCompliance to finish, then open DL form
-  setTimeout(() => showDLForm(), 300);
+  // Switch to compliance tab visually (without calling showTab to avoid loadCompliance race)
+  ['jobs','interview','applications','timeclock','payments','compliance','todos','profile'].forEach(t => {
+    document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t==='compliance'?'':'none';
+  });
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'compliance'));
+  // Wait for compliance content to fully load (loadCompliance hides all forms at the end)
+  await loadCompliance();
+  // Now safely show the DL form — no race condition
+  showDLForm();
+  // Scroll to the DL form card so user sees it immediately
+  document.getElementById('dlFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── Persona Verification ──
