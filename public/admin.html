@@ -4724,18 +4724,22 @@ async function _doVerifyEmpAddr(silent) {
   const statusEl = document.getElementById('eAddrStatus');
   statusEl.textContent = '验证中…';
   statusEl.style.color = 'var(--gray-400)';
-  const result = await validateAddress({ street, street2, city, state, zip }, { silent });
-  if (result.skipped) { statusEl.textContent = ''; return; }
-  if (!result.proceed) { statusEl.textContent = ''; return; }
-  if (result.verified === false) { _setAddrStatus(statusEl, false); return; }
-  if (result.standardized) {
-    const s = result.standardized;
-    document.getElementById('eAddr').value  = s.street;
-    document.getElementById('eCity').value  = s.city;
-    document.getElementById('eZip').value   = s.zip;
-    fillStateSelect(document.getElementById('eState'), s.state);
+  try {
+    const result = await validateAddress({ street, street2, city, state, zip }, { silent });
+    if (result.skipped) { statusEl.textContent = ''; return; }
+    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
+    if (result.standardized) {
+      const s = result.standardized;
+      document.getElementById('eAddr').value  = s.street;
+      document.getElementById('eCity').value  = s.city;
+      document.getElementById('eZip').value   = s.zip;
+      fillStateSelect(document.getElementById('eState'), s.state);
+    }
+    _setAddrStatus(statusEl, result.verified === true);
+  } catch (e) {
+    console.error('[verifyEmpAddr]', e);
+    _setAddrStatus(statusEl, false);
   }
-  _setAddrStatus(statusEl, true);
 }
 
 function verifyEmpAddr()    { _doVerifyEmpAddr(false); }
@@ -4761,20 +4765,24 @@ async function _doVerifyPartnerAddr(row, silent) {
   const zip    = zipEl.value.trim();
   if (!street && !city && !zip) return;
   if (statusEl) { statusEl.textContent = '验证中…'; statusEl.style.color = 'var(--gray-400)'; }
-  const result = await validateAddress({
-    street, street2: street2El ? street2El.value.trim() : '', city, state: stateEl.value, zip
-  }, { silent });
-  if (result.skipped) { if (statusEl) statusEl.textContent = ''; return; }
-  if (!result.proceed) { if (statusEl) statusEl.textContent = ''; return; }
-  if (result.verified === false) { _setAddrStatus(statusEl, false); return; }
-  if (result.standardized) {
-    const s = result.standardized;
-    streetEl.value = s.street;
-    cityEl.value   = s.city;
-    stateEl.value  = s.state;
-    zipEl.value    = s.zip;
+  try {
+    const result = await validateAddress({
+      street, street2: street2El ? street2El.value.trim() : '', city, state: stateEl.value, zip
+    }, { silent });
+    if (result.skipped) { if (statusEl) statusEl.textContent = ''; return; }
+    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
+    if (result.standardized) {
+      const s = result.standardized;
+      streetEl.value = s.street;
+      cityEl.value   = s.city;
+      stateEl.value  = s.state;
+      zipEl.value    = s.zip;
+    }
+    _setAddrStatus(statusEl, result.verified === true);
+  } catch (e) {
+    console.error('[verifyPartnerAddr]', e);
+    _setAddrStatus(statusEl, false);
   }
-  _setAddrStatus(statusEl, true);
 }
 
 function verifyPartnerAddr(btn) { _doVerifyPartnerAddr(btn.closest('.pa-addr-row'), false); }
@@ -4795,12 +4803,16 @@ async function _doVerifySingleAddr(inputId, statusId, silent) {
   if (!input || !input.value.trim()) return;
   statusEl.textContent = '验证中…';
   statusEl.style.color = 'var(--gray-400)';
-  const result = await validateAddressSingleField(input.value.trim(), { silent });
-  if (result.skipped) { statusEl.textContent = ''; return; }
-  if (!result.proceed) { statusEl.textContent = ''; return; }
-  if (result.verified === false) { _setAddrStatus(statusEl, false); return; }
-  if (result.standardized) input.value = result.standardized;
-  _setAddrStatus(statusEl, true);
+  try {
+    const result = await validateAddressSingleField(input.value.trim(), { silent });
+    if (result.skipped) { statusEl.textContent = ''; return; }
+    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
+    if (result.standardized) input.value = result.standardized;
+    _setAddrStatus(statusEl, result.verified === true);
+  } catch (e) {
+    console.error('[verifySingleAddr]', e);
+    _setAddrStatus(statusEl, false);
+  }
 }
 
 function verifySingleAddr(inputId, statusId)     { _doVerifySingleAddr(inputId, statusId, false); }

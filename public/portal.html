@@ -2207,21 +2207,26 @@ async function _doVerifyI9Addr(silent) {
   if (!street && !city && !zip) return;
   const statusEl = document.getElementById('i9AddrStatus');
   statusEl.textContent = '验证中…'; statusEl.style.color = '#94a3b8';
-  const result = await validateAddress({
-    street, street2: form.apt ? form.apt.value.trim() : '',
-    city, state: form.state.value, zip
-  }, { silent });
-  if (result.skipped || !result.proceed) { statusEl.textContent = ''; return; }
-  if (result.verified === false) { _setPortalAddrStatus('i9AddrStatus', false); return; }
-  if (result.standardized) {
-    const s = result.standardized;
-    form.address.value = s.street;
-    if (form.apt && s.street2) form.apt.value = s.street2;
-    form.city.value  = s.city;
-    form.state.value = s.state;
-    form.zip.value   = s.zip;
+  try {
+    const result = await validateAddress({
+      street, street2: form.apt ? form.apt.value.trim() : '',
+      city, state: form.state.value, zip
+    }, { silent });
+    if (result.skipped) { statusEl.textContent = ''; return; }
+    if (!result.proceed) { _setPortalAddrStatus('i9AddrStatus', false); return; }
+    if (result.standardized) {
+      const s = result.standardized;
+      form.address.value = s.street;
+      if (form.apt && s.street2) form.apt.value = s.street2;
+      form.city.value  = s.city;
+      form.state.value = s.state;
+      form.zip.value   = s.zip;
+    }
+    _setPortalAddrStatus('i9AddrStatus', result.verified === true);
+  } catch (e) {
+    console.error('[verifyI9Addr]', e);
+    _setPortalAddrStatus('i9AddrStatus', false);
   }
-  _setPortalAddrStatus('i9AddrStatus', true);
 }
 
 function verifyI9Addr()     { _doVerifyI9Addr(false); }
@@ -2240,17 +2245,22 @@ async function _doVerifyW9Addr(silent) {
   if (!street && !city && !zip) return;
   const statusEl = document.getElementById('w9AddrStatus');
   statusEl.textContent = '验证中…'; statusEl.style.color = '#94a3b8';
-  const result = await validateAddress({ street, city, state: form.state.value.trim(), zip }, { silent });
-  if (result.skipped || !result.proceed) { statusEl.textContent = ''; return; }
-  if (result.verified === false) { _setPortalAddrStatus('w9AddrStatus', false); return; }
-  if (result.standardized) {
-    const s = result.standardized;
-    form.address.value = s.street;
-    form.city.value    = s.city;
-    form.state.value   = s.state;
-    form.zip.value     = s.zip;
+  try {
+    const result = await validateAddress({ street, city, state: form.state.value.trim(), zip }, { silent });
+    if (result.skipped) { statusEl.textContent = ''; return; }
+    if (!result.proceed) { _setPortalAddrStatus('w9AddrStatus', false); return; }
+    if (result.standardized) {
+      const s = result.standardized;
+      form.address.value = s.street;
+      form.city.value    = s.city;
+      form.state.value   = s.state;
+      form.zip.value     = s.zip;
+    }
+    _setPortalAddrStatus('w9AddrStatus', result.verified === true);
+  } catch (e) {
+    console.error('[verifyW9Addr]', e);
+    _setPortalAddrStatus('w9AddrStatus', false);
   }
-  _setPortalAddrStatus('w9AddrStatus', true);
 }
 
 function verifyW9Addr()     { _doVerifyW9Addr(false); }

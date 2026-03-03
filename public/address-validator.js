@@ -10,33 +10,42 @@
  */
 async function validateAddress({ street, street2, city, state, zip }, { silent = false } = {}) {
   if (!street && !city && !zip) return { proceed: true };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const res = await fetch('/api/validate-address', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ street: street || '', street2: street2 || '', city: city || '', state: state || '', zip: zip || '' })
+      body: JSON.stringify({ street: street || '', street2: street2 || '', city: city || '', state: state || '', zip: zip || '' }),
+      signal: controller.signal
     });
     if (!res.ok) return { proceed: true };
     const data = await res.json();
     return _handleResult(data, { street, city, state, zip }, { silent });
   } catch (e) {
-    console.warn('[Google Address Validation] Error:', e);
+    if (e.name === 'AbortError') console.warn('[Google Address Validation] Request timed out');
+    else console.warn('[Google Address Validation] Error:', e);
     return { proceed: true };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 /**
  * Validate a single-line address string (e.g. "123 Main St, Chicago, IL 60601").
  * @param {string} address
- * @returns {Promise<{ proceed: boolean, standardized?: string }>}
+ * @returns {Promise<{ proceed: boolean, verified?: boolean, standardized?: string }>}
  */
 async function validateAddressSingleField(address, { silent = false } = {}) {
   if (!address || !address.trim()) return { proceed: true };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const res = await fetch('/api/validate-address', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ street: address.trim() })
+      body: JSON.stringify({ street: address.trim() }),
+      signal: controller.signal
     });
     if (!res.ok) return { proceed: true };
     const data = await res.json();
@@ -52,8 +61,11 @@ async function validateAddressSingleField(address, { silent = false } = {}) {
     }
     return result;
   } catch (e) {
-    console.warn('[Google Address Validation] Error:', e);
+    if (e.name === 'AbortError') console.warn('[Google Address Validation] Request timed out');
+    else console.warn('[Google Address Validation] Error:', e);
     return { proceed: true };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -69,7 +81,7 @@ function _handleResult(data, original, { silent = false } = {}) {
       'No match found in the USPS database.\n\n' +
       '是否仍要继续提交？/ Continue submitting anyway?'
     );
-    return { proceed };
+    return { proceed, verified: false };
   }
 
   const std = data.standardized;

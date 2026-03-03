@@ -5596,6 +5596,7 @@ app.post('/api/validate-address', async (req, res) => {
         r.on('data', chunk => data += chunk);
         r.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid JSON from Google')); } });
       });
+      req2.setTimeout(10000, () => { req2.destroy(new Error('Google API request timed out')); });
       req2.on('error', reject);
       req2.write(body);
       req2.end();
