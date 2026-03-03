@@ -1997,7 +1997,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="form-section" style="margin-top:.75rem">
     <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">排班时间</label>
     <table class="sched-table" id="aSchedTable">
-      <thead><tr><th>星期</th><th>上班</th><th>下班</th><th>休息次数</th><th>每次时长</th><th>休息日</th></tr></thead>
+      <thead><tr><th>星期</th><th>上班</th><th>下班</th><th>休息次数</th><th>每次时长</th><th>休息日</th><th></th></tr></thead>
       <tbody id="aSchedBody"></tbody>
     </table>
   </div>
@@ -4082,6 +4082,14 @@ function initSchedTable(schedJson) {
         <input type="checkbox" id="sched-off-${key}" onchange="toggleSchedOff('${key}')" ${off ? 'checked' : ''}>
         休息
       </label></td>
+      <td style="width:1px;padding-left:.2rem">
+        <button id="sched-copy-btn-${key}" data-sched-copy onclick="schedCopyOpen('${key}',this)" title="复制到其他天" ${dis}
+          style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:3px;border-radius:4px;line-height:1;display:block">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
+      </td>
     </tr>
     <tr id="sched-btimes-row-${key}" style="display:none">
       <td></td>
@@ -4136,6 +4144,8 @@ function toggleSchedOff(key) {
     if (bs) bs.disabled = off;
     if (be) be.disabled = off;
   }
+  const copyBtn = document.getElementById('sched-copy-btn-' + key);
+  if (copyBtn) copyBtn.disabled = off;
   if (off) document.getElementById('sched-btimes-row-' + key).style.display = 'none';
   else if (count) document.getElementById('sched-btimes-row-' + key).style.display = '';
 }
@@ -4161,6 +4171,82 @@ function getSchedJson() {
     };
   });
   return JSON.stringify(out);
+}
+// ── Sched row copy ────────────────────────────────────────────────
+let _schedCopyFrom = null;
+
+function _ensureSchedCopyPopover() {
+  if (document.getElementById('schedCopyPopover')) return;
+  const pop = document.createElement('div');
+  pop.id = 'schedCopyPopover';
+  pop.style.cssText = 'display:none;position:fixed;background:#fff;border:1px solid var(--gray-200);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15);padding:.7rem .9rem;z-index:9999;min-width:148px';
+  const s = 'flex:1;font-size:.78rem;padding:.28rem .4rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;background:var(--gray-50);color:var(--gray-700)';
+  pop.innerHTML = `
+    <div style="font-weight:600;font-size:.8rem;color:var(--gray-600);margin-bottom:.45rem">复制到</div>
+    <div id="schedCopyDays" style="margin-bottom:.5rem"></div>
+    <div style="display:flex;gap:.35rem">
+      <button onclick="schedCopySelectAll()" style="${s}">全选</button>
+      <button onclick="schedCopyApply()" style="${s};background:var(--sky-light);border-color:var(--blue-300,#93c5fd);font-weight:600">确定</button>
+      <button onclick="schedCopyClose()" style="${s}">取消</button>
+    </div>`;
+  document.body.appendChild(pop);
+  document.addEventListener('click', e => {
+    const p = document.getElementById('schedCopyPopover');
+    if (p && p.style.display !== 'none' && !p.contains(e.target) && !e.target.closest('[data-sched-copy]'))
+      schedCopyClose();
+  }, true);
+}
+
+function schedCopyOpen(fromKey, btn) {
+  _ensureSchedCopyPopover();
+  _schedCopyFrom = fromKey;
+  document.getElementById('schedCopyDays').innerHTML = SCHED_DAYS
+    .filter(d => d.key !== fromKey)
+    .map(d => `<label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;padding:.1rem 0;cursor:pointer">
+      <input type="checkbox" class="sched-copy-cb" value="${d.key}">${d.label}</label>`).join('');
+  const pop = document.getElementById('schedCopyPopover');
+  const rect = btn.getBoundingClientRect();
+  pop.style.top  = Math.min(rect.bottom + 5, window.innerHeight - 230) + 'px';
+  pop.style.left = Math.max(8, rect.right  - 148) + 'px';
+  pop.style.display = 'block';
+}
+
+function schedCopySelectAll() {
+  const cbs = document.querySelectorAll('.sched-copy-cb');
+  const allChecked = [...cbs].every(c => c.checked);
+  cbs.forEach(c => c.checked = !allChecked);
+}
+
+function schedCopyApply() {
+  const fromKey = _schedCopyFrom;
+  if (!fromKey) return;
+  const start  = document.getElementById('sched-start-'  + fromKey).value;
+  const end    = document.getElementById('sched-end-'    + fromKey).value;
+  const breaks = document.getElementById('sched-breaks-' + fromKey).value;
+  const bmin   = document.getElementById('sched-bmin-'   + fromKey).value;
+  const count  = parseInt(breaks) || 0;
+  const bts = [];
+  for (let i = 0; i < count; i++) {
+    const s = document.getElementById(`sched-bt-s-${fromKey}-${i}`);
+    const e = document.getElementById(`sched-bt-e-${fromKey}-${i}`);
+    bts.push({ start: s ? s.value : '', end: e ? e.value : '' });
+  }
+  document.querySelectorAll('.sched-copy-cb:checked').forEach(cb => {
+    const toKey = cb.value;
+    if (document.getElementById('sched-off-' + toKey).checked) return;
+    document.getElementById('sched-start-'  + toKey).value = start;
+    document.getElementById('sched-end-'    + toKey).value = end;
+    document.getElementById('sched-breaks-' + toKey).value = breaks;
+    document.getElementById('sched-bmin-'   + toKey).value = bmin;
+    renderBreakTimes(toKey, bts);
+  });
+  schedCopyClose();
+}
+
+function schedCopyClose() {
+  const pop = document.getElementById('schedCopyPopover');
+  if (pop) pop.style.display = 'none';
+  _schedCopyFrom = null;
 }
 // ─────────────────────────────────────────────────────────────────
 
