@@ -2152,7 +2152,7 @@ async function loadOnboarding() {
     list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
     return;
   }
-  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', persona_verify:'🪪', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadgeStyle = {
     locked:'color:var(--gray-400);background:var(--gray-100);border:1px solid var(--gray-200)',
@@ -2167,6 +2167,10 @@ async function loadOnboarding() {
     if (s === 'pending') {
       if (t.key === 'interview') {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openInterviewBookModal()">去预约面试</button>`;
+      } else if (t.key === 'persona_verify') {
+        actionHtml = t.action_url
+          ? `<a class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;text-decoration:none;display:inline-block" href="${esc(t.action_url)}" target="_blank">🪪 开始身份验证 →</a>`
+          : `<div style="font-size:.8rem;color:var(--gray-400);margin-top:.4rem">HR 会为您发送验证链接，请等待通知。</div>`;
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">去提交文件 →</button>`;
       } else if ((t.key === 'contract' || t.key === 'gusto') && t.action_url) {
