@@ -4020,25 +4020,25 @@ async function openAssignModal(assignment) {
   if (assignment && assignment.contract_filename) {
     fileInfo.innerHTML = `已上传: <a href="/api/admin/assignments/${assignment.id}/contract?token=${TOKEN}" target="_blank">${esc(assignment.contract_filename)}</a>`;
   } else { fileInfo.textContent = ''; }
-  document.getElementById('aInquiry').value = '';
-  document.getElementById('aJob').value = '';
-  // Set IDs immediately from assignment data — don't wait for API lookup
-  document.getElementById('aInquiryId').value = assignment ? (assignment.inquiry_id || '') : '';
-  document.getElementById('aJobId').value      = assignment ? (assignment.job_id      || '') : '';
+  // Pre-fill person & job immediately from the assignment's own joined fields
+  // (server returns inquiry_name/job_title etc. from the JOIN — no second lookup needed)
+  if (assignment) {
+    document.getElementById('aInquiry').value  = assignment.inquiry_name + (assignment.inquiry_phone ? ' · ' + assignment.inquiry_phone : '');
+    document.getElementById('aInquiryId').value = assignment.inquiry_id || '';
+    document.getElementById('aJob').value      = (assignment.job_title || '') + (assignment.job_location ? ' - ' + assignment.job_location : '');
+    document.getElementById('aJobId').value    = assignment.job_id || '';
+  } else {
+    document.getElementById('aInquiry').value  = '';
+    document.getElementById('aJob').value      = '';
+    document.getElementById('aInquiryId').value = '';
+    document.getElementById('aJobId').value    = '';
+  }
   document.getElementById('aDispatchWarn').style.display = 'none';
   closeAssignDropdowns();
 
   const [inqs, jobs] = await Promise.all([api('/admin/inquiries'), api('/admin/jobs')]);
   _assignInqs = inqs;
   _assignJobs = jobs.filter(j => j.active);
-
-  if (assignment) {
-    // Update display text; IDs are already set above
-    const inq = inqs.find(i => i.id == assignment.inquiry_id);
-    const job = jobs.find(j => j.id == assignment.job_id);
-    if (inq) { document.getElementById('aInquiry').value = inq.name + (inq.phone ? ' · ' + inq.phone : ''); document.getElementById('aInquiryId').value = inq.id; }
-    if (job) { document.getElementById('aJob').value = job.title + ' - ' + job.location; document.getElementById('aJobId').value = job.id; }
-  }
 
   schedCopyClose();
   initSchedTable(assignment ? (assignment.work_schedule || '{}') : '{}');
