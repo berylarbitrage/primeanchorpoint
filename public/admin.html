@@ -1997,7 +1997,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="form-section" style="margin-top:.75rem">
     <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">排班时间</label>
     <table class="sched-table" id="aSchedTable">
-      <thead><tr><th>星期</th><th>上班</th><th>下班</th><th>休息</th></tr></thead>
+      <thead><tr><th>星期</th><th>上班</th><th>下班</th><th>休息次数</th><th>每次时长</th><th>休息日</th></tr></thead>
       <tbody id="aSchedBody"></tbody>
     </table>
   </div>
@@ -4065,12 +4065,15 @@ function initSchedTable(schedJson) {
   document.getElementById('aSchedBody').innerHTML = SCHED_DAYS.map(({ key, label }) => {
     const d = sched[key] || {};
     const off = d.off ? true : (key === 'sun' && !sched[key] ? true : false);
-    const start = d.start || '';
-    const end = d.end || '';
+    const dis = off ? 'disabled' : '';
     return `<tr id="sched-row-${key}" class="${off ? 'is-off' : ''}">
       <td style="font-weight:600;white-space:nowrap">${label}</td>
-      <td><input type="time" id="sched-start-${key}" value="${start}" ${off ? 'disabled' : ''}></td>
-      <td><input type="time" id="sched-end-${key}" value="${end}" ${off ? 'disabled' : ''}></td>
+      <td><input type="time" id="sched-start-${key}" value="${d.start||''}" ${dis}></td>
+      <td><input type="time" id="sched-end-${key}" value="${d.end||''}" ${dis}></td>
+      <td><input type="number" id="sched-breaks-${key}" min="0" max="9" value="${d.breaks??''}" placeholder="0"
+        style="width:54px;border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem;text-align:center" ${dis}></td>
+      <td style="white-space:nowrap"><input type="number" id="sched-bmin-${key}" min="0" max="120" value="${d.bmin??''}" placeholder="0"
+        style="width:54px;border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem;text-align:center" ${dis}> <span style="font-size:.78rem;color:var(--gray-500)">分钟</span></td>
       <td><label class="sched-day-off">
         <input type="checkbox" id="sched-off-${key}" onchange="toggleSchedOff('${key}')" ${off ? 'checked' : ''}>
         休息
@@ -4083,8 +4086,9 @@ function toggleSchedOff(key) {
   const off = document.getElementById('sched-off-' + key).checked;
   const row = document.getElementById('sched-row-' + key);
   row.classList.toggle('is-off', off);
-  document.getElementById('sched-start-' + key).disabled = off;
-  document.getElementById('sched-end-' + key).disabled = off;
+  ['sched-start-','sched-end-','sched-breaks-','sched-bmin-'].forEach(p => {
+    document.getElementById(p + key).disabled = off;
+  });
 }
 
 function getSchedJson() {
@@ -4092,8 +4096,10 @@ function getSchedJson() {
   SCHED_DAYS.forEach(({ key }) => {
     const off = document.getElementById('sched-off-' + key).checked;
     out[key] = {
-      start: off ? '' : (document.getElementById('sched-start-' + key).value || ''),
-      end:   off ? '' : (document.getElementById('sched-end-' + key).value || ''),
+      start:  off ? '' : (document.getElementById('sched-start-' + key).value || ''),
+      end:    off ? '' : (document.getElementById('sched-end-' + key).value || ''),
+      breaks: off ? '' : (document.getElementById('sched-breaks-' + key).value || ''),
+      bmin:   off ? '' : (document.getElementById('sched-bmin-' + key).value || ''),
       off
     };
   });
@@ -7263,19 +7269,30 @@ async function pickDispatchJob(w, jobId) {
   closeDispatchJobPicker();
   showTab('assignments');
   await openAssignModal();
-  // Pre-fill person: prefer direct linked_inquiry_id, fallback to phone/email match
-  const inqId = w.linked_inquiry_id;
-  const inq = inqId
-    ? _assignInqs.find(i => i.id == inqId)
-    : _assignInqs.find(i =>
-        (w.phone && i.phone && i.phone === w.phone) ||
-        (w.email && i.email && i.email.toLowerCase() === (w.email || '').toLowerCase())
-      );
+
+  // Normalize phone to digits only for comparison
+  const normPhone = s => (s || '').replace(/\D/g, '');
+  const wPhone = normPhone(w.phone);
+  const wEmail = (w.email || '').toLowerCase();
+
+  // 1. direct linked_inquiry_id  2. normalized phone  3. email
+  const inq = _assignInqs.find(i => i.id == w.linked_inquiry_id) ||
+    (wPhone && _assignInqs.find(i => normPhone(i.phone) === wPhone)) ||
+    (wEmail && _assignInqs.find(i => (i.email || '').toLowerCase() === wEmail));
+
   if (inq) {
     document.getElementById('aInquiry').value = inq.name + (inq.phone ? ' · ' + inq.phone : '');
     document.getElementById('aInquiryId').value = inq.id;
     checkInquiryDispatchStatus(inq.id);
+  } else {
+    // Fall back: pre-fill name so admin can confirm from dropdown
+    const displayName = (w.first_name && w.last_name)
+      ? w.first_name + ' ' + w.last_name
+      : (w.name || w.phone || '');
+    document.getElementById('aInquiry').value = displayName;
+    filterAssignSearch('inq');   // open dropdown for manual confirm
   }
+
   // Pre-fill job
   const job = _assignJobs.find(j => j.id == jobId);
   if (job) {
