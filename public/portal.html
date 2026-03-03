@@ -130,6 +130,7 @@ tr:last-child td{border-bottom:none}
 @media(max-width:600px){.job-card{flex-direction:column}.header h1{font-size:.9rem}.form-row{grid-template-columns:1fr}.compliance-grid{grid-template-columns:1fr}}
 </style>
 <script src="https://cdn.withpersona.com/dist/persona-v5.5.0.js" defer></script>
+<script src="/address-validator.js"></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -2179,6 +2180,22 @@ function toggleI9Fields(val) {
 async function submitI9(e) {
   e.preventDefault();
   const form = e.target;
+  const addrResult = await validateAddress({
+    street:  form.address.value.trim(),
+    street2: form.apt ? form.apt.value.trim() : '',
+    city:    form.city.value.trim(),
+    state:   form.state.value,
+    zip:     form.zip.value.trim()
+  });
+  if (!addrResult.proceed) return;
+  if (addrResult.standardized) {
+    const s = addrResult.standardized;
+    form.address.value = s.street;
+    if (form.apt && s.street2) form.apt.value = s.street2;
+    form.city.value  = s.city;
+    form.state.value = s.state;
+    form.zip.value   = s.zip;
+  }
   const fd = new FormData(form);
   fd.set('signature_confirm', form.signature_confirm.checked ? '1' : '');
   try {
@@ -2212,6 +2229,20 @@ async function submitDL(e) {
 async function submitW9(e) {
   e.preventDefault();
   const form = e.target;
+  const addrResult = await validateAddress({
+    street: form.address.value.trim(),
+    city:   form.city.value.trim(),
+    state:  form.state.value.trim(),
+    zip:    form.zip.value.trim()
+  });
+  if (!addrResult.proceed) return;
+  if (addrResult.standardized) {
+    const s = addrResult.standardized;
+    form.address.value = s.street;
+    form.city.value    = s.city;
+    form.state.value   = s.state;
+    form.zip.value     = s.zip;
+  }
   const body = {};
   new FormData(form).forEach((v, k) => { body[k] = v; });
   body.signature_confirm = form.signature_confirm.checked ? '1' : '';

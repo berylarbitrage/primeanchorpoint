@@ -291,6 +291,7 @@ tr:hover td{background:var(--sky-light)}
 .wa-skill-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-size:.7rem;background:#f0f5ff;color:var(--blue);margin:1px 0;white-space:nowrap}
 .wa-skill-pill .stars{color:#f59e0b;font-size:.65rem}
 </style>
+<script src="/address-validator.js"></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -4439,6 +4440,30 @@ async function deletePartnerFile(fid, pid) {
 
 async function savePartner() {
   if (!validatePartnerAddrs()) return;
+  const addrRows = Array.from(document.querySelectorAll('#pAddrList .pa-addr-row'));
+  for (const row of addrRows) {
+    const streetEl  = row.querySelector('.pa-street');
+    const street2El = row.querySelector('.pa-street2');
+    const cityEl    = row.querySelector('.pa-city');
+    const stateEl   = row.querySelector('.pa-state');
+    const zipEl     = row.querySelector('.pa-zip');
+    if (!streetEl.value.trim() && !cityEl.value.trim()) continue;
+    const addrResult = await validateAddress({
+      street:  streetEl.value.trim(),
+      street2: street2El ? street2El.value.trim() : '',
+      city:    cityEl.value.trim(),
+      state:   stateEl.value,
+      zip:     zipEl.value.trim()
+    });
+    if (!addrResult.proceed) return;
+    if (addrResult.standardized) {
+      const s = addrResult.standardized;
+      streetEl.value = s.street;
+      cityEl.value   = s.city;
+      stateEl.value  = s.state;
+      zipEl.value    = s.zip;
+    }
+  }
   const id = document.getElementById('partnerId').value;
   // Collect services
   const selectedSvcs = Array.from(document.querySelectorAll('#pSvcTags .svc-tag.active')).map(t=>t.dataset.v);
@@ -4864,6 +4889,21 @@ async function saveEmployee() {
   if (zipErr) return alert(zipErr);
   const ssn = document.getElementById('eSSN').value.replace(/\D/g,'');
   if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
+  if (data.address || data.city || data.zip) {
+    const addrResult = await validateAddress({ street: data.address, street2: data.street2, city: data.city, state: data.state, zip: data.zip });
+    if (!addrResult.proceed) return;
+    if (addrResult.standardized) {
+      const s = addrResult.standardized;
+      data.address = s.street;
+      data.city    = s.city;
+      data.state   = s.state;
+      data.zip     = s.zip;
+      document.getElementById('eAddr').value  = s.street;
+      document.getElementById('eCity').value  = s.city;
+      document.getElementById('eZip').value   = s.zip;
+      fillStateSelect(document.getElementById('eState'), s.state);
+    }
+  }
   async function doSave(forceData) {
     return id
       ? await api(`/admin/employees/${id}`, { method:'PUT', body: JSON.stringify(forceData) })
@@ -7500,6 +7540,14 @@ async function saveLocation() {
     instructions:  document.getElementById('ivLocInstructions').value.trim()
   };
   if (!data.name) return showToast('❌ 地点名称必填', 'error');
+  if (data.address) {
+    const addrResult = await validateAddressSingleField(data.address);
+    if (!addrResult.proceed) return;
+    if (addrResult.standardized) {
+      data.address = addrResult.standardized;
+      document.getElementById('ivLocAddress').value = addrResult.standardized;
+    }
+  }
   const r = await api(id ? `/admin/interview-locations/${id}` : '/admin/interview-locations', {
     method: id ? 'PUT' : 'POST',
     body: JSON.stringify(data)
@@ -7996,6 +8044,14 @@ async function saveJobSite() {
     radius_meters: parseInt(document.getElementById('siteRadius').value) || 200
   };
   if (!data.name || isNaN(data.latitude) || isNaN(data.longitude)) return alert('请填写名称和坐标');
+  if (data.address) {
+    const addrResult = await validateAddressSingleField(data.address);
+    if (!addrResult.proceed) return;
+    if (addrResult.standardized) {
+      data.address = addrResult.standardized;
+      document.getElementById('siteAddress').value = addrResult.standardized;
+    }
+  }
   if (id) {
     await api(`/admin/job-sites/${id}`, { method:'PUT', body: JSON.stringify(data) });
   } else {
