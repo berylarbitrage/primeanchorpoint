@@ -104,8 +104,11 @@ tr:hover td{background:var(--sky-light)}
 .sched-table th{font-weight:600;color:var(--gray-500);font-size:.75rem;text-transform:uppercase;padding:.3rem .5rem;text-align:left;border-bottom:1px solid var(--gray-200)}
 .sched-table td{padding:.35rem .5rem;vertical-align:middle;border-bottom:1px solid var(--gray-100)}
 .sched-table tr:last-child td{border-bottom:none}
-.sched-table input[type=time]{border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem;color:var(--gray-700)}
-.sched-table input[type=time]:disabled{background:var(--gray-100);color:var(--gray-400);border-color:var(--gray-100)}
+.sched-time{border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem;color:var(--gray-700);width:68px;font-family:inherit;text-align:center}
+.sched-time:disabled{background:var(--gray-100);color:var(--gray-400);border-color:var(--gray-100)}
+.sched-time.err{border-color:#f87171}
+#schedCopyPanel{display:none;background:#f0f9ff;border:1px solid var(--blue-300,#93c5fd);border-radius:7px;padding:.55rem .8rem;margin-top:.5rem;font-size:.84rem}
+#schedCopyPanel label{display:inline-flex;align-items:center;gap:.25rem;margin-right:.55rem;cursor:pointer}
 .sched-day-off{display:flex;align-items:center;gap:.35rem;font-size:.8rem;color:var(--gray-500);cursor:pointer;user-select:none}
 .sched-table tr.is-off td:not(:first-child):not(:last-child){opacity:.35}
 .djp-item{padding:.75rem 1.5rem;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.88rem;transition:background .1s}
@@ -2000,6 +2003,13 @@ tr:hover td{background:var(--sky-light)}
       <thead><tr><th>星期</th><th>上班</th><th>下班</th><th>休息次数</th><th>休息日</th><th></th></tr></thead>
       <tbody id="aSchedBody"></tbody>
     </table>
+    <div id="schedCopyPanel">
+      <span style="font-weight:600;color:var(--gray-600);margin-right:.5rem">复制到：</span>
+      <span id="schedCopyCheckboxes"></span>
+      <button type="button" onclick="schedCopySelectAll()" style="font-size:.78rem;padding:.2rem .5rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;background:#fff;margin-right:.3rem">全选</button>
+      <button type="button" onclick="schedCopyApply()" style="font-size:.78rem;padding:.2rem .6rem;border-radius:5px;border:1px solid #93c5fd;cursor:pointer;background:#dbeafe;font-weight:600">确定</button>
+      <button type="button" onclick="schedCopyClose()" style="font-size:.78rem;padding:.2rem .5rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;background:#fff;margin-left:.3rem">取消</button>
+    </div>
   </div>
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
@@ -4026,6 +4036,7 @@ async function openAssignModal(assignment) {
     if (job) { document.getElementById('aJob').value = job.title + ' - ' + job.location; document.getElementById('aJobId').value = job.id; }
   }
 
+  schedCopyClose();
   initSchedTable(assignment ? (assignment.work_schedule || '{}') : '{}');
 
   document.getElementById('assignModal').classList.add('show');
@@ -4070,8 +4081,8 @@ function initSchedTable(schedJson) {
     const dis = off ? 'disabled' : '';
     return `<tr id="sched-row-${key}" class="${off ? 'is-off' : ''}">
       <td style="font-weight:600;white-space:nowrap">${label}</td>
-      <td><input type="time" step="60" id="sched-start-${key}" value="${(d.start||'').slice(0,5)}" ${dis}></td>
-      <td><input type="time" step="60" id="sched-end-${key}" value="${(d.end||'').slice(0,5)}" ${dis}></td>
+      <td><input type="text" class="sched-time" id="sched-start-${key}" value="${(d.start||'').slice(0,5)}" placeholder="HH:MM" maxlength="5" ${dis} onblur="fmtSchedTime(this)"></td>
+      <td><input type="text" class="sched-time" id="sched-end-${key}" value="${(d.end||'').slice(0,5)}" placeholder="HH:MM" maxlength="5" ${dis} onblur="fmtSchedTime(this)"></td>
       <td><input type="number" id="sched-breaks-${key}" min="0" max="9" value="${d.breaks??''}" placeholder="0"
         style="${SCHED_INP};width:54px;text-align:center" ${dis}
         oninput="renderBreakTimes('${key}')"></td>
@@ -4080,7 +4091,7 @@ function initSchedTable(schedJson) {
         休息
       </label></td>
       <td style="width:1px;padding-left:.2rem">
-        <button id="sched-copy-btn-${key}" onclick="schedCopyOpen('${key}',this)" title="复制到其他天" ${dis}
+        <button type="button" id="sched-copy-btn-${key}" onclick="schedCopyOpen('${key}')" title="复制到其他天" ${dis}
           style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:3px;border-radius:4px;line-height:1;display:block">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
             <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -4116,11 +4127,9 @@ function renderBreakTimes(key, savedTimes) {
     const e = ((savedTimes && savedTimes[i]) ? savedTimes[i].end   || '' : '').slice(0, 5);
     html += `<span style="display:inline-flex;align-items:center;gap:.3rem;background:var(--sky-light);border:1px solid var(--gray-200);border-radius:6px;padding:.25rem .5rem;font-size:.8rem">
       <span style="color:var(--gray-500);white-space:nowrap">休息${i+1}</span>
-      <input type="time" step="60" id="sched-bt-s-${key}-${i}" value="${s}" ${dis}
-        style="${SCHED_INP}">
+      <input type="text" class="sched-time" id="sched-bt-s-${key}-${i}" value="${s}" placeholder="HH:MM" maxlength="5" ${dis} onblur="fmtSchedTime(this)">
       <span style="color:var(--gray-400)">—</span>
-      <input type="time" step="60" id="sched-bt-e-${key}-${i}" value="${e}" ${dis}
-        style="${SCHED_INP}">
+      <input type="text" class="sched-time" id="sched-bt-e-${key}-${i}" value="${e}" placeholder="HH:MM" maxlength="5" ${dis} onblur="fmtSchedTime(this)">
     </span>`;
   }
   html += '</div>';
@@ -4168,77 +4177,51 @@ function getSchedJson() {
   });
   return JSON.stringify(out);
 }
-// ── Sched row copy (inline sub-row, no floating popover) ──────────
+// Format / validate HH:MM text input on blur
+function fmtSchedTime(el) {
+  let v = el.value.trim().replace(/[^\d:]/g, '');
+  if (!v) { el.classList.remove('err'); return; }
+  // Strip seconds: "10:00:00" → "10:00"
+  if (/^\d{1,2}:\d{2}:\d{2}$/.test(v)) v = v.slice(0, 5);
+  // "930" → "09:30", "9:30" → "09:30"
+  if (/^\d{3,4}$/.test(v)) {
+    const h = v.slice(0, v.length - 2), m = v.slice(-2);
+    v = h.padStart(2,'0') + ':' + m;
+  } else if (/^\d{1,2}:\d{2}$/.test(v)) {
+    v = v.split(':')[0].padStart(2,'0') + ':' + v.split(':')[1];
+  }
+  const [h, m] = v.split(':').map(Number);
+  if (isNaN(h) || isNaN(m) || h > 23 || m > 59) {
+    el.classList.add('err');
+  } else {
+    el.classList.remove('err');
+    el.value = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+  }
+}
+// ── Sched row copy (static panel, no DOM insertion) ───────────────
 let _schedCopyFrom = null;
 
-function schedCopyOpen(fromKey, btn) {
+function schedCopyOpen(fromKey) {
   if (_schedCopyFrom === fromKey) { schedCopyClose(); return; }
   schedCopyClose();
   _schedCopyFrom = fromKey;
 
-  // Build sub-row inserted right after the source row
-  const srcRow = document.getElementById('sched-row-' + fromKey);
-  const colCount = srcRow.cells.length;
+  // Populate checkboxes in the static panel
+  document.getElementById('schedCopyCheckboxes').innerHTML =
+    SCHED_DAYS.filter(d => d.key !== fromKey)
+      .map(d => `<label><input type="checkbox" value="${d.key}">${d.label}</label>`)
+      .join('');
 
-  const tr = document.createElement('tr');
-  tr.id = 'sched-copy-row';
-  tr.style.cssText = 'background:#f0f9ff';
-
-  const td = document.createElement('td');
-  td.colSpan = colCount;
-  td.style.cssText = 'padding:.5rem .75rem';
-
-  // Label
-  const lbl = document.createElement('span');
-  lbl.textContent = '复制到：';
-  lbl.style.cssText = 'font-size:.8rem;font-weight:600;color:var(--gray-600);margin-right:.4rem';
-  td.appendChild(lbl);
-
-  // One checkbox per other day, inline
-  const cbMap = {};
-  SCHED_DAYS.filter(d => d.key !== fromKey).forEach(d => {
-    const label = document.createElement('label');
-    label.style.cssText = 'display:inline-flex;align-items:center;gap:.25rem;font-size:.83rem;margin-right:.6rem;cursor:pointer';
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.value = d.key;
-    cbMap[d.key] = cb;
-    label.appendChild(cb);
-    label.appendChild(document.createTextNode(d.label));
-    td.appendChild(label);
-  });
-
-  // Buttons
-  const bs = 'font-size:.78rem;padding:.22rem .55rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;margin-left:.35rem';
-
-  const bAll = document.createElement('button');
-  bAll.type = 'button';
-  bAll.textContent = '全选';
-  bAll.style.cssText = bs + ';background:var(--gray-50);color:var(--gray-700)';
-  bAll.onclick = () => {
-    const cbs = Object.values(cbMap);
-    const all = cbs.every(c => c.checked);
-    cbs.forEach(c => c.checked = !all);
-  };
-
-  const bOk = document.createElement('button');
-  bOk.type = 'button';
-  bOk.textContent = '确定';
-  bOk.style.cssText = bs + ';background:#dbeafe;font-weight:600;color:var(--gray-800)';
-  bOk.onclick = () => schedCopyApply(cbMap);
-
-  const bCancel = document.createElement('button');
-  bCancel.type = 'button';
-  bCancel.textContent = '取消';
-  bCancel.style.cssText = bs + ';background:var(--gray-50);color:var(--gray-700)';
-  bCancel.onclick = schedCopyClose;
-
-  td.append(bAll, bOk, bCancel);
-  tr.appendChild(td);
-  srcRow.insertAdjacentElement('afterend', tr);
+  document.getElementById('schedCopyPanel').style.display = 'block';
 }
 
-function schedCopyApply(cbMap) {
+function schedCopySelectAll() {
+  const cbs = document.querySelectorAll('#schedCopyCheckboxes input');
+  const all = [...cbs].every(c => c.checked);
+  cbs.forEach(c => c.checked = !all);
+}
+
+function schedCopyApply() {
   const fromKey = _schedCopyFrom;
   if (!fromKey) return;
 
@@ -4253,7 +4236,7 @@ function schedCopyApply(cbMap) {
     srcBts.push({ start: (bs ? bs.value : '').slice(0,5), end: (be ? be.value : '').slice(0,5) });
   }
 
-  const toKeys = Object.values(cbMap).filter(c => c.checked).map(c => c.value);
+  const toKeys = [...document.querySelectorAll('#schedCopyCheckboxes input:checked')].map(c => c.value);
   schedCopyClose();
 
   toKeys.forEach(toKey => {
@@ -4272,8 +4255,7 @@ function schedCopyApply(cbMap) {
 }
 
 function schedCopyClose() {
-  const tr = document.getElementById('sched-copy-row');
-  if (tr) tr.remove();
+  document.getElementById('schedCopyPanel').style.display = 'none';
   _schedCopyFrom = null;
 }
 // ─────────────────────────────────────────────────────────────────
