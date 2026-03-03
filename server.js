@@ -1355,8 +1355,14 @@ function requireWorker(req, res, next) {
     if (token) workerSessions.delete(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  // Verify account still exists and is not suspended
+  const w = db.prepare('SELECT id, active, suspended, employee_id FROM worker_accounts WHERE id=?').get(s.workerId);
+  if (!w || !w.active || w.suspended) {
+    workerSessions.delete(token);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   req.workerId = s.workerId;
-  req.workerEmployeeId = s.employeeId;
+  req.workerEmployeeId = w.employee_id;
   next();
 }
 
@@ -1373,8 +1379,14 @@ function requireCustomer(req, res, next) {
     if (token) customerSessions.delete(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  // Verify account still exists
+  const c = db.prepare('SELECT id, active, partner_id FROM customer_accounts WHERE id=?').get(s.customerId);
+  if (!c || !c.active) {
+    customerSessions.delete(token);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   req.customerId = s.customerId;
-  req.customerPartnerId = s.partnerId;
+  req.customerPartnerId = c.partner_id;
   next();
 }
 
