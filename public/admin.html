@@ -3997,8 +3997,10 @@ async function refreshDsStatus(type, id, badgeEl) {
 
 // Cache for assignment search
 let _assignInqs = [], _assignJobs = [];
+let _editingAssignment = null;   // authoritative source when editing
 
 async function openAssignModal(assignment) {
+  _editingAssignment = assignment || null;
   document.getElementById('assignModalTitle').textContent = assignment ? '编辑派工' : '新建派工';
   document.getElementById('assignId').value = assignment ? assignment.id : '';
   document.getElementById('aStatus').value = assignment ? assignment.status : 'assigned';
@@ -4326,11 +4328,13 @@ function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
 function editAssignment(a) { openAssignModal(a); }
 
 async function saveAssignment() {
-  const id = document.getElementById('assignId').value;
+  // Use module-level _editingAssignment as authoritative source for IDs
+  const ea = _editingAssignment;
+  const id = document.getElementById('assignId').value || (ea ? ea.id : '');
   const benefits = [...document.querySelectorAll('#aBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const data = {
-    inquiry_id: document.getElementById('aInquiryId').value,
-    job_id: document.getElementById('aJobId').value,
+    inquiry_id: document.getElementById('aInquiryId').value || (ea ? ea.inquiry_id : ''),
+    job_id:     document.getElementById('aJobId').value     || (ea ? ea.job_id     : ''),
     status: document.getElementById('aStatus').value,
     notes: document.getElementById('aNotes').value,
     start_date: document.getElementById('aStartDate').value,
