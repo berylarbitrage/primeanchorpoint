@@ -7449,23 +7449,25 @@ async function pickDispatchJob(w, jobId) {
   const normPhone = s => (s || '').replace(/\D/g, '');
   const wPhone = normPhone(w.phone);
   const wEmail = (w.email || '').toLowerCase();
+  const wName  = ((w.first_name && w.last_name)
+    ? w.first_name + ' ' + w.last_name
+    : (w.name || '')).toLowerCase().trim();
 
-  // 1. direct linked_inquiry_id  2. normalized phone  3. email
+  // 1. direct linked_inquiry_id  2. phone  3. email  4. full name
   const inq = _assignInqs.find(i => i.id == w.linked_inquiry_id) ||
     (wPhone && _assignInqs.find(i => normPhone(i.phone) === wPhone)) ||
-    (wEmail && _assignInqs.find(i => (i.email || '').toLowerCase() === wEmail));
+    (wEmail && _assignInqs.find(i => (i.email || '').toLowerCase() === wEmail)) ||
+    (wName  && _assignInqs.find(i => (i.name  || '').toLowerCase().trim() === wName));
 
   if (inq) {
     document.getElementById('aInquiry').value = inq.name + (inq.phone ? ' · ' + inq.phone : '');
     document.getElementById('aInquiryId').value = inq.id;
     checkInquiryDispatchStatus(inq.id);
   } else {
-    // Fall back: pre-fill name so admin can confirm from dropdown
-    const displayName = (w.first_name && w.last_name)
-      ? w.first_name + ' ' + w.last_name
-      : (w.name || w.phone || '');
+    // No inquiry found — show search so admin can pick or confirm
+    const displayName = wName || w.phone || '';
     document.getElementById('aInquiry').value = displayName;
-    filterAssignSearch('inq');   // open dropdown for manual confirm
+    filterAssignSearch('inq');
   }
 
   // Pre-fill job
