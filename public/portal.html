@@ -66,6 +66,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .btn-sky:hover{background:#0284c7}
 .btn-gray{background:var(--gray-100);color:var(--gray-500)}
 .btn-green{background:var(--green);color:#fff}
+.btn-outline{background:#fff;color:var(--sky);border:1.5px solid var(--sky);font-weight:500}
+.btn-outline:hover{background:#f0f9ff}
 /* Timesheet table */
 table{width:100%;border-collapse:collapse;font-size:.85rem}
 th{background:var(--gray-50);padding:.6rem .75rem;text-align:left;font-weight:600;color:var(--gray-500);border-bottom:2px solid var(--gray-200)}
@@ -77,6 +79,18 @@ tr:last-child td{border-bottom:none}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
+/* Onboarding steps */
+.ob-step{display:flex;align-items:flex-start;gap:1rem;padding:.85rem 0;border-bottom:1px solid var(--gray-100)}
+.ob-step:last-child{border-bottom:none}
+.ob-icon{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;margin-top:2px}
+.ob-done{background:#d1fae5;color:#065f46}
+.ob-submitted{background:#fef3c7;color:#92400e}
+.ob-pending{background:#dbeafe;color:#1d4ed8}
+.ob-locked{background:var(--gray-100);color:var(--gray-400)}
+.ob-waived{background:#f3e8ff;color:#7c3aed}
+.ob-title{font-weight:700;font-size:.95rem;color:var(--blue)}
+.ob-badge{display:inline-block;padding:1px 8px;border-radius:20px;font-size:.72rem;font-weight:600;margin-left:.4rem;vertical-align:middle}
+.ob-note{font-size:.8rem;color:var(--gray-500);margin-top:.2rem;font-style:italic}
 /* Punch card */
 .punch-card{text-align:center;padding:1.5rem}
 .punch-status{font-size:.9rem;color:var(--gray-500);margin-bottom:1rem}
@@ -335,7 +349,9 @@ tr:last-child td{border-bottom:none}
     <button class="nav-btn" data-tab="interview" onclick="showTab('interview')">我的安排</button>
     <button class="nav-btn" data-tab="applications" onclick="showTab('applications')">我的申请</button>
     <button class="nav-btn" data-tab="timeclock" onclick="showTab('timeclock')">我的打卡记录</button>
+    <button class="nav-btn" data-tab="payments" onclick="showTab('payments')">打款记录</button>
     <button class="nav-btn" data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none">合规文件</button>
+    <button class="nav-btn" data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none">📋 待办事项</button>
     <button class="nav-btn" data-tab="profile" onclick="showTab('profile')">我的信息</button>
   </div>
   <div class="content">
@@ -387,19 +403,38 @@ tr:last-child td{border-bottom:none}
 
     <!-- Timeclock -->
     <div id="tabTimeclock" style="display:none">
+      <!-- Current dispatched jobs -->
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:.75rem">💼 当前工作安排</h2>
+        <div id="myJobsList"><p style="color:var(--gray-400);font-size:.88rem">加载中…</p></div>
+      </div>
       <div class="card">
         <div class="punch-card">
           <div class="punch-status" id="punchStatus">正在检查状态…</div>
           <div class="punch-time" id="punchTime"></div>
           <div class="punch-sub" id="punchSub"></div>
+          <!-- Job selector shown only when clocking in with multiple active jobs -->
+          <div id="jobSelectorWrap" style="display:none;margin:.75rem 0;width:100%;max-width:340px">
+            <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block">选择打卡工作 / Select job to clock in for</label>
+            <select id="jobSelector" style="width:100%;padding:.55rem .8rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem;background:#fff"></select>
+          </div>
           <button class="btn-punch btn-punch-in" id="btnPunch" onclick="doPunch()" disabled>获取位置中…</button>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
         </div>
       </div>
       <div class="card">
         <h2>打卡历史记录</h2>
-        <table><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工作时长</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
+        <table><thead><tr><th>日期</th><th>工作</th><th>上班</th><th>下班</th><th>工时</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
         <tbody id="timeclockTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- Payments -->
+    <div id="tabPayments" style="display:none">
+      <div class="card">
+        <h2>打款记录</h2>
+        <table><thead><tr><th>日期</th><th>工作</th><th>周期</th><th>金额</th><th>付款方式</th><th>备注</th></tr></thead>
+        <tbody id="paymentsTable"></tbody></table>
       </div>
     </div>
 
@@ -497,15 +532,84 @@ tr:last-child td{border-bottom:none}
       <div class="card" id="dlFormCard" style="display:none">
         <h2>🪪 身份证件验证 / ID Verification</h2>
         <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">
-          使用 Persona 安全验证您的驾照或身份证件。点击下方按钮开始，按照提示拍照即可自动验证。<br>
-          <span style="font-size:.8rem">Securely verify your driver's license or government ID via Persona. Click below to start.</span>
+          请选择验证方式：可以在本网站直接完成验证，也可以选择在其他平台（手机、邮箱等）继续验证。<br>
+          <span style="font-size:.8rem">Choose how to verify: complete on this website, or continue on another platform (phone, email, etc.).</span>
         </p>
         <div id="personaStatusBox" style="display:none;padding:1rem;border-radius:8px;margin-bottom:1rem"></div>
         <div id="personaActions">
-          <button class="btn btn-sky" onclick="startPersonaVerification()" id="personaStartBtn" style="font-size:.95rem;padding:.7rem 1.5rem">
-            开始验证 / Start Verification
-          </button>
-          <button type="button" class="btn btn-gray" onclick="hideDLForm()" style="margin-left:.5rem">取消</button>
+          <!-- Step 1: Two-choice selection -->
+          <div id="personaChoiceScreen">
+            <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
+              <!-- Option A: Verify on this website -->
+              <div onclick="personaChooseWebsite()" style="flex:1;min-width:200px;padding:1.2rem;border:2px solid var(--gray-200);border-radius:12px;cursor:pointer;text-align:center;transition:all .2s;background:#fff" onmouseover="this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" onmouseout="this.style.borderColor='var(--gray-200)';this.style.background='#fff'">
+                <div style="font-size:2rem;margin-bottom:.5rem">🖥️</div>
+                <div style="font-weight:700;font-size:.95rem;color:var(--gray-700);margin-bottom:.3rem">在本网站验证</div>
+                <div style="font-size:.8rem;color:var(--gray-500)">Verify on This Website</div>
+                <div style="font-size:.75rem;color:var(--gray-400);margin-top:.5rem">直接在此页面完成身份验证<br>Complete verification right here</div>
+              </div>
+              <!-- Option B: Verify on other platform -->
+              <div onclick="personaChooseOtherPlatform()" style="flex:1;min-width:200px;padding:1.2rem;border:2px solid var(--gray-200);border-radius:12px;cursor:pointer;text-align:center;transition:all .2s;background:#fff" onmouseover="this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" onmouseout="this.style.borderColor='var(--gray-200)';this.style.background='#fff'">
+                <div style="font-size:2rem;margin-bottom:.5rem">📱</div>
+                <div style="font-weight:700;font-size:.95rem;color:var(--gray-700);margin-bottom:.3rem">在其他平台验证</div>
+                <div style="font-size:.8rem;color:var(--gray-500)">Verify on Other Platform</div>
+                <div style="font-size:.75rem;color:var(--gray-400);margin-top:.5rem">通过手机短信、邮件或扫码完成<br>Via SMS, email, QR code, or new tab</div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-gray" onclick="hideDLForm()">取消 / Cancel</button>
+          </div>
+
+          <!-- Step 2A: Embedded verification (hidden by default) -->
+          <div id="personaEmbeddedScreen" style="display:none">
+            <div style="margin-bottom:1rem">
+              <button class="btn btn-sky" onclick="startPersonaVerification()" id="personaStartBtn" style="font-size:.95rem;padding:.7rem 1.5rem">
+                🖥️ 开始验证 / Start Verification
+              </button>
+              <button type="button" class="btn btn-outline" onclick="personaBackToChoice()" style="margin-left:.5rem;font-size:.85rem">← 返回 / Back</button>
+            </div>
+            <p style="font-size:.8rem;color:var(--gray-400)">验证窗口将在此页面弹出，请按照提示完成操作。<br>A verification window will open on this page. Follow the prompts to complete.</p>
+          </div>
+
+          <!-- Step 2B: Other platform options (hidden by default) -->
+          <div id="personaOtherPlatformScreen" style="display:none">
+            <div style="margin-bottom:1rem">
+              <button type="button" class="btn btn-outline" onclick="personaBackToChoice()" style="font-size:.85rem">← 返回选择 / Back to Options</button>
+            </div>
+            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem;font-weight:600">
+              选择一种方式发送验证链接 / Choose how to receive the verification link:
+            </p>
+            <!-- Open in new tab -->
+            <div style="margin-bottom:.75rem">
+              <button class="btn btn-sky" onclick="personaOpenNewTab()" id="personaNewTabBtn" style="font-size:.9rem;padding:.6rem 1.2rem;width:100%;text-align:left">
+                🌐 在新标签页中打开验证 / Open Verification in New Tab
+              </button>
+            </div>
+            <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem">
+              <button class="btn btn-outline" onclick="personaSendSMS()" id="personaSmsBtn" style="font-size:.85rem;padding:.5rem 1rem">
+                💬 短信发送 / Send SMS
+              </button>
+              <button class="btn btn-outline" onclick="personaSendEmail()" id="personaEmailBtn" style="font-size:.85rem;padding:.5rem 1rem">
+                📧 邮件发送 / Send Email
+              </button>
+              <button class="btn btn-outline" onclick="personaShowQR()" id="personaQRBtn" style="font-size:.85rem;padding:.5rem 1rem">
+                📷 显示二维码 / Show QR Code
+              </button>
+              <button class="btn btn-outline" onclick="personaCopyLink()" id="personaCopyBtn" style="font-size:.85rem;padding:.5rem 1rem">
+                🔗 复制链接 / Copy Link
+              </button>
+            </div>
+            <!-- QR Code display area -->
+            <div id="personaQRArea" style="display:none;text-align:center;padding:1rem;background:#f9fafb;border-radius:8px;margin-bottom:.75rem">
+              <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.5rem">用手机扫描二维码完成验证 / Scan with your phone to verify</p>
+              <div id="personaQRCode" style="display:inline-block"></div>
+            </div>
+            <!-- Link display area -->
+            <div id="personaLinkArea" style="display:none;padding:.75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;margin-bottom:.75rem">
+              <p style="font-size:.78rem;color:var(--gray-500);margin-bottom:.3rem">验证链接 / Verification Link:</p>
+              <input type="text" id="personaLinkInput" readonly style="width:100%;padding:.4rem .6rem;font-size:.8rem;border:1px solid #d1d5db;border-radius:4px;background:#fff" onclick="this.select()">
+            </div>
+            <!-- Send status message -->
+            <div id="personaSendStatus" style="display:none;padding:.5rem .75rem;border-radius:6px;font-size:.82rem;margin-bottom:.5rem"></div>
+          </div>
         </div>
         <!-- Fallback for manual upload if Persona not configured -->
         <div id="dlManualFallback" style="display:none;margin-top:1rem;border-top:1px solid var(--gray-200);padding-top:1rem">
@@ -589,6 +693,30 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
 
+    <!-- Todos / Onboarding -->
+    <div id="tabTodos" style="display:none">
+      <div class="card">
+        <h2>📋 我的入职待办事项</h2>
+        <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1.25rem">请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。</p>
+        <div id="onboardingList"></div>
+      </div>
+    </div>
+
+    <!-- Interview Booking Modal (inline in todos) -->
+    <div class="modal-overlay" id="interviewBookModal" style="display:none">
+      <div class="modal-box" style="max-width:600px;width:96%;max-height:85vh;overflow-y:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h2 style="margin:0;font-size:1.05rem">🗓️ 预约面试 / Book Interview</h2>
+          <button onclick="closeInterviewBookModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">&times;</button>
+        </div>
+        <!-- Current interview status (if any) -->
+        <div id="interviewModalStatus" style="display:none;margin-bottom:1rem"></div>
+        <!-- Available slots -->
+        <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1rem">请选择一个方便的时间进行面试。<br><span style="font-size:.78rem">Select a convenient time for your interview.</span></p>
+        <div id="interviewModalSlots"></div>
+      </div>
+    </div>
+
     <!-- Profile -->
     <div id="tabProfile" style="display:none">
       <!-- Basic info -->
@@ -611,6 +739,42 @@ tr:last-child td{border-bottom:none}
       <div class="card">
         <h2 style="margin-bottom:1rem">📂 我的文件</h2>
         <div id="profileDocs"></div>
+      </div>
+
+      <!-- Change phone/email modal -->
+      <div id="changeContactOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:none;align-items:center;justify-content:center">
+        <div style="background:#fff;border-radius:12px;padding:1.5rem;max-width:420px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,.2)">
+          <h3 id="ccTitle" style="margin-bottom:.75rem">更换联系方式</h3>
+          <!-- Step 1: Enter new value -->
+          <div id="ccStep1">
+            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem" id="ccDesc">更换后新旧号码都需要验证</p>
+            <div class="field" style="margin-bottom:1rem">
+              <label id="ccNewLabel">新号码/邮箱</label>
+              <input type="text" id="ccNewValue" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+            </div>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn btn-sky" onclick="sendChangeVerification()">发送验证码</button>
+              <button class="btn btn-gray" onclick="closeChangeContact()">取消</button>
+            </div>
+          </div>
+          <!-- Step 2: Enter both codes -->
+          <div id="ccStep2" style="display:none">
+            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">验证码已发送到<strong>旧</strong>和<strong>新</strong>的联系方式，请分别输入：</p>
+            <div class="field" style="margin-bottom:.75rem">
+              <label>旧号码/邮箱验证码</label>
+              <input type="text" id="ccOldCode" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:3px;font-size:1.1rem;text-align:center">
+            </div>
+            <div class="field" style="margin-bottom:1rem">
+              <label>新号码/邮箱验证码</label>
+              <input type="text" id="ccNewCode" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:3px;font-size:1.1rem;text-align:center">
+            </div>
+            <div id="ccError" style="display:none;color:var(--red);font-size:.82rem;margin-bottom:.5rem"></div>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn btn-sky" onclick="confirmChangeContact()">确认更换</button>
+              <button class="btn btn-gray" onclick="closeChangeContact()">取消</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -756,20 +920,24 @@ async function showApp() {
   // Only show compliance tab if interview passed
   _interviewPassed = interview && interview.status === 'passed';
   document.getElementById('navCompliance').style.display = _interviewPassed ? '' : 'none';
+  // Show todos tab (always visible for logged-in workers)
+  document.getElementById('navTodos').style.display = '';
 
   loadJobs();
 }
 
 function showTab(tab) {
-  ['jobs','interview','applications','timeclock','compliance','profile'].forEach(t => {
+  ['jobs','interview','applications','timeclock','payments','compliance','todos','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
+  else if (tab === 'payments') loadPayments();
   else if (tab === 'compliance') loadCompliance();
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
+  else if (tab === 'todos') loadOnboarding();
   else loadJobs();
 }
 
@@ -861,13 +1029,24 @@ async function loadInterview() {
     } else if (interview.status === 'failed') {
       extra = `<div style="margin-top:.75rem;font-size:.83rem;color:#dc2626">如有疑问请联系 HR。</div>`;
     }
+    const contactLine = interview.contact_name ? `<div><span style="color:var(--gray-500)">联系人：</span>${esc(interview.contact_name)} ${interview.contact_phone ? esc(interview.contact_phone) : ''}</div>` : '';
+    const instrBlock = interview.instructions ? `<div style="margin-top:.5rem;padding:.6rem .8rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:.84rem;white-space:pre-line"><strong>📋 到达指引：</strong><br>${esc(interview.instructions)}</div>` : '';
     statusContent.innerHTML = `
       <div style="display:grid;gap:.5rem;font-size:.9rem">
         <div><span style="color:var(--gray-500)">状态：</span>${statusMap[interview.status] || interview.status}</div>
         <div><span style="color:var(--gray-500)">时间：</span><strong>${dtStr}</strong></div>
-        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span>${interview.location}</div>` : ''}
+        ${interview.location ? `<div><span style="color:var(--gray-500)">地点：</span>${esc(interview.location)}</div>` : ''}
+        ${contactLine}
         ${interview.duration_min ? `<div><span style="color:var(--gray-500)">时长：</span>${interview.duration_min} 分钟</div>` : ''}
-      </div>${extra}`;
+      </div>${instrBlock}${extra}`;
+    // Add cancel / reschedule buttons for scheduled interviews
+    if (interview.status === 'scheduled') {
+      statusContent.innerHTML += `
+        <div style="display:flex;gap:.6rem;margin-top:1rem;flex-wrap:wrap">
+          <button class="btn btn-sky" style="font-size:.85rem;padding:.45rem 1rem" onclick="rescheduleInterview()">🔄 更改预约时间 / Reschedule</button>
+          <button class="btn" style="font-size:.85rem;padding:.45rem 1rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:8px;cursor:pointer" onclick="cancelInterview()">✖ 取消预约 / Cancel</button>
+        </div>`;
+    }
     // Hide slot selection if already booked (not passed/failed/cancelled)
     slotsCard.style.display = (interview.status === 'scheduled') ? 'none' : '';
   } else {
@@ -899,15 +1078,23 @@ async function loadInterview() {
   for (const [dateKey, group] of Object.entries(grouped)) {
     const dt = group.date;
     const dateLabel = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-    // First slot's location as the day's location
-    const dayLocation = group.slots[0].location;
-    html += `<div style="margin-bottom:1.25rem">
-      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:2px solid #e0f2fe">
-        <span style="font-size:1.3rem">📅</span>
-        <span style="font-weight:700;font-size:1rem;color:#0c4a6e">${dateLabel}</span>
-        ${dayLocation ? `<span style="font-size:.8rem;color:var(--gray-500);margin-left:auto">📍 ${dayLocation}</span>` : ''}
+    // First slot's location info for the day header
+    const rep = group.slots[0];
+    const dayLocation = rep.location;
+    const dayContact = rep.contact_name;
+    const dayPhone = rep.contact_phone;
+    const dayInstr = rep.instructions;
+    html += `<div style="margin-bottom:1.5rem">
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.7rem 1rem;margin-bottom:.6rem">
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:${(dayContact||dayInstr)?'.5rem':'0'}">
+          <span style="font-size:1.2rem">📅</span>
+          <span style="font-weight:700;font-size:.95rem;color:#0c4a6e">${dateLabel}</span>
+        </div>
+        ${dayLocation ? `<div style="font-size:.82rem;color:#0369a1;margin-bottom:.2rem">📍 ${dayLocation}</div>` : ''}
+        ${dayContact ? `<div style="font-size:.82rem;color:var(--gray-600)">👤 ${dayContact}${dayPhone ? `&nbsp;&nbsp;📞 ${dayPhone}` : ''}</div>` : ''}
+        ${dayInstr ? `<div style="font-size:.8rem;color:var(--gray-500);margin-top:.3rem;white-space:pre-wrap;line-height:1.5">📋 ${dayInstr}</div>` : ''}
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem">`;
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">`;
 
     group.slots.forEach(s => {
       const sdt = new Date(s.slot_datetime);
@@ -1148,7 +1335,7 @@ async function loadApplications() {
 
 // ─── GPS Punch ───
 let _gpsCoords = null;
-let _punchStatus = null; // { clocked_in, open_entry }
+let _punchStatus = null; // { clocked_in, open_entry, active_jobs }
 
 function initGPS() {
   if (!navigator.geolocation) {
@@ -1172,7 +1359,7 @@ function initGPS() {
 }
 
 function enablePunchBtn(ready) {
-  if (!_punchStatus) return; // wait for status
+  if (!_punchStatus) return;
   const btn = document.getElementById('btnPunch');
   btn.disabled = !ready;
   if (ready) {
@@ -1194,6 +1381,8 @@ async function loadPunchStatus() {
   const timeEl = document.getElementById('punchTime');
   const subEl = document.getElementById('punchSub');
   const btn = document.getElementById('btnPunch');
+  const selectorWrap = document.getElementById('jobSelectorWrap');
+  const selector = document.getElementById('jobSelector');
 
   if (s.no_employee) {
     statusEl.innerHTML = '<span style="color:var(--red)">⚠ 账号未关联员工档案</span>';
@@ -1202,6 +1391,7 @@ async function loadPunchStatus() {
     btn.disabled = true;
     btn.textContent = '账号未关联，无法打卡';
     btn.className = 'btn-punch';
+    selectorWrap.style.display = 'none';
     return;
   }
 
@@ -1210,6 +1400,7 @@ async function loadPunchStatus() {
     statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
     timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+    selectorWrap.style.display = 'none';
   } else if (!s.has_active_job) {
     statusEl.innerHTML = '<span style="color:var(--orange)">● 未在班</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
@@ -1217,13 +1408,25 @@ async function loadPunchStatus() {
     btn.disabled = true;
     btn.textContent = '暂无工作安排，无法打卡';
     btn.className = 'btn-punch';
+    selectorWrap.style.display = 'none';
     return;
   } else {
     statusEl.innerHTML = '<span style="color:var(--gray-400)">● 未在班</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = s.active_job ? s.active_job.title || new Date().toLocaleDateString() : new Date().toLocaleDateString();
+    subEl.textContent = '请选择工作后打卡';
+    // Populate job selector
+    const jobs = s.active_jobs || [];
+    selector.innerHTML = jobs.map(j =>
+      `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+    ).join('');
+    selectorWrap.style.display = jobs.length > 1 ? '' : 'none';
+    if (jobs.length === 1) {
+      // Pre-select single job in hidden selector so doPunch can read it
+      selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
+    }
   }
-  enablePunchBtn(_gpsCoords !== null || document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
+  const gpsReady = _gpsCoords !== null || (document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
+  enablePunchBtn(gpsReady);
 }
 
 async function doPunch() {
@@ -1231,6 +1434,11 @@ async function doPunch() {
   btn.disabled = true;
   btn.textContent = '处理中…';
   const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null };
+  if (!_punchStatus?.clocked_in) {
+    // clock-in: include selected job
+    const sel = document.getElementById('jobSelector');
+    body.job_id = sel ? parseInt(sel.value) || null : null;
+  }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { btn.disabled = false; enablePunchBtn(true); return; }
   if (r.error) {
@@ -1241,34 +1449,62 @@ async function doPunch() {
   }
   if (r.action === 'in') {
     const geoMsg = r.geo_verified ? (r.site_name ? ` (${r.site_name})` : ' (位置已验证)') : '';
-    showToast(`✅ 上班打卡成功！${geoMsg}`, 'success');
+    showToast(`✅ 上班打卡成功！${r.job_title ? ' · ' + r.job_title : ''}${geoMsg}`, 'success');
   } else if (r.action === 'out') {
     const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
     showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
   }
-  // Refresh GPS coords and status
   _gpsCoords = null;
   document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
   btn.textContent = '获取位置中…';
+  await loadMyJobs();
   await loadPunchStatus();
   loadTimeclock();
   initGPS();
 }
 
+async function loadMyJobs() {
+  const jobs = await wApi('/my-jobs');
+  const el = document.getElementById('myJobsList');
+  if (!el) return;
+  if (!jobs || !Array.isArray(jobs) || !jobs.length) {
+    el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">当前没有派遣工作安排，请联系HR。</p>';
+    return;
+  }
+  el.innerHTML = jobs.map(j => `
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid var(--gray-100)">
+      <div>
+        <div style="font-weight:700;font-size:.95rem">${esc(j.title)}</div>
+        ${j.company_name ? `<div style="font-size:.8rem;color:var(--gray-400)">${esc(j.company_name)}</div>` : ''}
+        <div style="font-size:.8rem;color:var(--gray-500);margin-top:.2rem">
+          ${j.location ? `📍 ${esc(j.location)}` : ''}
+          ${j.site_name ? ` · 🏭 ${esc(j.site_name)}` : ''}
+        </div>
+        ${j.start_date ? `<div style="font-size:.78rem;color:var(--gray-400);margin-top:.15rem">开始：${esc(j.start_date)}</div>` : ''}
+      </div>
+      <div style="text-align:right;flex-shrink:0;margin-left:1rem">
+        ${j.emp_hourly_rate ? `<div style="font-weight:700;color:var(--sky)">$${(+j.emp_hourly_rate).toFixed(2)}/hr</div>` : (j.pay ? `<div style="font-size:.85rem;color:var(--sky)">${esc(j.pay)}</div>` : '')}
+        <span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600">进行中</span>
+      </div>
+    </div>`).join('');
+}
+
 async function loadTimeclock() {
-  await loadPunchStatus();
+  await Promise.all([loadPunchStatus(), loadMyJobs()]);
   const entries = await wApi('/timeclock');
   if (!entries) return;
   if (!Array.isArray(entries)) {
-    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="8" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录</td></tr>';
+    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="9" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录</td></tr>';
     return;
   }
-  document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t=>{
+  document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
     const ci = t.clock_in ? new Date(t.clock_in) : null;
     const co = t.clock_out ? new Date(t.clock_out) : null;
     const mapLink = t.latitude ? `<a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="${(+t.latitude).toFixed(4)},${(+t.longitude).toFixed(4)}">📍</a>` : '—';
+    const jobLabel = t.job_title ? esc(t.job_title) : '<span style="color:var(--gray-300)">—</span>';
     return `<tr>
       <td>${ci ? ci.toLocaleDateString() : '—'}</td>
+      <td style="font-size:.8rem">${jobLabel}</td>
       <td>${ci ? ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
       <td>${co ? co.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--orange)">未打卡</span>'}</td>
       <td>${t.total_hours ? t.total_hours.toFixed(2) + ' h' : '—'}</td>
@@ -1277,8 +1513,34 @@ async function loadTimeclock() {
       <td>${t.status === 'closed' ? '✅ 已完成' : '<span style="color:var(--sky)">进行中</span>'}</td>
       <td>${mapLink}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="8" class="empty">暂无打卡记录</td></tr>';
+  }).join('') : '<tr><td colspan="9" class="empty">暂无打卡记录</td></tr>';
 }
+
+async function loadPayments() {
+  const payments = await wApi('/payments');
+  const tbody = document.getElementById('paymentsTable');
+  if (!tbody) return;
+  if (!payments || !Array.isArray(payments)) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">⚠️ 账号未关联员工档案</td></tr>';
+    return;
+  }
+  if (!payments.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无打款记录</td></tr>';
+    return;
+  }
+  const PAY_METHOD = { cash:'💵 现金', check:'📄 支票', direct_deposit:'🏦 直接存款', zelle:'📱 Zelle', other:'其他' };
+  tbody.innerHTML = payments.map(p => `<tr>
+    <td>${esc(p.payment_date)}</td>
+    <td style="font-size:.82rem">${p.job_title ? esc(p.job_title) : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.8rem">${p.period_start && p.period_end ? esc(p.period_start)+' ~ '+esc(p.period_end) : (p.period_start ? esc(p.period_start) : '<span style="color:var(--gray-300)">—</span>')}</td>
+    <td style="font-weight:700;color:var(--green)">$${(+p.amount).toFixed(2)}</td>
+    <td style="font-size:.82rem">${PAY_METHOD[p.payment_method] || esc(p.payment_method||'—')}</td>
+    <td style="font-size:.8rem;color:var(--gray-400)">${p.notes ? esc(p.notes) : '—'}</td>
+  </tr>`).join('');
+}
+
+const WORK_STATUS_LABELS = { citizen:'🇺🇸 美国公民', green_card:'🟢 绿卡', ead:'📄 EAD工卡', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'其他' };
+const DOC_STATUS_ZH = { pending:'审核中', approved:'已通过', rejected:'未通过' };
 
 async function loadProfile() {
   const [me, docs, idStatus] = await Promise.all([wApi('/me'), wApi('/compliance'), wApi('/identity/status')]);
@@ -1489,8 +1751,10 @@ const DOC_LABELS = {
   drivers_license: { zh: '身份证件验证', en: "ID Verification (Persona)", icon: '🪪' },
   w9: { zh: 'W-9 纳税人识别', en: 'W-9 Tax ID', icon: '📄' },
   ssn_card: { zh: '社安卡', en: 'SSN Card', icon: '🔒' },
-  work_permit: { zh: '工作许可', en: 'Work Permit', icon: '📃' },
-  background_check: { zh: '背景调查', en: 'Background Check', icon: '🔍' }
+  work_permit: { zh: '工作许可/EAD', en: 'Work Permit / EAD', icon: '📃' },
+  background_check: { zh: '背景调查', en: 'Background Check', icon: '🔍' },
+  employment_contract: { zh: '雇佣合同', en: 'Employment Contract', icon: '📝' },
+  gusto_payroll: { zh: 'Gusto 薪资设置', en: 'Gusto Payroll Setup', icon: '💰' }
 };
 
 const STATUS_LABELS = { pending: '审核中', approved: '已通过', rejected: '未通过', not_submitted: '未提交', ordered: '已下单', completed: '已完成', clear: '通过', flagged: '有记录' };
@@ -1510,15 +1774,40 @@ async function loadCompliance() {
   if (!data) return;
   const docs = data.documents || {};
   const bg = data.background_check;
+  const assignedTasks = data.assigned_tasks || [];
+
+  // If admin hasn't assigned any tasks, show a message
+  if (assignedTasks.length === 0) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2.5rem 1rem">
+      <div style="font-size:2.5rem;margin-bottom:.75rem">📋</div>
+      <div style="font-weight:700;font-size:1.05rem;color:var(--gray-600);margin-bottom:.5rem">暂无分配的合规任务</div>
+      <div style="font-size:.85rem;color:var(--gray-400)">HR 尚未为您分配合规任务，请耐心等待。<br>No compliance tasks have been assigned yet. Please wait for HR.</div>
+    </div>`;
+    return;
+  }
+
+  // Action mapping for each task type
+  const TASK_ACTIONS = {
+    i9: 'showI9Form()',
+    drivers_license: 'showDLForm()',
+    w9: 'showW9Form()',
+    ssn_card: null,
+    work_permit: null,
+    employment_contract: null,
+    gusto_payroll: null,
+    background_check: null
+  };
 
   let html = '';
-  // Core compliance items
-  const items = [
-    { type: 'i9', doc: docs.i9, action: 'showI9Form()' },
-    { type: 'drivers_license', doc: docs.drivers_license, action: 'showDLForm()' },
-    { type: 'w9', doc: docs.w9, action: 'showW9Form()' },
-    { type: 'background_check', doc: bg ? { status: bg.result || bg.status, created_at: bg.ordered_date || bg.completed_date } : null, action: null }
-  ];
+  // Build items from assigned tasks only
+  const items = assignedTasks
+    .filter(type => DOC_LABELS[type])
+    .map(type => {
+      if (type === 'background_check') {
+        return { type, doc: bg ? { status: bg.result || bg.status, created_at: bg.ordered_date || bg.completed_date } : null, action: TASK_ACTIONS[type] };
+      }
+      return { type, doc: docs[type], action: TASK_ACTIONS[type] };
+    });
 
   for (const item of items) {
     const label = DOC_LABELS[item.type];
@@ -1552,6 +1841,8 @@ function showI9Form() { document.getElementById('i9FormCard').style.display = ''
 function hideI9Form() { document.getElementById('i9FormCard').style.display = 'none'; }
 async function showDLForm() {
   document.getElementById('dlFormCard').style.display = '';
+  // Reset to choice screen
+  personaBackToChoice();
   // Check if Persona is configured
   const config = await wApi('/persona/config');
   if (config && config.enabled) {
@@ -1560,19 +1851,27 @@ async function showDLForm() {
     // Check current status
     const status = await wApi('/persona/status');
     const box = document.getElementById('personaStatusBox');
+    // Restore hosted URL if available
+    if (status && status.persona_hosted_url) {
+      _personaHostedUrl = status.persona_hosted_url;
+      updatePersonaLinkUI(status.persona_hosted_url);
+    }
     if (status && status.persona_inquiry_id && status.status !== 'rejected') {
       if (status.status === 'approved') {
         box.style.display = '';
         box.style.background = '#f0fdf4';
         box.style.border = '1px solid #86efac';
         box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
-        document.getElementById('personaStartBtn').style.display = 'none';
+        // Hide all screens when already approved
+        document.getElementById('personaChoiceScreen').style.display = 'none';
+        document.getElementById('personaEmbeddedScreen').style.display = 'none';
+        document.getElementById('personaOtherPlatformScreen').style.display = 'none';
       } else if (status.status === 'pending') {
         box.style.display = '';
         box.style.background = '#fefce8';
         box.style.border = '1px solid #fde047';
-        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Verification in progress</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">Persona 正在自动验证您的证件，请稍候。</div>';
-        document.getElementById('personaStartBtn').textContent = '重新验证 / Re-verify';
+        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Verification in progress</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">Persona 正在自动验证您的证件，请稍候。如果通过手机完成了验证，请刷新页面查看最新状态。<br>Verification is being processed. If you completed it on another device, refresh the page.</div>';
+        document.getElementById('personaStartBtn').textContent = '🖥️ 重新验证 / Re-verify';
       }
     }
   } else {
@@ -1587,6 +1886,56 @@ function hideW9Form() { document.getElementById('w9FormCard').style.display = 'n
 
 // ── Persona Verification ──
 let _personaClient = null;
+let _personaHostedUrl = null; // stored hosted URL for link sharing
+
+// Choice screen navigation
+function personaChooseWebsite() {
+  document.getElementById('personaChoiceScreen').style.display = 'none';
+  document.getElementById('personaEmbeddedScreen').style.display = '';
+  document.getElementById('personaOtherPlatformScreen').style.display = 'none';
+}
+
+function personaChooseOtherPlatform() {
+  document.getElementById('personaChoiceScreen').style.display = 'none';
+  document.getElementById('personaEmbeddedScreen').style.display = 'none';
+  document.getElementById('personaOtherPlatformScreen').style.display = '';
+  // Pre-create inquiry so links are ready
+  ensurePersonaInquiry();
+}
+
+function personaBackToChoice() {
+  document.getElementById('personaChoiceScreen').style.display = '';
+  document.getElementById('personaEmbeddedScreen').style.display = 'none';
+  document.getElementById('personaOtherPlatformScreen').style.display = 'none';
+}
+
+async function personaOpenNewTab() {
+  const btn = document.getElementById('personaNewTabBtn');
+  btn.disabled = true;
+  btn.textContent = '生成中... / Generating...';
+  try {
+    if (!_personaHostedUrl) {
+      const r = await ensurePersonaInquiry();
+      if (!r || (!r.hosted_url && !_personaHostedUrl)) {
+        showPersonaSendStatus('❌ 无法生成验证链接 / Failed to generate verification link', 'error');
+        btn.disabled = false; btn.textContent = '🌐 在新标签页中打开验证 / Open Verification in New Tab'; return;
+      }
+    }
+    window.open(_personaHostedUrl, '_blank');
+    showPersonaSendStatus('✅ 已在新标签页中打开验证页面 / Verification opened in new tab', 'ok');
+  } catch (e) {
+    showPersonaSendStatus('❌ ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = '🌐 在新标签页中打开验证 / Open Verification in New Tab';
+}
+
+async function ensurePersonaInquiry() {
+  // Create inquiry if we don't have a hosted URL yet, or return existing one
+  if (_personaHostedUrl) return { inquiry_id: null, hosted_url: _personaHostedUrl };
+  const r = await wApi('/persona/inquiry', { method: 'POST' });
+  if (r && r.hosted_url) _personaHostedUrl = r.hosted_url;
+  return r;
+}
 
 async function startPersonaVerification() {
   if (typeof Persona === 'undefined') {
@@ -1603,8 +1952,13 @@ async function startPersonaVerification() {
     if (!r || !r.inquiry_id) {
       showToast('❌ ' + (r?.error || '创建验证失败'), 'error');
       btn.disabled = false;
-      btn.textContent = '开始验证 / Start Verification';
+      btn.textContent = '🖥️ 开始验证 / Start Verification';
       return;
+    }
+    // Store hosted URL for sharing
+    if (r.hosted_url) {
+      _personaHostedUrl = r.hosted_url;
+      updatePersonaLinkUI(r.hosted_url);
     }
 
     // Open Persona embedded flow
@@ -1615,7 +1969,7 @@ async function startPersonaVerification() {
       onReady: () => {
         _personaClient.open();
         btn.disabled = false;
-        btn.textContent = '开始验证 / Start Verification';
+        btn.textContent = '🖥️ 开始验证 / Start Verification';
       },
       onComplete: ({ inquiryId, status, fields }) => {
         console.log('[Persona] Complete:', inquiryId, status);
@@ -1631,6 +1985,7 @@ async function startPersonaVerification() {
           box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 验证已提交 / Submitted</div>';
         }
         showToast('✅ 证件已提交验证');
+        _personaHostedUrl = null; // reset after completion
         loadCompliance();
       },
       onCancel: ({ inquiryId }) => {
@@ -1641,14 +1996,150 @@ async function startPersonaVerification() {
         console.error('[Persona] Error:', error);
         showToast('❌ 验证出错，请重试', 'error');
         btn.disabled = false;
-        btn.textContent = '开始验证 / Start Verification';
+        btn.textContent = '🖥️ 开始验证 / Start Verification';
       }
     });
   } catch (e) {
     console.error('[Persona] Init error:', e);
     showToast('❌ 初始化失败: ' + e.message, 'error');
     btn.disabled = false;
-    btn.textContent = '开始验证 / Start Verification';
+    btn.textContent = '🖥️ 开始验证 / Start Verification';
+  }
+}
+
+// Update link display area with hosted URL
+function updatePersonaLinkUI(url) {
+  if (!url) return;
+  const linkArea = document.getElementById('personaLinkArea');
+  const linkInput = document.getElementById('personaLinkInput');
+  if (linkArea && linkInput) {
+    linkInput.value = url;
+    linkArea.style.display = '';
+  }
+}
+
+function showPersonaSendStatus(msg, type) {
+  const el = document.getElementById('personaSendStatus');
+  el.style.display = '';
+  el.style.background = type === 'ok' ? '#f0fdf4' : type === 'error' ? '#fef2f2' : '#fefce8';
+  el.style.color = type === 'ok' ? '#15803d' : type === 'error' ? '#dc2626' : '#a16207';
+  el.textContent = msg;
+  setTimeout(() => { el.style.display = 'none'; }, 5000);
+}
+
+// Send verification link via SMS
+async function personaSendSMS() {
+  const btn = document.getElementById('personaSmsBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+  try {
+    if (!_personaHostedUrl) {
+      const r = await ensurePersonaInquiry();
+      if (!r || (!r.hosted_url && !_personaHostedUrl)) {
+        showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+        btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS'; return;
+      }
+    }
+    const r = await wApi('/persona/send-sms', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.success) {
+      showPersonaSendStatus('✅ 短信已发送到您的手机 / SMS sent to your phone', 'ok');
+    } else {
+      showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
+    }
+  } catch (e) {
+    showPersonaSendStatus('❌ ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS';
+}
+
+// Send verification link via email
+async function personaSendEmail() {
+  const btn = document.getElementById('personaEmailBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中...';
+  try {
+    if (!_personaHostedUrl) {
+      const r = await ensurePersonaInquiry();
+      if (!r || (!r.hosted_url && !_personaHostedUrl)) {
+        showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+        btn.disabled = false; btn.textContent = '📧 邮件发送 / Send Email'; return;
+      }
+    }
+    const r = await wApi('/persona/send-email', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.success) {
+      showPersonaSendStatus('✅ 邮件已发送 / Email sent', 'ok');
+    } else {
+      showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
+    }
+  } catch (e) {
+    showPersonaSendStatus('❌ ' + e.message, 'error');
+  }
+  btn.disabled = false; btn.textContent = '📧 邮件发送 / Send Email';
+}
+
+// Show QR code for scanning
+async function personaShowQR() {
+  const area = document.getElementById('personaQRArea');
+  const qrDiv = document.getElementById('personaQRCode');
+  if (!_personaHostedUrl) {
+    const btn = document.getElementById('personaQRBtn');
+    btn.disabled = true; btn.textContent = '生成中...';
+    const r = await ensurePersonaInquiry();
+    btn.disabled = false; btn.textContent = '📷 显示二维码 / Show QR Code';
+    if (!r || (!r.hosted_url && !_personaHostedUrl)) {
+      showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+      return;
+    }
+  }
+  // Toggle QR display
+  if (area.style.display !== 'none') { area.style.display = 'none'; return; }
+  qrDiv.innerHTML = '';
+  // Generate QR code using qrcode.js (loaded on demand)
+  if (typeof QRCode === 'undefined') {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+    script.onload = () => { renderPersonaQR(qrDiv); area.style.display = ''; };
+    script.onerror = () => {
+      // Fallback: use Google Charts QR API
+      qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(_personaHostedUrl)}" alt="QR Code" style="width:200px;height:200px">`;
+      area.style.display = '';
+    };
+    document.head.appendChild(script);
+  } else {
+    renderPersonaQR(qrDiv);
+    area.style.display = '';
+  }
+  // Also show the link
+  updatePersonaLinkUI(_personaHostedUrl);
+}
+
+function renderPersonaQR(container) {
+  new QRCode(container, { text: _personaHostedUrl, width: 200, height: 200, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
+}
+
+// Copy verification link to clipboard
+async function personaCopyLink() {
+  if (!_personaHostedUrl) {
+    const btn = document.getElementById('personaCopyBtn');
+    btn.disabled = true; btn.textContent = '生成中...';
+    const r = await ensurePersonaInquiry();
+    btn.disabled = false; btn.textContent = '🔗 复制链接 / Copy Link';
+    if (!r || (!r.hosted_url && !_personaHostedUrl)) {
+      showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+      return;
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(_personaHostedUrl);
+    showPersonaSendStatus('✅ 链接已复制到剪贴板 / Link copied!', 'ok');
+    updatePersonaLinkUI(_personaHostedUrl);
+  } catch {
+    // Fallback for older browsers
+    const input = document.getElementById('personaLinkInput');
+    updatePersonaLinkUI(_personaHostedUrl);
+    input.select();
+    document.execCommand('copy');
+    showPersonaSendStatus('✅ 链接已复制 / Link copied!', 'ok');
   }
 }
 
@@ -1706,6 +2197,198 @@ async function submitW9(e) {
     else alert(data.error || '提交失败');
   } catch { alert('网络错误'); }
 }
+
+// ─── Onboarding / 待办事项 ───
+async function loadOnboarding() {
+  const tasks = await wApi('/onboarding');
+  const list = document.getElementById('onboardingList');
+  if (!tasks) return;
+  if (!tasks.length) {
+    list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
+    return;
+  }
+  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
+  const sBadgeStyle = {
+    locked:'color:var(--gray-400);background:var(--gray-100);border:1px solid var(--gray-200)',
+    pending:'color:#1d4ed8;background:#dbeafe;border:1px solid #bfdbfe',
+    submitted:'color:#92400e;background:#fef3c7;border:1px solid #fde68a',
+    completed:'color:#065f46;background:#d1fae5;border:1px solid #6ee7b7',
+    waived:'color:#7c3aed;background:#f3e8ff;border:1px solid #e9d5ff'
+  };
+  list.innerHTML = tasks.map(t => {
+    const s = t.status;
+    let actionHtml = '';
+    if (s === 'pending') {
+      if (t.key === 'interview') {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openInterviewBookModal()">去预约面试</button>`;
+      } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">去提交文件 →</button>`;
+      } else if ((t.key === 'contract' || t.key === 'gusto') && t.action_url) {
+        const label = t.key === 'gusto' ? '填写 Gusto 信息 →' : '查看/签署合同 →';
+        actionHtml = `<a class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;text-decoration:none;display:inline-block" href="${esc(t.action_url)}" target="_blank">${label}</a>`;
+      } else if (t.key !== 'phone_verify') {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="submitOnboardingTask('${t.key}')">标记已提交</button>`;
+      }
+    } else if (s === 'submitted') {
+      actionHtml = `<div style="font-size:.8rem;color:var(--orange);margin-top:.4rem">已提交，等待 HR 审核中…</div>`;
+    }
+    return `<div class="ob-step">
+      <div class="ob-icon ob-${s==='completed'?'done':s==='waived'?'waived':s==='submitted'?'submitted':s==='pending'?'pending':'locked'}">${icons[t.key]||'📌'}</div>
+      <div style="flex:1">
+        <div><span class="ob-title">${esc(t.title)}</span>
+          <span class="ob-badge" style="${sBadgeStyle[s]||''}">${sLabel[s]||s}</span>
+          ${!t.required?'<span style="font-size:.72rem;color:var(--gray-400);margin-left:.35rem">(可豁免)</span>':''}
+        </div>
+        ${t.admin_note ? `<div class="ob-note">💬 ${esc(t.admin_note)}</div>` : ''}
+        ${actionHtml}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function submitOnboardingTask(key) {
+  const r = await wApi(`/onboarding/${key}/submit`, { method:'POST', body:'{}' });
+  if (r && r.success) { showToast('✅ 已提交，等待 HR 审核'); loadOnboarding(); }
+  else alert(r?.error || '提交失败');
+}
+
+// ── Cancel / Reschedule Interview ──
+async function cancelInterview() {
+  if (!confirm('确认取消面试预约吗？\nAre you sure you want to cancel your interview booking?')) return;
+  const r = await wApi('/interview/cancel', { method: 'POST', body: '{}' });
+  if (!r) return;
+  if (r.success) {
+    showToast('✅ 面试预约已取消 / Interview cancelled');
+    loadInterview();
+    loadOnboarding();
+  } else {
+    showToast('❌ ' + (r.error || '取消失败'), 'error');
+  }
+}
+
+function rescheduleInterview() {
+  if (!confirm('更改预约时间将取消当前预约，然后您可以选择新的时间。\nRescheduling will cancel your current booking, then you can pick a new time.\n\n继续？Continue?')) return;
+  wApi('/interview/cancel', { method: 'POST', body: '{}' }).then(r => {
+    if (r && r.success) {
+      showToast('当前预约已取消，请选择新时间 / Booking cancelled, please select a new time');
+      loadInterview();
+      loadOnboarding();
+    } else {
+      showToast('❌ ' + (r?.error || '操作失败'), 'error');
+    }
+  });
+}
+
+// ── Interview Booking Modal (inline in todos) ──
+function openInterviewBookModal() {
+  document.getElementById('interviewBookModal').style.display = 'flex';
+  loadInterviewModalSlots();
+}
+
+function closeInterviewBookModal() {
+  document.getElementById('interviewBookModal').style.display = 'none';
+}
+
+async function loadInterviewModalSlots() {
+  const slotsDiv = document.getElementById('interviewModalSlots');
+  const statusDiv = document.getElementById('interviewModalStatus');
+  slotsDiv.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中...</div>';
+
+  const [interview, slots] = await Promise.all([wApi('/interview'), wApi('/interview-slots')]);
+
+  // Show current interview status if exists
+  if (interview && interview.status !== 'cancelled') {
+    statusDiv.style.display = '';
+    const dt = new Date(interview.slot_datetime);
+    const dtStr = dt.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const statusMap = {
+      scheduled: '<span style="color:#d97706;font-weight:700">⏳ 已预约</span>',
+      completed: '<span style="color:#6366f1;font-weight:700">✔ 面试完成</span>',
+      passed:    '<span style="color:#16a34a;font-weight:700">✅ 面试通过</span>',
+      failed:    '<span style="color:#dc2626;font-weight:700">❌ 未通过</span>',
+    };
+    statusDiv.innerHTML = `<div style="padding:.85rem 1rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;font-size:.88rem">
+      <div style="font-weight:700;margin-bottom:.4rem">📋 我的面试预约</div>
+      <div>状态：${statusMap[interview.status] || interview.status}</div>
+      <div>时间：<strong>${dtStr}</strong></div>
+      ${interview.location ? `<div>地点：${esc(interview.location)}</div>` : ''}
+      ${interview.contact_name ? `<div>联系人：${esc(interview.contact_name)} ${interview.contact_phone || ''}</div>` : ''}
+    </div>`;
+    if (interview.status === 'scheduled') {
+      slotsDiv.innerHTML = `<div style="text-align:center;padding:1.5rem">
+        <div style="color:var(--gray-500);margin-bottom:1rem;font-size:.88rem">您已有面试预约。如需更改，可取消后重新选择时间。</div>
+        <div style="display:flex;gap:.6rem;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-sky" style="font-size:.85rem;padding:.45rem 1rem" onclick="rescheduleInterview()">🔄 更改预约时间 / Reschedule</button>
+          <button class="btn" style="font-size:.85rem;padding:.45rem 1rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:8px;cursor:pointer" onclick="cancelInterview()">✖ 取消预约 / Cancel</button>
+        </div>
+      </div>`;
+      return;
+    }
+  } else {
+    statusDiv.style.display = 'none';
+  }
+
+  // Render available slots
+  if (!slots || !slots.length) {
+    slotsDiv.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无可用面试时间，请稍后再查看或联系 HR。</div>';
+    return;
+  }
+
+  const grouped = {};
+  slots.forEach(s => {
+    const dt = new Date(s.slot_datetime);
+    const dateKey = dt.toISOString().split('T')[0];
+    if (!grouped[dateKey]) grouped[dateKey] = { date: dt, slots: [] };
+    grouped[dateKey].slots.push(s);
+  });
+
+  let html = '';
+  for (const [dateKey, group] of Object.entries(grouped)) {
+    const dt = group.date;
+    const dateLabel = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+    const dayLocation = group.slots[0].location;
+    html += `<div style="margin-bottom:1.25rem">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:2px solid #e0f2fe">
+        <span style="font-size:1.3rem">📅</span>
+        <span style="font-weight:700;font-size:1rem;color:#0c4a6e">${dateLabel}</span>
+        ${dayLocation ? `<span style="font-size:.8rem;color:var(--gray-500);margin-left:auto">📍 ${dayLocation}</span>` : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">`;
+    group.slots.forEach(s => {
+      const sdt = new Date(s.slot_datetime);
+      const timeStr = sdt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+      const remaining = s.max_bookings - s.booked_count;
+      const full = remaining <= 0;
+      html += `<button onclick="${full ? '' : `modalBookSlot(${s.id})`}" ${full ? 'disabled' : ''}
+        style="padding:.7rem .5rem;border:1px solid ${full?'var(--gray-200)':'#bae6fd'};border-radius:10px;background:${full?'#f9fafb':'#f0f9ff'};cursor:${full?'not-allowed':'pointer'};text-align:center;transition:all .15s">
+        <div style="font-weight:700;font-size:1rem;color:${full?'var(--gray-400)':'#0369a1'}">${timeStr}</div>
+        <div style="font-size:.75rem;color:${full?'var(--gray-400)':'#d97706'};margin-top:.2rem">${full ? '已满' : `剩余 ${remaining} 名额`}</div>
+        <div style="font-size:.72rem;color:var(--gray-400);margin-top:.1rem">${s.duration_min}分钟</div>
+      </button>`;
+    });
+    html += `</div></div>`;
+  }
+  slotsDiv.innerHTML = html;
+}
+
+async function modalBookSlot(slotId) {
+  const r = await wApi('/interviews', { method:'POST', body: JSON.stringify({ slot_id: slotId }) });
+  if (!r) return;
+  if (r.success) {
+    showToast('✅ 面试已预约！请准时参加');
+    closeInterviewBookModal();
+    loadOnboarding();
+    loadInterview(); // also refresh the interview tab
+  } else {
+    showToast('❌ ' + (r.error || '预约失败'), 'error');
+  }
+}
+
+// Close modal on overlay click
+document.addEventListener('click', (e) => {
+  if (e.target.id === 'interviewBookModal') closeInterviewBookModal();
+});
 
 function esc(s) {
   const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML;

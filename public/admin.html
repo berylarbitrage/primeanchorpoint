@@ -54,6 +54,15 @@ tr:hover td{background:var(--sky-light)}
 .badge-cooperated{background:#D1FAE5;color:#065F46}
 .badge-rejected{background:#FEE2E2;color:#991B1B}
 .badge-unreachable{background:#F3F4F6;color:#6B7280}
+.badge-quote_high{background:#FEF3C7;color:#92400E}
+.badge-too_small{background:#E0E7FF;color:#3730A3}
+.badge-no_match{background:#FEE2E2;color:#991B1B}
+.badge-other{background:#F3F4F6;color:#6B7280}
+.proc-reason-card{display:flex;flex-direction:column;align-items:center;gap:.3rem;padding:.65rem .5rem;border:2px solid var(--gray-200);border-radius:10px;cursor:pointer;transition:border-color .15s,background .15s;text-align:center;user-select:none}
+.proc-reason-card:hover{border-color:var(--sky);background:#f0f9ff}
+.proc-reason-card.selected{border-color:var(--sky);background:#e0f2fe}
+.proc-reason-card .proc-icon{font-size:1.4rem;line-height:1}
+.proc-reason-card .proc-label{font-size:.78rem;font-weight:600;color:var(--gray-700);line-height:1.3}
 .badge-w2{background:#D1FAE5;color:#065F46}
 .badge-contract{background:#FEF3C7;color:#92400E}
 .badge-open{background:#D1FAE5;color:#065F46}.badge-filled{background:#DBEAFE;color:#1D4ED8}.badge-on_hold{background:#FEF9C3;color:#92400E}.badge-closed{background:#F3F4F6;color:#6B7280}
@@ -89,6 +98,15 @@ tr:hover td{background:var(--sky-light)}
 .assign-dropdown .adrop-item:last-child{border-bottom:none}
 .assign-dropdown .adrop-item:hover,.assign-dropdown .adrop-item.focused{background:var(--sky-light)}
 .assign-dropdown .adrop-item small{display:block;color:var(--gray-500);font-size:.75rem}
+/* ── Toast notifications ── */
+#toastContainer{position:fixed;top:1.25rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
+.toast{display:flex;align-items:center;gap:.7rem;padding:.7rem 1.2rem;border-radius:12px;font-size:.9rem;font-weight:600;box-shadow:0 4px 20px rgba(0,0,0,.15);pointer-events:auto;animation:toastIn .25s cubic-bezier(.34,1.56,.64,1) both}
+.toast.toast-success{background:#fff;border:1.5px solid #BBF7D0;color:#166534}
+.toast.toast-error{background:#fff;border:1.5px solid #FECACA;color:#991B1B}
+.toast.toast-info{background:#fff;border:1.5px solid #BFDBFE;color:#1E40AF}
+.toast.hide{animation:toastOut .2s ease forwards}
+@keyframes toastIn{from{opacity:0;transform:translateY(-12px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes toastOut{to{opacity:0;transform:translateY(-8px) scale(.96)}}
 .badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
@@ -217,6 +235,61 @@ tr:hover td{background:var(--sky-light)}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
+/* Onboarding task list scrollbar */
+#onboardingTaskList{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
+#onboardingTaskList::-webkit-scrollbar{width:5px}
+#onboardingTaskList::-webkit-scrollbar-track{background:transparent}
+#onboardingTaskList::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px}
+#onboardingTaskList::-webkit-scrollbar-thumb:hover{background:#94a3b8}
+
+/* ── Worker table beautification ── */
+#accPanelWorker table{border-spacing:0 4px;border-collapse:separate;min-width:1900px}
+#accPanelWorker thead th{position:sticky;top:0;background:var(--white);z-index:1;padding:8px 10px;font-size:.7rem;white-space:nowrap}
+#accPanelWorker tbody td{padding:8px 10px;vertical-align:middle;font-size:.82rem}
+#accPanelWorker tbody tr{transition:box-shadow .15s}
+#accPanelWorker tbody tr:hover td{background:#f0f5ff}
+.wa-name{font-weight:700;color:var(--blue);font-size:.88rem;white-space:nowrap}
+.wa-sub{font-size:.7rem;color:var(--gray-400);margin-top:1px}
+.wa-compliance{display:flex;gap:3px;flex-wrap:wrap}
+.wa-cbadge{display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:4px;font-size:.68rem;font-weight:700;letter-spacing:.3px}
+.wa-cbadge.ok{background:#dcfce7;color:#15803d}.wa-cbadge.pend{background:#fef3c7;color:#92400e}
+.wa-cbadge.fail{background:#fef2f2;color:#dc2626}.wa-cbadge.na{background:var(--gray-100);color:var(--gray-300)}
+.wa-status{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:700;white-space:nowrap}
+.wa-status.active{background:#d1fae5;color:#065f46;border:1px solid #a7f3d0}
+.wa-status.pending{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
+.wa-status.suspended{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+.wa-dispatch{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:700;white-space:nowrap}
+.wa-dispatch.yes{background:#d1fae5;color:#065f46;border:1px solid #6ee7b7}
+.wa-dispatch.no{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.wa-actions{display:flex;gap:4px;align-items:center;position:relative;white-space:nowrap;flex-shrink:0}
+.wa-actions .btn-sm{padding:4px 10px;font-size:.72rem;border-radius:6px;white-space:nowrap}
+.wa-abtn-primary{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe}
+.wa-abtn-primary:hover{background:#ddd6fe}
+.wa-abtn-edit{background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe}
+.wa-abtn-edit:hover{background:#dbeafe}
+.wa-abtn-warn{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
+.wa-abtn-warn:hover{background:#ffedd5}
+.wa-abtn-green{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.wa-abtn-green:hover{background:#d1fae5}
+.wa-abtn-convert{background:#faf5ff;color:#7c3aed;border:1px solid #e9d5ff}
+.wa-abtn-convert:hover{background:#f3e8ff}
+.wa-abtn-reset{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
+.wa-abtn-reset:hover{background:#e0f2fe}
+.wa-abtn-del{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
+.wa-abtn-del:hover{background:#fee2e2}
+.wa-more-wrap{position:relative}
+.wa-more-btn{width:28px;height:28px;border-radius:6px;border:1px solid var(--gray-200);background:var(--white);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:1rem;color:var(--gray-600);transition:all .15s}
+.wa-more-btn:hover{background:var(--gray-100);border-color:var(--gray-400)}
+.wa-dropdown{display:none;position:absolute;right:0;top:calc(100% + 4px);background:var(--white);border:1px solid var(--gray-200);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);min-width:160px;z-index:50;padding:4px 0;animation:waFadeIn .12s ease}
+.wa-dropdown.show{display:block}
+@keyframes waFadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+.wa-dropdown-item{display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:.78rem;cursor:pointer;color:var(--gray-600);transition:background .1s;white-space:nowrap;border:none;background:none;width:100%;text-align:left}
+.wa-dropdown-item:hover{background:var(--sky-light);color:var(--blue)}
+.wa-dropdown-item.danger{color:var(--red)}
+.wa-dropdown-item.danger:hover{background:#fef2f2;color:#dc2626}
+.wa-dropdown-sep{height:1px;background:var(--gray-200);margin:4px 0}
+.wa-skill-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-size:.7rem;background:#f0f5ff;color:var(--blue);margin:1px 0;white-space:nowrap}
+.wa-skill-pill .stars{color:#f59e0b;font-size:.65rem}
 </style>
 </head>
 <body>
@@ -377,9 +450,12 @@ tr:hover td{background:var(--sky-light)}
       <input type="text" id="inqHistSearch" placeholder="搜索姓名、电话、公司..." oninput="filterInquiryHistory()">
       <select id="inqHistStatus" onchange="filterInquiryHistory()">
         <option value="">全部结果</option>
-        <option value="cooperated">✅ 已合作</option>
-        <option value="rejected">❌ 已拒绝</option>
+        <option value="cooperated">🤝 已建立合作</option>
+        <option value="quote_high">💰 报价过高</option>
+        <option value="too_small">📦 订货量太小</option>
+        <option value="no_match">❌ 需求不匹配</option>
         <option value="unreachable">📵 联系不上</option>
+        <option value="other">💬 其他</option>
       </select>
     </div>
     <div class="card"><table><thead><tr><th>处理日期</th><th>姓名</th><th>类型</th><th>申请职位</th><th>处理结果</th><th>备注</th><th>操作</th></tr></thead><tbody id="inqHistTable"></tbody></table></div>
@@ -712,6 +788,10 @@ tr:hover td{background:var(--sky-light)}
       style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
       面试预约列表
     </button>
+    <button id="ivTabLocations" onclick="switchIvTab('locations')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
+      📍 面试地点管理
+    </button>
   </div>
 
   <!-- Slots pane -->
@@ -741,8 +821,16 @@ tr:hover td{background:var(--sky-light)}
       </div>
 
       <div style="margin-bottom:1rem">
-        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点</label>
-        <input type="text" id="batchLocation" placeholder="如：公司办公室 123 Main St / Zoom 线上" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试地点（选择预设或手动输入）</label>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <select id="batchLocationSelect" onchange="onBatchLocationSelect()" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+            <option value="">-- 选择预设地点 --</option>
+          </select>
+          <span style="color:var(--gray-400);font-size:.82rem">或</span>
+          <input type="text" id="batchLocation" placeholder="手动输入地址" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div id="batchLocationDetail" style="display:none;margin-top:.5rem;padding:.5rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;font-size:.82rem">
+        </div>
       </div>
 
       <!-- Day selection with time inputs -->
@@ -762,7 +850,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="card" style="margin-bottom:1rem">
       <details>
         <summary style="cursor:pointer;font-weight:700;font-size:.95rem;color:var(--gray-600)">➕ 单独添加时间槽</summary>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:.75rem;align-items:end;margin-top:1rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;align-items:end;margin-top:1rem">
           <div>
             <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">日期时间</label>
             <input type="datetime-local" id="ivSlotDatetime" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
@@ -775,8 +863,16 @@ tr:hover td{background:var(--sky-light)}
             <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">最大名额</label>
             <input type="number" id="ivSlotMax" value="1" min="1" max="20" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
           </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:.75rem;align-items:end;margin-top:.75rem">
           <div>
-            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点（可选）</label>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">地点</label>
+            <select id="ivSlotLocationSelect" onchange="onSingleLocationSelect()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+              <option value="">-- 选择预设或手动输入 --</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">或手动输入</label>
             <input type="text" id="ivSlotLocation" placeholder="如：公司会议室、Zoom" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
           </div>
           <button class="btn btn-blue" onclick="addInterviewSlot()" style="white-space:nowrap">添加</button>
@@ -795,8 +891,25 @@ tr:hover td{background:var(--sky-light)}
         </select>
         <button class="btn btn-sm btn-red" onclick="clearExpiredSlots()" style="margin-left:auto">清理已过期</button>
       </div>
-      <table><thead><tr><th>日期时间</th><th>时长</th><th>地点</th><th>名额</th><th>已预约</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>日期时间</th><th>时长</th><th>地点 / 联系人</th><th>名额</th><th>已预约</th><th>操作</th></tr></thead>
       <tbody id="ivSlotsTable"></tbody></table>
+    </div>
+  </div>
+
+  <!-- Locations pane -->
+  <div id="ivPaneLocations" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div>
+          <h3 style="margin:0">预设面试地点</h3>
+          <p style="font-size:.82rem;color:var(--gray-500);margin:.25rem 0 0">新建时间槽时可从这里选择地点，联系人和指引会自动填入</p>
+        </div>
+        <button class="btn btn-green" onclick="openLocationModal()">+ 添加地点</button>
+      </div>
+      <table>
+        <thead><tr><th>名称</th><th>地址</th><th>联系人</th><th>手机</th><th>到场指引</th><th>操作</th></tr></thead>
+        <tbody id="ivLocationsTable"></tbody>
+      </table>
     </div>
   </div>
 
@@ -818,7 +931,67 @@ tr:hover td{background:var(--sky-light)}
       <tbody id="ivInterviewsTable"></tbody></table>
     </div>
   </div>
+
+  <!-- Locations pane -->
+  <div id="ivPaneLocations" style="display:none">
+    <div class="card" style="margin-bottom:1rem">
+      <h3 style="margin-bottom:.75rem">📍 面试地点预设</h3>
+      <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">管理常用面试地点，创建时间槽时可以快速选择。包含地址、联系人和到达指引。</p>
+
+      <div style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:1rem;margin-bottom:1rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">名称 *</label>
+            <input type="text" id="locName" placeholder="如：总部面试室、芝加哥分部" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">完整地址 *</label>
+            <input type="text" id="locAddress" placeholder="如：123 Main St, Suite 200, Chicago, IL 60601" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">联系人姓名</label>
+            <input type="text" id="locContactName" placeholder="如：张经理" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+          <div>
+            <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">联系人手机</label>
+            <input type="tel" id="locContactPhone" placeholder="如：(312) 555-1234" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          </div>
+        </div>
+        <div style="margin-bottom:.75rem">
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">到达指引 Instructions</label>
+          <textarea id="locInstructions" rows="3" placeholder="如：从正门进入，到二楼 Suite 200，找前台登记。面试在 Conference Room B。&#10;Enter from main entrance, go to 2nd floor Suite 200, check in at front desk. Interview in Conference Room B." style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+        </div>
+        <button class="btn btn-blue" onclick="saveInterviewLocation()">保存地点</button>
+        <input type="hidden" id="locEditId" value="">
+      </div>
+
+      <table><thead><tr><th>名称</th><th>地址</th><th>联系人</th><th>电话</th><th style="min-width:200px">到达指引</th><th>操作</th></tr></thead>
+      <tbody id="ivLocationsTable"></tbody></table>
+    </div>
+  </div>
 </div>
+
+<!-- Interview Location Modal -->
+<div class="modal-bg" id="ivLocationModal"><div class="modal" style="max-width:520px">
+  <h2 id="ivLocModalTitle">添加面试地点</h2>
+  <input type="hidden" id="ivLocId">
+  <div class="field"><label>地点名称 *</label><input id="ivLocName" placeholder="例：芝加哥主办公室、Zoom 线上面试"></div>
+  <div class="field"><label>地址</label><input id="ivLocAddress" placeholder="123 Main St, Chicago, IL 60601"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+    <div class="field"><label>联系人姓名</label><input id="ivLocContactName" placeholder="张经理"></div>
+    <div class="field"><label>联系人手机</label><input id="ivLocContactPhone" placeholder="(312) 555-0100"></div>
+  </div>
+  <div class="field">
+    <label>到场指引 <span style="color:var(--gray-400);font-weight:400;font-size:.8rem">（房间号、停车、注意事项等）</span></label>
+    <textarea id="ivLocInstructions" rows="4" placeholder="例：请到2楼前台报到，告知来面试，停车场在大楼东侧，免费停3小时。"></textarea>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="saveLocation()">保存</button>
+    <button class="btn" onclick="closeModal('ivLocationModal')">取消</button>
+  </div>
+</div></div>
 
 <!-- Approvals Tab -->
 <div id="tab-approvals" style="display:none">
@@ -859,7 +1032,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>面试</th>
-      <th>合规文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>操作</th>
+      <th>合规文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -1014,6 +1187,20 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Onboarding Progress Modal -->
+<div class="modal-bg" id="onboardingModal"><div class="modal" style="max-width:600px">
+  <h2>🗂️ 入职进度 — <span id="onboardingWorkerName" style="color:var(--sky)"></span></h2>
+  <div id="onboardingTaskList" style="margin:.75rem 0;max-height:60vh;overflow-y:auto"></div>
+  <div style="display:flex;align-items:center;gap:.75rem;padding:.75rem 0;border-top:1px solid var(--gray-200);margin-top:.5rem;flex-wrap:wrap">
+    <span style="font-size:.88rem;font-weight:700;color:var(--blue)">派工状态：</span>
+    <span id="onboardingDispatchBadge"></span>
+    <button class="btn btn-sm" id="onboardingDispatchBtn" onclick="toggleDispatchReady()" style="margin-left:auto"></button>
+  </div>
+  <div class="modal-actions" style="margin-top:.5rem">
+    <button class="btn" onclick="closeModal('onboardingModal')">关闭</button>
+  </div>
+</div></div>
+
 <!-- Customer Account Modal -->
 <div class="modal-bg" id="customerAccountModal"><div class="modal" style="max-width:520px">
   <h2 id="customerAccModalTitle">新建客户账户</h2>
@@ -1124,6 +1311,15 @@ tr:hover td{background:var(--sky-light)}
     <p style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">常见: 叉车 Forklift, 打包 Packaging, 清洁 Cleaning, 搬运 Loading, 仓储 Warehouse, 厨房 Kitchen, 电焊 Welding, 机械操作 Machine Op</p>
   </div>
 
+  <div style="margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <label style="font-size:.8rem;font-weight:600">分配合规任务 Assign Compliance Tasks</label>
+      <button class="btn btn-sm" onclick="wdSelectAllTasks()">全选/取消</button>
+    </div>
+    <div id="wdTasksList" style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem"></div>
+    <p style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">仅勾选的任务会显示在工人的 Portal 中 / Only checked tasks will appear in the worker's portal</p>
+  </div>
+
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('workerDetailModal')">取消</button>
     <button class="btn btn-blue" onclick="saveWorkerDetail()">保存</button>
@@ -1131,6 +1327,8 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Job Modal -->
+<div id="toastContainer"></div>
+
 <!-- ════ Employee Rating Modal ════ -->
 <div class="modal-bg" id="ratingModal"><div class="modal" style="max-width:560px">
   <h2 id="ratingModalTitle">职位能力评分</h2>
@@ -1644,24 +1842,50 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Inquiry Process Modal -->
-<div class="modal-bg" id="procModal"><div class="modal" style="max-width:420px">
+<div class="modal-bg" id="procModal"><div class="modal" style="max-width:480px">
   <h2>标记处理结果</h2>
-  <div class="field">
-    <label>处理结果 *</label>
-    <select id="procStatus">
-      <option value="">-- 请选择 --</option>
-      <option value="cooperated">✅ 已合作</option>
-      <option value="rejected">❌ 已拒绝</option>
-      <option value="unreachable">📵 联系不上</option>
-    </select>
+  <div class="field" style="margin-bottom:1rem">
+    <label style="font-weight:600;font-size:.85rem;color:var(--gray-600);margin-bottom:.6rem;display:block">处理原因 *</label>
+    <div id="procReasonGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+      <label class="proc-reason-card" data-val="cooperated">
+        <input type="radio" name="procReason" value="cooperated" style="display:none">
+        <span class="proc-icon">🤝</span>
+        <span class="proc-label">已建立合作关系</span>
+      </label>
+      <label class="proc-reason-card" data-val="quote_high">
+        <input type="radio" name="procReason" value="quote_high" style="display:none">
+        <span class="proc-icon">💰</span>
+        <span class="proc-label">报价过高，对方不接受</span>
+      </label>
+      <label class="proc-reason-card" data-val="too_small">
+        <input type="radio" name="procReason" value="too_small" style="display:none">
+        <span class="proc-icon">📦</span>
+        <span class="proc-label">订货量太小，无法承接</span>
+      </label>
+      <label class="proc-reason-card" data-val="no_match">
+        <input type="radio" name="procReason" value="no_match" style="display:none">
+        <span class="proc-icon">❌</span>
+        <span class="proc-label">需求不匹配</span>
+      </label>
+      <label class="proc-reason-card" data-val="unreachable">
+        <input type="radio" name="procReason" value="unreachable" style="display:none">
+        <span class="proc-icon">📵</span>
+        <span class="proc-label">联系不上</span>
+      </label>
+      <label class="proc-reason-card" data-val="other">
+        <input type="radio" name="procReason" value="other" style="display:none">
+        <span class="proc-icon">💬</span>
+        <span class="proc-label">其他原因</span>
+      </label>
+    </div>
   </div>
   <div class="field">
-    <label>备注 *（必填）</label>
-    <textarea id="procNote" placeholder="例：已入职XX公司，或沟通后不符合需求..." style="height:90px"></textarea>
+    <label>补充备注 <span style="color:var(--gray-400);font-weight:400">（可选）</span></label>
+    <textarea id="procNote" placeholder="可补充具体细节，如报价金额、沟通结果等..." style="height:72px"></textarea>
   </div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
-    <button class="btn btn-green" onclick="saveProcessInquiry()">确认</button>
-    <button class="btn btn-red" onclick="guardClose('procModal')">取消</button>
+    <button class="btn btn-green" onclick="saveProcessInquiry()">确认标记</button>
+    <button class="btn" onclick="guardClose('procModal')">取消</button>
   </div>
 </div></div>
 
@@ -1686,6 +1910,7 @@ tr:hover td{background:var(--sky-light)}
     <input id="aInquiry" autocomplete="off" placeholder="搜索姓名 / 电话 / 邮箱…" oninput="filterAssignSearch('inq')">
     <div class="assign-dropdown" id="aInquiryDrop"></div>
   </div>
+  <div id="aDispatchWarn" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:.5rem .75rem;font-size:.83rem;color:#92400e;margin-top:-.25rem;margin-bottom:.5rem"></div>
 
   <div class="field" style="position:relative">
     <label>分配职位 *</label>
@@ -2126,6 +2351,21 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- ── Danger Confirm Modal ── -->
+<!-- Generic Confirm Modal -->
+<div class="modal-bg" id="genericConfirmModal"><div class="modal" style="max-width:400px">
+  <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.1rem">
+    <div id="gcmIcon" style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"></div>
+    <div>
+      <h2 id="gcmTitle" style="margin:0;font-size:1.05rem"></h2>
+      <p id="gcmDesc" style="margin:.25rem 0 0;font-size:.84rem;color:var(--gray-600)"></p>
+    </div>
+  </div>
+  <div style="display:flex;gap:.65rem;justify-content:flex-end">
+    <button class="btn btn-outline" onclick="closeGenericConfirm()">取消</button>
+    <button class="btn" id="gcmBtn" onclick="execGenericConfirm()">确认</button>
+  </div>
+</div></div>
+
 <div class="modal-bg" id="dangerConfirmModal"><div class="modal" style="max-width:420px">
   <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.1rem">
     <div style="width:44px;height:44px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -2149,6 +2389,29 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <script>
+let _gcmCallback = null;
+function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor) {
+  const colors = {
+    blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
+    green: { bg:'#D1FAE5', stroke:'#059669', title:'#065F46' },
+    red:   { bg:'#FEE2E2', stroke:'#DC2626', title:'#B91C1C' },
+    amber: { bg:'#FEF3C7', stroke:'#D97706', title:'#92400E' }
+  };
+  const c = colors[iconColor] || colors.blue;
+  document.getElementById('gcmIcon').style.background = c.bg;
+  document.getElementById('gcmIcon').innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c.stroke}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+  document.getElementById('gcmTitle').textContent = title;
+  document.getElementById('gcmTitle').style.color = c.title;
+  document.getElementById('gcmDesc').textContent = desc;
+  const btn = document.getElementById('gcmBtn');
+  btn.textContent = btnText;
+  btn.className = 'btn ' + (btnClass || 'btn-green');
+  _gcmCallback = onConfirm;
+  document.getElementById('genericConfirmModal').classList.add('show');
+}
+function closeGenericConfirm() { document.getElementById('genericConfirmModal').classList.remove('show'); _gcmCallback = null; }
+async function execGenericConfirm() { const cb = _gcmCallback; closeGenericConfirm(); if (cb) await cb(); }
+
 let TOKEN = '';
 let USER_ROLE = '';
 let USER_NAME = '';
@@ -3276,8 +3539,8 @@ function filterInquiryHistory() {
   renderInquiryHistory(filtered);
 }
 
-const procStatusLabel = s => ({ cooperated:'已合作', rejected:'已拒绝', unreachable:'联系不上' })[s] || s;
-const procStatusIcon  = s => ({ cooperated:'✅', rejected:'❌', unreachable:'📵' })[s] || '';
+const procStatusLabel = s => ({ cooperated:'已建立合作', quote_high:'报价过高', too_small:'订货量太小', no_match:'需求不匹配', unreachable:'联系不上', other:'其他', rejected:'已拒绝' })[s] || s;
+const procStatusIcon  = s => ({ cooperated:'🤝', quote_high:'💰', too_small:'📦', no_match:'❌', unreachable:'📵', other:'💬', rejected:'❌' })[s] || '';
 
 function renderInquiries(inqs) {
   document.getElementById('inqTable').innerHTML = inqs.length ? inqs.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
@@ -3311,8 +3574,9 @@ function renderInquiryHistory(inqs) {
 
 // ── Process modal ──
 function openProcessModal() {
-  // called from detail modal
-  document.getElementById('procStatus').value = '';
+  // reset card selection
+  document.querySelectorAll('.proc-reason-card').forEach(c => c.classList.remove('selected'));
+  document.querySelectorAll('input[name=procReason]').forEach(r => r.checked = false);
   document.getElementById('procNote').value = '';
   document.getElementById('procModal').classList.add('show');
   captureModalState('procModal');
@@ -3323,20 +3587,29 @@ function openProcessModalDirect(inq) {
   openProcessModal();
 }
 
+// card click handler — highlight selected card
+document.addEventListener('click', e => {
+  const card = e.target.closest('.proc-reason-card');
+  if (!card) return;
+  document.querySelectorAll('.proc-reason-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+  card.querySelector('input[type=radio]').checked = true;
+});
+
 async function saveProcessInquiry() {
   if (!currentInquiry) return;
-  const status = document.getElementById('procStatus').value;
-  if (!status) return alert('请选择处理结果');
+  const checked = document.querySelector('input[name=procReason]:checked');
+  if (!checked) return alert('请选择处理原因');
+  const status = checked.value;
   const note = document.getElementById('procNote').value.trim();
-  if (!note) return alert('请填写备注');
   await api(`/admin/inquiries/${currentInquiry.id}/process`, { method: 'PUT', body: JSON.stringify({ status, note }) });
   clearModalState('procModal');
   document.getElementById('procModal').classList.remove('show');
   document.getElementById('inqModal').classList.remove('show');
-  // refresh both lists
   allInqHistory = [];
   await loadInquiries();
   if (currentInqTab === 'history') loadInquiryHistory();
+  showToast(`✅ 已标记：${procStatusIcon(status)} ${procStatusLabel(status)}`);
 }
 
 async function undoProcessInquiry(id) {
@@ -3685,6 +3958,7 @@ async function openAssignModal(assignment) {
   document.getElementById('aJob').value = '';
   document.getElementById('aInquiryId').value = '';
   document.getElementById('aJobId').value = '';
+  document.getElementById('aDispatchWarn').style.display = 'none';
   closeAssignDropdowns();
 
   const [inqs, jobs] = await Promise.all([api('/admin/inquiries'), api('/admin/jobs')]);
@@ -3752,6 +4026,22 @@ function selectAssignItem(which, id, label) {
   document.getElementById(isInq ? 'aInquiry' : 'aJob').value = label;
   document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = id;
   document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop').classList.remove('open');
+  if (isInq) checkInquiryDispatchStatus(id);
+}
+
+async function checkInquiryDispatchStatus(inquiryId) {
+  const warn = document.getElementById('aDispatchWarn');
+  warn.style.display = 'none';
+  if (!inquiryId) return;
+  const r = await api(`/admin/inquiries/${inquiryId}/worker-status`);
+  if (!r) return;
+  if (!r.has_account) {
+    warn.innerHTML = '⚠️ 此人员尚未创建工人账户，建议先创建账户并完成入职流程后再派工。';
+    warn.style.display = '';
+  } else if (!r.dispatch_ready) {
+    warn.innerHTML = `⚠️ 该工人入职流程尚未完成，未标记"可派工"。<button class="btn btn-sm" style="margin-left:.5rem;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe" onclick="openOnboardingModalById(${r.worker_id})">查看入职进度</button>`;
+    warn.style.display = '';
+  }
 }
 
 function closeAssignDropdowns() {
@@ -3784,6 +4074,14 @@ async function saveAssignment() {
     benefits
   };
   if (!data.inquiry_id || !data.job_id) return alert('请搜索并选择人员和职位');
+  // Dispatch-ready guard
+  const ws = await api(`/admin/inquiries/${data.inquiry_id}/worker-status`).catch(()=>null);
+  if (ws && !ws.dispatch_ready) {
+    const msg = ws.has_account
+      ? '该工人尚未标记"可派工"（入职流程未完成），确定继续派工吗？'
+      : '此人员尚未创建工人账户，确定继续派工吗？';
+    if (!confirm(msg)) return;
+  }
   let assignId;
   if (id) {
     await api(`/admin/assignments/${id}`, { method: 'PUT', body: JSON.stringify(data) });
@@ -6330,56 +6628,212 @@ const WORK_STATUS_MAP = { citizen:'🇺🇸 公民', green_card:'🟢 绿卡', e
 const IV_STATUS_MAP = { scheduled:'⏳ 已约', completed:'✔ 面试完成', passed:'✅ 通过', failed:'❌ 未通过', cancelled:'取消' };
 const PAY_METHOD_LABELS = { check:'✅ 支票', cash:'💵 现金', direct_deposit:'🏦 直接存款' };
 
-function complianceBadge(type, status) {
-  if (!status) return `<span style="color:var(--gray-300);font-size:.72rem">—</span>`;
-  const colors = { approved:'background:#dcfce7;color:#15803d', pending:'background:#fef3c7;color:#92400e', rejected:'background:#fef2f2;color:#dc2626' };
-  return `<span style="display:inline-block;padding:0 4px;border-radius:3px;font-size:.68rem;font-weight:600;${colors[status]||''}">${type}</span>`;
+function complianceBadge2(type, status) {
+  if (!status) return `<span class="wa-cbadge na">${type}</span>`;
+  const cls = { approved:'ok', pending:'pend', rejected:'fail' };
+  return `<span class="wa-cbadge ${cls[status]||'na'}">${type}</span>`;
 }
 
-function skillStars(rating) {
+function skillPills(skills) {
+  if (!skills || !skills.length) return '<span style="color:var(--gray-300)">—</span>';
   const max = 5;
-  const r = Math.min(max, Math.max(0, parseInt(rating) || 0));
-  return '<span style="color:#f59e0b;font-size:.75rem">' + '★'.repeat(r) + '<span style="color:#e5e7eb">' + '☆'.repeat(max - r) + '</span></span>';
+  return skills.map(s => {
+    const r = Math.min(max, Math.max(0, parseInt(s.rating) || 0));
+    return `<span class="wa-skill-pill">${esc(s.skill_name)} <span class="stars">${'★'.repeat(r)}${'☆'.repeat(max-r)}</span></span>`;
+  }).join(' ');
+}
+
+// Close any open dropdown when clicking outside
+document.addEventListener('click', e => {
+  if (!e.target.closest('.wa-more-wrap')) {
+    document.querySelectorAll('.wa-dropdown.show').forEach(d => d.classList.remove('show'));
+  }
+});
+function toggleWorkerMenu(btn) {
+  const dd = btn.nextElementSibling;
+  const wasOpen = dd.classList.contains('show');
+  document.querySelectorAll('.wa-dropdown.show').forEach(d => d.classList.remove('show'));
+  if (!wasOpen) dd.classList.add('show');
 }
 
 async function loadWorkerAccounts() {
   const rows = await api('/admin/worker-accounts');
   if (!Array.isArray(rows)) return;
   const workerStatus = w => {
-    if (!w.active) return '<span style="color:var(--orange);font-weight:600">⏳ 待验证</span>';
-    if (w.suspended) return '<span style="color:var(--red);font-weight:600">⛔ 暂停</span>';
-    return '<span style="color:var(--green);font-weight:600">✅ 正常</span>';
+    if (!w.active) return '<span class="wa-status pending">⏳ 待验证</span>';
+    if (w.suspended) return '<span class="wa-status suspended">⛔ 暂停</span>';
+    return '<span class="wa-status active">✅ 正常</span>';
   };
+  const dispatchBadge = w => w.dispatch_ready
+    ? '<span class="wa-dispatch yes">✅ 可派工</span>'
+    : '<span class="wa-dispatch no">⏳ 待确认</span>';
   document.getElementById('workerAccountsTable').innerHTML = rows.length ? rows.map(w => {
     const c = w.compliance || {};
     const skills = w.skills || [];
+    // Build inline action buttons
+    let extraBtns = '';
+    if (!w.active) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="resendWorkerVerify(${w.id})">📨 重发验证</button>`;
+    if (w.active && w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-green" onclick="suspendWorkerAccount(${w.id},0)">▶️ 恢复</button>`;
+    if (w.active && !w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="suspendWorkerAccount(${w.id},1)">⏸️ 暂停</button>`;
+    if (!w.employee_id) extraBtns += `<button class="btn btn-sm wa-abtn-convert" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>🔄 转员工</button>`;
+    extraBtns += `<button class="btn btn-sm wa-abtn-reset" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">🔑 重置</button>`;
+    extraBtns += `<button class="btn btn-sm wa-abtn-del" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除</button>`;
     return `<tr>
-    <td><strong>${esc(w.name||w.username)}</strong><br><span style="font-size:.72rem;color:var(--gray-400)">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</span></td>
-    <td style="font-size:.8rem">${esc(w.phone||'')}</td>
-    <td style="font-size:.78rem">${esc(w.email||'')}</td>
-    <td style="font-size:.8rem">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
-    <td style="font-size:.8rem">${w.interview_status ? IV_STATUS_MAP[w.interview_status]||w.interview_status : '<span style="color:var(--gray-300)">未安排</span>'}</td>
-    <td style="white-space:nowrap">
-      ${complianceBadge('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
-      ${complianceBadge('SSN', c.ssn_card)}
-      ${complianceBadge('DL', c.drivers_license)}
-      ${complianceBadge('W9', c.w9)}
-      ${complianceBadge('I9', c.i9)}
-    </td>
-    <td style="font-size:.8rem">${PAY_METHOD_LABELS[w.payment_method]||'💵 现金'}</td>
+    <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div></td>
+    <td style="font-size:.8rem;white-space:nowrap">${esc(w.phone||'—')}</td>
+    <td style="font-size:.78rem">${esc(w.email||'—')}</td>
+    <td style="font-size:.8rem;white-space:nowrap">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
+    <td style="font-size:.8rem;white-space:nowrap">${w.interview_status ? IV_STATUS_MAP[w.interview_status]||w.interview_status : '<span style="color:var(--gray-300)">未安排</span>'}</td>
+    <td><div class="wa-compliance">
+      ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
+      ${complianceBadge2('SSN', c.ssn_card)}
+      ${complianceBadge2('DL', c.drivers_license)}
+      ${complianceBadge2('W9', c.w9)}
+      ${complianceBadge2('I9', c.i9)}
+    </div></td>
+    <td style="font-size:.8rem;white-space:nowrap">${PAY_METHOD_LABELS[w.payment_method]||'💵 现金'}</td>
     <td style="font-size:.8rem">${w.expected_salary ? '$'+esc(w.expected_salary) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.8rem">${w.our_salary_rating ? esc(w.our_salary_rating) : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td style="font-size:.75rem">${skills.length ? skills.map(s => `<div>${esc(s.skill_name)} ${skillStars(s.rating)}</div>`).join('') : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="max-width:160px">${skillPills(skills)}</td>
     <td>${workerStatus(w)}</td>
-    <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
-      ${!w.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="resendWorkerVerify(${w.id})">重发验证</button>`:''}
-      ${w.active?(w.suspended?`<button class="btn btn-sm btn-green" onclick="suspendWorkerAccount(${w.id},0)">恢复</button>`:`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendWorkerAccount(${w.id},1)">暂停</button>`):''}
-      ${!w.employee_id?`<button class="btn btn-sm" style="background:#f0fdf4;color:var(--green);border:1px solid #bbf7d0" onclick='convertWorkerToEmployee(${JSON.stringify(w).replace(/'/g,"&#39;")})'>转为正式员工</button>`:''}
-      <button class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">发送重置链接</button>
-      <button class="btn btn-sm" onclick="openWorkerDetailModal(${w.id})">编辑</button>
-      <button class="btn btn-sm btn-red" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">删除</button>
+    <td>${dispatchBadge(w)}</td>
+    <td style="white-space:nowrap">
+      <div class="wa-actions">
+        <button class="btn btn-sm wa-abtn-primary" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">📋 入职</button>
+        <button class="btn btn-sm wa-abtn-edit" onclick="openWorkerDetailModal(${w.id})">✏️ 编辑</button>
+        ${extraBtns}
+      </div>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="12" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="13" class="empty">暂无工人账户</td></tr>';
+}
+
+// ─── Onboarding Progress Modal ───
+let _onboardingWorkerId = null;
+let _onboardingDispatchReady = false;
+
+async function openOnboardingModal(workerId, workerName) {
+  _onboardingWorkerId = workerId;
+  document.getElementById('onboardingWorkerName').textContent = workerName;
+  document.getElementById('onboardingModal').classList.add('show');
+  await refreshOnboardingModal();
+}
+
+async function openOnboardingModalById(workerId) {
+  const rows = await api('/admin/worker-accounts');
+  const w = rows && rows.find(r => r.id === workerId);
+  if (w) openOnboardingModal(w.id, w.name || w.username);
+}
+
+async function refreshOnboardingModal() {
+  const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
+  const rows = await api('/admin/worker-accounts');
+  const w = rows && rows.find(r => r.id === _onboardingWorkerId);
+  _onboardingDispatchReady = !!(w && w.dispatch_ready);
+
+  const badge = document.getElementById('onboardingDispatchBadge');
+  const btn = document.getElementById('onboardingDispatchBtn');
+  if (_onboardingDispatchReady) {
+    badge.innerHTML = '<span style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7;padding:2px 10px;border-radius:20px;font-size:.8rem;font-weight:600">✅ 可派工</span>';
+    btn.textContent = '撤销可派工';
+    btn.style.cssText = 'background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+  } else {
+    badge.innerHTML = '<span style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;padding:2px 10px;border-radius:20px;font-size:.8rem;font-weight:600">⏳ 待确认</span>';
+    btn.textContent = '标记可派工 ✅';
+    btn.style.cssText = 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+  }
+
+  if (!Array.isArray(tasks) || !tasks.length) {
+    document.getElementById('onboardingTaskList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">入职流程尚未初始化。<br><button class="btn btn-sm btn-blue" style="margin-top:.75rem" onclick="initOnboarding()">初始化入职流程</button></div>';
+    return;
+  }
+  renderOnboardingTasks(tasks);
+}
+
+function renderOnboardingTasks(tasks) {
+  const icons = { phone_verify:'📱', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
+  const sBadge = {
+    locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
+    pending:'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe',
+    submitted:'background:#fef3c7;color:#92400e;border:1px solid #fde68a',
+    completed:'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7',
+    waived:'background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff'
+  };
+  document.getElementById('onboardingTaskList').innerHTML = tasks.map(t => {
+    const s = t.status;
+    const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
+    const canWaive = (s === 'pending' || s === 'locked') && !t.required;
+    const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
+    const needsUrl = t.key === 'contract' || t.key === 'gusto';
+    const isVisible = t.visible_to_worker !== 0;
+    return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100);${!isVisible?'opacity:.55':''}">
+      <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
+          <span style="font-weight:700;color:var(--blue);font-size:.9rem">${esc(t.title)}</span>
+          <span style="padding:1px 7px;border-radius:20px;font-size:.7rem;font-weight:600;${sBadge[s]||''}">${sLabel[s]||s}</span>
+          ${!t.required?'<span style="font-size:.7rem;color:var(--gray-400)">(可豁免)</span>':''}
+          ${!isVisible?'<span style="font-size:.7rem;color:#dc2626;font-weight:600">（工人不可见）</span>':''}
+        </div>
+        ${t.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);font-style:italic;margin-top:.15rem">💬 ${esc(t.admin_note)}</div>`:''}
+        ${t.action_url?`<div style="font-size:.78rem;margin-top:.15rem">🔗 <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">${esc(t.action_url)}</a></div>`:''}
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
+          ${canComplete?`<button class="btn btn-sm btn-green" onclick="updateOnboardingTask('${t.key}','completed')">✅ 完成</button>`:''}
+          ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="updateOnboardingTask('${t.key}','waived')">⏭️ 豁免</button>`:''}
+          ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="updateOnboardingTask('${t.key}','pending')">↩️ 重置</button>`:''}
+          <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
+          <button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function initOnboarding() {
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/init-onboarding`, { method:'POST' });
+  refreshOnboardingModal();
+}
+
+function toggleOnboardingVisibility(key, visible) {
+  if (visible) {
+    showConfirmModal('发送给工人', '确认要将此任务发送给工人吗？工人将可以在门户中看到此任务。', '确认发送', 'btn-green', async () => {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}/visibility`, { method:'PUT', body:JSON.stringify({ visible: 1 }) });
+      refreshOnboardingModal();
+    }, 'green');
+  } else {
+    showConfirmModal('取消发送', '确认要对工人隐藏此任务吗？工人将无法在门户中看到此任务。', '确认隐藏', 'btn-red', async () => {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}/visibility`, { method:'PUT', body:JSON.stringify({ visible: 0 }) });
+      refreshOnboardingModal();
+    }, 'amber');
+  }
+}
+
+async function updateOnboardingTask(key, status, note, actionUrl) {
+  const body = { status };
+  if (note !== undefined) body.admin_note = note;
+  if (actionUrl !== undefined) body.action_url = actionUrl;
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, { method:'PUT', body:JSON.stringify(body) });
+  refreshOnboardingModal();
+  loadWorkerAccounts();
+}
+
+function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
+  const note = prompt('管理员备注（发送给工人的说明）：', currentNote || '');
+  if (note === null) return;
+  let url = currentUrl;
+  if (hasUrl) {
+    url = prompt('操作链接（如 Gusto 邀请链接或合同链接）：', currentUrl || '');
+    if (url === null) return;
+  }
+  updateOnboardingTask(key, undefined, note, hasUrl ? url : undefined);
+}
+
+async function toggleDispatchReady() {
+  const newVal = _onboardingDispatchReady ? 0 : 1;
+  if (newVal && !confirm('确定将此工人标记为"可派工"？')) return;
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/dispatch-ready`, { method:'PUT', body:JSON.stringify({ dispatch_ready: newVal }) });
+  refreshOnboardingModal();
+  loadWorkerAccounts();
 }
 
 async function openWorkerAccountModal(data) {
@@ -6486,6 +6940,18 @@ async function sendResetLink(id, name) {
 // Worker detail modal for editing salary, payment, skills
 let _workerDetailId = null;
 let _workerDetailSkills = [];
+let _workerAssignedTasks = [];
+
+const ALL_TASK_TYPES = [
+  { key: 'drivers_license', label: '🪪 身份证件 ID Verification' },
+  { key: 'ssn_card', label: '🔒 社安卡 SSN Card' },
+  { key: 'work_permit', label: '📃 工作许可/EAD Work Permit' },
+  { key: 'i9', label: '📋 I-9 就业资格' },
+  { key: 'w9', label: '📄 W-9 纳税人识别' },
+  { key: 'employment_contract', label: '📝 雇佣合同 Employment Contract' },
+  { key: 'gusto_payroll', label: '💰 Gusto 薪资 Payroll' },
+  { key: 'background_check', label: '🔍 背景调查 Background Check' }
+];
 
 async function openWorkerDetailModal(id) {
   const rows = await api('/admin/worker-accounts');
@@ -6493,6 +6959,7 @@ async function openWorkerDetailModal(id) {
   if (!w) return;
   _workerDetailId = id;
   _workerDetailSkills = (w.skills || []).map(s => ({...s}));
+  try { _workerAssignedTasks = JSON.parse(w.assigned_tasks || '[]'); } catch { _workerAssignedTasks = []; }
 
   const modal = document.getElementById('workerDetailModal');
   if (!modal) return;
@@ -6502,7 +6969,37 @@ async function openWorkerDetailModal(id) {
   document.getElementById('wdOurRating').value = w.our_salary_rating || '';
   document.getElementById('wdPaymentMethod').value = w.payment_method || 'cash';
   renderWdSkills();
+  renderWdTasks();
   modal.classList.add('show');
+}
+
+function renderWdTasks() {
+  const container = document.getElementById('wdTasksList');
+  container.innerHTML = ALL_TASK_TYPES.map(t => {
+    const checked = _workerAssignedTasks.includes(t.key) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:.4rem;padding:.35rem .5rem;border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;font-size:.8rem;${checked ? 'background:#f0f9ff;border-color:#bae6fd' : ''}">
+      <input type="checkbox" value="${t.key}" ${checked} onchange="toggleWdTask('${t.key}',this.checked)">
+      ${t.label}
+    </label>`;
+  }).join('');
+}
+
+function toggleWdTask(key, checked) {
+  if (checked && !_workerAssignedTasks.includes(key)) {
+    _workerAssignedTasks.push(key);
+  } else if (!checked) {
+    _workerAssignedTasks = _workerAssignedTasks.filter(k => k !== key);
+  }
+  renderWdTasks();
+}
+
+function wdSelectAllTasks() {
+  if (_workerAssignedTasks.length === ALL_TASK_TYPES.length) {
+    _workerAssignedTasks = [];
+  } else {
+    _workerAssignedTasks = ALL_TASK_TYPES.map(t => t.key);
+  }
+  renderWdTasks();
 }
 
 function renderWdSkills() {
@@ -6528,7 +7025,8 @@ async function saveWorkerDetail() {
   const data = {
     expected_salary: document.getElementById('wdExpectedSalary').value,
     our_salary_rating: document.getElementById('wdOurRating').value,
-    payment_method: document.getElementById('wdPaymentMethod').value
+    payment_method: document.getElementById('wdPaymentMethod').value,
+    assigned_tasks: _workerAssignedTasks
   };
   await api(`/admin/worker-accounts/${_workerDetailId}`, { method:'PUT', body: JSON.stringify(data) });
   // Save skills
@@ -6912,20 +7410,85 @@ async function rejectAction() {
 
 // ── Interview Management ──
 let _allInterviews = [];
+let _ivLocations = [];
 
 function switchIvTab(tab) {
-  document.getElementById('ivPaneSlots').style.display = tab === 'slots' ? '' : 'none';
-  document.getElementById('ivPaneList').style.display  = tab === 'list'  ? '' : 'none';
-  document.getElementById('ivTabSlots').style.cssText  = tab === 'slots'
-    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
-    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
-  document.getElementById('ivTabList').style.cssText   = tab === 'list'
-    ? 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky)'
-    : 'padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)';
+  ['slots','list','locations'].forEach(t => {
+    const paneId = 'ivPane' + t.charAt(0).toUpperCase() + t.slice(1);
+    const btnId  = 'ivTab'  + t.charAt(0).toUpperCase() + t.slice(1);
+    document.getElementById(paneId).style.display = tab === t ? '' : 'none';
+    const active = tab === t;
+    document.getElementById(btnId).style.cssText =
+      `padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid ${active?'var(--sky)':'transparent'};margin-bottom:-2px;color:${active?'var(--sky)':'var(--gray-500)'}`;
+  });
   if (tab === 'list') filterInterviews();
+  if (tab === 'locations') loadInterviewLocations();
+}
+
+// ── Interview Location Presets ──
+async function loadInterviewLocations() {
+  const locs = await api('/admin/interview-locations');
+  if (!Array.isArray(locs)) return;
+  _ivLocations = locs;
+  document.getElementById('ivLocationsTable').innerHTML = locs.length ? locs.map(l => `<tr>
+    <td><strong>${esc(l.name)}</strong></td>
+    <td style="font-size:.82rem">${esc(l.address||'—')}</td>
+    <td>${esc(l.contact_name||'—')}</td>
+    <td style="font-size:.82rem">${esc(l.contact_phone||'—')}</td>
+    <td style="font-size:.8rem;white-space:pre-line;max-width:250px">${esc(l.instructions||'—')}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editInterviewLocation(${l.id})">编辑</button>
+      <button class="btn btn-sm btn-red" onclick="deleteInterviewLocation(${l.id},'${esc(l.name).replace(/'/g,"\\'")}')">删除</button>
+    </td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无预设地点，点击「+ 添加地点」创建</td></tr>';
+}
+
+function openLocationModal(id) {
+  const loc = id ? _ivLocations.find(l => l.id === id) : null;
+  document.getElementById('ivLocModalTitle').textContent = loc ? '编辑面试地点' : '添加面试地点';
+  document.getElementById('ivLocId').value            = loc ? loc.id : '';
+  document.getElementById('ivLocName').value          = loc ? loc.name : '';
+  document.getElementById('ivLocAddress').value       = loc ? (loc.address||'') : '';
+  document.getElementById('ivLocContactName').value   = loc ? (loc.contact_name||'') : '';
+  document.getElementById('ivLocContactPhone').value  = loc ? (loc.contact_phone||'') : '';
+  document.getElementById('ivLocInstructions').value  = loc ? (loc.instructions||'') : '';
+  document.getElementById('ivLocationModal').classList.add('show');
+}
+
+function editInterviewLocation(id) { openLocationModal(id); }
+
+async function saveLocation() {
+  const id   = document.getElementById('ivLocId').value;
+  const data = {
+    name:          document.getElementById('ivLocName').value.trim(),
+    address:       document.getElementById('ivLocAddress').value.trim(),
+    contact_name:  document.getElementById('ivLocContactName').value.trim(),
+    contact_phone: document.getElementById('ivLocContactPhone').value.trim(),
+    instructions:  document.getElementById('ivLocInstructions').value.trim()
+  };
+  if (!data.name) return showToast('❌ 地点名称必填', 'error');
+  const r = await api(id ? `/admin/interview-locations/${id}` : '/admin/interview-locations', {
+    method: id ? 'PUT' : 'POST',
+    body: JSON.stringify(data)
+  });
+  if (r && (r.success || r.id)) {
+    showToast('✅ 地点已保存');
+    closeModal('ivLocationModal');
+    loadInterviewLocations();
+  } else {
+    showToast('❌ ' + (r?.error || '保存失败'), 'error');
+  }
+}
+
+async function deleteInterviewLocation(id, name) {
+  if (!confirm(`确定删除面试地点「${name}」？`)) return;
+  const r = await api(`/admin/interview-locations/${id}`, { method: 'DELETE' });
+  if (r && r.success) { showToast('✅ 已删除'); loadInterviewLocations(); }
+  else showToast('❌ 删除失败', 'error');
 }
 
 async function loadInterviews() {
+  await loadInterviewLocations();
   const [slots, interviews] = await Promise.all([
     api('/admin/interview-slots'),
     api('/admin/interviews')
@@ -6972,10 +7535,12 @@ function renderSlots(slots) {
       const dt = new Date(s.slot_datetime);
       const past = dt <= now;
       const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+      const contactInfo = s.contact_name ? `<div style="font-size:.72rem;color:var(--gray-500)">👤 ${esc(s.contact_name)} ${esc(s.contact_phone||'')}</div>` : '';
+      const instrInfo = s.instructions ? `<div style="font-size:.72rem;color:var(--gray-500);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(s.instructions)}">📋 ${esc(s.instructions)}</div>` : '';
       html += `<tr style="${past ? 'opacity:.55' : ''}">
         <td>${timeStr}${past ? ' <span style="color:var(--gray-400);font-size:.75rem">已过期</span>' : ''}</td>
         <td>${s.duration_min} 分钟</td>
-        <td>${esc(s.location||'—')}</td>
+        <td>${esc(s.location||'—')}${contactInfo}${instrInfo}</td>
         <td>${s.max_bookings}</td>
         <td><span style="color:${s.total_booked>0?'var(--sky)':'var(--gray-400)'}">${s.total_booked||0}</span></td>
         <td><button class="btn btn-sm btn-red" onclick="deleteSlot(${s.id})">删除</button></td>
@@ -6985,22 +7550,36 @@ function renderSlots(slots) {
   tbody.innerHTML = html;
 }
 
+function getSelectedLocation(selectId, inputId) {
+  const sel = document.getElementById(selectId);
+  const loc = _ivLocations.find(l => l.id == sel?.value);
+  const manualAddr = document.getElementById(inputId)?.value?.trim() || '';
+  return {
+    location: loc ? loc.address : manualAddr,
+    contact_name: loc ? loc.contact_name : '',
+    contact_phone: loc ? loc.contact_phone : '',
+    instructions: loc ? loc.instructions : ''
+  };
+}
+
 async function addInterviewSlot() {
   const dt = document.getElementById('ivSlotDatetime').value;
   if (!dt) return showToast('❌ 请选择日期时间', 'error');
+  const locData = getSelectedLocation('ivSlotLocationSelect', 'ivSlotLocation');
   const r = await api('/admin/interview-slots', {
     method: 'POST',
     body: JSON.stringify({
       slot_datetime: dt,
       duration_min: parseInt(document.getElementById('ivSlotDuration').value) || 30,
       max_bookings: parseInt(document.getElementById('ivSlotMax').value) || 1,
-      location: document.getElementById('ivSlotLocation').value.trim()
+      ...locData
     })
   });
   if (r && r.success) {
     showToast('✅ 时间槽已添加');
     document.getElementById('ivSlotDatetime').value = '';
     document.getElementById('ivSlotLocation').value = '';
+    if (document.getElementById('ivSlotLocationSelect')) document.getElementById('ivSlotLocationSelect').value = '';
     loadInterviews();
   } else {
     showToast('❌ ' + (r && r.error || '添加失败'), 'error');
@@ -7101,7 +7680,7 @@ function collectBatchSlots() {
   const checks = grid.querySelectorAll('.batchDayCheck:checked');
   const duration = parseInt(document.getElementById('batchDuration').value) || 30;
   const maxBookings = parseInt(document.getElementById('batchMaxBookings').value) || 5;
-  const location = document.getElementById('batchLocation').value.trim();
+  const locData = getSelectedLocation('batchLocationSelect', 'batchLocation');
   const slots = [];
 
   checks.forEach(chk => {
@@ -7115,7 +7694,7 @@ function collectBatchSlots() {
         slot_datetime: `${dateStr}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`,
         duration_min: duration,
         max_bookings: maxBookings,
-        location: location
+        ...locData
       });
     });
   });
@@ -7123,6 +7702,7 @@ function collectBatchSlots() {
 }
 
 async function batchCreateSlots() {
+  if (!document.getElementById('batchLocationSelect')?.value && !document.getElementById('batchLocation')?.value?.trim()) return showToast('❌ 请先选择或输入面试地点', 'error');
   const slots = collectBatchSlots();
   if (!slots.length) return showToast('❌ 没有可生成的时间槽，请检查日期和时间设置', 'error');
   if (!confirm(`确定生成 ${slots.length} 个面试时间槽？`)) return;
