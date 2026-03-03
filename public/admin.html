@@ -2087,13 +2087,6 @@ tr:hover td{background:var(--sky-light)}
 <!-- ════ Employee Add/Edit Modal ════ -->
 <div class="modal-bg" id="empModal"><div class="modal modal-lg">
   <h2 id="empModalTitle">新增员工</h2>
-  <div id="dupConflictBanner" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
-    <div id="dupConflictMsg" style="font-size:.88rem;color:#92400e;margin-bottom:10px;line-height:1.5;"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-sm" onclick="_execDupTransfer()" style="background:#d97706;border-color:#d97706;color:#fff">更新成新信息 / Use New Info</button>
-      <button class="btn btn-sm btn-outline" onclick="_execDupKeep()" style="color:#92400e;border-color:#d97706">保留原员工信息 / Keep Original</button>
-    </div>
-  </div>
   <input type="hidden" id="empId">
   <div class="form-section">
     <h4>基本信息</h4>
@@ -2174,6 +2167,14 @@ tr:hover td{background:var(--sky-light)}
     <div style="display:flex;gap:.5rem">
       <button class="btn btn-sm" onclick="editFromDetail()">编辑</button>
       <button class="btn btn-sm btn-outline" onclick="closeEmpDetailModal()">关闭</button>
+    </div>
+  </div>
+  <div id="dupActionBar" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+    <div id="dupActionMsg" style="font-size:.87rem;color:#92400e;margin-bottom:10px;line-height:1.5;"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-sm" onclick="_execDupReplace()" style="background:#d97706;border-color:#d97706;color:#fff">替换成新信息 / Replace</button>
+      <button class="btn btn-sm btn-outline" onclick="_execDupMerge()" style="color:#1d4ed8;border-color:#93c5fd">合并员工档案 / Merge</button>
+      <button class="btn btn-sm btn-outline" onclick="_execDupEdit()">编辑此员工 / Edit</button>
     </div>
   </div>
   <div id="empDetailContent"></div>
@@ -2414,7 +2415,7 @@ tr:hover td{background:var(--sky-light)}
 
 <script>
 let _gcmCallback = null;
-let _pendingDupSave = null; // { data, empId, fieldLabel, existingEmpName }
+let _pendingDupSave = null; // { data, empId, field, fieldLabel, existingEmpName }
 function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor, cancelText) {
   const colors = {
     blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
@@ -4667,7 +4668,6 @@ function renderEmployees(list) {
 }
 
 function openEmpModal(id) {
-  document.getElementById('dupConflictBanner').style.display = 'none';
   document.getElementById('empModalTitle').textContent = id ? '编辑员工' : '新增员工';
   document.getElementById('empId').value = id || '';
   if (id) {
@@ -4705,14 +4705,7 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
-function closeEmpModal() {
-  _convertFromWorkerId = null;
-  guardClose('empModal');
-  if (!document.getElementById('empModal').classList.contains('show') && _pendingDupSave) {
-    _pendingDupSave = null;
-    document.getElementById('dupConflictBanner').style.display = 'none';
-  }
-}
+function closeEmpModal() { _convertFromWorkerId = null; guardClose('empModal'); }
 
 // ── Address verify helpers ──
 function _setAddrStatus(el, verified) {
@@ -5032,27 +5025,54 @@ async function _forceSaveEmployee(p) {
   }
 }
 
-function _showDupConflictBanner() {
-  const p = _pendingDupSave;
-  if (!p) return;
-  const nameA = `${p.data.first_name} ${p.data.last_name}`.trim();
-  document.getElementById('dupConflictMsg').textContent =
-    `⚠️ 冲突提示：「${nameA}」正在保存的${p.fieldLabel}与此员工重复。请查看下方信息后选择如何处理。`;
-  document.getElementById('dupConflictBanner').style.display = '';
+function _showDupActionBar(p) {
+  _pendingDupSave = p;
+  const nameA = `${esc(p.data.first_name)} ${esc(p.data.last_name)}`.trim();
+  document.getElementById('dupActionMsg').innerHTML =
+    `<strong>⚠️ 冲突提示</strong>：「${nameA}」正在保存的${esc(p.fieldLabel)}与此员工重复。` +
+    `请查看下方完整档案后，选择如何处理：`;
+  document.getElementById('dupActionBar').style.display = '';
 }
 
-function _execDupKeep() {
+async function _execDupReplace() {
   const p = _pendingDupSave;
   _pendingDupSave = null;
-  document.getElementById('dupConflictBanner').style.display = 'none';
-  if (p) showToast(`已保留原员工的${p.fieldLabel}，请为「${p.data.first_name} ${p.data.last_name}」更换其他${p.fieldLabel}`);
-}
-
-async function _execDupTransfer() {
-  const p = _pendingDupSave;
-  _pendingDupSave = null;
-  document.getElementById('dupConflictBanner').style.display = 'none';
+  document.getElementById('dupActionBar').style.display = 'none';
+  closeEmpDetailModal();
   if (p) await _forceSaveEmployee(p);
+}
+
+function _execDupEdit() {
+  _pendingDupSave = null;
+  document.getElementById('dupActionBar').style.display = 'none';
+  const empId = currentEmpForDetail && currentEmpForDetail.id;
+  closeEmpDetailModal();
+  if (empId) setTimeout(() => openEmpModal(empId), 100);
+}
+
+function _execDupMerge() {
+  const p = _pendingDupSave;
+  _pendingDupSave = null;
+  document.getElementById('dupActionBar').style.display = 'none';
+  const empId = currentEmpForDetail && currentEmpForDetail.id;
+  closeEmpDetailModal();
+  if (!empId || !p) return;
+  setTimeout(() => {
+    openEmpModal(empId);
+    const toMerge = [
+      ['ePhone', p.field !== 'phone' ? p.data.phone : null],
+      ['eEmail', p.field !== 'email' ? p.data.email : null],
+      ['eAddr', p.data.address], ['eStreet2', p.data.street2],
+      ['eCity', p.data.city], ['eZip', p.data.zip],
+      ['eEmgName', p.data.emergency_name], ['eEmgPhone', p.data.emergency_phone],
+      ['eEmgRel', p.data.emergency_relation], ['eNotes', p.data.notes],
+    ];
+    for (const [elId, val] of toMerge) {
+      if (!val) continue;
+      const el = document.getElementById(elId);
+      if (el && !el.value) el.value = val;
+    }
+  }, 100);
 }
 
 async function saveEmployee() {
@@ -5137,8 +5157,10 @@ async function saveEmployee() {
       '查看员工档案 / View Employee',
       'btn',
       async () => {
-        _pendingDupSave = { data, empId: id || null, fieldLabel, existingEmpName: empName };
-        clearModalState('empModal'); closeEmpModal(); await loadEmployees(); openEmpModal(emp.id); _showDupConflictBanner();
+        const p = { data, empId: id || null, field: r.field, fieldLabel, existingEmpName: empName };
+        clearModalState('empModal'); closeEmpModal();
+        await viewEmployee(emp.id);
+        _showDupActionBar(p);
       },
       'amber',
       '关闭 / Close'
@@ -5372,7 +5394,11 @@ async function viewEmployee(id) {
   document.getElementById('empDetailModal').classList.add('show');
   loadEmpRatings(emp.id);
 }
-function closeEmpDetailModal() { document.getElementById('empDetailModal').classList.remove('show'); }
+function closeEmpDetailModal() {
+  _pendingDupSave = null;
+  document.getElementById('dupActionBar').style.display = 'none';
+  document.getElementById('empDetailModal').classList.remove('show');
+}
 
 // ─── Employee Ratings ───
 const STAR_LABEL = ['','差','一般','良好','优秀','出色'];
