@@ -6720,6 +6720,10 @@ async function initOnboarding() {
 }
 
 async function toggleOnboardingVisibility(key, visible) {
+  const msg = visible
+    ? '确认要将此任务发送给工人吗？\nSend this task to the worker?'
+    : '确认要取消发送（对工人隐藏）吗？\nHide this task from the worker?';
+  if (!confirm(msg)) return;
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}/visibility`, { method:'PUT', body:JSON.stringify({ visible }) });
   refreshOnboardingModal();
 }
