@@ -1974,6 +1974,20 @@ app.get('/api/admin/worker-accounts/:id/checkr-status', requireAdmin, async (req
 app.get('/api/worker/onboarding', requireWorker, (req, res) => {
   const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.workerId);
   if (!existing) initWorkerOnboarding(req.workerId);
+
+  // Auto-sync persona_verify status from worker_accounts.identity_status (may have been updated by webhook)
+  const personaOnboard = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='persona_verify'").get(req.workerId);
+  if (personaOnboard && personaOnboard.status === 'pending') {
+    const w = db.prepare('SELECT identity_status FROM worker_accounts WHERE id=?').get(req.workerId);
+    if (w && w.identity_status === 'approved') {
+      db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+    } else if (w && (w.identity_status === 'completed' || w.identity_status === 'needs_review')) {
+      db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+    } else if (w && w.identity_status === 'declined') {
+      db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+    }
+  }
+
   const tasks = getOnboardingTasks(req.workerId).filter(t => t.visible_to_worker !== 0);
   res.json(tasks);
 });
@@ -4524,7 +4538,30 @@ app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (re
 // Worker: actively poll Persona API for latest inquiry status (does not rely on webhook)
 app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
   const apiKey = process.env.PERSONA_API_KEY;
-  if (!apiKey) return res.status(503).json({ error: 'Persona not configured' });
+
+  // Fallback: even without Persona API key, check if identity_status was updated (e.g., by webhook or admin)
+  const w = db.prepare('SELECT identity_status, persona_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (w && (w.identity_status === 'approved' || w.identity_status === 'completed' || w.identity_status === 'declined')) {
+    // Sync to worker_onboarding if not already synced
+    const onboard = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='persona_verify'").get(req.workerId);
+    if (onboard && onboard.status === 'pending') {
+      if (w.identity_status === 'approved') {
+        db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+      } else if (w.identity_status === 'completed') {
+        db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+      } else if (w.identity_status === 'declined') {
+        db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+      }
+    }
+    const docStatus = w.identity_status === 'approved' ? 'approved' : w.identity_status === 'declined' ? 'rejected' : 'submitted';
+    return res.json({ status: docStatus, persona_status: w.identity_status, updated: onboard && onboard.status === 'pending' });
+  }
+
+  if (!apiKey) {
+    // No API key + identity_status not yet set → return current DB state
+    const doc = db.prepare("SELECT status FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
+    return res.json({ status: doc ? doc.status : 'not_started', persona_status: null });
+  }
   const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
   if (!doc) return res.json({ status: 'not_started' });
   let formData;
