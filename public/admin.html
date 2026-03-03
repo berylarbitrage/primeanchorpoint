@@ -4059,6 +4059,8 @@ const SCHED_DAYS = [
   { key:'sat', label:'周六' }, { key:'sun', label:'周日' }
 ];
 
+const SCHED_INP = 'border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem';
+
 function initSchedTable(schedJson) {
   let sched = {};
   try { sched = JSON.parse(schedJson || '{}'); } catch {}
@@ -4071,35 +4073,90 @@ function initSchedTable(schedJson) {
       <td><input type="time" id="sched-start-${key}" value="${d.start||''}" ${dis}></td>
       <td><input type="time" id="sched-end-${key}" value="${d.end||''}" ${dis}></td>
       <td><input type="number" id="sched-breaks-${key}" min="0" max="9" value="${d.breaks??''}" placeholder="0"
-        style="width:54px;border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem;text-align:center" ${dis}></td>
+        style="${SCHED_INP};width:54px;text-align:center" ${dis}
+        oninput="renderBreakTimes('${key}')"></td>
       <td style="white-space:nowrap"><input type="number" id="sched-bmin-${key}" min="0" max="120" value="${d.bmin??''}" placeholder="0"
-        style="width:54px;border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem;text-align:center" ${dis}> <span style="font-size:.78rem;color:var(--gray-500)">分钟</span></td>
+        style="${SCHED_INP};width:54px;text-align:center" ${dis}>
+        <span style="font-size:.78rem;color:var(--gray-500)">分钟</span></td>
       <td><label class="sched-day-off">
         <input type="checkbox" id="sched-off-${key}" onchange="toggleSchedOff('${key}')" ${off ? 'checked' : ''}>
         休息
       </label></td>
+    </tr>
+    <tr id="sched-btimes-row-${key}" style="display:none">
+      <td></td>
+      <td colspan="5" id="sched-btimes-${key}" style="padding:.3rem .5rem .6rem"></td>
     </tr>`;
   }).join('');
+  // Restore saved break times
+  SCHED_DAYS.forEach(({ key }) => {
+    const d = sched[key];
+    if (d && d.break_times && d.break_times.length) {
+      renderBreakTimes(key, d.break_times);
+    }
+  });
+}
+
+function renderBreakTimes(key, savedTimes) {
+  const count = parseInt(document.getElementById('sched-breaks-' + key).value) || 0;
+  const container = document.getElementById('sched-btimes-' + key);
+  const row = document.getElementById('sched-btimes-row-' + key);
+  if (!count) { row.style.display = 'none'; container.innerHTML = ''; return; }
+  row.style.display = '';
+  const off = document.getElementById('sched-off-' + key).checked;
+  const dis = off ? 'disabled' : '';
+  let html = '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">';
+  for (let i = 0; i < count; i++) {
+    const s = (savedTimes && savedTimes[i]) ? savedTimes[i].start || '' : '';
+    const e = (savedTimes && savedTimes[i]) ? savedTimes[i].end   || '' : '';
+    html += `<span style="display:inline-flex;align-items:center;gap:.3rem;background:var(--sky-light);border:1px solid var(--gray-200);border-radius:6px;padding:.25rem .5rem;font-size:.8rem">
+      <span style="color:var(--gray-500);white-space:nowrap">休息${i+1}</span>
+      <input type="time" id="sched-bt-s-${key}-${i}" value="${s}" ${dis}
+        style="${SCHED_INP};width:88px">
+      <span style="color:var(--gray-400)">—</span>
+      <input type="time" id="sched-bt-e-${key}-${i}" value="${e}" ${dis}
+        style="${SCHED_INP};width:88px">
+    </span>`;
+  }
+  html += '</div>';
+  container.innerHTML = html;
 }
 
 function toggleSchedOff(key) {
   const off = document.getElementById('sched-off-' + key).checked;
-  const row = document.getElementById('sched-row-' + key);
-  row.classList.toggle('is-off', off);
+  document.getElementById('sched-row-' + key).classList.toggle('is-off', off);
   ['sched-start-','sched-end-','sched-breaks-','sched-bmin-'].forEach(p => {
     document.getElementById(p + key).disabled = off;
   });
+  // Also toggle break time inputs in sub-row
+  const count = parseInt(document.getElementById('sched-breaks-' + key).value) || 0;
+  for (let i = 0; i < count; i++) {
+    const bs = document.getElementById(`sched-bt-s-${key}-${i}`);
+    const be = document.getElementById(`sched-bt-e-${key}-${i}`);
+    if (bs) bs.disabled = off;
+    if (be) be.disabled = off;
+  }
+  if (off) document.getElementById('sched-btimes-row-' + key).style.display = 'none';
+  else if (count) document.getElementById('sched-btimes-row-' + key).style.display = '';
 }
 
 function getSchedJson() {
   const out = {};
   SCHED_DAYS.forEach(({ key }) => {
     const off = document.getElementById('sched-off-' + key).checked;
+    const count = off ? 0 : (parseInt(document.getElementById('sched-breaks-' + key).value) || 0);
+    const break_times = [];
+    for (let i = 0; i < count; i++) {
+      const bs = document.getElementById(`sched-bt-s-${key}-${i}`);
+      const be = document.getElementById(`sched-bt-e-${key}-${i}`);
+      break_times.push({ start: bs ? bs.value : '', end: be ? be.value : '' });
+    }
     out[key] = {
       start:  off ? '' : (document.getElementById('sched-start-' + key).value || ''),
       end:    off ? '' : (document.getElementById('sched-end-' + key).value || ''),
       breaks: off ? '' : (document.getElementById('sched-breaks-' + key).value || ''),
       bmin:   off ? '' : (document.getElementById('sched-bmin-' + key).value || ''),
+      break_times,
       off
     };
   });
