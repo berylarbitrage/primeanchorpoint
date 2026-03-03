@@ -2090,7 +2090,7 @@ async function loadOnboarding() {
     list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
     return;
   }
-  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', persona_verify:'🪪', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadgeStyle = {
     locked:'color:var(--gray-400);background:var(--gray-100);border:1px solid var(--gray-200)',
@@ -2110,6 +2110,8 @@ async function loadOnboarding() {
           <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="openPersonaInPortal()">🖥️ 在Portal中验证</button>
           ${t.action_url ? `<a class="btn" style="font-size:.8rem;padding:.3rem .75rem;text-decoration:none;display:inline-block;background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5" href="${esc(t.action_url)}" target="_blank">🔗 打开链接验证</a>` : ''}
         </div>`;
+      } else if (t.key === 'background_check') {
+        actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">📧 请查收 Checkr 发送的邮件完成背景调查${t.action_url ? ` · <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">打开链接</a>` : ''}</div>`;
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">去提交文件 →</button>`;
       } else if ((t.key === 'contract' || t.key === 'gusto') && t.action_url) {
