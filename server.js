@@ -5560,6 +5560,57 @@ app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
   res.json({ success: true });
 });
 
+// ─── Smarty Address Validation ───
+app.post('/api/validate-address', async (req, res) => {
+  const authId    = process.env.SMARTY_AUTH_ID;
+  const authToken = process.env.SMARTY_AUTH_TOKEN;
+  if (!authId || !authToken) {
+    return res.json({ skipped: true });
+  }
+  const { street, street2, city, state, zip } = req.body || {};
+  if (!street) return res.status(400).json({ error: 'street is required' });
+  const params = new URLSearchParams({
+    'auth-id':    authId,
+    'auth-token': authToken,
+    street:       street,
+    candidates:   '1'
+  });
+  if (street2) params.set('street2', street2);
+  if (city)    params.set('city', city);
+  if (state)   params.set('state', state);
+  if (zip)     params.set('zipcode', zip);
+  const url = `https://us-street.api.smarty.com/street-address?${params.toString()}`;
+  try {
+    const https = require('https');
+    const candidates = await new Promise((resolve, reject) => {
+      https.get(url, r => {
+        let body = '';
+        r.on('data', chunk => body += chunk);
+        r.on('end', () => { try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON from Smarty')); } });
+      }).on('error', reject);
+    });
+    if (!Array.isArray(candidates) || candidates.length === 0) {
+      return res.json({ valid: false });
+    }
+    const c = candidates[0];
+    return res.json({
+      valid: true,
+      dpv_match_code: c.analysis?.dpv_match_code,
+      standardized: {
+        street:  c.delivery_line_1 || '',
+        street2: c.delivery_line_2 || '',
+        city:    c.components?.city_name || '',
+        state:   c.components?.state_abbreviation || '',
+        zip:     c.components?.zipcode || '',
+        zip4:    c.components?.plus4_code || ''
+      }
+    });
+  } catch (e) {
+    console.error('[Smarty] Error:', e.message);
+    return res.status(500).json({ error: 'Address validation service error' });
+  }
+});
+
 // Global error handler — return JSON instead of Express's default HTML error page
 app.use((err, req, res, next) => {
   console.error('[Unhandled Error]', err.message);
