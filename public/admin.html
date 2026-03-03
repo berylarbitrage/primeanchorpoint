@@ -1564,6 +1564,29 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
+  <div class="field">
+    <label>必备技能（多选）</label>
+    <select id="jRequiredSkills" multiple style="width:100%;min-height:120px;padding:6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+      <option value="仓库操作">仓库操作 / Warehouse Operation</option>
+      <option value="叉车操作">叉车操作 / Forklift</option>
+      <option value="驾照">驾照 / Driver's License</option>
+      <option value="搬运">搬运 / Heavy Lifting</option>
+      <option value="分拣">分拣 / Sorting</option>
+      <option value="包装">包装 / Packing</option>
+      <option value="收货">收货 / Receiving</option>
+      <option value="发货">发货 / Shipping</option>
+      <option value="盘点">盘点 / Inventory</option>
+      <option value="清洁">清洁 / Cleaning</option>
+      <option value="机器操作">机器操作 / Machine Operation</option>
+      <option value="质量检查">质量检查 / Quality Inspection</option>
+      <option value="组装">组装 / Assembly</option>
+      <option value="基本英语">基本英语 / Basic English</option>
+      <option value="普通话">普通话 / Mandarin</option>
+      <option value="体力劳动">体力劳动 / Physical Labor</option>
+    </select>
+    <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选</div>
+  </div>
+
   <div class="field"><label>职位描述</label><textarea id="jDesc" placeholder="详细描述工作内容..."></textarea></div>
   <div class="field-row">
     <div class="field"><label>招聘人数</label><input type="number" id="jHeadcount" min="1" value="1" placeholder="1"></div>
@@ -2734,6 +2757,11 @@ async function openJobModal(job) {
     btn.classList.toggle('active', activeBenefits.includes(btn.dataset.val));
   });
 
+  // Required skills
+  const activeSkills = job && job.required_skills ? job.required_skills.split(',').map(s=>s.trim()) : [];
+  const skillsEl = document.getElementById('jRequiredSkills');
+  [...skillsEl.options].forEach(opt => { opt.selected = activeSkills.includes(opt.value); });
+
   document.getElementById('jobModal').classList.add('show');
   captureModalState('jobModal');
   } catch(e) { console.error('openJobModal error:', e); document.getElementById('jobModal').classList.add('show'); }
@@ -3050,6 +3078,7 @@ async function saveJob() {
   const partnerName = partnerId ? ((_jobPartners||[]).find(p=>p.id==partnerId)||{}).name||'' : '';
   const workDays = [...document.querySelectorAll('#jWorkDaysWrap .day-btn.active')].map(b=>b.dataset.day).join(',');
   const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
+  const requiredSkills = [...document.getElementById('jRequiredSkills').selectedOptions].map(o=>o.value).join(',');
   const data = {
     partner_id: partnerId,
     title: document.getElementById('jTitle').value,
@@ -3073,6 +3102,7 @@ async function saveJob() {
     work_start: document.getElementById('jWorkStart').value,
     work_end: document.getElementById('jWorkEnd').value,
     benefits,
+    required_skills: requiredSkills,
     schedule: '',
     description: document.getElementById('jDesc').value,
     urgent: document.getElementById('jUrgent').checked,
@@ -3152,7 +3182,8 @@ async function showJobHistory(jobId, title) {
     title:'职位名称', type:'职位类型', location:'地点', pay:'薪资', job_status:'状态',
     close_reason:'关闭原因', close_note:'关闭备注', active:'在招', headcount:'人数',
     employment_type:'雇佣性质', work_days:'工作日', work_start:'上班时间', work_end:'下班时间',
-    benefits:'福利', description:'描述', urgent:'急聘', company_name:'公司', work_auth:'身份要求'
+    benefits:'福利', description:'描述', urgent:'急聘', company_name:'公司', work_auth:'身份要求',
+    required_skills:'必备技能'
   };
   if (!logs.length) {
     document.getElementById('jobHistoryContent').innerHTML = '<p class="empty" style="padding:1rem">暂无变更记录</p>';
