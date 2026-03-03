@@ -1,6 +1,6 @@
 // address-validator.js
-// Client-side helper for Smarty US Street Address validation.
-// Calls the server-side proxy at /api/validate-address (credentials are server-side only).
+// Client-side helper for Google Address Validation (US addresses).
+// Calls the server-side proxy at /api/validate-address (API key is server-side only).
 
 /**
  * Validate structured address fields.
@@ -19,7 +19,7 @@ async function validateAddress({ street, street2, city, state, zip }) {
     const data = await res.json();
     return _handleResult(data, { street, city, state, zip });
   } catch (e) {
-    console.warn('[Smarty] Validation error:', e);
+    console.warn('[Google Address Validation] Error:', e);
     return { proceed: true };
   }
 }
@@ -51,7 +51,7 @@ async function validateAddressSingleField(address) {
     }
     return result;
   } catch (e) {
-    console.warn('[Smarty] Validation error:', e);
+    console.warn('[Google Address Validation] Error:', e);
     return { proceed: true };
   }
 }
@@ -90,7 +90,7 @@ function _handleResult(data, original) {
     const stdLines  = [std.street, std.street2, [std.city, std.state].filter(Boolean).join(', ') + ' ' + zipFull].filter(Boolean).join('\n');
     const useStd = confirm(
       '✅ 地址已验证 / Address Verified\n\n' +
-      'Smarty 建议标准化地址 / Smarty suggests:\n\n' +
+      'Google 建议标准化地址 / Google suggests:\n\n' +
       stdLines + '\n\n' +
       '点击「确定」使用此标准化地址 / OK = use standardized address\n' +
       '点击「取消」保留原始输入 / Cancel = keep original'
