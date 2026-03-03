@@ -99,6 +99,15 @@ tr:hover td{background:var(--sky-light)}
 .assign-dropdown .adrop-item:hover,.assign-dropdown .adrop-item.focused{background:var(--sky-light)}
 .assign-dropdown .adrop-item small{display:block;color:var(--gray-500);font-size:.75rem}
 /* Dispatch job picker floating dropdown */
+/* Work schedule table in assignment modal */
+.sched-table{width:100%;border-collapse:collapse;font-size:.84rem;margin-top:.4rem}
+.sched-table th{font-weight:600;color:var(--gray-500);font-size:.75rem;text-transform:uppercase;padding:.3rem .5rem;text-align:left;border-bottom:1px solid var(--gray-200)}
+.sched-table td{padding:.35rem .5rem;vertical-align:middle;border-bottom:1px solid var(--gray-100)}
+.sched-table tr:last-child td{border-bottom:none}
+.sched-table input[type=time]{border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem;width:90px;color:var(--gray-700)}
+.sched-table input[type=time]:disabled{background:var(--gray-100);color:var(--gray-400);border-color:var(--gray-100)}
+.sched-day-off{display:flex;align-items:center;gap:.35rem;font-size:.8rem;color:var(--gray-500);cursor:pointer;user-select:none}
+.sched-table tr.is-off td:not(:first-child):not(:last-child){opacity:.35}
 .djp-item{padding:.75rem 1.5rem;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.88rem;transition:background .1s}
 .djp-item:last-child{border-bottom:none}
 .djp-item:hover{background:var(--sky-light)}
@@ -1984,6 +1993,13 @@ tr:hover td{background:var(--sky-light)}
     <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">劳务合同上传</label>
     <div id="aContractFileInfo" style="font-size:.82rem;color:var(--gray-500);margin:.3rem 0"></div>
     <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%;margin-top:.3rem">
+  </div>
+  <div class="form-section" style="margin-top:.75rem">
+    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">排班时间</label>
+    <table class="sched-table" id="aSchedTable">
+      <thead><tr><th>星期</th><th>上班</th><th>下班</th><th>休息</th></tr></thead>
+      <tbody id="aSchedBody"></tbody>
+    </table>
   </div>
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
@@ -4010,6 +4026,8 @@ async function openAssignModal(assignment) {
     if (job) { document.getElementById('aJob').value = job.title + ' - ' + job.location; document.getElementById('aJobId').value = job.id; }
   }
 
+  initSchedTable(assignment ? (assignment.work_schedule || '{}') : '{}');
+
   document.getElementById('assignModal').classList.add('show');
   captureModalState('assignModal');
 }
@@ -4033,6 +4051,55 @@ function selectPartnerItem(id, name) {
   document.getElementById('jPartnerSearch').value = name;
   document.getElementById('jPartnerDrop').classList.remove('open');
 }
+
+// ── Work schedule helpers ────────────────────────────────────────
+const SCHED_DAYS = [
+  { key:'mon', label:'周一' }, { key:'tue', label:'周二' }, { key:'wed', label:'周三' },
+  { key:'thu', label:'周四' }, { key:'fri', label:'周五' },
+  { key:'sat', label:'周六' }, { key:'sun', label:'周日' }
+];
+
+function initSchedTable(schedJson) {
+  let sched = {};
+  try { sched = JSON.parse(schedJson || '{}'); } catch {}
+  document.getElementById('aSchedBody').innerHTML = SCHED_DAYS.map(({ key, label }) => {
+    const d = sched[key] || {};
+    const off = d.off ? true : (key === 'sun' && !sched[key] ? true : false);
+    const start = d.start || '';
+    const end = d.end || '';
+    return `<tr id="sched-row-${key}" class="${off ? 'is-off' : ''}">
+      <td style="font-weight:600;white-space:nowrap">${label}</td>
+      <td><input type="time" id="sched-start-${key}" value="${start}" ${off ? 'disabled' : ''}></td>
+      <td><input type="time" id="sched-end-${key}" value="${end}" ${off ? 'disabled' : ''}></td>
+      <td><label class="sched-day-off">
+        <input type="checkbox" id="sched-off-${key}" onchange="toggleSchedOff('${key}')" ${off ? 'checked' : ''}>
+        休息
+      </label></td>
+    </tr>`;
+  }).join('');
+}
+
+function toggleSchedOff(key) {
+  const off = document.getElementById('sched-off-' + key).checked;
+  const row = document.getElementById('sched-row-' + key);
+  row.classList.toggle('is-off', off);
+  document.getElementById('sched-start-' + key).disabled = off;
+  document.getElementById('sched-end-' + key).disabled = off;
+}
+
+function getSchedJson() {
+  const out = {};
+  SCHED_DAYS.forEach(({ key }) => {
+    const off = document.getElementById('sched-off-' + key).checked;
+    out[key] = {
+      start: off ? '' : (document.getElementById('sched-start-' + key).value || ''),
+      end:   off ? '' : (document.getElementById('sched-end-' + key).value || ''),
+      off
+    };
+  });
+  return JSON.stringify(out);
+}
+// ─────────────────────────────────────────────────────────────────
 
 function filterAssignSearch(which) {
   const isInq = which === 'inq';
@@ -4109,7 +4176,8 @@ async function saveAssignment() {
     contract_type: document.getElementById('aContractType').value,
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
-    benefits
+    benefits,
+    work_schedule: getSchedJson()
   };
   if (!data.inquiry_id || !data.job_id) return alert('请搜索并选择人员和职位');
   // Dispatch-ready guard
@@ -7195,11 +7263,14 @@ async function pickDispatchJob(w, jobId) {
   closeDispatchJobPicker();
   showTab('assignments');
   await openAssignModal();
-  // Pre-fill person
-  const inq = _assignInqs.find(i =>
-    (w.phone && i.phone && i.phone === w.phone) ||
-    (w.email && i.email && i.email.toLowerCase() === (w.email || '').toLowerCase())
-  );
+  // Pre-fill person: prefer direct linked_inquiry_id, fallback to phone/email match
+  const inqId = w.linked_inquiry_id;
+  const inq = inqId
+    ? _assignInqs.find(i => i.id == inqId)
+    : _assignInqs.find(i =>
+        (w.phone && i.phone && i.phone === w.phone) ||
+        (w.email && i.email && i.email.toLowerCase() === (w.email || '').toLowerCase())
+      );
   if (inq) {
     document.getElementById('aInquiry').value = inq.name + (inq.phone ? ' · ' + inq.phone : '');
     document.getElementById('aInquiryId').value = inq.id;

@@ -613,6 +613,7 @@ try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); }
 
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
+try { db.exec(`ALTER TABLE assignments ADD COLUMN work_schedule TEXT DEFAULT '{}'`); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
 
 db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
@@ -1598,7 +1599,8 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
 app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   const workers = db.prepare(`
     SELECT w.*, e.first_name, e.last_name, e.employee_id as emp_code,
-      e.pay_rate, e.pay_type, e.position, e.department
+      e.pay_rate, e.pay_type, e.position, e.department,
+      (SELECT id FROM inquiries WHERE phone=w.phone OR (w.email!='' AND email=w.email) ORDER BY id DESC LIMIT 1) as linked_inquiry_id
     FROM worker_accounts w LEFT JOIN employees e ON w.employee_id=e.id ORDER BY w.id DESC
   `).all();
 
@@ -2759,19 +2761,19 @@ app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
 });
 
 app.post('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
-  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date } = req.body;
+  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule } = req.body;
   if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
   const r = db.prepare(`INSERT INTO assignments
-    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '');
+    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('update', 'assignments'), (req, res) => {
-  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date } = req.body;
-  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=? WHERE id=?`)
-    .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', req.params.id);
+  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule } = req.body;
+  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=?, work_schedule=? WHERE id=?`)
+    .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}', req.params.id);
   res.json({ success: true });
 });
 
