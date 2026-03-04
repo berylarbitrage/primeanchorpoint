@@ -4413,8 +4413,10 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     return res.status(400).json({ error: '请开启定位权限后再打卡。该工作需要验证您的位置。\nPlease enable location access. This job requires location verification.', geo_blocked: true });
   }
 
-  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
-    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null);
+  if (!geoVerified) return res.status(400).json({ error: '该工作暂未配置工作地点，无法验证位置，请联系HR。/ Work site not configured for this job, please contact HR.', no_site: true });
+
+  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0)")
+    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id);
   res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
     site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
 });
@@ -4575,6 +4577,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   }
 
   // Fall back to assignments table: match by linked_inquiry_id, phone, or email
+  // Only include accepted assignments (worker_response = 'accepted')
   if (!activeJobs.length) {
     activeJobs = db.prepare(`
       SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
