@@ -4695,6 +4695,31 @@ function selectPartnerItem(id, name) {
   document.getElementById('jPartnerId').value = id;
   document.getElementById('jPartnerSearch').value = name;
   document.getElementById('jPartnerDrop').classList.remove('open');
+
+  // Offer to import company address into work location fields
+  const partner = (_jobPartners || []).find(p => p.id == id);
+  if (!partner) return;
+  let addrs = [];
+  try { addrs = JSON.parse(partner.addresses || '[]'); } catch(e) {}
+  if (!addrs.length && partner.address) addrs = [partner.address];
+  if (!addrs.length) return;
+
+  // Only prompt if address fields are currently empty
+  const hasAddr = document.getElementById('jStreet').value.trim() ||
+                  document.getElementById('jCity').value.trim() ||
+                  document.getElementById('jZip').value.trim();
+  const msg = hasAddr
+    ? `是否用「${name}」的公司地址覆盖当前工作地点？\n\n${addrs[0]}`
+    : `是否将「${name}」的公司地址导入到工作地点？\n\n${addrs[0]}`;
+  if (!confirm(msg)) return;
+
+  const parsed = parseAddressString(addrs[0]);
+  document.getElementById('jStreet').value  = parsed.street;
+  document.getElementById('jStreet2').value = parsed.street2;
+  document.getElementById('jCity').value    = parsed.city;
+  if (parsed.state) document.getElementById('jState').value = parsed.state;
+  document.getElementById('jZip').value     = parsed.zip;
+  document.getElementById('jAddrStatus').textContent = '';
 }
 
 // ── Estimate Time (weekly schedule) helpers ───────────────────────
