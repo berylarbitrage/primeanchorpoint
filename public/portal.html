@@ -1887,7 +1887,8 @@ async function doPunch(type, photo) {
   document.getElementById('punchBtnsWrap').style.display = '';
   _gpsCoords = null;
   document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
-  await loadMyJobs();tatus();
+  await loadMyJobs();
+  await loadPunchStatus();
   loadTimeclock();
   initGPS();
 }
