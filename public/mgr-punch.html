@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Manager Punch — Prime Anchorpoint</title>
+<link rel="icon" href="/logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#0F2B5B;--sky:#4A90D9;--accent:#F5A623;--green:#10B981;--red:#EF4444;--amber:#F59E0B;--purple:#3B82F6;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--off-white:#F7F8FA;--white:#fff;--radius:12px;--shadow:0 4px 24px rgba(15,43,91,.12)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',system-ui,sans-serif;background:var(--off-white);min-height:100vh;padding-bottom:2rem}
+.header{background:var(--blue);padding:1rem 1.25rem;display:flex;align-items:center;gap:.75rem;position:sticky;top:0;z-index:10}
+.header img{width:36px;height:36px;object-fit:contain}
+.header-text{color:#fff;font-size:1rem;font-weight:700;line-height:1.2}
+.header-sub{color:rgba(255,255,255,.55);font-size:.75rem}
+.container{max-width:440px;margin:0 auto;padding:1.25rem 1rem}
+.card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);padding:1.5rem;margin-bottom:1rem}
+/* Employee header */
+.emp-row{display:flex;align-items:center;gap:1rem;margin-bottom:1.1rem}
+.avatar{width:58px;height:58px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;flex-shrink:0;letter-spacing:-1px}
+.emp-name{font-size:1.1rem;font-weight:700;color:var(--blue);line-height:1.3}
+.emp-code{font-size:.78rem;color:var(--gray-400);font-family:monospace;margin-top:3px}
+/* Status pill */
+.status-pill{display:inline-flex;align-items:center;gap:.4rem;padding:.38rem 1rem;border-radius:20px;font-size:.82rem;font-weight:700;margin-bottom:1.1rem}
+.s-off{background:#f1f5f9;color:var(--gray-600)}
+.s-working{background:#D1FAE5;color:#065F46}
+.s-break{background:#FEF9C3;color:#92400E}
+/* Clock info */
+.clock-info{background:var(--off-white);border-radius:8px;padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem;color:var(--gray-600)}
+.clock-info strong{color:var(--blue)}
+/* Job selector */
+.field-label{font-size:.72rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem}
+select.job-sel{width:100%;padding:.75rem .9rem;border:1.5px solid var(--gray-200);border-radius:var(--radius);font-size:.92rem;font-family:inherit;background:var(--white);color:var(--blue);margin-bottom:.85rem;outline:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239BA3B0' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+select.job-sel:focus{border-color:var(--sky)}
+/* Punch buttons */
+.punch-btns{display:flex;flex-direction:column;gap:.55rem}
+.btn{width:100%;padding:.9rem;border:none;border-radius:var(--radius);font-size:1rem;font-weight:700;cursor:pointer;transition:all .18s;display:flex;align-items:center;justify-content:center;gap:.5rem;font-family:inherit}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-in{background:var(--green);color:#fff}.btn-in:active:not(:disabled){background:#0d9e6d}
+.btn-out{background:var(--red);color:#fff}.btn-out:active:not(:disabled){background:#dc2626}
+.btn-break-s{background:var(--amber);color:#fff}.btn-break-s:active:not(:disabled){background:#d97706}
+.btn-break-e{background:var(--purple);color:#fff}.btn-break-e:active:not(:disabled){background:#2563eb}
+.btn-refresh{background:var(--off-white);color:var(--gray-600);border:1px solid var(--gray-200);font-size:.88rem;padding:.65rem;margin-top:.3rem}
+/* Error */
+.err-msg{background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:.7rem 1rem;color:#DC2626;font-size:.88rem;margin-bottom:.75rem;display:none}
+/* Success */
+.success-card{text-align:center;padding:1.5rem .5rem}
+.success-icon{font-size:3.5rem;margin-bottom:.75rem}
+.success-title{font-size:1.25rem;font-weight:700;color:var(--blue);margin-bottom:.35rem}
+.success-sub{font-size:.9rem;color:var(--gray-400);margin-bottom:1.5rem;line-height:1.6}
+/* Loading */
+.loading-wrap{text-align:center;padding:3.5rem 1rem;color:var(--gray-400)}
+.spinner{width:38px;height:38px;border:3px solid var(--gray-200);border-top-color:var(--sky);border-radius:50%;animation:spin .75s linear infinite;margin:0 auto 1rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Auth/error states */
+.centered-card{text-align:center;padding:2.5rem 1rem}
+.centered-card .icon{font-size:3rem;margin-bottom:.75rem}
+.centered-card h3{font-size:1.05rem;font-weight:700;color:var(--blue);margin-bottom:.4rem}
+.centered-card p{font-size:.88rem;color:var(--gray-400);margin-bottom:1.25rem}
+.btn-login{display:inline-block;padding:.75rem 2rem;background:var(--blue);color:#fff;border-radius:8px;font-weight:700;text-decoration:none;font-size:.92rem}
+.manager-tag{text-align:center;font-size:.75rem;color:var(--gray-400);margin-top:.25rem}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <img src="/logo.svg" alt="PA">
+  <div>
+    <div class="header-text">Manager Punch</div>
+    <div class="header-sub">Prime Anchorpoint</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- Loading -->
+  <div id="viewLoading" class="card loading-wrap">
+    <div class="spinner"></div>
+    <div>正在加载…</div>
+  </div>
+
+  <!-- Auth error -->
+  <div id="viewAuth" class="card centered-card" style="display:none">
+    <div class="icon">🔒</div>
+    <h3>需要 Manager 账号</h3>
+    <p>请使用 Manager / Admin 账号登录后再扫码打卡</p>
+    <a href="/admin" class="btn-login">前往登录</a>
+  </div>
+
+  <!-- Employee not found -->
+  <div id="viewEmpErr" class="card centered-card" style="display:none">
+    <div class="icon">❓</div>
+    <h3 id="empErrMsg">员工不存在</h3>
+    <p>请检查二维码是否正确，或联系 HR</p>
+  </div>
+
+  <!-- Main punch view -->
+  <div id="viewMain" style="display:none">
+    <div class="card">
+      <div class="emp-row">
+        <div class="avatar" id="empAvatar">?</div>
+        <div>
+          <div class="emp-name" id="empName">—</div>
+          <div class="emp-code" id="empCode">—</div>
+        </div>
+      </div>
+
+      <div id="statusPill" class="status-pill s-off">⬛ 未打卡</div>
+
+      <div id="clockInfo" class="clock-info" style="display:none">
+        上班时间：<strong id="clockInTime">—</strong>
+      </div>
+
+      <div id="errMsg" class="err-msg"></div>
+
+      <div id="jobWrap" style="display:none">
+        <div class="field-label">选择工作岗位</div>
+        <select id="jobSel" class="job-sel">
+          <option value="">-- 请选择 --</option>
+        </select>
+      </div>
+
+      <div class="punch-btns">
+        <button id="btnIn"       class="btn btn-in"      onclick="doPunch('in')"          style="display:none">▶ 上班打卡 &nbsp;Clock In</button>
+        <button id="btnBreakS"   class="btn btn-break-s" onclick="doPunch('break_start')" style="display:none">⏸ 开始休息 &nbsp;Break Start</button>
+        <button id="btnBreakE"   class="btn btn-break-e" onclick="doPunch('break_end')"   style="display:none">▶ 结束休息 &nbsp;Break End</button>
+        <button id="btnOut"      class="btn btn-out"     onclick="doPunch('out')"         style="display:none">⏹ 下班打卡 &nbsp;Clock Out</button>
+        <button class="btn btn-refresh" onclick="loadStatus()">↻ 刷新状态</button>
+      </div>
+    </div>
+    <div class="manager-tag">Manager: <span id="managerName">—</span></div>
+  </div>
+
+  <!-- Success view -->
+  <div id="viewSuccess" style="display:none">
+    <div class="card success-card">
+      <div class="success-icon" id="successIcon">✅</div>
+      <div class="success-title" id="successTitle">打卡成功</div>
+      <div class="success-sub" id="successSub"></div>
+      <button class="btn btn-refresh" style="max-width:200px;margin:0 auto" onclick="backToMain()">返回</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const empCode = new URLSearchParams(location.search).get('emp');
+let _status = null;
+
+function fmt(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+}
+
+function show(id) {
+  ['viewLoading','viewAuth','viewEmpErr','viewMain','viewSuccess'].forEach(v => {
+    document.getElementById(v).style.display = v === id ? '' : 'none';
+  });
+}
+
+async function init() {
+  try {
+    const r = await fetch('/api/admin/me', {credentials:'include'});
+    if (!r.ok) { show('viewAuth'); return; }
+    const me = await r.json();
+    document.getElementById('managerName').textContent = me.username || me.name || 'Manager';
+  } catch (e) { show('viewAuth'); return; }
+
+  if (!empCode) { show('viewEmpErr'); document.getElementById('empErrMsg').textContent = 'URL 缺少 emp 参数'; return; }
+  await loadStatus();
+}
+
+async function loadStatus() {
+  show('viewLoading');
+  try {
+    const r = await fetch('/api/admin/manager-punch-status/' + empCode, {credentials:'include'});
+    if (r.status === 404) { show('viewEmpErr'); document.getElementById('empErrMsg').textContent = '找不到该员工'; return; }
+    if (!r.ok) { show('viewEmpErr'); document.getElementById('empErrMsg').textContent = '加载失败，请重试'; return; }
+    _status = await r.json();
+  } catch (e) { show('viewEmpErr'); document.getElementById('empErrMsg').textContent = '网络错误，请重试'; return; }
+
+  const emp = _status.employee;
+  const initials = (emp.name || '?').split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase();
+  document.getElementById('empAvatar').textContent = initials;
+  document.getElementById('empName').textContent = emp.name;
+  document.getElementById('empCode').textContent = emp.emp_code;
+
+  // Status pill
+  const pill = document.getElementById('statusPill');
+  if (_status.on_break) {
+    pill.className = 'status-pill s-break';
+    pill.textContent = '⏸ 休息中';
+  } else if (_status.clocked_in) {
+    pill.className = 'status-pill s-working';
+    pill.textContent = '✅ 上班中';
+  } else {
+    pill.className = 'status-pill s-off';
+    pill.textContent = '⬛ 未打卡';
+  }
+
+  // Clock in time
+  const ci = document.getElementById('clockInfo');
+  if (_status.clocked_in && _status.open_entry) {
+    ci.style.display = '';
+    document.getElementById('clockInTime').textContent = fmt(_status.open_entry.clock_in);
+  } else {
+    ci.style.display = 'none';
+  }
+
+  // Job selector (only for clock-in)
+  const jobWrap = document.getElementById('jobWrap');
+  const jobSel = document.getElementById('jobSel');
+  if (!_status.clocked_in && _status.active_jobs && _status.active_jobs.length) {
+    jobSel.innerHTML = '<option value="">-- 请选择工作 --</option>' +
+      _status.active_jobs.map(j =>
+        `<option value="${j.job_id}">${j.title}${j.company_name ? ' ('+j.company_name+')' : ''}</option>`
+      ).join('');
+    jobWrap.style.display = '';
+    if (_status.active_jobs.length === 1) jobSel.value = _status.active_jobs[0].job_id;
+  } else {
+    jobWrap.style.display = 'none';
+  }
+
+  // Buttons
+  document.getElementById('btnIn').style.display      = !_status.clocked_in ? '' : 'none';
+  document.getElementById('btnBreakS').style.display  = (_status.clocked_in && !_status.on_break) ? '' : 'none';
+  document.getElementById('btnBreakE').style.display  = _status.on_break ? '' : 'none';
+  document.getElementById('btnOut').style.display     = (_status.clocked_in && !_status.on_break) ? '' : 'none';
+  document.getElementById('errMsg').style.display     = 'none';
+
+  show('viewMain');
+}
+
+async function doPunch(type) {
+  const errEl = document.getElementById('errMsg');
+  errEl.style.display = 'none';
+  const btns = ['btnIn','btnBreakS','btnBreakE','btnOut'].map(id => document.getElementById(id));
+  btns.forEach(b => b.disabled = true);
+
+  const body = {emp_code: empCode, punch_type: type};
+  if (type === 'in') {
+    const jobId = document.getElementById('jobSel').value;
+    if (!jobId) {
+      errEl.textContent = '请先选择工作岗位';
+      errEl.style.display = '';
+      btns.forEach(b => b.disabled = false);
+      return;
+    }
+    body.job_id = parseInt(jobId);
+  }
+
+  try {
+    const r = await fetch('/api/admin/manager-punch', {
+      method: 'POST', credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      errEl.textContent = data.error || '打卡失败';
+      errEl.style.display = '';
+      btns.forEach(b => b.disabled = false);
+      return;
+    }
+    showSuccess(data);
+  } catch (e) {
+    errEl.textContent = '网络错误，请重试';
+    errEl.style.display = '';
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+function showSuccess(data) {
+  const icons  = {in:'✅', out:'👋', break_start:'⏸', break_end:'▶️'};
+  const titles = {in:'上班打卡成功', out:'下班打卡成功', break_start:'开始休息', break_end:'休息结束'};
+  let sub = '打卡时间：' + fmt(new Date().toISOString());
+  if (data.action === 'out' && data.total_hours != null)
+    sub += '<br>本次工时：<strong>' + data.total_hours + ' h</strong>';
+
+  document.getElementById('successIcon').textContent = icons[data.action] || '✅';
+  document.getElementById('successTitle').textContent = titles[data.action] || '打卡成功';
+  document.getElementById('successSub').innerHTML = sub;
+  show('viewSuccess');
+}
+
+function backToMain() { loadStatus(); }
+
+init();
+</script>
+</body>
+</html>

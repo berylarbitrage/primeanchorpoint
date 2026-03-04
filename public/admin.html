@@ -29,6 +29,15 @@
 .sidebar a{display:block;padding:10px 1.5rem;color:rgba(255,255,255,.5);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}
 .sidebar a:hover,.sidebar a.active{color:#fff;background:rgba(255,255,255,.08)}
 .sidebar .logout{margin-top:auto;padding:10px 1.5rem;color:var(--red);font-size:.82rem}
+.sidebar .nav-group-header{display:flex;align-items:center;padding:6px 1.25rem 6px 1.5rem;color:rgba(255,255,255,.38);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;cursor:pointer;user-select:none;transition:color .2s;margin-top:.6rem}
+.sidebar .nav-group-header:hover{color:rgba(255,255,255,.65)}
+.sidebar .nav-group.open>.nav-group-header{color:rgba(255,255,255,.7)}
+.sidebar .nav-group-header .chev{margin-left:auto;font-size:.6rem;transition:transform .2s;display:inline-block}
+.sidebar .nav-group.open>.nav-group-header .chev{transform:rotate(180deg)}
+.sidebar .nav-group-items{overflow:hidden;max-height:0;transition:max-height .28s ease}
+.sidebar .nav-group.open>.nav-group-items{max-height:400px}
+.sidebar .nav-group-items a{padding:8px 1.25rem 8px 2.25rem}
+.sidebar .nav-divider{border-top:1px solid rgba(255,255,255,.08);margin:.5rem 1.5rem .25rem}
 .main{margin-left:220px;padding:2rem}
 .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:.5rem}
 .top h1{font-size:1.5rem;color:var(--blue)}
@@ -127,6 +136,7 @@ tr:hover td{background:var(--sky-light)}
 @keyframes toastIn{from{opacity:0;transform:translateY(-12px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes toastOut{to{opacity:0;transform:translateY(-8px) scale(.96)}}
 .badge-pending{background:#FFF3E0;color:#b45309}.badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#f0fdf4;color:#16a34a}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-terminated{background:#fef2f2;color:#b91c1c}.badge-resigned{background:#fff7ed;color:#c2410c}.badge-no_show{background:#fafafa;color:#6b7280;border:1px solid #e5e7eb}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
+.assign-status-select{border:none;border-radius:10px;padding:2px 8px;font-size:.72rem;font-weight:700;cursor:pointer;outline:none;appearance:auto}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
 .modal{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
@@ -162,6 +172,21 @@ tr:hover td{background:var(--sky-light)}
 .hours-item{background:var(--white);border-radius:var(--radius);padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,.04);text-align:center}
 .hours-item h4{font-size:1.6rem;font-weight:700;color:var(--sky)}.hours-item p{font-size:.72rem;color:var(--gray-400);margin-top:2px}
 .emp-meta{font-size:.75rem;color:var(--gray-400);margin-top:2px}
+.emp-table td{padding:.75rem 1rem;vertical-align:middle}
+.emp-table th{padding:.6rem 1rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-400);background:var(--gray-50);border-bottom:1px solid var(--gray-200)}
+.emp-table tbody tr{border-bottom:1px solid var(--gray-100);transition:background .12s}
+.emp-table tbody tr:last-child{border-bottom:none}
+.emp-table tbody tr:hover{background:#f8fafc}
+.emp-name{font-weight:700;color:var(--gray-800);font-size:.92rem}
+.emp-contact{font-size:.75rem;color:var(--gray-400);margin-top:2px;display:flex;gap:.5rem;flex-wrap:wrap}
+.emp-contact a{color:var(--sky);text-decoration:none}
+.emp-contact a:hover{text-decoration:underline}
+.emp-job-tag{display:inline-block;background:#e0f2fe;color:#0369a1;padding:1px 7px;border-radius:8px;font-size:.73rem;margin:1px 2px;font-weight:600}
+.emp-company{font-size:.8rem;color:var(--gray-600);margin-top:2px}
+.emp-action-btn{background:none;border:1px solid var(--gray-200);border-radius:7px;padding:.28rem .55rem;cursor:pointer;font-size:1rem;line-height:1;color:var(--gray-500);transition:all .12s}
+.emp-action-btn:hover{background:var(--gray-100);border-color:var(--gray-300);color:var(--gray-800)}
+.emp-menu-item{display:block;width:100%;text-align:left;padding:.55rem 1rem;background:none;border:none;cursor:pointer;font-size:.87rem;color:var(--gray-700);transition:background .1s;white-space:nowrap}
+.emp-menu-item:hover{background:#f1f5f9}
 .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:.25rem 1.5rem}
 .detail-row{display:flex;flex-direction:column;padding:.4rem 0;border-bottom:1px solid var(--gray-200)}
 .detail-row span:first-child{font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase}
@@ -312,6 +337,8 @@ tr:hover td{background:var(--sky-light)}
 .wa-skill-pill .stars{color:#f59e0b;font-size:.65rem}
 </style>
 <script src="/address-validator.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -384,30 +411,76 @@ tr:hover td{background:var(--sky-light)}
 <div class="app" id="app">
 <div class="sidebar" id="sidebar">
   <h2>⚓ 管理后台</h2>
-  <a class="active" onclick="showTab('dashboard')">仪表盘</a>
-  <a onclick="showTab('client-inquiries')" data-role="admin,staff">🏢 客户问卷</a>
-  <a onclick="showTab('worker-inquiries')" data-role="admin,staff">👤 员工问卷</a>
-  <a onclick="showTab('quotes')" data-role="admin,staff">📋 报价请求</a>
-  <a onclick="showTab('assignments')" data-role="admin,staff">派工管理</a>
-  <a onclick="showTab('jobs')" data-role="admin,staff">职位管理</a>
-  <a onclick="showTab('partners')" data-role="admin,staff">合作公司</a>
-  <a onclick="showTab('backups')" data-role="admin">备份管理</a>
-  <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem"></div>
-  <a onclick="showTab('employees')" data-role="admin,staff">👥 员工管理</a>
-  <a onclick="showTab('time')">⏱ 工时打卡</a>
-  <a onclick="showTab('ts-verify')" data-role="admin,staff">📋 工时核对</a>
-  <a onclick="showTab('ts-payment')" data-role="admin,staff">💰 待付款</a>
-  <a onclick="showTab('ts-dividend')" data-role="staff">🎯 待分红</a>
-  <a onclick="showTab('ts-history')" data-role="admin,staff">📚 工时历史</a>
-  <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
-  <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
-  <a onclick="showTab('interviews')" data-role="admin,staff">🗓️ 面试管理</a>
-  <a onclick="showTab('compliance')" data-role="admin,staff">📑 合规审核</a>
-  <a onclick="showTab('jobsites')" data-role="admin,staff">📍 工作地点</a>
-  <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
-  <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
-  <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
-  <a onclick="showTab('integrations')" data-role="admin">🔗 集成设置</a>
+  <a class="active" onclick="showTab('dashboard')" data-tab="dashboard">🏠 仪表盘</a>
+
+  <!-- 客户管理 -->
+  <div class="nav-group open" id="sec-customer" data-role="admin,staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-customer')">
+      👤 客户管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('client-inquiries')" data-tab="client-inquiries" data-role="admin,staff">🏢 客户问卷</a>
+      <a onclick="showTab('worker-inquiries')" data-tab="worker-inquiries" data-role="admin,staff">👤 员工问卷</a>
+      <a onclick="showTab('quotes')" data-tab="quotes" data-role="admin,staff">📋 报价请求</a>
+      <a onclick="showTab('partners')" data-tab="partners" data-role="admin,staff">合作公司</a>
+    </div>
+  </div>
+
+  <!-- 员工管理 -->
+  <div class="nav-group open" id="sec-worker" data-role="admin,staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-worker')">
+      👷 员工管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('employees')" data-tab="employees" data-role="admin,staff">👥 员工列表</a>
+      <a onclick="showTab('bgchecks')" data-tab="bgchecks" data-role="admin,staff">🔍 背景调查</a>
+      <a onclick="showTab('compliance')" data-tab="compliance" data-role="admin,staff">📑 合规审核</a>
+      <a onclick="showTab('documents')" data-tab="documents" data-role="admin,staff">📄 HR 文件</a>
+      <a onclick="showTab('referrals')" data-tab="referrals" data-role="admin,staff">🎁 推荐奖励</a>
+    </div>
+  </div>
+
+  <!-- 职位派工 -->
+  <div class="nav-group open" id="sec-jobs" data-role="admin,staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-jobs')">
+      💼 职位派工<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('jobs')" data-tab="jobs" data-role="admin,staff">职位管理</a>
+      <a onclick="showTab('assignments')" data-tab="assignments" data-role="admin,staff">派工管理</a>
+      <a onclick="showTab('interviews')" data-tab="interviews" data-role="admin,staff">🗓️ 面试管理</a>
+      <a onclick="showTab('jobsites')" data-tab="jobsites" data-role="admin,staff">📍 工作地点</a>
+    </div>
+  </div>
+
+  <!-- 工时薪资 -->
+  <div class="nav-group open" id="sec-time">
+    <div class="nav-group-header" onclick="toggleNav('sec-time')">
+      ⏱ 工时薪资<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('time')" data-tab="time">工时打卡</a>
+      <a onclick="showTab('ts-verify')" data-tab="ts-verify" data-role="admin,staff">📋 工时核对</a>
+      <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
+      <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
+      <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
+    </div>
+  </div>
+
+  <!-- 系统管理 -->
+  <div class="nav-group open" id="sec-system" data-role="admin">
+    <div class="nav-group-header" onclick="toggleNav('sec-system')">
+      ⚙️ 系统管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('approvals')" data-tab="approvals" data-role="admin">📋 待审批</a>
+      <a onclick="showTab('accounts')" data-tab="accounts" data-role="admin">🔐 账户管理</a>
+      <a onclick="showTab('integrations')" data-tab="integrations" data-role="admin">🔗 集成设置</a>
+      <a onclick="showTab('skill-settings')" data-tab="skill-settings" data-role="admin">🛠️ 技能设置</a>
+      <a onclick="showTab('backups')" data-tab="backups" data-role="admin">备份管理</a>
+    </div>
+  </div>
+
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -546,7 +619,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="cancelled">已取消</option>
     </select>
   </div>
-  <div class="card" style="padding:0"><div style="overflow-x:auto;padding:1rem"><table style="min-width:780px"><thead><tr><th>日期</th><th>人员</th><th>分配职位</th><th>合同/薪资</th><th>福利</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div></div>
+  <div class="card" style="padding:0"><div style="overflow-x:auto;padding:1rem"><table style="min-width:780px"><thead><tr><th>人员</th><th>分配职位</th><th>合同类型</th><th>薪资</th><th>福利</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div></div>
 </div>
 
 <!-- Jobs -->
@@ -653,7 +726,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="stat-card"><h3 id="empStatMonth">0</h3><p>本月入职</p></div>
   </div>
   <div class="search-bar">
-    <input type="text" id="empSearch" placeholder="搜索姓名、员工号、职位、部门..." oninput="filterEmployees()">
+    <input type="text" id="empSearch" placeholder="搜索姓名、员工号、职位、公司..." oninput="filterEmployees()">
     <select id="empStatusFilter" onchange="filterEmployees()">
       <option value="">全部状态</option>
       <option value="active">在职</option>
@@ -662,9 +735,30 @@ tr:hover td{background:var(--sky-light)}
     </select>
     <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
-  <div class="card">
-    <table><thead><tr><th>员工号</th><th>工人编码</th><th>姓名</th><th>当前职位</th><th>所属公司</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
-    <tbody id="empTable"></tbody></table>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table class="emp-table">
+      <thead><tr>
+        <th style="width:90px">员工号</th>
+        <th>姓名 / 联系方式</th>
+        <th>职位 / 公司</th>
+        <th style="width:80px">薪资</th>
+        <th style="width:70px">状态</th>
+        <th style="width:90px">入职日期</th>
+        <th style="width:56px">操作</th>
+      </tr></thead>
+      <tbody id="empTable"></tbody>
+    </table>
+  </div>
+  <!-- Employee action dropdown menu (shared) -->
+  <div id="empActionMenu" style="display:none;position:fixed;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.13);z-index:9999;min-width:180px;padding:4px 0">
+    <button class="emp-menu-item" id="empMenuDetail">🔍 查看详情</button>
+    <button class="emp-menu-item" id="empMenuEdit">✏️ 编辑信息</button>
+    <button class="emp-menu-item" id="empMenuJob" style="color:#9A3412">📋 安排职位</button>
+    <button class="emp-menu-item" id="empMenuRate" style="color:#0369a1">⭐ 员工评分</button>
+    <button class="emp-menu-item" id="empMenuDoc" style="color:#166534">📎 发送材料链接</button>
+    <button class="emp-menu-item" id="empMenuRegLink" style="color:#7c3aed">📱 发送注册链接</button>
+    <div style="height:1px;background:var(--gray-200);margin:4px 0"></div>
+    <button class="emp-menu-item" id="empMenuTerminate" style="color:#dc2626;display:none">🚪 办理离职</button>
   </div>
 </div>
 
@@ -696,7 +790,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="hours-item"><h4 id="sumOT" style="color:var(--accent)">0h</h4><p>加班工时</p></div>
   </div>
   <div class="card">
-    <table><thead><tr><th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>合计</th><th>正常</th><th>加班</th><th>状态</th><th>备注</th><th>操作</th></tr></thead>
+    <table><thead><tr><th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>合计</th><th>正常</th><th>加班</th><th>状态</th><th>照片</th><th>备注</th><th>操作</th></tr></thead>
     <tbody id="timeTable"></tbody></table>
   </div>
 </div>
@@ -1152,10 +1246,77 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Referral Rewards 推荐奖励 -->
+<div id="tab-referrals" style="display:none">
+  <div class="top"><h1>🎁 推荐奖励记录</h1></div>
+
+  <!-- Config card -->
+  <div class="card" style="margin-bottom:1rem" id="referralConfigCard">
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div style="font-weight:700;font-size:.95rem;color:var(--blue)">奖励规则配置</div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <label style="font-size:.85rem;color:var(--gray-500)">每笔奖励</label>
+        <span style="font-weight:600">$</span>
+        <input id="refBonusAmtAll" type="number" min="0" step="1" style="width:80px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <label style="font-size:.85rem;color:var(--gray-500)">最低达标工时</label>
+        <input id="refMinHoursAll" type="number" min="0" step="1" style="width:70px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+        <span style="font-size:.85rem;color:var(--gray-500)">小时</span>
+      </div>
+      <button class="btn btn-green" onclick="saveAllReferralConfig()">保存配置</button>
+      <div style="margin-left:auto;font-size:.82rem;color:var(--gray-400)">被推荐人工作满指定小时后，推荐人获得奖励</div>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  <div id="referralStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem"></div>
+
+  <!-- Table -->
+  <div class="card" style="overflow-x:auto">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
+      <input id="refSearch" type="text" placeholder="搜索推荐人或被推荐人…" style="padding:.4rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;width:220px" oninput="filterReferralTable()">
+      <select id="refFilter" onchange="filterReferralTable()" style="padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        <option value="">全部状态</option>
+        <option value="qualified">✅ 已达标</option>
+        <option value="pending">⏳ 进行中</option>
+        <option value="none">⬜ 未开始</option>
+      </select>
+      <span id="refCount" style="font-size:.82rem;color:var(--gray-400);margin-left:auto"></span>
+    </div>
+    <table style="font-size:.84rem">
+      <thead><tr>
+        <th>推荐人</th><th>推荐人编码</th><th>被推荐人</th><th>被推荐人编码</th>
+        <th>注册时间</th><th>已工作工时</th><th>状态</th><th>奖励金额</th>
+      </tr></thead>
+      <tbody id="referralTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- Integration Settings 集成设置 -->
 <div id="tab-integrations" style="display:none">
   <div class="top"><h1>第三方集成设置</h1></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem" id="integrationsGrid"></div>
+</div>
+
+
+<!-- Skill Options Settings 必备技能设置 -->
+<div id="tab-skill-settings" style="display:none">
+  <div class="top"><h1>🛠️ 必备技能设置</h1></div>
+  <div style="max-width:640px;margin:1.5rem auto">
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
+      <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
+        在此管理「必备技能」选项列表，修改后会自动应用到职位发布等所有使用该列表的地方。
+      </p>
+      <div style="display:flex;gap:.6rem;margin-bottom:1.25rem;flex-wrap:wrap">
+        <input id="newSkillZh" placeholder="技能名称（中文）*" style="flex:1;min-width:130px;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem">
+        <input id="newSkillEn" placeholder="Skill name (English)" style="flex:1;min-width:130px;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem">
+        <button class="btn" onclick="addSkillOption()" style="white-space:nowrap">＋ 添加</button>
+      </div>
+      <div id="skillOptionsList"></div>
+    </div>
+  </div>
 </div>
 
 </div></div>
@@ -1181,11 +1342,14 @@ tr:hover td{background:var(--sky-light)}
     <span id="siteAddrStatus" style="font-size:.8rem;font-weight:600"></span>
   </div>
   <div class="field-row" style="display:flex;gap:1rem">
-    <div class="field" style="flex:1"><label>纬度 Latitude *</label><input id="siteLat" type="number" step="any" placeholder="40.7128"></div>
-    <div class="field" style="flex:1"><label>经度 Longitude *</label><input id="siteLng" type="number" step="any" placeholder="-74.0060"></div>
+    <div class="field" style="flex:1"><label>纬度 Latitude *</label><input id="siteLat" type="number" step="any" placeholder="40.7128" oninput="updateSiteMap()"></div>
+    <div class="field" style="flex:1"><label>经度 Longitude *</label><input id="siteLng" type="number" step="any" placeholder="-74.0060" oninput="updateSiteMap()"></div>
   </div>
-  <div class="field"><label>围栏半径 (米)</label><input id="siteRadius" type="number" value="200" min="50" max="2000"></div>
-  <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:1rem">提示: 可以在 Google Maps 上右键点击获取坐标</div>
+  <div class="field"><label>围栏半径 (米)</label><input id="siteRadius" type="number" value="200" min="50" max="2000" oninput="updateSiteMap()"></div>
+  <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:.6rem">提示: 可以在 Google Maps 上右键点击获取坐标，或输入坐标后下方地图预览会自动更新</div>
+  <div id="siteMapWrap" style="display:none;margin-bottom:1rem">
+    <div id="siteMapPreview" style="height:220px;border-radius:10px;border:1px solid var(--gray-200);overflow:hidden"></div>
+  </div>
   <div class="modal-actions">
     <button class="btn btn-green" onclick="saveJobSite()">保存</button>
     <button class="btn" onclick="closeModal('jobSiteModal')">取消</button>
@@ -1742,6 +1906,20 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Worker Account History Modal -->
+<div class="modal-bg" id="workerHistoryModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal modal-lg" style="max-width:640px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <div>
+        <h2 id="workerHistoryTitle" style="margin:0;font-size:1.1rem">账户变更历史</h2>
+        <div id="workerHistorySubtitle" style="font-size:.8rem;color:var(--gray-400);margin-top:.2rem"></div>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('workerHistoryModal').classList.remove('show')">关闭</button>
+    </div>
+    <div id="workerHistoryContent" style="max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
 <!-- Job History Modal -->
 <div class="modal-bg" id="jobHistoryModal"><div class="modal modal-lg">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
@@ -1760,6 +1938,32 @@ tr:hover td{background:var(--sky-light)}
     <div class="assign-dropdown" id="jPartnerDrop"></div>
   </div>
   <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
+
+  <div class="field"><label>工种类别 Job Category</label>
+    <select id="jCategory">
+      <option value="">-- 请选择 --</option>
+      <option value="warehouse_sorter">仓库分拣员 / Warehouse Sorter</option>
+      <option value="labeler">贴标员 / Labeler</option>
+      <option value="packer">打包员 / Packer</option>
+      <option value="forklift_operator">叉车操作员 / Forklift Operator</option>
+      <option value="cdl_driver">CDL卡车司机 / CDL Truck Driver</option>
+      <option value="delivery_driver">送货司机 / Delivery Driver</option>
+      <option value="shift_supervisor">班组长 / Shift Supervisor</option>
+      <option value="site_manager">现场主管 / Site Manager</option>
+      <option value="quality_inspector">质检员 / Quality Inspector</option>
+      <option value="machine_operator">机器操作员 / Machine Operator</option>
+      <option value="assembly_line">装配线工人 / Assembly Line</option>
+      <option value="material_handler">物料搬运工 / Material Handler</option>
+      <option value="inventory_clerk">库存文员 / Inventory Clerk</option>
+      <option value="general_labor">普工 / General Labor</option>
+      <option value="janitorial">清洁工 / Janitorial</option>
+      <option value="food_processing">食品加工 / Food Processing</option>
+      <option value="warehouse_lead">仓库领班 / Warehouse Lead</option>
+      <option value="loading_unloading">装卸工 / Loading / Unloading</option>
+      <option value="order_picker">拣货员 / Order Picker</option>
+      <option value="welder">焊接工 / Welder</option>
+    </select>
+  </div>
 
   <div class="field"><label>职位类型</label>
     <select id="jType">
@@ -1836,21 +2040,69 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field">
-    <label>工作日</label>
-    <div id="jWorkDaysWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
-      <button type="button" class="day-btn" data-day="Mon">Mon</button>
-      <button type="button" class="day-btn" data-day="Tue">Tue</button>
-      <button type="button" class="day-btn" data-day="Wed">Wed</button>
-      <button type="button" class="day-btn" data-day="Thu">Thu</button>
-      <button type="button" class="day-btn" data-day="Fri">Fri</button>
-      <button type="button" class="day-btn" data-day="Sat">Sat</button>
-      <button type="button" class="day-btn" data-day="Sun">Sun</button>
-    </div>
-  </div>
-
-  <div class="field-row">
-    <div class="field"><label>上班时间</label><input type="time" step="60" id="jWorkStart"></div>
-    <div class="field"><label>下班时间</label><input type="time" step="60" id="jWorkEnd"></div>
+    <label>工作日 / 工作时间 <span style="color:var(--red)">*</span></label>
+    <table id="jScheduleTable" style="width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.82rem">
+      <thead>
+        <tr style="color:var(--gray-400);font-weight:600;font-size:.74rem;border-bottom:1px solid var(--gray-200)">
+          <th style="padding:.25rem .4rem;width:30px"></th>
+          <th style="padding:.25rem .5rem;text-align:left">工作日</th>
+          <th style="padding:.25rem .5rem;text-align:left">上班时间 *</th>
+          <th style="padding:.25rem .5rem;text-align:left">下班时间 *</th>
+          <th style="padding:.25rem .4rem;width:54px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-day="Mon" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Mon</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Tue" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Tue</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Wed" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Wed</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Thu" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Thu</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Fri" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Fri</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Sat" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Sat</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Sun">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Sun</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 
   <div class="field">
@@ -1871,61 +2123,29 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="field">
     <label>必备技能（多选）</label>
-    <select id="jRequiredSkills" multiple style="width:100%;min-height:120px;padding:6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-      <option value="仓库操作">仓库操作 / Warehouse Operation</option>
-      <option value="叉车操作">叉车操作 / Forklift</option>
-      <option value="驾照">驾照 / Driver's License</option>
-      <option value="搬运">搬运 / Heavy Lifting</option>
-      <option value="分拣">分拣 / Sorting</option>
-      <option value="包装">包装 / Packing</option>
-      <option value="收货">收货 / Receiving</option>
-      <option value="发货">发货 / Shipping</option>
-      <option value="盘点">盘点 / Inventory</option>
-      <option value="清洁">清洁 / Cleaning</option>
-      <option value="机器操作">机器操作 / Machine Operation</option>
-      <option value="质量检查">质量检查 / Quality Inspection</option>
-      <option value="组装">组装 / Assembly</option>
-      <option value="基本英语">基本英语 / Basic English</option>
-      <option value="普通话">普通话 / Mandarin</option>
-      <option value="体力劳动">体力劳动 / Physical Labor</option>
-    </select>
-    <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选</div>
+    <select id="jRequiredSkills" multiple style="width:100%;min-height:120px;padding:6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem"></select>
+    <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选 · <a onclick="showTab('skill-settings')" style="cursor:pointer;color:var(--primary)">管理技能选项</a></div>
   </div>
 
   <div class="field">
     <label style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem">
       <span>Job Description</span>
-      <button type="button" onclick="toggleDescTemplates()" id="btnDescTpl"
-        style="font-size:.74rem;padding:.2rem .65rem;border-radius:6px;border:1px solid #a5b4fc;background:#eef2ff;color:#4338ca;cursor:pointer;font-weight:600;text-transform:none;letter-spacing:0">
-        📝 My Wordings
-      </button>
+      <div style="display:flex;gap:.3rem">
+        <button type="button" id="jDescBtnDetailed" onclick="setJobDescMode('detailed')"
+          style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-weight:600">Detailed</button>
+        <button type="button" id="jDescBtnChecklist" onclick="setJobDescMode('checklist')"
+          style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer;font-weight:600">Checklist</button>
+      </div>
     </label>
-
-    <!-- Wording bank panel -->
-    <div id="descTplPanel" style="display:none;border:1px solid #c7d2fe;border-radius:8px;background:#f5f7ff;padding:.65rem .75rem;margin-bottom:.5rem">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
-        <span style="font-size:.75rem;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:.04em">My Wordings</span>
-        <button type="button" onclick="addDescEntry()"
-          style="font-size:.72rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #a5b4fc;background:#e0e7ff;color:#3730a3;cursor:pointer;font-weight:600">+ New Wording</button>
-      </div>
-      <div id="descTplList" style="display:flex;flex-direction:column;gap:.45rem;max-height:360px;overflow-y:auto"></div>
-      <!-- Inline editor -->
-      <div id="descEditorPanel" style="display:none;margin-top:.6rem;border:1px solid #a5b4fc;border-radius:7px;background:#fff;padding:.6rem .7rem">
-        <input type="hidden" id="descEditorIdx">
-        <input id="descEditorName" placeholder="Label (e.g. Version A, Warehousing v2…)"
-          style="width:100%;border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.82rem;margin-bottom:.4rem">
-        <textarea id="descEditorText" placeholder="Write your wording here…"
-          style="width:100%;border:1px solid #c7d2fe;border-radius:5px;padding:.3rem .45rem;font-size:.82rem;resize:vertical;min-height:80px"></textarea>
-        <div style="display:flex;gap:.4rem;margin-top:.4rem">
-          <button type="button" onclick="saveDescEntry()"
-            style="font-size:.75rem;padding:.22rem .65rem;border-radius:5px;border:1px solid #6ee7b7;background:#d1fae5;color:#065f46;cursor:pointer;font-weight:600">Save</button>
-          <button type="button" onclick="cancelDescEditor()"
-            style="font-size:.75rem;padding:.22rem .55rem;border-radius:5px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer">Cancel</button>
-        </div>
-      </div>
+    <input type="hidden" id="jDescMode" value="detailed">
+    <div id="jDescDetailedWrap" style="margin-top:.4rem">
+      <textarea id="jDesc" placeholder="Describe the scope of services, deliverables, and requirements..."></textarea>
     </div>
-
-    <textarea id="jDesc" placeholder="Describe the scope of services, deliverables, and requirements..."></textarea>
+    <div id="jDescChecklistWrap" style="display:none;margin-top:.4rem">
+      <div id="jDescSteps" style="display:flex;flex-direction:column;gap:.3rem"></div>
+      <button type="button" onclick="addJobDescStep()"
+        style="margin-top:.35rem;font-size:.75rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #fcd34d;background:#fef9c3;color:#92400e;cursor:pointer;font-weight:600">+ Add Step</button>
+    </div>
   </div>
   <div class="field-row">
     <div class="field"><label>招聘人数</label><input type="number" id="jHeadcount" min="1" value="1" placeholder="1"></div>
@@ -2039,6 +2259,44 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Assignment History Modal -->
+<div class="modal-bg" id="assignHistoryModal"><div class="modal" style="max-width:680px">
+  <h2 id="assignHistoryTitle">状态历史</h2>
+  <div style="overflow-x:auto;overflow-y:auto;max-height:420px;margin-top:.75rem;border:1px solid var(--gray-200);border-radius:6px">
+    <table style="width:100%;border-collapse:collapse;min-width:560px">
+      <thead style="position:sticky;top:0;background:#fff;z-index:1">
+        <tr>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200);white-space:nowrap">时间</th>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200);white-space:nowrap">原状态</th>
+          <th style="padding:8px 4px;border-bottom:2px solid var(--gray-200)"></th>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200);white-space:nowrap">新状态</th>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200);white-space:nowrap">操作人</th>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200)">原因</th>
+        </tr>
+      </thead>
+      <tbody id="assignHistoryList"></tbody>
+    </table>
+  </div>
+  <div style="margin-top:1rem;text-align:right">
+    <button class="btn" onclick="document.getElementById('assignHistoryModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Status Change Reason Modal -->
+<div class="modal-bg" id="statusReasonModal"><div class="modal" style="max-width:420px">
+  <h2>更改状态原因</h2>
+  <p style="margin:.5rem 0 1rem;color:var(--gray-500);font-size:.9rem">请填写更改状态的原因（必填）</p>
+  <div style="margin-bottom:1rem">
+    <label style="font-size:.85rem;font-weight:600;display:block;margin-bottom:.4rem">原因</label>
+    <textarea id="statusReasonInput" rows="4" style="width:100%;padding:.6rem .8rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.9rem;resize:vertical;box-sizing:border-box" placeholder="请输入更改原因…"></textarea>
+    <div id="statusReasonErr" style="color:#dc2626;font-size:.82rem;margin-top:.3rem;display:none">原因不能为空</div>
+  </div>
+  <div style="display:flex;gap:.75rem;justify-content:flex-end">
+    <button class="btn" onclick="cancelStatusChange()">取消</button>
+    <button class="btn btn-green" onclick="confirmStatusChange()">确认更改</button>
+  </div>
+</div></div>
+
 <!-- Assignment Modal -->
 <div class="modal-bg" id="assignModal"><div class="modal">
   <h2 id="assignModalTitle">新建派工</h2>
@@ -2080,6 +2338,32 @@ tr:hover td{background:var(--sky-light)}
     <input id="aJob" autocomplete="off" placeholder="搜索职位名称 / 地点…" oninput="filterAssignSearch('job');clearFieldErr('aJob','aJobErr')" onblur="setTimeout(()=>blurAutoSelectAssign('job'),200)">
     <div class="assign-dropdown" id="aJobDrop"></div>
     <div id="aJobErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请搜索并选择职位</div>
+  </div>
+
+  <div class="field"><label>工种类别 Job Category</label>
+    <select id="aCategory">
+      <option value="">-- 请选择 --</option>
+      <option value="warehouse_sorter">仓库分拣员 / Warehouse Sorter</option>
+      <option value="labeler">贴标员 / Labeler</option>
+      <option value="packer">打包员 / Packer</option>
+      <option value="forklift_operator">叉车操作员 / Forklift Operator</option>
+      <option value="cdl_driver">CDL卡车司机 / CDL Truck Driver</option>
+      <option value="delivery_driver">送货司机 / Delivery Driver</option>
+      <option value="shift_supervisor">班组长 / Shift Supervisor</option>
+      <option value="site_manager">现场主管 / Site Manager</option>
+      <option value="quality_inspector">质检员 / Quality Inspector</option>
+      <option value="machine_operator">机器操作员 / Machine Operator</option>
+      <option value="assembly_line">装配线工人 / Assembly Line</option>
+      <option value="material_handler">物料搬运工 / Material Handler</option>
+      <option value="inventory_clerk">库存文员 / Inventory Clerk</option>
+      <option value="general_labor">普工 / General Labor</option>
+      <option value="janitorial">清洁工 / Janitorial</option>
+      <option value="food_processing">食品加工 / Food Processing</option>
+      <option value="warehouse_lead">仓库领班 / Warehouse Lead</option>
+      <option value="loading_unloading">装卸工 / Loading / Unloading</option>
+      <option value="order_picker">拣货员 / Order Picker</option>
+      <option value="welder">焊接工 / Welder</option>
+    </select>
   </div>
 
   <div class="field"><label>状态</label><select id="aStatus">
@@ -2129,24 +2413,55 @@ tr:hover td{background:var(--sky-light)}
     <div id="aContractFileInfo" style="font-size:.82rem;color:var(--gray-500);margin:.3rem 0"></div>
     <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%;margin-top:.3rem">
   </div>
-  <!-- Estimate Time (multi-shift) -->
+  <!-- Work period dates -->
+  <div style="display:flex;align-items:center;gap:.5rem;margin-top:.75rem;flex-wrap:wrap">
+    <span style="font-size:.78rem;color:#6366f1;font-weight:600;white-space:nowrap">开始日期</span>
+    <input type="date" id="aWorkStart" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;box-sizing:border-box">
+    <span style="font-size:.78rem;color:#6366f1;font-weight:600;white-space:nowrap">结束日期</span>
+    <input type="date" id="aWorkEnd" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;box-sizing:border-box">
+    <label style="display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:#4338ca;cursor:pointer;white-space:nowrap">
+      <input type="checkbox" id="aWorkUntilFurther" onchange="toggleUntilFurther(this)"> Until further notice
+    </label>
+  </div>
+  <!-- Estimate Time (weekly schedule) -->
   <div class="form-section" style="margin-top:.75rem;border:1px solid #e0e7ff;border-radius:8px;padding:.75rem 1rem;background:#f5f7ff">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
-      <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#4338ca;letter-spacing:.04em">⏱ Estimate Time</label>
-      <button type="button" onclick="addShift()" style="font-size:.78rem;padding:.25rem .7rem;border-radius:6px;border:1px solid #a5b4fc;background:#eef2ff;color:#4338ca;cursor:pointer;font-weight:600">+ Add Shift</button>
-    </div>
-    <div id="aShiftsList" style="display:flex;flex-direction:column;gap:.5rem"></div>
-    <div id="aShiftsEmpty" style="font-size:.82rem;color:var(--gray-400);padding:.4rem 0">No shifts added yet. Click "+ Add Shift" to add a time block.</div>
+    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#4338ca;letter-spacing:.04em;display:block;margin-bottom:.65rem">⏱ Estimate Time</label>
+    <!-- Weekly schedule rows (built by JS) -->
+    <div id="aWeeklySchedule"></div>
   </div>
 
   <!-- Task Requirements -->
   <div class="form-section" style="margin-top:.75rem;border:1px solid #d1fae5;border-radius:8px;padding:.75rem 1rem;background:#f0fdf4">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
       <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#065f46;letter-spacing:.04em">📋 Task Requirements</label>
-      <div style="display:flex;gap:.4rem">
+      <div style="display:flex;gap:.4rem;align-items:center">
+        <button type="button" onclick="toggleAssignWordings()" id="btnAssignWordings"
+          style="font-size:.74rem;padding:.2rem .65rem;border-radius:6px;border:1px solid #a5b4fc;background:#eef2ff;color:#4338ca;cursor:pointer;font-weight:600">📝 My Wordings</button>
         <button type="button" onclick="addTask('simple')" style="font-size:.75rem;padding:.22rem .6rem;border-radius:6px;border:1px solid #6ee7b7;background:#d1fae5;color:#065f46;cursor:pointer;font-weight:600" title="Quick one-line task">+ Simple</button>
         <button type="button" onclick="addTask('detailed')" style="font-size:.75rem;padding:.22rem .6rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-weight:600" title="Task with full description">+ Detailed</button>
         <button type="button" onclick="addTask('checklist')" style="font-size:.75rem;padding:.22rem .6rem;border-radius:6px;border:1px solid #fcd34d;background:#fef9c3;color:#92400e;cursor:pointer;font-weight:600" title="Task with step-by-step checklist">+ Checklist</button>
+      </div>
+    </div>
+    <!-- My Wordings panel (for rotating compliance wording) -->
+    <div id="assignWordingsPanel" style="display:none;border:1px solid #c7d2fe;border-radius:8px;background:#f5f7ff;padding:.65rem .75rem;margin-bottom:.6rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
+        <span style="font-size:.75rem;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:.04em">My Wordings</span>
+        <button type="button" onclick="addDescEntry()"
+          style="font-size:.72rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #a5b4fc;background:#e0e7ff;color:#3730a3;cursor:pointer;font-weight:600">+ New Wording</button>
+      </div>
+      <div id="descTplList" style="display:flex;flex-direction:column;gap:.45rem;max-height:320px;overflow-y:auto"></div>
+      <div id="descEditorPanel" style="display:none;margin-top:.6rem;border:1px solid #a5b4fc;border-radius:7px;background:#fff;padding:.6rem .7rem">
+        <input type="hidden" id="descEditorIdx">
+        <input id="descEditorName" placeholder="Label (e.g. Version A, Warehousing v2…)"
+          style="width:100%;border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.82rem;margin-bottom:.4rem">
+        <textarea id="descEditorText" placeholder="Write your wording here…"
+          style="width:100%;border:1px solid #c7d2fe;border-radius:5px;padding:.3rem .45rem;font-size:.82rem;resize:vertical;min-height:80px"></textarea>
+        <div style="display:flex;gap:.4rem;margin-top:.4rem">
+          <button type="button" onclick="saveDescEntry()"
+            style="font-size:.75rem;padding:.22rem .65rem;border-radius:5px;border:1px solid #6ee7b7;background:#d1fae5;color:#065f46;cursor:pointer;font-weight:600">Save</button>
+          <button type="button" onclick="cancelDescEditor()"
+            style="font-size:.75rem;padding:.22rem .55rem;border-radius:5px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer">Cancel</button>
+        </div>
       </div>
     </div>
     <div id="aTasksList" style="display:flex;flex-direction:column;gap:.65rem"></div>
@@ -2156,17 +2471,32 @@ tr:hover td{background:var(--sky-light)}
     <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#1d4ed8;display:block;margin-bottom:.5rem">📍 工作地点（打卡围栏）</label>
     <div class="field" style="margin-bottom:.5rem">
       <label>工作地址 *</label>
-      <div style="display:flex;gap:.5rem">
-        <input id="aWorkAddress" placeholder="例：1234 Main St, Los Angeles, CA" style="flex:1" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+      <div style="margin-bottom:.4rem">
+        <input id="aWorkStreet" placeholder="Street Address（例：1234 Main St）" style="width:100%;box-sizing:border-box" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:.4rem;align-items:flex-start">
+        <input id="aWorkCity" placeholder="City（城市）" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+        <input id="aWorkState" placeholder="State" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+        <input id="aWorkZip" placeholder="ZIP" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+        <input id="aWorkCountry" placeholder="Country" value="USA" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
         <button type="button" onclick="geocodeWorkAddress()" style="white-space:nowrap;padding:.4rem .75rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-size:.82rem;font-weight:600">🔍 查坐标</button>
       </div>
       <div id="aWorkAddrErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请填写工作地址</div>
       <div id="aWorkGeoStatus" style="font-size:.75rem;color:var(--gray-500);margin-top:.25rem"></div>
+      <div id="aWorkGeoMapLink" style="display:none;margin-top:.3rem"><a id="aWorkGeoMapAnchor" href="#" target="_blank" style="font-size:.75rem;color:#1d4ed8;text-decoration:none">🗺 在 Google Maps 中验证坐标（Nominatim 可能偏移，建议确认）</a></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>纬度 (Lat) *</label><input id="aWorkLat" type="number" step="any" placeholder="例：34.052235" oninput="document.getElementById('aWorkLatErr').style.display='none'"><div id="aWorkLatErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
-      <div class="field"><label>经度 (Lng) *</label><input id="aWorkLng" type="number" step="any" placeholder="例：-118.243683" oninput="document.getElementById('aWorkLngErr').style.display='none'"><div id="aWorkLngErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
-      <div class="field"><label>围栏半径（米）</label><input id="aWorkRadius" type="number" placeholder="200" value="200"></div>
+      <div class="field"><label>纬度 (Lat) *</label><input id="aWorkLat" type="number" step="any" placeholder="例：34.052235" oninput="document.getElementById('aWorkLatErr').style.display='none';updateAssignWorkMap()"><div id="aWorkLatErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
+      <div class="field"><label>经度 (Lng) *</label><input id="aWorkLng" type="number" step="any" placeholder="例：-118.243683" oninput="document.getElementById('aWorkLngErr').style.display='none';updateAssignWorkMap()"><div id="aWorkLngErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
+      <div class="field"><label>围栏半径（米）</label><input id="aWorkRadius" type="number" placeholder="200" value="200" oninput="updateAssignWorkMap()"></div>
+    </div>
+    <!-- Interactive map preview for work location -->
+    <div id="aWorkMapWrap" style="display:none;margin-top:.5rem;border-radius:8px;overflow:hidden;border:1px solid #93c5fd">
+      <div id="aWorkMap" style="height:260px;width:100%"></div>
+      <div style="font-size:.73rem;color:#1d4ed8;padding:.3rem .6rem;background:#eff6ff;display:flex;align-items:center;gap:.4rem">
+        <span>🖱 拖动图钉可纠正位置，坐标将自动更新</span>
+        <span id="aWorkMapCoordLabel" style="margin-left:auto;color:#6b7280;font-family:monospace"></span>
+      </div>
     </div>
   </div>
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
@@ -2280,6 +2610,28 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- ════ Employee Add/Edit Modal ════ -->
+<!-- ═══ Send Registration Link Modal ═══ -->
+<div class="modal-bg" id="regLinkModal"><div class="modal" style="max-width:420px">
+  <h2>📱 发送注册链接</h2>
+  <input type="hidden" id="regLinkEmpId">
+  <p style="color:var(--gray-500);font-size:.88rem;margin-bottom:1.2rem">
+    员工 <strong id="regLinkEmpName"></strong> 将收到链接，点击后可验证手机号和邮箱，完成账户注册。链接 <strong>7天内有效</strong>。
+  </p>
+  <div class="field">
+    <label>手机号（接收短信）</label>
+    <input type="tel" id="regLinkPhone" placeholder="10位手机号" style="width:100%">
+  </div>
+  <div class="field">
+    <label>邮箱（接收邮件）</label>
+    <input type="email" id="regLinkEmail" placeholder="employee@example.com" style="width:100%">
+  </div>
+  <div id="regLinkResult" style="margin:.75rem 0;min-height:1.5rem"></div>
+  <div style="display:flex;gap:.75rem;justify-content:flex-end">
+    <button class="btn btn-outline" onclick="guardClose('regLinkModal')">关闭</button>
+    <button class="btn btn-green" onclick="sendRegLink()">发送链接</button>
+  </div>
+</div></div>
+
 <div class="modal-bg" id="empModal"><div class="modal modal-lg">
   <h2 id="empModalTitle">新增员工</h2>
   <input type="hidden" id="empId">
@@ -2636,6 +2988,108 @@ function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor, 
 function closeGenericConfirm() { document.getElementById('genericConfirmModal').classList.remove('show'); _gcmCallback = null; }
 async function execGenericConfirm() { const cb = _gcmCallback; closeGenericConfirm(); if (cb) await cb(); }
 
+// ─── Per-day work schedule helpers ───────────────────────────────────────────
+function _jDayToggle(cb) {
+  const row = cb.closest('tr');
+  const start = row.querySelector('.jDayStart');
+  const end   = row.querySelector('.jDayEnd');
+  const copy  = row.querySelector('.jCopyDay');
+  start.disabled = !cb.checked;
+  end.disabled   = !cb.checked;
+  copy.disabled  = !cb.checked;
+  if (cb.checked) {
+    start.style.background = '#fff';
+    end.style.background   = '#fff';
+    copy.style.color       = 'var(--sky)';
+    copy.style.borderColor = 'var(--sky)';
+  } else {
+    start.value = ''; end.value = '';
+    start.style.background = 'var(--off-white)';
+    end.style.background   = 'var(--off-white)';
+    copy.style.color       = 'var(--gray-400)';
+    copy.style.borderColor = 'var(--gray-200)';
+  }
+}
+function _jCopyDay(btn) {
+  const row   = btn.closest('tr');
+  const start = row.querySelector('.jDayStart').value;
+  const end   = row.querySelector('.jDayEnd').value;
+  if (!start && !end) return;
+  document.querySelectorAll('#jScheduleTable tbody tr').forEach(r => {
+    if (r === row) return;
+    if (r.querySelector('.jDayCheck').checked) {
+      r.querySelector('.jDayStart').value = start;
+      r.querySelector('.jDayEnd').value   = end;
+    }
+  });
+}
+function populateScheduleTable(workSchedule, workDays, workStart, workEnd) {
+  let sched = {};
+  if (workSchedule) { try { sched = JSON.parse(workSchedule); } catch(e) {} }
+  if (!Object.keys(sched).length && workDays) {
+    workDays.split(',').map(d => d.trim()).filter(Boolean).forEach(day => {
+      sched[day] = { start: workStart || '', end: workEnd || '' };
+    });
+  }
+  document.querySelectorAll('#jScheduleTable tbody tr').forEach(row => {
+    const day  = row.dataset.day;
+    const data = sched[day];
+    const cb    = row.querySelector('.jDayCheck');
+    const start = row.querySelector('.jDayStart');
+    const end   = row.querySelector('.jDayEnd');
+    const copy  = row.querySelector('.jCopyDay');
+    cb.checked      = !!data;
+    start.disabled  = !data;
+    end.disabled    = !data;
+    copy.disabled   = !data;
+    start.value     = data ? (data.start || '') : '';
+    end.value       = data ? (data.end   || '') : '';
+    start.style.background = data ? '#fff' : 'var(--off-white)';
+    end.style.background   = data ? '#fff' : 'var(--off-white)';
+    copy.style.color       = data ? 'var(--sky)' : 'var(--gray-400)';
+    copy.style.borderColor = data ? 'var(--sky)' : 'var(--gray-200)';
+  });
+}
+function collectScheduleTable() {
+  const sched = {};
+  let firstStart = '', firstEnd = '', anyDay = false, allFilled = true;
+  document.querySelectorAll('#jScheduleTable tbody tr').forEach(row => {
+    if (!row.querySelector('.jDayCheck').checked) return;
+    anyDay = true;
+    const day   = row.dataset.day;
+    const start = row.querySelector('.jDayStart').value;
+    const end   = row.querySelector('.jDayEnd').value;
+    if (!start || !end) { allFilled = false; return; }
+    sched[day] = { start, end };
+    if (!firstStart) { firstStart = start; firstEnd = end; }
+  });
+  return { sched, firstStart, firstEnd, anyDay, allFilled };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Promise-based confirm dialog matching site style. Returns Promise<boolean>. */
+function showConfirm(message, { confirmLabel = '确认', cancelLabel = '取消', danger = false } = {}) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000;font-family:\'DM Sans\',sans-serif';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem';
+    const confirmBg = danger ? '#E63946' : '#4A90D9';
+    box.innerHTML =
+      '<div style="font-size:.9rem;color:#2D3748;line-height:1.7;margin-bottom:1.5rem;white-space:pre-line">' + message + '</div>' +
+      '<div style="display:flex;gap:.6rem;justify-content:flex-end">' +
+        '<button class="_sc-cancel" style="padding:8px 18px;border:1px solid #e2e5ea;border-radius:8px;background:transparent;color:#5F6B7A;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">' + cancelLabel + '</button>' +
+        '<button class="_sc-confirm" style="padding:8px 18px;border:none;border-radius:8px;background:' + confirmBg + ';color:#fff;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">' + confirmLabel + '</button>' +
+      '</div>';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const cleanup = r => { document.body.removeChild(overlay); resolve(r); };
+    box.querySelector('._sc-confirm').onclick = () => cleanup(true);
+    box.querySelector('._sc-cancel').onclick  = () => cleanup(false);
+    overlay.onclick = e => { if (e.target === overlay) cleanup(false); };
+  });
+}
+
 let TOKEN = '';
 let USER_ROLE = '';
 let USER_NAME = '';
@@ -2671,14 +3125,15 @@ async function api(path, opts = {}) {
 
 // ─── Login ───
 function applyRoleUI() {
-  // Show/hide sidebar items based on role
+  // Show/hide sidebar links based on role
   document.querySelectorAll('#sidebar a[data-role]').forEach(a => {
     const roles = a.getAttribute('data-role').split(',');
     a.style.display = roles.includes(USER_ROLE) ? '' : 'none';
   });
-  document.querySelectorAll('#sidebar div[data-role]').forEach(d => {
-    const roles = d.getAttribute('data-role').split(',');
-    d.style.display = roles.includes(USER_ROLE) ? '' : 'none';
+  // Show/hide nav-group sections based on role
+  document.querySelectorAll('#sidebar .nav-group[data-role]').forEach(g => {
+    const roles = g.getAttribute('data-role').split(',');
+    g.style.display = roles.includes(USER_ROLE) ? '' : 'none';
   });
   // Show/hide action buttons based on role
   document.querySelectorAll('[data-perm]').forEach(el => {
@@ -2940,11 +3395,28 @@ function logout() {
 })();
 
 // ─── Tabs ───
+const _TAB_TO_SEC = {
+  inquiries:'sec-customer', quotes:'sec-customer', partners:'sec-customer',
+  employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
+  jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time',
+  approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system'
+};
+
+function toggleNav(secId) {
+  document.getElementById(secId).classList.toggle('open');
+}
+
 function showTab(t) {
   document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
   document.getElementById('tab-' + t).style.display = 'block';
   document.querySelectorAll('.sidebar a:not(.logout)').forEach(a => a.classList.remove('active'));
-  if (event && event.target) event.target.classList.add('active');
+  // Mark the correct sidebar link active by data-tab
+  const link = document.querySelector(`.sidebar a[data-tab="${t}"]`);
+  if (link) link.classList.add('active');
+  // Ensure the containing section is expanded
+  const secId = _TAB_TO_SEC[t];
+  if (secId) document.getElementById(secId)?.classList.add('open');
   if (t === 'dashboard')  loadDashboard();
   if (t === 'jobs')       loadJobs();
   if (t === 'client-inquiries') loadClientInquiries();
@@ -2967,6 +3439,8 @@ function showTab(t) {
   if (t === 'compliance') loadComplianceDocs();
   if (t === 'jobsites')   loadJobSites();
   if (t === 'integrations') loadIntegrations();
+  if (t === 'skill-settings')   loadSkillSettings();
+  if (t === 'referrals')   loadAllReferrals();
 }
 
 // ─── Dashboard ───
@@ -3029,6 +3503,15 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// Format SQLite date/datetime string to "YYYY/MM/DD"
+function fmtDate(s) {
+  if (!s) return '';
+  // Accept "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
 // ─── Danger Confirm Modal ───
@@ -3189,12 +3672,35 @@ function showJobAppDetail(id) {
 async function scheduleInterview(id) {
   const a = _allJobApps.find(x => x.id === id);
   const name = a ? (a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'') : '';
-  // Load interview locations
+  // Load interview locations from system settings
   const locs = await api('/admin/interview-locations').catch(() => []) || [];
+  // Parse existing times if rescheduling
+  let existingTimes = [];
+  if (a?.interview_times_json) { try { existingTimes = JSON.parse(a.interview_times_json); } catch(e) {} }
+  if (!existingTimes.length && a?.interview_datetime) existingTimes = [a.interview_datetime.slice(0,16)];
+  if (!existingTimes.length) existingTimes = [''];
+
+  const locsSelectHtml = locs.length ? `
+    <div style="margin-bottom:.5rem">
+      <label style="font-size:.78rem;color:var(--gray-500);font-weight:600;display:block;margin-bottom:.3rem">从系统面试地址列表导入：</label>
+      <select id="_ivLocSelect" style="width:100%;padding:.5rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.85rem;box-sizing:border-box" onchange="if(this.value){document.getElementById('_ivLocText').value=this.options[this.selectedIndex].dataset.addr||this.value;this.value=''}">
+        <option value="">— 选择系统预设地点 —</option>
+        ${locs.map(l => `<option value="${esc(l.name)}" data-addr="${esc([l.name,l.address].filter(Boolean).join(' · '))}">${esc(l.name)}${l.address ? ' · '+esc(l.address) : ''}</option>`).join('')}
+      </select>
+    </div>` : '';
+
+  const jobLocVal = a?.job_location ? esc(a.job_location) : '';
+
+  const renderTimeSlots = (times) => times.map((t, i) => `
+    <div class="_ivTimeRow" style="display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem">
+      <input type="datetime-local" class="_ivTimeInput" style="flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(t)}">
+      ${i > 0 ? `<button type="button" onclick="this.closest('._ivTimeRow').remove()" style="flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1">×</button>` : '<div style="width:28px"></div>'}
+    </div>`).join('');
+
   const result = await new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
-    overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(460px,94vw);max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(480px,95vw);max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <div style="font-weight:700;font-size:1.05rem">📅 安排面试</div>
         <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
@@ -3202,17 +3708,23 @@ async function scheduleInterview(id) {
       ${name ? `<div style="font-size:.88rem;color:var(--gray-500);margin-bottom:1rem;padding:.6rem .8rem;background:#f8fafc;border-radius:8px">申请人：<strong>${esc(name)}</strong>${a.job_title ? `　职位：<strong>${esc(a.job_title)}</strong>` : ''}</div>` : ''}
       <div style="display:grid;gap:1rem">
         <div>
-          <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试时间 *</label>
-          <input type="datetime-local" id="_ivDateTime" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.92rem;box-sizing:border-box" value="${a?.interview_datetime ? a.interview_datetime.slice(0,16) : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+            <label style="font-size:.83rem;font-weight:600;color:var(--gray-600)">面试时间 * <span style="font-weight:400;color:var(--gray-400);font-size:.78rem">（可添加多个时间选项）</span></label>
+          </div>
+          <div id="_ivTimeSlots">${renderTimeSlots(existingTimes)}</div>
+          <button type="button" onclick="
+            const row=document.createElement('div');
+            row.className='_ivTimeRow';
+            row.style.cssText='display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem';
+            row.innerHTML='<input type=\\'datetime-local\\' class=\\'_ivTimeInput\\' style=\\'flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box\\'><button type=\\'button\\' onclick=\\'this.closest(\"._ivTimeRow\").remove()\\' style=\\'flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1\\'>×</button>';
+            document.getElementById('_ivTimeSlots').appendChild(row);
+          " style="font-size:.82rem;padding:.35rem .8rem;border:1.5px dashed #93c5fd;border-radius:7px;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-weight:600">+ 添加时间选项</button>
         </div>
         <div>
           <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试地点</label>
-          ${locs.length ? `<select id="_ivLocSelect" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;margin-bottom:.5rem;box-sizing:border-box" onchange="document.getElementById('_ivLocText').value=this.value==='__custom__'?'':this.options[this.selectedIndex].dataset.addr||''">
-            <option value="">— 选择预设地点 —</option>
-            ${locs.map(l => `<option value="${esc(l.name)}" data-addr="${esc([l.name,l.address].filter(Boolean).join(' · '))}">${esc(l.name)}${l.address ? ' · '+esc(l.address) : ''}</option>`).join('')}
-            <option value="__custom__">✏️ 自定义地点</option>
-          </select>` : ''}
-          <input type="text" id="_ivLocText" placeholder="地址 / 详细信息（可选）" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(a?.interview_location_text||'')}">
+          ${locsSelectHtml}
+          ${jobLocVal ? `<button type="button" onclick="document.getElementById('_ivLocText').value=${JSON.stringify(a.job_location || '').replace(/</g,'\\x3c')}" style="font-size:.8rem;padding:.3rem .75rem;border:1.5px solid #6ee7b7;border-radius:7px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;margin-bottom:.5rem">📌 从本职位导入地点</button>` : ''}
+          <input type="text" id="_ivLocText" placeholder="地址 / 详细信息（可选，也可手动填写）" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(a?.interview_location_text||'')}">
         </div>
         <div>
           <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">备注 / 说明</label>
@@ -3226,13 +3738,13 @@ async function scheduleInterview(id) {
       <div style="display:flex;gap:.75rem;margin-top:1.25rem;justify-content:flex-end">
         <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="padding:.6rem 1.1rem;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;cursor:pointer;font-size:.9rem">取消</button>
         <button onclick="
-          const dt=document.getElementById('_ivDateTime').value;
-          if(!dt){document.getElementById('_ivDateTime').style.borderColor='#ef4444';return;}
-          const loc=document.getElementById('_ivLocText').value.trim()||(document.getElementById('_ivLocSelect')&&document.getElementById('_ivLocSelect').value!=='__custom__'?document.getElementById('_ivLocSelect').value:'');
+          const times=[...document.querySelectorAll('#_ivTimeSlots ._ivTimeInput')].map(i=>i.value).filter(Boolean);
+          if(!times.length){document.querySelector('#_ivTimeSlots ._ivTimeInput').style.borderColor='#ef4444';return;}
+          const loc=document.getElementById('_ivLocText').value.trim();
           const note=document.getElementById('_ivNote').value.trim();
           const notify=document.getElementById('_ivNotify').checked;
           this.closest('[style*=fixed]').remove();
-          window._ivResolve({dt,loc,note,notify});
+          window._ivResolve({times,loc,note,notify});
         " style="padding:.6rem 1.4rem;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;font-size:.9rem">确认安排</button>
       </div>
     </div>`;
@@ -3243,7 +3755,7 @@ async function scheduleInterview(id) {
   const r = await api(`/admin/job-applications/${id}`, { method:'PUT', body: JSON.stringify({
     status: 'interview_scheduled',
     admin_note: result.note,
-    interview_datetime: result.dt,
+    interview_times: result.times,
     interview_location_text: result.loc,
     notify: result.notify
   })});
@@ -3319,17 +3831,31 @@ function renderJobsFiltered() {
       <td style="text-align:center">${j.headcount||1}</td>
       <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
       <td>${esc(j.pay||'')}</td>
-      <td><span class="badge ${si.cls}">${si.text}</span>${reasonTip}</td>
+      <td>
+        <span class="badge ${si.cls}">${si.text}</span>${reasonTip}
+        ${j.visible === 0 ? `<br><span class="badge" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;font-size:.7rem">隐藏</span>` : ''}
+      </td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button>
         ${!isHistory
           ? `<button class="btn btn-sm" style="background:var(--orange-light,#fff3e0);color:#c05621;border:1px solid #fbd38d" onclick='openCloseJobModal(${JSON.stringify(j).replace(/'/g,"&#39;")})'>关闭</button>`
           : `<button class="btn btn-sm btn-green" onclick="reopenJob(${j.id})">重新开放</button>`}
+        <button class="btn btn-sm" style="${j.visible === 0 ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1'}" onclick="toggleJobVisible(${j.id}, this)">
+          ${j.visible === 0 ? '👁 显示' : '🚫 隐藏'}
+        </button>
         <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
         <button class="btn btn-sm btn-outline" onclick="showJobHistory(${j.id},'${esc(j.title)}')">历史</button>
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="8" class="empty">${isHistory ? '暂无历史职位' : '暂无在招职位，点击 "+ 新增职位" 添加'}</td></tr>`;
+}
+
+async function toggleJobVisible(id, btn) {
+  const res = await api(`/admin/jobs/${id}/visible`, { method: 'PUT' });
+  if (!res || !res.success) return;
+  const job = _allJobs.find(j => j.id === id);
+  if (job) job.visible = res.visible;
+  renderJobsFiltered();
 }
 
 async function loadJobs() {
@@ -3362,14 +3888,13 @@ async function openJobModal(job) {
     document.getElementById('jPartnerSearch').value = '';
   }
   document.getElementById('jTitle').value = job ? job.title : '';
+  document.getElementById('jCategory').value = job ? (job.category || '') : '';
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jPayPeriod').value = job ? (job.pay_period || '') : '';
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
-  document.getElementById('jWorkStart').value = job ? (job.work_start || '') : '';
-  document.getElementById('jWorkEnd').value = job ? (job.work_end || '') : '';
   // Parse location into 5 fields
   const _loc = parseAddressString(job ? (job.location||'') : '');
   document.getElementById('jStreet').value  = _loc.street;
@@ -3377,15 +3902,17 @@ async function openJobModal(job) {
   document.getElementById('jCity').value    = _loc.city;
   fillStateSelect(document.getElementById('jState'), _loc.state);
   document.getElementById('jZip').value     = _loc.zip;
-  document.getElementById('jDesc').value = job ? job.description : '';
+  loadJobDesc(job ? job.description : '');
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
   document.getElementById('jHeadcount').value = job ? (job.headcount || 1) : 1;
 
-  // Work days toggle
-  const activeDays = job && job.work_days ? job.work_days.split(',').map(s=>s.trim()) : [];
-  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
-    btn.classList.toggle('active', activeDays.includes(btn.dataset.day));
-  });
+  // Per-day work schedule
+  populateScheduleTable(
+    job ? (job.work_schedule || '') : '',
+    job ? (job.work_days || '') : '',
+    job ? (job.work_start || '') : '',
+    job ? (job.work_end   || '') : ''
+  );
 
   // Benefits toggle
   const activeBenefits = job && job.benefits ? job.benefits.split(',').map(s=>s.trim()) : [];
@@ -3393,10 +3920,17 @@ async function openJobModal(job) {
     btn.classList.toggle('active', activeBenefits.includes(btn.dataset.val));
   });
 
-  // Required skills
-  const activeSkills = job && job.required_skills ? job.required_skills.split(',').map(s=>s.trim()) : [];
+  // Required skills – load options dynamically from server
+  const activeSkills = job && job.required_skills ? job.required_skills.split(',').map(s=>s.trim()).filter(Boolean) : [];
   const skillsEl = document.getElementById('jRequiredSkills');
-  [...skillsEl.options].forEach(opt => { opt.selected = activeSkills.includes(opt.value); });
+  try {
+    const skillOpts = await api('/admin/skill-options');
+    skillsEl.innerHTML = (skillOpts || []).map(s => {
+      const label = s.name_en ? `${s.name_zh} / ${s.name_en}` : s.name_zh;
+      const sel = activeSkills.includes(s.name_zh) ? ' selected' : '';
+      return `<option value="${esc(s.name_zh)}"${sel}>${esc(label)}</option>`;
+    }).join('');
+  } catch(e) { /* keep empty on error */ }
 
   document.getElementById('jobModal').classList.add('show');
   captureModalState('jobModal');
@@ -3451,9 +3985,6 @@ document.addEventListener('DOMContentLoaded', () => {
   fillStateSelect(document.getElementById('eState'), '');
   fillStateSelect(document.getElementById('jState'), '');
 
-  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
-    btn.addEventListener('click', () => btn.classList.toggle('active'));
-  });
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
     btn.addEventListener('click', () => btn.classList.toggle('active'));
   });
@@ -3511,15 +4042,9 @@ function randomFillJob() {
   document.getElementById('jLang').value           = r.lang;
   document.getElementById('jWorkAuth').value       = r.work_auth || '';
   document.getElementById('jEmploymentType').value = r.employment_type || '';
-  document.getElementById('jWorkStart').value      = r.work_start || '';
-  document.getElementById('jWorkEnd').value        = r.work_end || '';
-  document.getElementById('jDesc').value           = r.desc;
+  loadJobDesc(r.desc || '');
   document.getElementById('jUrgent').checked       = !!r.urgent;
-  // Days
-  const days = r.work_days ? r.work_days.split(',') : [];
-  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
-    btn.classList.toggle('active', days.includes(btn.dataset.day));
-  });
+  populateScheduleTable('', r.work_days || '', r.work_start || '', r.work_end || '');
   // Benefits
   const bens = r.benefits ? r.benefits.split(',') : [];
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
@@ -3717,16 +4242,71 @@ function getDescBank() {
 function saveDescBank(list) { localStorage.setItem(DESC_BANK_KEY, JSON.stringify(list)); }
 function getDescFreq() {
   try { const s = localStorage.getItem(DESC_FREQ_KEY); if (s) return JSON.parse(s); } catch {}
-  return { every: 30, unit: 'days' }; // default: rotate every 30 days
+  return { every: 30, unit: 'days' };
 }
 function saveDescFreq(f) { localStorage.setItem(DESC_FREQ_KEY, JSON.stringify(f)); }
 
-function toggleDescTemplates() {
-  const panel = document.getElementById('descTplPanel');
+function toggleAssignWordings() {
+  const panel = document.getElementById('assignWordingsPanel');
   const isOpen = panel.style.display !== 'none';
   if (isOpen) { panel.style.display = 'none'; return; }
   panel.style.display = '';
   renderDescBank();
+}
+
+// ── Job Description mode switcher ──
+function setJobDescMode(mode) {
+  document.getElementById('jDescMode').value = mode;
+  const det = mode === 'detailed';
+  document.getElementById('jDescDetailedWrap').style.display = det ? '' : 'none';
+  document.getElementById('jDescChecklistWrap').style.display = det ? 'none' : '';
+  const activeStyle  = (border, bg, color) => `font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid ${border};background:${bg};color:${color};cursor:pointer;font-weight:600`;
+  document.getElementById('jDescBtnDetailed').style.cssText  = det ? activeStyle('#93c5fd','#dbeafe','#1d4ed8') : activeStyle('#e2e8f0','#f8fafc','#64748b');
+  document.getElementById('jDescBtnChecklist').style.cssText = det ? activeStyle('#e2e8f0','#f8fafc','#64748b') : activeStyle('#fcd34d','#fef9c3','#92400e');
+  if (!det && document.getElementById('jDescSteps').children.length === 0) addJobDescStep();
+}
+
+function addJobDescStep() {
+  const container = document.getElementById('jDescSteps');
+  const idx = container.children.length;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:.35rem';
+  wrap.innerHTML = `
+    <span style="font-size:.75rem;color:#92400e;font-weight:700;min-width:18px">${idx+1}.</span>
+    <input placeholder="Step description" style="flex:1;border:1px solid #fcd34d;border-radius:5px;padding:.2rem .4rem;font-size:.81rem;background:#fff">
+    <button type="button" onclick="this.parentElement.remove();renumberJobDescSteps()"
+      style="background:none;border:none;color:#d97706;cursor:pointer;font-size:.9rem;padding:0 2px;line-height:1">×</button>`;
+  container.appendChild(wrap);
+}
+
+function renumberJobDescSteps() {
+  document.querySelectorAll('#jDescSteps > div > span').forEach((s, i) => { s.textContent = (i+1)+'.'; });
+}
+
+function getJobDescValue() {
+  const mode = document.getElementById('jDescMode').value;
+  if (mode === 'checklist') {
+    const steps = [...document.querySelectorAll('#jDescSteps input')].map(i => i.value.trim()).filter(Boolean);
+    return JSON.stringify({ type: 'checklist', steps });
+  }
+  return document.getElementById('jDesc').value;
+}
+
+function loadJobDesc(str) {
+  if (!str) { setJobDescMode('detailed'); document.getElementById('jDesc').value = ''; return; }
+  try {
+    const d = JSON.parse(str);
+    if (d && d.type === 'checklist' && Array.isArray(d.steps)) {
+      setJobDescMode('checklist');
+      const container = document.getElementById('jDescSteps');
+      container.innerHTML = '';
+      d.steps.forEach(() => addJobDescStep());
+      [...container.querySelectorAll('input')].forEach((inp, i) => { inp.value = d.steps[i] || ''; });
+      return;
+    }
+  } catch {}
+  setJobDescMode('detailed');
+  document.getElementById('jDesc').value = str;
 }
 
 function descRotationStatus(entry) {
@@ -3798,10 +4378,20 @@ function saveDescFreqNow() {
 function applyDescEntry(idx) {
   const list = getDescBank();
   if (!list[idx]) return;
-  document.getElementById('jDesc').value = list[idx].text;
+  const text = list[idx].text;
   list[idx].last_used = Date.now();
   saveDescBank(list);
-  document.getElementById('descTplPanel').style.display = 'none';
+  // Insert into the first Detailed task's description textarea in the assign modal
+  const detailedTask = document.querySelector('#aTasksList [data-type="detailed"]');
+  if (detailedTask) {
+    const taskIdx = detailedTask.id.replace('task-row-', '');
+    const ta = document.getElementById(`task-desc-${taskIdx}`);
+    if (ta) ta.value = text;
+  } else {
+    // No detailed task yet — add one with this wording
+    addTask('detailed', { name: '', description: text });
+  }
+  document.getElementById('assignWordingsPanel').style.display = 'none';
 }
 
 function addDescEntry() {
@@ -3842,8 +4432,8 @@ function cancelDescEditor() {
   document.getElementById('descEditorPanel').style.display = 'none';
 }
 
-function deleteDescEntry(idx) {
-  if (!confirm('Delete this wording?')) return;
+async function deleteDescEntry(idx) {
+  if (!await showConfirm('Delete this wording?', { danger: true })) return;
   const list = getDescBank();
   list.splice(idx, 1);
   saveDescBank(list);
@@ -3857,12 +4447,16 @@ async function saveJob() {
   const langVal = document.getElementById('jLang').value;
   const partnerId = document.getElementById('jPartnerId').value || null;
   const partnerName = partnerId ? ((_jobPartners||[]).find(p=>p.id==partnerId)||{}).name||'' : '';
-  const workDays = [...document.querySelectorAll('#jWorkDaysWrap .day-btn.active')].map(b=>b.dataset.day).join(',');
+  const { sched: _sched, firstStart: _wStart, firstEnd: _wEnd, anyDay: _anyDay, allFilled: _allFilled } = collectScheduleTable();
+  if (!_anyDay) return alert('请至少选择一个工作日');
+  if (!_allFilled) return alert('请填写所有选中工作日的上班和下班时间');
+  const workDays = Object.keys(_sched).join(',');
   const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const requiredSkills = [...document.getElementById('jRequiredSkills').selectedOptions].map(o=>o.value).join(',');
   const data = {
     partner_id: partnerId,
     title: document.getElementById('jTitle').value,
+    category: document.getElementById('jCategory').value,
     type: document.getElementById('jType').value,
     location: buildAddressString(
       document.getElementById('jStreet').value.trim(),
@@ -3880,12 +4474,13 @@ async function saveJob() {
     company_id: partnerId,
     company_name: partnerName,
     work_days: workDays,
-    work_start: document.getElementById('jWorkStart').value,
-    work_end: document.getElementById('jWorkEnd').value,
+    work_start: _wStart,
+    work_end: _wEnd,
+    work_schedule: JSON.stringify(_sched),
     benefits,
     required_skills: requiredSkills,
     schedule: '',
-    description: document.getElementById('jDesc').value,
+    description: getJobDescValue(),
     urgent: document.getElementById('jUrgent').checked,
     headcount: parseInt(document.getElementById('jHeadcount').value) || 1,
     job_status: 'open',
@@ -3923,7 +4518,7 @@ async function saveJob() {
 }
 
 async function deleteJob(id) {
-  if (!confirm('确定删除此职位？')) return;
+  if (!await showConfirm('确定删除此职位？', { danger: true })) return;
   await api(`/admin/jobs/${id}`, { method: 'DELETE' });
   loadJobs();
 }
@@ -4198,7 +4793,7 @@ async function saveProcessInquiry() {
 }
 
 async function undoProcessInquiry(id) {
-  if (!confirm('撤销处理，将此问卷移回待处理？')) return;
+  if (!await showConfirm('撤销处理，将此问卷移回待处理？')) return;
   await api(`/admin/inquiries/${id}/process`, { method: 'PUT', body: JSON.stringify({ undo: true }) });
   // find which tab this belongs to by checking current history data
   const isClient = allClientInqHistory.some(i => i.id === id);
@@ -4369,7 +4964,7 @@ async function viewOnboardDocs(subId, name) {
 
 async function deleteInqFromModal() {
   if (!currentInquiry) return;
-  if (!confirm('确定删除此问卷？')) return;
+  if (!await showConfirm('确定删除此问卷？', { danger: true })) return;
   await api(`/admin/inquiries/${currentInquiry.id}`, { method: 'DELETE' });
   document.getElementById('inqModal').classList.remove('show');
   if (currentInquiry.type === 'Employer') { allClientInqHistory = []; loadClientInquiries(); }
@@ -4377,7 +4972,7 @@ async function deleteInqFromModal() {
 }
 
 async function deleteInq(id) {
-  if (!confirm('确定删除此问卷？')) return;
+  if (!await showConfirm('确定删除此问卷？', { danger: true })) return;
   await api(`/admin/inquiries/${id}`, { method: 'DELETE' });
   loadClientInquiries(); loadWorkerInquiries();
 }
@@ -4427,7 +5022,7 @@ function filterQuotes() {
   </tr>`).join('') : '<tr><td colspan="10" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无报价请求</td></tr>';
 }
 async function deleteQuote(id) {
-  if (!confirm('确定删除该报价请求？')) return;
+  if (!await showConfirm('确定删除该报价请求？', { danger: true })) return;
   await api('/admin/quotes/' + id, { method: 'DELETE' });
   loadQuotes();
 }
@@ -4459,28 +5054,36 @@ const DS_STATUS_LABELS = { sent:'已发送(待签)', delivered:'已送达', comp
 const DS_STATUS_COLORS = { sent:'#F59E0B', delivered:'#3B82F6', completed:'#10B981', declined:'#EF4444', voided:'#6B7280' };
 
 function renderAssignments(assigns) {
+  const statusOpts = [
+    ['pending','待确认'],['assigned','已分配'],['working','进行中'],
+    ['completed','已完成'],['terminated','已解雇'],['resigned','已辞职'],
+    ['no_show','未出勤'],['cancelled','已取消']
+  ];
   document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => {
     const dsLabel = a.ds_status ? (DS_STATUS_LABELS[a.ds_status] || a.ds_status) : '';
     const dsColor = DS_STATUS_COLORS[a.ds_status] || '#6B7280';
     const dsBadge = a.ds_envelope_id
       ? `<br><span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer" onclick="refreshDsStatus('assignment',${a.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
       : (a.contract_file ? `<br><button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-top:2px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('assignment',${a.id},'${esc(a.inquiry_email||'')}','${esc(a.inquiry_name||'')}')">✍ DocuSign</button>` : '');
+    const statusSelect = `<select class="assign-status-select badge-select badge-${a.status}" onchange="updateAssignmentStatus(${a.id},this.value,this)">
+      ${statusOpts.map(([v,l]) => `<option value="${v}"${a.status===v?' selected':''}>${l}</option>`).join('')}
+    </select>`;
     return `<tr>
-    <td>${new Date(a.assigned_at).toLocaleDateString()}${a.start_date ? '<br><span style="font-size:.72rem;color:var(--gray-400)">开始：' + a.start_date + '</span>' : ''}</td>
     <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
     <td>${esc(a.job_title || '未知职位')}<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(a.job_location || '')}</span></td>
-    <td>
+    <td style="white-space:nowrap">
       <span class="badge" style="background:${a.contract_type==='1099'?'var(--orange-light,#fff3e0)':'var(--sky-light)'};color:${a.contract_type==='1099'?'#e65100':'var(--blue)'};font-weight:700">${esc(a.contract_type||'W2')}</span>
-      ${a.pay_rate ? '<br><span style="font-size:.8rem;font-weight:600">' + esc(a.pay_rate) + '</span>' : ''}
-      ${a.pay_type ? '<br><span style="font-size:.72rem;color:var(--gray-400)">' + payTypeLabel(a.pay_type) + '</span>' : ''}
       ${dsBadge}
     </td>
+    <td style="white-space:nowrap">
+      ${a.pay_rate ? '<span style="font-size:.88rem;font-weight:700;color:var(--gray-800)">' + esc(a.pay_rate) + '</span>' : '<span style="color:var(--gray-400)">—</span>'}
+      ${a.pay_type ? '<br><span style="font-size:.72rem;color:var(--gray-400)">' + payTypeLabel(a.pay_type) + '</span>' : ''}
+    </td>
     <td style="font-size:.78rem;max-width:160px;white-space:normal">${esc(a.benefits || '—')}</td>
-    <td><span class="badge badge-${a.status}">${statusLabel(a.status)}</span></td>
-    <td>
-      <button class="btn btn-sm" onclick='editAssignment(${JSON.stringify(a).replace(/'/g,"&#39;")})'>编辑</button>
-      <button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick='addMoreDispatch(${JSON.stringify({inquiry_id:a.inquiry_id,inquiry_name:a.inquiry_name,inquiry_phone:a.inquiry_phone,inquiry_email:a.inquiry_email,job_id:a.job_id,job_title:a.job_title,job_location:a.job_location}).replace(/'/g,"&#39;")})'>+ 再派工</button>
-      <button class="btn btn-sm btn-red" onclick="deleteAssignment(${a.id})">删除</button>
+    <td>${statusSelect}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" style="background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe" onclick="openAssignModal(allAssignments.find(x=>x.id===${a.id}))">修改</button>
+      <button class="btn btn-sm" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe" onclick="showAssignmentHistory(${a.id},'${esc(a.inquiry_name||'')}')">历史</button>
     </td>
   </tr>`;
   }).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
@@ -4527,13 +5130,18 @@ async function openAssignModal(assignment) {
   document.getElementById('assignModalTitle').textContent = assignment ? '编辑派工' : '新建派工';
   document.getElementById('assignId').value = assignment ? assignment.id : '';
   document.getElementById('aStatus').value = assignment ? assignment.status : 'assigned';
+  document.getElementById('aCategory').value = assignment ? (assignment.category || '') : '';
   document.getElementById('aNotes').value = assignment ? (assignment.notes || '') : '';
   document.getElementById('aStartDate').value = assignment ? (assignment.start_date || '') : '';
   document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
   document.getElementById('aPayType').value = assignment ? (assignment.pay_type || 'hourly') : 'hourly';
   document.getElementById('aPayRate').value = assignment ? (assignment.pay_rate || '') : '';
-  // Work location
-  document.getElementById('aWorkAddress').value = assignment ? (assignment.work_address || '') : '';
+  // Work location – populate 5 fields (existing data goes into street; other fields blank)
+  document.getElementById('aWorkStreet').value  = assignment ? (assignment.work_address || '') : '';
+  document.getElementById('aWorkCity').value    = '';
+  document.getElementById('aWorkState').value   = '';
+  document.getElementById('aWorkZip').value     = '';
+  document.getElementById('aWorkCountry').value = 'USA';
   document.getElementById('aWorkLat').value = assignment ? (assignment.work_lat || '') : '';
   document.getElementById('aWorkLng').value = assignment ? (assignment.work_lng || '') : '';
   document.getElementById('aWorkRadius').value = assignment ? (assignment.work_radius || 200) : 200;
@@ -4542,6 +5150,11 @@ async function openAssignModal(assignment) {
   document.getElementById('aJobImportConfirm').style.display = 'none';
   document.getElementById('aJobAddrPickerStatus').textContent = '';
   ['aWorkAddrErr','aWorkLatErr','aWorkLngErr'].forEach(id => document.getElementById(id).style.display='none');
+  destroyAssignWorkMap();
+  // If editing an assignment that already has coords, show the map
+  if (assignment && assignment.work_lat && assignment.work_lng) {
+    setTimeout(updateAssignWorkMap, 100);
+  }
   // Benefits toggle
   const activeBens = assignment && assignment.benefits ? assignment.benefits.split(',').map(s=>s.trim()) : [];
   document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
@@ -4598,65 +5211,100 @@ function selectPartnerItem(id, name) {
   document.getElementById('jPartnerId').value = id;
   document.getElementById('jPartnerSearch').value = name;
   document.getElementById('jPartnerDrop').classList.remove('open');
+
+  // Offer to import company address into work location fields
+  const partner = (_jobPartners || []).find(p => p.id == id);
+  if (!partner) return;
+  let addrs = [];
+  try { addrs = JSON.parse(partner.addresses || '[]'); } catch(e) {}
+  if (!addrs.length && partner.address) addrs = [partner.address];
+  if (!addrs.length) return;
+
+  // Only prompt if address fields are currently empty
+  const hasAddr = document.getElementById('jStreet').value.trim() ||
+                  document.getElementById('jCity').value.trim() ||
+                  document.getElementById('jZip').value.trim();
+  const addr0Str = _addrStr(addrs[0]);
+  const msg = hasAddr
+    ? `是否用「${name}」的公司地址覆盖当前工作地点？\n\n${addr0Str}`
+    : `是否将「${name}」的公司地址导入到工作地点？\n\n${addr0Str}`;
+  if (!confirm(msg)) return;
+
+  const parsed = parseAddressString(addr0Str);
+  document.getElementById('jStreet').value  = parsed.street;
+  document.getElementById('jStreet2').value = parsed.street2;
+  document.getElementById('jCity').value    = parsed.city;
+  if (parsed.state) document.getElementById('jState').value = parsed.state;
+  document.getElementById('jZip').value     = parsed.zip;
+  document.getElementById('jAddrStatus').textContent = '';
 }
 
-// ── Estimate Time (multi-shift) helpers ──────────────────────────
-let _shiftCounter = 0;
+// ── Estimate Time (weekly schedule) helpers ───────────────────────
+const WEEK_DAYS = [
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+  { key: 'sun', label: 'Sun' },
+];
 
-const SHIFT_INP = 'border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.83rem;background:#fff';
-const TIME_INP  = `${SHIFT_INP};width:80px;text-align:center`;
+const _SINP = 'border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.83rem;background:#fff';
+const _TINP = `${_SINP};text-align:center`;
 
-function initEstimateTime(schedJson) {
-  _shiftCounter = 0;
-  const list = document.getElementById('aShiftsList');
-  list.innerHTML = '';
-  let data = null;
-  try { data = JSON.parse(schedJson || 'null'); } catch {}
-  const shifts = (data && data.type === 'estimate' && Array.isArray(data.shifts)) ? data.shifts : [];
-  if (shifts.length) {
-    shifts.forEach(s => addShift(s));
-  }
-  updateShiftsEmpty();
+function buildWeeklySchedule() {
+  const wrap = document.getElementById('aWeeklySchedule');
+  wrap.innerHTML = '';
+  WEEK_DAYS.forEach(d => {
+    const row = document.createElement('div');
+    row.id = `week-row-${d.key}`;
+    row.style.cssText = 'display:grid;grid-template-columns:38px 60px 1fr auto 1fr auto;gap:.35rem;align-items:center;padding:.35rem .5rem;border-radius:6px;margin-bottom:.3rem;background:#eef2ff;border:1px solid #c7d2fe';
+    row.innerHTML = `
+      <span style="font-weight:700;font-size:.82rem;color:#4338ca">${d.label}</span>
+      <label style="display:flex;align-items:center;gap:.2rem;font-size:.76rem;color:#6b7280;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="rest-${d.key}" onchange="toggleDayRest('${d.key}')"> 休息
+      </label>
+      <input type="text" id="start-${d.key}" placeholder="09:00" maxlength="5"
+        style="${_TINP};width:100%" onblur="fmtShiftTime(this)">
+      <span style="color:#a5b4fc;font-weight:700">→</span>
+      <input type="text" id="end-${d.key}" placeholder="17:00" maxlength="5"
+        style="${_TINP};width:100%" onblur="fmtShiftTime(this)">
+      <button type="button" onclick="copyDayTime('${d.key}')" title="Copy to all working days"
+        style="font-size:.72rem;padding:.2rem .4rem;border-radius:5px;border:1px solid #a5b4fc;background:#e0e7ff;color:#4338ca;cursor:pointer;white-space:nowrap">Copy</button>
+    `;
+    wrap.appendChild(row);
+  });
 }
 
-const WEEKDAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-
-function addShift(saved) {
-  const idx = _shiftCounter++;
-  const s = saved || {};
-  const list = document.getElementById('aShiftsList');
-  const div = document.createElement('div');
-  div.id = `shift-row-${idx}`;
-  div.style.cssText = 'display:grid;grid-template-columns:1fr auto auto auto auto auto;gap:.4rem;align-items:center;background:#eef2ff;border:1px solid #c7d2fe;border-radius:7px;padding:.45rem .6rem';
-  const dayOptions = WEEKDAYS.map(d => `<option value="${d}"${s.day===d?' selected':''}>${d}</option>`).join('');
-  div.innerHTML = `
-    <input placeholder="Shift name (e.g. Morning Shift)" value="${esc(s.name||'')}"
-      style="${SHIFT_INP};width:100%" id="shift-name-${idx}">
-    <select style="${SHIFT_INP};width:120px" id="shift-day-${idx}">
-      <option value="">-- Day --</option>
-      ${dayOptions}
-    </select>
-    <input type="text" placeholder="Start" value="${esc(s.start||'')}" maxlength="5"
-      style="${TIME_INP}" id="shift-start-${idx}" onblur="fmtShiftTime(this)">
-    <span style="color:#a5b4fc;font-weight:700">→</span>
-    <input type="text" placeholder="End" value="${esc(s.end||'')}" maxlength="5"
-      style="${TIME_INP}" id="shift-end-${idx}" onblur="fmtShiftTime(this)">
-    <button type="button" onclick="removeShift(${idx})"
-      style="background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:5px;padding:.2rem .5rem;cursor:pointer;font-size:.82rem;flex-shrink:0">✕</button>
-  `;
-  list.appendChild(div);
-  updateShiftsEmpty();
+function toggleDayRest(key) {
+  const isRest = document.getElementById(`rest-${key}`).checked;
+  const row = document.getElementById(`week-row-${key}`);
+  const s = document.getElementById(`start-${key}`);
+  const e = document.getElementById(`end-${key}`);
+  s.disabled = isRest; e.disabled = isRest;
+  row.style.background = isRest ? '#f3f4f6' : '#eef2ff';
+  row.style.borderColor = isRest ? '#d1d5db' : '#c7d2fe';
+  s.style.background = isRest ? '#f3f4f6' : '#fff';
+  e.style.background = isRest ? '#f3f4f6' : '#fff';
 }
 
-function removeShift(idx) {
-  const el = document.getElementById(`shift-row-${idx}`);
-  if (el) el.remove();
-  updateShiftsEmpty();
+function copyDayTime(key) {
+  const start = document.getElementById(`start-${key}`).value;
+  const end   = document.getElementById(`end-${key}`).value;
+  WEEK_DAYS.forEach(d => {
+    if (d.key === key) return;
+    if (document.getElementById(`rest-${d.key}`).checked) return;
+    document.getElementById(`start-${d.key}`).value = start;
+    document.getElementById(`end-${d.key}`).value   = end;
+  });
 }
 
-function updateShiftsEmpty() {
-  const list = document.getElementById('aShiftsList');
-  document.getElementById('aShiftsEmpty').style.display = list.children.length ? 'none' : '';
+function toggleUntilFurther(cb) {
+  const endInput = document.getElementById('aWorkEnd');
+  endInput.disabled = cb.checked;
+  endInput.style.opacity = cb.checked ? '0.4' : '1';
+  if (cb.checked) endInput.value = '';
 }
 
 function fmtShiftTime(el) {
@@ -4678,18 +5326,44 @@ function fmtShiftTime(el) {
   }
 }
 
+function initEstimateTime(schedJson) {
+  buildWeeklySchedule();
+  let data = null;
+  try { data = JSON.parse(schedJson || 'null'); } catch {}
+  // Work period
+  document.getElementById('aWorkStart').value = (data && data.workStart) || '';
+  const untilFurther = !!(data && data.untilFurther);
+  document.getElementById('aWorkUntilFurther').checked = untilFurther;
+  document.getElementById('aWorkEnd').value = (!untilFurther && data && data.workEnd) ? data.workEnd : '';
+  toggleUntilFurther(document.getElementById('aWorkUntilFurther'));
+  // Weekly days
+  const days = (data && data.days) || {};
+  WEEK_DAYS.forEach(d => {
+    const info = days[d.key] || {};
+    document.getElementById(`rest-${d.key}`).checked = !!info.rest;
+    document.getElementById(`start-${d.key}`).value  = info.start || '';
+    document.getElementById(`end-${d.key}`).value    = info.end   || '';
+    toggleDayRest(d.key);
+  });
+}
+
 function getEstimateTimeJson() {
-  const list = document.getElementById('aShiftsList');
-  const shifts = [...list.children].map(row => {
-    const idx = row.id.replace('shift-row-', '');
-    return {
-      name:  document.getElementById(`shift-name-${idx}`)?.value?.trim() || '',
-      day:   document.getElementById(`shift-day-${idx}`)?.value || '',
-      start: document.getElementById(`shift-start-${idx}`)?.value || '',
-      end:   document.getElementById(`shift-end-${idx}`)?.value || '',
+  const days = {};
+  WEEK_DAYS.forEach(d => {
+    days[d.key] = {
+      rest:  document.getElementById(`rest-${d.key}`).checked,
+      start: document.getElementById(`start-${d.key}`).value || '',
+      end:   document.getElementById(`end-${d.key}`).value   || '',
     };
-  }).filter(s => s.name || s.day || s.start || s.end);
-  return JSON.stringify({ type: 'estimate', shifts });
+  });
+  const untilFurther = document.getElementById('aWorkUntilFurther').checked;
+  return JSON.stringify({
+    type: 'estimate',
+    workStart: document.getElementById('aWorkStart').value || '',
+    workEnd:   untilFurther ? '' : (document.getElementById('aWorkEnd').value || ''),
+    untilFurther,
+    days,
+  });
 }
 
 // ── Task Requirements helpers ─────────────────────────────────────
@@ -4973,7 +5647,7 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#jPartnerDrop') && !e.target.closest('#jPartnerSearch')) document.getElementById('jPartnerDrop').classList.remove('open');
 });
 
-function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
+function closeAssignModal() { destroyAssignWorkMap(); guardClose('assignModal', closeAssignDropdowns); }
 
 function editAssignment(a) { openAssignModal(a); }
 
@@ -5027,7 +5701,11 @@ function confirmAssignJobImport() {
   const j = _pendingImportJob;
   if (!j) return;
   if (document.getElementById('aImportAddr').checked && j.location) {
-    document.getElementById('aWorkAddress').value = j.location;
+    document.getElementById('aWorkStreet').value  = j.location;
+    document.getElementById('aWorkCity').value    = '';
+    document.getElementById('aWorkState').value   = '';
+    document.getElementById('aWorkZip').value     = '';
+    document.getElementById('aWorkCountry').value = 'USA';
     document.getElementById('aWorkAddrErr').style.display = 'none';
     geocodeWorkAddress();
   }
@@ -5051,8 +5729,17 @@ function confirmAssignJobImport() {
   _pendingImportJob = null;
 }
 
+function getWorkAddressString() {
+  const street  = document.getElementById('aWorkStreet').value.trim();
+  const city    = document.getElementById('aWorkCity').value.trim();
+  const state   = document.getElementById('aWorkState').value.trim();
+  const zip     = document.getElementById('aWorkZip').value.trim();
+  const country = document.getElementById('aWorkCountry').value.trim();
+  return [street, city, state && zip ? `${state} ${zip}` : (state || zip), country].filter(Boolean).join(', ');
+}
+
 async function geocodeWorkAddress() {
-  const addr = document.getElementById('aWorkAddress').value.trim();
+  const addr = getWorkAddressString();
   if (!addr) { document.getElementById('aWorkGeoStatus').textContent = '请先填写地址'; return; }
   const statusEl = document.getElementById('aWorkGeoStatus');
   statusEl.textContent = '🔍 正在查找坐标…';
@@ -5060,14 +5747,80 @@ async function geocodeWorkAddress() {
     const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1`, { headers: { 'Accept-Language': 'zh-CN,en' } });
     const data = await r.json();
     if (!data.length) { statusEl.textContent = '⚠ 未找到该地址，请检查后重试或手动输入坐标'; return; }
-    document.getElementById('aWorkLat').value = parseFloat(data[0].lat).toFixed(6);
-    document.getElementById('aWorkLng').value = parseFloat(data[0].lon).toFixed(6);
+    const lat = parseFloat(data[0].lat).toFixed(6);
+    const lng = parseFloat(data[0].lon).toFixed(6);
+    document.getElementById('aWorkLat').value = lat;
+    document.getElementById('aWorkLng').value = lng;
     document.getElementById('aWorkLatErr').style.display = 'none';
     document.getElementById('aWorkLngErr').style.display = 'none';
     statusEl.innerHTML = `✅ ${data[0].display_name}`;
+    const mapLink = document.getElementById('aWorkGeoMapLink');
+    document.getElementById('aWorkGeoMapAnchor').href = `https://www.google.com/maps?q=${lat},${lng}`;
+    mapLink.style.display = 'block';
+    updateAssignWorkMap();
   } catch(e) {
     statusEl.textContent = '⚠ 查找失败，请手动输入坐标';
   }
+}
+
+// ─── Assignment work location map ───
+let _assignWorkMap = null;
+let _assignWorkMarker = null;
+let _assignWorkCircle = null;
+
+function updateAssignWorkMap() {
+  const lat = parseFloat(document.getElementById('aWorkLat').value);
+  const lng = parseFloat(document.getElementById('aWorkLng').value);
+  const radius = parseInt(document.getElementById('aWorkRadius').value) || 200;
+  const wrap = document.getElementById('aWorkMapWrap');
+
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  wrap.style.display = '';
+  document.getElementById('aWorkMapCoordLabel').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+  if (!_assignWorkMap) {
+    _assignWorkMap = L.map('aWorkMap', { zoomControl: true, scrollWheelZoom: true });
+    L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+      attribution: '© Google Maps', maxZoom: 20, subdomains: ['0', '1', '2', '3']
+    }).addTo(_assignWorkMap);
+
+    _assignWorkMarker = L.marker([lat, lng], { draggable: true }).addTo(_assignWorkMap);
+    _assignWorkCircle = L.circle([lat, lng], {
+      radius, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.12, weight: 2
+    }).addTo(_assignWorkMap);
+    _assignWorkMap.setView([lat, lng], 16);
+
+    // Drag: update inputs and circle
+    _assignWorkMarker.on('dragend', function(e) {
+      const pos = e.target.getLatLng();
+      const newLat = pos.lat.toFixed(6);
+      const newLng = pos.lng.toFixed(6);
+      document.getElementById('aWorkLat').value = newLat;
+      document.getElementById('aWorkLng').value = newLng;
+      document.getElementById('aWorkMapCoordLabel').textContent = `${parseFloat(newLat).toFixed(5)}, ${parseFloat(newLng).toFixed(5)}`;
+      _assignWorkCircle.setLatLng(pos);
+      // Update Google Maps link
+      document.getElementById('aWorkGeoMapAnchor').href = `https://www.google.com/maps?q=${newLat},${newLng}`;
+      document.getElementById('aWorkGeoMapLink').style.display = 'block';
+    });
+  } else {
+    _assignWorkMarker.setLatLng([lat, lng]);
+    _assignWorkCircle.setLatLng([lat, lng]);
+    _assignWorkCircle.setRadius(radius);
+    _assignWorkMap.setView([lat, lng], _assignWorkMap.getZoom() || 16);
+  }
+
+  setTimeout(() => { if (_assignWorkMap) _assignWorkMap.invalidateSize(); }, 60);
+}
+
+function destroyAssignWorkMap() {
+  if (_assignWorkMap) { _assignWorkMap.remove(); _assignWorkMap = null; _assignWorkMarker = null; _assignWorkCircle = null; }
+  const wrap = document.getElementById('aWorkMapWrap');
+  if (wrap) wrap.style.display = 'none';
 }
 
 async function addMoreDispatch(prefill) {
@@ -5097,6 +5850,7 @@ async function saveAssignment() {
     inquiry_id: isNew ? document.getElementById('aInquiryId').value : (ea ? ea.inquiry_id : document.getElementById('aInquiryId').value),
     job_id:     isNew ? document.getElementById('aJobId').value     : (ea ? ea.job_id     : document.getElementById('aJobId').value),
     status: document.getElementById('aStatus').value,
+    category: document.getElementById('aCategory').value,
     notes: document.getElementById('aNotes').value,
     start_date: document.getElementById('aStartDate').value,
     contract_type: document.getElementById('aContractType').value,
@@ -5105,7 +5859,7 @@ async function saveAssignment() {
     benefits,
     work_schedule: getEstimateTimeJson(),
     task_requirements: getTasksJson(),
-    work_address: document.getElementById('aWorkAddress').value.trim(),
+    work_address: getWorkAddressString(),
     work_lat: parseFloat(document.getElementById('aWorkLat').value) || null,
     work_lng: parseFloat(document.getElementById('aWorkLng').value) || null,
     work_radius: parseInt(document.getElementById('aWorkRadius').value) || 200
@@ -5131,7 +5885,7 @@ async function saveAssignment() {
     const msg = ws.has_account
       ? '该工人尚未标记"可派工"（入职流程未完成），确定继续派工吗？'
       : '此人员尚未创建工人账户，确定继续派工吗？';
-    if (!confirm(msg)) return;
+    if (!await showConfirm(msg)) return;
   }
   let assignId;
   if (id) {
@@ -5156,9 +5910,75 @@ async function saveAssignment() {
 }
 
 async function deleteAssignment(id) {
-  if (!confirm('确定删除此派工记录？')) return;
+  if (!await showConfirm('确定删除此派工记录？', { danger: true })) return;
   await api(`/admin/assignments/${id}`, { method: 'DELETE' });
   loadAssignments();
+}
+
+let _pendingStatusChange = null;
+
+function updateAssignmentStatus(id, newStatus, selectEl) {
+  const prev = selectEl.dataset.prevStatus || selectEl.querySelector('option[selected]')?.value || selectEl.value;
+  if (prev === newStatus) return;
+  // Store pending change and show reason modal
+  _pendingStatusChange = { id, newStatus, prev, selectEl };
+  document.getElementById('statusReasonInput').value = '';
+  document.getElementById('statusReasonErr').style.display = 'none';
+  document.getElementById('statusReasonModal').classList.add('show');
+}
+
+function cancelStatusChange() {
+  if (_pendingStatusChange) {
+    _pendingStatusChange.selectEl.value = _pendingStatusChange.prev;
+    _pendingStatusChange = null;
+  }
+  document.getElementById('statusReasonModal').classList.remove('show');
+}
+
+async function confirmStatusChange() {
+  const reason = document.getElementById('statusReasonInput').value.trim();
+  if (!reason) {
+    document.getElementById('statusReasonErr').style.display = 'block';
+    return;
+  }
+  document.getElementById('statusReasonErr').style.display = 'none';
+  const { id, newStatus, prev, selectEl } = _pendingStatusChange;
+  _pendingStatusChange = null;
+  document.getElementById('statusReasonModal').classList.remove('show');
+  selectEl.disabled = true;
+  try {
+    await api(`/admin/assignments/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: newStatus, reason }) });
+    selectEl.className = selectEl.className.replace(/badge-\S+/, `badge-${newStatus}`);
+    selectEl.dataset.prevStatus = newStatus;
+  } catch(e) {
+    alert('更新失败：' + e.message);
+    selectEl.value = prev;
+  } finally {
+    selectEl.disabled = false;
+  }
+}
+
+async function showAssignmentHistory(id, name) {
+  const modal = document.getElementById('assignHistoryModal');
+  document.getElementById('assignHistoryTitle').textContent = `状态历史 — ${name || ''}`;
+  document.getElementById('assignHistoryList').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  modal.classList.add('show');
+  try {
+    const rows = await api(`/admin/assignments/${id}/history`);
+    const statusLabelMap = { pending:'待确认', assigned:'已分配', working:'进行中', completed:'已完成', terminated:'已解雇', resigned:'已辞职', no_show:'未出勤', cancelled:'已取消' };
+    document.getElementById('assignHistoryList').innerHTML = rows.length
+      ? rows.map(r => `<tr style="border-bottom:1px solid var(--gray-100)">
+          <td style="white-space:nowrap;font-size:.82rem;padding:8px 10px">${new Date(r.changed_at).toLocaleString()}</td>
+          <td style="padding:8px 10px"><span class="badge badge-${r.old_status||''}">${statusLabelMap[r.old_status] || r.old_status || '—'}</span></td>
+          <td style="padding:8px 4px;color:var(--gray-400)">→</td>
+          <td style="padding:8px 10px"><span class="badge badge-${r.new_status}">${statusLabelMap[r.new_status] || r.new_status}</span></td>
+          <td style="font-size:.8rem;color:var(--gray-400);padding:8px 10px;white-space:nowrap">${esc(r.changed_by||'')}</td>
+          <td style="font-size:.82rem;padding:8px 10px;max-width:200px;word-break:break-word">${esc(r.reason||'—')}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:16px">暂无状态变更记录</td></tr>';
+  } catch(e) {
+    document.getElementById('assignHistoryList').innerHTML = '<tr><td colspan="5" style="color:#dc2626">加载失败</td></tr>';
+  }
 }
 
 // ─── Partners (合作公司管理) ───
@@ -5245,7 +6065,12 @@ async function showPartnerById(id) {
   }
   if (addresses.length) {
     html += `<div class="detail-section"><h4>地址 (${addresses.length})</h4>` +
-      addresses.map(a=>`<div style="padding:.3rem 0;font-size:.85rem">📍 ${esc(a)}</div>`).join('')+'</div>';
+      addresses.map(a=>{
+        const addrText = _addrStr(a);
+        const lat = a?.lat, lng = a?.lng;
+        const mapLink = lat && lng ? ` <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" style="font-size:.78rem;color:#1d4ed8;text-decoration:none">🗺 地图</a>` : '';
+        return `<div style="padding:.3rem 0;font-size:.85rem">📍 ${esc(addrText)}${mapLink}</div>`;
+      }).join('')+'</div>';
   }
   const linkEntries = Object.entries(links).filter(([k,v])=>v);
   if (linkEntries.length) {
@@ -5279,10 +6104,12 @@ function addPartnerContact(c) {
   const fname = c?.first_name || (c?.name && !c.last_name ? c.name : '');
   const lname = c?.last_name || '';
   div.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:.5rem">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
       <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
       <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
       <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.15rem">
       <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
       <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
     </div>
@@ -5317,15 +6144,25 @@ function getPartnerContacts() {
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
 
 function addPartnerAddr(addr) {
-  // Parse existing "123 Main St, Ste 200, Chicago, IL 60601" string
-  let street='', street2='', city='', state='', zip='';
-  if (addr && typeof addr === 'string') {
-    // Try: Street, [Street2,] City, ST ZIP
-    const m5 = addr.match(/^(.*?),\s*(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
-    const m4 = addr.match(/^(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  // Parse existing address: string or object {address, lat, lng} or {street, city, state, zip, lat, lng}
+  let street='', street2='', city='', state='', zip='', lat='', lng='';
+  const parseStr = s => {
+    const m5 = s.match(/^(.*?),\s*(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    const m4 = s.match(/^(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
     if (m5) { street=m5[1].trim(); street2=m5[2].trim(); city=m5[3].trim(); state=m5[4]; zip=m5[5]; }
     else if (m4) { street=m4[1].trim(); city=m4[2].trim(); state=m4[3]; zip=m4[4]; }
-    else { street = addr; }
+    else { street = s; }
+  };
+  if (addr && typeof addr === 'string') {
+    parseStr(addr);
+  } else if (addr && typeof addr === 'object') {
+    if (addr.street || addr.city) {
+      street=addr.street||''; street2=addr.street2||''; city=addr.city||''; state=addr.state||''; zip=addr.zip||'';
+    } else if (addr.address) {
+      parseStr(addr.address);
+    }
+    lat = addr.lat != null ? String(addr.lat) : '';
+    lng = addr.lng != null ? String(addr.lng) : '';
   }
 
   const inp = (cls, ph, val, extra='') =>
@@ -5333,6 +6170,7 @@ function addPartnerAddr(addr) {
       style="width:100%;padding:9px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;box-sizing:border-box">`;
 
   const stateOptions = US_STATES.map(s=>`<option value="${s}" ${s===state?'selected':''}>${s}</option>`).join('');
+  const inpStyle = 'width:100%;padding:7px 9px;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;box-sizing:border-box';
 
   const div = document.createElement('div');
   div.className = 'dyn-item pa-addr-row';
@@ -5351,12 +6189,32 @@ function addPartnerAddr(addr) {
       </select>
       ${inp('pa-zip','ZIP *',zip,'maxlength="10" oninput="this.value=this.value.replace(/[^\\d-]/g,\'\');clearPartnerAddrStatus(this)" onblur="autoVerifyPartnerAddr(this)"')}
     </div>
-    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem">
+    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem;flex-wrap:wrap">
       <button type="button" class="btn btn-sm btn-outline" onclick="verifyPartnerAddr(this)">🔍 验证地址 Verify</button>
+      <button type="button" class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="togglePartnerAddrLocation(this)">📍 修改定位</button>
       <span class="pa-addr-status" style="font-size:.8rem;font-weight:600"></span>
+    </div>
+    <div class="pa-loc-section" style="display:${lat&&lng?'':'none'};border-top:1px solid var(--gray-200);padding-top:.5rem;margin-top:.1rem">
+      <div style="display:flex;gap:.5rem;align-items:flex-end">
+        <div style="flex:1"><label style="font-size:.73rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">纬度 Lat</label>
+          <input class="pa-lat" type="number" step="any" placeholder="e.g. 41.882" value="${esc(lat)}" style="${inpStyle}" oninput="updatePartnerAddrMap(this.closest('.pa-addr-row'))"></div>
+        <div style="flex:1"><label style="font-size:.73rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">经度 Lng</label>
+          <input class="pa-lng" type="number" step="any" placeholder="e.g. -87.623" value="${esc(lng)}" style="${inpStyle}" oninput="updatePartnerAddrMap(this.closest('.pa-addr-row'))"></div>
+        <button type="button" class="btn btn-sm" style="white-space:nowrap;padding:.4rem .75rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-size:.82rem;font-weight:600;height:fit-content" onclick="geocodePartnerAddr(this)">🔍 查坐标</button>
+      </div>
+      <div class="pa-geo-status" style="font-size:.75rem;color:var(--gray-500);margin-top:.25rem"></div>
+      <div class="pa-map-wrap" style="display:none;margin-top:.4rem;border-radius:8px;overflow:hidden;border:1px solid #93c5fd">
+        <div class="pa-map" style="height:220px;width:100%"></div>
+        <div style="font-size:.73rem;color:#1d4ed8;padding:.3rem .6rem;background:#eff6ff;display:flex;align-items:center;gap:.4rem">
+          <span>🖱 拖动图钉可纠正位置，坐标将自动更新</span>
+          <span class="pa-map-coord" style="margin-left:auto;color:#6b7280;font-family:monospace"></span>
+        </div>
+      </div>
     </div>
     <div class="pa-err" style="color:var(--red);font-size:.78rem;display:none"></div>`;
   document.getElementById('pAddrList').appendChild(div);
+  // Auto-render map if coords exist
+  if (lat && lng) setTimeout(() => updatePartnerAddrMap(div), 120);
 }
 
 function validatePartnerAddrs() {
@@ -5401,8 +6259,99 @@ function getPartnerAddrs() {
     const parts = [street];
     if (street2) parts.push(street2);
     parts.push(city, state + (zip ? ' ' + zip : ''));
-    return parts.filter(Boolean).join(', ');
+    const address = parts.filter(Boolean).join(', ');
+    const lat = parseFloat(row.querySelector('.pa-lat')?.value) || null;
+    const lng = parseFloat(row.querySelector('.pa-lng')?.value) || null;
+    return { address, lat, lng };
   }).filter(Boolean);
+}
+
+// Helper: extract address string from string or object
+function _addrStr(a) { return typeof a === 'string' ? a : (a?.address || ''); }
+
+// ── Per-row partner address map (WeakMap keyed by row element) ──
+const _partnerAddrMaps = new WeakMap();
+
+function togglePartnerAddrLocation(btn) {
+  const row = btn.closest('.pa-addr-row');
+  const sec = row.querySelector('.pa-loc-section');
+  const hidden = sec.style.display === 'none';
+  sec.style.display = hidden ? '' : 'none';
+  if (hidden) {
+    const lat = row.querySelector('.pa-lat').value;
+    const lng = row.querySelector('.pa-lng').value;
+    if (lat && lng) setTimeout(() => updatePartnerAddrMap(row), 80);
+  } else {
+    destroyPartnerAddrMap(row);
+  }
+}
+
+function updatePartnerAddrMap(row) {
+  const lat = parseFloat(row.querySelector('.pa-lat').value);
+  const lng = parseFloat(row.querySelector('.pa-lng').value);
+  const mapWrap = row.querySelector('.pa-map-wrap');
+  const coordLabel = row.querySelector('.pa-map-coord');
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    mapWrap.style.display = 'none';
+    return;
+  }
+  mapWrap.style.display = '';
+  if (coordLabel) coordLabel.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  let ms = _partnerAddrMaps.get(row);
+  if (!ms) {
+    const mapEl = row.querySelector('.pa-map');
+    const map = L.map(mapEl, { zoomControl: true, scrollWheelZoom: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+    map.setView([lat, lng], 16);
+    marker.on('dragend', e => {
+      const pos = e.target.getLatLng();
+      row.querySelector('.pa-lat').value = pos.lat.toFixed(6);
+      row.querySelector('.pa-lng').value = pos.lng.toFixed(6);
+      if (coordLabel) coordLabel.textContent = `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}`;
+    });
+    ms = { map, marker };
+    _partnerAddrMaps.set(row, ms);
+  } else {
+    ms.marker.setLatLng([lat, lng]);
+    ms.map.setView([lat, lng], ms.map.getZoom() || 16);
+  }
+  setTimeout(() => { if (ms.map) ms.map.invalidateSize(); }, 60);
+}
+
+function destroyPartnerAddrMap(row) {
+  const ms = _partnerAddrMaps.get(row);
+  if (ms) { ms.map.remove(); _partnerAddrMaps.delete(row); }
+  const mapWrap = row.querySelector('.pa-map-wrap');
+  if (mapWrap) mapWrap.style.display = 'none';
+}
+
+async function geocodePartnerAddr(btn) {
+  const row = btn.closest('.pa-addr-row');
+  const street = row.querySelector('.pa-street').value.trim();
+  const city   = row.querySelector('.pa-city').value.trim();
+  const state  = row.querySelector('.pa-state').value;
+  const zip    = row.querySelector('.pa-zip').value.trim();
+  const addrStr = [street, city, state && zip ? `${state} ${zip}` : (state || zip), 'USA'].filter(Boolean).join(', ');
+  if (!addrStr.trim()) { showToast('请先填写地址', 'error'); return; }
+  const statusEl = row.querySelector('.pa-geo-status');
+  statusEl.textContent = '查询中…'; statusEl.style.color = 'var(--gray-400)';
+  try {
+    const data = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addrStr)}&limit=1&countrycodes=us`,
+      { headers: { 'Accept-Language': 'en' } }
+    ).then(r => r.json());
+    if (!data.length) { statusEl.textContent = '⚠ 未找到，请手动输入坐标'; statusEl.style.color = '#dc2626'; return; }
+    const lat = parseFloat(data[0].lat).toFixed(6);
+    const lng = parseFloat(data[0].lon).toFixed(6);
+    row.querySelector('.pa-lat').value = lat;
+    row.querySelector('.pa-lng').value = lng;
+    statusEl.textContent = `✅ ${data[0].display_name.split(',').slice(0,3).join(',')}`;
+    statusEl.style.color = '#16a34a';
+    updatePartnerAddrMap(row);
+  } catch(e) {
+    statusEl.textContent = '⚠ 查询失败，请手动输入坐标'; statusEl.style.color = '#dc2626';
+  }
 }
 
 function openPartnerModal(p) {
@@ -5449,7 +6398,10 @@ function openPartnerModal(p) {
   captureModalState('partnerModal');
 }
 
-function closePartnerModal() { guardClose('partnerModal'); }
+function closePartnerModal() {
+  document.querySelectorAll('#pAddrList .pa-addr-row').forEach(row => destroyPartnerAddrMap(row));
+  guardClose('partnerModal');
+}
 
 async function loadPartnerFiles(pid) {
   const files = await api(`/admin/partners/${pid}/files`);
@@ -5487,7 +6439,7 @@ async function uploadPartnerFile() {
 }
 
 async function deletePartnerFile(fid, pid) {
-  if (!confirm('确定删除此文件？')) return;
+  if (!await showConfirm('确定删除此文件？', { danger: true })) return;
   await api(`/admin/partner-files/${fid}`, {method:'DELETE'});
   loadPartnerFiles(pid);
 }
@@ -5502,6 +6454,8 @@ async function savePartner() {
     const stateEl   = row.querySelector('.pa-state');
     const zipEl     = row.querySelector('.pa-zip');
     if (!streetEl.value.trim() && !cityEl.value.trim()) continue;
+    const addrStatusEl = row.querySelector('.pa-addr-status');
+    if (addrStatusEl && addrStatusEl.textContent === '✓ 已验证') continue;
     const addrResult = await validateAddress({
       street:  streetEl.value.trim(),
       street2: street2El ? street2El.value.trim() : '',
@@ -5529,7 +6483,7 @@ async function savePartner() {
     contact_person: contacts.length ? `${contacts[0].first_name||''} ${contacts[0].last_name||''}`.trim() : '',
     phone: contacts.length ? contacts[0].phone : '',
     email: contacts.length ? contacts[0].email : '',
-    address: getPartnerAddrs()[0] || '',
+    address: _addrStr(getPartnerAddrs()[0]) || '',
     industry: document.getElementById('pIndustry').value,
     services: JSON.stringify(allSvcs),
     notes: document.getElementById('pNotes').value,
@@ -5561,7 +6515,7 @@ async function savePartner() {
 }
 
 async function deletePartner(id) {
-  if (!confirm('确定删除此合作公司及其所有文件？')) return;
+  if (!await showConfirm('确定删除此合作公司及其所有文件？', { danger: true })) return;
   await api(`/admin/partners/${id}`, { method:'DELETE' });
   loadPartners();
 }
@@ -5670,26 +6624,102 @@ function renderEmployees(list) {
     const jobs = e.current_jobs || [];
     const jobNames = jobs.map(j=>j.job_title).filter(Boolean);
     const companyNames = [...new Set(jobs.map(j=>j.company_name).filter(Boolean))];
+    const payLabel = e.pay_rate ? '$'+Number(e.pay_rate).toFixed(0)+'/'+(e.pay_type==='hourly'?'hr':'yr') : '—';
+    const contactHtml = [
+      e.email ? `<a href="mailto:${esc(e.email)}">${esc(e.email)}</a>` : '',
+      e.phone ? `<a href="tel:${esc(e.phone)}">${esc(e.phone)}</a>` : ''
+    ].filter(Boolean).join('<span style="color:var(--gray-200)">|</span>');
+    const workerCodeHtml = e.worker_code
+      ? `<span style="font-family:monospace;font-size:.72rem;color:var(--sky);font-weight:600">${esc(e.worker_code)}</span>`
+      : '';
     return `<tr>
-    <td><strong>${esc(e.employee_id||'')}</strong></td>
-    <td style="font-family:monospace;font-size:.78rem;white-space:nowrap;color:var(--sky)">${e.worker_code ? esc(e.worker_code) : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td style="cursor:pointer" onclick='viewEmployee(${e.id})'><strong>${esc(e.first_name)} ${esc(e.last_name)}</strong>
-      <div class="emp-meta">${esc(e.email||'')} ${e.phone?'· '+esc(e.phone):''}</div></td>
-    <td>${jobNames.length ? jobNames.map(n=>'<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:1px 8px;border-radius:10px;font-size:.78rem;margin:1px 2px">'+esc(n)+'</span>').join('') : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td>${companyNames.length ? companyNames.map(c=>'<span style="font-size:.85rem">'+esc(c)+'</span>').join('<br>') : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td><span class="badge badge-${e.pay_type||'hourly'}">${PAY_TYPE_LABEL[e.pay_type]||e.pay_type}</span>
-      ${e.pay_rate?'<br><span style="font-size:.75rem">$'+Number(e.pay_rate).toFixed(2)+'/'+((e.pay_type==='hourly')?'hr':'yr')+'</span>':''}</td>
-    <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
-    <td>${e.hire_date||'—'}</td>
     <td>
-      <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
-      <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
-      <button class="btn btn-sm" style="background:#FFF7ED;color:#9A3412;border:1px solid #FED7AA" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>安排职位</button>
-      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>发送材料链接</button>
-      <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
-      ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
+      <div style="font-weight:700;font-size:.88rem">${esc(e.employee_id||'—')}</div>
+      ${workerCodeHtml}
     </td>
-  </tr>`}).join('') : '<tr><td colspan="9" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
+    <td style="cursor:pointer" onclick='viewEmployee(${e.id})'>
+      <div class="emp-name">${esc(e.first_name)} ${esc(e.last_name)}</div>
+      <div class="emp-contact">${contactHtml||'<span style="color:var(--gray-300)">无联系方式</span>'}</div>
+    </td>
+    <td>
+      <div>${jobNames.length ? jobNames.map(n=>'<span class="emp-job-tag">'+esc(n)+'</span>').join('') : '<span style="color:var(--gray-300);font-size:.82rem">未分配</span>'}</div>
+      ${companyNames.length ? '<div class="emp-company">'+companyNames.map(c=>esc(c)).join(' · ')+'</div>' : ''}
+    </td>
+    <td style="font-size:.85rem;white-space:nowrap">${payLabel}</td>
+    <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
+    <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
+    <td>
+      <button class="emp-action-btn" onclick='openEmpActionMenu(event,${e.id},"${esc(e.first_name)} ${esc(e.last_name)}",${e.status!=='terminated'})' title="操作">⋯</button>
+    </td>
+  </tr>`}).join('') : '<tr><td colspan="7" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
+}
+
+// ── Employee action dropdown ──
+let _empMenuCurrentId = null, _empMenuCurrentName = null, _empMenuCanTerminate = false;
+const _empMenuEl = () => document.getElementById('empActionMenu');
+
+function openEmpActionMenu(evt, id, name, canTerminate) {
+  evt.stopPropagation();
+  _empMenuCurrentId = id;
+  _empMenuCurrentName = name;
+  _empMenuCanTerminate = canTerminate;
+  const menu = _empMenuEl();
+  document.getElementById('empMenuTerminate').style.display = canTerminate ? '' : 'none';
+  menu.style.display = 'block';
+  const rect = evt.currentTarget.getBoundingClientRect();
+  const menuW = 190, menuH = 290;
+  let left = rect.right - menuW;
+  let top = rect.bottom + 4;
+  if (left < 4) left = 4;
+  if (top + menuH > window.innerHeight) top = rect.top - menuH - 4;
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+}
+function _closeEmpMenu() { _empMenuEl().style.display = 'none'; }
+document.addEventListener('click', _closeEmpMenu);
+
+// Wire up menu items
+document.getElementById('empMenuDetail').onclick   = () => { _closeEmpMenu(); viewEmployee(_empMenuCurrentId); };
+document.getElementById('empMenuEdit').onclick     = () => { _closeEmpMenu(); openEmpModal(_empMenuCurrentId); };
+document.getElementById('empMenuJob').onclick      = () => { _closeEmpMenu(); openAssignJobModal(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuRate').onclick     = () => { _closeEmpMenu(); openRatingModal(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuDoc').onclick      = () => { _closeEmpMenu(); sendEmpDocLink(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuRegLink').onclick  = () => { _closeEmpMenu(); openSendRegLinkModal(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuTerminate').onclick= () => { _closeEmpMenu(); terminateEmployee(_empMenuCurrentId, _empMenuCurrentName); };
+
+// ── Send Registration Link modal ──
+function openSendRegLinkModal(empId, empName) {
+  const emp = allEmployees.find(e=>e.id===empId) || {};
+  document.getElementById('regLinkEmpId').value = empId;
+  document.getElementById('regLinkEmpName').textContent = empName;
+  document.getElementById('regLinkPhone').value = emp.phone || '';
+  document.getElementById('regLinkEmail').value = emp.email || '';
+  document.getElementById('regLinkResult').innerHTML = '';
+  document.getElementById('regLinkModal').classList.add('show');
+}
+
+async function sendRegLink() {
+  const empId = document.getElementById('regLinkEmpId').value;
+  const phone = document.getElementById('regLinkPhone').value.trim();
+  const email = document.getElementById('regLinkEmail').value.trim();
+  const resultEl = document.getElementById('regLinkResult');
+  if (!phone && !email) { resultEl.innerHTML = '<span style="color:#dc2626">请填写手机号或邮箱</span>'; return; }
+  resultEl.innerHTML = '<span style="color:var(--gray-400)">发送中...</span>';
+  try {
+    const d = await api(`/admin/employees/${empId}/send-registration-link`, 'POST', { phone, email });
+    let msg = '<div style="color:#166534;font-weight:600">✓ 链接已生成</div>';
+    const sent = [];
+    if (d.sms_sent) sent.push('短信');
+    if (d.email_sent) sent.push('邮件');
+    if (sent.length) msg += `<div style="font-size:.85rem;margin-top:.3rem">已通过 <strong>${sent.join(' + ')}</strong> 发送</div>`;
+    if (!sent.length) {
+      msg += `<div style="font-size:.82rem;margin-top:.3rem;color:var(--gray-500)">短信/邮件服务未配置，请手动分享链接：</div>
+        <div style="background:#f1f5f9;padding:.5rem .7rem;border-radius:6px;margin-top:.4rem;font-size:.78rem;word-break:break-all;user-select:all">${esc(d.invite_url)}</div>`;
+    }
+    resultEl.innerHTML = msg;
+  } catch(e) {
+    resultEl.innerHTML = `<span style="color:#dc2626">错误：${esc(e.message||String(e))}</span>`;
+  }
 }
 
 function openEmpModal(id) {
@@ -5895,7 +6925,7 @@ async function loadEditEmpJobRecords(empId) {
       const company = r.partner_name || r.company_name || '';
       const loc = r.location || '';
       const meta = [company, loc].filter(Boolean).map(esc).join(' · ');
-      const dates = `${r.start_date||'—'} → ${r.end_date||'至今'}`;
+      const dates = `${fmtDate(r.start_date)||'—'} → ${fmtDate(r.end_date)||'至今'}`;
       const pay = r.emp_hourly_rate ? ` · $${r.emp_hourly_rate}/hr` : '';
       return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:.35rem;background:#fafcff">
         <div style="flex:1;min-width:0">
@@ -5926,7 +6956,7 @@ function editJobRecordFromEdit(empId, jobId) {
 }
 
 async function removeJobRecordFromEdit(empId, jobId) {
-  if (!confirm('确认删除该就业记录？')) return;
+  if (!await showConfirm('确认删除该就业记录？', { danger: true })) return;
   await api(`/admin/employees/${empId}/assign-job/${jobId}`, { method: 'DELETE' });
   loadEditEmpJobRecords(empId);
   loadEmployees();
@@ -6274,9 +7304,21 @@ async function saveEmployee() {
 }
 
 async function terminateEmployee(id, name) {
-  if (!confirm(`确定将 ${name} 标记为已离职？`)) return;
+  if (!await showConfirm(`确定将 ${name} 标记为已离职？`)) return;
   await api(`/admin/employees/${id}`, { method:'DELETE' });
   loadEmployees();
+}
+
+let _qrLibLoaded = false;
+function _loadQRLib() {
+  if (_qrLibLoaded || window.QRCode) { _qrLibLoaded = true; return Promise.resolve(); }
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+    s.onload = () => { _qrLibLoaded = true; resolve(); };
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
 }
 
 async function viewEmployee(id) {
@@ -6289,11 +7331,17 @@ async function viewEmployee(id) {
   const cols = (pairs) => `<div class="detail-grid">${pairs.map(([k,v])=>`<div class="detail-row"><span>${k}</span><span>${v||'—'}</span></div>`).join('')}</div>`;
 
   let html = `
-    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--gray-200)">
-      <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
-      <div>
-        <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
-        <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--gray-200)">
+      <div style="display:flex;align-items:center;gap:1rem">
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;flex-shrink:0">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
+        <div>
+          <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
+          <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+        </div>
+      </div>
+      <div style="text-align:center;flex-shrink:0">
+        <div id="empQRCode_${emp.id}" style="width:110px;height:110px;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center"></div>
+        <div style="font-size:.64rem;color:var(--gray-400);margin-top:3px;letter-spacing:.3px">PUNCH QR</div>
       </div>
     </div>
     <div class="form-section">
@@ -6415,7 +7463,7 @@ async function viewEmployee(id) {
           <button class="btn btn-sm btn-outline" onclick='openAssignJobModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}");setTimeout(()=>prefillJobRecord(${JSON.stringify(r).replace(/'/g,"&#39;")}),300)' style="font-size:.78rem">编辑</button>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.3rem .75rem;font-size:.82rem">
-          <div><span style="color:var(--gray-400)">时间：</span>${r.start_date||'—'} ~ ${r.end_date||'—'}</div>
+          <div><span style="color:var(--gray-400)">时间：</span>${fmtDate(r.start_date)||'—'} ~ ${fmtDate(r.end_date)||'—'}</div>
           <div><span style="color:var(--gray-400)">员工时薪：</span>${r.emp_hourly_rate>0?'$'+r.emp_hourly_rate+'/h':'—'}</div>
           <div><span style="color:var(--gray-400)">工时：</span>${r.emp_total_hours>0?r.emp_total_hours+'h':'—'}</div>
         </div>
@@ -6495,6 +7543,11 @@ async function viewEmployee(id) {
   document.getElementById('empDetailTitle').textContent = `${emp.first_name} ${emp.last_name} (${emp.employee_id})`;
   document.getElementById('empDetailContent').innerHTML = html;
   document.getElementById('empDetailModal').classList.add('show');
+  // Generate Manager Punch QR code
+  _loadQRLib().then(() => {
+    const qrDiv = document.getElementById('empQRCode_' + emp.id);
+    if (qrDiv && window.QRCode) new QRCode(qrDiv, { text: location.origin + '/mgr-punch?emp=' + emp.employee_id, width: 110, height: 110, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  }).catch(() => {});
   loadEmpRatings(emp.id);
 }
 function closeEmpDetailModal() {
@@ -6592,7 +7645,7 @@ function editRating(r, empId, empName) {
 }
 
 async function deleteRating(ratingId, empId) {
-  if (!confirm('确定删除此评分记录？')) return;
+  if (!await showConfirm('确定删除此评分记录？', { danger: true })) return;
   await api(`/admin/employee-ratings/${ratingId}`, { method:'DELETE' });
   viewEmployee(empId);
 }
@@ -6778,7 +7831,7 @@ async function generateEmpDocLink() {
   const phonesChanged = JSON.stringify(phones) !== JSON.stringify(_empDocOrigPhones.filter(Boolean));
   const emailsChanged = JSON.stringify(emails) !== JSON.stringify(_empDocOrigEmails.filter(Boolean));
   if (phonesChanged || emailsChanged) {
-    const choice = confirm('联系方式已修改。\n\n点击「确定」将更新员工档案中的电话/邮箱。\n点击「取消」仅本次使用，不更新员工信息。');
+    const choice = await showConfirm('联系方式已修改。\n\n点击「确定」将更新员工档案中的电话/邮箱。\n点击「取消」仅本次使用，不更新员工信息。');
     if (choice) {
       try {
         await api(`/admin/employees/${empId}/contacts`, {
@@ -7000,7 +8053,7 @@ async function confirmAssignJob() {
 }
 
 async function deleteDocRequest(reqId, empId) {
-  if (!confirm('删除此链接后员工将无法再访问，确认删除？')) return;
+  if (!await showConfirm('删除此链接后员工将无法再访问，确认删除？', { danger: true })) return;
   await api(`/admin/employee-doc-requests/${reqId}`, { method:'DELETE' });
   viewEmployee(empId);
 }
@@ -7068,7 +8121,13 @@ async function loadTimeEntries() {
 }
 
 function renderTimeEntries(list) {
-  document.getElementById('timeTable').innerHTML = list.length ? list.map(t=>`<tr>
+  document.getElementById('timeTable').innerHTML = list.length ? list.map(t=>{
+    const photoSrc = t.punch_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`
+                   : t.punch_photo ? t.punch_photo : '';
+    const photoCell = photoSrc
+      ? `<img src="${photoSrc}" onclick="openPunchPhoto('${photoSrc.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)" title="点击查看大图">`
+      : '—';
+    return `<tr>
     <td><strong>${esc(t.first_name||'')} ${esc(t.last_name||'')}</strong><br><span class="emp-meta">${esc(t.emp_code||'')}</span></td>
     <td>${fmtDT(t.clock_in)}</td>
     <td>${t.clock_out?fmtDT(t.clock_out):'<span style="color:var(--accent)">进行中</span>'}</td>
@@ -7077,13 +8136,29 @@ function renderTimeEntries(list) {
     <td>${fmtH(t.regular_hours)}</td>
     <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
     <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
-    <td>${esc(t.notes||'')}${t.latitude?` <a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="查看打卡位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})">📍</a>`:''}</td>
+    <td style="text-align:center">${photoCell}</td>
+    <td>${esc(t.notes||'')}${t.latitude?` <span onclick="showMiniMap(event,${t.latitude},${t.longitude})" title="查看打卡位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">📍</span>`:''}</td>
     <td>
       ${t.status==='open'?`<button class="btn btn-sm btn-accent" onclick="clockOutEntry(${t.id})">打卡下班</button> `:''}
       <button class="btn btn-sm" onclick='openTimeModal(${JSON.stringify(t).replace(/'/g,"&#39;")})'>编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteTimeEntry(${t.id})">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="10" class="empty">暂无工时记录</td></tr>';
+  </tr>`;
+  }).join('') : '<tr><td colspan="11" class="empty">暂无工时记录</td></tr>';
+}
+
+function openPunchPhoto(src) {
+  let overlay = document.getElementById('punchPhotoOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'punchPhotoOverlay';
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;align-items:center;justify-content:center;cursor:zoom-out';
+    overlay.innerHTML = '<img id="punchPhotoFull" style="max-width:92vw;max-height:92vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.6)">';
+    overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('punchPhotoFull').src = src;
+  overlay.style.display = 'flex';
 }
 
 async function openTimeModal(entry) {
@@ -7147,7 +8222,7 @@ async function saveTimeEntry() {
 }
 
 async function clockOutEntry(id) {
-  if (!confirm('确认为该员工打卡下班（时间为现在）？')) return;
+  if (!await showConfirm('确认为该员工打卡下班（时间为现在）？')) return;
   const now = new Date().toISOString().slice(0,16);
   const entry = allTimeEntries.find(t=>t.id===id);
   if (!entry) return;
@@ -7156,7 +8231,7 @@ async function clockOutEntry(id) {
 }
 
 async function deleteTimeEntry(id) {
-  if (!confirm('确定删除此工时记录？')) return;
+  if (!await showConfirm('确定删除此工时记录？', { danger: true })) return;
   await api(`/admin/time-entries/${id}`, { method:'DELETE' });
   loadTimeEntries();
 }
@@ -7713,7 +8788,7 @@ async function uploadDoc() {
 }
 
 async function deleteDoc(id) {
-  if (!confirm('确定删除此文件？此操作不可撤销。')) return;
+  if (!await showConfirm('确定删除此文件？此操作不可撤销。', { danger: true })) return;
   await api(`/admin/documents/${id}`, { method:'DELETE' });
   loadDocuments();
 }
@@ -7821,7 +8896,7 @@ async function saveBgCheck() {
 }
 
 async function deleteBgCheck(id) {
-  if (!confirm('确定删除此背景调查记录？')) return;
+  if (!await showConfirm('确定删除此背景调查记录？', { danger: true })) return;
   await api(`/admin/background-checks/${id}`, { method:'DELETE' });
   loadBgChecks();
 }
@@ -7867,9 +8942,9 @@ function isModalDirty(modalId) {
   return false;
 }
 function clearModalState(modalId) { delete _modalSnap[modalId]; }
-function guardClose(modalId, extraFn) {
+async function guardClose(modalId, extraFn) {
   if (isModalDirty(modalId)) {
-    if (!confirm('你有未保存的修改，确定要离开吗？')) return;
+    if (!await showConfirm('你有未保存的修改，确定要离开吗？')) return;
   }
   clearModalState(modalId);
   if (extraFn) extraFn();
@@ -8040,17 +9115,26 @@ async function loadWorkerAccounts() {
     const skills = w.skills || [];
     // Build inline action buttons
     let extraBtns = '';
-    if (!w.active) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="resendWorkerVerify(${w.id})">📨 重发验证</button>`;
+    if (!w.active) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="resendWorkerVerify(${w.id})">📨 重发验证</button><button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick="activateWorkerAccount(${w.id})">✅ 手动激活</button>`;
     if (w.active && w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-green" onclick="suspendWorkerAccount(${w.id},0)">▶️ 恢复</button>`;
     if (w.active && !w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="suspendWorkerAccount(${w.id},1)">⏸️ 暂停</button>`;
     extraBtns += `<button class="btn btn-sm wa-abtn-reset" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">🔑 重置</button>`;
+    extraBtns += `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="showWorkerHistory(${w.id},'${esc(w.name||w.username)}')">📋 历史</button>`;
     extraBtns += `<button class="btn btn-sm wa-abtn-del" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除</button>`;
     return `<tr>
     <td style="font-family:monospace;font-size:.78rem;white-space:nowrap;color:var(--sky)">${w.worker_code ? esc(w.worker_code) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div></td>
     <td style="font-size:.8rem;white-space:nowrap">${esc(w.phone||'—')}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
-    <td style="font-size:.8rem;white-space:nowrap">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
+    <td><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:110px" onchange="updateWorkerStatus(${w.id},this.value)">
+      <option value="">— 未填 —</option>
+      <option value="citizen" ${w.work_status==='citizen'?'selected':''}>🇺🇸 公民</option>
+      <option value="green_card" ${w.work_status==='green_card'?'selected':''}>🟢 绿卡</option>
+      <option value="ead" ${w.work_status==='ead'?'selected':''}>📄 EAD</option>
+      <option value="h1b" ${w.work_status==='h1b'?'selected':''}>H-1B</option>
+      <option value="opt" ${w.work_status==='opt'?'selected':''}>OPT/CPT</option>
+      <option value="other" ${w.work_status==='other'?'selected':''}>其他</option>
+    </select></td>
     <td><div class="wa-compliance">
       ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
       ${complianceBadge2('SSN', c.ssn_card)}
@@ -8149,31 +9233,33 @@ function renderOnboardingTasks(tasks) {
   document.getElementById('onboardingTaskList').innerHTML = tasks.map(t => {
     const s = t.status;
     const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
-    const canWaive = (s === 'pending' || s === 'locked') && !t.required;
+    const canWaive = s !== 'completed' && s !== 'waived';
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
     const isVisible = t.visible_to_worker !== 0;
+    const tk = JSON.stringify(t.key);
+    const tt = JSON.stringify(t.title);
     return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100);${!isVisible?'opacity:.55':''}">
       <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--blue);font-size:.9rem">${esc(t.title)}</span>
           <span style="padding:1px 7px;border-radius:20px;font-size:.7rem;font-weight:600;${sBadge[s]||''}">${sLabel[s]||s}</span>
-          ${!t.required?'<span style="font-size:.7rem;color:var(--gray-400)">(可豁免)</span>':''}
+          ${t.required?'<span style="font-size:.7rem;color:#dc2626;font-weight:600">(必须)</span>':'<span style="font-size:.7rem;color:var(--gray-400)">(可豁免)</span>'}
           ${!isVisible?'<span style="font-size:.7rem;color:#dc2626;font-weight:600">（工人不可见）</span>':''}
         </div>
         ${t.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);font-style:italic;margin-top:.15rem">💬 ${esc(t.admin_note)}</div>`:''}
         ${t.action_url?`<div style="font-size:.78rem;margin-top:.15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px">🔗 <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)" title="${esc(t.action_url)}">${esc(t.action_url.length>60?t.action_url.substring(0,60)+'...':t.action_url)}</a></div>`:''}
         ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 工人门户 — 已通知</div>`:''}
         <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
-          ${canComplete?`<button class="btn btn-sm btn-green" onclick="updateOnboardingTask('${t.key}','completed')">✅ 完成</button>`:''}
-          ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="updateOnboardingTask('${t.key}','waived')">⏭️ 豁免</button>`:''}
-          ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="updateOnboardingTask('${t.key}','pending')">↩️ 重置</button>`:''}
+          ${canComplete?`<button class="btn btn-sm btn-green" onclick="confirmOnboardingComplete(${tk},${tt})">✅ 完成</button>`:''}
+          ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="confirmOnboardingWaive(${tk},${tt})">⏭️ Waive</button>`:''}
+          ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${t.key==='persona_verify'
-            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="sendPersonaFromOnboarding()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
             : t.key==='background_check'
-            ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="sendCheckrFromOnboarding()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
+            ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -8200,6 +9286,22 @@ function toggleOnboardingVisibility(key, visible) {
   }
 }
 
+function confirmOnboardingComplete(key, title) {
+  showConfirmModal(`标记完成：${title}`, '确认将此任务标记为已完成？', '✅ 确认完成', 'btn-green', () => updateOnboardingTask(key, 'completed'), 'green');
+}
+function confirmOnboardingWaive(key, title) {
+  showConfirmModal(`Waive 任务：${title}`, '确认豁免此任务？豁免后该任务视为无需完成，不影响入职进度。', '⏭️ 确认 Waive', 'btn-outline', () => updateOnboardingTask(key, 'waived'), 'amber');
+}
+function confirmOnboardingReset(key, title) {
+  showConfirmModal(`重置任务：${title}`, '确认将此任务重置为"待处理"状态？', '↩️ 确认重置', 'btn-outline', () => updateOnboardingTask(key, 'pending'), 'amber');
+}
+function confirmSendPersona() {
+  showConfirmModal('发送 Persona 身份验证', '确认向该工人发送 Persona 身份验证（驾照 + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
+}
+function confirmSendCheckr() {
+  showConfirmModal('发送 Checkr 背调邀请', '确认向该工人发送 Checkr 背景调查邀请？邀请链接将通过短信和邮件发送。', '🔍 确认发送', 'btn-blue', sendCheckrFromOnboarding, 'blue');
+}
+
 async function updateOnboardingTask(key, status, note, actionUrl) {
   const body = { status };
   if (note !== undefined) body.admin_note = note;
@@ -8222,7 +9324,7 @@ function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
 
 async function sendPersonaFromOnboarding() {
   if (!_onboardingWorkerId) return;
-  if (!confirm('确定向该工人发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
+  if (!await showConfirm('确定向该工人发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-persona`, { method:'POST', body:JSON.stringify({}) });
   if (r && r.success) {
     const parts = [];
@@ -8238,7 +9340,7 @@ async function sendPersonaFromOnboarding() {
 
 async function sendCheckrFromOnboarding() {
   if (!_onboardingWorkerId) return;
-  if (!confirm('确定向该工人发送 Checkr 背景调查邀请？\nCheckr 将通过邮件收集 SSN 并进行犯罪记录调查。')) return;
+  if (!await showConfirm('确定向该工人发送 Checkr 背景调查邀请？\nCheckr 将通过邮件收集 SSN 并进行犯罪记录调查。')) return;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-checkr`, { method:'POST', body:JSON.stringify({}) });
   if (r && r.success) {
     showToast(`✅ Checkr 背景调查邀请已发送\n${r.smsSent ? '📱 已短信通知' : '📧 邮件邀请已发送'}`, 'success', 6000);
@@ -8250,7 +9352,7 @@ async function sendCheckrFromOnboarding() {
 
 async function toggleDispatchReady() {
   const newVal = _onboardingDispatchReady ? 0 : 1;
-  if (newVal && !confirm('确定将此工人标记为"可派工"？')) return;
+  if (newVal && !await showConfirm('确定将此工人标记为"可派工"？')) return;
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/dispatch-ready`, { method:'PUT', body:JSON.stringify({ dispatch_ready: newVal }) });
   refreshOnboardingModal();
   loadWorkerAccounts();
@@ -8401,10 +9503,52 @@ async function saveWorkerAccount() {
 }
 
 async function activateWorkerAccount(id) {
-  if (!confirm('手动激活该账户？（跳过验证）/ Manually activate this account?')) return;
+  if (!await showConfirm('手动激活该账户？（跳过验证）/ Manually activate this account?')) return;
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ active: 1 }) });
   loadWorkerAccounts();
   showToast('✅ 账户已激活');
+}
+
+async function updateWorkerStatus(id, work_status) {
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ work_status }) });
+  showToast('✅ 身份已更新');
+}
+
+async function showWorkerHistory(id, name) {
+  document.getElementById('workerHistoryTitle').textContent = `账户变更历史 — ${name}`;
+  document.getElementById('workerHistorySubtitle').textContent = `Worker ID: ${id}`;
+  const content = document.getElementById('workerHistoryContent');
+  content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0">加载中…</div>';
+  document.getElementById('workerHistoryModal').classList.add('show');
+  try {
+    const rows = await api(`/admin/worker-accounts/${id}/history`);
+    if (!rows || !rows.length) {
+      content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无变更记录</div>';
+      return;
+    }
+    content.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.83rem">
+      <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.75rem">
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">时间</th>
+        <th style="text-align:left;padding:.4rem .5rem">操作人</th>
+        <th style="text-align:left;padding:.4rem .5rem">字段</th>
+        <th style="text-align:left;padding:.4rem .5rem">原值</th>
+        <th style="text-align:left;padding:.4rem .5rem">新值</th>
+      </tr></thead>
+      <tbody>${rows.map(r => {
+        const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+        const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
+        const oldV = fmtWdVal(r.old_value);
+        const newV = fmtWdVal(r.new_value);
+        return `<tr style="border-bottom:1px solid var(--gray-100)">
+          <td style="padding:.45rem .5rem;color:var(--gray-400);white-space:nowrap">${ts}</td>
+          <td style="padding:.45rem .5rem;color:var(--sky);white-space:nowrap">${esc(r.changed_by||'—')}</td>
+          <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}</td>
+          <td style="padding:.45rem .5rem;color:#dc2626">${esc(oldV)}</td>
+          <td style="padding:.45rem .5rem;color:#16a34a">${esc(newV)}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  } catch { content.innerHTML = '<div style="color:#dc2626;padding:1rem 0">加载失败，请重试</div>'; }
 }
 
 async function deleteWorkerAccount(id, name) {
@@ -8418,7 +9562,7 @@ async function deleteWorkerAccount(id, name) {
 
 // Send password reset link
 async function sendResetLink(id, name) {
-  if (!confirm(`确定给 ${name} 发送密码重置链接？`)) return;
+  if (!await showConfirm(`确定给 ${name} 发送密码重置链接？`)) return;
   const r = await api(`/admin/worker-accounts/${id}/send-reset-link`, { method:'POST' });
   if (r && r.success) {
     let msgs = [];
@@ -8593,13 +9737,13 @@ async function loadCustomerAccounts() {
 }
 
 async function approveEnterprise(id) {
-  if (!confirm('确认通过此企业注册？')) return;
+  if (!await showConfirm('确认通过此企业注册？')) return;
   await api(`/admin/approve-enterprise/${id}`, { method:'PUT' });
   showToast('✅ 企业已审核通过');
   loadCustomerAccounts();
 }
 async function rejectEnterprise(id) {
-  if (!confirm('确认拒绝此企业注册？')) return;
+  if (!await showConfirm('确认拒绝此企业注册？', { danger: true })) return;
   await api(`/admin/reject-enterprise/${id}`, { method:'PUT' });
   showToast('❌ 企业注册已拒绝');
   loadCustomerAccounts();
@@ -8672,31 +9816,32 @@ async function clearAllTestData() {
 // ── Worker: suspend / resend verification ──
 async function suspendWorkerAccount(id, doSuspend) {
   const label = doSuspend ? '暂停' : '恢复';
-  if (!confirm(`确认${label}该工人账户？`)) return;
+  if (!await showConfirm(`确认${label}该工人账户？`)) return;
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ suspended: doSuspend ? 1 : 0 }) });
   loadWorkerAccounts();
   showToast(`✅ 账户已${label}`);
 }
 
-async function resendWorkerVerify(id) {
-  const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
-  if (r && r.success) {
-    const msgs = [];
-    if (r.sms_sent) msgs.push('短信已发送 ✅');
-    if (r.email_sent) msgs.push('邮件已发送 ✅');
-    // Only show codes if delivery failed (so admin can tell user manually)
-    if (r.phone_code) msgs.push(`⚠️ 短信发送失败，手机验证码: ${r.phone_code}`);
-    if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
-    if (!msgs.length) msgs.push('未配置短信/邮件发送');
-    showToast('✅ 验证码已重新生成');
-    alert(msgs.join('\n'));
-  }
+function resendWorkerVerify(id) {
+  showConfirmModal('重发验证码', '确认重新向该工人发送手机和邮箱验证码？', '📨 确认发送', 'btn-blue', async () => {
+    const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
+    if (r && r.success) {
+      const msgs = [];
+      if (r.sms_sent) msgs.push('短信已发送 ✅');
+      if (r.email_sent) msgs.push('邮件已发送 ✅');
+      if (r.phone_code) msgs.push(`⚠️ 短信发送失败，手机验证码: ${r.phone_code}`);
+      if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
+      if (!msgs.length) msgs.push('未配置短信/邮件发送');
+      showToast('✅ 验证码已重新生成');
+      alert(msgs.join('\n'));
+    }
+  }, 'blue');
 }
 
 // ── Customer: suspend / restore ──
 async function suspendCustomerAccount(id, doEnable) {
   const label = doEnable ? '恢复' : '暂停';
-  if (!confirm(`确认${label}该客户账户？`)) return;
+  if (!await showConfirm(`确认${label}该客户账户？`)) return;
   await api(`/admin/customer-accounts/${id}`, { method:'PUT', body:JSON.stringify({ active: doEnable ? 1 : 0 }) });
   loadCustomerAccounts();
   showToast(`✅ 客户账户已${label}`);
@@ -8764,7 +9909,7 @@ async function confirmApproveEnterprise() {
 
 async function rejectEnterpriseFromModal() {
   const id = document.getElementById('entApprovalId').value;
-  if (!confirm('确认拒绝此企业注册？')) return;
+  if (!await showConfirm('确认拒绝此企业注册？', { danger: true })) return;
   await api(`/admin/reject-enterprise/${id}`, { method:'PUT' });
   closeModal('entApprovalModal');
   showToast('❌ 企业注册已拒绝');
@@ -9011,7 +10156,7 @@ async function saveLocation() {
 }
 
 async function deleteInterviewLocation(id, name) {
-  if (!confirm(`确定删除面试地点「${name}」？`)) return;
+  if (!await showConfirm(`确定删除面试地点「${name}」？`, { danger: true })) return;
   const r = await api(`/admin/interview-locations/${id}`, { method: 'DELETE' });
   if (r && r.success) { showToast('✅ 已删除'); loadInterviewLocations(); }
   else showToast('❌ 删除失败', 'error');
@@ -9123,7 +10268,7 @@ async function deleteSlot(id) {
 }
 
 async function clearExpiredSlots() {
-  if (!confirm('确定清理所有已过期且无预约的时间槽？')) return;
+  if (!await showConfirm('确定清理所有已过期且无预约的时间槽？', { danger: true })) return;
   const slots = await api('/admin/interview-slots');
   if (!slots) return;
   const now = new Date();
@@ -9235,7 +10380,7 @@ async function batchCreateSlots() {
   if (!document.getElementById('batchLocationSelect')?.value && !document.getElementById('batchLocation')?.value?.trim()) return showToast('❌ 请先选择或输入面试地点', 'error');
   const slots = collectBatchSlots();
   if (!slots.length) return showToast('❌ 没有可生成的时间槽，请检查日期和时间设置', 'error');
-  if (!confirm(`确定生成 ${slots.length} 个面试时间槽？`)) return;
+  if (!await showConfirm(`确定生成 ${slots.length} 个面试时间槽？`)) return;
 
   const r = await api('/admin/interview-slots/batch', {
     method: 'POST',
@@ -9328,7 +10473,7 @@ async function setIvField(id, field, value) {
 }
 
 async function sendIdentityVerify(interviewId, workerName) {
-  if (!confirm(`确定向 ${workerName} 发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信和邮件发送给工人。`)) return;
+  if (!await showConfirm(`确定向 ${workerName} 发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信和邮件发送给工人。`)) return;
   const r = await api(`/admin/interviews/${interviewId}/send-identity`, { method: 'POST', body: JSON.stringify({}) });
   if (r && r.success) {
     showToast(`✅ 身份验证已发送${r.smsSent ? '（短信已发）' : '（短信未发，请检查 Twilio 配置）'}`, 'success', 5000);
@@ -9454,6 +10599,45 @@ async function reviewComplianceDoc(status) {
 // ─── Job Sites ───
 let _jobSites = [];
 
+// ─── Job Site Minimap ───
+let _siteMap = null, _siteMarker = null, _siteCircle = null;
+
+function updateSiteMap() {
+  const lat = parseFloat(document.getElementById('siteLat').value);
+  const lng = parseFloat(document.getElementById('siteLng').value);
+  const radius = parseInt(document.getElementById('siteRadius').value) || 200;
+  const wrap = document.getElementById('siteMapWrap');
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  if (!_siteMap) {
+    _siteMap = L.map('siteMapPreview', { zoomControl: true, scrollWheelZoom: false });
+    L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+      attribution: '© Google Maps',
+      maxZoom: 20,
+      subdomains: ['0', '1', '2', '3']
+    }).addTo(_siteMap);
+    _siteMarker = L.marker([lat, lng]).addTo(_siteMap);
+    _siteCircle = L.circle([lat, lng], { radius, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.15, weight: 2 }).addTo(_siteMap);
+    _siteMap.setView([lat, lng], 16);
+  } else {
+    _siteMarker.setLatLng([lat, lng]);
+    _siteCircle.setLatLng([lat, lng]);
+    _siteCircle.setRadius(radius);
+    _siteMap.setView([lat, lng], 16);
+  }
+  // Force resize in case modal just opened
+  setTimeout(() => _siteMap && _siteMap.invalidateSize(), 100);
+}
+
+function resetSiteMap() {
+  _siteMap = null; _siteMarker = null; _siteCircle = null;
+  document.getElementById('siteMapWrap').style.display = 'none';
+  document.getElementById('siteMapPreview').innerHTML = '';
+}
+
 async function loadJobSites() {
   const sites = await api('/admin/job-sites');
   if (!sites) return;
@@ -9481,6 +10665,7 @@ function openJobSiteModal() {
   document.getElementById('siteJobPickerWrap').style.display = 'none';
   document.getElementById('siteJobPickerStatus').textContent = '';
   document.getElementById('jobSiteModalTitle').textContent = '添加工作地点';
+  resetSiteMap();
   document.getElementById('jobSiteModal').classList.add('show');
 }
 
@@ -9522,7 +10707,9 @@ function editJobSite(id) {
   document.getElementById('siteLng').value = s.longitude;
   document.getElementById('siteRadius').value = s.radius_meters;
   document.getElementById('jobSiteModalTitle').textContent = '编辑工作地点';
+  resetSiteMap();
   document.getElementById('jobSiteModal').classList.add('show');
+  setTimeout(updateSiteMap, 150);
 }
 
 async function saveJobSite() {
@@ -9554,7 +10741,7 @@ async function saveJobSite() {
 }
 
 async function deleteJobSite(id) {
-  if (!confirm('确认删除此工作地点？')) return;
+  if (!await showConfirm('确认删除此工作地点？', { danger: true })) return;
   await api(`/admin/job-sites/${id}`, { method:'DELETE' });
   showToast('✅ 已删除');
   loadJobSites();
@@ -9621,6 +10808,159 @@ async function saveIntegration() {
   loadIntegrations();
 }
 
+
+async function saveAllReferralConfig() {
+  const bonus = parseFloat(document.getElementById('refBonusAmtAll').value);
+  const hours = parseFloat(document.getElementById('refMinHoursAll').value);
+  if (isNaN(bonus) || isNaN(hours) || bonus < 0 || hours < 0) { showToast('请输入有效数字', 'error'); return; }
+  showConfirmModal('保存奖励配置', `确认将奖励金额改为 $${bonus}，达标工时改为 ${hours} 小时？`, '保存', 'btn-green', async () => {
+    await api('/admin/referral-config', { method:'PUT', body: JSON.stringify({ bonus_per_referral: bonus, min_hours_to_qualify: hours }) });
+    showToast('✅ 奖励配置已保存');
+    loadAllReferrals();
+  }, 'green');
+}
+
+// ── Referral Rewards Admin (referrals tab) ──────────────────────
+let _referralRows = [];
+let _referralConfig = { bonus_per_referral: 50, min_hours_to_qualify: 8 };
+
+async function loadAllReferrals() {
+  const data = await api('/admin/all-referrals');
+  if (!data) return;
+  _referralRows = data.rows || [];
+  _referralConfig = data.config || _referralConfig;
+
+  document.getElementById('refBonusAmtAll').value = _referralConfig.bonus_per_referral;
+  document.getElementById('refMinHoursAll').value = _referralConfig.min_hours_to_qualify;
+
+  const qualified = _referralRows.filter(r => r.total_hours >= _referralConfig.min_hours_to_qualify);
+  const pending   = _referralRows.filter(r => r.total_hours > 0 && r.total_hours < _referralConfig.min_hours_to_qualify);
+  const totalBonus = qualified.length * _referralConfig.bonus_per_referral;
+
+  document.getElementById('referralStats').innerHTML = [
+    { label:'总邀请记录', value: _referralRows.length + ' 条', color:'#dbeafe', text:'#1d4ed8' },
+    { label:'已达标 (奖励已赚)', value: qualified.length + ' 条', color:'#d1fae5', text:'#065f46' },
+    { label:'进行中', value: pending.length + ' 条', color:'#fef3c7', text:'#92400e' },
+    { label:'累计奖励金额', value: '$' + totalBonus.toFixed(2), color:'#f3e8ff', text:'#7c3aed' }
+  ].map(s => `<div style="background:${s.color};border-radius:10px;padding:.75rem 1rem">
+    <div style="font-size:.75rem;color:${s.text};font-weight:600;margin-bottom:.2rem">${s.label}</div>
+    <div style="font-size:1.3rem;font-weight:800;color:${s.text}">${s.value}</div>
+  </div>`).join('');
+
+  filterReferralTable();
+}
+
+function filterReferralTable() {
+  const q = (document.getElementById('refSearch').value || '').toLowerCase();
+  const f = document.getElementById('refFilter').value;
+  const min = _referralConfig.min_hours_to_qualify;
+
+  const filtered = _referralRows.filter(r => {
+    const status = r.total_hours >= min ? 'qualified' : r.total_hours > 0 ? 'pending' : 'none';
+    if (f && f !== status) return false;
+    if (q) {
+      const hay = `${r.referrer_name} ${r.referrer_code} ${r.referred_name} ${r.referred_code}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById('refCount').textContent = `共 ${filtered.length} 条`;
+
+  const statusLabel = { qualified:'✅ 已达标', pending:'⏳ 进行中', none:'⬜ 未开始' };
+  const statusStyle = {
+    qualified:'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7',
+    pending:'background:#fef3c7;color:#92400e;border:1px solid #fde68a',
+    none:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)'
+  };
+
+  document.getElementById('referralTableBody').innerHTML = filtered.length === 0
+    ? `<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:2rem">暂无邀请记录</td></tr>`
+    : filtered.map(r => {
+        const status = r.total_hours >= _referralConfig.min_hours_to_qualify ? 'qualified'
+                     : r.total_hours > 0 ? 'pending' : 'none';
+        const bonus = status === 'qualified' ? `<span style="font-weight:700;color:#065f46">$${_referralConfig.bonus_per_referral.toFixed(2)}</span>` : '—';
+        const hrs = r.total_hours ? r.total_hours.toFixed(1) + ' h' : '0 h';
+        const date = r.created_at ? r.created_at.substring(0, 10) : '—';
+        return `<tr>
+          <td style="font-weight:600">${esc(r.referrer_name || '—')}</td>
+          <td><span style="font-family:monospace;font-size:.78rem;background:#f0f9ff;padding:1px 6px;border-radius:4px">${esc(r.referrer_code || '—')}</span></td>
+          <td>${esc(r.referred_name || '—')}</td>
+          <td><span style="font-family:monospace;font-size:.78rem;background:#f0f9ff;padding:1px 6px;border-radius:4px">${esc(r.referred_code || '—')}</span></td>
+          <td style="color:var(--gray-400);font-size:.8rem">${date}</td>
+          <td style="font-weight:600">${hrs}</td>
+          <td><span style="padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600;${statusStyle[status]}">${statusLabel[status]}</span></td>
+          <td>${bonus}</td>
+        </tr>`;
+      }).join('');
+}
+
+// ─── Skill Options Settings ───
+let _skillOptions = [];
+
+async function loadSkillSettings() {
+  _skillOptions = await api('/admin/skill-options') || [];
+  renderSkillOptions();
+}
+
+function renderSkillOptions() {
+  const el = document.getElementById('skillOptionsList');
+  if (!_skillOptions.length) {
+    el.innerHTML = '<p style="color:#94a3b8;font-size:.875rem;text-align:center;padding:1rem 0">暂无技能选项</p>';
+    return;
+  }
+  el.innerHTML = _skillOptions.map((s, i) => `
+    <div style="display:flex;gap:.5rem;align-items:center;padding:.45rem 0;border-bottom:1px solid #f1f5f9">
+      <span style="color:#94a3b8;font-size:.75rem;width:1.6rem;text-align:right;flex-shrink:0">${i+1}</span>
+      <input value="${esc(s.name_zh)}" data-id="${s.id}" data-field="name_zh"
+        onchange="_skillOptChange(this)"
+        style="flex:1;padding:.4rem .6rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.875rem">
+      <input value="${esc(s.name_en)}" data-id="${s.id}" data-field="name_en"
+        onchange="_skillOptChange(this)"
+        placeholder="English"
+        style="flex:1;padding:.4rem .6rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.875rem">
+      <button onclick="_skillOptSave(${s.id})" title="保存"
+        style="padding:.35rem .65rem;border:1px solid #86efac;background:#f0fdf4;color:#15803d;border-radius:6px;cursor:pointer;font-size:.8rem;white-space:nowrap">保存</button>
+      <button onclick="_skillOptDelete(${s.id})" title="删除"
+        style="padding:.35rem .6rem;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:6px;cursor:pointer;font-size:.8rem">✕</button>
+    </div>
+  `).join('');
+}
+
+function _skillOptChange(input) {
+  const id = parseInt(input.dataset.id);
+  const field = input.dataset.field;
+  const s = _skillOptions.find(x => x.id === id);
+  if (s) s[field] = input.value;
+}
+
+async function _skillOptSave(id) {
+  const s = _skillOptions.find(x => x.id === id);
+  if (!s) return;
+  const res = await api(`/admin/skill-options/${id}`, { method:'PUT', body: JSON.stringify({ name_zh: s.name_zh, name_en: s.name_en, sort_order: s.sort_order }) });
+  if (res && res.success) showToast('✅ 已保存');
+  else alert('保存失败');
+}
+
+async function _skillOptDelete(id) {
+  if (!confirm('确认删除此技能选项？')) return;
+  const res = await api(`/admin/skill-options/${id}`, { method:'DELETE' });
+  if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
+}
+
+async function addSkillOption() {
+  const zh = document.getElementById('newSkillZh').value.trim();
+  const en = document.getElementById('newSkillEn').value.trim();
+  if (!zh) return alert('请输入技能名称（中文）');
+  const res = await api('/admin/skill-options', { method:'POST', body: JSON.stringify({ name_zh: zh, name_en: en }) });
+  if (res && res.success) {
+    document.getElementById('newSkillZh').value = '';
+    document.getElementById('newSkillEn').value = '';
+    await loadSkillSettings();
+    showToast('✅ 已添加');
+  }
+}
+
 </script>
 <!-- Dispatch Job Picker Modal -->
 <div class="modal-bg" id="dispatchJobPickerModal">
@@ -9630,5 +10970,61 @@ async function saveIntegration() {
     <button class="btn btn-red" onclick="closeDispatchJobPicker()">取消</button>
   </div>
 </div>
+
+<!-- Inline Mini-Map Popup -->
+<div id="miniMapPopup" style="display:none;position:fixed;z-index:9999;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22);padding:0;overflow:hidden;min-width:300px">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .8rem;background:#f8fafc;border-bottom:1px solid #e2e8f0">
+    <span id="miniMapLabel" style="font-size:.82rem;color:#475569;font-weight:600">📍 打卡位置</span>
+    <div style="display:flex;gap:.4rem">
+      <a id="miniMapGoogleLink" href="#" target="_blank" style="font-size:.76rem;color:#3b82f6;text-decoration:none;padding:2px 8px;border-radius:4px;background:#eff6ff">在 Google Maps 打开</a>
+      <button onclick="closeMiniMapPopup()" style="background:none;border:none;cursor:pointer;font-size:1rem;color:#94a3b8;line-height:1;padding:0 2px">✕</button>
+    </div>
+  </div>
+  <div id="miniMapContainer" style="height:220px;width:300px"></div>
+</div>
+<script>
+(function() {
+  let _mmMap = null, _mmMarker = null;
+
+  window.showMiniMap = function(e, lat, lng) {
+    e.stopPropagation();
+    const popup = document.getElementById('miniMapPopup');
+    document.getElementById('miniMapLabel').textContent = `📍 ${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
+    document.getElementById('miniMapGoogleLink').href = `https://maps.google.com/?q=${lat},${lng}`;
+
+    // Position near click
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let x = e.clientX + 12, y = e.clientY + 12;
+    popup.style.display = '';
+    const pw = popup.offsetWidth || 310, ph = popup.offsetHeight || 270;
+    if (x + pw > vw - 8) x = e.clientX - pw - 8;
+    if (y + ph > vh - 8) y = e.clientY - ph - 8;
+    popup.style.left = Math.max(8, x) + 'px';
+    popup.style.top  = Math.max(8, y) + 'px';
+
+    if (!_mmMap) {
+      _mmMap = L.map('miniMapContainer', { zoomControl: true, scrollWheelZoom: false });
+      L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { attribution: '© Google Maps', maxZoom: 20, subdomains: ['0', '1', '2', '3'] }).addTo(_mmMap);
+      _mmMarker = L.marker([lat, lng]).addTo(_mmMap);
+      _mmMap.setView([lat, lng], 16);
+    } else {
+      _mmMarker.setLatLng([lat, lng]);
+      _mmMap.setView([lat, lng], 16);
+    }
+    setTimeout(() => _mmMap && _mmMap.invalidateSize(), 80);
+  };
+
+  window.closeMiniMapPopup = function() {
+    document.getElementById('miniMapPopup').style.display = 'none';
+  };
+
+  document.addEventListener('click', function(e) {
+    const popup = document.getElementById('miniMapPopup');
+    if (popup && popup.style.display !== 'none' && !popup.contains(e.target)) {
+      popup.style.display = 'none';
+    }
+  });
+})();
+</script>
 </body>
 </html>
