@@ -181,7 +181,7 @@ tr:hover td{background:#fafcff}
       <div class="time-table-wrap">
         <table>
           <thead><tr>
-            <th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>总工时</th><th>正常工时</th><th>加班</th><th>状态</th><th>备注</th>
+            <th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>总工时</th><th>正常工时</th><th>加班</th><th>状态</th><th>照片</th><th>备注</th>
           </tr></thead>
           <tbody id="tcTable"></tbody>
         </table>
@@ -436,7 +436,7 @@ async function loadTimeClock() {
 
 function renderTimeClock(rows) {
   if (!rows.length) {
-    document.getElementById('tcTable').innerHTML = '<tr><td colspan="9" class="empty-state" style="padding:2rem;text-align:center">暂无打卡记录</td></tr>';
+    document.getElementById('tcTable').innerHTML = '<tr><td colspan="10" class="empty-state" style="padding:2rem;text-align:center">暂无打卡记录</td></tr>';
     document.getElementById('tcSummary').textContent = '';
     return;
   }
@@ -444,6 +444,11 @@ function renderTimeClock(rows) {
   document.getElementById('tcTable').innerHTML = rows.map(t => {
     totalH  += t.total_hours || 0;
     totalOT += t.overtime_hours || 0;
+    const photoSrc = t.punch_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`
+                   : t.punch_photo ? t.punch_photo : '';
+    const photoCell = photoSrc
+      ? `<img src="${photoSrc}" onclick="openPunchPhoto('${photoSrc.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid #e5e7eb" title="点击查看大图">`
+      : '—';
     return `<tr>
       <td><div class="emp-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-code">${esc(t.emp_code||'')}</div></td>
       <td style="white-space:nowrap">${fmtDT(t.clock_in)}</td>
@@ -453,11 +458,26 @@ function renderTimeClock(rows) {
       <td>${fmtH(t.regular_hours)}</td>
       <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
       <td><span class="badge ${t.status==='open'?'badge-working':'badge-completed'}">${t.status==='open'?'进行中':'已完成'}</span></td>
+      <td style="text-align:center">${photoCell}</td>
       <td style="max-width:160px;white-space:normal;font-size:.78rem;color:var(--gray-500)">${esc(t.notes||'')}${t.latitude?` <a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="打卡位置">📍</a>`:''}</td>
     </tr>`;
   }).join('');
   document.getElementById('tcSummary').innerHTML =
     `共 <strong>${rows.length}</strong> 条记录 &nbsp;·&nbsp; 总工时 <strong>${totalH.toFixed(2)}h</strong>&nbsp;·&nbsp; 加班 <strong>${totalOT.toFixed(2)}h</strong>`;
+}
+
+function openPunchPhoto(src) {
+  let overlay = document.getElementById('punchPhotoOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'punchPhotoOverlay';
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;align-items:center;justify-content:center;cursor:zoom-out';
+    overlay.innerHTML = '<img id="punchPhotoFull" style="max-width:92vw;max-height:92vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.6)">';
+    overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('punchPhotoFull').src = src;
+  overlay.style.display = 'flex';
 }
 
 // ── Init ───────────────────────────────────────────────────────

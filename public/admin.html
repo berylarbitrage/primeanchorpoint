@@ -669,7 +669,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="hours-item"><h4 id="sumOT" style="color:var(--accent)">0h</h4><p>加班工时</p></div>
   </div>
   <div class="card">
-    <table><thead><tr><th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>合计</th><th>正常</th><th>加班</th><th>状态</th><th>备注</th><th>操作</th></tr></thead>
+    <table><thead><tr><th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>合计</th><th>正常</th><th>加班</th><th>状态</th><th>照片</th><th>备注</th><th>操作</th></tr></thead>
     <tbody id="timeTable"></tbody></table>
   </div>
 </div>
@@ -7523,7 +7523,13 @@ async function loadTimeEntries() {
 }
 
 function renderTimeEntries(list) {
-  document.getElementById('timeTable').innerHTML = list.length ? list.map(t=>`<tr>
+  document.getElementById('timeTable').innerHTML = list.length ? list.map(t=>{
+    const photoSrc = t.punch_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`
+                   : t.punch_photo ? t.punch_photo : '';
+    const photoCell = photoSrc
+      ? `<img src="${photoSrc}" onclick="openPunchPhoto('${photoSrc.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)" title="点击查看大图">`
+      : '—';
+    return `<tr>
     <td><strong>${esc(t.first_name||'')} ${esc(t.last_name||'')}</strong><br><span class="emp-meta">${esc(t.emp_code||'')}</span></td>
     <td>${fmtDT(t.clock_in)}</td>
     <td>${t.clock_out?fmtDT(t.clock_out):'<span style="color:var(--accent)">进行中</span>'}</td>
@@ -7532,13 +7538,29 @@ function renderTimeEntries(list) {
     <td>${fmtH(t.regular_hours)}</td>
     <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
     <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
+    <td style="text-align:center">${photoCell}</td>
     <td>${esc(t.notes||'')}${t.latitude?` <a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="查看打卡位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})">📍</a>`:''}</td>
     <td>
       ${t.status==='open'?`<button class="btn btn-sm btn-accent" onclick="clockOutEntry(${t.id})">打卡下班</button> `:''}
       <button class="btn btn-sm" onclick='openTimeModal(${JSON.stringify(t).replace(/'/g,"&#39;")})'>编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteTimeEntry(${t.id})">删除</button>
     </td>
-  </tr>`).join('') : '<tr><td colspan="10" class="empty">暂无工时记录</td></tr>';
+  </tr>`;
+  }).join('') : '<tr><td colspan="11" class="empty">暂无工时记录</td></tr>';
+}
+
+function openPunchPhoto(src) {
+  let overlay = document.getElementById('punchPhotoOverlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'punchPhotoOverlay';
+    overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;align-items:center;justify-content:center;cursor:zoom-out';
+    overlay.innerHTML = '<img id="punchPhotoFull" style="max-width:92vw;max-height:92vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.6)">';
+    overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('punchPhotoFull').src = src;
+  overlay.style.display = 'flex';
 }
 
 async function openTimeModal(entry) {
