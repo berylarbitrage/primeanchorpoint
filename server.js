@@ -4145,7 +4145,7 @@ app.post('/api/timeclock/punch', (req, res) => {
     const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, ...hrs });
+    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
   } else {
     const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status) VALUES(?,?,'open')").run(emp.id, now);
     res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
