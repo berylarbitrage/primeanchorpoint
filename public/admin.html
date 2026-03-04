@@ -7907,7 +7907,15 @@ async function loadWorkerAccounts() {
     <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div></td>
     <td style="font-size:.8rem;white-space:nowrap">${esc(w.phone||'—')}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
-    <td style="font-size:.8rem;white-space:nowrap">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
+    <td><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:110px" onchange="updateWorkerStatus(${w.id},this.value)">
+      <option value="">— 未填 —</option>
+      <option value="citizen" ${w.work_status==='citizen'?'selected':''}>🇺🇸 公民</option>
+      <option value="green_card" ${w.work_status==='green_card'?'selected':''}>🟢 绿卡</option>
+      <option value="ead" ${w.work_status==='ead'?'selected':''}>📄 EAD</option>
+      <option value="h1b" ${w.work_status==='h1b'?'selected':''}>H-1B</option>
+      <option value="opt" ${w.work_status==='opt'?'selected':''}>OPT/CPT</option>
+      <option value="other" ${w.work_status==='other'?'selected':''}>其他</option>
+    </select></td>
     <td><div class="wa-compliance">
       ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
       ${complianceBadge2('SSN', c.ssn_card)}
@@ -8262,6 +8270,11 @@ async function activateWorkerAccount(id) {
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ active: 1 }) });
   loadWorkerAccounts();
   showToast('✅ 账户已激活');
+}
+
+async function updateWorkerStatus(id, work_status) {
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ work_status }) });
+  showToast('✅ 身份已更新');
 }
 
 async function deleteWorkerAccount(id, name) {
