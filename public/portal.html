@@ -1377,7 +1377,7 @@ async function loadTasks() {
           </div>
         </div>` : ''}
         <div style="font-size:.83rem;color:var(--gray-600);display:grid;gap:.22rem">
-          ${t.start_date ? `<div>📅 <span style="color:var(--gray-400)">开始日期：</span>${esc(t.start_date)}</div>` : ''}
+          ${t.start_date ? `<div>📅 <span style="color:var(--gray-400)">开始日期：</span>${fmtDate(t.start_date)}</div>` : ''}
           ${(t.work_address||t.location) ? `<div>📍 <span style="color:var(--gray-400)">地点：</span>${esc(t.work_address||t.location)}</div>` : ''}
           ${t.pay_rate ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay_rate)}${t.pay_type==='hourly'?' /hr':''}</div>` : (t.pay ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay)}</div>` : '')}
           ${t.contract_type ? `<div>📄 <span style="color:var(--gray-400)">合同类型：</span>${esc(t.contract_type)}</div>` : ''}
@@ -1928,7 +1928,7 @@ async function loadMyJobs() {
           ${j.location ? `📍 ${esc(j.location)}` : ''}
           ${j.site_name ? ` · 🏭 ${esc(j.site_name)}` : ''}
         </div>
-        ${j.start_date ? `<div style="font-size:.78rem;color:var(--gray-400);margin-top:.15rem">开始：${esc(j.start_date)}</div>` : ''}
+        ${j.start_date ? `<div style="font-size:.78rem;color:var(--gray-400);margin-top:.15rem">开始：${fmtDate(j.start_date)}</div>` : ''}
       </div>
       <div style="text-align:right;flex-shrink:0;margin-left:1rem">
         ${j.emp_hourly_rate ? `<div style="font-weight:700;color:var(--sky)">$${(+j.emp_hourly_rate).toFixed(2)}/hr</div>` : (j.pay ? `<div style="font-size:.85rem;color:var(--sky)">${esc(j.pay)}</div>` : '')}
@@ -3195,6 +3195,12 @@ document.addEventListener('click', (e) => {
 
 function esc(s) {
   const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML;
+}
+function fmtDate(s) {
+  if (!s) return '';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
 // Auto-login if token exists
