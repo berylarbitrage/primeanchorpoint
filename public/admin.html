@@ -3488,6 +3488,23 @@ async function saveJob() {
   if (!jCity || !jState) return alert('请填写工作地点的城市和州');
   const jZipErr = validateZip(document.getElementById('jZip').value.trim());
   if (jZipErr) return alert(jZipErr);
+  const addrResult = await validateAddress({
+    street: document.getElementById('jStreet').value.trim(),
+    street2: document.getElementById('jStreet2').value.trim(),
+    city: jCity,
+    state: jState,
+    zip: document.getElementById('jZip').value.trim()
+  });
+  if (!addrResult.proceed) return;
+  if (addrResult.standardized) {
+    const s = addrResult.standardized;
+    document.getElementById('jStreet').value = s.street;
+    document.getElementById('jStreet2').value = s.street2;
+    document.getElementById('jCity').value = s.city;
+    fillStateSelect(document.getElementById('jState'), s.state);
+    document.getElementById('jZip').value = s.zip;
+    data.location = buildAddressString(s.street, s.street2, s.city, s.state, s.zip);
+  }
   if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
   clearModalState('jobModal');
