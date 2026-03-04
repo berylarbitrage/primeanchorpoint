@@ -2184,11 +2184,12 @@ tr:hover td{background:var(--sky-light)}
     <div class="field" style="margin-bottom:.5rem">
       <label>工作地址 *</label>
       <div style="display:flex;gap:.5rem">
-        <input id="aWorkAddress" placeholder="例：1234 Main St, Los Angeles, CA" style="flex:1" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+        <input id="aWorkAddress" placeholder="例：1234 Main St, Los Angeles, CA" style="flex:1" oninput="document.getElementById('aWorkAddrErr').style.display='none';document.getElementById('aWorkGeoMapLink').style.display='none'">
         <button type="button" onclick="geocodeWorkAddress()" style="white-space:nowrap;padding:.4rem .75rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-size:.82rem;font-weight:600">🔍 查坐标</button>
       </div>
       <div id="aWorkAddrErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请填写工作地址</div>
       <div id="aWorkGeoStatus" style="font-size:.75rem;color:var(--gray-500);margin-top:.25rem"></div>
+      <div id="aWorkGeoMapLink" style="display:none;margin-top:.3rem"><a id="aWorkGeoMapAnchor" href="#" target="_blank" style="font-size:.75rem;color:#1d4ed8;text-decoration:none">🗺 在 Google Maps 中验证坐标（Nominatim 可能偏移，建议确认）</a></div>
     </div>
     <div class="field-row">
       <div class="field"><label>纬度 (Lat) *</label><input id="aWorkLat" type="number" step="any" placeholder="例：34.052235" oninput="document.getElementById('aWorkLatErr').style.display='none'"><div id="aWorkLatErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
@@ -5198,11 +5199,16 @@ async function geocodeWorkAddress() {
     const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1`, { headers: { 'Accept-Language': 'zh-CN,en' } });
     const data = await r.json();
     if (!data.length) { statusEl.textContent = '⚠ 未找到该地址，请检查后重试或手动输入坐标'; return; }
-    document.getElementById('aWorkLat').value = parseFloat(data[0].lat).toFixed(6);
-    document.getElementById('aWorkLng').value = parseFloat(data[0].lon).toFixed(6);
+    const lat = parseFloat(data[0].lat).toFixed(6);
+    const lng = parseFloat(data[0].lon).toFixed(6);
+    document.getElementById('aWorkLat').value = lat;
+    document.getElementById('aWorkLng').value = lng;
     document.getElementById('aWorkLatErr').style.display = 'none';
     document.getElementById('aWorkLngErr').style.display = 'none';
     statusEl.innerHTML = `✅ ${data[0].display_name}`;
+    const mapLink = document.getElementById('aWorkGeoMapLink');
+    document.getElementById('aWorkGeoMapAnchor').href = `https://www.google.com/maps?q=${lat},${lng}`;
+    mapLink.style.display = 'block';
   } catch(e) {
     statusEl.textContent = '⚠ 查找失败，请手动输入坐标';
   }
