@@ -1097,7 +1097,7 @@ async function wApi(path, opts={}) {
       ...opts
     });
     if (r.status === 401) { workerLogout(); return null; }
-    return r.json();
+    return await r.json();
   } catch (e) {
     showToast('❌ 网络错误，请检查连接后重试', 'error');
     return null;
@@ -1873,14 +1873,10 @@ async function doPunch(type, photo) {
     body.job_id = sel ? parseInt(sel.value) || null : null;
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
-  if (!r) { enablePunchBtn(true); cancelPunchPhoto(); showToast('❌ 打卡失败，请重新登录后重试', 'error'); return; }
+  if (!r) { enablePunchBtn(true); cancelPunchPhoto(); await customAlert('打卡失败，请重新登录后重试。\nFailed to clock in, please re-login.', '打卡失败', '❌'); return; }
   if (r.error) {
     cancelPunchPhoto();
-    if (r.geo_blocked || r.no_site || r.need_gps) {
-      await customAlert(r.error, '📍 打卡失败', '❌');
-    } else {
-      showToast('❌ ' + r.error, 'error');
-    }
+    await customAlert(r.error, r.geo_blocked ? '📍 不在工作地点' : '打卡失败', '❌');
     enablePunchBtn(true);
     await loadPunchStatus();
     return;
