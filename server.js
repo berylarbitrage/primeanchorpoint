@@ -5613,7 +5613,8 @@ app.get('/api/admin/interviews', requireAdmin, (req, res) => {
     SELECT i.*, s.slot_datetime, s.duration_min, s.location,
       w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
       w.work_status, w.position_interests,
-      w.identity_status, w.persona_inquiry_id, w.identity_sent_at
+      w.identity_status, w.persona_inquiry_id, w.identity_sent_at,
+      w.payment_method
     FROM interviews i
     JOIN interview_slots s ON i.slot_id = s.id
     JOIN worker_accounts w ON i.worker_account_id = w.id
@@ -5624,14 +5625,21 @@ app.get('/api/admin/interviews', requireAdmin, (req, res) => {
 
 // Admin: update interview status / notes
 app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
-  const { status, admin_notes } = req.body;
+  const { status, admin_notes, identity_status, payment_method } = req.body;
   const row = db.prepare('SELECT * FROM interviews WHERE id=?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   db.prepare(`UPDATE interviews SET status=?, admin_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
     .run(status ?? row.status, admin_notes ?? row.admin_notes, req.params.id);
-  // If cancelled, free the slot count
   if (status === 'cancelled' && row.status !== 'cancelled') {
     db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
+  }
+  // Update worker account fields decided after interview
+  if (identity_status !== undefined) {
+    db.prepare('UPDATE worker_accounts SET identity_status=? WHERE id=?').run(identity_status, row.worker_account_id);
+  }
+  if (payment_method !== undefined) {
+    try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT ''"); } catch {}
+    db.prepare('UPDATE worker_accounts SET payment_method=? WHERE id=?').run(payment_method, row.worker_account_id);
   }
   res.json({ success: true });
 });

@@ -949,7 +949,7 @@ tr:hover td{background:var(--sky-light)}
           <option value="cancelled">已取消</option>
         </select>
       </div>
-      <table><thead><tr><th>姓名</th><th>电话</th><th>面试时间</th><th>地点</th><th>状态</th><th>文件链接</th><th>身份验证</th><th>操作</th></tr></thead>
+      <table><thead><tr><th>姓名</th><th>电话</th><th>面试时间</th><th>地点</th><th>状态</th><th>身份验证</th><th>支付方式</th><th>操作</th></tr></thead>
       <tbody id="ivInterviewsTable"></tbody></table>
     </div>
   </div>
@@ -8741,23 +8741,29 @@ const ID_VERIFY_BADGE = {
 function renderInterviews(rows) {
   const tbody = document.getElementById('ivInterviewsTable');
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无面试预约</td></tr>'; return; }
+  const idOpts = [
+    ['', '— 未设置 —'],
+    ['not_sent', '未发送'],
+    ['pending', '🕐 验证中'],
+    ['completed', '⏳ 待审批'],
+    ['approved', '✅ 已验证'],
+    ['declined', '❌ 验证失败'],
+  ];
+  const payOpts = [
+    ['', '— 未设置 —'],
+    ['cash', '💵 现金 Cash'],
+    ['check', '✅ 支票 Check'],
+    ['direct_deposit', '🏦 直存 Direct Deposit'],
+  ];
+  const sel = (opts, val, fn) =>
+    `<select style="padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem;max-width:140px" onchange="${fn}">
+      ${opts.map(([v,l])=>`<option value="${v}"${val===v?' selected':''}>${l}</option>`).join('')}
+    </select>`;
   tbody.innerHTML = rows.map(i => {
     const dt = new Date(i.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-    const docLink = i.doc_request_token
-      ? `<a href="/emp-docs?token=${i.doc_request_token}" target="_blank" style="font-size:.78rem;color:var(--sky)">📎 查看链接</a>`
-      : (i.status === 'passed' ? '<span style="color:var(--red);font-size:.78rem">链接缺失</span>' : '—');
-    const idStatus = i.identity_status || '';
-    const idBadge = ID_VERIFY_BADGE[idStatus] || '';
-    // Show send button for completed/passed; show resend if pending/declined
-    const canSendId = i.status === 'completed' || i.status === 'passed';
-    const idBtn = canSendId
-      ? (idStatus === 'approved'
-          ? ''
-          : `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5" onclick="sendIdentityVerify(${i.id},'${esc(i.worker_name||'')}')">
-              ${idStatus === 'pending' ? '重发验证' : idStatus === 'declined' ? '重发验证' : '发身份验证'}
-             </button>`)
-      : '';
-    const payBadge  = i.expected_pay ? `<div style="font-size:.72rem;color:#0369a1;margin-top:2px">💰 ${esc(i.expected_pay)}</div>` : '';
+    const idSel  = sel(idOpts,  i.identity_status||'',  `setIvField(${i.id},'identity_status',this.value)`);
+    const paySel = sel(payOpts, i.payment_method||'',   `setIvField(${i.id},'payment_method',this.value)`);
+    const payBadge   = i.expected_pay ? `<div style="font-size:.72rem;color:#0369a1;margin-top:2px">💰 ${esc(i.expected_pay)}</div>` : '';
     const skillsLine = i.skills ? `<div style="font-size:.72rem;color:var(--gray-500);margin-top:1px">🛠 ${esc(i.skills)}</div>` : '';
     const noteLine   = i.applicant_note ? `<div style="font-size:.72rem;color:var(--gray-500);margin-top:1px;font-style:italic">💬 ${esc(i.applicant_note)}</div>` : '';
     return `<tr>
@@ -8766,19 +8772,22 @@ function renderInterviews(rows) {
       <td>${dt}</td>
       <td style="font-size:.82rem">${esc(i.location||'—')}</td>
       <td>${IV_STATUS[i.status] || i.status}</td>
-      <td>${docLink}</td>
-      <td>${idBadge || '<span style="color:var(--gray-400);font-size:.78rem">—</span>'}</td>
+      <td>${idSel}</td>
+      <td>${paySel}</td>
       <td style="white-space:nowrap;display:flex;gap:.3rem;flex-wrap:wrap">
         ${i.status==='scheduled'?`<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1" onclick="setIvStatus(${i.id},'completed')">标记完成</button>`:''}
         ${i.status==='completed'?`
           <button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">通过并发链接</button>
           <button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'failed')">未通过</button>`:''}
-        ${i.status==='passed'&&!i.doc_request_token?`<button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">发文件链接</button>`:''}
+        ${i.status==='passed'?`<button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">${i.doc_request_token?'重发链接':'发文件链接'}</button>`:''}
         ${i.status==='scheduled'?`<button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'cancelled')">取消</button>`:''}
-        ${idBtn}
       </td>
     </tr>`;
   }).join('');
+}
+
+async function setIvField(id, field, value) {
+  await api(`/admin/interviews/${id}`, { method:'PUT', body: JSON.stringify({ [field]: value }) });
 }
 
 async function sendIdentityVerify(interviewId, workerName) {
