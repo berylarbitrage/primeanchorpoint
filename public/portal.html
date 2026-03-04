@@ -2099,7 +2099,7 @@ function showPunchConfirmMap() {
   if (_confirmMap) { _confirmMap.remove(); _confirmMap = null; _confirmMapUserMarker = null; _confirmMapFenceCircle = null; _confirmMapFenceMarker = null; }
 
   _confirmMap = L.map('punchConfirmMap', { zoomControl: true, scrollWheelZoom: false, attributionControl: false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_confirmMap);
+  L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains: ['0', '1', '2', '3'] }).addTo(_confirmMap);
 
   // User position – blue pulsing icon
   const userIcon = L.divIcon({
@@ -3600,7 +3600,7 @@ else document.getElementById('loginWrap').style.display = '';
 
     if (!_mmMap) {
       _mmMap = L.map('miniMapContainer', { zoomControl: true, scrollWheelZoom: false });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(_mmMap);
+      L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { attribution: '© Google Maps', maxZoom: 20, subdomains: ['0', '1', '2', '3'] }).addTo(_mmMap);
       _mmMarker = L.marker([lat, lng]).addTo(_mmMap);
       _mmMap.setView([lat, lng], 16);
     } else {
