@@ -5621,8 +5621,8 @@ function updateAssignWorkMap() {
 
   if (!_assignWorkMap) {
     _assignWorkMap = L.map('aWorkMap', { zoomControl: true, scrollWheelZoom: true });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap', maxZoom: 19
+    L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+      attribution: '© Google Maps', maxZoom: 20, subdomains: ['0', '1', '2', '3']
     }).addTo(_assignWorkMap);
 
     _assignWorkMarker = L.marker([lat, lng], { draggable: true }).addTo(_assignWorkMap);
@@ -10245,9 +10245,10 @@ function updateSiteMap() {
   wrap.style.display = '';
   if (!_siteMap) {
     _siteMap = L.map('siteMapPreview', { zoomControl: true, scrollWheelZoom: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap',
-      maxZoom: 19
+    L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+      attribution: '© Google Maps',
+      maxZoom: 20,
+      subdomains: ['0', '1', '2', '3']
     }).addTo(_siteMap);
     _siteMarker = L.marker([lat, lng]).addTo(_siteMap);
     _siteCircle = L.circle([lat, lng], { radius, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.15, weight: 2 }).addTo(_siteMap);
@@ -10634,7 +10635,7 @@ async function addSkillOption() {
 
     if (!_mmMap) {
       _mmMap = L.map('miniMapContainer', { zoomControl: true, scrollWheelZoom: false });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(_mmMap);
+      L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { attribution: '© Google Maps', maxZoom: 20, subdomains: ['0', '1', '2', '3'] }).addTo(_mmMap);
       _mmMarker = L.marker([lat, lng]).addTo(_mmMap);
       _mmMap.setView([lat, lng], 16);
     } else {
