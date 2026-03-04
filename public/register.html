@@ -865,6 +865,44 @@ if (typeParam === 'enterprise') {
   document.getElementById('typeSelector').style.display = 'none';
 }
 
+// ── Invite token handling ──
+const _inviteToken = urlParams.get('invite');
+if (_inviteToken) {
+  _typeOnly = 'worker';
+  document.getElementById('typeSelector').style.display = 'none';
+  // Show an invite banner above the form
+  const banner = document.createElement('div');
+  banner.id = 'inviteBanner';
+  banner.style.cssText = 'background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:.75rem 1rem;font-size:.88rem;color:#166534;margin-bottom:1rem;display:flex;align-items:center;gap:.6rem';
+  banner.innerHTML = '<span style="font-size:1.3rem">✉️</span><span id="inviteBannerText">正在验证邀请链接...</span>';
+  document.getElementById('formWorker').insertBefore(banner, document.getElementById('formWorker').firstChild);
+
+  // Fetch invite info and pre-fill form
+  fetch('/api/register/invite-info?token=' + encodeURIComponent(_inviteToken))
+    .then(r => r.json())
+    .then(d => {
+      if (!d.valid) {
+        document.getElementById('inviteBannerText').textContent = '邀请链接无效或已过期。Invalid or expired invite link.';
+        banner.style.background = '#fef2f2';
+        banner.style.borderColor = '#fecaca';
+        banner.style.color = '#dc2626';
+        return;
+      }
+      document.getElementById('inviteBannerText').innerHTML =
+        `您好 <strong>${d.first_name} ${d.last_name}</strong>，欢迎注册账户！请填写以下信息完成注册并验证联系方式。`;
+      if (d.first_name) document.getElementById('wFirstName').value = d.first_name;
+      if (d.last_name)  document.getElementById('wLastName').value  = d.last_name;
+      if (d.phone) {
+        const ph = d.phone.replace(/(\d{3})(\d{3})(\d{4})/, '($1) $2-$3');
+        document.getElementById('wPhone').value = ph;
+      }
+      if (d.email) document.getElementById('wEmail').value = d.email;
+    })
+    .catch(() => {
+      document.getElementById('inviteBannerText').textContent = '无法验证邀请链接，请稍后重试。';
+    });
+}
+
 function formatPhoneInput(el) {
   const digits = el.value.replace(/\D/g, '').slice(0, 10);
   if (digits.length === 0) { el.value = ''; return; }
@@ -967,7 +1005,7 @@ async function registerWorker() {
     const r = await fetch('/api/register/worker', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ first_name: firstName, middle_name: middleName, last_name: lastName, name, phone, email, dob, city, state, work_status: _selectedStatus, position_interests: interests, password: pwd, ref_code: new URLSearchParams(window.location.search).get('ref') || undefined })
+      body: JSON.stringify({ first_name: firstName, middle_name: middleName, last_name: lastName, name, phone, email, dob, city, state, work_status: _selectedStatus, position_interests: interests, password: pwd, ref_code: new URLSearchParams(window.location.search).get('ref') || undefined, invite_token: _inviteToken || undefined })
     });
     const d = await r.json();
     if (!r.ok || d.error) return showError(d.error || 'Registration failed');

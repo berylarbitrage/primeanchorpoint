@@ -172,6 +172,21 @@ tr:hover td{background:var(--sky-light)}
 .hours-item{background:var(--white);border-radius:var(--radius);padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,.04);text-align:center}
 .hours-item h4{font-size:1.6rem;font-weight:700;color:var(--sky)}.hours-item p{font-size:.72rem;color:var(--gray-400);margin-top:2px}
 .emp-meta{font-size:.75rem;color:var(--gray-400);margin-top:2px}
+.emp-table td{padding:.75rem 1rem;vertical-align:middle}
+.emp-table th{padding:.6rem 1rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-400);background:var(--gray-50);border-bottom:1px solid var(--gray-200)}
+.emp-table tbody tr{border-bottom:1px solid var(--gray-100);transition:background .12s}
+.emp-table tbody tr:last-child{border-bottom:none}
+.emp-table tbody tr:hover{background:#f8fafc}
+.emp-name{font-weight:700;color:var(--gray-800);font-size:.92rem}
+.emp-contact{font-size:.75rem;color:var(--gray-400);margin-top:2px;display:flex;gap:.5rem;flex-wrap:wrap}
+.emp-contact a{color:var(--sky);text-decoration:none}
+.emp-contact a:hover{text-decoration:underline}
+.emp-job-tag{display:inline-block;background:#e0f2fe;color:#0369a1;padding:1px 7px;border-radius:8px;font-size:.73rem;margin:1px 2px;font-weight:600}
+.emp-company{font-size:.8rem;color:var(--gray-600);margin-top:2px}
+.emp-action-btn{background:none;border:1px solid var(--gray-200);border-radius:7px;padding:.28rem .55rem;cursor:pointer;font-size:1rem;line-height:1;color:var(--gray-500);transition:all .12s}
+.emp-action-btn:hover{background:var(--gray-100);border-color:var(--gray-300);color:var(--gray-800)}
+.emp-menu-item{display:block;width:100%;text-align:left;padding:.55rem 1rem;background:none;border:none;cursor:pointer;font-size:.87rem;color:var(--gray-700);transition:background .1s;white-space:nowrap}
+.emp-menu-item:hover{background:#f1f5f9}
 .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:.25rem 1.5rem}
 .detail-row{display:flex;flex-direction:column;padding:.4rem 0;border-bottom:1px solid var(--gray-200)}
 .detail-row span:first-child{font-size:.72rem;font-weight:700;color:var(--gray-400);text-transform:uppercase}
@@ -679,7 +694,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="stat-card"><h3 id="empStatMonth">0</h3><p>本月入职</p></div>
   </div>
   <div class="search-bar">
-    <input type="text" id="empSearch" placeholder="搜索姓名、员工号、职位、部门..." oninput="filterEmployees()">
+    <input type="text" id="empSearch" placeholder="搜索姓名、员工号、职位、公司..." oninput="filterEmployees()">
     <select id="empStatusFilter" onchange="filterEmployees()">
       <option value="">全部状态</option>
       <option value="active">在职</option>
@@ -688,9 +703,30 @@ tr:hover td{background:var(--sky-light)}
     </select>
     <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
-  <div class="card">
-    <table><thead><tr><th>员工号</th><th>工人编码</th><th>姓名</th><th>当前职位</th><th>所属公司</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
-    <tbody id="empTable"></tbody></table>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table class="emp-table">
+      <thead><tr>
+        <th style="width:90px">员工号</th>
+        <th>姓名 / 联系方式</th>
+        <th>职位 / 公司</th>
+        <th style="width:80px">薪资</th>
+        <th style="width:70px">状态</th>
+        <th style="width:90px">入职日期</th>
+        <th style="width:56px">操作</th>
+      </tr></thead>
+      <tbody id="empTable"></tbody>
+    </table>
+  </div>
+  <!-- Employee action dropdown menu (shared) -->
+  <div id="empActionMenu" style="display:none;position:fixed;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.13);z-index:9999;min-width:180px;padding:4px 0">
+    <button class="emp-menu-item" id="empMenuDetail">🔍 查看详情</button>
+    <button class="emp-menu-item" id="empMenuEdit">✏️ 编辑信息</button>
+    <button class="emp-menu-item" id="empMenuJob" style="color:#9A3412">📋 安排职位</button>
+    <button class="emp-menu-item" id="empMenuRate" style="color:#0369a1">⭐ 员工评分</button>
+    <button class="emp-menu-item" id="empMenuDoc" style="color:#166534">📎 发送材料链接</button>
+    <button class="emp-menu-item" id="empMenuRegLink" style="color:#7c3aed">📱 发送注册链接</button>
+    <div style="height:1px;background:var(--gray-200);margin:4px 0"></div>
+    <button class="emp-menu-item" id="empMenuTerminate" style="color:#dc2626;display:none">🚪 办理离职</button>
   </div>
 </div>
 
@@ -2415,6 +2451,28 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- ════ Employee Add/Edit Modal ════ -->
+<!-- ═══ Send Registration Link Modal ═══ -->
+<div class="modal-bg" id="regLinkModal"><div class="modal" style="max-width:420px">
+  <h2>📱 发送注册链接</h2>
+  <input type="hidden" id="regLinkEmpId">
+  <p style="color:var(--gray-500);font-size:.88rem;margin-bottom:1.2rem">
+    员工 <strong id="regLinkEmpName"></strong> 将收到链接，点击后可验证手机号和邮箱，完成账户注册。链接 <strong>7天内有效</strong>。
+  </p>
+  <div class="field">
+    <label>手机号（接收短信）</label>
+    <input type="tel" id="regLinkPhone" placeholder="10位手机号" style="width:100%">
+  </div>
+  <div class="field">
+    <label>邮箱（接收邮件）</label>
+    <input type="email" id="regLinkEmail" placeholder="employee@example.com" style="width:100%">
+  </div>
+  <div id="regLinkResult" style="margin:.75rem 0;min-height:1.5rem"></div>
+  <div style="display:flex;gap:.75rem;justify-content:flex-end">
+    <button class="btn btn-outline" onclick="guardClose('regLinkModal')">关闭</button>
+    <button class="btn btn-green" onclick="sendRegLink()">发送链接</button>
+  </div>
+</div></div>
+
 <div class="modal-bg" id="empModal"><div class="modal modal-lg">
   <h2 id="empModalTitle">新增员工</h2>
   <input type="hidden" id="empId">
@@ -5964,26 +6022,102 @@ function renderEmployees(list) {
     const jobs = e.current_jobs || [];
     const jobNames = jobs.map(j=>j.job_title).filter(Boolean);
     const companyNames = [...new Set(jobs.map(j=>j.company_name).filter(Boolean))];
+    const payLabel = e.pay_rate ? '$'+Number(e.pay_rate).toFixed(0)+'/'+(e.pay_type==='hourly'?'hr':'yr') : '—';
+    const contactHtml = [
+      e.email ? `<a href="mailto:${esc(e.email)}">${esc(e.email)}</a>` : '',
+      e.phone ? `<a href="tel:${esc(e.phone)}">${esc(e.phone)}</a>` : ''
+    ].filter(Boolean).join('<span style="color:var(--gray-200)">|</span>');
+    const workerCodeHtml = e.worker_code
+      ? `<span style="font-family:monospace;font-size:.72rem;color:var(--sky);font-weight:600">${esc(e.worker_code)}</span>`
+      : '';
     return `<tr>
-    <td><strong>${esc(e.employee_id||'')}</strong></td>
-    <td style="font-family:monospace;font-size:.78rem;white-space:nowrap;color:var(--sky)">${e.worker_code ? esc(e.worker_code) : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td style="cursor:pointer" onclick='viewEmployee(${e.id})'><strong>${esc(e.first_name)} ${esc(e.last_name)}</strong>
-      <div class="emp-meta">${esc(e.email||'')} ${e.phone?'· '+esc(e.phone):''}</div></td>
-    <td>${jobNames.length ? jobNames.map(n=>'<span style="display:inline-block;background:var(--sky-light);color:var(--sky);padding:1px 8px;border-radius:10px;font-size:.78rem;margin:1px 2px">'+esc(n)+'</span>').join('') : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td>${companyNames.length ? companyNames.map(c=>'<span style="font-size:.85rem">'+esc(c)+'</span>').join('<br>') : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td><span class="badge badge-${e.pay_type||'hourly'}">${PAY_TYPE_LABEL[e.pay_type]||e.pay_type}</span>
-      ${e.pay_rate?'<br><span style="font-size:.75rem">$'+Number(e.pay_rate).toFixed(2)+'/'+((e.pay_type==='hourly')?'hr':'yr')+'</span>':''}</td>
-    <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
-    <td>${e.hire_date||'—'}</td>
     <td>
-      <button class="btn btn-sm" onclick='viewEmployee(${e.id})'>详情</button>
-      <button class="btn btn-sm" style="background:var(--sky-light);color:var(--blue);border:1px solid var(--sky)" onclick='openRatingModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>评分</button>
-      <button class="btn btn-sm" style="background:#FFF7ED;color:#9A3412;border:1px solid #FED7AA" onclick='openAssignJobModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>安排职位</button>
-      <button class="btn btn-sm" style="background:#F0FDF4;color:#166534;border:1px solid #BBF7D0" onclick='sendEmpDocLink(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>发送材料链接</button>
-      <button class="btn btn-sm" onclick='openEmpModal(${e.id})'>编辑</button>
-      ${e.status!=='terminated'?`<button class="btn btn-sm btn-red" onclick="terminateEmployee(${e.id},'${esc(e.first_name)} ${esc(e.last_name)}')">离职</button>`:''}
+      <div style="font-weight:700;font-size:.88rem">${esc(e.employee_id||'—')}</div>
+      ${workerCodeHtml}
     </td>
-  </tr>`}).join('') : '<tr><td colspan="9" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
+    <td style="cursor:pointer" onclick='viewEmployee(${e.id})'>
+      <div class="emp-name">${esc(e.first_name)} ${esc(e.last_name)}</div>
+      <div class="emp-contact">${contactHtml||'<span style="color:var(--gray-300)">无联系方式</span>'}</div>
+    </td>
+    <td>
+      <div>${jobNames.length ? jobNames.map(n=>'<span class="emp-job-tag">'+esc(n)+'</span>').join('') : '<span style="color:var(--gray-300);font-size:.82rem">未分配</span>'}</div>
+      ${companyNames.length ? '<div class="emp-company">'+companyNames.map(c=>esc(c)).join(' · ')+'</div>' : ''}
+    </td>
+    <td style="font-size:.85rem;white-space:nowrap">${payLabel}</td>
+    <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
+    <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
+    <td>
+      <button class="emp-action-btn" onclick='openEmpActionMenu(event,${e.id},"${esc(e.first_name)} ${esc(e.last_name)}",${e.status!=='terminated'})' title="操作">⋯</button>
+    </td>
+  </tr>`}).join('') : '<tr><td colspan="7" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
+}
+
+// ── Employee action dropdown ──
+let _empMenuCurrentId = null, _empMenuCurrentName = null, _empMenuCanTerminate = false;
+const _empMenuEl = () => document.getElementById('empActionMenu');
+
+function openEmpActionMenu(evt, id, name, canTerminate) {
+  evt.stopPropagation();
+  _empMenuCurrentId = id;
+  _empMenuCurrentName = name;
+  _empMenuCanTerminate = canTerminate;
+  const menu = _empMenuEl();
+  document.getElementById('empMenuTerminate').style.display = canTerminate ? '' : 'none';
+  menu.style.display = 'block';
+  const rect = evt.currentTarget.getBoundingClientRect();
+  const menuW = 190, menuH = 290;
+  let left = rect.right - menuW;
+  let top = rect.bottom + 4;
+  if (left < 4) left = 4;
+  if (top + menuH > window.innerHeight) top = rect.top - menuH - 4;
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+}
+function _closeEmpMenu() { _empMenuEl().style.display = 'none'; }
+document.addEventListener('click', _closeEmpMenu);
+
+// Wire up menu items
+document.getElementById('empMenuDetail').onclick   = () => { _closeEmpMenu(); viewEmployee(_empMenuCurrentId); };
+document.getElementById('empMenuEdit').onclick     = () => { _closeEmpMenu(); openEmpModal(_empMenuCurrentId); };
+document.getElementById('empMenuJob').onclick      = () => { _closeEmpMenu(); openAssignJobModal(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuRate').onclick     = () => { _closeEmpMenu(); openRatingModal(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuDoc').onclick      = () => { _closeEmpMenu(); sendEmpDocLink(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuRegLink').onclick  = () => { _closeEmpMenu(); openSendRegLinkModal(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuTerminate').onclick= () => { _closeEmpMenu(); terminateEmployee(_empMenuCurrentId, _empMenuCurrentName); };
+
+// ── Send Registration Link modal ──
+function openSendRegLinkModal(empId, empName) {
+  const emp = allEmployees.find(e=>e.id===empId) || {};
+  document.getElementById('regLinkEmpId').value = empId;
+  document.getElementById('regLinkEmpName').textContent = empName;
+  document.getElementById('regLinkPhone').value = emp.phone || '';
+  document.getElementById('regLinkEmail').value = emp.email || '';
+  document.getElementById('regLinkResult').innerHTML = '';
+  document.getElementById('regLinkModal').classList.add('show');
+}
+
+async function sendRegLink() {
+  const empId = document.getElementById('regLinkEmpId').value;
+  const phone = document.getElementById('regLinkPhone').value.trim();
+  const email = document.getElementById('regLinkEmail').value.trim();
+  const resultEl = document.getElementById('regLinkResult');
+  if (!phone && !email) { resultEl.innerHTML = '<span style="color:#dc2626">请填写手机号或邮箱</span>'; return; }
+  resultEl.innerHTML = '<span style="color:var(--gray-400)">发送中...</span>';
+  try {
+    const d = await api(`/admin/employees/${empId}/send-registration-link`, 'POST', { phone, email });
+    let msg = '<div style="color:#166534;font-weight:600">✓ 链接已生成</div>';
+    const sent = [];
+    if (d.sms_sent) sent.push('短信');
+    if (d.email_sent) sent.push('邮件');
+    if (sent.length) msg += `<div style="font-size:.85rem;margin-top:.3rem">已通过 <strong>${sent.join(' + ')}</strong> 发送</div>`;
+    if (!sent.length) {
+      msg += `<div style="font-size:.82rem;margin-top:.3rem;color:var(--gray-500)">短信/邮件服务未配置，请手动分享链接：</div>
+        <div style="background:#f1f5f9;padding:.5rem .7rem;border-radius:6px;margin-top:.4rem;font-size:.78rem;word-break:break-all;user-select:all">${esc(d.invite_url)}</div>`;
+    }
+    resultEl.innerHTML = msg;
+  } catch(e) {
+    resultEl.innerHTML = `<span style="color:#dc2626">错误：${esc(e.message||String(e))}</span>`;
+  }
 }
 
 function openEmpModal(id) {

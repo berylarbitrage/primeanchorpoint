@@ -847,6 +847,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_account_history (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// ─── Employee registration invites ───
+db.exec(`CREATE TABLE IF NOT EXISTS employee_registration_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  token TEXT UNIQUE NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Backfill: assign worker_code + linked_inquiry_id to existing verified workers
 // (runs once on startup; activateWorkerAccount is idempotent — skips if code already set)
 setTimeout(() => {
@@ -3445,6 +3455,80 @@ app.get('/api/admin/employees/:id/doc-requests', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id));
 });
 
+// ─── Employee Registration Invites ───
+
+// Admin: send registration invite link to employee (via SMS/email)
+app.post('/api/admin/employees/:id/send-registration-link', requireAdmin, async (req, res) => {
+  try {
+    const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+
+    // Invalidate old pending invites
+    db.prepare("DELETE FROM employee_registration_invites WHERE employee_id=? AND used=0").run(emp.id);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+    db.prepare('INSERT INTO employee_registration_invites (employee_id, token, expires_at) VALUES (?,?,?)')
+      .run(emp.id, token, expiresAt);
+
+    const host = req.get('host');
+    const proto = req.protocol;
+    const inviteUrl = `${proto}://${host}/register?invite=${token}`;
+
+    const name = `${emp.first_name||''} ${emp.last_name||''}`.trim();
+    let smsSent = false, emailSent = false;
+    const errs = [];
+
+    // SMS
+    const phone = (req.body.phone || emp.phone || '').replace(/\D/g,'').slice(-10);
+    if (phone) {
+      smsSent = await sendSMS('+1'+phone,
+        `[Prime Anchorpoint] 您好 ${name}，请点击以下链接完成账户注册（7天内有效）:\n${inviteUrl}\nHi ${name}, click to register your account (valid 7 days).`
+      );
+      if (!smsSent) errs.push('SMS failed');
+    }
+
+    // Email
+    const email = req.body.email || emp.email || '';
+    if (email) {
+      const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+        <h2 style="color:#0F2B5B">Prime Anchor Point — 账户注册邀请</h2>
+        <p>您好 <strong>${name}</strong>，</p>
+        <p>请点击下方按钮完成您的账户注册，验证手机号和邮箱。链接 <strong>7天内有效</strong>。</p>
+        <p><a href="${inviteUrl}" style="display:inline-block;padding:12px 28px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">注册账户 / Register Account</a></p>
+        <p style="color:#64748b;font-size:.85rem">或复制此链接：<br>${inviteUrl}</p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:1.5rem 0">
+        <p style="color:#94a3b8;font-size:.75rem">Prime Anchor Point Staffing &mdash; 如非本人请忽略此邮件</p>
+      </div>`;
+      emailSent = await sendEmail(email, 'Prime Anchor Point — 账户注册邀请 / Registration Invite', null, html);
+      if (!emailSent) errs.push('Email failed');
+    }
+
+    res.json({ success: true, invite_url: inviteUrl, sms_sent: smsSent, email_sent: emailSent, warnings: errs });
+  } catch (e) {
+    console.error('[Send Reg Link]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Public: validate invite token (used by register.html)
+app.get('/api/register/invite-info', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Missing token' });
+  const inv = db.prepare("SELECT * FROM employee_registration_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
+  if (!inv) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  const emp = db.prepare('SELECT id, first_name, last_name, email, phone FROM employees WHERE id=?').get(inv.employee_id);
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+  res.json({
+    valid: true,
+    first_name: emp.first_name || '',
+    last_name: emp.last_name || '',
+    email: emp.email || '',
+    phone: emp.phone ? emp.phone.replace(/\D/g,'').slice(-10) : '',
+    employee_id: emp.id
+  });
+});
+
 app.delete('/api/admin/employee-doc-requests/:id', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM employee_doc_requests WHERE id=?').run(req.params.id);
   res.json({ success: true });
@@ -5797,7 +5881,7 @@ app.get('/api/register/check', (req, res) => {
 
 app.post('/api/register/worker', async (req, res) => {
   try {
-  const { first_name, middle_name, last_name, phone: phoneRaw, email, dob, work_status, position_interests, password, city, state, ref_code } = req.body;
+  const { first_name, middle_name, last_name, phone: phoneRaw, email, dob, work_status, position_interests, password, city, state, ref_code, invite_token } = req.body;
   const phone = phoneRaw ? phoneRaw.replace(/\D/g, '').slice(-10) : ''; // store last 10 digits only
   const nameParts = [first_name, middle_name, last_name].filter(Boolean);
   if (!first_name || !last_name || !phone || !email || !password)
@@ -5853,10 +5937,23 @@ app.post('/api/register/worker', async (req, res) => {
     const referrer = db.prepare('SELECT id FROM worker_accounts WHERE worker_code=? AND active=1').get(ref_code);
     if (referrer) referredBy = referrer.id;
   }
-  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active, source, referred_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, 'online', referredBy);
+  // Validate invite token if provided
+  let inviteEmployeeId = null;
+  if (invite_token) {
+    const inv = db.prepare("SELECT * FROM employee_registration_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(invite_token);
+    if (inv) inviteEmployeeId = inv.employee_id;
+  }
+
+  const registrationSource = inviteEmployeeId ? 'invite' : 'online';
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active, source, referred_by, employee_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, registrationSource, referredBy, inviteEmployeeId);
   const accountId = r.lastInsertRowid;
+
+  // Mark invite as used
+  if (invite_token && inviteEmployeeId) {
+    db.prepare('UPDATE employee_registration_invites SET used=1 WHERE token=?').run(invite_token);
+  }
 
   if (!needsVerification) {
     // No verification channels configured — activate immediately and auto-login
