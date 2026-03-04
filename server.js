@@ -269,6 +269,8 @@ if (!fs.existsSync(punchPhotosDir)) fs.mkdirSync(punchPhotosDir, { recursive: tr
 const db = new Database(path.join(dataDir, 'prime.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('wal_autocheckpoint = 100');
+// Custom function: strip all non-digits and return last 10 chars (US phone matching)
+db.function('phone10', s => s ? s.replace(/\D/g, '').slice(-10) : '');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS jobs (
@@ -4078,19 +4080,11 @@ app.post('/api/worker/login', (req, res) => {
   const { login, username, password } = req.body;
   const identifier = (login || username || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
-  // Normalize phone: strip all non-digits, also try +1 prefix variants
-  const digits = identifier.replace(/\D/g, '');
-  const phoneVariants = digits.length >= 10
-    ? [digits, digits.slice(-10), `+1${digits.slice(-10)}`, `1${digits.slice(-10)}`]
-    : [];
-  // Try matching by email, phone (all format variants), or username
-  let w = db.prepare('SELECT * FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(identifier, identifier, identifier);
-  if (!w && phoneVariants.length) {
-    for (const v of phoneVariants) {
-      w = db.prepare('SELECT * FROM worker_accounts WHERE phone=? OR username=?').get(v, v);
-      if (w) break;
-    }
-  }
+  const digits10 = identifier.replace(/\D/g, '').slice(-10);
+  // Match by email (exact), phone (last-10-digits, format-agnostic), or username
+  const w = db.prepare(
+    'SELECT * FROM worker_accounts WHERE email=? OR phone10(phone)=? OR username=?'
+  ).get(identifier, digits10, identifier);
   if (!w || !verifyPassword(password, w.salt, w.password_hash))
     return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
   if (!w.active)
@@ -5324,22 +5318,16 @@ app.post('/api/customer/login', (req, res) => {
   const { login, email, password } = req.body;
   const identifier = (login || email || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
-  // Normalize phone variants for flexible matching
-  const digits = identifier.replace(/\D/g, '');
-  const phoneVariants = digits.length >= 10
-    ? [digits, digits.slice(-10), `+1${digits.slice(-10)}`, `1${digits.slice(-10)}`]
-    : [];
-  const findCustomer = (id) => db.prepare('SELECT * FROM customer_accounts WHERE email=? OR phone=?').get(id, id);
-  let cAny = findCustomer(identifier);
-  if (!cAny && phoneVariants.length) {
-    for (const v of phoneVariants) { cAny = findCustomer(v); if (cAny) break; }
-  }
+  const digits10 = identifier.replace(/\D/g, '').slice(-10);
+  const cAny = db.prepare(
+    'SELECT * FROM customer_accounts WHERE email=? OR phone10(phone)=?'
+  ).get(identifier, digits10);
   if (cAny && cAny.approval_status === 'pending')
     return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
   if (cAny && cAny.approval_status === 'rejected')
     return res.status(403).json({ error: '您的企业注册已被拒绝，请联系管理员 / Your registration was rejected. Please contact admin' });
-  const c = (cAny && cAny.active) ? db.prepare('SELECT * FROM customer_accounts WHERE id=?').get(cAny.id) : null;
-  if (!c || !verifyPassword(password, c.salt, c.password_hash))
+  const c = (cAny && cAny.active && verifyPassword(password, cAny.salt, cAny.password_hash)) ? cAny : null;
+  if (!c)
     return res.status(401).json({ error: '邮箱/电话或密码错误 / Invalid email/phone or password' });
   const token = crypto.randomBytes(32).toString('hex');
   customerSessions.set(token, { created: Date.now(), customerId: c.id, partnerId: c.partner_id });
@@ -5423,7 +5411,8 @@ app.get('/api/register/check', (req, res) => {
 
 app.post('/api/register/worker', async (req, res) => {
   try {
-  const { first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, password, city, state, ref_code } = req.body;
+  const { first_name, middle_name, last_name, phone: phoneRaw, email, dob, work_status, position_interests, password, city, state, ref_code } = req.body;
+  const phone = phoneRaw ? phoneRaw.replace(/\D/g, '').slice(-10) : ''; // store last 10 digits only
   const nameParts = [first_name, middle_name, last_name].filter(Boolean);
   if (!first_name || !last_name || !phone || !email || !password)
     return res.status(400).json({ error: '请填写名字、姓氏、手机号、邮箱和密码 / First name, last name, phone, email, and password are required' });
