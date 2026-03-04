@@ -660,6 +660,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS shift_confirmations (
 )`);
 try { db.exec(`ALTER TABLE shift_confirmations ADD COLUMN shift_start TEXT DEFAULT ''`); } catch {}
 try { db.exec(`ALTER TABLE shift_confirmations ADD COLUMN shift_end TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE shift_confirmations ADD COLUMN reminded_at DATETIME DEFAULT NULL`); } catch {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1269,6 +1270,56 @@ function scheduleWeeklyShiftGeneration() {
   }, next7am - now);
 }
 scheduleWeeklyShiftGeneration();
+
+// ─── 24-hour advance shift reminders ──────────────────────────────
+// Runs daily at 9 AM: sends SMS to workers with pending shifts tomorrow
+async function send24hShiftReminders() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+  const pending = db.prepare(`
+    SELECT sc.id, sc.shift_start, sc.shift_end,
+           j.title,
+           w.phone, w.first_name, w.name as wname
+    FROM shift_confirmations sc
+    JOIN assignments a ON sc.assignment_id = a.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN worker_accounts w ON w.linked_inquiry_id = i.id
+    WHERE sc.date = ?
+      AND sc.status = 'pending'
+      AND sc.reminded_at IS NULL
+      AND w.phone IS NOT NULL AND w.phone != ''
+  `).all(tomorrowStr);
+
+  let sent = 0;
+  for (const row of pending) {
+    const name = row.first_name || row.wname || '';
+    const job = row.title || '班次';
+    const time = (row.shift_start && row.shift_end)
+      ? `（${row.shift_start}–${row.shift_end}）`
+      : '';
+    await sendSMS(row.phone,
+      `[Prime Anchorpoint] 提醒：您明天${time}有 ${job} 的班次，请登录 Portal 确认是否出勤。`
+    ).catch(() => {});
+    db.prepare(`UPDATE shift_confirmations SET reminded_at=CURRENT_TIMESTAMP WHERE id=?`).run(row.id);
+    sent++;
+  }
+  console.log(`[24hReminder] ${tomorrowStr}: sent ${sent} reminders`);
+}
+
+function schedule24hReminders() {
+  const now = new Date();
+  const next9am = new Date(now);
+  next9am.setHours(9, 0, 0, 0);
+  if (next9am <= now) next9am.setDate(next9am.getDate() + 1);
+  setTimeout(() => {
+    send24hShiftReminders();
+    setInterval(send24hShiftReminders, 24 * 60 * 60 * 1000);
+  }, next9am - now);
+}
+schedule24hReminders();
 
 // ─── Middleware ───
 app.use(express.json());
