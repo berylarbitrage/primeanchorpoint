@@ -503,21 +503,20 @@ tr:last-child td{border-bottom:none}
           <div class="punch-status" id="punchStatus">正在检查状态…</div>
           <div class="punch-time" id="punchTime"></div>
           <div class="punch-sub" id="punchSub"></div>
-          <!-- Punch type selector (required) -->
-          <div id="punchTypeWrap" style="display:none">
-            <div style="font-size:.82rem;color:var(--gray-400);margin-bottom:.4rem">打卡类型（必选）/ Punch Type</div>
-            <div class="punch-type-group">
-              <button type="button" class="punch-type-btn" id="ptBtnIn" onclick="selectPunchType('in')">▶ 上班</button>
-              <button type="button" class="punch-type-btn" id="ptBtnBreak" onclick="selectPunchType('break')">☕ 休息</button>
-              <button type="button" class="punch-type-btn" id="ptBtnOut" onclick="selectPunchType('out')">⏹ 下班</button>
-            </div>
-          </div>
           <!-- Job selector shown only when clocking in with multiple active jobs -->
           <div id="jobSelectorWrap" style="display:none;margin:.75rem 0;width:100%;max-width:340px">
             <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block">选择打卡工作 / Select job to clock in for</label>
             <select id="jobSelector" style="width:100%;padding:.55rem .8rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem;background:#fff"></select>
           </div>
-          <button class="btn-punch btn-punch-in" id="btnPunch" onclick="startPunchFlow()" disabled>获取位置中…</button>
+          <!-- Context-aware punch buttons -->
+          <div id="punchBtnsWrap" style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:.5rem">
+            <button class="btn-punch btn-punch-in" id="btnPunchIn" onclick="startPunchFlow('in')" disabled style="width:100%">▶ 上班打卡 / Clock In</button>
+            <div id="punchWorkingBtns" style="display:none;gap:.5rem">
+              <button onclick="startPunchFlow('break_start')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff">☕ 休息开始</button>
+              <button onclick="startPunchFlow('out')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:var(--red);color:#fff">⏹ 下班打卡</button>
+            </div>
+            <button id="btnBreakEnd" onclick="startPunchFlow('break_end')" style="display:none;width:100%;padding:.85rem;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff">▶ 休息结束 / Resume Work</button>
+          </div>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
           <!-- Punch confirmation modal overlay -->
           <div id="punchConfirmOverlay" style="display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
@@ -547,10 +546,24 @@ tr:last-child td{border-bottom:none}
           </div>
         </div>
       </div>
-      <div class="card">
-        <h2>打卡历史记录</h2>
-        <table><thead><tr><th>日期</th><th>工作</th><th>上班</th><th>下班</th><th>工时</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
-        <tbody id="timeclockTable"></tbody></table>
+      <div class="card" style="padding:0">
+        <div style="padding:1rem 1rem .5rem;font-size:1rem;font-weight:700">打卡历史记录</div>
+        <div style="overflow-x:auto;padding:0 1rem 1rem">
+          <table style="min-width:780px"><thead><tr><th>日期</th><th>工作</th><th>上班</th><th>休息开始</th><th>休息结束</th><th>下班</th><th>工时</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
+          <tbody id="timeclockTable"></tbody></table>
+        </div>
+      </div>
+      <!-- Punch confirm modal -->
+      <div id="punchConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center">
+        <div style="background:#fff;border-radius:16px;padding:1.75rem;width:90%;max-width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+          <div style="font-size:1.05rem;font-weight:700;color:var(--blue);margin-bottom:.35rem">确认打卡 / Confirm Punch</div>
+          <div style="font-size:.9rem;color:var(--gray-500);margin-bottom:.5rem" id="punchConfirmTypeLabel"></div>
+          <div style="font-size:1.6rem;font-weight:800;color:var(--blue);letter-spacing:.05em;margin-bottom:1.25rem" id="punchConfirmClock"></div>
+          <div style="display:flex;gap:.6rem">
+            <button onclick="closePunchConfirm()" style="flex:1;padding:.65rem;border:1px solid var(--gray-200);border-radius:8px;background:var(--gray-100);font-size:.9rem;font-weight:600;cursor:pointer">取消</button>
+            <button id="btnExecutePunch" onclick="executePunch()" style="flex:2;padding:.65rem;border:none;border-radius:8px;background:var(--green);color:#fff;font-size:.9rem;font-weight:700;cursor:pointer">✅ 确认打卡</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1597,20 +1610,9 @@ function closeAppDetail() {
 
 // ─── GPS Punch ───
 let _gpsCoords = null;
-let _punchStatus = null; // { clocked_in, open_entry, active_jobs }
-let _selectedPunchType = null; // 'in' | 'break' | 'out'
-
-function selectPunchType(type) {
-  _selectedPunchType = type;
-  ['in','break','out'].forEach(t => {
-    const btn = document.getElementById('ptBtn' + t.charAt(0).toUpperCase() + t.slice(1));
-    if (btn) btn.className = 'punch-type-btn' + (t === type ? ' sel-' + t : '');
-  });
-  const gpsReady = _gpsCoords !== null ||
-    (document.getElementById('gpsIndicator').textContent.includes('不支持') ||
-     document.getElementById('gpsIndicator').textContent.includes('无法'));
-  enablePunchBtn(gpsReady);
-}
+let _punchStatus = null;
+let _pendingPunchType = null; // type queued for confirmation modal
+let _confirmClockTimer = null;
 
 function initGPS() {
   if (!navigator.geolocation) {
@@ -1635,22 +1637,31 @@ function initGPS() {
 
 function enablePunchBtn(ready) {
   if (!_punchStatus) return;
-  const btn = document.getElementById('btnPunch');
-  const typeWrap = document.getElementById('punchTypeWrap');
-  if (typeWrap) typeWrap.style.display = (ready && !_punchStatus.no_employee && (_punchStatus.clocked_in || _punchStatus.has_active_job)) ? '' : 'none';
-  const canPunch = ready && !!_selectedPunchType;
-  btn.disabled = !canPunch;
-  if (ready) {
-    const onBreak = _punchStatus?.on_break;
-    const labels = { in: '▶ 上班打卡 / Clock In', break: onBreak ? '☕ 结束休息 / End Break' : '☕ 开始休息 / Start Break', out: '⏹ 下班打卡 / Clock Out' };
-    const classes = { in: 'btn-punch btn-punch-in', break: 'btn-punch btn-punch-in', out: 'btn-punch btn-punch-out' };
-    if (_selectedPunchType) {
-      btn.textContent = labels[_selectedPunchType];
-      btn.className = classes[_selectedPunchType];
-    } else {
-      btn.textContent = '请先选择打卡类型 / Select type above';
-      btn.className = 'btn-punch';
+  const s = _punchStatus;
+  const btnIn = document.getElementById('btnPunchIn');
+  const workingBtns = document.getElementById('punchWorkingBtns');
+  const btnBreakEnd = document.getElementById('btnBreakEnd');
+  if (!btnIn) return;
+
+  // Hide all first
+  btnIn.style.display = 'none';
+  workingBtns.style.display = 'none';
+  btnBreakEnd.style.display = 'none';
+
+  if (s.no_employee || !ready) return;
+
+  if (!s.clocked_in) {
+    // Not clocked in: show clock-in button (only if has active job)
+    if (s.has_active_job) {
+      btnIn.style.display = '';
+      btnIn.disabled = false;
     }
+  } else if (s.on_break) {
+    // On break: show resume button
+    btnBreakEnd.style.display = '';
+  } else {
+    // Working: show break + clock-out buttons
+    workingBtns.style.display = 'flex';
   }
 }
 
@@ -1658,16 +1669,9 @@ async function loadPunchStatus() {
   const s = await wApi('/punch/status');
   if (!s) return;
   _punchStatus = s;
-  // Reset punch type selection
-  _selectedPunchType = null;
-  ['in','break','out'].forEach(t => {
-    const b = document.getElementById('ptBtn' + t.charAt(0).toUpperCase() + t.slice(1));
-    if (b) b.className = 'punch-type-btn';
-  });
   const statusEl = document.getElementById('punchStatus');
   const timeEl = document.getElementById('punchTime');
   const subEl = document.getElementById('punchSub');
-  const btn = document.getElementById('btnPunch');
   const selectorWrap = document.getElementById('jobSelectorWrap');
   const selector = document.getElementById('jobSelector');
 
@@ -1675,90 +1679,84 @@ async function loadPunchStatus() {
     statusEl.innerHTML = '<span style="color:var(--red)">⚠ 账号未关联员工档案</span>';
     timeEl.textContent = '—';
     subEl.textContent = '请联系HR关联您的员工档案后方可打卡';
-    btn.disabled = true;
-    btn.textContent = '账号未关联，无法打卡';
-    btn.className = 'btn-punch';
     selectorWrap.style.display = 'none';
+    enablePunchBtn(false);
     return;
   }
 
-  // Update break button label based on on_break state
-  const breakBtn = document.getElementById('ptBtnBreak');
-  if (breakBtn) breakBtn.textContent = s.on_break ? '☕ 结束休息' : '☕ 休息';
-
-  if (s.clocked_in && s.open_entry) {
+  if (s.clocked_in && s.on_break) {
+    statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
+    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    subEl.textContent = '休息中 · 点击"休息结束"继续工作';
+    selectorWrap.style.display = 'none';
+  } else if (s.clocked_in && s.open_entry) {
     const ci = new Date(s.open_entry.clock_in);
-    if (s.on_break) {
-      statusEl.innerHTML = '<span style="color:var(--orange);font-weight:600">● 休息中</span>';
-      subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
-    } else {
-      statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
-      subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
-    }
+    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
     timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
     selectorWrap.style.display = 'none';
   } else if (!s.has_active_job) {
     statusEl.innerHTML = '<span style="color:var(--orange)">● 未在班</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = '当前无有效工作安排';
-    btn.disabled = true;
-    btn.textContent = '暂无工作安排，无法打卡';
-    btn.className = 'btn-punch';
     selectorWrap.style.display = 'none';
+    enablePunchBtn(false);
     return;
   } else {
     statusEl.innerHTML = '<span style="color:var(--gray-400)">● 未在班</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = '请选择工作后打卡';
-    // Populate job selector
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
       `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
     selectorWrap.style.display = jobs.length > 1 ? '' : 'none';
-    if (jobs.length === 1) {
-      // Pre-select single job in hidden selector so doPunch can read it
+    if (jobs.length === 1)
       selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
-    }
   }
   const gpsReady = _gpsCoords !== null || (document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
   enablePunchBtn(gpsReady);
 }
 
-let _pendingPunchPhoto = null; // File object from camera
+let _pendingPunchPhoto = null;
 
-function startPunchFlow() {
-  if (!_selectedPunchType) { showToast('请先选择打卡类型 / Please select a punch type', 'error'); return; }
-  const onBreak = _punchStatus?.on_break;
-  const icons  = { in: '▶', break: onBreak ? '☕' : '☕', out: '⏹' };
-  const labels = { in: '上班打卡 / Clock In', break: onBreak ? '结束休息 / End Break' : '开始休息 / Start Break', out: '下班打卡 / Clock Out' };
-  const colors = { in: 'var(--green)', break: 'var(--orange)', out: 'var(--red)' };
-  const now = new Date();
-  document.getElementById('punchConfirmIcon').textContent = icons[_selectedPunchType];
-  document.getElementById('punchConfirmTypeLabel').textContent = labels[_selectedPunchType];
-  document.getElementById('punchConfirmTimeLabel').textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
-  document.getElementById('punchConfirmDateLabel').textContent = now.toLocaleDateString('zh-CN', {year:'numeric', month:'long', day:'numeric', weekday:'long'});
-  document.getElementById('punchConfirmOkBtn').style.background = colors[_selectedPunchType];
-  document.getElementById('punchConfirmOverlay').style.display = 'flex';
+function startPunchFlow(type) {
+  _pendingPunchType = type;
+  const labels = { in: '▶ 上班打卡 / Clock In', break_start: '☕ 休息开始 / Start Break', break_end: '▶ 休息结束 / Resume Work', out: '⏹ 下班打卡 / Clock Out' };
+  const colors  = { in: 'var(--green)', break_start: '#f97316', break_end: '#7c3aed', out: 'var(--red)' };
+  document.getElementById('punchConfirmTypeLabel').textContent = labels[type] || type;
+  document.getElementById('btnExecutePunch').style.background = colors[type] || 'var(--green)';
+  if (_confirmClockTimer) clearInterval(_confirmClockTimer);
+  const tick = () => {
+    const el = document.getElementById('punchConfirmClock');
+    if (el) el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  };
+  tick();
+  _confirmClockTimer = setInterval(tick, 1000);
+  document.getElementById('punchConfirmModal').style.display = 'flex';
 }
-
 function closePunchConfirm() {
-  document.getElementById('punchConfirmOverlay').style.display = 'none';
+  if (_confirmClockTimer) { clearInterval(_confirmClockTimer); _confirmClockTimer = null; }
+  document.getElementById('punchConfirmModal').style.display = 'none';
+  _pendingPunchType = null;
 }
-
 function executePunch() {
   closePunchConfirm();
-  if (_selectedPunchType === 'in') {
+  if (!_pendingPunchType) return;
+  const type = _pendingPunchType;
+  _pendingPunchType = null;
+  if (type === 'in') {
     // Clock-in: require photo first
     _pendingPunchPhoto = null;
     document.getElementById('punchPhotoPreview').style.display = 'none';
     document.getElementById('punchPhotoConfirmRow').style.display = 'none';
     document.getElementById('punchPhotoInput').value = '';
-    document.getElementById('btnPunch').style.display = 'none';
+    document.getElementById('punchBtnsWrap').style.display = 'none';
     document.getElementById('punchPhotoStep').style.display = '';
-  } else {
-    doPunch(null);
+    window._punchTypeAfterPhoto = 'in';
+    return;
   }
+  doPunch(type, null);
 }
 
 function onPunchPhotoSelected(input) {
@@ -1773,7 +1771,7 @@ function onPunchPhotoSelected(input) {
 function cancelPunchPhoto() {
   _pendingPunchPhoto = null;
   document.getElementById('punchPhotoStep').style.display = 'none';
-  document.getElementById('btnPunch').style.display = '';
+  document.getElementById('punchBtnsWrap').style.display = '';
 }
 
 async function confirmPunchWithPhoto() {
@@ -1781,28 +1779,26 @@ async function confirmPunchWithPhoto() {
   const confirmBtn = document.getElementById('btnPunchConfirm');
   confirmBtn.disabled = true;
   confirmBtn.textContent = '打卡中…';
-  await doPunch(_pendingPunchPhoto);
+  await doPunch('in', _pendingPunchPhoto);
   confirmBtn.disabled = false;
   confirmBtn.textContent = '✅ 确认打卡';
 }
 
-async function doPunch(photo) {
-  const btn = document.getElementById('btnPunch');
-  const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null, punch_type: _selectedPunchType };
-  if (!_punchStatus?.clocked_in) {
+async function doPunch(type, photo) {
+  const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null, punch_type: type };
+  if (type === 'in') {
     const sel = document.getElementById('jobSelector');
     body.job_id = sel ? parseInt(sel.value) || null : null;
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
-  if (!r) { btn.disabled = false; enablePunchBtn(true); cancelPunchPhoto(); return; }
+  if (!r) { enablePunchBtn(true); cancelPunchPhoto(); return; }
   if (r.error) {
     showToast('❌ ' + r.error, 'error');
-    btn.disabled = false;
     cancelPunchPhoto();
     await loadPunchStatus();
     return;
   }
-  // Upload punch photo if provided (clock-in only)
+  // Upload photo for clock-in
   if (photo && r.entry_id) {
     const fd = new FormData();
     fd.append('photo', photo);
@@ -1812,28 +1808,22 @@ async function doPunch(photo) {
       body: fd
     }).catch(() => {});
   }
-  if (r.action === 'in') {
-    if (r.geo_warning) {
-      showToast(`⚠️ 打卡成功，但您不在指定工作地点范围内！请确认位置后联系管理员。`, 'error');
-    } else {
+  const toasts = {
+    in: () => {
+      if (r.geo_warning) return showToast('⚠️ 上班打卡成功，但不在指定地点范围内！', 'error');
       const geoMsg = r.geo_verified ? (r.site_name ? ` · 📍${r.site_name}` : ' · 位置已验证') : '';
       showToast(`✅ 上班打卡成功！${r.job_title ? ' · ' + r.job_title : ''}${geoMsg}`, 'success');
-    }
-  } else if (r.action === 'break_start') {
-    showToast('☕ 休息开始，记得打卡结束休息！', 'success');
-  } else if (r.action === 'break_end') {
-    const bMin = r.break_minutes || 0;
-    showToast(`✅ 休息结束！休息了 ${bMin} 分钟`, 'success');
-  } else if (r.action === 'out') {
-    const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
-    showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
-  }
+    },
+    break_start: () => showToast('☕ 休息开始，注意休息！', 'success'),
+    break_end:   () => showToast('▶ 休息结束，继续工作！', 'success'),
+    out:         () => showToast(`✅ 下班打卡成功！本次 ${r.total_hours?.toFixed(2) || 0}h`, 'success'),
+  };
+  (toasts[type] || (() => {}))();
   _pendingPunchPhoto = null;
   document.getElementById('punchPhotoStep').style.display = 'none';
-  btn.style.display = '';
+  document.getElementById('punchBtnsWrap').style.display = '';
   _gpsCoords = null;
   document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
-  btn.textContent = '获取位置中…';
   await loadMyJobs();
   await loadPunchStatus();
   loadTimeclock();
@@ -1871,26 +1861,43 @@ async function loadTimeclock() {
   const entries = await wApi('/timeclock');
   if (!entries) return;
   if (!Array.isArray(entries)) {
-    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="9" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录</td></tr>';
+    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="11" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录</td></tr>';
     return;
   }
+  const fmt = d => d ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—';
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
     const ci = t.clock_in ? new Date(t.clock_in) : null;
     const co = t.clock_out ? new Date(t.clock_out) : null;
     const mapLink = t.latitude ? `<a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="${(+t.latitude).toFixed(4)},${(+t.longitude).toFixed(4)}">📍</a>` : '—';
     const jobLabel = t.job_title ? esc(t.job_title) : '<span style="color:var(--gray-300)">—</span>';
+    // Parse breaks
+    let breaks = [];
+    try { breaks = JSON.parse(t.break_records || '[]'); } catch(e) {}
+    const breakStartCell = breaks.length
+      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.start ? new Date(b.start).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—'}</span>`).join('')
+      : '—';
+    const breakEndCell = breaks.length
+      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.end ? new Date(b.end).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--orange)">休息中</span>'}</span>`).join('')
+      : '—';
+    const statusCell = t.on_break
+      ? '<span style="color:#7c3aed">☕ 休息中</span>'
+      : t.status === 'closed'
+        ? '✅ 已完成'
+        : '<span style="color:var(--sky)">⏱ 工作中</span>';
     return `<tr>
       <td>${ci ? ci.toLocaleDateString() : '—'}</td>
       <td style="font-size:.8rem">${jobLabel}</td>
-      <td>${ci ? ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
-      <td>${co ? co.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--orange)">未打卡</span>'}</td>
-      <td>${t.total_hours ? t.total_hours.toFixed(2) + ' h' : '—'}</td>
-      <td>${t.regular_hours ? t.regular_hours.toFixed(2) + ' h' : '—'}</td>
-      <td>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+' h</span>' : '—'}</td>
-      <td>${t.status === 'closed' ? '✅ 已完成' : '<span style="color:var(--sky)">进行中</span>'}</td>
+      <td>${fmt(ci)}</td>
+      <td>${breakStartCell}</td>
+      <td>${breakEndCell}</td>
+      <td>${co ? fmt(co) : '<span style="color:var(--orange)">—</span>'}</td>
+      <td>${t.total_hours ? t.total_hours.toFixed(2) + 'h' : '—'}</td>
+      <td>${t.regular_hours ? t.regular_hours.toFixed(2) + 'h' : '—'}</td>
+      <td>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+'h</span>' : '—'}</td>
+      <td>${statusCell}</td>
       <td>${mapLink}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="9" class="empty">暂无打卡记录</td></tr>';
+  }).join('') : '<tr><td colspan="11" class="empty">暂无打卡记录</td></tr>';
 }
 
 async function loadPayments() {
