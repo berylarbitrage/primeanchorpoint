@@ -3080,6 +3080,15 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// Format SQLite date/datetime string to "YYYY/MM/DD"
+function fmtDate(s) {
+  if (!s) return '';
+  // Accept "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  return `${m[1]}/${m[2]}/${m[3]}`;
+}
+
 // ─── Danger Confirm Modal ───
 let _dangerConfirmCallback = null;
 function showDeleteConfirm(targetName, description, onConfirm) {
@@ -4485,7 +4494,7 @@ function renderAssignments(assigns) {
       ? `<br><span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer" onclick="refreshDsStatus('assignment',${a.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
       : (a.contract_file ? `<br><button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-top:2px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('assignment',${a.id},'${esc(a.inquiry_email||'')}','${esc(a.inquiry_name||'')}')">✍ DocuSign</button>` : '');
     return `<tr>
-    <td>${new Date(a.assigned_at).toLocaleDateString()}${a.start_date ? '<br><span style="font-size:.72rem;color:var(--gray-400)">开始：' + a.start_date + '</span>' : ''}</td>
+    <td>${fmtDate(a.assigned_at)}${a.start_date ? '<br><span style="font-size:.72rem;color:var(--gray-400)">开始：' + fmtDate(a.start_date) + '</span>' : ''}</td>
     <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
     <td>${esc(a.job_title || '未知职位')}<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(a.job_location || '')}</span></td>
     <td>
