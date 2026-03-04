@@ -126,7 +126,7 @@ tr:hover td{background:var(--sky-light)}
 .toast.hide{animation:toastOut .2s ease forwards}
 @keyframes toastIn{from{opacity:0;transform:translateY(-12px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes toastOut{to{opacity:0;transform:translateY(-8px) scale(.96)}}
-.badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
+.badge-pending{background:#FFF3E0;color:#b45309}.badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#f0fdf4;color:#16a34a}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-terminated{background:#fef2f2;color:#b91c1c}.badge-resigned{background:#fff7ed;color:#c2410c}.badge-no_show{background:#fafafa;color:#6b7280;border:1px solid #e5e7eb}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
 .modal{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
@@ -505,9 +505,13 @@ tr:hover td{background:var(--sky-light)}
     <input type="text" id="assignSearch" placeholder="搜索人员、职位..." oninput="filterAssignments()">
     <select id="assignStatusFilter" onchange="filterAssignments()">
       <option value="">全部状态</option>
+      <option value="pending">待确认</option>
       <option value="assigned">已分配</option>
-      <option value="working">工作中</option>
+      <option value="working">进行中</option>
       <option value="completed">已完成</option>
+      <option value="terminated">已解雇</option>
+      <option value="resigned">已辞职</option>
+      <option value="no_show">未出勤</option>
       <option value="cancelled">已取消</option>
     </select>
   </div>
@@ -1061,7 +1065,7 @@ tr:hover td{background:var(--sky-light)}
   <!-- Worker -->
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
-      <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>面试</th>
+      <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th>
       <th>合规文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
@@ -1328,9 +1332,20 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="workerDetailModal"><div class="modal" style="max-width:560px">
   <h2>工人详情编辑</h2>
   <p style="font-size:.9rem;font-weight:700;color:var(--sky);margin-bottom:.5rem" id="wdName"></p>
-  <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">身份: <span id="wdIdentity"></span></p>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1rem">
+    <div class="field">
+      <label style="font-size:.8rem;font-weight:600">身份 Work Status</label>
+      <select id="wdWorkStatus" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+        <option value="">— 未填写 —</option>
+        <option value="citizen">🇺🇸 公民</option>
+        <option value="green_card">🟢 绿卡</option>
+        <option value="ead">📄 EAD</option>
+        <option value="h1b">H-1B</option>
+        <option value="opt">OPT/CPT</option>
+        <option value="other">其他</option>
+      </select>
+    </div>
     <div class="field">
       <label style="font-size:.8rem;font-weight:600">期望薪资 Expected Salary</label>
       <input type="text" id="wdExpectedSalary" placeholder="如: 18/hr, 3500/mo">
@@ -1366,6 +1381,15 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div id="wdTasksList" style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem"></div>
     <p style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">仅勾选的任务会显示在工人的 Portal 中 / Only checked tasks will appear in the worker's portal</p>
+  </div>
+
+  <div style="margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <label style="font-size:.8rem;font-weight:600;color:var(--gray-600)">📋 变更历史 Change History</label>
+    </div>
+    <div id="wdHistory" style="max-height:180px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;background:var(--gray-50);font-size:.76rem;color:var(--gray-600)">
+      <span style="color:var(--gray-300)">加载中…</span>
+    </div>
   </div>
 
   <div class="modal-actions">
@@ -1994,9 +2018,13 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field"><label>状态</label><select id="aStatus">
+    <option value="pending">待确认</option>
     <option value="assigned">已分配</option>
-    <option value="working">工作中</option>
+    <option value="working">进行中</option>
     <option value="completed">已完成</option>
+    <option value="terminated">已解雇</option>
+    <option value="resigned">已辞职</option>
+    <option value="no_show">未出勤</option>
     <option value="cancelled">已取消</option>
   </select></div>
   <div class="field-row">
@@ -2893,7 +2921,7 @@ function typeLabel(t) {
   return '其他';
 }
 function statusLabel(s) {
-  const m = { assigned: '已分配', working: '工作中', completed: '已完成', cancelled: '已取消' };
+  const m = { pending:'待确认', assigned:'已分配', working:'进行中', completed:'已完成', terminated:'已解雇', resigned:'已辞职', no_show:'未出勤', cancelled:'已取消' };
   return m[s] || s;
 }
 function showToast(msg, type = 'success', duration = 3000) {
@@ -7658,7 +7686,6 @@ async function loadWorkerAccounts() {
     <td style="font-size:.8rem;white-space:nowrap">${esc(w.phone||'—')}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
     <td style="font-size:.8rem;white-space:nowrap">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
-    <td style="font-size:.8rem;white-space:nowrap">${w.interview_status ? IV_STATUS_MAP[w.interview_status]||w.interview_status : '<span style="color:var(--gray-300)">未安排</span>'}</td>
     <td><div class="wa-compliance">
       ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
       ${complianceBadge2('SSN', c.ssn_card)}
@@ -7680,7 +7707,7 @@ async function loadWorkerAccounts() {
         ${extraBtns}
       </div>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="14" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="13" class="empty">暂无工人账户</td></tr>';
 }
 
 // ─── Onboarding Progress Modal ───
@@ -8064,13 +8091,14 @@ async function openWorkerDetailModal(id) {
   const modal = document.getElementById('workerDetailModal');
   if (!modal) return;
   document.getElementById('wdName').textContent = w.name || w.username;
-  document.getElementById('wdIdentity').textContent = (WORK_STATUS_MAP[w.work_status] || w.work_status || '—');
+  document.getElementById('wdWorkStatus').value = w.work_status || '';
   document.getElementById('wdExpectedSalary').value = w.expected_salary || '';
   document.getElementById('wdOurRating').value = w.our_salary_rating || '';
   document.getElementById('wdPaymentMethod').value = w.payment_method || 'cash';
   renderWdSkills();
   renderWdTasks();
   modal.classList.add('show');
+  loadWorkerHistory(id);
 }
 
 function renderWdTasks() {
@@ -8123,6 +8151,7 @@ function addWdSkill() {
 async function saveWorkerDetail() {
   if (!_workerDetailId) return;
   const data = {
+    work_status: document.getElementById('wdWorkStatus').value,
     expected_salary: document.getElementById('wdExpectedSalary').value,
     our_salary_rating: document.getElementById('wdOurRating').value,
     payment_method: document.getElementById('wdPaymentMethod').value,
@@ -8135,6 +8164,31 @@ async function saveWorkerDetail() {
   closeModal('workerDetailModal');
   showToast('✅ 工人信息已保存');
   loadWorkerAccounts();
+}
+
+const WD_FIELD_LABELS = { active:'账户状态', suspended:'暂停状态', work_status:'身份', expected_salary:'期望薪资', our_salary_rating:'评分', payment_method:'支付方式', employee_id:'绑定员工', password:'密码' };
+const WD_VALUE_LABELS = { '0':'否/禁用','1':'是/启用', cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直接存款', citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他', '':'（未填写）' };
+function fmtWdVal(v) { return WD_VALUE_LABELS[v] !== undefined ? WD_VALUE_LABELS[v] : (v || '（空）'); }
+
+async function loadWorkerHistory(id) {
+  const el = document.getElementById('wdHistory');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--gray-300)">加载中…</span>';
+  try {
+    const rows = await api(`/admin/worker-accounts/${id}/history`);
+    if (!rows || !rows.length) { el.innerHTML = '<span style="color:var(--gray-300)">暂无变更记录</span>'; return; }
+    el.innerHTML = rows.map(r => {
+      const ts = new Date(r.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+      const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
+      const oldV = fmtWdVal(r.old_value);
+      const newV = fmtWdVal(r.new_value);
+      return `<div style="display:flex;gap:.5rem;align-items:baseline;padding:.25rem 0;border-bottom:1px solid var(--gray-100)">
+        <span style="color:var(--gray-400);white-space:nowrap;min-width:80px">${ts}</span>
+        <span style="color:var(--sky);white-space:nowrap">${esc(r.changed_by)}</span>
+        <span>修改 <strong>${esc(field)}</strong>：<span style="color:#dc2626">${esc(oldV)}</span> → <span style="color:#16a34a">${esc(newV)}</span></span>
+      </div>`;
+    }).join('');
+  } catch { el.innerHTML = '<span style="color:var(--gray-300)">加载失败</span>'; }
 }
 
 // ── Customer accounts ──

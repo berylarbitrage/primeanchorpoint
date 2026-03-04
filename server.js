@@ -805,6 +805,19 @@ try { db.exec("ALTER TABLE worker_accounts ADD COLUMN last_name TEXT DEFAULT ''"
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN worker_code TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN linked_inquiry_id INTEGER DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN source TEXT DEFAULT 'admin'"); } catch {}
+
+// ─── Worker account change history ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_account_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL,
+  changed_by TEXT DEFAULT 'admin',
+  field_name TEXT NOT NULL,
+  old_value TEXT,
+  new_value TEXT,
+  note TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Backfill: assign worker_code + linked_inquiry_id to existing verified workers
 // (runs once on startup; activateWorkerAccount is idempotent — skips if code already set)
 setTimeout(() => {
@@ -1213,8 +1226,8 @@ function nextEmployeeId(city, hireDate) {
   return `EMEE-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
 }
 
-// ─── Auto-generate worker code: WORKER-CITY-MMDDYY-000001 ───
-function generateWorkerCode(city, prefix = 'WORKER') {
+// ─── Auto-generate worker code: PORT-CITY-MMDDYY-000001 ───
+function generateWorkerCode(city, prefix = 'PORT') {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -1237,7 +1250,7 @@ function activateWorkerAccount(accountId, prefix) {
   if (!acc) return;
   // Generate worker_code if not already set
   if (!acc.worker_code) {
-    const codePrefix = prefix || (acc.source === 'online' ? 'ONLINE' : 'WORKER');
+    const codePrefix = prefix || 'PORT';
     const code = generateWorkerCode(acc.city, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
@@ -1772,27 +1785,53 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
+  const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+  const logChange = (field, oldVal, newVal) => {
+    const o = oldVal == null ? '' : String(oldVal);
+    const n = newVal == null ? '' : String(newVal);
+    if (o !== n) db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value) VALUES (?,?,?,?,?)').run(req.params.id, changedBy, field, o, n);
+  };
   if (password) {
     const salt = crypto.randomBytes(16).toString('hex');
     db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hashPassword(password, salt), salt, req.params.id);
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value) VALUES (?,?,?,?,?)').run(req.params.id, changedBy, 'password', '***', '***（已更新）');
   }
+  const newActive = active !== undefined ? active : w.active;
+  const newSuspended = suspended !== undefined ? suspended : (w.suspended||0);
+  const newWorkStatus = work_status !== undefined ? work_status : w.work_status;
+  const newExpectedSalary = expected_salary !== undefined ? expected_salary : w.expected_salary;
+  const newOurRating = our_salary_rating !== undefined ? our_salary_rating : w.our_salary_rating;
+  const newPaymentMethod = payment_method !== undefined ? payment_method : w.payment_method;
+  logChange('active', w.active, newActive);
+  logChange('suspended', w.suspended||0, newSuspended);
+  logChange('work_status', w.work_status, newWorkStatus);
+  logChange('expected_salary', w.expected_salary, newExpectedSalary);
+  logChange('our_salary_rating', w.our_salary_rating, newOurRating);
+  logChange('payment_method', w.payment_method, newPaymentMethod);
+  if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
-    payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks) WHERE id=?`)
+    payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
+    work_status=COALESCE(?,work_status) WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
-      active !== undefined ? active : w.active,
-      suspended !== undefined ? suspended : (w.suspended||0),
+      newActive, newSuspended,
       expected_salary !== undefined ? expected_salary : null,
       our_salary_rating !== undefined ? our_salary_rating : null,
       payment_method !== undefined ? payment_method : null,
       assigned_tasks !== undefined ? JSON.stringify(assigned_tasks) : null,
+      work_status !== undefined ? work_status : null,
       req.params.id
     );
   res.json({ success: true });
+});
+
+app.get('/api/admin/worker-accounts/:id/history', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM worker_account_history WHERE worker_account_id=? ORDER BY created_at DESC LIMIT 100').all(req.params.id);
+  res.json(rows);
 });
 
 // ── Worker Onboarding ──
@@ -5779,6 +5818,13 @@ app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
   if (status === 'cancelled' && row.status !== 'cancelled') {
     db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
   }
+  // Sync to onboarding task
+  if (status === 'passed' && row.worker_account_id) {
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(row.worker_account_id);
+  }
+  if ((status === 'cancelled' || status === 'scheduled') && row.worker_account_id) {
+    db.prepare(`UPDATE worker_onboarding SET status='pending', completed_at=NULL WHERE worker_account_id=? AND task_key='interview' AND status='completed'`).run(row.worker_account_id);
+  }
   // Update worker account fields decided after interview
   if (identity_status !== undefined) {
     db.prepare('UPDATE worker_accounts SET identity_status=? WHERE id=?').run(identity_status, row.worker_account_id);
@@ -5800,8 +5846,10 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
 
   // Check for existing pending doc request
   const existing = db.prepare(`SELECT token FROM employee_doc_requests WHERE employee_id=? AND status='pending' AND (expires_at IS NULL OR expires_at > datetime('now'))`).get(interview.employee_id);
+  const syncOnboarding = () => db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(interview.worker_account_id);
   if (existing) {
     db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(existing.token, req.params.id);
+    syncOnboarding();
     return res.json({ token: existing.token, already_exists: true });
   }
 
@@ -5811,6 +5859,7 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
   db.prepare(`INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions, expires_at)
     VALUES (?,?,?,?,?,?,?)`).run(token, interview.employee_id, admin_note || '', JSON.stringify(['gov_id','ssn','work_card','w9']), lang || 'zh', '[]', expiresAt);
   db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(token, req.params.id);
+  syncOnboarding();
   res.json({ token, expires_at: expiresAt });
 });
 
