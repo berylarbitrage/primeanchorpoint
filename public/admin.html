@@ -2000,6 +2000,7 @@ tr:hover td{background:var(--sky-light)}
     </select></div>
     <div class="field"><label>薪资 / 工资</label><input id="aPayRate" placeholder="例：18.50/hr 或 $3,200/月"></div>
   </div>
+  <div class="field"><label>工作地址</label><input id="aWorkAddr" placeholder="例：123 Main St, Chicago, IL"></div>
   <div class="field">
     <label>福利待遇（多选）</label>
     <div id="aBenefitsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
@@ -4056,6 +4057,7 @@ async function openAssignModal(assignment) {
   document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
   document.getElementById('aPayType').value = assignment ? (assignment.pay_type || 'hourly') : 'hourly';
   document.getElementById('aPayRate').value = assignment ? (assignment.pay_rate || '') : '';
+  document.getElementById('aWorkAddr').value = assignment ? (assignment.work_address || '') : '';
   // Benefits toggle
   const activeBens = assignment && assignment.benefits ? assignment.benefits.split(',').map(s=>s.trim()) : [];
   document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
@@ -4399,6 +4401,7 @@ function showJobImportPanel(jobId) {
   if (j.benefits)        items.push({ key:'benefits',  label:`福利：${j.benefits}`, checked: true });
   if (j.work_start || j.work_end || j.work_days)
                          items.push({ key:'schedule',  label:`排班：${j.work_days||'每天'} ${j.work_start||''}${j.work_end?'–'+j.work_end:''}`, checked: true });
+  if (j.location)        items.push({ key:'location',  label:`工作地址：${j.location}`, checked: true });
 
   if (!items.length) return; // nothing to import
 
@@ -4453,6 +4456,9 @@ function applyJobImport() {
     initSchedTable(JSON.stringify(sched));
   }
 
+  if (checked('location') && j.location)
+    document.getElementById('aWorkAddr').value = j.location;
+
   document.getElementById('aJobImportPanel').style.display = 'none';
 }
 
@@ -4503,6 +4509,7 @@ async function saveAssignment() {
     contract_type: document.getElementById('aContractType').value,
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
+    work_address: document.getElementById('aWorkAddr').value,
     benefits,
     work_schedule: getSchedJson()
   };
