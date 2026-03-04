@@ -639,6 +639,15 @@ try { db.exec("ALTER TABLE assignments ADD COLUMN worker_response TEXT DEFAULT N
 try { db.exec("ALTER TABLE assignments ADD COLUMN task_requirements TEXT DEFAULT '[]'"); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
 
+db.exec(`CREATE TABLE IF NOT EXISTS assignment_status_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  assignment_id INTEGER NOT NULL REFERENCES assignments(id),
+  old_status TEXT,
+  new_status TEXT NOT NULL,
+  changed_by TEXT DEFAULT '',
+  changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS shift_confirmations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   assignment_id INTEGER NOT NULL REFERENCES assignments(id),
@@ -3172,10 +3181,34 @@ app.post('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
 
 app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('update', 'assignments'), (req, res) => {
   const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements } = req.body;
+  const old = db.prepare('SELECT status FROM assignments WHERE id=?').get(req.params.id);
   db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=?, work_schedule=?, work_address=?, work_lat=?, work_lng=?, work_radius=?, task_requirements=? WHERE id=?`)
     .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}',
          work_address || '', work_lat || null, work_lng || null, work_radius || 200, task_requirements || '[]', req.params.id);
+  if (old && status && old.status !== status) {
+    db.prepare('INSERT INTO assignment_status_history (assignment_id, old_status, new_status, changed_by) VALUES (?,?,?,?)')
+      .run(req.params.id, old.status, status, req.admin?.username || req.admin?.display_name || 'admin');
+  }
   res.json({ success: true });
+});
+
+// PATCH status only — lightweight inline update
+app.patch('/api/admin/assignments/:id/status', requireAdmin, blockManager, (req, res) => {
+  const { status } = req.body;
+  if (!status) return res.status(400).json({ error: 'status required' });
+  const old = db.prepare('SELECT status FROM assignments WHERE id=?').get(req.params.id);
+  if (!old) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE assignments SET status=? WHERE id=?').run(status, req.params.id);
+  if (old.status !== status) {
+    db.prepare('INSERT INTO assignment_status_history (assignment_id, old_status, new_status, changed_by) VALUES (?,?,?,?)')
+      .run(req.params.id, old.status, status, req.admin?.username || req.admin?.display_name || 'admin');
+  }
+  res.json({ success: true });
+});
+
+// GET history for an assignment
+app.get('/api/admin/assignments/:id/history', requireAdmin, blockManager, (req, res) => {
+  res.json(db.prepare('SELECT * FROM assignment_status_history WHERE assignment_id=? ORDER BY changed_at DESC').all(req.params.id));
 });
 
 app.delete('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('delete', 'assignments'), (req, res) => {

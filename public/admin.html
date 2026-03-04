@@ -127,6 +127,7 @@ tr:hover td{background:var(--sky-light)}
 @keyframes toastIn{from{opacity:0;transform:translateY(-12px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes toastOut{to{opacity:0;transform:translateY(-8px) scale(.96)}}
 .badge-pending{background:#FFF3E0;color:#b45309}.badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#f0fdf4;color:#16a34a}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-terminated{background:#fef2f2;color:#b91c1c}.badge-resigned{background:#fff7ed;color:#c2410c}.badge-no_show{background:#fafafa;color:#6b7280;border:1px solid #e5e7eb}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
+.assign-status-select{border:none;border-radius:10px;padding:2px 8px;font-size:.72rem;font-weight:700;cursor:pointer;outline:none;appearance:auto}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
 .modal{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
@@ -518,7 +519,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="cancelled">已取消</option>
     </select>
   </div>
-  <div class="card" style="padding:0"><div style="overflow-x:auto;padding:1rem"><table style="min-width:780px"><thead><tr><th>日期</th><th>人员</th><th>分配职位</th><th>合同/薪资</th><th>福利</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div></div>
+  <div class="card" style="padding:0"><div style="overflow-x:auto;padding:1rem"><table style="min-width:700px"><thead><tr><th>人员</th><th>分配职位</th><th>合同/薪资</th><th>福利</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div></div>
 </div>
 
 <!-- Jobs -->
@@ -2072,6 +2073,26 @@ tr:hover td{background:var(--sky-light)}
   <div id="onboardDocContent"></div>
   <div style="margin-top:1.5rem">
     <button class="btn btn-red" onclick="document.getElementById('onboardDocModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Assignment History Modal -->
+<div class="modal-bg" id="assignHistoryModal"><div class="modal" style="max-width:560px">
+  <h2 id="assignHistoryTitle">状态历史</h2>
+  <div style="overflow-x:auto;margin-top:.75rem">
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="text-align:left;padding:6px 8px;font-size:.8rem;color:var(--gray-500);border-bottom:1px solid var(--gray-200)">时间</th>
+        <th style="text-align:left;padding:6px 8px;font-size:.8rem;color:var(--gray-500);border-bottom:1px solid var(--gray-200)">原状态</th>
+        <th style="padding:6px 4px;border-bottom:1px solid var(--gray-200)"></th>
+        <th style="text-align:left;padding:6px 8px;font-size:.8rem;color:var(--gray-500);border-bottom:1px solid var(--gray-200)">新状态</th>
+        <th style="text-align:left;padding:6px 8px;font-size:.8rem;color:var(--gray-500);border-bottom:1px solid var(--gray-200)">操作人</th>
+      </tr></thead>
+      <tbody id="assignHistoryList"></tbody>
+    </table>
+  </div>
+  <div style="margin-top:1rem;text-align:right">
+    <button class="btn" onclick="document.getElementById('assignHistoryModal').classList.remove('show')">关闭</button>
   </div>
 </div></div>
 
@@ -4512,14 +4533,21 @@ const DS_STATUS_LABELS = { sent:'已发送(待签)', delivered:'已送达', comp
 const DS_STATUS_COLORS = { sent:'#F59E0B', delivered:'#3B82F6', completed:'#10B981', declined:'#EF4444', voided:'#6B7280' };
 
 function renderAssignments(assigns) {
+  const statusOpts = [
+    ['pending','待确认'],['assigned','已分配'],['working','进行中'],
+    ['completed','已完成'],['terminated','已解雇'],['resigned','已辞职'],
+    ['no_show','未出勤'],['cancelled','已取消']
+  ];
   document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => {
     const dsLabel = a.ds_status ? (DS_STATUS_LABELS[a.ds_status] || a.ds_status) : '';
     const dsColor = DS_STATUS_COLORS[a.ds_status] || '#6B7280';
     const dsBadge = a.ds_envelope_id
       ? `<br><span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer" onclick="refreshDsStatus('assignment',${a.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
       : (a.contract_file ? `<br><button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-top:2px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('assignment',${a.id},'${esc(a.inquiry_email||'')}','${esc(a.inquiry_name||'')}')">✍ DocuSign</button>` : '');
+    const statusSelect = `<select class="assign-status-select badge-select badge-${a.status}" onchange="updateAssignmentStatus(${a.id},this.value,this)">
+      ${statusOpts.map(([v,l]) => `<option value="${v}"${a.status===v?' selected':''}>${l}</option>`).join('')}
+    </select>`;
     return `<tr>
-    <td>${fmtDate(a.assigned_at)}${a.start_date ? '<br><span style="font-size:.72rem;color:var(--gray-400)">开始：' + fmtDate(a.start_date) + '</span>' : ''}</td>
     <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
     <td>${esc(a.job_title || '未知职位')}<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(a.job_location || '')}</span></td>
     <td>
@@ -4529,14 +4557,13 @@ function renderAssignments(assigns) {
       ${dsBadge}
     </td>
     <td style="font-size:.78rem;max-width:160px;white-space:normal">${esc(a.benefits || '—')}</td>
-    <td><span class="badge badge-${a.status}">${statusLabel(a.status)}</span></td>
+    <td>${statusSelect}</td>
     <td>
-      <button class="btn btn-sm" onclick='editAssignment(${JSON.stringify(a).replace(/'/g,"&#39;")})'>编辑</button>
       <button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick='addMoreDispatch(${JSON.stringify({inquiry_id:a.inquiry_id,inquiry_name:a.inquiry_name,inquiry_phone:a.inquiry_phone,inquiry_email:a.inquiry_email,job_id:a.job_id,job_title:a.job_title,job_location:a.job_location}).replace(/'/g,"&#39;")})'>+ 再派工</button>
-      <button class="btn btn-sm btn-red" onclick="deleteAssignment(${a.id})">删除</button>
+      <button class="btn btn-sm" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe" onclick="showAssignmentHistory(${a.id},'${esc(a.inquiry_name||'')}')">历史</button>
     </td>
   </tr>`;
-  }).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
 }
 
 async function sendForDocuSign(type, id, defaultEmail, defaultName) {
@@ -5247,6 +5274,45 @@ async function deleteAssignment(id) {
   if (!confirm('确定删除此派工记录？')) return;
   await api(`/admin/assignments/${id}`, { method: 'DELETE' });
   loadAssignments();
+}
+
+async function updateAssignmentStatus(id, newStatus, selectEl) {
+  const prev = selectEl.dataset.prevStatus || selectEl.value;
+  selectEl.dataset.prevStatus = selectEl.querySelector('option[selected]')?.value || newStatus;
+  selectEl.disabled = true;
+  try {
+    await api(`/admin/assignments/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) });
+    // Update badge color class
+    selectEl.className = selectEl.className.replace(/badge-\S+/, `badge-${newStatus}`);
+    selectEl.dataset.prevStatus = newStatus;
+  } catch(e) {
+    alert('更新失败：' + e.message);
+    selectEl.value = prev;
+  } finally {
+    selectEl.disabled = false;
+  }
+}
+
+async function showAssignmentHistory(id, name) {
+  const modal = document.getElementById('assignHistoryModal');
+  document.getElementById('assignHistoryTitle').textContent = `状态历史 — ${name || ''}`;
+  document.getElementById('assignHistoryList').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  modal.classList.add('show');
+  try {
+    const rows = await api(`/admin/assignments/${id}/history`);
+    const statusLabelMap = { pending:'待确认', assigned:'已分配', working:'进行中', completed:'已完成', terminated:'已解雇', resigned:'已辞职', no_show:'未出勤', cancelled:'已取消' };
+    document.getElementById('assignHistoryList').innerHTML = rows.length
+      ? rows.map(r => `<tr>
+          <td style="white-space:nowrap;font-size:.82rem">${new Date(r.changed_at).toLocaleString()}</td>
+          <td><span class="badge badge-${r.old_status||''}">${statusLabelMap[r.old_status] || r.old_status || '—'}</span></td>
+          <td>→</td>
+          <td><span class="badge badge-${r.new_status}">${statusLabelMap[r.new_status] || r.new_status}</span></td>
+          <td style="font-size:.8rem;color:var(--gray-400)">${esc(r.changed_by||'')}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="5" style="text-align:center;color:var(--gray-400)">暂无状态变更记录</td></tr>';
+  } catch(e) {
+    document.getElementById('assignHistoryList').innerHTML = '<tr><td colspan="5" style="color:#dc2626">加载失败</td></tr>';
+  }
 }
 
 // ─── Partners (合作公司管理) ───
