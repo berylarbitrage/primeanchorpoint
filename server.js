@@ -608,6 +608,7 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_end TEXT DEFAULT ''`); 
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN sheet_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_type TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN break_records TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN on_break INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN break_start DATETIME`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid INTEGER DEFAULT 0`); } catch(e) {}
@@ -4232,110 +4233,122 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
 app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.status(400).json({ error: '账号未关联员工档案，请联系HR' });
   const { latitude, longitude, job_id, punch_type } = req.body;
-  if (!punch_type || !['in','break','out'].includes(punch_type))
-    return res.status(400).json({ error: '请选择打卡类型（上班/休息/下班）/ Please select a punch type.' });
+  if (!punch_type || !['in','break_start','break_end','out'].includes(punch_type))
+    return res.status(400).json({ error: '请选择打卡类型 / Please select a punch type.' });
   const now = new Date().toISOString();
   let geoVerified = 0;
   let matchedSiteId = null;
 
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
-  if (open) {
-    if (punch_type === 'break') {
-      if (!open.on_break) {
-        // Start break
-        db.prepare("UPDATE time_entries SET on_break=1, break_start=? WHERE id=?").run(now, open.id);
-        return res.json({ action: 'break_start', clock_in: open.clock_in });
-      } else {
-        // End break — accumulate break minutes
-        const addMin = open.break_start ? Math.max(0, Math.round((new Date(now) - new Date(open.break_start)) / 60000)) : 0;
-        const newBreakMin = (open.break_minutes || 0) + addMin;
-        db.prepare("UPDATE time_entries SET on_break=0, break_start=NULL, break_minutes=? WHERE id=?").run(newBreakMin, open.id);
-        return res.json({ action: 'break_end', break_minutes: addMin });
-      }
-    }
-    // punch_type === 'out': auto-end any open break first
-    let totalBreakMin = open.break_minutes || 0;
-    if (open.on_break && open.break_start) {
-      totalBreakMin += Math.max(0, Math.round((new Date(now) - new Date(open.break_start)) / 60000));
-    }
-    const hrs = calcHours(open.clock_in, now, totalBreakMin);
-    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type=?,break_minutes=?,on_break=0,break_start=NULL WHERE id=?")
-      .run(now, hrs.total, hrs.regular, hrs.overtime, punch_type, totalBreakMin, open.id);
-    res.json({ action: 'out', punch_type, clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
-  } else {
-    // Clock in — validate against selected job
-    if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
-    let activeJob = db.prepare(`
-      SELECT ej.id, ej.job_id, j.title, j.site_id,
-             js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-      FROM employee_jobs ej
-      JOIN jobs j ON ej.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      WHERE ej.employee_id = ? AND ej.job_id = ? AND ej.status = 'active'
-    `).get(req.workerEmployeeId, job_id);
-    // Fallback: check assignments table (worker linked via inquiry, not employee_jobs)
-    if (!activeJob) {
-      const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
-      const linkedInqId = wa?.linked_inquiry_id || null;
-      const wPhone = (wa?.phone || '').replace(/\D/g, '');
-      const wEmail = (wa?.email || '').toLowerCase();
-      activeJob = db.prepare(`
-        SELECT a.id, a.job_id, j.title, j.site_id,
-               js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-        FROM assignments a
-        JOIN jobs j ON a.job_id = j.id
-        LEFT JOIN job_sites js ON j.site_id = js.id
-        JOIN inquiries i ON a.inquiry_id = i.id
-        WHERE a.job_id = ? AND a.status != 'cancelled'
-          AND (
-            (? IS NOT NULL AND a.inquiry_id = ?)
-            OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
-            OR (? != '' AND lower(i.email) = ?)
-          )
-        ORDER BY a.assigned_at DESC LIMIT 1
-      `).get(job_id, linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
-    }
-    if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
 
-    // GPS Geofencing: check job site, then fall back to assignment location
-    let geoWarning = false;
-    let assignSite = null;
-    if (latitude && longitude) {
-      if (activeJob.js_id) {
-        const dist = haversineDistance(latitude, longitude, activeJob.site_lat, activeJob.site_lng);
-        if (dist <= activeJob.radius_meters) {
-          geoVerified = 1;
-          matchedSiteId = activeJob.js_id;
-        } else {
-          console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(dist)}m from site "${activeJob.site_name}" (max ${activeJob.radius_meters}m)`);
-        }
-      }
-      // Also check assignment-level GPS (takes precedence for geo_warning)
-      if (!geoVerified) {
-        assignSite = db.prepare(`
-          SELECT a.work_lat, a.work_lng, a.work_radius, a.work_address
-          FROM assignments a
-          JOIN worker_accounts w ON a.inquiry_id = w.linked_inquiry_id
-          WHERE w.id = ? AND a.status IN ('pending','assigned','working') AND a.work_lat IS NOT NULL
-          ORDER BY a.assigned_at DESC LIMIT 1
-        `).get(req.workerId);
-        if (assignSite) {
-          const dist2 = haversineDistance(latitude, longitude, assignSite.work_lat, assignSite.work_lng);
-          if (dist2 <= (assignSite.work_radius || 200)) {
-            geoVerified = 1;
-          } else {
-            geoWarning = true;
-            console.log(`[Geo] Worker ${req.workerId} is ${Math.round(dist2)}m from assignment site (max ${assignSite.work_radius || 200}m)`);
-          }
-        }
-      }
-    }
-
-    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type) VALUES(?,?,'open',?,?,?,?,?,?)")
-      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, punch_type);
-    res.json({ action: 'in', punch_type, clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
-      geo_warning: geoWarning, site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
+  // ── Break start ──────────────────────────────────────────────────
+  if (punch_type === 'break_start') {
+    if (!open) return res.status(400).json({ error: '尚未上班打卡，无法开始休息。' });
+    if (open.on_break) return res.status(400).json({ error: '您已在休息中，请先打卡休息结束。' });
+    const breaks = JSON.parse(open.break_records || '[]');
+    breaks.push({ start: now, end: null });
+    db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?')
+      .run(JSON.stringify(breaks), open.id);
+    return res.json({ action: 'break_start', break_index: breaks.length - 1 });
   }
+
+  // ── Break end ────────────────────────────────────────────────────
+  if (punch_type === 'break_end') {
+    if (!open) return res.status(400).json({ error: '尚未上班打卡。' });
+    if (!open.on_break) return res.status(400).json({ error: '当前不在休息中。' });
+    const breaks = JSON.parse(open.break_records || '[]');
+    const lastIdx = breaks.findIndex(b => !b.end);
+    if (lastIdx >= 0) breaks[lastIdx].end = now;
+    // Recalculate total break_minutes from all completed breaks
+    const totalBreakMs = breaks.reduce((sum, b) => {
+      if (b.start && b.end) sum += new Date(b.end) - new Date(b.start);
+      return sum;
+    }, 0);
+    const breakMins = Math.round(totalBreakMs / 60000);
+    db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?')
+      .run(JSON.stringify(breaks), breakMins, open.id);
+    return res.json({ action: 'break_end', break_minutes: breakMins });
+  }
+
+  // ── Clock out ────────────────────────────────────────────────────
+  if (punch_type === 'out') {
+    if (!open) return res.status(400).json({ error: '尚未上班打卡，无法下班打卡。' });
+    if (open.on_break) return res.status(400).json({ error: '请先打卡休息结束，再下班打卡。' });
+    const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out' WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+    return res.json({ action: 'out', punch_type: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
+  }
+
+  // ── Clock in ─────────────────────────────────────────────────────
+  if (open) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
+  let activeJob = db.prepare(`
+    SELECT ej.id, ej.job_id, j.title, j.site_id,
+           js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+    FROM employee_jobs ej
+    JOIN jobs j ON ej.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    WHERE ej.employee_id = ? AND ej.job_id = ? AND ej.status = 'active'
+  `).get(req.workerEmployeeId, job_id);
+  if (!activeJob) {
+    const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+    const linkedInqId = wa?.linked_inquiry_id || null;
+    const wPhone = (wa?.phone || '').replace(/\D/g, '');
+    const wEmail = (wa?.email || '').toLowerCase();
+    activeJob = db.prepare(`
+      SELECT a.id, a.job_id, j.title, j.site_id,
+             js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+      FROM assignments a
+      JOIN jobs j ON a.job_id = j.id
+      LEFT JOIN job_sites js ON j.site_id = js.id
+      JOIN inquiries i ON a.inquiry_id = i.id
+      WHERE a.job_id = ? AND a.status != 'cancelled'
+        AND (
+          (? IS NOT NULL AND a.inquiry_id = ?)
+          OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
+          OR (? != '' AND lower(i.email) = ?)
+        )
+      ORDER BY a.assigned_at DESC LIMIT 1
+    `).get(job_id, linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  }
+  if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
+
+  let geoWarning = false;
+  let assignSite = null;
+  if (latitude && longitude) {
+    if (activeJob.js_id) {
+      const dist = haversineDistance(latitude, longitude, activeJob.site_lat, activeJob.site_lng);
+      if (dist <= activeJob.radius_meters) {
+        geoVerified = 1;
+        matchedSiteId = activeJob.js_id;
+      } else {
+        console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(dist)}m from site "${activeJob.site_name}" (max ${activeJob.radius_meters}m)`);
+      }
+    }
+    if (!geoVerified) {
+      assignSite = db.prepare(`
+        SELECT a.work_lat, a.work_lng, a.work_radius, a.work_address
+        FROM assignments a
+        JOIN worker_accounts w ON a.inquiry_id = w.linked_inquiry_id
+        WHERE w.id = ? AND a.status IN ('assigned','working') AND a.work_lat IS NOT NULL
+        ORDER BY a.assigned_at DESC LIMIT 1
+      `).get(req.workerId);
+      if (assignSite) {
+        const dist2 = haversineDistance(latitude, longitude, assignSite.work_lat, assignSite.work_lng);
+        if (dist2 <= (assignSite.work_radius || 200)) {
+          geoVerified = 1;
+        } else {
+          geoWarning = true;
+        }
+      }
+    }
+  }
+
+  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0)")
+    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id);
+  res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
+    geo_warning: geoWarning, site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
 });
 
 // Upload punch photo for a time entry (must belong to this worker)
@@ -4453,7 +4466,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
 
   res.json({
     clocked_in: !!open,
-    on_break: open ? (open.on_break || 0) : 0,
+    on_break: !!(open?.on_break),
     open_entry: open || null,
     no_employee: !req.workerEmployeeId,
     has_active_job: activeJobs.length > 0,
