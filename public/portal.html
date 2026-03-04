@@ -125,6 +125,11 @@ tr:last-child td{border-bottom:none}
 .btn-punch-out:hover{background:#dc2626}
 .btn-punch:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
 .gps-indicator{margin-top:.75rem;font-size:.78rem;color:var(--gray-400);display:flex;align-items:center;justify-content:center;gap:.35rem}
+.punch-type-group{display:flex;gap:.5rem;width:100%;max-width:340px;margin:.75rem 0}
+.punch-type-btn{flex:1;padding:.6rem .3rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;font-size:.82rem;font-weight:600;cursor:pointer;color:var(--gray-600);transition:all .15s}
+.punch-type-btn.sel-in{border-color:var(--green);background:#f0fdf4;color:#15803d}
+.punch-type-btn.sel-break{border-color:var(--orange);background:#fff7ed;color:#c2410c}
+.punch-type-btn.sel-out{border-color:var(--red);background:#fef2f2;color:#dc2626}
 /* Compliance section */
 .compliance-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem}
 .compliance-item{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.25rem;position:relative}
@@ -496,6 +501,15 @@ tr:last-child td{border-bottom:none}
           <div class="punch-status" id="punchStatus">正在检查状态…</div>
           <div class="punch-time" id="punchTime"></div>
           <div class="punch-sub" id="punchSub"></div>
+          <!-- Punch type selector (required) -->
+          <div id="punchTypeWrap" style="display:none">
+            <div style="font-size:.82rem;color:var(--gray-400);margin-bottom:.4rem">打卡类型（必选）/ Punch Type</div>
+            <div class="punch-type-group">
+              <button type="button" class="punch-type-btn" id="ptBtnIn" onclick="selectPunchType('in')">▶ 上班</button>
+              <button type="button" class="punch-type-btn" id="ptBtnBreak" onclick="selectPunchType('break')">☕ 休息</button>
+              <button type="button" class="punch-type-btn" id="ptBtnOut" onclick="selectPunchType('out')">⏹ 下班</button>
+            </div>
+          </div>
           <!-- Job selector shown only when clocking in with multiple active jobs -->
           <div id="jobSelectorWrap" style="display:none;margin:.75rem 0;width:100%;max-width:340px">
             <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block">选择打卡工作 / Select job to clock in for</label>
@@ -1513,6 +1527,19 @@ function closeAppDetail() {
 // ─── GPS Punch ───
 let _gpsCoords = null;
 let _punchStatus = null; // { clocked_in, open_entry, active_jobs }
+let _selectedPunchType = null; // 'in' | 'break' | 'out'
+
+function selectPunchType(type) {
+  _selectedPunchType = type;
+  ['in','break','out'].forEach(t => {
+    const btn = document.getElementById('ptBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (btn) btn.className = 'punch-type-btn' + (t === type ? ' sel-' + t : '');
+  });
+  const gpsReady = _gpsCoords !== null ||
+    (document.getElementById('gpsIndicator').textContent.includes('不支持') ||
+     document.getElementById('gpsIndicator').textContent.includes('无法'));
+  enablePunchBtn(gpsReady);
+}
 
 function initGPS() {
   if (!navigator.geolocation) {
@@ -1538,14 +1565,19 @@ function initGPS() {
 function enablePunchBtn(ready) {
   if (!_punchStatus) return;
   const btn = document.getElementById('btnPunch');
-  btn.disabled = !ready;
+  const typeWrap = document.getElementById('punchTypeWrap');
+  if (typeWrap) typeWrap.style.display = (ready && !_punchStatus.no_employee && (_punchStatus.clocked_in || _punchStatus.has_active_job)) ? '' : 'none';
+  const canPunch = ready && !!_selectedPunchType;
+  btn.disabled = !canPunch;
   if (ready) {
-    if (_punchStatus.clocked_in) {
-      btn.textContent = '⏹ 下班打卡 / Clock Out';
-      btn.className = 'btn-punch btn-punch-out';
+    const labels = { in: '▶ 上班打卡 / Clock In', break: '☕ 休息打卡 / Break', out: '⏹ 下班打卡 / Clock Out' };
+    const classes = { in: 'btn-punch btn-punch-in', break: 'btn-punch btn-punch-in', out: 'btn-punch btn-punch-out' };
+    if (_selectedPunchType) {
+      btn.textContent = labels[_selectedPunchType];
+      btn.className = classes[_selectedPunchType];
     } else {
-      btn.textContent = '▶ 上班打卡 / Clock In';
-      btn.className = 'btn-punch btn-punch-in';
+      btn.textContent = '请先选择打卡类型 / Select type above';
+      btn.className = 'btn-punch';
     }
   }
 }
@@ -1554,6 +1586,12 @@ async function loadPunchStatus() {
   const s = await wApi('/punch/status');
   if (!s) return;
   _punchStatus = s;
+  // Reset punch type selection
+  _selectedPunchType = null;
+  ['in','break','out'].forEach(t => {
+    const b = document.getElementById('ptBtn' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (b) b.className = 'punch-type-btn';
+  });
   const statusEl = document.getElementById('punchStatus');
   const timeEl = document.getElementById('punchTime');
   const subEl = document.getElementById('punchSub');
@@ -1609,8 +1647,9 @@ async function loadPunchStatus() {
 let _pendingPunchPhoto = null; // File object from camera
 
 function startPunchFlow() {
-  if (_punchStatus?.clocked_in) {
-    // Clock-out: no photo needed
+  if (!_selectedPunchType) { showToast('请先选择打卡类型 / Please select a punch type', 'error'); return; }
+  if (_selectedPunchType !== 'in') {
+    // Break and clock-out: no photo needed
     doPunch(null);
     return;
   }
@@ -1650,7 +1689,7 @@ async function confirmPunchWithPhoto() {
 
 async function doPunch(photo) {
   const btn = document.getElementById('btnPunch');
-  const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null };
+  const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null, punch_type: _selectedPunchType };
   if (!_punchStatus?.clocked_in) {
     const sel = document.getElementById('jobSelector');
     body.job_id = sel ? parseInt(sel.value) || null : null;
@@ -1683,7 +1722,8 @@ async function doPunch(photo) {
     }
   } else if (r.action === 'out') {
     const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
-    showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
+    const typeLabel = r.punch_type === 'break' ? '休息打卡' : '下班打卡';
+    showToast(`✅ ${typeLabel}成功！本次 ${hrs}h`, 'success');
   }
   _pendingPunchPhoto = null;
   document.getElementById('punchPhotoStep').style.display = 'none';
