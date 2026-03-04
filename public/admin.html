@@ -5198,10 +5198,12 @@ function addPartnerContact(c) {
   const fname = c?.first_name || (c?.name && !c.last_name ? c.name : '');
   const lname = c?.last_name || '';
   div.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:.5rem">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
       <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
       <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
       <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.15rem">
       <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
       <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
     </div>
@@ -5421,6 +5423,8 @@ async function savePartner() {
     const stateEl   = row.querySelector('.pa-state');
     const zipEl     = row.querySelector('.pa-zip');
     if (!streetEl.value.trim() && !cityEl.value.trim()) continue;
+    const addrStatusEl = row.querySelector('.pa-addr-status');
+    if (addrStatusEl && addrStatusEl.textContent === '✓ 已验证') continue;
     const addrResult = await validateAddress({
       street:  streetEl.value.trim(),
       street2: street2El ? street2El.value.trim() : '',
