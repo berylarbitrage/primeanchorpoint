@@ -7549,10 +7549,18 @@ async function pickDispatchJob(w, jobId) {
     document.getElementById('aInquiryId').value = inq.id;
     checkInquiryDispatchStatus(inq.id);
   } else {
-    // No inquiry found — show search so admin can pick or confirm
-    const displayName = wName || w.phone || '';
-    document.getElementById('aInquiry').value = displayName;
-    filterAssignSearch('inq');
+    // No inquiry found — auto-create one from worker data via server
+    try {
+      const created = await api(`/admin/worker-accounts/${w.id}/ensure-inquiry`, { method: 'POST' });
+      if (created && created.id) {
+        document.getElementById('aInquiry').value = created.name + (created.phone ? ' · ' + created.phone : '');
+        document.getElementById('aInquiryId').value = created.id;
+        _assignInqs.push(created);
+        checkInquiryDispatchStatus(created.id);
+      }
+    } catch(e) {
+      console.error('[dispatch] ensure-inquiry failed', e);
+    }
   }
 
   // Pre-fill job
