@@ -605,6 +605,7 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_start TEXT DEFAULT ''`)
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_end TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN sheet_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_type TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN verified_at TEXT DEFAULT NULL`); } catch(e) {}
@@ -4127,7 +4128,9 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
 
 app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.status(400).json({ error: '账号未关联员工档案，请联系HR' });
-  const { latitude, longitude, job_id } = req.body;
+  const { latitude, longitude, job_id, punch_type } = req.body;
+  if (!punch_type || !['in','break','out'].includes(punch_type))
+    return res.status(400).json({ error: '请选择打卡类型（上班/休息/下班）/ Please select a punch type.' });
   const now = new Date().toISOString();
   let geoVerified = 0;
   let matchedSiteId = null;
@@ -4136,9 +4139,9 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (open) {
     // Clock out — always allowed
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
-    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
-      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type=? WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, punch_type, open.id);
+    res.json({ action: 'out', punch_type, clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
   } else {
     // Clock in — validate against selected job
     if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
@@ -4208,9 +4211,9 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
       }
     }
 
-    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id) VALUES(?,?,'open',?,?,?,?,?)")
-      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id);
-    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type) VALUES(?,?,'open',?,?,?,?,?,?)")
+      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, punch_type);
+    res.json({ action: 'in', punch_type, clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
       geo_warning: geoWarning, site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
   }
 });
