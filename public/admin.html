@@ -1130,7 +1130,17 @@ tr:hover td{background:var(--sky-light)}
   <h2 id="jobSiteModalTitle">添加工作地点</h2>
   <input type="hidden" id="siteId">
   <div class="field"><label>名称 *</label><input id="siteName" placeholder="例: 仓库A"></div>
-  <div class="field"><label>地址</label><input id="siteAddress" placeholder="123 Main St, City, ST" oninput="clearAddrStatus('siteAddrStatus')" onblur="autoVerifySingleAddr('siteAddress','siteAddrStatus')"></div>
+  <div class="field">
+    <label>地址</label>
+    <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.4rem">
+      <button type="button" class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;white-space:nowrap" onclick="toggleJobAddrPicker()">📋 从职位导入地址</button>
+      <span id="siteJobPickerStatus" style="font-size:.8rem;color:var(--gray-400)"></span>
+    </div>
+    <div id="siteJobPickerWrap" style="display:none;margin-bottom:.5rem;border:1px solid var(--gray-200);border-radius:8px;max-height:180px;overflow-y:auto">
+      <div id="siteJobPickerList"></div>
+    </div>
+    <input id="siteAddress" placeholder="123 Main St, City, ST" oninput="clearAddrStatus('siteAddrStatus')" onblur="autoVerifySingleAddr('siteAddress','siteAddrStatus')">
+  </div>
   <div style="display:flex;align-items:center;gap:.5rem;margin-top:-.25rem;margin-bottom:.5rem">
     <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('siteAddress','siteAddrStatus')">🔍 验证地址 Verify</button>
     <span id="siteAddrStatus" style="font-size:.8rem;font-weight:600"></span>
@@ -8702,8 +8712,38 @@ function openJobSiteModal() {
   document.getElementById('siteLat').value = '';
   document.getElementById('siteLng').value = '';
   document.getElementById('siteRadius').value = '200';
+  document.getElementById('siteJobPickerWrap').style.display = 'none';
+  document.getElementById('siteJobPickerStatus').textContent = '';
   document.getElementById('jobSiteModalTitle').textContent = '添加工作地点';
   document.getElementById('jobSiteModal').classList.add('show');
+}
+
+function toggleJobAddrPicker() {
+  const wrap = document.getElementById('siteJobPickerWrap');
+  if (wrap.style.display !== 'none') { wrap.style.display = 'none'; return; }
+  const jobs = (_allJobs || []).filter(j => j.active && j.location);
+  if (!jobs.length) {
+    document.getElementById('siteJobPickerStatus').textContent = '暂无有地址的职位';
+    return;
+  }
+  document.getElementById('siteJobPickerList').innerHTML = jobs.map(j =>
+    `<div onclick="pickJobAddr(${j.id})" style="padding:.55rem .85rem;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-100)" onmouseenter="this.style.background='#f0fdf4'" onmouseleave="this.style.background=''">
+      <strong>${esc(j.title||'')}</strong> <span style="color:var(--gray-400);font-size:.8rem">${esc(j.company_name||'')}</span><br>
+      <span style="color:var(--gray-600)">${esc(j.location)}</span>
+    </div>`
+  ).join('');
+  wrap.style.display = '';
+}
+
+function pickJobAddr(jobId) {
+  const j = (_allJobs || []).find(x => x.id === jobId);
+  if (!j || !j.location) return;
+  document.getElementById('siteAddress').value = j.location;
+  if (!document.getElementById('siteName').value) document.getElementById('siteName').value = j.title || '';
+  document.getElementById('siteJobPickerWrap').style.display = 'none';
+  document.getElementById('siteJobPickerStatus').textContent = '';
+  clearAddrStatus('siteAddrStatus');
+  autoVerifySingleAddr('siteAddress', 'siteAddrStatus');
 }
 
 function editJobSite(id) {
