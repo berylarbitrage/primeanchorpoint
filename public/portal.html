@@ -468,8 +468,19 @@ tr:last-child td{border-bottom:none}
     <div id="tabApplications" style="display:none">
       <div class="card">
         <h2>我的申请记录</h2>
-        <table><thead><tr><th>职位</th><th>地点</th><th>薪资</th><th>申请状态</th><th>申请时间</th></tr></thead>
+        <table><thead><tr><th>职位</th><th>地点</th><th>申请状态</th><th>申请时间</th></tr></thead>
         <tbody id="applicationsTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- Application Detail Modal -->
+    <div class="modal-overlay" id="appDetailModal" style="display:none" onclick="if(event.target===this)closeAppDetail()">
+      <div class="modal" style="max-width:480px;padding:1.5rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h3 id="appDetailTitle" style="margin:0;font-size:1.05rem"></h3>
+          <button onclick="closeAppDetail()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
+        </div>
+        <div id="appDetailBody"></div>
       </div>
     </div>
 
@@ -1444,18 +1455,59 @@ async function submitApply() {
   }
 }
 
+let _myApps = [];
 async function loadApplications() {
   const apps = await wApi('/assignments');
   if (!apps) return;
-  const statusLabel = { pending:'待审核', approved:'已通过', rejected:'未通过', assigned:'已派工' };
-  const statusColor = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)', assigned:'color:var(--sky)' };
-  document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map(a=>`<tr>
-    <td><strong>${esc(a.title||'')}</strong></td>
-    <td>${esc(a.location||'')}</td>
-    <td>${esc(a.pay||'')}</td>
+  _myApps = apps;
+  const statusLabel = { pending:'待审核', interview_scheduled:'已安排面试', approved:'已通过', rejected:'未通过', assigned:'已派工' };
+  const statusColor = { pending:'color:var(--orange)', interview_scheduled:'color:#2563eb', approved:'color:var(--green)', rejected:'color:var(--red)', assigned:'color:var(--sky)' };
+  document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map((a,i)=>`<tr onclick="openAppDetail(${i})" style="cursor:pointer" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''">
+    <td><strong>${esc(a.title||'—')}</strong><br><small style="color:var(--gray-400)">${esc(a.company_name||'')}</small></td>
+    <td style="font-size:.85rem">${esc(a.location||'—')}</td>
     <td><span style="font-weight:600;${statusColor[a.status]||''}">${statusLabel[a.status]||a.status}</span></td>
-    <td>${(a.created_at||'').slice(0,10)}</td>
-  </tr>`).join('') : '<tr><td colspan="6" class="empty">暂无申请记录</td></tr>';
+    <td style="font-size:.82rem;color:var(--gray-400)">${(a.created_at||'').slice(0,10)}</td>
+  </tr>`).join('') : '<tr><td colspan="4" class="empty">暂无申请记录</td></tr>';
+}
+
+function openAppDetail(idx) {
+  const a = _myApps[idx];
+  if (!a) return;
+  const statusLabel = { pending:'待审核', interview_scheduled:'已安排面试', approved:'已通过', rejected:'未通过', assigned:'已派工' };
+  const statusColor = { pending:'#f59e0b', interview_scheduled:'#2563eb', approved:'#16a34a', rejected:'#dc2626', assigned:'#0284c7' };
+  const st = a.status || 'pending';
+  const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+  const DAY_ZH = { Mon:'周一',Tue:'周二',Wed:'周三',Thu:'周四',Fri:'周五',Sat:'周六',Sun:'周日' };
+  const workDays = a.work_days ? a.work_days.split(',').map(d=>DAY_ZH[d.trim()]||d.trim()).join('、') : '';
+  document.getElementById('appDetailTitle').textContent = a.title || '申请详情';
+  document.getElementById('appDetailBody').innerHTML = `
+    <div style="display:grid;gap:.9rem">
+      <div style="background:#f8fafc;border-radius:8px;padding:.9rem;display:grid;gap:.4rem;font-size:.88rem">
+        <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">职位信息</div>
+        ${a.company_name ? `<div><span style="color:var(--gray-400)">公司：</span>${esc(a.company_name)}</div>` : ''}
+        ${a.location ? `<div><span style="color:var(--gray-400)">地点：</span>${esc(a.location)}</div>` : ''}
+        ${a.pay ? `<div><span style="color:var(--gray-400)">薪资：</span>${esc(a.pay)}</div>` : ''}
+        ${a.employment_type ? `<div><span style="color:var(--gray-400)">类型：</span>${esc(a.employment_type)}</div>` : ''}
+        ${workDays ? `<div><span style="color:var(--gray-400)">工作日：</span>${workDays}</div>` : ''}
+        ${(a.work_start&&a.work_end) ? `<div><span style="color:var(--gray-400)">时间：</span>${fmt12(a.work_start)} — ${fmt12(a.work_end)}</div>` : ''}
+        ${a.description ? `<div style="margin-top:.3rem;color:var(--gray-600);font-size:.83rem;white-space:pre-wrap">${esc(a.description)}</div>` : ''}
+      </div>
+      <div style="background:#f0f9ff;border-radius:8px;padding:.9rem;display:grid;gap:.4rem;font-size:.88rem">
+        <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">我的申请信息</div>
+        ${a.expected_pay ? `<div><span style="color:var(--gray-400)">期望薪资：</span>${esc(a.expected_pay)}</div>` : ''}
+        ${a.interview_availability ? `<div><span style="color:var(--gray-400)">面试时间：</span>${esc(a.interview_availability)}</div>` : ''}
+        ${a.applicant_message ? `<div style="margin-top:.3rem;color:var(--gray-600);font-size:.83rem;white-space:pre-wrap">${esc(a.applicant_message)}</div>` : ''}
+      </div>
+      <div style="border-radius:8px;padding:.9rem;border:2px solid ${statusColor[st]}20;background:${statusColor[st]}08;display:grid;gap:.4rem;font-size:.88rem">
+        <div style="font-weight:700;color:${statusColor[st]}">处理结果：${statusLabel[st]||st}</div>
+        ${a.admin_note ? `<div style="color:var(--gray-600);white-space:pre-wrap">${esc(a.admin_note)}</div>` : `<div style="color:var(--gray-400)">—</div>`}
+      </div>
+    </div>`;
+  document.getElementById('appDetailModal').style.display = 'flex';
+}
+
+function closeAppDetail() {
+  document.getElementById('appDetailModal').style.display = 'none';
 }
 
 // ─── GPS Punch ───

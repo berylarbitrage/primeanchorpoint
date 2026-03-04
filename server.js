@@ -542,6 +542,7 @@ try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN checkr_invitation_id TEXT 
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN checkr_report_id TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN bgcheck_status TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN applicant_message TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE job_applications ADD COLUMN admin_note TEXT DEFAULT ''`); } catch(e) {}
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
@@ -2422,8 +2423,8 @@ app.get('/api/admin/job-applications', requireAdmin, blockManager, (req, res) =>
 });
 
 app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, (req, res) => {
-  const { status, notes } = req.body;
-  db.prepare('UPDATE job_applications SET status=?, notes=? WHERE id=?').run(status, notes||'', req.params.id);
+  const { status, notes, admin_note } = req.body;
+  db.prepare('UPDATE job_applications SET status=?, notes=?, admin_note=? WHERE id=?').run(status, notes||'', admin_note||'', req.params.id);
   res.json({ success: true });
 });
 
@@ -4271,7 +4272,10 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
 
 app.get('/api/worker/assignments', requireWorker, (req, res) => {
   const apps = db.prepare(`
-    SELECT a.*, j.title, j.location, j.pay, j.company_name
+    SELECT a.id, a.status, a.notes, a.admin_note, a.applicant_message,
+           a.interview_availability, a.expected_pay, a.work_auth_confirmed, a.created_at,
+           j.id as job_id, j.title, j.location, j.pay, j.company_name,
+           j.employment_type, j.description, j.work_days, j.work_start, j.work_end, j.benefits
     FROM job_applications a LEFT JOIN jobs j ON a.job_id=j.id
     WHERE a.worker_account_id=? ORDER BY a.created_at DESC
   `).all(req.workerId);
