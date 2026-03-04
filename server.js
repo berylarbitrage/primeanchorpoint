@@ -964,6 +964,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS referral_bonus_config (
 )`);
 if (!db.prepare('SELECT id FROM referral_bonus_config WHERE id=1').get())
   db.prepare('INSERT INTO referral_bonus_config (id) VALUES (1)').run();
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
@@ -1127,7 +1128,15 @@ setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
 // ─── Middleware ───
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
+app.use(express.static('public', {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 app.use('/uploads', express.static(uploadsDir));
 
 // Resume upload
@@ -1879,6 +1888,19 @@ function initWorkerOnboarding(workerId) {
   }
 }
 
+// Check if all assigned onboarding tasks are done; update onboarded flag accordingly
+function syncOnboardedStatus(workerId) {
+  const w = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(workerId);
+  if (!w) return;
+  let assigned = [];
+  try { assigned = JSON.parse(w.assigned_tasks || '[]'); } catch {}
+  if (!assigned.length) return; // no tasks assigned — don't auto-mark
+  const tasks = db.prepare('SELECT task_key, status FROM worker_onboarding WHERE worker_account_id=?').all(workerId);
+  const statusMap = Object.fromEntries(tasks.map(t => [t.task_key, t.status]));
+  const allDone = assigned.every(key => statusMap[key] === 'completed' || statusMap[key] === 'waived');
+  db.prepare('UPDATE worker_accounts SET onboarded=? WHERE id=?').run(allDone ? 1 : 0, workerId);
+}
+
 function getOnboardingTasks(workerId) {
   const rows = db.prepare('SELECT * FROM worker_onboarding WHERE worker_account_id=? ORDER BY id ASC').all(workerId);
   const rowMap = {};
@@ -1929,6 +1951,7 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
     ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,
       action_url=excluded.action_url, completed_at=excluded.completed_at, updated_at=CURRENT_TIMESTAMP`)
     .run(req.params.id, req.params.key, status, admin_note||'', action_url||'', completedAt);
+  syncOnboardedStatus(parseInt(req.params.id));
   res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
 });
 
@@ -2112,6 +2135,7 @@ app.post('/api/webhooks/checkr', express.json(), (req, res) => {
           db.prepare('UPDATE worker_accounts SET checkr_report_id=?, bgcheck_status=? WHERE id=?').run(reportId || '', status, w.id);
           if (status === 'clear') {
             db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='Checkr: Clear ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
+            syncOnboardedStatus(w.id);
             console.log(`[Checkr Webhook] Auto-completed background_check for worker ${w.id}`);
           } else {
             db.prepare(`UPDATE worker_onboarding SET admin_note='Checkr: 需人工审核 (consider)', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
@@ -5855,9 +5879,11 @@ app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
   // Sync to onboarding task
   if (status === 'passed' && row.worker_account_id) {
     db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(row.worker_account_id);
+    syncOnboardedStatus(row.worker_account_id);
   }
   if ((status === 'cancelled' || status === 'scheduled') && row.worker_account_id) {
     db.prepare(`UPDATE worker_onboarding SET status='pending', completed_at=NULL WHERE worker_account_id=? AND task_key='interview' AND status='completed'`).run(row.worker_account_id);
+    syncOnboardedStatus(row.worker_account_id);
   }
   // Update worker account fields decided after interview
   if (identity_status !== undefined) {
@@ -5880,7 +5906,7 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
 
   // Check for existing pending doc request
   const existing = db.prepare(`SELECT token FROM employee_doc_requests WHERE employee_id=? AND status='pending' AND (expires_at IS NULL OR expires_at > datetime('now'))`).get(interview.employee_id);
-  const syncOnboarding = () => db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(interview.worker_account_id);
+  const syncOnboarding = () => { db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(interview.worker_account_id); syncOnboardedStatus(interview.worker_account_id); };
   if (existing) {
     db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(existing.token, req.params.id);
     syncOnboarding();
