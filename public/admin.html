@@ -4368,7 +4368,51 @@ function selectAssignItem(which, id, label) {
   document.getElementById(isInq ? 'aInquiry' : 'aJob').value = label;
   document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = id;
   document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop').classList.remove('open');
-  if (isInq) checkInquiryDispatchStatus(id);
+  if (isInq) {
+    checkInquiryDispatchStatus(id);
+  } else {
+    // Auto-fill fields from job when creating a new assignment
+    if (!_editingAssignment) autoFillFromJob(id);
+  }
+}
+
+function autoFillFromJob(jobId) {
+  const j = _assignJobs.find(x => x.id == jobId);
+  if (!j) return;
+
+  // Pay rate
+  if (j.pay && !document.getElementById('aPayRate').value)
+    document.getElementById('aPayRate').value = j.pay;
+
+  // Contract type: map employment_type → contract type select
+  const typeMap = { 'W2':'W2', 'Contract':'Contract', '1099':'1099', 'W2+Contract':'W2' };
+  const ct = typeMap[j.employment_type];
+  if (ct) document.getElementById('aContractType').value = ct;
+
+  // Pay type: default hourly (jobs use pay string so keep existing)
+  if (j.pay && /\/hr|hourly/i.test(j.pay)) document.getElementById('aPayType').value = 'hourly';
+  else if (j.pay && /\/mo|monthly|salary/i.test(j.pay)) document.getElementById('aPayType').value = 'salary';
+
+  // Benefits
+  if (j.benefits) {
+    const vals = j.benefits.split(',').map(v => v.trim()).filter(Boolean);
+    document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
+      if (vals.includes(btn.dataset.val)) btn.classList.add('active');
+    });
+  }
+
+  // Work schedule from job's work_days / work_start / work_end
+  if (j.work_start || j.work_end || j.work_days) {
+    const ALL_DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
+    const DAY_MAP = { Mon:'mon',Tue:'tue',Wed:'wed',Thu:'thu',Fri:'fri',Sat:'sat',Sun:'sun' };
+    const workDays = j.work_days ? j.work_days.split(',').map(d => DAY_MAP[d.trim()]).filter(Boolean) : [];
+    const sched = {};
+    ALL_DAYS.forEach(key => {
+      const isOff = workDays.length > 0 && !workDays.includes(key);
+      sched[key] = { start: isOff ? '' : (j.work_start || ''), end: isOff ? '' : (j.work_end || ''), breaks: '', break_times: [], off: isOff };
+    });
+    initSchedTable(JSON.stringify(sched));
+  }
 }
 
 async function checkInquiryDispatchStatus(inquiryId) {
