@@ -4180,7 +4180,11 @@ app.get('/api/admin/punch-photo/:filename', requireAdmin, (req, res) => {
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
-  const linkedInqId = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId)?.linked_inquiry_id || null;
+  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const linkedInqId = wa?.linked_inquiry_id || null;
+  const wPhone = (wa?.phone || '').replace(/\D/g, '');
+  const wEmail = (wa?.email || '').toLowerCase();
+
   const open = req.workerEmployeeId
     ? db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId)
     : null;
@@ -4199,8 +4203,8 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     `).all(linkedInqId, req.workerEmployeeId);
   }
 
-  // Fall back to assignments table directly when no employee_jobs exist
-  if (!activeJobs.length && linkedInqId) {
+  // Fall back to assignments table: match by linked_inquiry_id, phone, or email
+  if (!activeJobs.length) {
     activeJobs = db.prepare(`
       SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end, j.location, j.pay,
              j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
@@ -4208,9 +4212,19 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
       FROM assignments a
       JOIN jobs j ON a.job_id = j.id
       LEFT JOIN job_sites js ON j.site_id = js.id
-      WHERE a.inquiry_id = ? AND a.status != 'cancelled'
+      JOIN inquiries i ON a.inquiry_id = i.id
+      WHERE a.status != 'cancelled'
+        AND (
+          (? IS NOT NULL AND a.inquiry_id = ?)
+          OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
+          OR (? != '' AND lower(i.email) = ?)
+        )
       ORDER BY a.assigned_at DESC
-    `).all(linkedInqId);
+    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+    // Also update linked_inquiry_id if we found a match and it wasn't set
+    if (activeJobs.length && !linkedInqId) {
+      try { activateWorkerAccount(req.workerId); } catch {}
+    }
   }
 
   res.json({
