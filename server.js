@@ -606,6 +606,8 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN lunch_end TEXT DEFAULT ''`); 
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN company_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN sheet_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_type TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN on_break INTEGER DEFAULT 0`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN break_start DATETIME`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN client_paid INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN labor_paid INTEGER DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE timesheet_sheets ADD COLUMN verified_at TEXT DEFAULT NULL`); } catch(e) {}
@@ -4137,10 +4139,27 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
   if (open) {
-    // Clock out — always allowed
-    const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
-    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type=? WHERE id=?")
-      .run(now, hrs.total, hrs.regular, hrs.overtime, punch_type, open.id);
+    if (punch_type === 'break') {
+      if (!open.on_break) {
+        // Start break
+        db.prepare("UPDATE time_entries SET on_break=1, break_start=? WHERE id=?").run(now, open.id);
+        return res.json({ action: 'break_start', clock_in: open.clock_in });
+      } else {
+        // End break — accumulate break minutes
+        const addMin = open.break_start ? Math.max(0, Math.round((new Date(now) - new Date(open.break_start)) / 60000)) : 0;
+        const newBreakMin = (open.break_minutes || 0) + addMin;
+        db.prepare("UPDATE time_entries SET on_break=0, break_start=NULL, break_minutes=? WHERE id=?").run(newBreakMin, open.id);
+        return res.json({ action: 'break_end', break_minutes: addMin });
+      }
+    }
+    // punch_type === 'out': auto-end any open break first
+    let totalBreakMin = open.break_minutes || 0;
+    if (open.on_break && open.break_start) {
+      totalBreakMin += Math.max(0, Math.round((new Date(now) - new Date(open.break_start)) / 60000));
+    }
+    const hrs = calcHours(open.clock_in, now, totalBreakMin);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type=?,break_minutes=?,on_break=0,break_start=NULL WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, punch_type, totalBreakMin, open.id);
     res.json({ action: 'out', punch_type, clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
   } else {
     // Clock in — validate against selected job
@@ -4289,6 +4308,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
 
   res.json({
     clocked_in: !!open,
+    on_break: open ? (open.on_break || 0) : 0,
     open_entry: open || null,
     no_employee: !req.workerEmployeeId,
     has_active_job: activeJobs.length > 0,
