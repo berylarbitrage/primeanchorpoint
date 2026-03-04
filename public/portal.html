@@ -2003,7 +2003,7 @@ async function loadReferrals() {
   linkInput.value = data.worker_code ? `${base}?ref=${data.worker_code}` : '（账号尚未激活，无法生成链接）';
 
   // Summary cards
-  document.getElementById('refCountEl').textContent = data.qualified_count;
+  document.getElementById('refCountEl').textContent = (data.referred || []).length;
   document.getElementById('refPendingEl').textContent = data.pending_count;
   document.getElementById('refBonusEl').textContent = '$' + (data.total_earned || 0).toFixed(0);
 
