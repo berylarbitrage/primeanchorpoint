@@ -1953,6 +1953,27 @@ tr:hover td{background:var(--sky-light)}
 <!-- Assignment Modal -->
 <div class="modal-bg" id="assignModal"><div class="modal">
   <h2 id="assignModalTitle">新建派工</h2>
+  <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+    <button type="button" class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;white-space:nowrap" onclick="toggleAssignJobAddrPicker()">📋 从职位导入</button>
+    <span id="aJobAddrPickerStatus" style="font-size:.8rem;color:var(--gray-400)"></span>
+  </div>
+  <div id="aJobAddrPickerWrap" style="display:none;margin-bottom:.75rem;border:1px solid var(--gray-200);border-radius:8px;max-height:180px;overflow-y:auto">
+    <div id="aJobAddrPickerList"></div>
+  </div>
+  <div id="aJobImportConfirm" style="display:none;margin-bottom:.75rem;border:1px solid #bfdbfe;border-radius:8px;padding:.65rem .85rem;background:#f0f9ff">
+    <div style="font-size:.83rem;font-weight:600;color:#1d4ed8;margin-bottom:.4rem">从职位导入 <span id="aJobImportTitle" style="color:#0f172a"></span></div>
+    <div style="font-size:.82rem;display:flex;flex-direction:column;gap:.3rem">
+      <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportAddr" checked> 工作地址</label>
+      <label id="aImportPayRow" style="display:none;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportPay" checked> <span id="aImportPayText"></span></label>
+      <label id="aImportPayTypeRow" style="display:none;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportPayType" checked> <span id="aImportPayTypeText"></span></label>
+      <label id="aImportContractRow" style="display:none;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportContract" checked> <span id="aImportContractText"></span></label>
+      <label id="aImportBenRow" style="display:none;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportBen" checked> 福利待遇</label>
+    </div>
+    <div style="display:flex;gap:.5rem;margin-top:.5rem">
+      <button type="button" onclick="confirmAssignJobImport()" style="padding:.3rem .75rem;background:#1d4ed8;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:.82rem;font-weight:600">确认导入</button>
+      <button type="button" onclick="document.getElementById('aJobImportConfirm').style.display='none'" style="padding:.3rem .6rem;background:#fff;border:1px solid var(--gray-200);border-radius:5px;cursor:pointer;font-size:.82rem">取消</button>
+    </div>
+  </div>
   <input type="hidden" id="assignId">
   <input type="hidden" id="aInquiryId">
   <input type="hidden" id="aJobId">
@@ -2031,27 +2052,6 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="form-section" style="margin-top:.75rem;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;background:#eff6ff">
     <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#1d4ed8;display:block;margin-bottom:.5rem">📍 工作地点（打卡围栏）</label>
-    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
-      <button type="button" class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;white-space:nowrap" onclick="toggleAssignJobAddrPicker()">📋 从职位导入地址</button>
-      <span id="aJobAddrPickerStatus" style="font-size:.8rem;color:var(--gray-400)"></span>
-    </div>
-    <div id="aJobAddrPickerWrap" style="display:none;margin-bottom:.5rem;border:1px solid var(--gray-200);border-radius:8px;max-height:180px;overflow-y:auto">
-      <div id="aJobAddrPickerList"></div>
-    </div>
-    <div id="aJobImportConfirm" style="display:none;margin-bottom:.5rem;border:1px solid #bfdbfe;border-radius:8px;padding:.65rem .85rem;background:#f0f9ff">
-      <div style="font-size:.83rem;font-weight:600;color:#1d4ed8;margin-bottom:.4rem">从职位导入 <span id="aJobImportTitle" style="color:#0f172a"></span></div>
-      <div style="font-size:.82rem;display:flex;flex-direction:column;gap:.3rem">
-        <label style="display:flex;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportAddr" checked> 工作地址</label>
-        <label id="aImportPayRow" style="display:none;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportPay" checked> <span id="aImportPayText"></span></label>
-        <label id="aImportPayTypeRow" style="display:none;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportPayType" checked> <span id="aImportPayTypeText"></span></label>
-        <label id="aImportContractRow" style="display:none;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportContract" checked> <span id="aImportContractText"></span></label>
-        <label id="aImportBenRow" style="display:none;align-items:center;gap:.4rem;cursor:pointer"><input type="checkbox" id="aImportBen" checked> 福利待遇</label>
-      </div>
-      <div style="display:flex;gap:.5rem;margin-top:.5rem">
-        <button type="button" onclick="confirmAssignJobImport()" style="padding:.3rem .75rem;background:#1d4ed8;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:.82rem;font-weight:600">确认导入</button>
-        <button type="button" onclick="document.getElementById('aJobImportConfirm').style.display='none'" style="padding:.3rem .6rem;background:#fff;border:1px solid var(--gray-200);border-radius:5px;cursor:pointer;font-size:.82rem">取消</button>
-      </div>
-    </div>
     <div class="field" style="margin-bottom:.5rem">
       <label>工作地址 *</label>
       <div style="display:flex;gap:.5rem">
