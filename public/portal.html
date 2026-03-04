@@ -194,6 +194,158 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Check In / Out Confirm Modal -->
+<div class="modal-overlay" id="checkConfirmModal">
+  <div class="modal-box" style="max-width:480px;width:96%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.9rem">
+      <h2 style="margin:0;font-size:1.05rem" id="checkConfirmTitle"></h2>
+      <button onclick="closeCheckConfirm()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+
+    <!-- Time + GPS -->
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.88rem;line-height:1.8;color:#0c4a6e">
+      <div>🕐 <strong id="checkConfirmTime"></strong></div>
+      <div id="checkConfirmGps" style="font-size:.8rem;color:#1d4ed8"></div>
+    </div>
+
+    <!-- Photo section -->
+    <div style="margin-bottom:1rem">
+      <div style="font-size:.83rem;font-weight:700;color:var(--gray-700);margin-bottom:.5rem">
+        📷 请拍一张仓库照片 / Take a warehouse photo <span style="color:#dc2626">*</span>
+      </div>
+      <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.65rem">
+        请用摄像头拍摄当前工作场所的实景照片，不可上传本地图片
+        <br>Take a live photo of your current work location using the camera
+      </div>
+
+      <!-- Hidden camera input — capture="environment" forces rear camera, no gallery -->
+      <input type="file" id="checkPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(this)">
+
+      <div id="checkPhotoPreview" style="display:none;margin-bottom:.65rem;text-align:center">
+        <img id="checkPhotoImg" style="max-width:100%;max-height:220px;border-radius:8px;border:2px solid var(--sky);object-fit:cover" alt="warehouse photo">
+        <div style="font-size:.75rem;color:var(--green);margin-top:.3rem">✅ 照片已拍摄 / Photo captured</div>
+      </div>
+
+      <button onclick="document.getElementById('checkPhotoInput').click()" id="btnTakePhoto"
+        style="width:100%;padding:.75rem;border:2px dashed var(--sky);border-radius:10px;background:#f0f9ff;color:var(--sky);font-weight:700;font-size:.9rem;cursor:pointer;transition:all .2s"
+        onmouseover="this.style.background='#e0f2fe'" onmouseout="this.style.background='#f0f9ff'">
+        📷 打开摄像头拍照 / Open Camera
+      </button>
+    </div>
+
+    <div class="modal-msg error" id="checkConfirmError"></div>
+    <div style="display:flex;gap:.6rem;margin-top:.5rem">
+      <button onclick="closeCheckConfirm()" class="modal-btn modal-btn-secondary" style="flex:1">取消 / Cancel</button>
+      <button onclick="confirmCheckAction()" id="btnConfirmCheck" class="modal-btn modal-btn-primary" style="flex:2;opacity:.45;cursor:not-allowed" disabled id="checkConfirmTitle">确认 / Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change Contact (Phone / Email) Modal -->
+<div class="modal-overlay" id="changeContactModal">
+  <div class="modal-box" style="max-width:440px;width:96%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem">
+      <h2 style="margin:0;font-size:1rem" id="changeContactTitle"></h2>
+      <button onclick="closeContactModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+
+    <!-- Step 1: enter new value -->
+    <div id="contactStep1">
+      <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:.85rem" id="changeContactDesc"></p>
+      <div style="margin-bottom:.85rem">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="changeContactLabel"></label>
+        <input id="changeContactNewVal" type="text" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.92rem">
+      </div>
+      <div class="modal-msg error" id="contactStep1Error"></div>
+      <div style="display:flex;gap:.6rem">
+        <button onclick="closeContactModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消</button>
+        <button onclick="requestContactChange()" id="btnRequestChange" class="modal-btn modal-btn-primary" style="flex:2">发送验证码</button>
+      </div>
+    </div>
+
+    <!-- Step 2: enter old + new codes -->
+    <div id="contactStep2" style="display:none">
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.7rem .9rem;font-size:.82rem;color:#0c4a6e;margin-bottom:1rem" id="contactCodeHint"></div>
+
+      <div style="margin-bottom:.85rem">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelOldCode"></label>
+        <input id="oldContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+      </div>
+      <div style="margin-bottom:.85rem">
+        <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelNewCode"></label>
+        <input id="newContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+      </div>
+      <div style="text-align:right;margin-top:-.4rem;margin-bottom:.75rem">
+        <a href="#" onclick="requestContactChange();return false" style="font-size:.8rem;color:var(--sky)">重新发送验证码</a>
+      </div>
+
+      <div class="modal-msg error" id="contactStep2Error"></div>
+      <div style="display:flex;gap:.6rem">
+        <button onclick="closeContactModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消</button>
+        <button onclick="confirmContactChange()" id="btnConfirmChange" class="modal-btn modal-btn-primary" style="flex:2">确认更换</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Interview Booking Confirm Modal -->
+<div class="modal-overlay" id="bookConfirmModal">
+  <div class="modal-box" style="max-width:500px;width:96%">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h2 style="margin:0;font-size:1.05rem">📅 确认面试预约 / Confirm Interview</h2>
+      <button onclick="closeBookModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
+    </div>
+
+    <!-- Slot details -->
+    <div id="bookSlotDetails" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem;font-size:.88rem;line-height:1.9">
+    </div>
+
+    <!-- Required documents -->
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem">
+      <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.55rem">📋 请携带以下证件 / Please Bring the Following Documents</div>
+      <div style="font-size:.82rem;color:#78350f;line-height:1.8">
+        <div>🪪 SSN 社会安全卡（Social Security Card）</div>
+        <div>🪪 驾照（Driver's License）或州政府颁发 ID</div>
+        <div>📄 EAD 工卡（如适用 / If applicable）</div>
+        <div>🛂 护照（Passport）或其他有效身份证明</div>
+        <div>📋 任何工作授权证明（Work Authorization Documents）</div>
+      </div>
+      <div style="font-size:.76rem;color:#92400e;margin-top:.6rem;padding-top:.5rem;border-top:1px solid #fde68a">
+        ⚠️ 如无法找到相关人员，请致电或发邮件联系我们：<br>
+        If you can't reach anyone, contact us at:<br>
+        <strong>📞 (847) 737-9888</strong> &nbsp;·&nbsp; <strong>✉️ info@primeanchorpoint.com</strong>
+      </div>
+    </div>
+
+    <!-- Confirm contact info -->
+    <div style="margin-bottom:.85rem">
+      <div style="font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.5rem">📱 确认您的联系方式 / Confirm Your Contact Info</div>
+      <div style="display:flex;gap:.6rem">
+        <div style="flex:1">
+          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">手机号 / Phone</label>
+          <input type="tel" id="bookPhone" placeholder="(312) 555-1234" style="width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
+        </div>
+        <div style="flex:1">
+          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">邮箱 / Email</label>
+          <input type="email" id="bookEmail" placeholder="you@email.com" style="width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
+        </div>
+      </div>
+    </div>
+
+    <!-- Message -->
+    <div style="margin-bottom:.9rem">
+      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 有什么想告诉我们的？/ Anything you'd like to share?</label>
+      <textarea id="bookNote" rows="3" placeholder="例：我没有驾照，只有护照 / e.g. I only have a passport, no driver's license" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
+    </div>
+
+    <div class="modal-msg error" id="bookModalError"></div>
+    <div style="display:flex;gap:.6rem;margin-top:.5rem">
+      <button onclick="closeBookModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消 / Cancel</button>
+      <button onclick="confirmBookSlot()" id="bookConfirmBtn" class="modal-btn modal-btn-primary" style="flex:2">✅ 确认预约 / Confirm Booking</button>
+    </div>
+  </div>
+</div>
+
 <!-- Forgot Password Modal -->
 <div class="modal-overlay" id="forgotModal">
   <div class="modal-box">
@@ -241,7 +393,7 @@ tr:last-child td{border-bottom:none}
     <button class="nav-btn active" data-tab="jobs" onclick="showTab('jobs')">职位浏览</button>
     <button class="nav-btn" data-tab="interview" onclick="showTab('interview')">预约面试</button>
     <button class="nav-btn" data-tab="applications" onclick="showTab('applications')">我的申请</button>
-    <button class="nav-btn" data-tab="timeclock" onclick="showTab('timeclock')">我的打卡记录</button>
+    <button class="nav-btn" data-tab="timeclock" onclick="showTab('timeclock')">Check In / Out</button>
     <button class="nav-btn" data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none">合规文件</button>
     <button class="nav-btn" data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none">📋 待办事项</button>
     <button class="nav-btn" data-tab="profile" onclick="showTab('profile')">我的信息</button>
@@ -292,13 +444,13 @@ tr:last-child td{border-bottom:none}
           <div class="punch-status" id="punchStatus">正在检查状态…</div>
           <div class="punch-time" id="punchTime"></div>
           <div class="punch-sub" id="punchSub"></div>
-          <button class="btn-punch btn-punch-in" id="btnPunch" onclick="doPunch()" disabled>获取位置中…</button>
+          <button class="btn-punch btn-punch-in" id="btnPunch" onclick="openCheckConfirm()" disabled>获取位置中…</button>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
         </div>
       </div>
       <div class="card">
-        <h2>打卡历史记录</h2>
-        <table><thead><tr><th>日期</th><th>上班</th><th>下班</th><th>工作时长</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
+        <h2>Check In / Out 记录</h2>
+        <table><thead><tr><th>日期</th><th>Check In</th><th>Check Out</th><th>工作时长</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
         <tbody id="timeclockTable"></tbody></table>
       </div>
     </div>
@@ -995,10 +1147,10 @@ function enablePunchBtn(ready) {
   btn.disabled = !ready;
   if (ready) {
     if (_punchStatus.clocked_in) {
-      btn.textContent = '⏹ 下班打卡 / Clock Out';
+      btn.textContent = '⏹ Check Out';
       btn.className = 'btn-punch btn-punch-out';
     } else {
-      btn.textContent = '▶ 上班打卡 / Clock In';
+      btn.textContent = '▶ Check In';
       btn.className = 'btn-punch btn-punch-in';
     }
   }
@@ -1016,58 +1168,144 @@ async function loadPunchStatus() {
   if (s.no_employee) {
     statusEl.innerHTML = '<span style="color:var(--red)">⚠ 账号未关联员工档案</span>';
     timeEl.textContent = '—';
-    subEl.textContent = '请联系HR关联您的员工档案后方可打卡';
+    subEl.textContent = '请联系HR关联您的员工档案后方可 Check In';
     btn.disabled = true;
-    btn.textContent = '账号未关联，无法打卡';
+    btn.textContent = '账号未关联，无法 Check In';
     btn.className = 'btn-punch';
     return;
   }
 
   if (s.clocked_in && s.open_entry) {
     const ci = new Date(s.open_entry.clock_in);
-    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
+    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● Checked In</span>';
     timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+    subEl.textContent = 'Check In 时间 · ' + ci.toLocaleDateString();
   } else if (!s.has_active_job) {
-    statusEl.innerHTML = '<span style="color:var(--orange)">● 未在班</span>';
+    statusEl.innerHTML = '<span style="color:var(--orange)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = '当前无有效工作安排';
     btn.disabled = true;
-    btn.textContent = '暂无工作安排，无法打卡';
+    btn.textContent = '暂无工作安排，无法 Check In';
     btn.className = 'btn-punch';
     return;
   } else {
-    statusEl.innerHTML = '<span style="color:var(--gray-400)">● 未在班</span>';
+    statusEl.innerHTML = '<span style="color:var(--gray-400)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = s.active_job ? s.active_job.title || new Date().toLocaleDateString() : new Date().toLocaleDateString();
   }
   enablePunchBtn(_gpsCoords !== null || document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
 }
 
-async function doPunch() {
-  const btn = document.getElementById('btnPunch');
-  btn.disabled = true;
-  btn.textContent = '处理中…';
-  const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null };
-  const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
-  if (!r) { btn.disabled = false; enablePunchBtn(true); return; }
-  if (r.error) {
-    showToast('❌ ' + r.error, 'error');
-    btn.disabled = false;
-    await loadPunchStatus();
+let _checkPhotoData = null; // base64 data URL of captured photo
+
+function openCheckConfirm() {
+  const isClockedIn = _punchStatus && _punchStatus.clocked_in;
+  const title = isClockedIn ? '⏹ 确认 Check Out' : '▶ 确认 Check In';
+  document.getElementById('checkConfirmTitle').textContent = title;
+
+  const now = new Date();
+  document.getElementById('checkConfirmTime').textContent =
+    now.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+
+  const gpsEl = document.getElementById('checkConfirmGps');
+  if (_gpsCoords) {
+    gpsEl.textContent = `📍 已定位 (${_gpsCoords.latitude.toFixed(5)}, ${_gpsCoords.longitude.toFixed(5)})`;
+  } else {
+    gpsEl.textContent = '📍 位置未获取（将不记录GPS）';
+  }
+
+  // Reset photo
+  _checkPhotoData = null;
+  document.getElementById('checkPhotoInput').value = '';
+  document.getElementById('checkPhotoPreview').style.display = 'none';
+  document.getElementById('btnTakePhoto').textContent = '📷 打开摄像头拍照 / Open Camera';
+  const confirmBtn = document.getElementById('btnConfirmCheck');
+  confirmBtn.disabled = true;
+  confirmBtn.style.opacity = '.45';
+  confirmBtn.style.cursor = 'not-allowed';
+  document.getElementById('checkConfirmError').textContent = '';
+  document.getElementById('checkConfirmError').style.display = 'none';
+
+  document.getElementById('checkConfirmModal').classList.add('show');
+}
+
+function closeCheckConfirm() {
+  document.getElementById('checkConfirmModal').classList.remove('show');
+}
+
+function onPhotoSelected(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  // Compress and preview via canvas
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      const MAX = 1200;
+      let w = img.width, h = img.height;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else       { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      _checkPhotoData = canvas.toDataURL('image/jpeg', 0.82);
+      document.getElementById('checkPhotoImg').src = _checkPhotoData;
+      document.getElementById('checkPhotoPreview').style.display = '';
+      document.getElementById('btnTakePhoto').textContent = '📷 重新拍照 / Retake Photo';
+      // Enable confirm button
+      const btn = document.getElementById('btnConfirmCheck');
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.style.cursor = 'pointer';
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function confirmCheckAction() {
+  if (!_checkPhotoData) {
+    const errEl = document.getElementById('checkConfirmError');
+    errEl.textContent = '请先拍摄仓库照片 / Please take a warehouse photo first';
+    errEl.style.display = '';
     return;
   }
+  const btn = document.getElementById('btnConfirmCheck');
+  btn.disabled = true;
+  btn.textContent = '处理中…';
+
+  const body = {
+    latitude: _gpsCoords?.latitude || null,
+    longitude: _gpsCoords?.longitude || null,
+    photo_data: _checkPhotoData
+  };
+  const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
+  btn.disabled = false;
+  btn.textContent = '确认 / Confirm';
+
+  if (!r) { closeCheckConfirm(); enablePunchBtn(true); return; }
+  if (r.error) {
+    const errEl = document.getElementById('checkConfirmError');
+    errEl.textContent = '❌ ' + r.error;
+    errEl.style.display = '';
+    return;
+  }
+
+  closeCheckConfirm();
   if (r.action === 'in') {
     const geoMsg = r.geo_verified ? (r.site_name ? ` (${r.site_name})` : ' (位置已验证)') : '';
-    showToast(`✅ 上班打卡成功！${geoMsg}`, 'success');
+    showToast(`✅ Check In 成功！${geoMsg}`, 'success');
   } else if (r.action === 'out') {
     const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
-    showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
+    showToast(`✅ Check Out 成功！本次 ${hrs}h`, 'success');
   }
-  // Refresh GPS coords and status
+
+  _checkPhotoData = null;
   _gpsCoords = null;
   document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
-  btn.textContent = '获取位置中…';
+  document.getElementById('btnPunch').textContent = '获取位置中…';
   await loadPunchStatus();
   loadTimeclock();
   initGPS();
@@ -1078,7 +1316,7 @@ async function loadTimeclock() {
   const entries = await wApi('/timeclock');
   if (!entries) return;
   if (!Array.isArray(entries)) {
-    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="8" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录</td></tr>';
+    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="8" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看 Check In / Out 记录</td></tr>';
     return;
   }
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t=>{
@@ -1088,14 +1326,14 @@ async function loadTimeclock() {
     return `<tr>
       <td>${ci ? ci.toLocaleDateString() : '—'}</td>
       <td>${ci ? ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'}</td>
-      <td>${co ? co.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--orange)">未打卡</span>'}</td>
+      <td>${co ? co.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--orange)">未 Check Out</span>'}</td>
       <td>${t.total_hours ? t.total_hours.toFixed(2) + ' h' : '—'}</td>
       <td>${t.regular_hours ? t.regular_hours.toFixed(2) + ' h' : '—'}</td>
       <td>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+' h</span>' : '—'}</td>
       <td>${t.status === 'closed' ? '✅ 已完成' : '<span style="color:var(--sky)">进行中</span>'}</td>
       <td>${mapLink}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="8" class="empty">暂无打卡记录</td></tr>';
+  }).join('') : '<tr><td colspan="8" class="empty">暂无 Check In / Out 记录</td></tr>';
 }
 
 const WORK_STATUS_LABELS = { citizen:'🇺🇸 美国公民', green_card:'🟢 绿卡', ead:'📄 EAD工卡', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'其他' };
