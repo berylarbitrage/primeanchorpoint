@@ -634,6 +634,16 @@ try { db.exec("ALTER TABLE assignments ADD COLUMN work_radius INTEGER DEFAULT 20
 try { db.exec("ALTER TABLE assignments ADD COLUMN worker_response TEXT DEFAULT NULL"); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
 
+db.exec(`CREATE TABLE IF NOT EXISTS shift_confirmations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  assignment_id INTEGER NOT NULL REFERENCES assignments(id),
+  date TEXT NOT NULL,
+  status TEXT DEFAULT 'pending',
+  notified_at DATETIME DEFAULT NULL,
+  responded_at DATETIME DEFAULT NULL,
+  UNIQUE(assignment_id, date)
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   employee_id INTEGER NOT NULL,
@@ -1129,6 +1139,49 @@ setTimeout(() => runBackup('启动备份'), 2000);
 
 // Periodic backup
 setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
+
+// ─── Daily shift confirmation notifications ───────────────────────
+async function sendDailyShiftConfirmations() {
+  const today = new Date().toISOString().slice(0, 10);
+  const assignments = db.prepare(`
+    SELECT a.id, a.inquiry_id, j.title,
+           w.phone, w.first_name, w.name as wname
+    FROM assignments a
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN worker_accounts w ON w.linked_inquiry_id = i.id
+    WHERE a.status != 'cancelled'
+      AND a.worker_response = 'accepted'
+      AND w.phone IS NOT NULL AND w.phone != ''
+  `).all();
+
+  let sent = 0;
+  for (const a of assignments) {
+    db.prepare('INSERT OR IGNORE INTO shift_confirmations (assignment_id, date, status) VALUES (?,?,?)').run(a.id, today, 'pending');
+    const sc = db.prepare('SELECT id, notified_at FROM shift_confirmations WHERE assignment_id=? AND date=?').get(a.id, today);
+    if (sc && !sc.notified_at) {
+      const name = a.first_name || a.wname || '';
+      const jobTitle = a.title || '班次';
+      await sendSMS(a.phone, `[Prime Anchorpoint] 您好${name ? ' ' + name : ''}，今天（${today}）${jobTitle}的班次是否确认出勤？请登录 Portal 确认。`).catch(() => {});
+      db.prepare('UPDATE shift_confirmations SET notified_at=CURRENT_TIMESTAMP WHERE id=?').run(sc.id);
+      sent++;
+    }
+  }
+  console.log(`[ShiftConfirm] ${today}: sent ${sent} notifications`);
+}
+
+function scheduleDailyShiftConfirmations() {
+  const now = new Date();
+  const next7am = new Date(now);
+  next7am.setHours(7, 0, 0, 0);
+  if (next7am <= now) next7am.setDate(next7am.getDate() + 1);
+  const delay = next7am - now;
+  setTimeout(() => {
+    sendDailyShiftConfirmations();
+    setInterval(sendDailyShiftConfirmations, 24 * 60 * 60 * 1000);
+  }, delay);
+}
+scheduleDailyShiftConfirmations();
 
 // ─── Middleware ───
 app.use(express.json());
@@ -4176,89 +4229,6 @@ app.post('/api/worker/me/verify-change', requireWorker, (req, res) => {
   res.json({ success: true });
 });
 
-// ─── Contact Change (phone / email) with dual verification ───
-const _pendingContactChange = new Map(); // key: `${workerId}_${field}`
-
-app.post('/api/worker/contact/request-change', requireWorker, async (req, res) => {
-  const { field, new_value } = req.body;
-  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
-  if (!new_value || !new_value.trim()) return res.status(400).json({ error: '请填写新' + (field==='phone'?'手机号':'邮箱') });
-
-  const val = new_value.trim();
-  const w = db.prepare('SELECT id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
-
-  // Check not already in use by another account
-  const taken = field === 'phone'
-    ? db.prepare('SELECT id FROM worker_accounts WHERE phone=? AND id!=?').get(val, req.workerId)
-    : db.prepare('SELECT id FROM worker_accounts WHERE email=? AND id!=?').get(val, req.workerId);
-  if (taken) return res.status(400).json({ error: field==='phone' ? '该手机号已被其他账号使用' : '该邮箱已被其他账号注册' });
-
-  const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
-  const oldCode = code6(), newCode = code6();
-  const expires = Date.now() + 15 * 60 * 1000;
-
-  _pendingContactChange.set(`${req.workerId}_${field}`, { new_value: val, old_code: oldCode, new_code: newCode, expires });
-
-  let oldSent = false, newSent = false;
-
-  if (field === 'phone') {
-    const oldPhone = w.phone;
-    const canVerify = !!(twilioClient && TWILIO_VERIFY_SID);
-    if (oldPhone) {
-      if (canVerify) { await sendVerifyCode(oldPhone); oldSent = true; }
-      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchorpoint] 验证旧手机号，验证码：${oldCode}，15分钟有效`); }
-    }
-    if (canVerify) { await sendVerifyCode(val); newSent = true; }
-    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] 验证新手机号，验证码：${newCode}，15分钟有效`); }
-  } else {
-    const oldEmail = w.email;
-    if (oldEmail) {
-      oldSent = await sendEmail(oldEmail, 'Prime Anchorpoint 更换邮箱验证', `您正在更换绑定邮箱，旧邮箱验证码：${oldCode}，15分钟内有效。\nYou are changing your email. Old email verification code: ${oldCode}`);
-    }
-    newSent = await sendEmail(val, 'Prime Anchorpoint 新邮箱验证', `您正在绑定此邮箱，新邮箱验证码：${newCode}，15分钟内有效。\nVerification code for new email: ${newCode}`);
-  }
-
-  console.log(`[ContactChange] Worker ${req.workerId} field=${field} old_sent=${oldSent} new_sent=${newSent} old_code=${oldCode} new_code=${newCode}`);
-  res.json({ success: true, old_sent: oldSent, new_sent: newSent });
-});
-
-app.post('/api/worker/contact/confirm-change', requireWorker, async (req, res) => {
-  const { field, old_code, new_code } = req.body;
-  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
-  const key = `${req.workerId}_${field}`;
-  const pending = _pendingContactChange.get(key);
-  if (!pending || Date.now() > pending.expires) return res.status(400).json({ error: '验证码已过期，请重新发送 / Code expired, please request again' });
-
-  const w = db.prepare('SELECT phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
-
-  // Verify old contact
-  let oldOk = false;
-  if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID && w.phone) {
-    oldOk = await checkVerifyCode(w.phone, old_code);
-  } else {
-    oldOk = (old_code && old_code.trim() === pending.old_code);
-  }
-  if (!oldOk && w[field]) return res.status(400).json({ error: field==='phone' ? '旧手机号验证码不正确' : '旧邮箱验证码不正确' });
-
-  // Verify new contact
-  let newOk = false;
-  if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID) {
-    newOk = await checkVerifyCode(pending.new_value, new_code);
-  } else {
-    newOk = (new_code && new_code.trim() === pending.new_code);
-  }
-  if (!newOk) return res.status(400).json({ error: field==='phone' ? '新手机号验证码不正确' : '新邮箱验证码不正确' });
-
-  // Apply change
-  if (field === 'phone') {
-    db.prepare('UPDATE worker_accounts SET phone=? WHERE id=?').run(pending.new_value, req.workerId);
-  } else {
-    db.prepare('UPDATE worker_accounts SET email=? WHERE id=?').run(pending.new_value, req.workerId);
-  }
-  _pendingContactChange.delete(key);
-  res.json({ success: true });
-});
-
 app.get('/api/worker/jobs', requireWorker, (req, res) => {
   const jobs = db.prepare(`
     SELECT j.id, j.title, j.type, j.location, j.pay, j.pay_period,
@@ -4471,6 +4441,40 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
   } else {
     db.prepare("UPDATE assignments SET worker_response='accepted' WHERE id=?").run(task.id);
   }
+  res.json({ success: true });
+});
+
+// ─── Shift confirmation endpoints ────────────────────────────────
+app.get('/api/worker/shift-confirmations', requireWorker, (req, res) => {
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!wa || !wa.linked_inquiry_id) return res.json([]);
+  const confirmations = db.prepare(`
+    SELECT sc.id, sc.date, sc.status, sc.notified_at, sc.responded_at,
+           a.id as assignment_id, j.title, j.company_name,
+           j.work_start, j.work_end, a.work_address, a.pay_rate, a.pay_type
+    FROM shift_confirmations sc
+    JOIN assignments a ON sc.assignment_id = a.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    WHERE a.inquiry_id = ?
+    ORDER BY sc.date DESC, sc.id DESC
+    LIMIT 30
+  `).all(wa.linked_inquiry_id);
+  res.json(confirmations);
+});
+
+app.post('/api/worker/shift-confirmations/:id/respond', requireWorker, (req, res) => {
+  const { response } = req.body; // 'confirmed' or 'declined'
+  if (!['confirmed', 'declined'].includes(response))
+    return res.status(400).json({ error: 'Invalid response' });
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!wa || !wa.linked_inquiry_id) return res.status(403).json({ error: '账号未关联' });
+  const sc = db.prepare(`
+    SELECT sc.id FROM shift_confirmations sc
+    JOIN assignments a ON sc.assignment_id = a.id
+    WHERE sc.id=? AND a.inquiry_id=?
+  `).get(req.params.id, wa.linked_inquiry_id);
+  if (!sc) return res.status(404).json({ error: '未找到' });
+  db.prepare('UPDATE shift_confirmations SET status=?, responded_at=CURRENT_TIMESTAMP WHERE id=?').run(response, sc.id);
   res.json({ success: true });
 });
 

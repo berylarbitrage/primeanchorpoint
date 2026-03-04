@@ -464,6 +464,13 @@ tr:last-child td{border-bottom:none}
 
     <!-- My Tasks -->
     <div id="tabInterview" style="display:none">
+      <!-- Today's shift confirmations -->
+      <div id="shiftConfirmCard" style="display:none;margin-bottom:1rem">
+        <div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
+          <h2 style="color:#92400e;margin-bottom:.75rem">📅 今日出勤确认</h2>
+          <div id="shiftConfirmList"></div>
+        </div>
+      </div>
       <div class="card">
         <h2>📋 我的任务</h2>
         <div id="myTasksList" style="margin-top:.75rem"></div>
@@ -1260,6 +1267,43 @@ async function loadInterview() {
 async function loadTasks() {
   const el = document.getElementById('myTasksList');
   el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">加载中…</p>';
+
+  // Load today's shift confirmations
+  const today = new Date().toISOString().slice(0, 10);
+  const confirmations = await wApi('/shift-confirmations');
+  const todayConfs = (confirmations || []).filter(c => c.date === today);
+  const confCard = document.getElementById('shiftConfirmCard');
+  const confList = document.getElementById('shiftConfirmList');
+  if (todayConfs.length) {
+    confCard.style.display = '';
+    confList.innerHTML = todayConfs.map(c => {
+      const fmt = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+      const timeStr = (c.work_start && c.work_end) ? `${fmt(c.work_start)} – ${fmt(c.work_end)}` : '';
+      const statusBadge = c.status === 'confirmed'
+        ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700">✓ 已确认出勤</span>`
+        : c.status === 'declined'
+        ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700">✕ 已请假</span>`
+        : `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700">待确认</span>`;
+      const actionBtns = c.status === 'pending' ? `
+        <div style="display:flex;gap:.6rem;margin-top:.85rem">
+          <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.6rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
+          <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.6rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer">❌ 今天请假</button>
+        </div>` : '';
+      return `
+        <div style="border:1px solid #fcd34d;border-radius:10px;padding:.9rem;margin-bottom:.6rem;background:#fff">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+            <div style="font-weight:700;font-size:.95rem;color:var(--gray-800)">${esc(c.title||'—')}${c.company_name?`<span style="font-weight:400;color:var(--gray-500);font-size:.82rem"> · ${esc(c.company_name)}</span>`:''}</div>
+            ${statusBadge}
+          </div>
+          ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ ${esc(timeStr)}</div>` : ''}
+          ${c.work_address ? `<div style="font-size:.83rem;color:#4b5563">📍 ${esc(c.work_address)}</div>` : ''}
+          ${actionBtns}
+        </div>`;
+    }).join('');
+  } else {
+    confCard.style.display = 'none';
+  }
+
   const tasks = await wApi('/my-tasks');
   if (!tasks || !tasks.length) {
     el.innerHTML = '<p style="color:var(--gray-500);font-size:.9rem;padding:.5rem 0">暂无任务安排，请联系 HR。</p>';
@@ -1324,6 +1368,14 @@ async function respondTask(id, response) {
   const r = await wApi(`/my-tasks/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
   if (r && r.success) {
     showToast(response === 'accepted' ? '✅ 已接受任务' : '已拒绝任务');
+    loadTasks();
+  }
+}
+
+async function respondShiftConfirm(id, response) {
+  const r = await wApi(`/shift-confirmations/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
+  if (r && r.success) {
+    showToast(response === 'confirmed' ? '✅ 已确认今日出勤' : '已登记今日请假');
     loadTasks();
   }
 }
