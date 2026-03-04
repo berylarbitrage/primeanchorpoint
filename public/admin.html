@@ -2013,6 +2013,23 @@ tr:hover td{background:var(--sky-light)}
       <button type="button" onclick="schedCopyClose()" style="font-size:.78rem;padding:.2rem .5rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;background:#fff;margin-left:.3rem">取消</button>
     </div>
   </div>
+  <div class="form-section" style="margin-top:.75rem;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;background:#eff6ff">
+    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#1d4ed8;display:block;margin-bottom:.5rem">📍 工作地点（打卡围栏）</label>
+    <div class="field" style="margin-bottom:.5rem">
+      <label>工作地址 *</label>
+      <div style="display:flex;gap:.5rem">
+        <input id="aWorkAddress" placeholder="例：1234 Main St, Los Angeles, CA" style="flex:1" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+        <button type="button" onclick="geocodeWorkAddress()" style="white-space:nowrap;padding:.4rem .75rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-size:.82rem;font-weight:600">🔍 查坐标</button>
+      </div>
+      <div id="aWorkAddrErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请填写工作地址</div>
+      <div id="aWorkGeoStatus" style="font-size:.75rem;color:var(--gray-500);margin-top:.25rem"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>纬度 (Lat) *</label><input id="aWorkLat" type="number" step="any" placeholder="例：34.052235" oninput="document.getElementById('aWorkLatErr').style.display='none'"><div id="aWorkLatErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
+      <div class="field"><label>经度 (Lng) *</label><input id="aWorkLng" type="number" step="any" placeholder="例：-118.243683" oninput="document.getElementById('aWorkLngErr').style.display='none'"><div id="aWorkLngErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
+      <div class="field"><label>围栏半径（米）</label><input id="aWorkRadius" type="number" placeholder="200" value="200"></div>
+    </div>
+  </div>
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
     <button class="btn btn-green" onclick="saveAssignment()">保存</button>
@@ -4014,6 +4031,13 @@ async function openAssignModal(assignment) {
   document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
   document.getElementById('aPayType').value = assignment ? (assignment.pay_type || 'hourly') : 'hourly';
   document.getElementById('aPayRate').value = assignment ? (assignment.pay_rate || '') : '';
+  // Work location
+  document.getElementById('aWorkAddress').value = assignment ? (assignment.work_address || '') : '';
+  document.getElementById('aWorkLat').value = assignment ? (assignment.work_lat || '') : '';
+  document.getElementById('aWorkLng').value = assignment ? (assignment.work_lng || '') : '';
+  document.getElementById('aWorkRadius').value = assignment ? (assignment.work_radius || 200) : 200;
+  document.getElementById('aWorkGeoStatus').textContent = '';
+  ['aWorkAddrErr','aWorkLatErr','aWorkLngErr'].forEach(id => document.getElementById(id).style.display='none');
   // Benefits toggle
   const activeBens = assignment && assignment.benefits ? assignment.benefits.split(',').map(s=>s.trim()) : [];
   document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
@@ -4369,6 +4393,25 @@ function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
 
 function editAssignment(a) { openAssignModal(a); }
 
+async function geocodeWorkAddress() {
+  const addr = document.getElementById('aWorkAddress').value.trim();
+  if (!addr) { document.getElementById('aWorkGeoStatus').textContent = '请先填写地址'; return; }
+  const statusEl = document.getElementById('aWorkGeoStatus');
+  statusEl.textContent = '🔍 正在查找坐标…';
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1`, { headers: { 'Accept-Language': 'zh-CN,en' } });
+    const data = await r.json();
+    if (!data.length) { statusEl.textContent = '⚠ 未找到该地址，请检查后重试或手动输入坐标'; return; }
+    document.getElementById('aWorkLat').value = parseFloat(data[0].lat).toFixed(6);
+    document.getElementById('aWorkLng').value = parseFloat(data[0].lon).toFixed(6);
+    document.getElementById('aWorkLatErr').style.display = 'none';
+    document.getElementById('aWorkLngErr').style.display = 'none';
+    statusEl.innerHTML = `✅ ${data[0].display_name}`;
+  } catch(e) {
+    statusEl.textContent = '⚠ 查找失败，请手动输入坐标';
+  }
+}
+
 async function addMoreDispatch(prefill) {
   showTab('assignments');
   await openAssignModal(); // blank new assignment
@@ -4402,7 +4445,11 @@ async function saveAssignment() {
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
     benefits,
-    work_schedule: getSchedJson()
+    work_schedule: getSchedJson(),
+    work_address: document.getElementById('aWorkAddress').value.trim(),
+    work_lat: parseFloat(document.getElementById('aWorkLat').value) || null,
+    work_lng: parseFloat(document.getElementById('aWorkLng').value) || null,
+    work_radius: parseInt(document.getElementById('aWorkRadius').value) || 200
   };
   // Only require person/job selection for brand-new assignments
   if (isNew && (!data.inquiry_id || !data.job_id)) {
@@ -4411,6 +4458,14 @@ async function saveAssignment() {
     document.getElementById('assignModal').querySelector('.modal').scrollTop = 0;
     return;
   }
+  // Required: pay_rate, start_date, work location
+  let hasErr = false;
+  if (!document.getElementById('aPayRate').value.trim()) { document.getElementById('aPayRate').style.borderColor='#dc2626'; hasErr = true; }
+  if (!document.getElementById('aStartDate').value)      { document.getElementById('aStartDate').style.borderColor='#dc2626'; hasErr = true; }
+  if (!data.work_address) { document.getElementById('aWorkAddrErr').style.display=''; hasErr = true; }
+  if (!data.work_lat)     { document.getElementById('aWorkLatErr').style.display=''; hasErr = true; }
+  if (!data.work_lng)     { document.getElementById('aWorkLngErr').style.display=''; hasErr = true; }
+  if (hasErr) { showToast('⚠ 请填写所有必填项（薪资、开始日期、工作地点坐标）', 'error'); return; }
   // Dispatch-ready guard
   const ws = await api(`/admin/inquiries/${data.inquiry_id}/worker-status`).catch(()=>null);
   if (ws && !ws.dispatch_ready) {

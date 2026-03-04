@@ -1623,8 +1623,12 @@ async function doPunch(photo) {
     }).catch(() => {});
   }
   if (r.action === 'in') {
-    const geoMsg = r.geo_verified ? (r.site_name ? ` (${r.site_name})` : ' (位置已验证)') : '';
-    showToast(`✅ 上班打卡成功！${r.job_title ? ' · ' + r.job_title : ''}${geoMsg}`, 'success');
+    if (r.geo_warning) {
+      showToast(`⚠️ 打卡成功，但您不在指定工作地点范围内！请确认位置后联系管理员。`, 'error');
+    } else {
+      const geoMsg = r.geo_verified ? (r.site_name ? ` · 📍${r.site_name}` : ' · 位置已验证') : '';
+      showToast(`✅ 上班打卡成功！${r.job_title ? ' · ' + r.job_title : ''}${geoMsg}`, 'success');
+    }
   } else if (r.action === 'out') {
     const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
     showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
