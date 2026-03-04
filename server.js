@@ -1329,13 +1329,13 @@ function activateWorkerAccount(accountId, prefix) {
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
   // Ensure a linked inquiry exists (by phone → email → name → create)
-  const normPhone = s => (s || '').replace(/\D/g, '');
+  const normPhone = s => (s || '').replace(/\D/g, '').slice(-10);
   const wPhone = normPhone(acc.phone);
   const wEmail = (acc.email || '').toLowerCase();
   const wName  = (acc.name || '').trim();
   let inqId = null;
   if (wPhone) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE REPLACE(REPLACE(REPLACE(phone,\' \',\'\'),\'-\',\'\'),\'(\',\'\') LIKE ?').get('%' + wPhone + '%');
+    const row = db.prepare('SELECT id FROM inquiries WHERE phone10(phone) = ?').get(wPhone);
     if (row) inqId = row.id;
   }
   if (!inqId && wEmail) {
@@ -4371,7 +4371,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (!activeJob) {
     const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
     const linkedInqId = wa?.linked_inquiry_id || null;
-    const wPhone = (wa?.phone || '').replace(/\D/g, '');
+    const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
     const wEmail = (wa?.email || '').toLowerCase();
     activeJob = db.prepare(`
       SELECT a.id, a.job_id, j.title, j.site_id,
@@ -4383,7 +4383,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
       WHERE a.job_id = ? AND a.status != 'cancelled'
         AND (
           (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
+          OR (? != '' AND phone10(i.phone) = ?)
           OR (? != '' AND lower(i.email) = ?)
         )
       ORDER BY a.assigned_at DESC LIMIT 1
@@ -4595,7 +4595,7 @@ app.get('/api/admin/all-referrals', requireAdmin, (req, res) => {
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '');
+  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
   const wEmail = (wa?.email || '').toLowerCase();
 
   const open = req.workerEmployeeId
@@ -4632,7 +4632,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
       WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
         AND (
           (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
+          OR (? != '' AND phone10(i.phone) = ?)
           OR (? != '' AND lower(i.email) = ?)
         )
       ORDER BY a.assigned_at DESC
@@ -4677,7 +4677,7 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
 app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '');
+  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
   const wEmail = (wa?.email || '').toLowerCase();
 
   let jobs = [];
@@ -4712,7 +4712,7 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
       WHERE a.status != 'cancelled'
         AND (
           (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
+          OR (? != '' AND phone10(i.phone) = ?)
           OR (? != '' AND lower(i.email) = ?)
         )
       ORDER BY a.assigned_at DESC
