@@ -2211,6 +2211,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="dupActionBar" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
     <div id="dupActionMsg" style="font-size:.87rem;color:#92400e;margin-bottom:10px;line-height:1.5;"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button id="dupLinkWorkerBtn" class="btn btn-sm btn-green" onclick="_execDupLinkWorker()" style="display:none">🔗 绑定工人账户 / Link Worker</button>
       <button class="btn btn-sm" onclick="_execDupReplace()" style="background:#d97706;border-color:#d97706;color:#fff">替换成新信息 / Replace</button>
       <button class="btn btn-sm btn-outline" onclick="_execDupMerge()" style="color:#1d4ed8;border-color:#93c5fd">合并员工档案 / Merge</button>
       <button class="btn btn-sm btn-outline" onclick="_execDupEdit()">编辑此员工 / Edit</button>
@@ -5292,7 +5293,27 @@ function _showDupActionBar(p) {
   document.getElementById('dupActionMsg').innerHTML =
     `<strong>⚠️ 冲突提示</strong>：「${nameA}」正在保存的${esc(p.fieldLabel)}与此员工重复。` +
     `请查看下方完整档案后，选择如何处理：`;
+  // Show link-worker button only when converting a worker account
+  const linkBtn = document.getElementById('dupLinkWorkerBtn');
+  if (linkBtn) linkBtn.style.display = p.convertFromWorkerId ? '' : 'none';
   document.getElementById('dupActionBar').style.display = '';
+}
+
+async function _execDupLinkWorker() {
+  const p = _pendingDupSave;
+  _pendingDupSave = null;
+  document.getElementById('dupActionBar').style.display = 'none';
+  const empId = currentEmpForDetail && currentEmpForDetail.id;
+  closeEmpDetailModal();
+  if (!p || !p.convertFromWorkerId || !empId) return;
+  await api(`/admin/worker-accounts/${p.convertFromWorkerId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ employee_id: empId })
+  });
+  _convertFromWorkerId = null;
+  await loadEmployees();
+  await loadWorkerAccounts();
+  showToast(`✅ 工人账户已绑定到员工「${esc(p.existingEmpName)}」`);
 }
 
 async function _execDupReplace() {
@@ -5419,7 +5440,7 @@ async function saveEmployee() {
       '查看员工档案 / View Employee',
       'btn',
       async () => {
-        const p = { data, empId: id || null, field: r.field, fieldLabel, existingEmpName: empName };
+        const p = { data, empId: id || null, field: r.field, fieldLabel, existingEmpName: empName, convertFromWorkerId: _convertFromWorkerId || null };
         clearModalState('empModal'); closeEmpModal();
         await viewEmployee(emp.id);
         _showDupActionBar(p);
