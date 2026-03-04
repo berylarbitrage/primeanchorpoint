@@ -1985,11 +1985,13 @@ function enablePunchBtn(ready) {
   const s = _punchStatus;
   const btnIn = document.getElementById('btnPunchIn');
   const workingBtns = document.getElementById('punchWorkingBtns');
+  const btnBreakEnd = document.getElementById('btnBreakEnd');
   if (!btnIn) return;
 
   // Hide all first
   btnIn.style.display = 'none';
   workingBtns.style.display = 'none';
+  if (btnBreakEnd) btnBreakEnd.style.display = 'none';
 
   if (s.no_employee || !ready) return;
 
@@ -1999,8 +2001,11 @@ function enablePunchBtn(ready) {
       btnIn.style.display = '';
       btnIn.disabled = false;
     }
+  } else if (s.on_break) {
+    // On break: show Resume Job button only
+    if (btnBreakEnd) btnBreakEnd.style.display = '';
   } else {
-    // Working: show Check Out button
+    // Working: show Pause + Clock Out buttons
     workingBtns.style.display = 'flex';
   }
 }
@@ -2173,15 +2178,15 @@ function executePunch() {
   const type = _pendingPunchType;
   closePunchConfirm();
   if (!type) return;
-  if (type === 'in') {
-    // Clock-in: require photo first
+  if (type === 'in' || type === 'break_start') {
+    // Clock-in / Pause: require photo first
     _pendingPunchPhoto = null;
     document.getElementById('punchPhotoPreview').style.display = 'none';
     document.getElementById('punchPhotoConfirmRow').style.display = 'none';
     document.getElementById('punchPhotoInput').value = '';
     document.getElementById('punchBtnsWrap').style.display = 'none';
     document.getElementById('punchPhotoStep').style.display = '';
-    window._punchTypeAfterPhoto = 'in';
+    window._punchTypeAfterPhoto = type;
     return;
   }
   doPunch(type, null);
@@ -2208,9 +2213,9 @@ async function confirmPunchWithPhoto() {
   confirmBtn.disabled = true;
   confirmBtn.textContent = '打卡中…';
   try {
-    await doPunch('in', _pendingPunchPhoto);
+    await doPunch(window._punchTypeAfterPhoto || 'in', _pendingPunchPhoto);
   } catch (e) {
-    await customAlert('打卡失败，请重试。\nClock-in failed, please try again.', '打卡失败', '❌');
+    await customAlert('打卡失败，请重试。\nFailed, please try again.', '打卡失败', '❌');
   } finally {
     confirmBtn.disabled = false;
     confirmBtn.textContent = '✅ 确认打卡';
@@ -2222,14 +2227,14 @@ async function doPunch(type, photo) {
   if (type === 'in') {
     const sel = document.getElementById('jobSelector');
     body.job_id = sel ? parseInt(sel.value) || null : null;
-    if (photo) {
-      body.photo_data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = e => resolve(e.target.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(photo);
-      });
-    }
+  }
+  if ((type === 'in' || type === 'break_start') && photo) {
+    body.photo_data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(photo);
+    });
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { enablePunchBtn(true); cancelPunchPhoto(); await customAlert('打卡失败，请重新登录后重试。\nFailed to clock in, please re-login.', '打卡失败', '❌'); return; }
