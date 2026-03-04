@@ -322,6 +322,8 @@ tr:hover td{background:var(--sky-light)}
 .wa-skill-pill .stars{color:#f59e0b;font-size:.65rem}
 </style>
 <script src="/address-validator.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -1274,11 +1276,14 @@ tr:hover td{background:var(--sky-light)}
     <span id="siteAddrStatus" style="font-size:.8rem;font-weight:600"></span>
   </div>
   <div class="field-row" style="display:flex;gap:1rem">
-    <div class="field" style="flex:1"><label>纬度 Latitude *</label><input id="siteLat" type="number" step="any" placeholder="40.7128"></div>
-    <div class="field" style="flex:1"><label>经度 Longitude *</label><input id="siteLng" type="number" step="any" placeholder="-74.0060"></div>
+    <div class="field" style="flex:1"><label>纬度 Latitude *</label><input id="siteLat" type="number" step="any" placeholder="40.7128" oninput="updateSiteMap()"></div>
+    <div class="field" style="flex:1"><label>经度 Longitude *</label><input id="siteLng" type="number" step="any" placeholder="-74.0060" oninput="updateSiteMap()"></div>
   </div>
-  <div class="field"><label>围栏半径 (米)</label><input id="siteRadius" type="number" value="200" min="50" max="2000"></div>
-  <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:1rem">提示: 可以在 Google Maps 上右键点击获取坐标</div>
+  <div class="field"><label>围栏半径 (米)</label><input id="siteRadius" type="number" value="200" min="50" max="2000" oninput="updateSiteMap()"></div>
+  <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:.6rem">提示: 可以在 Google Maps 上右键点击获取坐标，或输入坐标后下方地图预览会自动更新</div>
+  <div id="siteMapWrap" style="display:none;margin-bottom:1rem">
+    <div id="siteMapPreview" style="height:220px;border-radius:10px;border:1px solid var(--gray-200);overflow:hidden"></div>
+  </div>
   <div class="modal-actions">
     <button class="btn btn-green" onclick="saveJobSite()">保存</button>
     <button class="btn" onclick="closeModal('jobSiteModal')">取消</button>
@@ -6805,6 +6810,18 @@ async function terminateEmployee(id, name) {
   loadEmployees();
 }
 
+let _qrLibLoaded = false;
+function _loadQRLib() {
+  if (_qrLibLoaded || window.QRCode) { _qrLibLoaded = true; return Promise.resolve(); }
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+    s.onload = () => { _qrLibLoaded = true; resolve(); };
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
 async function viewEmployee(id) {
   const emp = await api(`/admin/employees/${id}`);
   currentEmpForDetail = emp;
@@ -6815,11 +6832,17 @@ async function viewEmployee(id) {
   const cols = (pairs) => `<div class="detail-grid">${pairs.map(([k,v])=>`<div class="detail-row"><span>${k}</span><span>${v||'—'}</span></div>`).join('')}</div>`;
 
   let html = `
-    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--gray-200)">
-      <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
-      <div>
-        <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
-        <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--gray-200)">
+      <div style="display:flex;align-items:center;gap:1rem">
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;flex-shrink:0">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
+        <div>
+          <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
+          <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+        </div>
+      </div>
+      <div style="text-align:center;flex-shrink:0">
+        <div id="empQRCode_${emp.id}" style="width:110px;height:110px;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center"></div>
+        <div style="font-size:.64rem;color:var(--gray-400);margin-top:3px;letter-spacing:.3px">PUNCH QR</div>
       </div>
     </div>
     <div class="form-section">
@@ -7021,6 +7044,11 @@ async function viewEmployee(id) {
   document.getElementById('empDetailTitle').textContent = `${emp.first_name} ${emp.last_name} (${emp.employee_id})`;
   document.getElementById('empDetailContent').innerHTML = html;
   document.getElementById('empDetailModal').classList.add('show');
+  // Generate Manager Punch QR code
+  _loadQRLib().then(() => {
+    const qrDiv = document.getElementById('empQRCode_' + emp.id);
+    if (qrDiv && window.QRCode) new QRCode(qrDiv, { text: location.origin + '/mgr-punch?emp=' + emp.employee_id, width: 110, height: 110, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  }).catch(() => {});
   loadEmpRatings(emp.id);
 }
 function closeEmpDetailModal() {
@@ -7610,7 +7638,7 @@ function renderTimeEntries(list) {
     <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
     <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
     <td style="text-align:center">${photoCell}</td>
-    <td>${esc(t.notes||'')}${t.latitude?` <a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="查看打卡位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})">📍</a>`:''}</td>
+    <td>${esc(t.notes||'')}${t.latitude?` <span onclick="showMiniMap(event,${t.latitude},${t.longitude})" title="查看打卡位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">📍</span>`:''}</td>
     <td>
       ${t.status==='open'?`<button class="btn btn-sm btn-accent" onclick="clockOutEntry(${t.id})">打卡下班</button> `:''}
       <button class="btn btn-sm" onclick='openTimeModal(${JSON.stringify(t).replace(/'/g,"&#39;")})'>编辑</button>
@@ -10072,6 +10100,44 @@ async function reviewComplianceDoc(status) {
 // ─── Job Sites ───
 let _jobSites = [];
 
+// ─── Job Site Minimap ───
+let _siteMap = null, _siteMarker = null, _siteCircle = null;
+
+function updateSiteMap() {
+  const lat = parseFloat(document.getElementById('siteLat').value);
+  const lng = parseFloat(document.getElementById('siteLng').value);
+  const radius = parseInt(document.getElementById('siteRadius').value) || 200;
+  const wrap = document.getElementById('siteMapWrap');
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  if (!_siteMap) {
+    _siteMap = L.map('siteMapPreview', { zoomControl: true, scrollWheelZoom: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap',
+      maxZoom: 19
+    }).addTo(_siteMap);
+    _siteMarker = L.marker([lat, lng]).addTo(_siteMap);
+    _siteCircle = L.circle([lat, lng], { radius, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.15, weight: 2 }).addTo(_siteMap);
+    _siteMap.setView([lat, lng], 16);
+  } else {
+    _siteMarker.setLatLng([lat, lng]);
+    _siteCircle.setLatLng([lat, lng]);
+    _siteCircle.setRadius(radius);
+    _siteMap.setView([lat, lng], 16);
+  }
+  // Force resize in case modal just opened
+  setTimeout(() => _siteMap && _siteMap.invalidateSize(), 100);
+}
+
+function resetSiteMap() {
+  _siteMap = null; _siteMarker = null; _siteCircle = null;
+  document.getElementById('siteMapWrap').style.display = 'none';
+  document.getElementById('siteMapPreview').innerHTML = '';
+}
+
 async function loadJobSites() {
   const sites = await api('/admin/job-sites');
   if (!sites) return;
@@ -10099,6 +10165,7 @@ function openJobSiteModal() {
   document.getElementById('siteJobPickerWrap').style.display = 'none';
   document.getElementById('siteJobPickerStatus').textContent = '';
   document.getElementById('jobSiteModalTitle').textContent = '添加工作地点';
+  resetSiteMap();
   document.getElementById('jobSiteModal').classList.add('show');
 }
 
@@ -10140,7 +10207,9 @@ function editJobSite(id) {
   document.getElementById('siteLng').value = s.longitude;
   document.getElementById('siteRadius').value = s.radius_meters;
   document.getElementById('jobSiteModalTitle').textContent = '编辑工作地点';
+  resetSiteMap();
   document.getElementById('jobSiteModal').classList.add('show');
+  setTimeout(updateSiteMap, 150);
 }
 
 async function saveJobSite() {
@@ -10401,5 +10470,61 @@ async function addSkillOption() {
     <button class="btn btn-red" onclick="closeDispatchJobPicker()">取消</button>
   </div>
 </div>
+
+<!-- Inline Mini-Map Popup -->
+<div id="miniMapPopup" style="display:none;position:fixed;z-index:9999;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22);padding:0;overflow:hidden;min-width:300px">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .8rem;background:#f8fafc;border-bottom:1px solid #e2e8f0">
+    <span id="miniMapLabel" style="font-size:.82rem;color:#475569;font-weight:600">📍 打卡位置</span>
+    <div style="display:flex;gap:.4rem">
+      <a id="miniMapGoogleLink" href="#" target="_blank" style="font-size:.76rem;color:#3b82f6;text-decoration:none;padding:2px 8px;border-radius:4px;background:#eff6ff">在 Google Maps 打开</a>
+      <button onclick="closeMiniMapPopup()" style="background:none;border:none;cursor:pointer;font-size:1rem;color:#94a3b8;line-height:1;padding:0 2px">✕</button>
+    </div>
+  </div>
+  <div id="miniMapContainer" style="height:220px;width:300px"></div>
+</div>
+<script>
+(function() {
+  let _mmMap = null, _mmMarker = null;
+
+  window.showMiniMap = function(e, lat, lng) {
+    e.stopPropagation();
+    const popup = document.getElementById('miniMapPopup');
+    document.getElementById('miniMapLabel').textContent = `📍 ${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
+    document.getElementById('miniMapGoogleLink').href = `https://maps.google.com/?q=${lat},${lng}`;
+
+    // Position near click
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let x = e.clientX + 12, y = e.clientY + 12;
+    popup.style.display = '';
+    const pw = popup.offsetWidth || 310, ph = popup.offsetHeight || 270;
+    if (x + pw > vw - 8) x = e.clientX - pw - 8;
+    if (y + ph > vh - 8) y = e.clientY - ph - 8;
+    popup.style.left = Math.max(8, x) + 'px';
+    popup.style.top  = Math.max(8, y) + 'px';
+
+    if (!_mmMap) {
+      _mmMap = L.map('miniMapContainer', { zoomControl: true, scrollWheelZoom: false });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(_mmMap);
+      _mmMarker = L.marker([lat, lng]).addTo(_mmMap);
+      _mmMap.setView([lat, lng], 16);
+    } else {
+      _mmMarker.setLatLng([lat, lng]);
+      _mmMap.setView([lat, lng], 16);
+    }
+    setTimeout(() => _mmMap && _mmMap.invalidateSize(), 80);
+  };
+
+  window.closeMiniMapPopup = function() {
+    document.getElementById('miniMapPopup').style.display = 'none';
+  };
+
+  document.addEventListener('click', function(e) {
+    const popup = document.getElementById('miniMapPopup');
+    if (popup && popup.style.display !== 'none' && !popup.contains(e.target)) {
+      popup.style.display = 'none';
+    }
+  });
+})();
+</script>
 </body>
 </html>
