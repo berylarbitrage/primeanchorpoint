@@ -1170,16 +1170,34 @@ async function loadInterview() {
 
   const scheduleEl = document.getElementById('todayScheduleContent');
   const DAY_MAP = { 0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat' };
+  const DAY_KEY_LOW = { 0:'sun',1:'mon',2:'tue',3:'wed',4:'thu',5:'fri',6:'sat' };
   const DAY_ZH  = { Mon:'周一',Tue:'周二',Wed:'周三',Thu:'周四',Fri:'周五',Sat:'周六',Sun:'周日' };
   const today = new Date();
   const todayKey = DAY_MAP[today.getDay()];
+  const todayKeyLow = DAY_KEY_LOW[today.getDay()];
   const todayStr = today.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+  const fmt = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh = parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
 
   if (punchStatus && punchStatus.has_active_job && punchStatus.active_job) {
     const job = punchStatus.active_job;
+    // Per-worker schedule from assignment (keyed by lowercase day: mon/tue/...)
+    let sched = {};
+    try { sched = JSON.parse(job.work_schedule || '{}'); } catch {}
+    const todaySched = sched[todayKeyLow];
+    // Determine if working today: per-assignment schedule takes priority over job's work_days
+    const hasSched = todaySched && !todaySched.off;
     const workDays = job.work_days ? job.work_days.split(',').map(d=>d.trim()) : [];
-    const hasShiftToday = workDays.length === 0 || workDays.includes(todayKey);
-    const fmt = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh = parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+    const hasShiftToday = todaySched
+      ? hasSched
+      : (workDays.length === 0 || workDays.includes(todayKey));
+    const shiftStart = (hasSched && todaySched.start) ? todaySched.start : job.work_start;
+    const shiftEnd   = (hasSched && todaySched.end)   ? todaySched.end   : job.work_end;
+    // Build break summary
+    let breakHtml = '';
+    if (hasSched && todaySched.break_times && todaySched.break_times.length) {
+      const breaks = todaySched.break_times.filter(b=>b.start||b.end).map(b=>`${fmt(b.start)||'?'}–${fmt(b.end)||'?'}`).join('、');
+      if (breaks) breakHtml = `<div><span style="color:var(--gray-500)">休息：</span>${breaks}</div>`;
+    }
     if (hasShiftToday) {
       scheduleEl.innerHTML = `
         <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:1.1rem 1.25rem;margin-bottom:.75rem">
@@ -1188,12 +1206,13 @@ async function loadInterview() {
           <div style="display:grid;gap:.4rem;font-size:.92rem">
             <div><span style="color:var(--gray-500)">公司：</span><strong>${job.company_name||'—'}</strong></div>
             <div><span style="color:var(--gray-500)">职位：</span><strong>${job.title||'—'}</strong></div>
-            ${job.work_start&&job.work_end ? `<div><span style="color:var(--gray-500)">时间：</span><strong>${fmt(job.work_start)} — ${fmt(job.work_end)}</strong></div>` : ''}
-            ${job.location ? `<div><span style="color:var(--gray-500)">地点：</span>${job.location}</div>` : ''}
+            ${shiftStart&&shiftEnd ? `<div><span style="color:var(--gray-500)">上班时间：</span><strong>${fmt(shiftStart)} — ${fmt(shiftEnd)}</strong></div>` : ''}
+            ${breakHtml}
+            ${job.location ? `<div><span style="color:var(--gray-500)">上班地点：</span><strong>${job.location}</strong></div>` : ''}
             ${job.pay ? `<div><span style="color:var(--gray-500)">薪资：</span>${job.pay}</div>` : ''}
           </div>
         </div>
-        ${workDays.length ? `<div style="font-size:.8rem;color:var(--gray-400)">工作日：${workDays.map(d=>DAY_ZH[d]||d).join('、')}</div>` : ''}`;
+        ${workDays.length&&!todaySched ? `<div style="font-size:.8rem;color:var(--gray-400)">工作日：${workDays.map(d=>DAY_ZH[d]||d).join('、')}</div>` : ''}`;
     } else {
       scheduleEl.innerHTML = `
         <div style="background:#fef9ec;border:1px solid #fcd34d;border-radius:10px;padding:1.1rem 1.25rem;margin-bottom:.75rem">
@@ -1201,7 +1220,7 @@ async function loadInterview() {
           <div style="font-size:.9rem;color:var(--gray-600);margin-bottom:.6rem">${todayStr}</div>
           <div style="font-size:.9rem;color:var(--gray-600)">当前职位：<strong>${job.title||'—'}</strong>（${job.company_name||'—'}）</div>
         </div>
-        ${workDays.length ? `<div style="font-size:.8rem;color:var(--gray-400)">本职位工作日：${workDays.map(d=>DAY_ZH[d]||d).join('、')}</div>` : ''}`;
+        ${workDays.length&&!todaySched ? `<div style="font-size:.8rem;color:var(--gray-400)">本职位工作日：${workDays.map(d=>DAY_ZH[d]||d).join('、')}</div>` : ''}`;
     }
   } else {
     scheduleEl.innerHTML = `
