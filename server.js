@@ -3637,12 +3637,19 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   let matchedSiteId = site_id || null;
 
   // GPS Geofencing: verify worker is within radius of a job site
-  if (latitude && longitude) {
-    const sites = db.prepare('SELECT * FROM job_sites WHERE active=1').all();
-    if (sites.length > 0) {
+  const activeSites = db.prepare('SELECT * FROM job_sites WHERE active=1').all();
+  let geoBlocked = false;
+  let geoBlockMsg = '';
+
+  if (activeSites.length > 0) {
+    if (!latitude || !longitude) {
+      // Sites exist but no GPS — block
+      geoBlocked = true;
+      geoBlockMsg = '无法获取您的位置。请开启定位权限后再 Check In / Check Out。\nCannot get your location. Please enable GPS and try again.';
+    } else {
       let nearestSite = null;
       let nearestDist = Infinity;
-      for (const s of sites) {
+      for (const s of activeSites) {
         const dist = haversineDistance(latitude, longitude, s.latitude, s.longitude);
         if (dist < nearestDist) { nearestDist = dist; nearestSite = s; }
       }
@@ -3650,11 +3657,14 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
         geoVerified = 1;
         matchedSiteId = nearestSite.id;
       } else if (nearestSite) {
-        // Not within any site radius - warn but allow punch
-        console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(nearestDist)}m from nearest site "${nearestSite.name}" (max ${nearestSite.radius_meters}m)`);
+        geoBlocked = true;
+        const distKm = nearestDist >= 1000 ? (nearestDist / 1000).toFixed(1) + ' km' : Math.round(nearestDist) + ' m';
+        geoBlockMsg = `您的位置不在工作地点范围内。\n距最近地点"${nearestSite.name}"约 ${distKm}，允许范围 ${nearestSite.radius_meters}m。\n请到达工作地点后再打卡。\nYou are outside the allowed work site radius (${distKm} away from "${nearestSite.name}").`;
       }
     }
   }
+
+  if (geoBlocked) return res.status(400).json({ error: geoBlockMsg, geo_blocked: true });
 
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
   if (open) {

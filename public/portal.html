@@ -1134,7 +1134,7 @@ function initGPS() {
       enablePunchBtn(true);
     },
     err => {
-      document.getElementById('gpsIndicator').innerHTML = '⚠️ 无法获取位置（将不记录GPS）';
+      document.getElementById('gpsIndicator').innerHTML = '⚠️ 无法获取位置 — 如有地点限制将无法打卡，请开启定位权限';
       enablePunchBtn(true);
     },
     { enableHighAccuracy: true, timeout: 10000 }
@@ -1208,10 +1208,15 @@ function openCheckConfirm() {
     now.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
 
   const gpsEl = document.getElementById('checkConfirmGps');
+  const gpsIndicatorText = document.getElementById('gpsIndicator').textContent || '';
   if (_gpsCoords) {
-    gpsEl.textContent = `📍 已定位 (${_gpsCoords.latitude.toFixed(5)}, ${_gpsCoords.longitude.toFixed(5)})`;
+    const accMatch = gpsIndicatorText.match(/±(\d+)m/);
+    const acc = accMatch ? `精度 ±${accMatch[1]}m` : '';
+    gpsEl.innerHTML = `📍 已定位 ${acc} &nbsp;·&nbsp; ${_gpsCoords.latitude.toFixed(5)}, ${_gpsCoords.longitude.toFixed(5)}`;
+    gpsEl.style.color = '#1d4ed8';
   } else {
-    gpsEl.textContent = '📍 位置未获取（将不记录GPS）';
+    gpsEl.textContent = '⚠️ 位置未获取 — 如设置了地点限制，提交后将被拒绝';
+    gpsEl.style.color = '#dc2626';
   }
 
   // Reset photo
