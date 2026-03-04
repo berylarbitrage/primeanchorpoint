@@ -966,6 +966,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
 )`);
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_phone TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_email TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN applicant_note TEXT DEFAULT ''`); } catch(e) {}
@@ -4342,6 +4343,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   // ── Clock in ─────────────────────────────────────────────────────
   if (open) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  if (!latitude || !longitude) return res.status(400).json({ error: '打卡需要开启位置权限，请允许浏览器获取您的位置后重试。/ Location permission required to clock in.', need_gps: true });
   if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
   let activeJob = db.prepare(`
     SELECT ej.id, ej.job_id, j.title, j.site_id,
@@ -4583,7 +4585,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
       JOIN jobs j ON a.job_id = j.id
       LEFT JOIN job_sites js ON j.site_id = js.id
       JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled'
+      WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
         AND (
           (? IS NOT NULL AND a.inquiry_id = ?)
           OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
@@ -4597,12 +4599,18 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     }
   }
 
+  // Count pending (unaccepted) tasks
+  const pendingTasksCount = linkedInqId
+    ? (db.prepare(`SELECT COUNT(*) AS cnt FROM assignments WHERE inquiry_id=? AND status != 'cancelled' AND (worker_response IS NULL OR worker_response = '')`).get(linkedInqId)?.cnt || 0)
+    : 0;
+
   res.json({
     clocked_in: !!open,
     on_break: !!(open?.on_break),
     open_entry: open || null,
     no_employee: !req.workerEmployeeId,
     has_active_job: activeJobs.length > 0,
+    pending_tasks_count: pendingTasksCount,
     active_jobs: activeJobs,
     active_job: activeJobs[0] || null
   });
