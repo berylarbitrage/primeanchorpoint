@@ -955,6 +955,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
 )`);
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
+try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_phone TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_email TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE interviews ADD COLUMN applicant_note TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN persona_inquiry_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN identity_status TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN identity_sent_at TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN referred_by INTEGER DEFAULT NULL"); } catch {}
 db.exec(`CREATE TABLE IF NOT EXISTS referral_bonus_config (
   id INTEGER PRIMARY KEY CHECK (id=1),
@@ -975,7 +981,6 @@ try {
       for (const r of oldRows) {
         const id_row = db.prepare(`SELECT * FROM worker_onboarding WHERE worker_account_id=? AND task_key='id_verify'`).get(r.worker_account_id);
         const ssn_row = db.prepare(`SELECT * FROM worker_onboarding WHERE worker_account_id=? AND task_key='ssn_verify'`).get(r.worker_account_id);
-        // Use the best status: completed > submitted > pending
         const statusOrder = { completed: 3, waived: 3, submitted: 2, pending: 1, locked: 0 };
         const bestStatus = (statusOrder[id_row?.status]||0) >= (statusOrder[ssn_row?.status]||0) ? (id_row?.status||'pending') : (ssn_row?.status||'pending');
         const visible = (id_row?.visible_to_worker || ssn_row?.visible_to_worker) ? 1 : 0;
@@ -1021,6 +1026,7 @@ try { db.exec("ALTER TABLE jobs ADD COLUMN site_id INTEGER DEFAULT NULL"); } cat
 // Migrate: add site_id to time_entries
 try { db.exec("ALTER TABLE time_entries ADD COLUMN site_id INTEGER DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN geo_verified INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN punch_photo TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN job_id INTEGER DEFAULT NULL"); } catch {}
 
 // Worker payments ledger
@@ -4038,6 +4044,65 @@ app.get('/api/worker/me', requireWorker, (req, res) => {
   res.json({ account: w, employee: emp, compliance_docs: docs });
 });
 
+// ─── Contact Change (phone / email) with dual verification ───
+const _pendingContactChange = new Map(); // key: `${workerId}_${field}`
+
+app.post('/api/worker/contact/request-change', requireWorker, async (req, res) => {
+  const { field, new_value } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  if (!new_value || !new_value.trim()) return res.status(400).json({ error: '请填写新' + (field==='phone'?'手机号':'邮箱') });
+  const val = new_value.trim();
+  const w = db.prepare('SELECT id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const taken = field === 'phone'
+    ? db.prepare('SELECT id FROM worker_accounts WHERE phone=? AND id!=?').get(val, req.workerId)
+    : db.prepare('SELECT id FROM worker_accounts WHERE email=? AND id!=?').get(val, req.workerId);
+  if (taken) return res.status(400).json({ error: field==='phone' ? '该手机号已被其他账号使用' : '该邮箱已被其他账号注册' });
+  const code6 = () => String(Math.floor(100000 + Math.random() * 900000));
+  const oldCode = code6(), newCode = code6();
+  const expires = Date.now() + 15 * 60 * 1000;
+  _pendingContactChange.set(`${req.workerId}_${field}`, { new_value: val, old_code: oldCode, new_code: newCode, expires });
+  let oldSent = false, newSent = false;
+  if (field === 'phone') {
+    const oldPhone = w.phone;
+    const canVerify = !!(twilioClient && TWILIO_VERIFY_SID);
+    if (oldPhone) {
+      if (canVerify) { await sendVerifyCode(oldPhone); oldSent = true; }
+      else if (twilioClient && TWILIO_FROM) { oldSent = await sendSMS(oldPhone, `[Prime Anchorpoint] 验证旧手机号，验证码：${oldCode}，15分钟有效`); }
+    }
+    if (canVerify) { await sendVerifyCode(val); newSent = true; }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] 验证新手机号，验证码：${newCode}，15分钟有效`); }
+  } else {
+    const oldEmail = w.email;
+    if (oldEmail) oldSent = await sendEmail(oldEmail, 'Prime Anchorpoint 更换邮箱验证', `旧邮箱验证码：${oldCode}，15分钟内有效。`);
+    newSent = await sendEmail(val, 'Prime Anchorpoint 新邮箱验证', `新邮箱验证码：${newCode}，15分钟内有效。`);
+  }
+  console.log(`[ContactChange] Worker ${req.workerId} field=${field} old_code=${oldCode} new_code=${newCode}`);
+  res.json({ success: true, old_sent: oldSent, new_sent: newSent });
+});
+
+app.post('/api/worker/contact/confirm-change', requireWorker, async (req, res) => {
+  const { field, old_code, new_code } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const key = `${req.workerId}_${field}`;
+  const pending = _pendingContactChange.get(key);
+  if (!pending || Date.now() > pending.expires) return res.status(400).json({ error: '验证码已过期，请重新发送' });
+  const w = db.prepare('SELECT phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  let oldOk = false;
+  if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID && w.phone) {
+    oldOk = await checkVerifyCode(w.phone, old_code);
+  } else { oldOk = (old_code && old_code.trim() === pending.old_code); }
+  if (!oldOk && w[field]) return res.status(400).json({ error: field==='phone' ? '旧手机号验证码不正确' : '旧邮箱验证码不正确' });
+  let newOk = false;
+  if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID) {
+    newOk = await checkVerifyCode(pending.new_value, new_code);
+  } else { newOk = (new_code && new_code.trim() === pending.new_code); }
+  if (!newOk) return res.status(400).json({ error: field==='phone' ? '新手机号验证码不正确' : '新邮箱验证码不正确' });
+  if (field === 'phone') db.prepare('UPDATE worker_accounts SET phone=? WHERE id=?').run(pending.new_value, req.workerId);
+  else db.prepare('UPDATE worker_accounts SET email=? WHERE id=?').run(pending.new_value, req.workerId);
+  _pendingContactChange.delete(key);
+  res.json({ success: true });
+});
+
 // Worker: update profile (phone/email change triggers re-verification)
 app.put('/api/worker/me', requireWorker, async (req, res) => {
   const { field, new_value } = req.body;
@@ -4257,7 +4322,7 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
 
 app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.status(400).json({ error: '账号未关联员工档案，请联系HR' });
-  const { latitude, longitude, job_id, punch_type } = req.body;
+  const { latitude, longitude, job_id, punch_type, photo_data } = req.body;
   if (!punch_type || !['in','break_start','break_end','out'].includes(punch_type))
     return res.status(400).json({ error: '请选择打卡类型 / Please select a punch type.' });
   const now = new Date().toISOString();
@@ -4284,7 +4349,6 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     const breaks = JSON.parse(open.break_records || '[]');
     const lastIdx = breaks.findIndex(b => !b.end);
     if (lastIdx >= 0) breaks[lastIdx].end = now;
-    // Recalculate total break_minutes from all completed breaks
     const totalBreakMs = breaks.reduce((sum, b) => {
       if (b.start && b.end) sum += new Date(b.end) - new Date(b.start);
       return sum;
@@ -4300,8 +4364,8 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     if (!open) return res.status(400).json({ error: '尚未上班打卡，无法下班打卡。' });
     if (open.on_break) return res.status(400).json({ error: '请先打卡休息结束，再下班打卡。' });
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
-    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out' WHERE id=?")
-      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out',punch_photo=COALESCE(?,punch_photo) WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, photo_data || null, open.id);
     return res.json({ action: 'out', punch_type: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, ...hrs });
   }
 
@@ -4339,7 +4403,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   }
   if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
 
-  let geoWarning = false;
+  // GPS verification for clock-in: check job site first, then assignment address
   let assignSite = null;
   if (latitude && longitude) {
     if (activeJob.js_id) {
@@ -4348,7 +4412,9 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
         geoVerified = 1;
         matchedSiteId = activeJob.js_id;
       } else {
-        console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(dist)}m from site "${activeJob.site_name}" (max ${activeJob.radius_meters}m)`);
+        // Outside job site radius — block
+        const distKm = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : Math.round(dist) + ' m';
+        return res.status(400).json({ error: `您的位置不在工作地点范围内（距"${activeJob.site_name}"约 ${distKm}，允许范围 ${activeJob.radius_meters}m）。\n请到达工作地点后再打卡。\nYou are outside the allowed radius (${distKm} from "${activeJob.site_name}").`, geo_blocked: true });
       }
     }
     if (!geoVerified) {
@@ -4364,16 +4430,20 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
         if (dist2 <= (assignSite.work_radius || 200)) {
           geoVerified = 1;
         } else {
-          geoWarning = true;
+          const distKm2 = dist2 >= 1000 ? (dist2 / 1000).toFixed(1) + ' km' : Math.round(dist2) + ' m';
+          return res.status(400).json({ error: `您的位置不在工作地点范围内（距指定地址约 ${distKm2}）。\n请到达工作地点后再打卡。\nYou are outside the allowed work location (${distKm2} away).`, geo_blocked: true });
         }
       }
     }
+  } else if (activeJob.js_id || activeJob.site_id) {
+    // Job has a configured site but worker provided no GPS — block
+    return res.status(400).json({ error: '请开启定位权限后再打卡。该工作需要验证您的位置。\nPlease enable location access. This job requires location verification.', geo_blocked: true });
   }
 
-  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0)")
-    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id);
+  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
+    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null);
   res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
-    geo_warning: geoWarning, site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
+    site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
 });
 
 // Upload punch photo for a time entry (must belong to this worker)
@@ -5864,6 +5934,79 @@ app.get('/api/admin/interviews', requireAdmin, (req, res) => {
     ORDER BY s.slot_datetime DESC
   `).all();
   res.json(rows);
+});
+
+// Admin: send Persona identity verification to worker via interview
+app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, res) => {
+  try {
+    const interview = db.prepare(`
+      SELECT i.*, w.id as worker_id, w.name as worker_name, w.phone as worker_phone,
+        w.email as worker_email, w.persona_inquiry_id, w.identity_status
+      FROM interviews i JOIN worker_accounts w ON i.worker_account_id = w.id WHERE i.id=?
+    `).get(req.params.id);
+    if (!interview) return res.status(404).json({ error: 'Interview not found' });
+    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
+      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    const { force } = req.body || {};
+    if (interview.identity_status === 'approved' && !force)
+      return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
+    const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
+    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(result.inquiryId, interview.worker_id);
+    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍+SSN）以继续求职流程。点击链接在手机完成：${result.link}`;
+    const smsSent = await sendSMS(interview.worker_phone, smsText);
+    if (interview.worker_email) {
+      await sendEmail(interview.worker_email,
+        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        `请完成身份验证：${result.link}`,
+        `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请在手机上点击以下链接，按提示上传驾照、完成自拍及 SSN 核验：</p><p><a href="${result.link}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.link}</p>`
+      );
+    }
+    res.json({ success: true, smsSent, inquiryId: result.inquiryId, link: result.link });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Persona webhook — called by Persona when verification status changes
+app.post('/api/webhooks/persona', express.raw({ type: '*/*' }), (req, res) => {
+  try {
+    const rawBody = req.body.toString('utf8');
+    const sig = req.headers['persona-signature'];
+    if (!verifyPersonaWebhook(rawBody, sig)) {
+      console.warn('[Persona Webhook] Signature mismatch');
+      return res.status(400).json({ error: 'Invalid signature' });
+    }
+    const event = JSON.parse(rawBody);
+    const payload = event.data?.attributes?.payload?.data || event.data;
+    const inquiryId = payload?.id;
+    const eventName = event.data?.attributes?.name || '';
+    const status = payload?.attributes?.status || '';
+    console.log(`[Persona Webhook] ${eventName} | inquiry=${inquiryId} | status=${status}`);
+    if (inquiryId) {
+      let identityStatus = '';
+      if (status === 'approved' || eventName.includes('approved')) identityStatus = 'approved';
+      else if (status === 'declined' || eventName.includes('declined') || eventName.includes('failed')) identityStatus = 'declined';
+      else if (status === 'completed' || eventName.includes('completed')) identityStatus = 'completed';
+      if (identityStatus) {
+        db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
+        console.log(`[Persona Webhook] Updated ${inquiryId} → ${identityStatus}`);
+      }
+    }
+    res.json({ received: true });
+  } catch (e) { console.error('[Persona Webhook]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Worker: get own identity verification status + fresh session link
+app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
+  try {
+    const w = db.prepare('SELECT persona_inquiry_id, identity_status, identity_sent_at FROM worker_accounts WHERE id=?').get(req.workerId);
+    if (!w) return res.status(404).json({ error: 'Not found' });
+    let link = null;
+    if (w.persona_inquiry_id && w.identity_status === 'pending') {
+      link = await resumePersonaInquiry(w.persona_inquiry_id);
+    }
+    res.json({ status: w.identity_status || 'not_sent', sent_at: w.identity_sent_at || null, link });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Admin: update interview status / notes

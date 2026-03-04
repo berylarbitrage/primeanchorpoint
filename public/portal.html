@@ -509,12 +509,10 @@ tr:last-child td{border-bottom:none}
           </div>
           <!-- Context-aware punch buttons -->
           <div id="punchBtnsWrap" style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:.5rem">
-            <button class="btn-punch btn-punch-in" id="btnPunchIn" onclick="startPunchFlow('in')" disabled style="width:100%">▶ 上班打卡 / Clock In</button>
+            <button class="btn-punch btn-punch-in" id="btnPunchIn" onclick="startPunchFlow('in')" disabled style="width:100%">▶ Check In</button>
             <div id="punchWorkingBtns" style="display:none;gap:.5rem">
-              <button onclick="startPunchFlow('break_start')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff">☕ 休息开始</button>
-              <button onclick="startPunchFlow('out')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:var(--red);color:#fff">⏹ 下班打卡</button>
+              <button onclick="startPunchFlow('out')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:var(--red);color:#fff">⏹ Check Out</button>
             </div>
-            <button id="btnBreakEnd" onclick="startPunchFlow('break_end')" style="display:none;width:100%;padding:.85rem;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff">▶ 休息结束 / Resume Work</button>
           </div>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
           <!-- Punch confirmation modal overlay -->
@@ -1635,7 +1633,7 @@ function initGPS() {
       enablePunchBtn(true);
     },
     err => {
-      document.getElementById('gpsIndicator').innerHTML = '⚠️ 无法获取位置（将不记录GPS）';
+      document.getElementById('gpsIndicator').innerHTML = '⚠️ 无法获取位置 — 如有地点限制将无法打卡，请开启定位权限';
       enablePunchBtn(true);
     },
     { enableHighAccuracy: true, timeout: 10000 }
@@ -1647,27 +1645,22 @@ function enablePunchBtn(ready) {
   const s = _punchStatus;
   const btnIn = document.getElementById('btnPunchIn');
   const workingBtns = document.getElementById('punchWorkingBtns');
-  const btnBreakEnd = document.getElementById('btnBreakEnd');
   if (!btnIn) return;
 
   // Hide all first
   btnIn.style.display = 'none';
   workingBtns.style.display = 'none';
-  btnBreakEnd.style.display = 'none';
 
   if (s.no_employee || !ready) return;
 
   if (!s.clocked_in) {
-    // Not clocked in: show clock-in button (only if has active job)
+    // Not clocked in: show Check In button (only if has active job)
     if (s.has_active_job) {
       btnIn.style.display = '';
       btnIn.disabled = false;
     }
-  } else if (s.on_break) {
-    // On break: show resume button
-    btnBreakEnd.style.display = '';
   } else {
-    // Working: show break + clock-out buttons
+    // Working: show Check Out button
     workingBtns.style.display = 'flex';
   }
 }
@@ -1685,7 +1678,7 @@ async function loadPunchStatus() {
   if (s.no_employee) {
     statusEl.innerHTML = '<span style="color:var(--red)">⚠ 账号未关联员工档案</span>';
     timeEl.textContent = '—';
-    subEl.textContent = '请联系HR关联您的员工档案后方可打卡';
+    subEl.textContent = '请联系HR关联您的员工档案后方可 Check In';
     selectorWrap.style.display = 'none';
     enablePunchBtn(false);
     return;
@@ -1698,19 +1691,19 @@ async function loadPunchStatus() {
     selectorWrap.style.display = 'none';
   } else if (s.clocked_in && s.open_entry) {
     const ci = new Date(s.open_entry.clock_in);
-    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
+    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● Checked In</span>';
     timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+    subEl.textContent = 'Check In · ' + ci.toLocaleDateString();
     selectorWrap.style.display = 'none';
   } else if (!s.has_active_job) {
-    statusEl.innerHTML = '<span style="color:var(--orange)">● 未在班</span>';
+    statusEl.innerHTML = '<span style="color:var(--orange)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = '当前无有效工作安排';
     selectorWrap.style.display = 'none';
     enablePunchBtn(false);
     return;
   } else {
-    statusEl.innerHTML = '<span style="color:var(--gray-400)">● 未在班</span>';
+    statusEl.innerHTML = '<span style="color:var(--gray-400)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = '请选择工作后打卡';
     const jobs = s.active_jobs || [];
@@ -1729,8 +1722,8 @@ let _pendingPunchPhoto = null;
 
 function startPunchFlow(type) {
   _pendingPunchType = type;
-  const labels = { in: '▶ 上班打卡 / Clock In', break_start: '☕ 休息开始 / Start Break', break_end: '▶ 休息结束 / Resume Work', out: '⏹ 下班打卡 / Clock Out' };
-  const colors  = { in: 'var(--green)', break_start: '#f97316', break_end: '#7c3aed', out: 'var(--red)' };
+  const labels = { in: '▶ Check In', out: '⏹ Check Out' };
+  const colors  = { in: 'var(--green)', out: 'var(--red)' };
   document.getElementById('punchConfirmTypeLabel').textContent = labels[type] || type;
   document.getElementById('btnExecutePunch').style.background = colors[type] || 'var(--green)';
   if (_confirmClockTimer) clearInterval(_confirmClockTimer);
@@ -1831,8 +1824,7 @@ async function doPunch(type, photo) {
   document.getElementById('punchBtnsWrap').style.display = '';
   _gpsCoords = null;
   document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
-  await loadMyJobs();
-  await loadPunchStatus();
+  await loadMyJobs();tatus();
   loadTimeclock();
   initGPS();
 }
@@ -1868,7 +1860,7 @@ async function loadTimeclock() {
   const entries = await wApi('/timeclock');
   if (!entries) return;
   if (!Array.isArray(entries)) {
-    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="11" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录</td></tr>';
+    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="11" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看 Check In / Out 记录</td></tr>';
     return;
   }
   const fmt = d => d ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—';
@@ -1904,7 +1896,7 @@ async function loadTimeclock() {
       <td>${statusCell}</td>
       <td>${mapLink}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="11" class="empty">暂无打卡记录</td></tr>';
+  }).join('') : '<tr><td colspan="11" class="empty">暂无 Check In / Out 记录</td></tr>';
 }
 
 async function loadPayments() {
