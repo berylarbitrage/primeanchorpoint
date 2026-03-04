@@ -1873,6 +1873,32 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
 
+  <div class="field"><label>工种类别 Job Category</label>
+    <select id="jCategory">
+      <option value="">-- 请选择 --</option>
+      <option value="warehouse_sorter">仓库分拣员 / Warehouse Sorter</option>
+      <option value="labeler">贴标员 / Labeler</option>
+      <option value="packer">打包员 / Packer</option>
+      <option value="forklift_operator">叉车操作员 / Forklift Operator</option>
+      <option value="cdl_driver">CDL卡车司机 / CDL Truck Driver</option>
+      <option value="delivery_driver">送货司机 / Delivery Driver</option>
+      <option value="shift_supervisor">班组长 / Shift Supervisor</option>
+      <option value="site_manager">现场主管 / Site Manager</option>
+      <option value="quality_inspector">质检员 / Quality Inspector</option>
+      <option value="machine_operator">机器操作员 / Machine Operator</option>
+      <option value="assembly_line">装配线工人 / Assembly Line</option>
+      <option value="material_handler">物料搬运工 / Material Handler</option>
+      <option value="inventory_clerk">库存文员 / Inventory Clerk</option>
+      <option value="general_labor">普工 / General Labor</option>
+      <option value="janitorial">清洁工 / Janitorial</option>
+      <option value="food_processing">食品加工 / Food Processing</option>
+      <option value="warehouse_lead">仓库领班 / Warehouse Lead</option>
+      <option value="loading_unloading">装卸工 / Loading / Unloading</option>
+      <option value="order_picker">拣货员 / Order Picker</option>
+      <option value="welder">焊接工 / Welder</option>
+    </select>
+  </div>
+
   <div class="field"><label>职位类型</label>
     <select id="jType">
       <option value="">-- 请选择 --</option>
@@ -2246,6 +2272,32 @@ tr:hover td{background:var(--sky-light)}
     <input id="aJob" autocomplete="off" placeholder="搜索职位名称 / 地点…" oninput="filterAssignSearch('job');clearFieldErr('aJob','aJobErr')" onblur="setTimeout(()=>blurAutoSelectAssign('job'),200)">
     <div class="assign-dropdown" id="aJobDrop"></div>
     <div id="aJobErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请搜索并选择职位</div>
+  </div>
+
+  <div class="field"><label>工种类别 Job Category</label>
+    <select id="aCategory">
+      <option value="">-- 请选择 --</option>
+      <option value="warehouse_sorter">仓库分拣员 / Warehouse Sorter</option>
+      <option value="labeler">贴标员 / Labeler</option>
+      <option value="packer">打包员 / Packer</option>
+      <option value="forklift_operator">叉车操作员 / Forklift Operator</option>
+      <option value="cdl_driver">CDL卡车司机 / CDL Truck Driver</option>
+      <option value="delivery_driver">送货司机 / Delivery Driver</option>
+      <option value="shift_supervisor">班组长 / Shift Supervisor</option>
+      <option value="site_manager">现场主管 / Site Manager</option>
+      <option value="quality_inspector">质检员 / Quality Inspector</option>
+      <option value="machine_operator">机器操作员 / Machine Operator</option>
+      <option value="assembly_line">装配线工人 / Assembly Line</option>
+      <option value="material_handler">物料搬运工 / Material Handler</option>
+      <option value="inventory_clerk">库存文员 / Inventory Clerk</option>
+      <option value="general_labor">普工 / General Labor</option>
+      <option value="janitorial">清洁工 / Janitorial</option>
+      <option value="food_processing">食品加工 / Food Processing</option>
+      <option value="warehouse_lead">仓库领班 / Warehouse Lead</option>
+      <option value="loading_unloading">装卸工 / Loading / Unloading</option>
+      <option value="order_picker">拣货员 / Order Picker</option>
+      <option value="welder">焊接工 / Welder</option>
+    </select>
   </div>
 
   <div class="field"><label>状态</label><select id="aStatus">
@@ -3734,6 +3786,7 @@ async function openJobModal(job) {
     document.getElementById('jPartnerSearch').value = '';
   }
   document.getElementById('jTitle').value = job ? job.title : '';
+  document.getElementById('jCategory').value = job ? (job.category || '') : '';
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jPayPeriod').value = job ? (job.pay_period || '') : '';
@@ -4301,6 +4354,7 @@ async function saveJob() {
   const data = {
     partner_id: partnerId,
     title: document.getElementById('jTitle').value,
+    category: document.getElementById('jCategory').value,
     type: document.getElementById('jType').value,
     location: buildAddressString(
       document.getElementById('jStreet').value.trim(),
@@ -4923,6 +4977,7 @@ async function openAssignModal(assignment) {
   document.getElementById('assignModalTitle').textContent = assignment ? '编辑派工' : '新建派工';
   document.getElementById('assignId').value = assignment ? assignment.id : '';
   document.getElementById('aStatus').value = assignment ? assignment.status : 'assigned';
+  document.getElementById('aCategory').value = assignment ? (assignment.category || '') : '';
   document.getElementById('aNotes').value = assignment ? (assignment.notes || '') : '';
   document.getElementById('aStartDate').value = assignment ? (assignment.start_date || '') : '';
   document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
@@ -5558,6 +5613,7 @@ async function saveAssignment() {
     inquiry_id: isNew ? document.getElementById('aInquiryId').value : (ea ? ea.inquiry_id : document.getElementById('aInquiryId').value),
     job_id:     isNew ? document.getElementById('aJobId').value     : (ea ? ea.job_id     : document.getElementById('aJobId').value),
     status: document.getElementById('aStatus').value,
+    category: document.getElementById('aCategory').value,
     notes: document.getElementById('aNotes').value,
     start_date: document.getElementById('aStartDate').value,
     contract_type: document.getElementById('aContractType').value,
