@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manager Portal — Prime Anchor Point</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --sky:#0ea5e9;--sky-d:#0284c7;--sky-l:#e0f2fe;
+  --green:#16a34a;--red:#dc2626;--orange:#f59e0b;
+  --gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-300:#d1d5db;
+  --gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--gray-700:#374151;--gray-800:#1f2937;
+  --radius:10px;--shadow:0 2px 12px rgba(0,0,0,.08);
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f7ff;min-height:100vh;color:var(--gray-800)}
+
+/* ── Login ── */
+#loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1.5rem}
+.login-card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(14,165,233,.13);width:100%;max-width:400px;padding:2.5rem 2rem}
+.login-logo{text-align:center;font-size:1.5rem;font-weight:800;color:var(--sky);margin-bottom:.25rem}
+.login-sub{text-align:center;color:var(--gray-400);font-size:.85rem;margin-bottom:2rem}
+.login-label{display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem}
+.login-input{width:100%;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:.93rem;outline:none;transition:.2s;margin-bottom:1rem}
+.login-input:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(14,165,233,.1)}
+.login-err{color:var(--red);font-size:.82rem;margin-bottom:.75rem;display:none}
+.btn-login{width:100%;padding:12px;background:var(--sky);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer;transition:.2s}
+.btn-login:hover{background:var(--sky-d)}
+.btn-login:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
+
+/* ── App shell ── */
+#appWrap{display:none;flex-direction:column;min-height:100vh}
+header{background:#fff;border-bottom:1px solid var(--gray-200);padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:var(--shadow)}
+.header-brand{font-weight:800;color:var(--sky);font-size:1.1rem}
+.header-info{font-size:.82rem;color:var(--gray-500)}
+.btn-logout{padding:6px 14px;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;color:var(--gray-600)}
+.btn-logout:hover{background:var(--gray-200)}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--gray-200);background:#fff;padding:0 1.5rem;position:sticky;top:57px;z-index:99}
+.tab-btn{padding:.75rem 1.25rem;font-size:.88rem;font-weight:600;color:var(--gray-500);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.2s}
+.tab-btn.active{color:var(--sky);border-bottom-color:var(--sky)}
+.tab-pane{display:none;padding:1.5rem}
+.tab-pane.active{display:block}
+
+/* ── Cards ── */
+.card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:1.25rem;margin-bottom:1rem}
+.section-title{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:.85rem}
+
+/* ── Partner chips ── */
+.partner-chip{display:inline-flex;align-items:center;gap:.3rem;background:var(--sky-l);color:var(--sky-d);border-radius:99px;padding:.2rem .75rem;font-size:.8rem;font-weight:600;margin:.2rem}
+
+/* ── Assignment cards ── */
+.assign-card{border:1px solid var(--gray-200);border-radius:12px;padding:1rem 1.15rem;margin-bottom:.75rem;background:#fafcff;transition:.15s}
+.assign-card:hover{border-color:#bae6fd;box-shadow:0 2px 8px rgba(14,165,233,.08)}
+.assign-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem;margin-bottom:.6rem}
+.assign-job{font-weight:700;font-size:.97rem;color:var(--gray-800)}
+.assign-company{font-size:.8rem;color:var(--gray-500);margin-top:.1rem}
+.badge{display:inline-block;border-radius:99px;padding:.15rem .6rem;font-size:.72rem;font-weight:700}
+.badge-assigned{background:#dbeafe;color:#1d4ed8}
+.badge-working{background:#dcfce7;color:var(--green)}
+.badge-completed{background:#f3f4f6;color:var(--gray-500)}
+.badge-terminated,.badge-cancelled,.badge-resigned{background:#fee2e2;color:var(--red)}
+.badge-pending{background:#fef9c3;color:#92400e}
+.badge-no_show{background:#fce7f3;color:#9d174d}
+
+.worker-row{display:flex;flex-wrap:wrap;gap:.4rem .75rem;font-size:.83rem;color:var(--gray-700);margin-top:.5rem;padding:.55rem .7rem;background:var(--gray-100);border-radius:8px;align-items:center}
+.worker-name{font-weight:700;color:var(--gray-800)}
+.worker-meta{color:var(--gray-500)}
+.assign-meta{display:flex;flex-wrap:wrap;gap:.3rem .75rem;font-size:.79rem;color:var(--gray-500);margin-top:.45rem}
+
+/* ── Filter bar ── */
+.filter-bar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-bottom:1rem}
+.filter-bar select,.filter-bar input[type=date]{padding:7px 10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:.85rem;outline:none}
+.filter-bar select:focus,.filter-bar input:focus{border-color:var(--sky)}
+.filter-bar label{font-size:.82rem;color:var(--gray-500)}
+
+/* ── Time table ── */
+.time-table-wrap{overflow-x:auto;border-radius:10px;border:1px solid var(--gray-200)}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+thead tr{background:var(--gray-100)}
+th{padding:.6rem .85rem;text-align:left;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--gray-500);white-space:nowrap}
+td{padding:.65rem .85rem;border-top:1px solid var(--gray-100);vertical-align:middle}
+tr:hover td{background:#fafcff}
+.emp-name{font-weight:600;color:var(--gray-800)}
+.emp-code{font-size:.75rem;color:var(--gray-400)}
+.ot-text{color:var(--orange);font-weight:700}
+
+/* ── Empty / loading ── */
+.empty-state{text-align:center;padding:3rem;color:var(--gray-400);font-size:.9rem}
+.spinner{width:28px;height:28px;border:3px solid var(--gray-200);border-top-color:var(--sky);border-radius:50%;animation:spin .8s linear infinite;margin:auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#1f2937;color:#fff;padding:.7rem 1.2rem;border-radius:10px;font-size:.88rem;opacity:0;transition:.3s;pointer-events:none;z-index:9999}
+#toast.show{opacity:1}
+
+/* ── Responsive ── */
+@media(max-width:600px){
+  header{padding:.7rem 1rem}
+  .tab-btn{padding:.65rem .9rem;font-size:.82rem}
+  .tab-pane{padding:1rem}
+}
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="loginWrap">
+  <div class="login-card">
+    <div class="login-logo">⚓ Prime Anchor Point</div>
+    <div class="login-sub">Manager Portal 经理管理平台</div>
+    <div class="login-err" id="loginErr"></div>
+    <label class="login-label">用户名 Username</label>
+    <input class="login-input" id="loginUser" type="text" placeholder="username" onkeydown="if(event.key==='Enter')doLogin()">
+    <label class="login-label">密码 Password</label>
+    <input class="login-input" id="loginPass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn-login" id="loginBtn" onclick="doLogin()">登录 / Login</button>
+  </div>
+</div>
+
+<!-- App -->
+<div id="appWrap">
+  <header>
+    <div>
+      <div class="header-brand">⚓ Manager Portal</div>
+      <div class="header-info" id="headerInfo">加载中…</div>
+    </div>
+    <button class="btn-logout" onclick="doLogout()">退出登录</button>
+  </header>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('assignments', this)">📋 派工工作</button>
+    <button class="tab-btn" onclick="switchTab('timeclock', this)">⏱ 打卡记录</button>
+    <button class="tab-btn" onclick="switchTab('workers', this)">👥 员工名单</button>
+  </div>
+
+  <!-- Tab: Assignments -->
+  <div class="tab-pane active" id="tab-assignments">
+    <div style="max-width:900px;margin:auto">
+      <div class="card" style="padding:.85rem 1.1rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+        <span style="font-size:.82rem;color:var(--gray-500);font-weight:600;margin-right:.3rem">筛选状态：</span>
+        <select id="assignStatusFilter" onchange="renderAssignments()" style="padding:5px 10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:.83rem;outline:none">
+          <option value="">全部</option>
+          <option value="assigned">已分配</option>
+          <option value="working">进行中</option>
+          <option value="completed">已完成</option>
+          <option value="pending">待确认</option>
+          <option value="terminated">已解雇</option>
+          <option value="resigned">已辞职</option>
+          <option value="cancelled">已取消</option>
+        </select>
+        <input id="assignSearch" type="search" placeholder="搜索姓名 / 职位…"
+          style="padding:5px 10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:.83rem;outline:none;min-width:180px"
+          oninput="renderAssignments()">
+        <span style="margin-left:auto;font-size:.8rem;color:var(--gray-400)" id="assignCount"></span>
+      </div>
+      <div id="assignList"><div class="empty-state"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- Tab: Time Clock -->
+  <div class="tab-pane" id="tab-timeclock">
+    <div style="max-width:1000px;margin:auto">
+      <div class="card" style="padding:.85rem 1.1rem">
+        <div class="filter-bar">
+          <label>员工：</label>
+          <select id="tcEmpFilter" onchange="loadTimeClock()"><option value="">全部员工</option></select>
+          <label>从：</label>
+          <input type="date" id="tcFrom" onchange="loadTimeClock()">
+          <label>到：</label>
+          <input type="date" id="tcTo" onchange="loadTimeClock()">
+          <select id="tcStatus" onchange="loadTimeClock()">
+            <option value="">全部状态</option>
+            <option value="open">进行中</option>
+            <option value="closed">已完成</option>
+          </select>
+          <button onclick="loadTimeClock()" style="padding:6px 14px;background:var(--sky);color:#fff;border:none;border-radius:8px;font-size:.83rem;font-weight:600;cursor:pointer">刷新</button>
+        </div>
+      </div>
+      <div class="time-table-wrap">
+        <table>
+          <thead><tr>
+            <th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>总工时</th><th>正常工时</th><th>加班</th><th>状态</th><th>备注</th>
+          </tr></thead>
+          <tbody id="tcTable"></tbody>
+        </table>
+      </div>
+      <div id="tcSummary" style="margin-top:.75rem;font-size:.82rem;color:var(--gray-500);text-align:right"></div>
+    </div>
+  </div>
+
+  <!-- Tab: Workers -->
+  <div class="tab-pane" id="tab-workers">
+    <div style="max-width:800px;margin:auto">
+      <div class="card" style="padding:.85rem 1.1rem">
+        <input id="workerSearch" type="search" placeholder="搜索姓名 / 员工号…"
+          style="width:100%;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:.87rem;outline:none"
+          oninput="renderWorkers()">
+      </div>
+      <div id="workerList"><div class="empty-state"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '/api';
+let TOKEN = localStorage.getItem('mgr_token') || '';
+let _assignments = [];
+let _workers = [];
+
+// ── Utilities ──────────────────────────────────────────────────────
+function esc(s) {
+  const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML;
+}
+function fmtDate(s) {
+  if (!s) return '';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  return `${m[2]}/${m[3]}/${m[1]}`;
+}
+function fmtDT(s) {
+  if (!s) return '—';
+  const d = new Date(s.replace(' ', 'T'));
+  if (isNaN(d)) return s;
+  return `${(d.getMonth()+1).toString().padStart(2,'0')}/${d.getDate().toString().padStart(2,'0')} ` +
+    `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+}
+function fmtH(h) {
+  if (!h && h !== 0) return '—';
+  return Number(h).toFixed(2) + 'h';
+}
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = type === 'error' ? '#dc2626' : '#1f2937';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+function statusLabel(s) {
+  return {assigned:'已分配', working:'进行中', completed:'已完成', pending:'待确认',
+    terminated:'已解雇', resigned:'已辞职', no_show:'未出勤', cancelled:'已取消'}[s] || s;
+}
+
+async function mApi(path, opts={}) {
+  const res = await fetch(API + path, {
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    ...opts
+  });
+  if (res.status === 401) { doLogout(); return null; }
+  return res.json();
+}
+
+// ── Auth ──────────────────────────────────────────────────────
+async function doLogin() {
+  const user = document.getElementById('loginUser').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  const err  = document.getElementById('loginErr');
+  const btn  = document.getElementById('loginBtn');
+  if (!user || !pass) { err.textContent = '请填写用户名和密码'; err.style.display=''; return; }
+  btn.disabled = true; btn.textContent = '登录中…';
+  err.style.display = 'none';
+  try {
+    const r = await fetch(API + '/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: user, password: pass })
+    });
+    const data = await r.json();
+    if (!r.ok || !data.success) {
+      err.textContent = data.error || '用户名或密码错误';
+      err.style.display = '';
+    } else if (data.role !== 'manager' && data.role !== 'admin' && data.role !== 'staff') {
+      err.textContent = '该账户无 Manager 权限';
+      err.style.display = '';
+    } else {
+      TOKEN = data.token;
+      localStorage.setItem('mgr_token', TOKEN);
+      showApp();
+    }
+  } catch(e) {
+    err.textContent = '网络错误，请重试';
+    err.style.display = '';
+  }
+  btn.disabled = false; btn.textContent = '登录 / Login';
+}
+
+function doLogout() {
+  fetch(API + '/admin/logout', { method:'POST', headers:{ Authorization:'Bearer '+TOKEN } }).catch(()=>{});
+  localStorage.removeItem('mgr_token');
+  TOKEN = '';
+  document.getElementById('appWrap').style.display = 'none';
+  document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('loginUser').value = '';
+  document.getElementById('loginPass').value = '';
+}
+
+async function showApp() {
+  document.getElementById('loginWrap').style.display = 'none';
+  document.getElementById('appWrap').style.display = 'flex';
+  // Load manager info
+  const me = await mApi('/manager/me');
+  if (!me) return;
+  const partnerNames = (me.partners||[]).map(p => p.name).join('、') || '（未指定公司）';
+  document.getElementById('headerInfo').innerHTML =
+    `${esc(me.display_name || me.username)} &nbsp;·&nbsp; 负责公司：<strong>${esc(partnerNames)}</strong>`;
+  // Load data
+  await Promise.all([loadAssignments(), loadTimeClock(), loadWorkers()]);
+}
+
+// ── Tab switching ──────────────────────────────────────────────
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ── Assignments tab ────────────────────────────────────────────
+async function loadAssignments() {
+  const data = await mApi('/manager/my-assignments');
+  _assignments = data || [];
+  renderAssignments();
+}
+
+function renderAssignments() {
+  const statusF = document.getElementById('assignStatusFilter').value;
+  const q = (document.getElementById('assignSearch').value || '').toLowerCase();
+  let list = _assignments;
+  if (statusF) list = list.filter(a => a.status === statusF);
+  if (q) list = list.filter(a =>
+    (a.worker_name||'').toLowerCase().includes(q) ||
+    (a.job_title||'').toLowerCase().includes(q) ||
+    (a.company_name||'').toLowerCase().includes(q) ||
+    (a.worker_phone||'').includes(q) ||
+    (a.worker_email||'').toLowerCase().includes(q)
+  );
+  document.getElementById('assignCount').textContent = `共 ${list.length} 条`;
+
+  if (!list.length) {
+    document.getElementById('assignList').innerHTML =
+      '<div class="empty-state">暂无派工记录</div>';
+    return;
+  }
+
+  document.getElementById('assignList').innerHTML = list.map(a => {
+    const sched = (() => { try { return JSON.parse(a.work_schedule || '{}'); } catch { return {}; } })();
+    const periodStart = sched.workStart ? fmtDate(sched.workStart) : '';
+    const periodEnd   = sched.untilFurther ? '至今后通知' : (sched.workEnd ? fmtDate(sched.workEnd) : '');
+    const periodStr   = periodStart ? (periodEnd ? `${periodStart} → ${periodEnd}` : `${periodStart} 起`) : '';
+    const payStr = a.pay_rate
+      ? `${a.pay_rate}${a.pay_type === 'hourly' ? ' /hr' : a.pay_type === 'salary' ? ' /月' : a.pay_type === 'annual' ? ' /年' : ''}`
+      : '';
+    return `
+    <div class="assign-card">
+      <div class="assign-top">
+        <div>
+          <div class="assign-job">${esc(a.job_title || '未知职位')}</div>
+          <div class="assign-company">${esc(a.company_name || a.job_location || '—')}</div>
+        </div>
+        <span class="badge badge-${esc(a.status)}">${statusLabel(a.status)}</span>
+      </div>
+      <div class="worker-row">
+        <span class="worker-name">👤 ${esc(a.worker_name || '未知员工')}</span>
+        ${a.worker_phone ? `<a href="tel:${esc(a.worker_phone)}" class="worker-meta" style="color:var(--sky-d);text-decoration:none">📞 ${esc(a.worker_phone)}</a>` : ''}
+        ${a.worker_email ? `<a href="mailto:${esc(a.worker_email)}" class="worker-meta" style="color:var(--sky-d);text-decoration:none">✉ ${esc(a.worker_email)}</a>` : ''}
+      </div>
+      <div class="assign-meta">
+        ${a.start_date ? `<span>📅 开始日期：${fmtDate(a.start_date)}</span>` : ''}
+        ${periodStr ? `<span>🗓 工作期：${esc(periodStr)}</span>` : ''}
+        ${payStr ? `<span>💰 ${esc(payStr)}</span>` : ''}
+        ${a.contract_type ? `<span>📄 ${esc(a.contract_type)}</span>` : ''}
+        ${a.work_address ? `<span>📍 ${esc(a.work_address)}</span>` : ''}
+        ${a.benefits ? `<span>🎁 ${esc(a.benefits)}</span>` : ''}
+      </div>
+      ${a.notes ? `<div style="margin-top:.45rem;font-size:.79rem;color:var(--gray-500);font-style:italic;padding-left:.2rem">${esc(a.notes)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── Time clock tab ─────────────────────────────────────────────
+async function loadWorkers() {
+  const data = await mApi('/manager/workers');
+  _workers = data || [];
+  // Populate employee filter in time clock tab
+  const sel = document.getElementById('tcEmpFilter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">全部员工</option>' +
+    _workers.map(w => `<option value="${w.id}"${w.id==cur?' selected':''}>${esc(w.first_name+' '+w.last_name)} (${esc(w.emp_code||'')})</option>`).join('');
+  renderWorkers();
+}
+
+function renderWorkers() {
+  const q = (document.getElementById('workerSearch').value || '').toLowerCase();
+  let list = _workers;
+  if (q) list = list.filter(w =>
+    (w.first_name+' '+w.last_name).toLowerCase().includes(q) ||
+    (w.emp_code||'').toLowerCase().includes(q) ||
+    (w.phone||'').includes(q) ||
+    (w.email||'').toLowerCase().includes(q)
+  );
+  if (!list.length) {
+    document.getElementById('workerList').innerHTML = '<div class="empty-state">暂无员工记录</div>';
+    return;
+  }
+  document.getElementById('workerList').innerHTML = list.map(w => `
+    <div class="card" style="padding:.9rem 1.1rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:.95rem">${esc(w.first_name+' '+w.last_name)}</div>
+        <div style="font-size:.78rem;color:var(--gray-400);margin-top:.1rem">${esc(w.emp_code||'')} ${w.position?'· '+esc(w.position):''}</div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">
+        ${w.phone ? `<a href="tel:${esc(w.phone)}" style="display:inline-flex;align-items:center;gap:.3rem;background:var(--sky-l);color:var(--sky-d);border-radius:8px;padding:.3rem .7rem;font-size:.83rem;font-weight:600;text-decoration:none">📞 ${esc(w.phone)}</a>` : ''}
+        ${w.email ? `<a href="mailto:${esc(w.email)}" style="display:inline-flex;align-items:center;gap:.3rem;background:#f0fdf4;color:var(--green);border-radius:8px;padding:.3rem .7rem;font-size:.83rem;font-weight:600;text-decoration:none">✉ ${esc(w.email)}</a>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+async function loadTimeClock() {
+  document.getElementById('tcTable').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2rem"><div class="spinner"></div></td></tr>';
+  const emp    = document.getElementById('tcEmpFilter').value;
+  const from   = document.getElementById('tcFrom').value;
+  const to     = document.getElementById('tcTo').value;
+  const status = document.getElementById('tcStatus').value;
+  let qs = '/admin/time-entries?';
+  if (emp)    qs += '&employee_id=' + emp;
+  if (from)   qs += '&date_from=' + from;
+  if (to)     qs += '&date_to=' + to;
+  if (status) qs += '&status=' + status;
+  const rows = await mApi(qs);
+  if (!rows) return;
+  renderTimeClock(rows);
+}
+
+function renderTimeClock(rows) {
+  if (!rows.length) {
+    document.getElementById('tcTable').innerHTML = '<tr><td colspan="9" class="empty-state" style="padding:2rem;text-align:center">暂无打卡记录</td></tr>';
+    document.getElementById('tcSummary').textContent = '';
+    return;
+  }
+  let totalH = 0, totalOT = 0;
+  document.getElementById('tcTable').innerHTML = rows.map(t => {
+    totalH  += t.total_hours || 0;
+    totalOT += t.overtime_hours || 0;
+    return `<tr>
+      <td><div class="emp-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-code">${esc(t.emp_code||'')}</div></td>
+      <td style="white-space:nowrap">${fmtDT(t.clock_in)}</td>
+      <td style="white-space:nowrap">${t.clock_out ? fmtDT(t.clock_out) : '<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
+      <td>${t.break_minutes||0}min</td>
+      <td>${fmtH(t.total_hours)}</td>
+      <td>${fmtH(t.regular_hours)}</td>
+      <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
+      <td><span class="badge ${t.status==='open'?'badge-working':'badge-completed'}">${t.status==='open'?'进行中':'已完成'}</span></td>
+      <td style="max-width:160px;white-space:normal;font-size:.78rem;color:var(--gray-500)">${esc(t.notes||'')}${t.latitude?` <a href="https://maps.google.com/?q=${t.latitude},${t.longitude}" target="_blank" title="打卡位置">📍</a>`:''}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('tcSummary').innerHTML =
+    `共 <strong>${rows.length}</strong> 条记录 &nbsp;·&nbsp; 总工时 <strong>${totalH.toFixed(2)}h</strong>&nbsp;·&nbsp; 加班 <strong>${totalOT.toFixed(2)}h</strong>`;
+}
+
+// ── Init ───────────────────────────────────────────────────────
+if (TOKEN) {
+  showApp().catch(() => {
+    localStorage.removeItem('mgr_token');
+    TOKEN = '';
+    document.getElementById('loginWrap').style.display = 'flex';
+  });
+} else {
+  document.getElementById('loginWrap').style.display = 'flex';
+}
+</script>
+</body>
+</html>

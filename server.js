@@ -1556,7 +1556,8 @@ function requireAdmin(req, res, next) {
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
-  req.assignedPartnerIds = session.assigned_partner_ids || '';
+  const _u = db.prepare('SELECT assigned_partner_ids FROM admin_users WHERE id=?').get(session.userId);
+  req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
   next();
 }
 
@@ -1768,6 +1769,66 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
   const user = db.prepare('SELECT id, username, role, display_name FROM admin_users WHERE id = ?').get(req.userId);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json(user);
+});
+
+// ─── Manager Portal Endpoints ───
+// GET /api/manager/me — returns current manager info + assigned partner names
+app.get('/api/manager/me', requireAdmin, requireRole('manager', 'admin', 'staff'), (req, res) => {
+  const user = db.prepare('SELECT id, username, role, display_name, assigned_partner_ids FROM admin_users WHERE id=?').get(req.userId);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  const pids = (user.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  const partners = pids.length
+    ? db.prepare(`SELECT id, name FROM partners WHERE id IN (${pids.map(() => '?').join(',')})`).all(...pids)
+    : [];
+  res.json({ ...user, partners });
+});
+
+// GET /api/manager/my-assignments — assignments for manager's assigned partner companies
+app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  let q = `
+    SELECT a.id, a.status, a.start_date, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
+           a.work_address, a.notes, a.assigned_at, a.work_schedule,
+           i.name  AS worker_name,
+           i.phone AS worker_phone,
+           i.email AS worker_email,
+           j.title AS job_title,
+           j.location AS job_location,
+           j.partner_id,
+           p.name  AS company_name
+    FROM assignments a
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN partners p ON j.partner_id = p.id
+    WHERE 1=1`;
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    q += ` AND j.partner_id IN (${pids.map(() => '?').join(',')})`;
+    params.push(...pids);
+  }
+  q += ' ORDER BY a.assigned_at DESC';
+  res.json(db.prepare(q).all(...params));
+});
+
+// GET /api/manager/workers — employees visible to this manager with contact info
+app.get('/api/manager/workers', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  let q = `
+    SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id as emp_code,
+           e.email, e.phone, e.position, e.status
+    FROM employees e`;
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    q += ` WHERE e.id IN (
+      SELECT DISTINCT t.employee_id FROM time_entries t
+      JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+    )`;
+    params.push(...pids);
+  }
+  q += ' ORDER BY e.last_name, e.first_name';
+  res.json(db.prepare(q).all(...params));
 });
 
 // ─── Account Management (admin only) ───
