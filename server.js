@@ -4342,6 +4342,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   // ── Clock in ─────────────────────────────────────────────────────
   if (open) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  if (!latitude || !longitude) return res.status(400).json({ error: '打卡需要开启位置权限，请允许浏览器获取您的位置后重试。/ Location permission required to clock in.', need_gps: true });
   if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
   let activeJob = db.prepare(`
     SELECT ej.id, ej.job_id, j.title, j.site_id,
@@ -4411,8 +4412,10 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     return res.status(400).json({ error: '请开启定位权限后再打卡。该工作需要验证您的位置。\nPlease enable location access. This job requires location verification.', geo_blocked: true });
   }
 
-  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
-    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null);
+  if (!geoVerified) return res.status(400).json({ error: '该工作暂未配置工作地点，无法验证位置，请联系HR。/ Work site not configured for this job, please contact HR.', no_site: true });
+
+  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0)")
+    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id);
   res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
     site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
 });
@@ -4573,6 +4576,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   }
 
   // Fall back to assignments table: match by linked_inquiry_id, phone, or email
+  // Only include accepted assignments (worker_response = 'accepted')
   if (!activeJobs.length) {
     activeJobs = db.prepare(`
       SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
@@ -4583,7 +4587,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
       JOIN jobs j ON a.job_id = j.id
       LEFT JOIN job_sites js ON j.site_id = js.id
       JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled'
+      WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
         AND (
           (? IS NOT NULL AND a.inquiry_id = ?)
           OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
@@ -4597,12 +4601,18 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     }
   }
 
+  // Count pending (unaccepted) tasks
+  const pendingTasksCount = linkedInqId
+    ? (db.prepare(`SELECT COUNT(*) AS cnt FROM assignments WHERE inquiry_id=? AND status != 'cancelled' AND (worker_response IS NULL OR worker_response = '')`).get(linkedInqId)?.cnt || 0)
+    : 0;
+
   res.json({
     clocked_in: !!open,
     on_break: !!(open?.on_break),
     open_entry: open || null,
     no_employee: !req.workerEmployeeId,
     has_active_job: activeJobs.length > 0,
+    pending_tasks_count: pendingTasksCount,
     active_jobs: activeJobs,
     active_job: activeJobs[0] || null
   });
