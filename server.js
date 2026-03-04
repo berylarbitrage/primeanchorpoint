@@ -1128,7 +1128,15 @@ setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
 // ─── Middleware ───
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static('public'));
+app.use(express.static('public', {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 app.use('/uploads', express.static(uploadsDir));
 
 // Resume upload
