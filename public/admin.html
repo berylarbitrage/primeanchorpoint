@@ -3002,17 +3002,19 @@ function renderJobApps(list) {
   const statusCls   = { pending:'badge-pending', interview_scheduled:'badge-info', approved:'badge-approved', rejected:'badge-rejected', assigned:'badge-approved' };
   document.getElementById('jobAppsTable').innerHTML = list.length ? list.map(a => {
     const name = a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : (a.username || '—');
+    const ivInfo = a.status === 'interview_scheduled' && a.interview_datetime
+      ? `<br><small style="color:#2563eb">📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</small>` : '';
     return `<tr>
       <td style="font-size:.8rem">${(a.created_at||'').slice(0,10)}</td>
-      <td><strong>${esc(name)}</strong></td>
-      <td>${esc(a.job_title||'—')}<br><small style="color:var(--gray-400)">${esc(a.job_location||'')}</small></td>
+      <td><strong>${esc(name)}</strong><br><small style="color:var(--gray-400)">${esc(a.worker_phone||a.worker_email||'')}</small></td>
+      <td style="cursor:pointer" onclick="showJobAppDetail(${a.id})" title="点击查看职位详情"><span style="color:#1d4ed8;text-decoration:underline;text-underline-offset:2px">${esc(a.job_title||'—')}</span><br><small style="color:var(--gray-400)">${esc(a.job_company||a.job_location||'')}</small>${ivInfo}</td>
       <td style="font-size:.83rem">${esc(a.interview_availability||'—')}</td>
       <td style="font-size:.83rem">${esc(a.expected_pay||'—')}</td>
       <td style="font-size:.82rem;max-width:160px;white-space:normal;color:var(--gray-600)">${esc(a.applicant_message||'—')}</td>
       <td><span class="badge ${statusCls[a.status]||'badge-pending'}">${statusLabel[a.status]||a.status}</span></td>
-      <td style="font-size:.82rem;max-width:160px;white-space:normal;color:var(--gray-600)">${esc(a.admin_note||'—')}</td>
+      <td style="font-size:.82rem;max-width:140px;white-space:normal;color:var(--gray-600)">${esc(a.admin_note||'—')}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-sm" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd" onclick="updateJobApp(${a.id},'interview_scheduled')">安排面试</button>
+        <button class="btn btn-sm" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd" onclick="scheduleInterview(${a.id})">安排面试</button>
         <button class="btn btn-sm btn-green" onclick="updateJobApp(${a.id},'approved')">通过</button>
         <button class="btn btn-sm btn-red" onclick="updateJobApp(${a.id},'rejected')">拒绝</button>
       </td>
@@ -3020,26 +3022,139 @@ function renderJobApps(list) {
   }).join('') : '<tr><td colspan="9" class="empty">暂无工人申请记录</td></tr>';
 }
 
-let _jobAppNoteModal = null;
+function showJobAppDetail(id) {
+  const a = _allJobApps.find(x => x.id === id);
+  if (!a) return;
+  const DAY_ZH = { Mon:'周一',Tue:'周二',Wed:'周三',Thu:'周四',Fri:'周五',Sat:'周六',Sun:'周日' };
+  const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+  const workDays = a.work_days ? a.work_days.split(',').map(d=>DAY_ZH[d.trim()]||d.trim()).join('、') : '';
+  const payPeriodLabel = {'hourly':'每小时','daily':'每天','weekly':'每周','biweekly':'每两周','semimonthly':'每半月','monthly':'每月'};
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(480px,94vw);max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div style="font-weight:700;font-size:1.05rem">职位详情</div>
+      <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
+    </div>
+    <div style="display:grid;gap:.9rem">
+      <div style="background:#f8fafc;border-radius:10px;padding:1rem;display:grid;gap:.4rem;font-size:.88rem">
+        <div style="font-weight:700;color:var(--gray-700);margin-bottom:.3rem;font-size:.95rem">${esc(a.job_title||'—')}</div>
+        ${a.job_company ? `<div><span style="color:var(--gray-400)">公司：</span>${esc(a.job_company)}</div>` : ''}
+        ${a.job_pay ? `<div><span style="color:var(--gray-400)">薪资：</span>${esc(a.job_pay)}${a.job_pay_period ? ` <span style="color:var(--gray-400)">(${payPeriodLabel[a.job_pay_period]||a.job_pay_period})</span>` : ''}</div>` : ''}
+        ${a.job_type ? `<div><span style="color:var(--gray-400)">类型：</span>${esc(a.job_type)}</div>` : ''}
+        ${a.job_employment_type ? `<div><span style="color:var(--gray-400)">雇佣性质：</span>${esc(a.job_employment_type)}</div>` : ''}
+        ${workDays ? `<div><span style="color:var(--gray-400)">工作日：</span>${workDays}</div>` : ''}
+        ${(a.work_start&&a.work_end) ? `<div><span style="color:var(--gray-400)">时间：</span>${fmt12(a.work_start)} — ${fmt12(a.work_end)}</div>` : ''}
+        ${a.job_benefits ? `<div><span style="color:var(--gray-400)">福利：</span>${esc(a.job_benefits)}</div>` : ''}
+        ${a.job_description ? `<div style="margin-top:.4rem;color:var(--gray-600);white-space:pre-wrap;line-height:1.5">${esc(a.job_description)}</div>` : ''}
+      </div>
+      <div style="background:#f0fdf4;border-radius:10px;padding:1rem;display:grid;gap:.4rem;font-size:.88rem">
+        <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">申请人信息</div>
+        <div><span style="color:var(--gray-400)">姓名：</span>${esc(a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'—')}</div>
+        ${a.worker_phone ? `<div><span style="color:var(--gray-400)">电话：</span>${esc(a.worker_phone)}</div>` : ''}
+        ${a.worker_email ? `<div><span style="color:var(--gray-400)">邮箱：</span>${esc(a.worker_email)}</div>` : ''}
+        ${a.interview_availability ? `<div><span style="color:var(--gray-400)">可面试时间：</span>${esc(a.interview_availability)}</div>` : ''}
+        ${a.expected_pay ? `<div><span style="color:var(--gray-400)">期望薪资：</span>${esc(a.expected_pay)}</div>` : ''}
+        ${a.applicant_message ? `<div style="margin-top:.3rem;color:var(--gray-600);white-space:pre-wrap">${esc(a.applicant_message)}</div>` : ''}
+      </div>
+      ${a.interview_datetime ? `<div style="background:#eff6ff;border-radius:10px;padding:1rem;font-size:.88rem">
+        <div style="font-weight:700;color:var(--gray-700);margin-bottom:.3rem">已安排面试</div>
+        <div>📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit'})}</div>
+        ${a.interview_location_text ? `<div style="margin-top:.25rem">📍 ${esc(a.interview_location_text)}</div>` : ''}
+      </div>` : ''}
+    </div>
+    <div style="margin-top:1.25rem;display:flex;gap:.6rem;justify-content:flex-end">
+      <button onclick="this.closest('[style*=fixed]').remove()" style="padding:.55rem 1.1rem;border:1px solid var(--gray-200);border-radius:8px;background:#f9fafb;cursor:pointer;font-size:.9rem">关闭</button>
+      <button onclick="this.closest('[style*=fixed]').remove();scheduleInterview(${a.id})" style="padding:.55rem 1.1rem;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer;font-size:.9rem">安排面试</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function scheduleInterview(id) {
+  const a = _allJobApps.find(x => x.id === id);
+  const name = a ? (a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'') : '';
+  // Load interview locations
+  const locs = await api('/admin/interview-locations').catch(() => []) || [];
+  const result = await new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(460px,94vw);max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div style="font-weight:700;font-size:1.05rem">📅 安排面试</div>
+        <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
+      </div>
+      ${name ? `<div style="font-size:.88rem;color:var(--gray-500);margin-bottom:1rem;padding:.6rem .8rem;background:#f8fafc;border-radius:8px">申请人：<strong>${esc(name)}</strong>${a.job_title ? `　职位：<strong>${esc(a.job_title)}</strong>` : ''}</div>` : ''}
+      <div style="display:grid;gap:1rem">
+        <div>
+          <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试时间 *</label>
+          <input type="datetime-local" id="_ivDateTime" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.92rem;box-sizing:border-box" value="${a?.interview_datetime ? a.interview_datetime.slice(0,16) : ''}">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试地点</label>
+          ${locs.length ? `<select id="_ivLocSelect" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;margin-bottom:.5rem;box-sizing:border-box" onchange="document.getElementById('_ivLocText').value=this.value==='__custom__'?'':this.options[this.selectedIndex].dataset.addr||''">
+            <option value="">— 选择预设地点 —</option>
+            ${locs.map(l => `<option value="${esc(l.name)}" data-addr="${esc([l.name,l.address].filter(Boolean).join(' · '))}">${esc(l.name)}${l.address ? ' · '+esc(l.address) : ''}</option>`).join('')}
+            <option value="__custom__">✏️ 自定义地点</option>
+          </select>` : ''}
+          <input type="text" id="_ivLocText" placeholder="地址 / 详细信息（可选）" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(a?.interview_location_text||'')}">
+        </div>
+        <div>
+          <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">备注 / 说明</label>
+          <textarea id="_ivNote" placeholder="面试须知、联系人等（可选）" style="width:100%;min-height:70px;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;resize:vertical;box-sizing:border-box">${esc(a?.admin_note||'')}</textarea>
+        </div>
+        <label style="display:flex;align-items:center;gap:.5rem;font-size:.88rem;cursor:pointer;user-select:none">
+          <input type="checkbox" id="_ivNotify" checked style="width:16px;height:16px">
+          <span>发送通知给求职者（短信 + 邮件）</span>
+        </label>
+      </div>
+      <div style="display:flex;gap:.75rem;margin-top:1.25rem;justify-content:flex-end">
+        <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="padding:.6rem 1.1rem;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;cursor:pointer;font-size:.9rem">取消</button>
+        <button onclick="
+          const dt=document.getElementById('_ivDateTime').value;
+          if(!dt){document.getElementById('_ivDateTime').style.borderColor='#ef4444';return;}
+          const loc=document.getElementById('_ivLocText').value.trim()||(document.getElementById('_ivLocSelect')&&document.getElementById('_ivLocSelect').value!=='__custom__'?document.getElementById('_ivLocSelect').value:'');
+          const note=document.getElementById('_ivNote').value.trim();
+          const notify=document.getElementById('_ivNotify').checked;
+          this.closest('[style*=fixed]').remove();
+          window._ivResolve({dt,loc,note,notify});
+        " style="padding:.6rem 1.4rem;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;font-size:.9rem">确认安排</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    window._ivResolve = resolve;
+  });
+  if (!result) return;
+  const r = await api(`/admin/job-applications/${id}`, { method:'PUT', body: JSON.stringify({
+    status: 'interview_scheduled',
+    admin_note: result.note,
+    interview_datetime: result.dt,
+    interview_location_text: result.loc,
+    notify: result.notify
+  })});
+  if (r?.emailSent || r?.smsSent) showToast(`✅ 面试已安排，通知已发送（邮件:${r.emailSent?'✓':'✗'} 短信:${r.smsSent?'✓':'✗'}）`, 'success');
+  else showToast('✅ 面试已安排', 'success');
+  loadJobApps();
+}
+
 async function updateJobApp(id, status) {
-  const statusLabel = { interview_scheduled:'已安排面试', approved:'已通过', rejected:'拒绝' };
+  const statusLabel = { approved:'已通过', rejected:'拒绝' };
   const label = statusLabel[status] || status;
-  // Require a reason
   const note = await new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
     overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:1.5rem;width:min(420px,92vw);box-shadow:0 8px 32px rgba(0,0,0,.18)">
       <div style="font-weight:700;font-size:1rem;margin-bottom:.75rem">处理申请 — ${esc(label)}</div>
-      <textarea id="_jobAppNoteInput" placeholder="请填写原因或备注（必填）..." style="width:100%;min-height:90px;padding:.65rem;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;box-sizing:border-box"></textarea>
+      <textarea id="_jobAppNoteInput" placeholder="请填写原因或备注（可选）..." style="width:100%;min-height:90px;padding:.65rem;border:1px solid #d1d5db;border-radius:8px;font-size:.9rem;resize:vertical;box-sizing:border-box"></textarea>
       <div style="display:flex;gap:.75rem;margin-top:1rem;justify-content:flex-end">
-        <button onclick="this.closest('div[style*=fixed]').remove();window._jobAppResolve('')" style="padding:.5rem 1rem;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;cursor:pointer">取消</button>
-        <button onclick="const v=document.getElementById('_jobAppNoteInput').value.trim();if(!v){document.getElementById('_jobAppNoteInput').style.borderColor='#ef4444';return;}this.closest('div[style*=fixed]').remove();window._jobAppResolve(v)" style="padding:.5rem 1.2rem;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer">确认</button>
+        <button onclick="this.closest('[style*=fixed]').remove();window._jobAppResolve(null)" style="padding:.5rem 1rem;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;cursor:pointer">取消</button>
+        <button onclick="this.closest('[style*=fixed]').remove();window._jobAppResolve(document.getElementById('_jobAppNoteInput').value.trim())" style="padding:.5rem 1.2rem;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:600;cursor:pointer">确认</button>
       </div>
     </div>`;
     document.body.appendChild(overlay);
     window._jobAppResolve = resolve;
   });
-  if (!note) return; // cancelled
+  if (note === null) return;
   await api(`/admin/job-applications/${id}`, { method:'PUT', body: JSON.stringify({ status, admin_note: note }) });
   loadJobApps();
 }
