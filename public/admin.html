@@ -3402,17 +3402,31 @@ function renderJobsFiltered() {
       <td style="text-align:center">${j.headcount||1}</td>
       <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
       <td>${esc(j.pay||'')}</td>
-      <td><span class="badge ${si.cls}">${si.text}</span>${reasonTip}</td>
+      <td>
+        <span class="badge ${si.cls}">${si.text}</span>${reasonTip}
+        ${j.visible === 0 ? `<br><span class="badge" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;font-size:.7rem">隐藏</span>` : ''}
+      </td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button>
         ${!isHistory
           ? `<button class="btn btn-sm" style="background:var(--orange-light,#fff3e0);color:#c05621;border:1px solid #fbd38d" onclick='openCloseJobModal(${JSON.stringify(j).replace(/'/g,"&#39;")})'>关闭</button>`
           : `<button class="btn btn-sm btn-green" onclick="reopenJob(${j.id})">重新开放</button>`}
+        <button class="btn btn-sm" style="${j.visible === 0 ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1'}" onclick="toggleJobVisible(${j.id}, this)">
+          ${j.visible === 0 ? '👁 显示' : '🚫 隐藏'}
+        </button>
         <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
         <button class="btn btn-sm btn-outline" onclick="showJobHistory(${j.id},'${esc(j.title)}')">历史</button>
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="8" class="empty">${isHistory ? '暂无历史职位' : '暂无在招职位，点击 "+ 新增职位" 添加'}</td></tr>`;
+}
+
+async function toggleJobVisible(id, btn) {
+  const res = await api(`/admin/jobs/${id}/visible`, { method: 'PUT' });
+  if (!res || !res.success) return;
+  const job = _allJobs.find(j => j.id === id);
+  if (job) job.visible = res.visible;
+  renderJobsFiltered();
 }
 
 async function loadJobs() {

@@ -550,6 +550,7 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_location_text T
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN visible INTEGER DEFAULT 1`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
@@ -1628,7 +1629,7 @@ function requireCustomer(req, res, next) {
 // GET /api/jobs - public job listings
 app.get('/api/jobs', (req, res) => {
   const lang = req.query.lang;
-  const base = `SELECT j.*, p.name as partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id WHERE j.active=1`;
+  const base = `SELECT j.*, p.name as partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id WHERE j.active=1 AND j.visible=1`;
   const jobs = (lang && lang !== 'all')
     ? db.prepare(base + ' AND j.lang=? ORDER BY j.created_at DESC').all(lang)
     : db.prepare(base + ' ORDER BY j.created_at DESC').all();
@@ -2750,6 +2751,15 @@ app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete
   db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
   logJobAudit.run(req.params.id, 'deleted', JSON.stringify(old || {}), req.userName);
   res.json({ success: true });
+});
+
+app.put('/api/admin/jobs/:id/visible', requireAdmin, blockManager, (req, res) => {
+  const job = db.prepare('SELECT visible FROM jobs WHERE id=?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'not found' });
+  const newVisible = job.visible ? 0 : 1;
+  db.prepare('UPDATE jobs SET visible=? WHERE id=?').run(newVisible, req.params.id);
+  logJobAudit.run(req.params.id, newVisible ? 'shown' : 'hidden', '{}', req.userName);
+  res.json({ success: true, visible: newVisible });
 });
 
 // Inquiries
