@@ -4525,6 +4525,8 @@ function initEstimateTime(schedJson) {
   updateShiftsEmpty();
 }
 
+const WEEKDAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+
 function addShift(saved) {
   const idx = _shiftCounter++;
   const s = saved || {};
@@ -4532,10 +4534,14 @@ function addShift(saved) {
   const div = document.createElement('div');
   div.id = `shift-row-${idx}`;
   div.style.cssText = 'display:grid;grid-template-columns:1fr auto auto auto auto auto;gap:.4rem;align-items:center;background:#eef2ff;border:1px solid #c7d2fe;border-radius:7px;padding:.45rem .6rem';
+  const dayOptions = WEEKDAYS.map(d => `<option value="${d}"${s.day===d?' selected':''}>${d}</option>`).join('');
   div.innerHTML = `
     <input placeholder="Shift name (e.g. Morning Shift)" value="${esc(s.name||'')}"
       style="${SHIFT_INP};width:100%" id="shift-name-${idx}">
-    <input type="date" value="${esc(s.date||'')}" style="${SHIFT_INP};width:130px" id="shift-date-${idx}">
+    <select style="${SHIFT_INP};width:120px" id="shift-day-${idx}">
+      <option value="">-- Day --</option>
+      ${dayOptions}
+    </select>
     <input type="text" placeholder="Start" value="${esc(s.start||'')}" maxlength="5"
       style="${TIME_INP}" id="shift-start-${idx}" onblur="fmtShiftTime(this)">
     <span style="color:#a5b4fc;font-weight:700">→</span>
@@ -4584,11 +4590,11 @@ function getEstimateTimeJson() {
     const idx = row.id.replace('shift-row-', '');
     return {
       name:  document.getElementById(`shift-name-${idx}`)?.value?.trim() || '',
-      date:  document.getElementById(`shift-date-${idx}`)?.value || '',
+      day:   document.getElementById(`shift-day-${idx}`)?.value || '',
       start: document.getElementById(`shift-start-${idx}`)?.value || '',
       end:   document.getElementById(`shift-end-${idx}`)?.value || '',
     };
-  }).filter(s => s.name || s.start || s.end);
+  }).filter(s => s.name || s.day || s.start || s.end);
   return JSON.stringify({ type: 'estimate', shifts });
 }
 
