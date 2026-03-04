@@ -4147,14 +4147,17 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json({ clocked_in: false, no_employee: true });
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId);
+  const linkedInqId = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId)?.linked_inquiry_id || null;
   const activeJobs = db.prepare(`
     SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end, j.location, j.pay,
-           j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+           j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
+           a.work_schedule
     FROM employee_jobs ej
     JOIN jobs j ON ej.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
+    LEFT JOIN assignments a ON a.job_id = ej.job_id AND a.inquiry_id = ?
     WHERE ej.employee_id = ? AND ej.status = 'active'
-  `).all(req.workerEmployeeId);
+  `).all(linkedInqId, req.workerEmployeeId);
   res.json({
     clocked_in: !!open,
     open_entry: open || null,
