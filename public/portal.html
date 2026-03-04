@@ -1860,9 +1860,14 @@ async function confirmPunchWithPhoto() {
   const confirmBtn = document.getElementById('btnPunchConfirm');
   confirmBtn.disabled = true;
   confirmBtn.textContent = '打卡中…';
-  await doPunch('in', _pendingPunchPhoto);
-  confirmBtn.disabled = false;
-  confirmBtn.textContent = '✅ 确认打卡';
+  try {
+    await doPunch('in', _pendingPunchPhoto);
+  } catch (e) {
+    await customAlert('打卡失败，请重试。\nClock-in failed, please try again.', '打卡失败', '❌');
+  } finally {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '✅ 确认打卡';
+  }
 }
 
 async function doPunch(type, photo) {
