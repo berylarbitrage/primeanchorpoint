@@ -1823,10 +1823,9 @@ function closePunchConfirm() {
   _pendingPunchType = null;
 }
 function executePunch() {
-  closePunchConfirm();
-  if (!_pendingPunchType) return;
   const type = _pendingPunchType;
-  _pendingPunchType = null;
+  closePunchConfirm();
+  if (!type) return;
   if (type === 'in') {
     // Clock-in: require photo first
     _pendingPunchPhoto = null;
