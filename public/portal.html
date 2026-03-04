@@ -545,7 +545,7 @@ tr:last-child td{border-bottom:none}
             </div>
             <input type="file" id="punchPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="onPunchPhotoSelected(this)">
             <button type="button" onclick="document.getElementById('punchPhotoInput').click()" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:8px;padding:.55rem 1.2rem;font-size:.9rem;font-weight:600;cursor:pointer;width:100%">📷 拍照</button>
-            <div id="punchPhotoConfirmRow" style="display:none;display:flex;gap:.6rem;margin-top:.6rem;justify-content:center">
+            <div id="punchPhotoConfirmRow" style="display:none;gap:.6rem;margin-top:.6rem;justify-content:center">
               <button type="button" id="btnPunchConfirm" onclick="confirmPunchWithPhoto()" style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:8px;padding:.6rem;font-size:.9rem;font-weight:700;cursor:pointer">✅ 确认打卡</button>
               <button type="button" onclick="cancelPunchPhoto()" style="flex:0 0 auto;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .9rem;font-size:.88rem;cursor:pointer">取消</button>
             </div>
@@ -1857,7 +1857,7 @@ function cancelPunchPhoto() {
 }
 
 async function confirmPunchWithPhoto() {
-  if (!_pendingPunchPhoto) return;
+  if (!_pendingPunchPhoto) { showToast('⚠️ 请先拍照后再确认打卡 / Please take a photo first', 'error'); return; }
   const confirmBtn = document.getElementById('btnPunchConfirm');
   confirmBtn.disabled = true;
   confirmBtn.textContent = '打卡中…';
