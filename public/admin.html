@@ -6734,6 +6734,18 @@ async function terminateEmployee(id, name) {
   loadEmployees();
 }
 
+let _qrLibLoaded = false;
+function _loadQRLib() {
+  if (_qrLibLoaded || window.QRCode) { _qrLibLoaded = true; return Promise.resolve(); }
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+    s.onload = () => { _qrLibLoaded = true; resolve(); };
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
 async function viewEmployee(id) {
   const emp = await api(`/admin/employees/${id}`);
   currentEmpForDetail = emp;
@@ -6744,11 +6756,17 @@ async function viewEmployee(id) {
   const cols = (pairs) => `<div class="detail-grid">${pairs.map(([k,v])=>`<div class="detail-row"><span>${k}</span><span>${v||'—'}</span></div>`).join('')}</div>`;
 
   let html = `
-    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--gray-200)">
-      <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
-      <div>
-        <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
-        <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--gray-200)">
+      <div style="display:flex;align-items:center;gap:1rem">
+        <div style="width:56px;height:56px;border-radius:50%;background:var(--sky);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;flex-shrink:0">${esc(emp.first_name[0]||'')}${esc(emp.last_name[0]||'')}</div>
+        <div>
+          <h3 style="color:var(--blue);font-size:1.2rem">${esc(emp.first_name)} ${esc(emp.last_name)}</h3>
+          <div class="emp-meta">${esc(emp.employee_id)} · <span class="badge badge-${emp.status}">${EMP_STATUS_LABEL[emp.status]||emp.status}</span></div>
+        </div>
+      </div>
+      <div style="text-align:center;flex-shrink:0">
+        <div id="empQRCode_${emp.id}" style="width:110px;height:110px;border:1px solid var(--gray-200);border-radius:8px;background:#fff;overflow:hidden;display:flex;align-items:center;justify-content:center"></div>
+        <div style="font-size:.64rem;color:var(--gray-400);margin-top:3px;letter-spacing:.3px">PUNCH QR</div>
       </div>
     </div>
     <div class="form-section">
@@ -6950,6 +6968,11 @@ async function viewEmployee(id) {
   document.getElementById('empDetailTitle').textContent = `${emp.first_name} ${emp.last_name} (${emp.employee_id})`;
   document.getElementById('empDetailContent').innerHTML = html;
   document.getElementById('empDetailModal').classList.add('show');
+  // Generate Manager Punch QR code
+  _loadQRLib().then(() => {
+    const qrDiv = document.getElementById('empQRCode_' + emp.id);
+    if (qrDiv && window.QRCode) new QRCode(qrDiv, { text: location.origin + '/mgr-punch?emp=' + emp.employee_id, width: 110, height: 110, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+  }).catch(() => {});
   loadEmpRatings(emp.id);
 }
 function closeEmpDetailModal() {
