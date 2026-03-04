@@ -490,8 +490,21 @@ tr:last-child td{border-bottom:none}
             <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block">选择打卡工作 / Select job to clock in for</label>
             <select id="jobSelector" style="width:100%;padding:.55rem .8rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem;background:#fff"></select>
           </div>
-          <button class="btn-punch btn-punch-in" id="btnPunch" onclick="doPunch()" disabled>获取位置中…</button>
+          <button class="btn-punch btn-punch-in" id="btnPunch" onclick="startPunchFlow()" disabled>获取位置中…</button>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
+          <!-- Photo capture step (shown only when clocking in) -->
+          <div id="punchPhotoStep" style="display:none;width:100%;max-width:340px;margin-top:1rem;text-align:center">
+            <div style="font-size:.88rem;color:var(--gray-600);margin-bottom:.6rem">请拍一张工作地点的照片</div>
+            <div id="punchPhotoPreview" style="display:none;margin-bottom:.6rem">
+              <img id="punchPhotoImg" style="max-width:100%;max-height:200px;border-radius:8px;border:2px solid #86efac;object-fit:cover">
+            </div>
+            <input type="file" id="punchPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="onPunchPhotoSelected(this)">
+            <button type="button" onclick="document.getElementById('punchPhotoInput').click()" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:8px;padding:.55rem 1.2rem;font-size:.9rem;font-weight:600;cursor:pointer;width:100%">📷 拍照</button>
+            <div id="punchPhotoConfirmRow" style="display:none;display:flex;gap:.6rem;margin-top:.6rem;justify-content:center">
+              <button type="button" id="btnPunchConfirm" onclick="confirmPunchWithPhoto()" style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:8px;padding:.6rem;font-size:.9rem;font-weight:700;cursor:pointer">✅ 确认打卡</button>
+              <button type="button" onclick="cancelPunchPhoto()" style="flex:0 0 auto;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .9rem;font-size:.88rem;cursor:pointer">取消</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="card">
@@ -1166,48 +1179,45 @@ async function loadInterview() {
 
   if (punchStatus && punchStatus.has_active_job && punchStatus.active_job) {
     const job = punchStatus.active_job;
-    // Per-worker schedule from assignment (keyed by lowercase day: mon/tue/...)
     let sched = {};
     try { sched = JSON.parse(job.work_schedule || '{}'); } catch {}
-    const todaySched = sched[todayKeyLow];
-    // Determine if working today: per-assignment schedule takes priority over job's work_days
-    const hasSched = todaySched && !todaySched.off;
     const workDays = job.work_days ? job.work_days.split(',').map(d=>d.trim()) : [];
-    const hasShiftToday = todaySched
-      ? hasSched
-      : (workDays.length === 0 || workDays.includes(todayKey));
-    const shiftStart = (hasSched && todaySched.start) ? todaySched.start : job.work_start;
-    const shiftEnd   = (hasSched && todaySched.end)   ? todaySched.end   : job.work_end;
-    // Build break summary
-    let breakHtml = '';
-    if (hasSched && todaySched.break_times && todaySched.break_times.length) {
-      const breaks = todaySched.break_times.filter(b=>b.start||b.end).map(b=>`${fmt(b.start)||'?'}–${fmt(b.end)||'?'}`).join('、');
-      if (breaks) breakHtml = `<div><span style="color:var(--gray-500)">休息：</span>${breaks}</div>`;
-    }
-    if (hasShiftToday) {
-      scheduleEl.innerHTML = `
-        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:1.1rem 1.25rem;margin-bottom:.75rem">
-          <div style="font-size:1.1rem;font-weight:700;color:#15803d;margin-bottom:.5rem">✅ 今天有班！</div>
-          <div style="font-size:.9rem;color:var(--gray-600);margin-bottom:.6rem">${todayStr}</div>
-          <div style="display:grid;gap:.4rem;font-size:.92rem">
-            <div><span style="color:var(--gray-500)">公司：</span><strong>${job.company_name||'—'}</strong></div>
-            <div><span style="color:var(--gray-500)">职位：</span><strong>${job.title||'—'}</strong></div>
-            ${shiftStart&&shiftEnd ? `<div><span style="color:var(--gray-500)">上班时间：</span><strong>${fmt(shiftStart)} — ${fmt(shiftEnd)}</strong></div>` : ''}
-            ${breakHtml}
-            ${job.location ? `<div><span style="color:var(--gray-500)">上班地点：</span><strong>${job.location}</strong></div>` : ''}
-            ${job.pay ? `<div><span style="color:var(--gray-500)">薪资：</span>${job.pay}</div>` : ''}
-          </div>
-        </div>
-        ${workDays.length&&!todaySched ? `<div style="font-size:.8rem;color:var(--gray-400)">工作日：${workDays.map(d=>DAY_ZH[d]||d).join('、')}</div>` : ''}`;
-    } else {
-      scheduleEl.innerHTML = `
-        <div style="background:#fef9ec;border:1px solid #fcd34d;border-radius:10px;padding:1.1rem 1.25rem;margin-bottom:.75rem">
-          <div style="font-size:1.05rem;font-weight:700;color:#b45309;margin-bottom:.4rem">今天没有班</div>
-          <div style="font-size:.9rem;color:var(--gray-600);margin-bottom:.6rem">${todayStr}</div>
-          <div style="font-size:.9rem;color:var(--gray-600)">当前职位：<strong>${job.title||'—'}</strong>（${job.company_name||'—'}）</div>
-        </div>
-        ${workDays.length&&!todaySched ? `<div style="font-size:.8rem;color:var(--gray-400)">本职位工作日：${workDays.map(d=>DAY_ZH[d]||d).join('、')}</div>` : ''}`;
-    }
+
+    // Build week rows: Mon → Sun
+    const WEEK_ORDER = ['mon','tue','wed','thu','fri','sat','sun'];
+    const WEEK_LABEL = { mon:'周一',tue:'周二',wed:'周三',thu:'周四',fri:'周五',sat:'周六',sun:'周日' };
+    const WEEK_EN    = { mon:'Mon',tue:'Tue',wed:'Wed',thu:'Thu',fri:'Fri',sat:'Sat',sun:'Sun' };
+
+    const weekRows = WEEK_ORDER.map(key => {
+      const d = sched[key];
+      const isToday = key === todayKeyLow;
+      const isOff = d ? d.off : (workDays.length && !workDays.includes(WEEK_EN[key]));
+      const start = (!isOff && d && d.start) ? d.start : (!isOff && !d ? job.work_start : '');
+      const end   = (!isOff && d && d.end)   ? d.end   : (!isOff && !d ? job.work_end   : '');
+      const breaks = (!isOff && d && d.break_times) ? d.break_times.filter(b=>b.start||b.end).map(b=>`${fmt(b.start)}–${fmt(b.end)}`).join(' ') : '';
+      const bg  = isToday ? (isOff ? '#fef9ec' : '#f0fdf4') : 'transparent';
+      const bdr = isToday ? (isOff ? '1px solid #fcd34d' : '1px solid #86efac') : '1px solid transparent';
+      return `<tr style="background:${bg};border-radius:8px">
+        <td style="padding:.5rem .6rem;font-weight:${isToday?'700':'500'};color:${isToday?'#15803d':'var(--gray-700)'};white-space:nowrap;border:${bdr};border-right:none;border-radius:6px 0 0 6px">
+          ${WEEK_LABEL[key]}${isToday?' <span style="font-size:.7rem;background:#dcfce7;color:#15803d;border-radius:4px;padding:.05rem .35rem">今天</span>':''}
+        </td>
+        <td style="padding:.5rem .6rem;color:${isOff?'var(--gray-400)':'var(--gray-700)'};border-top:${bdr};border-bottom:${bdr}">
+          ${isOff ? '休息' : (start&&end ? `<strong>${fmt(start)}</strong> <span style="color:var(--gray-400)">—</span> <strong>${fmt(end)}</strong>` : '—')}
+        </td>
+        <td style="padding:.5rem .6rem;font-size:.8rem;color:var(--gray-400);border:${bdr};border-left:none;border-radius:0 6px 6px 0">${breaks}</td>
+      </tr>`;
+    }).join('');
+
+    scheduleEl.innerHTML = `
+      <div style="font-size:.88rem;color:var(--gray-600);margin-bottom:.75rem;display:grid;gap:.3rem">
+        <div><span style="color:var(--gray-400)">公司：</span><strong>${job.company_name||'—'}</strong></div>
+        <div><span style="color:var(--gray-400)">职位：</span>${job.title||'—'}</div>
+        ${job.location ? `<div><span style="color:var(--gray-400)">地点：</span><strong>${job.location}</strong></div>` : ''}
+        ${job.pay ? `<div><span style="color:var(--gray-400)">薪资：</span>${job.pay}</div>` : ''}
+      </div>
+      <table style="width:100%;border-collapse:separate;border-spacing:0 3px;font-size:.88rem">
+        ${weekRows}
+      </table>`;
   } else {
     scheduleEl.innerHTML = `
       <div style="padding:.9rem 0;color:var(--gray-500);font-size:.9rem">
@@ -1544,23 +1554,73 @@ async function loadPunchStatus() {
   enablePunchBtn(gpsReady);
 }
 
-async function doPunch() {
+let _pendingPunchPhoto = null; // File object from camera
+
+function startPunchFlow() {
+  if (_punchStatus?.clocked_in) {
+    // Clock-out: no photo needed
+    doPunch(null);
+    return;
+  }
+  // Clock-in: require photo first
+  _pendingPunchPhoto = null;
+  document.getElementById('punchPhotoPreview').style.display = 'none';
+  document.getElementById('punchPhotoConfirmRow').style.display = 'none';
+  document.getElementById('punchPhotoInput').value = '';
+  document.getElementById('btnPunch').style.display = 'none';
+  document.getElementById('punchPhotoStep').style.display = '';
+}
+
+function onPunchPhotoSelected(input) {
+  if (!input.files || !input.files[0]) return;
+  _pendingPunchPhoto = input.files[0];
+  const url = URL.createObjectURL(_pendingPunchPhoto);
+  document.getElementById('punchPhotoImg').src = url;
+  document.getElementById('punchPhotoPreview').style.display = '';
+  document.getElementById('punchPhotoConfirmRow').style.display = 'flex';
+}
+
+function cancelPunchPhoto() {
+  _pendingPunchPhoto = null;
+  document.getElementById('punchPhotoStep').style.display = 'none';
+  document.getElementById('btnPunch').style.display = '';
+}
+
+async function confirmPunchWithPhoto() {
+  if (!_pendingPunchPhoto) return;
+  const confirmBtn = document.getElementById('btnPunchConfirm');
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = '打卡中…';
+  await doPunch(_pendingPunchPhoto);
+  confirmBtn.disabled = false;
+  confirmBtn.textContent = '✅ 确认打卡';
+}
+
+async function doPunch(photo) {
   const btn = document.getElementById('btnPunch');
-  btn.disabled = true;
-  btn.textContent = '处理中…';
   const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null };
   if (!_punchStatus?.clocked_in) {
-    // clock-in: include selected job
     const sel = document.getElementById('jobSelector');
     body.job_id = sel ? parseInt(sel.value) || null : null;
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
-  if (!r) { btn.disabled = false; enablePunchBtn(true); return; }
+  if (!r) { btn.disabled = false; enablePunchBtn(true); cancelPunchPhoto(); return; }
   if (r.error) {
     showToast('❌ ' + r.error, 'error');
     btn.disabled = false;
+    cancelPunchPhoto();
     await loadPunchStatus();
     return;
+  }
+  // Upload punch photo if provided (clock-in only)
+  if (photo && r.entry_id) {
+    const fd = new FormData();
+    fd.append('photo', photo);
+    await fetch('/api/worker/punch/' + r.entry_id + '/photo', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
+      body: fd
+    }).catch(() => {});
   }
   if (r.action === 'in') {
     const geoMsg = r.geo_verified ? (r.site_name ? ` (${r.site_name})` : ' (位置已验证)') : '';
@@ -1569,6 +1629,9 @@ async function doPunch() {
     const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
     showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
   }
+  _pendingPunchPhoto = null;
+  document.getElementById('punchPhotoStep').style.display = 'none';
+  btn.style.display = '';
   _gpsCoords = null;
   document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
   btn.textContent = '获取位置中…';

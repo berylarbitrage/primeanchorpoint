@@ -263,6 +263,9 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const docsDir = path.join(dataDir, 'employee_docs');
 if (!fs.existsSync(docsDir)) fs.mkdirSync(docsDir, { recursive: true });
 
+const punchPhotosDir = path.join(dataDir, 'punch_photos');
+if (!fs.existsSync(punchPhotosDir)) fs.mkdirSync(punchPhotosDir, { recursive: true });
+
 const db = new Database(path.join(dataDir, 'prime.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('wal_autocheckpoint = 100');
@@ -612,6 +615,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
 
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
@@ -1119,6 +1123,18 @@ const docUpload = multer({
     const ok = /pdf|jpg|jpeg|png|gif|doc|docx/.test(path.extname(file.originalname).toLowerCase());
     cb(null, ok);
   }
+});
+
+const punchPhotoUpload = multer({
+  storage: multer.diskStorage({
+    destination: punchPhotosDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      cb(null, `punch-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => cb(null, /jpg|jpeg|png|gif|webp|heic/.test(file.mimetype))
 });
 
 // ─── ADMIN AUTH (username + password with session tokens) ───
@@ -4144,6 +4160,25 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
       .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id);
     res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified, site_name: activeJob.site_name || null, job_title: activeJob.title });
   }
+});
+
+// Upload punch photo for a time entry (must belong to this worker)
+app.post('/api/worker/punch/:entryId/photo', requireWorker, punchPhotoUpload.single('photo'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
+  const entry = db.prepare('SELECT id, employee_id FROM time_entries WHERE id=?').get(req.params.entryId);
+  if (!entry || entry.employee_id !== req.workerEmployeeId) {
+    fs.unlink(req.file.path, ()=>{});
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  res.json({ success: true });
+});
+
+// Serve punch photos (admin only)
+app.get('/api/admin/punch-photo/:filename', requireAdmin, (req, res) => {
+  const fp = path.join(punchPhotosDir, path.basename(req.params.filename));
+  if (!fs.existsSync(fp)) return res.status(404).send('Not found');
+  res.sendFile(fp);
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
