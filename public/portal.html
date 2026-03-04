@@ -464,6 +464,26 @@ tr:last-child td{border-bottom:none}
 
     <!-- My Tasks -->
     <div id="tabInterview" style="display:none">
+      <!-- Work Calendar -->
+      <div id="workCalendarCard" style="display:none;margin-bottom:1rem">
+        <div class="card" style="padding:.85rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+            <h2 style="color:#1d4ed8;margin:0;font-size:1rem">📆 我的工作日历</h2>
+            <div style="display:flex;gap:.35rem;align-items:center">
+              <button onclick="calChangeMonth(-1)" style="width:28px;height:28px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;align-items:center;justify-content:center">‹</button>
+              <span id="calMonthLabel" style="font-weight:700;font-size:.92rem;color:#1e293b;min-width:72px;text-align:center"></span>
+              <button onclick="calChangeMonth(1)" style="width:28px;height:28px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;align-items:center;justify-content:center">›</button>
+            </div>
+          </div>
+          <div id="calGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center"></div>
+          <div style="display:flex;gap:.65rem;margin-top:.7rem;flex-wrap:wrap;font-size:.73rem;color:#475569">
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;display:inline-block"></span>已确认</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span>待确认</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span>已请假</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:2px;background:#bfdbfe;display:inline-block;border:1px solid #93c5fd"></span>排班中</span>
+          </div>
+        </div>
+      </div>
       <!-- Weekly shift confirmations -->
       <div id="shiftConfirmCard" style="display:none;margin-bottom:1rem">
         <div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
@@ -1285,7 +1305,7 @@ function showTab(tab) {
 }
 
 async function loadInterview() {
-  await loadTasks();
+  await Promise.all([loadTasks(), loadWorkCalendar()]);
 }
 
 async function loadTasks() {
@@ -1449,8 +1469,110 @@ async function respondShiftConfirm(id, response) {
   if (r && r.success) {
     showToast(response === 'confirmed' ? '✅ 已确认出勤' : '已登记请假');
     loadTasks();
+    loadWorkCalendar(); // refresh calendar dots after responding
   }
 }
+
+// ── Work Calendar ─────────────────────────────────────────────────
+const _CAL_DOW_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
+const _CAL_DAY_LABELS = ['日','一','二','三','四','五','六'];
+let _calYear = new Date().getFullYear();
+let _calMonth = new Date().getMonth() + 1; // 1–12
+let _calData = null;
+
+async function loadWorkCalendar() {
+  const card = document.getElementById('workCalendarCard');
+  _calData = await wApi(`/work-calendar?year=${_calYear}&month=${_calMonth}`);
+  if (!_calData || (!_calData.confirmations.length && !_calData.assignments.length)) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  renderCalendar();
+}
+
+function calChangeMonth(delta) {
+  _calMonth += delta;
+  if (_calMonth > 12) { _calMonth = 1; _calYear++; }
+  if (_calMonth < 1)  { _calMonth = 12; _calYear--; }
+  loadWorkCalendar();
+}
+
+function renderCalendar() {
+  document.getElementById('calMonthLabel').textContent = `${_calYear}年${_calMonth}月`;
+  const grid = document.getElementById('calGrid');
+
+  // Build date → confirmations lookup
+  const confMap = {};
+  (_calData.confirmations || []).forEach(c => {
+    if (!confMap[c.date]) confMap[c.date] = [];
+    confMap[c.date].push(c);
+  });
+
+  // Project work days from assignments' recurring schedule
+  const projectedDays = new Set();
+  const daysInMonth = new Date(_calYear, _calMonth, 0).getDate();
+  (_calData.assignments || []).forEach(a => {
+    let sched = {};
+    try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+    const workStart = sched.workStart || a.start_date || null;
+    const workEnd   = sched.workEnd   || null;
+    const untilFurther = !!sched.untilFurther;
+    const days = sched.days || {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateObj = new Date(_calYear, _calMonth - 1, d);
+      const dateStr = dateObj.toISOString().slice(0, 10);
+      if (confMap[dateStr]) continue; // already confirmed, don't double-mark
+      if (workStart && dateStr < workStart) continue;
+      if (!untilFurther && workEnd && dateStr > workEnd) continue;
+      const dayInfo = days[_CAL_DOW_KEYS[dateObj.getDay()]];
+      if (dayInfo && !dayInfo.rest) projectedDays.add(dateStr);
+    }
+  });
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const firstDow = new Date(_calYear, _calMonth - 1, 1).getDay(); // 0=Sun
+  const statusColor = { confirmed: '#16a34a', pending: '#f59e0b', declined: '#dc2626' };
+
+  // Header row
+  let html = _CAL_DAY_LABELS.map(l =>
+    `<div style="font-weight:700;font-size:.72rem;color:#94a3b8;padding:.25rem 0">${l}</div>`
+  ).join('');
+
+  // Empty leading cells
+  for (let i = 0; i < firstDow; i++) html += '<div></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${_calYear}-${String(_calMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday = dateStr === todayStr;
+    const confs = confMap[dateStr] || [];
+    const isProjected = projectedDays.has(dateStr);
+    const hasWork = confs.length > 0 || isProjected;
+
+    // Status dots
+    let dotsHtml = '';
+    if (confs.length) {
+      dotsHtml = confs.slice(0, 3).map(c =>
+        `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor[c.status]||'#94a3b8'};margin:0 1px"></span>`
+      ).join('');
+    } else if (isProjected) {
+      dotsHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:2px;background:#bfdbfe;border:1px solid #93c5fd;margin:0 1px"></span>`;
+    }
+
+    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : isProjected ? '#eff6ff' : 'transparent');
+    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : isProjected ? '1px solid #bfdbfe' : '1px solid transparent';
+    const numColor = isToday ? '#fff' : hasWork ? '#1e293b' : '#cbd5e1';
+    const numWeight = (isToday || hasWork) ? '700' : '400';
+
+    html += `<div style="border-radius:8px;padding:.28rem .05rem;background:${bg};border:${border};min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">
+      <span style="font-size:.8rem;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>
+      ${dotsHtml ? `<div style="line-height:1">${dotsHtml}</div>` : ''}
+    </div>`;
+  }
+
+  grid.innerHTML = html;
+}
+// ─────────────────────────────────────────────────────────────────
 
 function bookSlot(slotId) {
   // Find slot data from the rendered list
