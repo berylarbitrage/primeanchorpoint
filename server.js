@@ -1258,6 +1258,37 @@ async function generateWeeklyShiftConfirmations() {
     smsCount++;
   }
   console.log(`[WeeklyShifts] ${todayStr}: ${Object.keys(newByWorker).length} workers with new shifts, ${smsCount} SMS sent`);
+
+  // On Saturday or Sunday, also pre-generate next week's shift confirmations
+  // so workers can see upcoming shifts in the portal (no extra SMS)
+  if (dow === 6 || dow === 0) {
+    const nextMonday = new Date(monday);
+    nextMonday.setDate(monday.getDate() + 7);
+    const nextWeekDates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(nextMonday);
+      d.setDate(nextMonday.getDate() + i);
+      nextWeekDates.push({ date: d.toISOString().slice(0, 10), dayKey: _WEEK_DAY_KEYS[d.getDay()] });
+    }
+    for (const a of assignments) {
+      let sched = {};
+      try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+      const workStart = sched.workStart || null;
+      const workEnd = sched.workEnd || null;
+      const untilFurther = !!sched.untilFurther;
+      const days = sched.days || {};
+      for (const { date, dayKey } of nextWeekDates) {
+        if (workStart && date < workStart) continue;
+        if (!untilFurther && workEnd && date > workEnd) continue;
+        const dayInfo = days[dayKey];
+        if (!dayInfo || dayInfo.rest) continue;
+        db.prepare(
+          `INSERT OR IGNORE INTO shift_confirmations (assignment_id, date, status, shift_start, shift_end) VALUES (?,?,?,?,?)`
+        ).run(a.id, date, 'pending', dayInfo.start || '', dayInfo.end || '');
+      }
+    }
+    console.log(`[WeeklyShifts] ${todayStr}: pre-generated next week shifts (Sat/Sun)`);
+  }
 }
 
 function scheduleWeeklyShiftGeneration() {
@@ -4724,11 +4755,20 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
 app.get('/api/worker/shift-confirmations', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!wa || !wa.linked_inquiry_id) return res.json([]);
-  // Return all shifts for the current week (today → Sunday)
+  // Return full current week (Mon → Sun); on Sat/Sun also include next week
   const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
-  const sunday = new Date(today);
-  sunday.setDate(today.getDate() + (7 - today.getDay()) % 7);
+  today.setHours(0, 0, 0, 0);
+  const todayDow = today.getDay(); // 0=Sun, 6=Sat
+  // Monday of current week
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - (todayDow === 0 ? 6 : todayDow - 1));
+  const mondayStr = monday.toISOString().slice(0, 10);
+  // Sunday of current week, extended by 7 days on Sat/Sun to include next week
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  if (todayDow === 6 || todayDow === 0) {
+    sunday.setDate(sunday.getDate() + 7);
+  }
   const sundayStr = sunday.toISOString().slice(0, 10);
   const confirmations = db.prepare(`
     SELECT sc.id, sc.date, sc.status, sc.notified_at, sc.responded_at,
@@ -4741,7 +4781,7 @@ app.get('/api/worker/shift-confirmations', requireWorker, (req, res) => {
     WHERE a.inquiry_id = ?
       AND sc.date >= ? AND sc.date <= ?
     ORDER BY sc.date ASC, sc.id ASC
-  `).all(wa.linked_inquiry_id, todayStr, sundayStr);
+  `).all(wa.linked_inquiry_id, mondayStr, sundayStr);
   res.json(confirmations);
 });
 

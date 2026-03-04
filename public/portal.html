@@ -1321,10 +1321,19 @@ async function loadTasks() {
         </div>
       </div>` : '';
 
+    // Determine current week's Sunday for next-week separator
+    const _nowDate = new Date(); _nowDate.setHours(0,0,0,0);
+    const _curDow = _nowDate.getDay();
+    const _curSunday = new Date(_nowDate);
+    _curSunday.setDate(_nowDate.getDate() + (7 - _curDow) % 7);
+    const curSundayStr = _curSunday.toISOString().slice(0,10);
+    let shownNextWeekHeader = false;
+
     confList.innerHTML = urgentBanner + confirmations.map(c => {
       const d = new Date(c.date + 'T00:00:00');
       const isToday = c.date === todayStr;
       const isTomorrow = c.date === tomorrowStr;
+      const isNextWeek = c.date > curSundayStr;
       const dayLabel = `${_DAY_NAMES[d.getDay()]} ${c.date.slice(5).replace('-','/')}${isToday ? ' <span style="background:#f59e0b;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">今天</span>' : isTomorrow ? ' <span style="background:#ef4444;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">明天</span>' : ''}`;
       const timeStr = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)} – ${fmt12(c.shift_end)}` : '';
       const statusBadge = c.status === 'confirmed'
@@ -1337,13 +1346,23 @@ async function loadTasks() {
           <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
           <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 请假</button>
         </div>` : '';
-      const cardBorder = (isTomorrow && c.status === 'pending') ? '2px solid #ef4444' : '1px solid #fcd34d';
-      const cardBg = (isTomorrow && c.status === 'pending') ? '#fff5f5' : '#fff';
-      return `
+      const cardBorder = (isTomorrow && c.status === 'pending') ? '2px solid #ef4444' : isNextWeek ? '1px solid #bfdbfe' : '1px solid #fcd34d';
+      const cardBg = (isTomorrow && c.status === 'pending') ? '#fff5f5' : isNextWeek ? '#f0f9ff' : '#fff';
+      // Insert next-week section header before first next-week card
+      let header = '';
+      if (isNextWeek && !shownNextWeekHeader) {
+        shownNextWeekHeader = true;
+        header = `<div style="display:flex;align-items:center;gap:.5rem;margin:.9rem 0 .5rem">
+          <div style="flex:1;height:1px;background:#e5e7eb"></div>
+          <span style="font-size:.8rem;font-weight:700;color:#3b82f6;white-space:nowrap">下周班次（等待确认）</span>
+          <div style="flex:1;height:1px;background:#e5e7eb"></div>
+        </div>`;
+      }
+      return header + `
         <div style="border:${cardBorder};border-radius:10px;padding:.85rem;margin-bottom:.55rem;background:${cardBg}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.3rem">
             <div>
-              <span style="font-weight:700;font-size:.92rem;color:#92400e">${dayLabel}</span>
+              <span style="font-weight:700;font-size:.92rem;color:${isNextWeek ? '#1d4ed8' : '#92400e'}">${dayLabel}</span>
               <div style="font-size:.82rem;color:var(--gray-700);margin-top:.15rem">${esc(c.title||'—')}${c.company_name?` · <span style="color:var(--gray-500)">${esc(c.company_name)}</span>`:''}</div>
             </div>
             ${statusBadge}
