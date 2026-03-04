@@ -547,6 +547,7 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN applicant_message TEXT DE
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN admin_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_datetime TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_location_text TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_times_json TEXT DEFAULT ''`); } catch(e) {}
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
@@ -2667,9 +2668,12 @@ app.get('/api/admin/job-applications', requireAdmin, blockManager, (req, res) =>
 });
 
 app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (req, res) => {
-  const { status, notes, admin_note, interview_datetime, interview_location_text, notify } = req.body;
-  db.prepare('UPDATE job_applications SET status=?, notes=?, admin_note=?, interview_datetime=?, interview_location_text=? WHERE id=?')
-    .run(status, notes||'', admin_note||'', interview_datetime||'', interview_location_text||'', req.params.id);
+  const { status, notes, admin_note, interview_datetime, interview_location_text, interview_times, notify } = req.body;
+  // interview_times: array of datetime strings (multi-slot support)
+  const timesJson = Array.isArray(interview_times) && interview_times.length ? JSON.stringify(interview_times) : '';
+  const primaryDatetime = (Array.isArray(interview_times) && interview_times[0]) ? interview_times[0] : (interview_datetime || '');
+  db.prepare('UPDATE job_applications SET status=?, notes=?, admin_note=?, interview_datetime=?, interview_location_text=?, interview_times_json=? WHERE id=?')
+    .run(status, notes||'', admin_note||'', primaryDatetime, interview_location_text||'', timesJson, req.params.id);
   let emailSent = false, smsSent = false;
   if (notify && status === 'interview_scheduled') {
     try {
@@ -2684,14 +2688,17 @@ app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (re
       `).get(req.params.id);
       if (app2) {
         const workerName = app2.first_name ? `${app2.first_name} ${app2.last_name||''}`.trim() : app2.username || '';
-        const dtStr = interview_datetime ? new Date(interview_datetime).toLocaleString('zh-CN', { timeZone: 'America/New_York', year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit' }) : '';
+        const times = Array.isArray(interview_times) && interview_times.length ? interview_times : (interview_datetime ? [interview_datetime] : []);
+        const fmtDt = dt => new Date(dt).toLocaleString('zh-CN', { timeZone: 'America/New_York', year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit' });
+        const dtLines = times.map((t, i) => (times.length > 1 ? `时间选项${i+1}：` : '时间：') + fmtDt(t)).join('\n');
+        const dtHtmlRows = times.map((t, i) => `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📅 ${times.length > 1 ? `时间${i+1}` : '时间'}</td><td style="padding:.4rem 0">${fmtDt(t)}</td></tr>`).join('');
         const locStr = interview_location_text || '';
         const noteStr = admin_note || '';
         const subject = 'Prime Anchorpoint — 面试通知 / Interview Scheduled';
-        const textMsg = `您好 ${workerName}，\n\n您申请的职位「${app2.job_title}」已安排面试：\n${dtStr ? '时间：' + dtStr + '\n' : ''}${locStr ? '地点：' + locStr + '\n' : ''}${noteStr ? '备注：' + noteStr + '\n' : ''}\n请登录工人门户查看详情。`;
+        const textMsg = `您好 ${workerName}，\n\n您申请的职位「${app2.job_title}」已安排面试：\n${dtLines ? dtLines + '\n' : ''}${locStr ? '地点：' + locStr + '\n' : ''}${noteStr ? '备注：' + noteStr + '\n' : ''}\n请登录工人门户查看详情。`;
         const htmlMsg = `<p>您好 ${workerName}，</p><p>您申请的职位 <strong>${app2.job_title}</strong> 已安排面试：</p>
           <table style="border-collapse:collapse;margin:1rem 0;font-size:15px">
-            ${dtStr ? `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📅 时间</td><td style="padding:.4rem 0">${dtStr}</td></tr>` : ''}
+            ${dtHtmlRows}
             ${locStr ? `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📍 地点</td><td style="padding:.4rem 0">${locStr}</td></tr>` : ''}
             ${noteStr ? `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📝 备注</td><td style="padding:.4rem 0">${noteStr}</td></tr>` : ''}
           </table>
@@ -4769,7 +4776,7 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
   const apps = db.prepare(`
     SELECT a.id, a.status, a.notes, a.admin_note, a.applicant_message,
            a.interview_availability, a.expected_pay, a.work_auth_confirmed, a.created_at,
-           a.interview_datetime, a.interview_location_text,
+           a.interview_datetime, a.interview_location_text, a.interview_times_json,
            j.id as job_id, j.title, j.location, j.pay, j.company_name,
            j.employment_type, j.description, j.work_days, j.work_start, j.work_end, j.benefits
     FROM job_applications a LEFT JOIN jobs j ON a.job_id=j.id
