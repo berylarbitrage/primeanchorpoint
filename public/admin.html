@@ -3961,6 +3961,7 @@ function renderAssignments(assigns) {
     <td><span class="badge badge-${a.status}">${statusLabel(a.status)}</span></td>
     <td>
       <button class="btn btn-sm" onclick='editAssignment(${JSON.stringify(a).replace(/'/g,"&#39;")})'>编辑</button>
+      <button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick='addMoreDispatch(${JSON.stringify({inquiry_id:a.inquiry_id,inquiry_name:a.inquiry_name,inquiry_phone:a.inquiry_phone,inquiry_email:a.inquiry_email,job_id:a.job_id,job_title:a.job_title,job_location:a.job_location}).replace(/'/g,"&#39;")})'>+ 再派工</button>
       <button class="btn btn-sm btn-red" onclick="deleteAssignment(${a.id})">删除</button>
     </td>
   </tr>`;
@@ -4367,6 +4368,21 @@ document.addEventListener('click', e => {
 function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
 
 function editAssignment(a) { openAssignModal(a); }
+
+async function addMoreDispatch(prefill) {
+  showTab('assignments');
+  await openAssignModal(); // blank new assignment
+  // pre-fill person from existing assignment
+  if (prefill.inquiry_id) {
+    document.getElementById('aInquiry').value = prefill.inquiry_name + (prefill.inquiry_phone ? ' · ' + prefill.inquiry_phone : '');
+    document.getElementById('aInquiryId').value = prefill.inquiry_id;
+  }
+  // pre-fill job
+  if (prefill.job_id) {
+    document.getElementById('aJob').value = (prefill.job_title||'') + (prefill.job_location ? ' - ' + prefill.job_location : '');
+    document.getElementById('aJobId').value = prefill.job_id;
+  }
+}
 
 async function saveAssignment() {
   // Use module-level _editingAssignment as authoritative source for IDs
@@ -7308,9 +7324,8 @@ async function loadWorkerAccounts() {
     <td>${dispatchBadge(w)}</td>
     <td style="white-space:nowrap">
       <div class="wa-actions">
-        ${!w.dispatch_ready
-          ? `<button class="btn btn-sm wa-abtn-primary" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">📋 入职</button>`
-          : `<button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick='showDispatchJobPicker(${JSON.stringify(w).replace(/'/g,"&#39;")})'>📤 派工</button>`}
+        <button class="btn btn-sm wa-abtn-primary" onclick="openOnboardingModal(${w.id},'${esc(w.name||w.username)}')">📋 入职</button>
+        <button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick='showDispatchJobPicker(${JSON.stringify(w).replace(/'/g,"&#39;")})'>📤 派工</button>
         <button class="btn btn-sm wa-abtn-edit" onclick="openWorkerDetailModal(${w.id})">✏️ 编辑</button>
         ${extraBtns}
       </div>
