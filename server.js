@@ -787,6 +787,7 @@ try { db.exec("ALTER TABLE worker_accounts ADD COLUMN middle_name TEXT DEFAULT '
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN last_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN worker_code TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN linked_inquiry_id INTEGER DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN source TEXT DEFAULT 'admin'"); } catch {}
 // Backfill: assign worker_code + linked_inquiry_id to existing verified workers
 // (runs once on startup; activateWorkerAccount is idempotent — skips if code already set)
 setTimeout(() => {
@@ -1175,30 +1176,31 @@ function nextEmployeeId(city, hireDate) {
 }
 
 // ─── Auto-generate worker code: WORKER-CITY-MMDDYY-000001 ───
-function generateWorkerCode(city) {
+function generateWorkerCode(city, prefix = 'WORKER') {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yy = String(d.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
   const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
-  const last = db.prepare("SELECT worker_code FROM worker_accounts WHERE worker_code LIKE 'WORKER-%' ORDER BY id DESC LIMIT 1").get();
+  const last = db.prepare(`SELECT worker_code FROM worker_accounts WHERE worker_code LIKE ? ORDER BY id DESC LIMIT 1`).get(prefix + '-%');
   let num = 1;
   if (last) {
     const parts = last.worker_code.split('-');
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `WORKER-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `${prefix}-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
 }
 
 // ─── On verification: assign worker_code + ensure linked inquiry exists ───
-function activateWorkerAccount(accountId) {
+function activateWorkerAccount(accountId, prefix) {
   const acc = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(accountId);
   if (!acc) return;
   // Generate worker_code if not already set
   if (!acc.worker_code) {
-    const code = generateWorkerCode(acc.city);
+    const codePrefix = prefix || (acc.source === 'online' ? 'ONLINE' : 'WORKER');
+    const code = generateWorkerCode(acc.city, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
   // Ensure a linked inquiry exists (by phone → email → name → create)
@@ -1803,6 +1805,15 @@ function getOnboardingTasks(workerId) {
     return { ...s, ...row, locked: locked && !['completed','waived'].includes(row.status) };
   });
 }
+
+app.post('/api/admin/worker-accounts/:id/ensure-inquiry', requireAdmin, (req, res) => {
+  const id = parseInt(req.params.id);
+  activateWorkerAccount(id);
+  const w = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(id);
+  if (!w || !w.linked_inquiry_id) return res.status(500).json({ error: 'Failed to ensure inquiry' });
+  const inq = db.prepare('SELECT id, name, phone, email, type FROM inquiries WHERE id=?').get(w.linked_inquiry_id);
+  res.json(inq);
+});
 
 app.post('/api/admin/worker-accounts/:id/init-onboarding', requireAdmin, (req, res) => {
   initWorkerOnboarding(parseInt(req.params.id));
@@ -4981,9 +4992,9 @@ app.post('/api/register/worker', async (req, res) => {
   const canEmail = !!(_sgKey || emailTransporter);
   const needsVerification = canSMS || canEmail;
 
-  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1);
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active, source)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, 'online');
   const accountId = r.lastInsertRowid;
 
   if (!needsVerification) {
