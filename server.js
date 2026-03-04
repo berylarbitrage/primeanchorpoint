@@ -779,9 +779,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS enterprise_verification_codes (
 // Migrate: suspended flag for worker accounts (distinct from unverified)
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN assigned_tasks TEXT DEFAULT '[]'"); } catch {}
-// Migrate: city / state / worker_code / linked_inquiry_id (stored)
+// Migrate: city / state / worker_code / linked_inquiry_id (stored) / split name
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN city TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN state TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN first_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN middle_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN last_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN worker_code TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN linked_inquiry_id INTEGER DEFAULT NULL"); } catch {}
 // Backfill: assign worker_code + linked_inquiry_id to existing verified workers
@@ -4928,11 +4931,13 @@ app.get('/api/register/check', (req, res) => {
 
 app.post('/api/register/worker', async (req, res) => {
   try {
-  const { name, phone, email, dob, work_status, position_interests, password, city, state } = req.body;
-  if (!name || !phone || !email || !password)
-    return res.status(400).json({ error: '请填写姓名、手机号、邮箱和密码 / Name, phone, email, and password are required' });
+  const { first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, password, city, state } = req.body;
+  const nameParts = [first_name, middle_name, last_name].filter(Boolean);
+  if (!first_name || !last_name || !phone || !email || !password)
+    return res.status(400).json({ error: '请填写名字、姓氏、手机号、邮箱和密码 / First name, last name, phone, email, and password are required' });
   if (!city || !state)
     return res.status(400).json({ error: '请填写城市和州 / City and state are required' });
+  const name = nameParts.join(' ');
   // Check phone or email uniqueness; allow re-registration only if previous account was never verified AND codes have expired
   const existing = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
   if (existing && existing.active) return res.status(400).json({ error: '该手机号或邮箱已注册 / An account with this phone or email already exists' });
@@ -4975,9 +4980,9 @@ app.post('/api/register/worker', async (req, res) => {
   const canEmail = !!(_sgKey || emailTransporter);
   const needsVerification = canSMS || canEmail;
 
-  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, city, state, active)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1);
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1);
   const accountId = r.lastInsertRowid;
 
   if (!needsVerification) {
