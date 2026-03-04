@@ -126,7 +126,7 @@ tr:hover td{background:var(--sky-light)}
 .toast.hide{animation:toastOut .2s ease forwards}
 @keyframes toastIn{from{opacity:0;transform:translateY(-12px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes toastOut{to{opacity:0;transform:translateY(-8px) scale(.96)}}
-.badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
+.badge-pending{background:#FFF3E0;color:#b45309}.badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#f0fdf4;color:#16a34a}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-terminated{background:#fef2f2;color:#b91c1c}.badge-resigned{background:#fff7ed;color:#c2410c}.badge-no_show{background:#fafafa;color:#6b7280;border:1px solid #e5e7eb}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
 .modal{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
@@ -505,9 +505,13 @@ tr:hover td{background:var(--sky-light)}
     <input type="text" id="assignSearch" placeholder="搜索人员、职位..." oninput="filterAssignments()">
     <select id="assignStatusFilter" onchange="filterAssignments()">
       <option value="">全部状态</option>
+      <option value="pending">待确认</option>
       <option value="assigned">已分配</option>
-      <option value="working">工作中</option>
+      <option value="working">进行中</option>
       <option value="completed">已完成</option>
+      <option value="terminated">已解雇</option>
+      <option value="resigned">已辞职</option>
+      <option value="no_show">未出勤</option>
       <option value="cancelled">已取消</option>
     </select>
   </div>
@@ -1994,9 +1998,13 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field"><label>状态</label><select id="aStatus">
+    <option value="pending">待确认</option>
     <option value="assigned">已分配</option>
-    <option value="working">工作中</option>
+    <option value="working">进行中</option>
     <option value="completed">已完成</option>
+    <option value="terminated">已解雇</option>
+    <option value="resigned">已辞职</option>
+    <option value="no_show">未出勤</option>
     <option value="cancelled">已取消</option>
   </select></div>
   <div class="field-row">
@@ -2893,7 +2901,7 @@ function typeLabel(t) {
   return '其他';
 }
 function statusLabel(s) {
-  const m = { assigned: '已分配', working: '工作中', completed: '已完成', cancelled: '已取消' };
+  const m = { pending:'待确认', assigned:'已分配', working:'进行中', completed:'已完成', terminated:'已解雇', resigned:'已辞职', no_show:'未出勤', cancelled:'已取消' };
   return m[s] || s;
 }
 function showToast(msg, type = 'success', duration = 3000) {

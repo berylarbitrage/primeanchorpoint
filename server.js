@@ -4254,7 +4254,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
           SELECT a.work_lat, a.work_lng, a.work_radius, a.work_address
           FROM assignments a
           JOIN worker_accounts w ON a.inquiry_id = w.linked_inquiry_id
-          WHERE w.id = ? AND a.status IN ('assigned','working') AND a.work_lat IS NOT NULL
+          WHERE w.id = ? AND a.status IN ('pending','assigned','working') AND a.work_lat IS NOT NULL
           ORDER BY a.assigned_at DESC LIMIT 1
         `).get(req.workerId);
         if (assignSite) {
