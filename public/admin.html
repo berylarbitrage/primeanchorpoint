@@ -1943,7 +1943,7 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="field" style="position:relative">
     <label>选择人员 *</label>
-    <input id="aInquiry" autocomplete="off" placeholder="搜索姓名 / 电话 / 邮箱…" oninput="filterAssignSearch('inq');clearFieldErr('aInquiry','aInquiryErr')">
+    <input id="aInquiry" autocomplete="off" placeholder="搜索姓名 / 电话 / 邮箱…" oninput="filterAssignSearch('inq');clearFieldErr('aInquiry','aInquiryErr')" onblur="setTimeout(()=>blurAutoSelectAssign('inq'),200)">
     <div class="assign-dropdown" id="aInquiryDrop"></div>
     <div id="aInquiryErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请搜索并选择人员</div>
   </div>
@@ -1951,7 +1951,7 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="field" style="position:relative">
     <label>分配职位 *</label>
-    <input id="aJob" autocomplete="off" placeholder="搜索职位名称 / 地点…" oninput="filterAssignSearch('job');clearFieldErr('aJob','aJobErr')">
+    <input id="aJob" autocomplete="off" placeholder="搜索职位名称 / 地点…" oninput="filterAssignSearch('job');clearFieldErr('aJob','aJobErr')" onblur="setTimeout(()=>blurAutoSelectAssign('job'),200)">
     <div class="assign-dropdown" id="aJobDrop"></div>
     <div id="aJobErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请搜索并选择职位</div>
   </div>
@@ -4286,6 +4286,16 @@ function filterAssignSearch(which) {
 
   if (!items.length) { drop.classList.remove('open'); return; }
 
+  // Auto-select when exactly 1 result matches
+  if (items.length === 1 && q) {
+    const item = items[0];
+    const label = isInq
+      ? item.name + (item.phone ? ' · ' + item.phone : '')
+      : item.title + ' - ' + item.location;
+    selectAssignItem(which, item.id, label);
+    return;
+  }
+
   drop.innerHTML = items.slice(0, 30).map(item => {
     if (isInq) {
       return `<div class="adrop-item" onclick="selectAssignItem('inq',${item.id},${JSON.stringify(item.name + (item.phone ? ' · ' + item.phone : '')).replace(/</g,'&lt;').replace(/"/g,'&quot;')})">
@@ -4296,6 +4306,16 @@ function filterAssignSearch(which) {
     }
   }).join('');
   drop.classList.add('open');
+}
+
+function blurAutoSelectAssign(which) {
+  // On blur: if nothing selected yet but dropdown has items, auto-select the first match
+  const isInq = which === 'inq';
+  const idEl = document.getElementById(isInq ? 'aInquiryId' : 'aJobId');
+  if (idEl.value) return; // already selected
+  const drop = document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop');
+  const first = drop.querySelector('.adrop-item');
+  if (first) first.click();
 }
 
 function selectAssignItem(which, id, label) {
