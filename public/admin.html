@@ -2099,14 +2099,25 @@ tr:hover td{background:var(--sky-light)}
     <div id="aContractFileInfo" style="font-size:.82rem;color:var(--gray-500);margin:.3rem 0"></div>
     <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%;margin-top:.3rem">
   </div>
-  <!-- Estimate Time (multi-shift) -->
+  <!-- Estimate Time (weekly schedule) -->
   <div class="form-section" style="margin-top:.75rem;border:1px solid #e0e7ff;border-radius:8px;padding:.75rem 1rem;background:#f5f7ff">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
-      <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#4338ca;letter-spacing:.04em">⏱ Estimate Time</label>
-      <button type="button" onclick="addShift()" style="font-size:.78rem;padding:.25rem .7rem;border-radius:6px;border:1px solid #a5b4fc;background:#eef2ff;color:#4338ca;cursor:pointer;font-weight:600">+ Add Shift</button>
+    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#4338ca;letter-spacing:.04em;display:block;margin-bottom:.65rem">⏱ Estimate Time</label>
+    <!-- Work period dates -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem;align-items:end">
+      <div>
+        <div style="font-size:.78rem;color:#6366f1;font-weight:600;margin-bottom:.25rem">开始日期</div>
+        <input type="date" id="aWorkStart" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;width:100%;box-sizing:border-box">
+      </div>
+      <div>
+        <div style="font-size:.78rem;color:#6366f1;font-weight:600;margin-bottom:.25rem">结束日期</div>
+        <input type="date" id="aWorkEnd" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;width:100%;box-sizing:border-box;margin-bottom:.3rem">
+        <label style="display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:#4338ca;cursor:pointer;margin-top:.3rem">
+          <input type="checkbox" id="aWorkUntilFurther" onchange="toggleUntilFurther(this)"> Until further notice
+        </label>
+      </div>
     </div>
-    <div id="aShiftsList" style="display:flex;flex-direction:column;gap:.5rem"></div>
-    <div id="aShiftsEmpty" style="font-size:.82rem;color:var(--gray-400);padding:.4rem 0">No shifts added yet. Click "+ Add Shift" to add a time block.</div>
+    <!-- Weekly schedule rows (built by JS) -->
+    <div id="aWeeklySchedule"></div>
   </div>
 
   <!-- Task Requirements -->
@@ -4519,63 +4530,72 @@ function selectPartnerItem(id, name) {
   document.getElementById('jPartnerDrop').classList.remove('open');
 }
 
-// ── Estimate Time (multi-shift) helpers ──────────────────────────
-let _shiftCounter = 0;
+// ── Estimate Time (weekly schedule) helpers ───────────────────────
+const WEEK_DAYS = [
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+  { key: 'sun', label: 'Sun' },
+];
 
-const SHIFT_INP = 'border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.83rem;background:#fff';
-const TIME_INP  = `${SHIFT_INP};width:80px;text-align:center`;
+const _SINP = 'border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.83rem;background:#fff';
+const _TINP = `${_SINP};text-align:center`;
 
-function initEstimateTime(schedJson) {
-  _shiftCounter = 0;
-  const list = document.getElementById('aShiftsList');
-  list.innerHTML = '';
-  let data = null;
-  try { data = JSON.parse(schedJson || 'null'); } catch {}
-  const shifts = (data && data.type === 'estimate' && Array.isArray(data.shifts)) ? data.shifts : [];
-  if (shifts.length) {
-    shifts.forEach(s => addShift(s));
-  }
-  updateShiftsEmpty();
+function buildWeeklySchedule() {
+  const wrap = document.getElementById('aWeeklySchedule');
+  wrap.innerHTML = '';
+  WEEK_DAYS.forEach(d => {
+    const row = document.createElement('div');
+    row.id = `week-row-${d.key}`;
+    row.style.cssText = 'display:grid;grid-template-columns:38px 60px 1fr auto 1fr auto;gap:.35rem;align-items:center;padding:.35rem .5rem;border-radius:6px;margin-bottom:.3rem;background:#eef2ff;border:1px solid #c7d2fe';
+    row.innerHTML = `
+      <span style="font-weight:700;font-size:.82rem;color:#4338ca">${d.label}</span>
+      <label style="display:flex;align-items:center;gap:.2rem;font-size:.76rem;color:#6b7280;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="rest-${d.key}" onchange="toggleDayRest('${d.key}')"> 休息
+      </label>
+      <input type="text" id="start-${d.key}" placeholder="09:00" maxlength="5"
+        style="${_TINP};width:100%" onblur="fmtShiftTime(this)">
+      <span style="color:#a5b4fc;font-weight:700">→</span>
+      <input type="text" id="end-${d.key}" placeholder="17:00" maxlength="5"
+        style="${_TINP};width:100%" onblur="fmtShiftTime(this)">
+      <button type="button" onclick="copyDayTime('${d.key}')" title="Copy to all working days"
+        style="font-size:.72rem;padding:.2rem .4rem;border-radius:5px;border:1px solid #a5b4fc;background:#e0e7ff;color:#4338ca;cursor:pointer;white-space:nowrap">Copy</button>
+    `;
+    wrap.appendChild(row);
+  });
 }
 
-const WEEKDAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-
-function addShift(saved) {
-  const idx = _shiftCounter++;
-  const s = saved || {};
-  const list = document.getElementById('aShiftsList');
-  const div = document.createElement('div');
-  div.id = `shift-row-${idx}`;
-  div.style.cssText = 'display:grid;grid-template-columns:1fr auto auto auto auto auto;gap:.4rem;align-items:center;background:#eef2ff;border:1px solid #c7d2fe;border-radius:7px;padding:.45rem .6rem';
-  const dayOptions = WEEKDAYS.map(d => `<option value="${d}"${s.day===d?' selected':''}>${d}</option>`).join('');
-  div.innerHTML = `
-    <input placeholder="Shift name (e.g. Morning Shift)" value="${esc(s.name||'')}"
-      style="${SHIFT_INP};width:100%" id="shift-name-${idx}">
-    <select style="${SHIFT_INP};width:120px" id="shift-day-${idx}">
-      <option value="">-- Day --</option>
-      ${dayOptions}
-    </select>
-    <input type="text" placeholder="Start" value="${esc(s.start||'')}" maxlength="5"
-      style="${TIME_INP}" id="shift-start-${idx}" onblur="fmtShiftTime(this)">
-    <span style="color:#a5b4fc;font-weight:700">→</span>
-    <input type="text" placeholder="End" value="${esc(s.end||'')}" maxlength="5"
-      style="${TIME_INP}" id="shift-end-${idx}" onblur="fmtShiftTime(this)">
-    <button type="button" onclick="removeShift(${idx})"
-      style="background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:5px;padding:.2rem .5rem;cursor:pointer;font-size:.82rem;flex-shrink:0">✕</button>
-  `;
-  list.appendChild(div);
-  updateShiftsEmpty();
+function toggleDayRest(key) {
+  const isRest = document.getElementById(`rest-${key}`).checked;
+  const row = document.getElementById(`week-row-${key}`);
+  const s = document.getElementById(`start-${key}`);
+  const e = document.getElementById(`end-${key}`);
+  s.disabled = isRest; e.disabled = isRest;
+  row.style.background = isRest ? '#f3f4f6' : '#eef2ff';
+  row.style.borderColor = isRest ? '#d1d5db' : '#c7d2fe';
+  s.style.background = isRest ? '#f3f4f6' : '#fff';
+  e.style.background = isRest ? '#f3f4f6' : '#fff';
 }
 
-function removeShift(idx) {
-  const el = document.getElementById(`shift-row-${idx}`);
-  if (el) el.remove();
-  updateShiftsEmpty();
+function copyDayTime(key) {
+  const start = document.getElementById(`start-${key}`).value;
+  const end   = document.getElementById(`end-${key}`).value;
+  WEEK_DAYS.forEach(d => {
+    if (d.key === key) return;
+    if (document.getElementById(`rest-${d.key}`).checked) return;
+    document.getElementById(`start-${d.key}`).value = start;
+    document.getElementById(`end-${d.key}`).value   = end;
+  });
 }
 
-function updateShiftsEmpty() {
-  const list = document.getElementById('aShiftsList');
-  document.getElementById('aShiftsEmpty').style.display = list.children.length ? 'none' : '';
+function toggleUntilFurther(cb) {
+  const endInput = document.getElementById('aWorkEnd');
+  endInput.disabled = cb.checked;
+  endInput.style.opacity = cb.checked ? '0.4' : '1';
+  if (cb.checked) endInput.value = '';
 }
 
 function fmtShiftTime(el) {
@@ -4597,18 +4617,44 @@ function fmtShiftTime(el) {
   }
 }
 
+function initEstimateTime(schedJson) {
+  buildWeeklySchedule();
+  let data = null;
+  try { data = JSON.parse(schedJson || 'null'); } catch {}
+  // Work period
+  document.getElementById('aWorkStart').value = (data && data.workStart) || '';
+  const untilFurther = !!(data && data.untilFurther);
+  document.getElementById('aWorkUntilFurther').checked = untilFurther;
+  document.getElementById('aWorkEnd').value = (!untilFurther && data && data.workEnd) ? data.workEnd : '';
+  toggleUntilFurther(document.getElementById('aWorkUntilFurther'));
+  // Weekly days
+  const days = (data && data.days) || {};
+  WEEK_DAYS.forEach(d => {
+    const info = days[d.key] || {};
+    document.getElementById(`rest-${d.key}`).checked = !!info.rest;
+    document.getElementById(`start-${d.key}`).value  = info.start || '';
+    document.getElementById(`end-${d.key}`).value    = info.end   || '';
+    toggleDayRest(d.key);
+  });
+}
+
 function getEstimateTimeJson() {
-  const list = document.getElementById('aShiftsList');
-  const shifts = [...list.children].map(row => {
-    const idx = row.id.replace('shift-row-', '');
-    return {
-      name:  document.getElementById(`shift-name-${idx}`)?.value?.trim() || '',
-      day:   document.getElementById(`shift-day-${idx}`)?.value || '',
-      start: document.getElementById(`shift-start-${idx}`)?.value || '',
-      end:   document.getElementById(`shift-end-${idx}`)?.value || '',
+  const days = {};
+  WEEK_DAYS.forEach(d => {
+    days[d.key] = {
+      rest:  document.getElementById(`rest-${d.key}`).checked,
+      start: document.getElementById(`start-${d.key}`).value || '',
+      end:   document.getElementById(`end-${d.key}`).value   || '',
     };
-  }).filter(s => s.name || s.day || s.start || s.end);
-  return JSON.stringify({ type: 'estimate', shifts });
+  });
+  const untilFurther = document.getElementById('aWorkUntilFurther').checked;
+  return JSON.stringify({
+    type: 'estimate',
+    workStart: document.getElementById('aWorkStart').value || '',
+    workEnd:   untilFurther ? '' : (document.getElementById('aWorkEnd').value || ''),
+    untilFurther,
+    days,
+  });
 }
 
 // ── Task Requirements helpers ─────────────────────────────────────
