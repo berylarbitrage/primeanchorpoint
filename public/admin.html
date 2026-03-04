@@ -2031,6 +2031,13 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="form-section" style="margin-top:.75rem;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;background:#eff6ff">
     <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#1d4ed8;display:block;margin-bottom:.5rem">📍 工作地点（打卡围栏）</label>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
+      <button type="button" class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #86efac;white-space:nowrap" onclick="toggleAssignJobAddrPicker()">📋 从职位导入地址</button>
+      <span id="aJobAddrPickerStatus" style="font-size:.8rem;color:var(--gray-400)"></span>
+    </div>
+    <div id="aJobAddrPickerWrap" style="display:none;margin-bottom:.5rem;border:1px solid var(--gray-200);border-radius:8px;max-height:180px;overflow-y:auto">
+      <div id="aJobAddrPickerList"></div>
+    </div>
     <div class="field" style="margin-bottom:.5rem">
       <label>工作地址 *</label>
       <div style="display:flex;gap:.5rem">
@@ -4091,6 +4098,8 @@ async function openAssignModal(assignment) {
   document.getElementById('aWorkLng').value = assignment ? (assignment.work_lng || '') : '';
   document.getElementById('aWorkRadius').value = assignment ? (assignment.work_radius || 200) : 200;
   document.getElementById('aWorkGeoStatus').textContent = '';
+  document.getElementById('aJobAddrPickerWrap').style.display = 'none';
+  document.getElementById('aJobAddrPickerStatus').textContent = '';
   ['aWorkAddrErr','aWorkLatErr','aWorkLngErr'].forEach(id => document.getElementById(id).style.display='none');
   // Benefits toggle
   const activeBens = assignment && assignment.benefits ? assignment.benefits.split(',').map(s=>s.trim()) : [];
@@ -4446,6 +4455,36 @@ document.addEventListener('click', e => {
 function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
 
 function editAssignment(a) { openAssignModal(a); }
+
+function toggleAssignJobAddrPicker() {
+  const wrap = document.getElementById('aJobAddrPickerWrap');
+  if (wrap.style.display !== 'none') { wrap.style.display = 'none'; return; }
+  // If a job is already selected, import its address directly
+  const jobId = parseInt(document.getElementById('aJobId').value);
+  if (jobId) {
+    const j = (_assignJobs || []).find(x => x.id === jobId);
+    if (j && j.location) { pickAssignJobAddr(j.id); return; }
+  }
+  const jobs = (_assignJobs || []).filter(j => j.location);
+  if (!jobs.length) { document.getElementById('aJobAddrPickerStatus').textContent = '暂无有地址的职位'; return; }
+  document.getElementById('aJobAddrPickerList').innerHTML = jobs.map(j =>
+    `<div onclick="pickAssignJobAddr(${j.id})" style="padding:.55rem .85rem;cursor:pointer;font-size:.86rem;border-bottom:1px solid var(--gray-100)" onmouseenter="this.style.background='#f0fdf4'" onmouseleave="this.style.background=''">
+      <strong>${esc(j.title||'')}</strong> <span style="color:var(--gray-400);font-size:.8rem">${esc(j.company_name||'')}</span><br>
+      <span style="color:var(--gray-600)">${esc(j.location)}</span>
+    </div>`
+  ).join('');
+  wrap.style.display = '';
+}
+
+function pickAssignJobAddr(jobId) {
+  const j = (_assignJobs || []).find(x => x.id === jobId);
+  if (!j || !j.location) return;
+  document.getElementById('aWorkAddress').value = j.location;
+  document.getElementById('aWorkAddrErr').style.display = 'none';
+  document.getElementById('aJobAddrPickerWrap').style.display = 'none';
+  document.getElementById('aJobAddrPickerStatus').textContent = '';
+  geocodeWorkAddress();
+}
 
 async function geocodeWorkAddress() {
   const addr = document.getElementById('aWorkAddress').value.trim();
