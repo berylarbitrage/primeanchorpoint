@@ -518,6 +518,19 @@ tr:last-child td{border-bottom:none}
           </div>
           <button class="btn-punch btn-punch-in" id="btnPunch" onclick="startPunchFlow()" disabled>获取位置中…</button>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
+          <!-- Punch confirmation modal overlay -->
+          <div id="punchConfirmOverlay" style="display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
+            <div style="background:#fff;border-radius:16px;padding:1.75rem 1.5rem;width:88%;max-width:310px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+              <div id="punchConfirmIcon" style="font-size:2.2rem;margin-bottom:.4rem"></div>
+              <div id="punchConfirmTypeLabel" style="font-size:1.2rem;font-weight:700;margin-bottom:.3rem"></div>
+              <div id="punchConfirmTimeLabel" style="font-size:1.5rem;font-weight:800;color:var(--blue);margin-bottom:.2rem"></div>
+              <div id="punchConfirmDateLabel" style="font-size:.82rem;color:var(--gray-400);margin-bottom:1.5rem"></div>
+              <div style="display:flex;gap:.75rem">
+                <button onclick="closePunchConfirm()" style="flex:1;padding:.75rem;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.95rem;font-weight:600;background:#fff;cursor:pointer;color:var(--gray-600)">取消</button>
+                <button id="punchConfirmOkBtn" onclick="executePunch()" style="flex:2;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;color:#fff;cursor:pointer">确认打卡</button>
+              </div>
+            </div>
+          </div>
           <!-- Photo capture step (shown only when clocking in) -->
           <div id="punchPhotoStep" style="display:none;width:100%;max-width:340px;margin-top:1rem;text-align:center">
             <div style="font-size:.88rem;color:var(--gray-600);margin-bottom:.6rem">请拍一张工作地点的照片</div>
@@ -1569,7 +1582,8 @@ function enablePunchBtn(ready) {
   const canPunch = ready && !!_selectedPunchType;
   btn.disabled = !canPunch;
   if (ready) {
-    const labels = { in: '▶ 上班打卡 / Clock In', break: '☕ 休息打卡 / Break', out: '⏹ 下班打卡 / Clock Out' };
+    const onBreak = _punchStatus?.on_break;
+    const labels = { in: '▶ 上班打卡 / Clock In', break: onBreak ? '☕ 结束休息 / End Break' : '☕ 开始休息 / Start Break', out: '⏹ 下班打卡 / Clock Out' };
     const classes = { in: 'btn-punch btn-punch-in', break: 'btn-punch btn-punch-in', out: 'btn-punch btn-punch-out' };
     if (_selectedPunchType) {
       btn.textContent = labels[_selectedPunchType];
@@ -1609,11 +1623,20 @@ async function loadPunchStatus() {
     return;
   }
 
+  // Update break button label based on on_break state
+  const breakBtn = document.getElementById('ptBtnBreak');
+  if (breakBtn) breakBtn.textContent = s.on_break ? '☕ 结束休息' : '☕ 休息';
+
   if (s.clocked_in && s.open_entry) {
     const ci = new Date(s.open_entry.clock_in);
-    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
+    if (s.on_break) {
+      statusEl.innerHTML = '<span style="color:var(--orange);font-weight:600">● 休息中</span>';
+      subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+    } else {
+      statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
+      subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+    }
     timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
     selectorWrap.style.display = 'none';
   } else if (!s.has_active_job) {
     statusEl.innerHTML = '<span style="color:var(--orange)">● 未在班</span>';
@@ -1647,18 +1670,36 @@ let _pendingPunchPhoto = null; // File object from camera
 
 function startPunchFlow() {
   if (!_selectedPunchType) { showToast('请先选择打卡类型 / Please select a punch type', 'error'); return; }
-  if (_selectedPunchType !== 'in') {
-    // Break and clock-out: no photo needed
+  const onBreak = _punchStatus?.on_break;
+  const icons  = { in: '▶', break: onBreak ? '☕' : '☕', out: '⏹' };
+  const labels = { in: '上班打卡 / Clock In', break: onBreak ? '结束休息 / End Break' : '开始休息 / Start Break', out: '下班打卡 / Clock Out' };
+  const colors = { in: 'var(--green)', break: 'var(--orange)', out: 'var(--red)' };
+  const now = new Date();
+  document.getElementById('punchConfirmIcon').textContent = icons[_selectedPunchType];
+  document.getElementById('punchConfirmTypeLabel').textContent = labels[_selectedPunchType];
+  document.getElementById('punchConfirmTimeLabel').textContent = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  document.getElementById('punchConfirmDateLabel').textContent = now.toLocaleDateString('zh-CN', {year:'numeric', month:'long', day:'numeric', weekday:'long'});
+  document.getElementById('punchConfirmOkBtn').style.background = colors[_selectedPunchType];
+  document.getElementById('punchConfirmOverlay').style.display = 'flex';
+}
+
+function closePunchConfirm() {
+  document.getElementById('punchConfirmOverlay').style.display = 'none';
+}
+
+function executePunch() {
+  closePunchConfirm();
+  if (_selectedPunchType === 'in') {
+    // Clock-in: require photo first
+    _pendingPunchPhoto = null;
+    document.getElementById('punchPhotoPreview').style.display = 'none';
+    document.getElementById('punchPhotoConfirmRow').style.display = 'none';
+    document.getElementById('punchPhotoInput').value = '';
+    document.getElementById('btnPunch').style.display = 'none';
+    document.getElementById('punchPhotoStep').style.display = '';
+  } else {
     doPunch(null);
-    return;
   }
-  // Clock-in: require photo first
-  _pendingPunchPhoto = null;
-  document.getElementById('punchPhotoPreview').style.display = 'none';
-  document.getElementById('punchPhotoConfirmRow').style.display = 'none';
-  document.getElementById('punchPhotoInput').value = '';
-  document.getElementById('btnPunch').style.display = 'none';
-  document.getElementById('punchPhotoStep').style.display = '';
 }
 
 function onPunchPhotoSelected(input) {
@@ -1719,10 +1760,14 @@ async function doPunch(photo) {
       const geoMsg = r.geo_verified ? (r.site_name ? ` · 📍${r.site_name}` : ' · 位置已验证') : '';
       showToast(`✅ 上班打卡成功！${r.job_title ? ' · ' + r.job_title : ''}${geoMsg}`, 'success');
     }
+  } else if (r.action === 'break_start') {
+    showToast('☕ 休息开始，记得打卡结束休息！', 'success');
+  } else if (r.action === 'break_end') {
+    const bMin = r.break_minutes || 0;
+    showToast(`✅ 休息结束！休息了 ${bMin} 分钟`, 'success');
   } else if (r.action === 'out') {
     const hrs = r.total_hours ? r.total_hours.toFixed(2) : '0';
-    const typeLabel = r.punch_type === 'break' ? '休息打卡' : '下班打卡';
-    showToast(`✅ ${typeLabel}成功！本次 ${hrs}h`, 'success');
+    showToast(`✅ 下班打卡成功！本次 ${hrs}h`, 'success');
   }
   _pendingPunchPhoto = null;
   document.getElementById('punchPhotoStep').style.display = 'none';
