@@ -2064,19 +2064,28 @@ tr:hover td{background:var(--sky-light)}
     <div id="aContractFileInfo" style="font-size:.82rem;color:var(--gray-500);margin:.3rem 0"></div>
     <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%;margin-top:.3rem">
   </div>
-  <div class="form-section" style="margin-top:.75rem">
-    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">排班时间</label>
-    <table class="sched-table" id="aSchedTable">
-      <thead><tr><th>星期</th><th>上班</th><th>下班</th><th>休息次数</th><th>休息日</th><th></th></tr></thead>
-      <tbody id="aSchedBody"></tbody>
-    </table>
-    <div id="schedCopyPanel">
-      <span style="font-weight:600;color:var(--gray-600);margin-right:.5rem">复制到：</span>
-      <span id="schedCopyCheckboxes"></span>
-      <button type="button" onclick="schedCopySelectAll()" style="font-size:.78rem;padding:.2rem .5rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;background:#fff;margin-right:.3rem">全选</button>
-      <button type="button" onclick="schedCopyApply()" style="font-size:.78rem;padding:.2rem .6rem;border-radius:5px;border:1px solid #93c5fd;cursor:pointer;background:#dbeafe;font-weight:600">确定</button>
-      <button type="button" onclick="schedCopyClose()" style="font-size:.78rem;padding:.2rem .5rem;border-radius:5px;border:1px solid var(--gray-200);cursor:pointer;background:#fff;margin-left:.3rem">取消</button>
+  <!-- Estimate Time (multi-shift) -->
+  <div class="form-section" style="margin-top:.75rem;border:1px solid #e0e7ff;border-radius:8px;padding:.75rem 1rem;background:#f5f7ff">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+      <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#4338ca;letter-spacing:.04em">⏱ Estimate Time</label>
+      <button type="button" onclick="addShift()" style="font-size:.78rem;padding:.25rem .7rem;border-radius:6px;border:1px solid #a5b4fc;background:#eef2ff;color:#4338ca;cursor:pointer;font-weight:600">+ Add Shift</button>
     </div>
+    <div id="aShiftsList" style="display:flex;flex-direction:column;gap:.5rem"></div>
+    <div id="aShiftsEmpty" style="font-size:.82rem;color:var(--gray-400);padding:.4rem 0">No shifts added yet. Click "+ Add Shift" to add a time block.</div>
+  </div>
+
+  <!-- Task Requirements -->
+  <div class="form-section" style="margin-top:.75rem;border:1px solid #d1fae5;border-radius:8px;padding:.75rem 1rem;background:#f0fdf4">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+      <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#065f46;letter-spacing:.04em">📋 Task Requirements</label>
+      <div style="display:flex;gap:.4rem">
+        <button type="button" onclick="addTask('simple')" style="font-size:.75rem;padding:.22rem .6rem;border-radius:6px;border:1px solid #6ee7b7;background:#d1fae5;color:#065f46;cursor:pointer;font-weight:600" title="Quick one-line task">+ Simple</button>
+        <button type="button" onclick="addTask('detailed')" style="font-size:.75rem;padding:.22rem .6rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-weight:600" title="Task with full description">+ Detailed</button>
+        <button type="button" onclick="addTask('checklist')" style="font-size:.75rem;padding:.22rem .6rem;border-radius:6px;border:1px solid #fcd34d;background:#fef9c3;color:#92400e;cursor:pointer;font-weight:600" title="Task with step-by-step checklist">+ Checklist</button>
+      </div>
+    </div>
+    <div id="aTasksList" style="display:flex;flex-direction:column;gap:.65rem"></div>
+    <div id="aTasksEmpty" style="font-size:.82rem;color:var(--gray-400);padding:.4rem 0">No tasks added yet. Choose a task type above to add requirements.</div>
   </div>
   <div class="form-section" style="margin-top:.75rem;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;background:#eff6ff">
     <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#1d4ed8;display:block;margin-bottom:.5rem">📍 工作地点（打卡围栏）</label>
@@ -4290,8 +4299,8 @@ async function openAssignModal(assignment) {
   _assignInqs = inqs;
   _assignJobs = jobs.filter(j => j.active);
 
-  schedCopyClose();
-  initSchedTable(assignment ? (assignment.work_schedule || '{}') : '{}');
+  initEstimateTime(assignment ? (assignment.work_schedule || 'null') : 'null');
+  initTaskRequirements(assignment ? (assignment.task_requirements || '[]') : '[]');
 
   document.getElementById('assignModal').classList.add('show');
   captureModalState('assignModal');
@@ -4317,127 +4326,63 @@ function selectPartnerItem(id, name) {
   document.getElementById('jPartnerDrop').classList.remove('open');
 }
 
-// ── Work schedule helpers ────────────────────────────────────────
-const SCHED_DAYS = [
-  { key:'mon', label:'周一' }, { key:'tue', label:'周二' }, { key:'wed', label:'周三' },
-  { key:'thu', label:'周四' }, { key:'fri', label:'周五' },
-  { key:'sat', label:'周六' }, { key:'sun', label:'周日' }
-];
+// ── Estimate Time (multi-shift) helpers ──────────────────────────
+let _shiftCounter = 0;
 
-const SCHED_INP = 'border:1px solid var(--gray-200);border-radius:5px;padding:.2rem .4rem;font-size:.83rem';
+const SHIFT_INP = 'border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.83rem;background:#fff';
+const TIME_INP  = `${SHIFT_INP};width:80px;text-align:center`;
 
-function initSchedTable(schedJson) {
-  let sched = {};
-  try { sched = JSON.parse(schedJson || '{}'); } catch {}
-  document.getElementById('aSchedBody').innerHTML = SCHED_DAYS.map(({ key, label }) => {
-    const d = sched[key] || {};
-    const off = d.off ? true : (key === 'sun' && !sched[key] ? true : false);
-    const dis = off ? 'disabled' : '';
-    return `<tr id="sched-row-${key}" class="${off ? 'is-off' : ''}">
-      <td style="font-weight:600;white-space:nowrap">${label}</td>
-      <td><input type="text" class="sched-time" id="sched-start-${key}" value="${(d.start||'').slice(0,5)}" placeholder="HH:MM" maxlength="5" ${dis} onblur="fmtSchedTime(this)"></td>
-      <td><input type="text" class="sched-time" id="sched-end-${key}" value="${(d.end||'').slice(0,5)}" placeholder="HH:MM" maxlength="5" ${dis} onblur="fmtSchedTime(this)"></td>
-      <td><input type="number" id="sched-breaks-${key}" min="0" max="9" value="${d.breaks??''}" placeholder="0"
-        style="${SCHED_INP};width:54px;text-align:center" ${dis}
-        oninput="renderBreakTimes('${key}')"></td>
-      <td><label class="sched-day-off">
-        <input type="checkbox" id="sched-off-${key}" onchange="toggleSchedOff('${key}')" ${off ? 'checked' : ''}>
-        休息
-      </label></td>
-      <td style="width:1px;padding-left:.2rem">
-        <button type="button" id="sched-copy-btn-${key}" onclick="schedCopyOpen('${key}')" title="复制到其他天" ${dis}
-          style="background:none;border:none;cursor:pointer;color:var(--gray-400);padding:3px;border-radius:4px;line-height:1;display:block">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-            <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-          </svg>
-        </button>
-      </td>
-    </tr>
-    <tr id="sched-btimes-row-${key}" style="display:none">
-      <td></td>
-      <td colspan="5" id="sched-btimes-${key}" style="padding:.3rem .5rem .6rem"></td>
-    </tr>`;
-  }).join('');
-  // Restore saved break times
-  SCHED_DAYS.forEach(({ key }) => {
-    const d = sched[key];
-    if (d && d.break_times && d.break_times.length) {
-      renderBreakTimes(key, d.break_times);
-    }
-  });
-}
-
-function renderBreakTimes(key, savedTimes) {
-  const count = parseInt(document.getElementById('sched-breaks-' + key).value) || 0;
-  const container = document.getElementById('sched-btimes-' + key);
-  const row = document.getElementById('sched-btimes-row-' + key);
-  if (!count) { row.style.display = 'none'; container.innerHTML = ''; return; }
-  row.style.display = '';
-  const off = document.getElementById('sched-off-' + key).checked;
-  const dis = off ? 'disabled' : '';
-  let html = '<div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center">';
-  for (let i = 0; i < count; i++) {
-    const s = ((savedTimes && savedTimes[i]) ? savedTimes[i].start || '' : '').slice(0, 5);
-    const e = ((savedTimes && savedTimes[i]) ? savedTimes[i].end   || '' : '').slice(0, 5);
-    html += `<span style="display:inline-flex;align-items:center;gap:.3rem;background:var(--sky-light);border:1px solid var(--gray-200);border-radius:6px;padding:.25rem .5rem;font-size:.8rem">
-      <span style="color:var(--gray-500);white-space:nowrap">休息${i+1}</span>
-      <input type="text" class="sched-time" id="sched-bt-s-${key}-${i}" value="${s}" placeholder="HH:MM" maxlength="5" ${dis} onblur="fmtSchedTime(this)">
-      <span style="color:var(--gray-400)">—</span>
-      <input type="text" class="sched-time" id="sched-bt-e-${key}-${i}" value="${e}" placeholder="HH:MM" maxlength="5" ${dis} onblur="fmtSchedTime(this)">
-    </span>`;
+function initEstimateTime(schedJson) {
+  _shiftCounter = 0;
+  const list = document.getElementById('aShiftsList');
+  list.innerHTML = '';
+  let data = null;
+  try { data = JSON.parse(schedJson || 'null'); } catch {}
+  const shifts = (data && data.type === 'estimate' && Array.isArray(data.shifts)) ? data.shifts : [];
+  if (shifts.length) {
+    shifts.forEach(s => addShift(s));
   }
-  html += '</div>';
-  container.innerHTML = html;
+  updateShiftsEmpty();
 }
 
-function toggleSchedOff(key) {
-  const off = document.getElementById('sched-off-' + key).checked;
-  document.getElementById('sched-row-' + key).classList.toggle('is-off', off);
-  ['sched-start-','sched-end-','sched-breaks-'].forEach(p => {
-    document.getElementById(p + key).disabled = off;
-  });
-  // Also toggle break time inputs in sub-row
-  const count = parseInt(document.getElementById('sched-breaks-' + key).value) || 0;
-  for (let i = 0; i < count; i++) {
-    const bs = document.getElementById(`sched-bt-s-${key}-${i}`);
-    const be = document.getElementById(`sched-bt-e-${key}-${i}`);
-    if (bs) bs.disabled = off;
-    if (be) be.disabled = off;
-  }
-  const copyBtn = document.getElementById('sched-copy-btn-' + key);
-  if (copyBtn) copyBtn.disabled = off;
-  if (off) document.getElementById('sched-btimes-row-' + key).style.display = 'none';
-  else if (count) document.getElementById('sched-btimes-row-' + key).style.display = '';
+function addShift(saved) {
+  const idx = _shiftCounter++;
+  const s = saved || {};
+  const list = document.getElementById('aShiftsList');
+  const div = document.createElement('div');
+  div.id = `shift-row-${idx}`;
+  div.style.cssText = 'display:grid;grid-template-columns:1fr auto auto auto auto auto;gap:.4rem;align-items:center;background:#eef2ff;border:1px solid #c7d2fe;border-radius:7px;padding:.45rem .6rem';
+  div.innerHTML = `
+    <input placeholder="Shift name (e.g. Morning Shift)" value="${esc(s.name||'')}"
+      style="${SHIFT_INP};width:100%" id="shift-name-${idx}">
+    <input type="date" value="${esc(s.date||'')}" style="${SHIFT_INP};width:130px" id="shift-date-${idx}">
+    <input type="text" placeholder="Start" value="${esc(s.start||'')}" maxlength="5"
+      style="${TIME_INP}" id="shift-start-${idx}" onblur="fmtShiftTime(this)">
+    <span style="color:#a5b4fc;font-weight:700">→</span>
+    <input type="text" placeholder="End" value="${esc(s.end||'')}" maxlength="5"
+      style="${TIME_INP}" id="shift-end-${idx}" onblur="fmtShiftTime(this)">
+    <button type="button" onclick="removeShift(${idx})"
+      style="background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:5px;padding:.2rem .5rem;cursor:pointer;font-size:.82rem;flex-shrink:0">✕</button>
+  `;
+  list.appendChild(div);
+  updateShiftsEmpty();
 }
 
-function getSchedJson() {
-  const out = {};
-  SCHED_DAYS.forEach(({ key }) => {
-    const off = document.getElementById('sched-off-' + key).checked;
-    const count = off ? 0 : (parseInt(document.getElementById('sched-breaks-' + key).value) || 0);
-    const break_times = [];
-    for (let i = 0; i < count; i++) {
-      const bs = document.getElementById(`sched-bt-s-${key}-${i}`);
-      const be = document.getElementById(`sched-bt-e-${key}-${i}`);
-      break_times.push({ start: bs ? bs.value : '', end: be ? be.value : '' });
-    }
-    out[key] = {
-      start:  off ? '' : (document.getElementById('sched-start-' + key).value || '').slice(0,5),
-      end:    off ? '' : (document.getElementById('sched-end-'   + key).value || '').slice(0,5),
-      breaks: off ? '' : (document.getElementById('sched-breaks-' + key).value || ''),
-      break_times: break_times.map(b => ({ start: (b.start||'').slice(0,5), end: (b.end||'').slice(0,5) })),
-      off
-    };
-  });
-  return JSON.stringify(out);
+function removeShift(idx) {
+  const el = document.getElementById(`shift-row-${idx}`);
+  if (el) el.remove();
+  updateShiftsEmpty();
 }
-// Format / validate HH:MM text input on blur
-function fmtSchedTime(el) {
+
+function updateShiftsEmpty() {
+  const list = document.getElementById('aShiftsList');
+  document.getElementById('aShiftsEmpty').style.display = list.children.length ? 'none' : '';
+}
+
+function fmtShiftTime(el) {
   let v = el.value.trim().replace(/[^\d:]/g, '');
-  if (!v) { el.classList.remove('err'); return; }
-  // Strip seconds: "10:00:00" → "10:00"
+  if (!v) { el.style.borderColor = ''; return; }
   if (/^\d{1,2}:\d{2}:\d{2}$/.test(v)) v = v.slice(0, 5);
-  // "930" → "09:30", "9:30" → "09:30"
   if (/^\d{3,4}$/.test(v)) {
     const h = v.slice(0, v.length - 2), m = v.slice(-2);
     v = h.padStart(2,'0') + ':' + m;
@@ -4446,71 +4391,209 @@ function fmtSchedTime(el) {
   }
   const [h, m] = v.split(':').map(Number);
   if (isNaN(h) || isNaN(m) || h > 23 || m > 59) {
-    el.classList.add('err');
+    el.style.borderColor = '#dc2626';
   } else {
-    el.classList.remove('err');
+    el.style.borderColor = '';
     el.value = String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
   }
 }
-// ── Sched row copy (static panel, no DOM insertion) ───────────────
-let _schedCopyFrom = null;
 
-function schedCopyOpen(fromKey) {
-  if (_schedCopyFrom === fromKey) { schedCopyClose(); return; }
-  schedCopyClose();
-  _schedCopyFrom = fromKey;
-
-  // Populate checkboxes in the static panel
-  document.getElementById('schedCopyCheckboxes').innerHTML =
-    SCHED_DAYS.filter(d => d.key !== fromKey)
-      .map(d => `<label><input type="checkbox" value="${d.key}">${d.label}</label>`)
-      .join('');
-
-  document.getElementById('schedCopyPanel').style.display = 'block';
+function getEstimateTimeJson() {
+  const list = document.getElementById('aShiftsList');
+  const shifts = [...list.children].map(row => {
+    const idx = row.id.replace('shift-row-', '');
+    return {
+      name:  document.getElementById(`shift-name-${idx}`)?.value?.trim() || '',
+      date:  document.getElementById(`shift-date-${idx}`)?.value || '',
+      start: document.getElementById(`shift-start-${idx}`)?.value || '',
+      end:   document.getElementById(`shift-end-${idx}`)?.value || '',
+    };
+  }).filter(s => s.name || s.start || s.end);
+  return JSON.stringify({ type: 'estimate', shifts });
 }
 
-function schedCopySelectAll() {
-  const cbs = document.querySelectorAll('#schedCopyCheckboxes input');
-  const all = [...cbs].every(c => c.checked);
-  cbs.forEach(c => c.checked = !all);
+// ── Task Requirements helpers ─────────────────────────────────────
+let _taskCounter = 0;
+
+const TASK_TYPE_META = {
+  simple:   { label: 'Simple',    color: '#065f46', bg: '#d1fae5', border: '#6ee7b7' },
+  detailed: { label: 'Detailed',  color: '#1d4ed8', bg: '#dbeafe', border: '#93c5fd' },
+  checklist:{ label: 'Checklist', color: '#92400e', bg: '#fef9c3', border: '#fcd34d' },
+};
+
+function initTaskRequirements(json) {
+  _taskCounter = 0;
+  document.getElementById('aTasksList').innerHTML = '';
+  let tasks = [];
+  try { tasks = JSON.parse(json || '[]'); } catch {}
+  if (!Array.isArray(tasks)) tasks = [];
+  tasks.forEach(t => addTask(t.type || 'simple', t));
+  updateTasksEmpty();
 }
 
-function schedCopyApply() {
-  const fromKey = _schedCopyFrom;
-  if (!fromKey) return;
+function addTask(type, saved) {
+  const idx = _taskCounter++;
+  const s = saved || {};
+  const meta = TASK_TYPE_META[type] || TASK_TYPE_META.simple;
+  const list = document.getElementById('aTasksList');
+  const div = document.createElement('div');
+  div.id = `task-row-${idx}`;
+  div.dataset.type = type;
+  div.style.cssText = `border:1px solid ${meta.border};border-radius:8px;padding:.6rem .75rem;background:${meta.bg}`;
 
-  const srcStart  = (document.getElementById('sched-start-'  + fromKey).value || '').slice(0,5);
-  const srcEnd    = (document.getElementById('sched-end-'    + fromKey).value || '').slice(0,5);
-  const srcBreaks = document.getElementById('sched-breaks-' + fromKey).value || '0';
-  const srcCount  = parseInt(srcBreaks) || 0;
-  const srcBts = [];
-  for (let i = 0; i < srcCount; i++) {
-    const bs = document.getElementById(`sched-bt-s-${fromKey}-${i}`);
-    const be = document.getElementById(`sched-bt-e-${fromKey}-${i}`);
-    srcBts.push({ start: (bs ? bs.value : '').slice(0,5), end: (be ? be.value : '').slice(0,5) });
+  // Type badge + name header row
+  let inner = `
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem;flex-wrap:wrap">
+      <span style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:${meta.color};background:#fff;border:1px solid ${meta.border};border-radius:20px;padding:1px 8px;white-space:nowrap">${meta.label}</span>
+      <input placeholder="Task Name" value="${esc(s.name||'')}" id="task-name-${idx}"
+        style="flex:1;min-width:160px;border:1px solid ${meta.border};border-radius:5px;padding:.22rem .45rem;font-size:.84rem;font-weight:600;background:#fff">
+      <select onchange="changeTaskType(${idx},this.value)"
+        style="font-size:.75rem;border:1px solid ${meta.border};border-radius:5px;padding:.2rem .4rem;background:#fff;color:${meta.color};cursor:pointer">
+        ${Object.entries(TASK_TYPE_META).map(([k,v])=>`<option value="${k}" ${k===type?'selected':''}>${v.label}</option>`).join('')}
+      </select>
+      <button type="button" onclick="removeTask(${idx})"
+        style="background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:5px;padding:.18rem .5rem;cursor:pointer;font-size:.8rem;flex-shrink:0">✕</button>
+    </div>`;
+
+  if (type === 'simple') {
+    inner += `<input placeholder="Brief description (one line)" value="${esc(s.description||'')}" id="task-desc-${idx}"
+      style="width:100%;border:1px solid ${meta.border};border-radius:5px;padding:.22rem .45rem;font-size:.82rem;background:#fff">`;
+  } else if (type === 'detailed') {
+    inner += `
+      <textarea placeholder="Full task description..." id="task-desc-${idx}"
+        style="width:100%;border:1px solid ${meta.border};border-radius:5px;padding:.3rem .45rem;font-size:.82rem;background:#fff;resize:vertical;min-height:60px">${esc(s.description||'')}</textarea>
+      <input placeholder="Additional notes (optional)" value="${esc(s.notes||'')}" id="task-notes-${idx}"
+        style="width:100%;border:1px solid ${meta.border};border-radius:5px;padding:.22rem .45rem;font-size:.8rem;background:#fff;margin-top:.35rem;color:#6b7280">`;
+  } else if (type === 'checklist') {
+    const steps = Array.isArray(s.steps) ? s.steps : [''];
+    inner += `<div id="task-steps-${idx}" style="display:flex;flex-direction:column;gap:.3rem">`;
+    steps.forEach((st, si) => {
+      inner += checklistStepHtml(idx, si, st);
+    });
+    inner += `</div>
+      <button type="button" onclick="addChecklistStep(${idx})"
+        style="margin-top:.35rem;font-size:.75rem;padding:.18rem .55rem;border-radius:5px;border:1px solid ${meta.border};background:#fff;color:${meta.color};cursor:pointer;font-weight:600">+ Add Step</button>`;
   }
 
-  const toKeys = [...document.querySelectorAll('#schedCopyCheckboxes input:checked')].map(c => c.value);
-  schedCopyClose();
+  div.innerHTML = inner;
+  list.appendChild(div);
+  updateTasksEmpty();
+}
 
-  toKeys.forEach(toKey => {
-    if (document.getElementById('sched-off-' + toKey).checked) return;
-    document.getElementById('sched-start-'  + toKey).value = srcStart;
-    document.getElementById('sched-end-'    + toKey).value = srcEnd;
-    document.getElementById('sched-breaks-' + toKey).value = srcBreaks;
-    renderBreakTimes(toKey, srcBts);
-    const row = document.getElementById('sched-row-' + toKey);
-    if (row) {
-      row.style.transition = 'background .15s';
-      row.style.background = '#d1fae5';
-      setTimeout(() => { row.style.background = ''; }, 800);
-    }
+function checklistStepHtml(taskIdx, stepIdx, value) {
+  return `<div style="display:flex;align-items:center;gap:.35rem" id="task-step-wrap-${taskIdx}-${stepIdx}">
+    <span style="font-size:.75rem;color:#92400e;font-weight:700;min-width:18px">${stepIdx+1}.</span>
+    <input placeholder="Step description" value="${esc(value||'')}" id="task-step-${taskIdx}-${stepIdx}"
+      style="flex:1;border:1px solid #fcd34d;border-radius:5px;padding:.2rem .4rem;font-size:.81rem;background:#fff">
+    <button type="button" onclick="removeChecklistStep(${taskIdx},${stepIdx})"
+      style="background:none;border:none;color:#d97706;cursor:pointer;font-size:.9rem;padding:0 2px;line-height:1">×</button>
+  </div>`;
+}
+
+function addChecklistStep(taskIdx) {
+  const container = document.getElementById(`task-steps-${taskIdx}`);
+  if (!container) return;
+  const stepIdx = container.children.length;
+  container.insertAdjacentHTML('beforeend', checklistStepHtml(taskIdx, stepIdx, ''));
+}
+
+function removeChecklistStep(taskIdx, stepIdx) {
+  const el = document.getElementById(`task-step-wrap-${taskIdx}-${stepIdx}`);
+  if (el) el.remove();
+  // Renumber remaining steps
+  const container = document.getElementById(`task-steps-${taskIdx}`);
+  if (!container) return;
+  [...container.children].forEach((row, i) => {
+    const num = row.querySelector('span');
+    if (num) num.textContent = (i+1) + '.';
   });
 }
 
-function schedCopyClose() {
-  document.getElementById('schedCopyPanel').style.display = 'none';
-  _schedCopyFrom = null;
+function changeTaskType(idx, newType) {
+  // Read current data, remove old row, re-add with new type
+  const nameEl = document.getElementById(`task-name-${idx}`);
+  const descEl = document.getElementById(`task-desc-${idx}`);
+  const notesEl = document.getElementById(`task-notes-${idx}`);
+  const stepsContainer = document.getElementById(`task-steps-${idx}`);
+  const saved = {
+    type: newType,
+    name: nameEl ? nameEl.value : '',
+    description: descEl ? descEl.value : '',
+    notes: notesEl ? notesEl.value : '',
+    steps: stepsContainer ? [...stepsContainer.querySelectorAll('input[id^="task-step-"]')].map(i => i.value) : [],
+  };
+  const row = document.getElementById(`task-row-${idx}`);
+  if (!row) return;
+  // Re-use same idx by reconstructing in place
+  const list = document.getElementById('aTasksList');
+  const meta = TASK_TYPE_META[newType] || TASK_TYPE_META.simple;
+  row.dataset.type = newType;
+  row.style.cssText = `border:1px solid ${meta.border};border-radius:8px;padding:.6rem .75rem;background:${meta.bg}`;
+
+  let inner = `
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem;flex-wrap:wrap">
+      <span style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:${meta.color};background:#fff;border:1px solid ${meta.border};border-radius:20px;padding:1px 8px;white-space:nowrap">${meta.label}</span>
+      <input placeholder="Task Name" value="${esc(saved.name)}" id="task-name-${idx}"
+        style="flex:1;min-width:160px;border:1px solid ${meta.border};border-radius:5px;padding:.22rem .45rem;font-size:.84rem;font-weight:600;background:#fff">
+      <select onchange="changeTaskType(${idx},this.value)"
+        style="font-size:.75rem;border:1px solid ${meta.border};border-radius:5px;padding:.2rem .4rem;background:#fff;color:${meta.color};cursor:pointer">
+        ${Object.entries(TASK_TYPE_META).map(([k,v])=>`<option value="${k}" ${k===newType?'selected':''}>${v.label}</option>`).join('')}
+      </select>
+      <button type="button" onclick="removeTask(${idx})"
+        style="background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:5px;padding:.18rem .5rem;cursor:pointer;font-size:.8rem;flex-shrink:0">✕</button>
+    </div>`;
+
+  if (newType === 'simple') {
+    inner += `<input placeholder="Brief description (one line)" value="${esc(saved.description)}" id="task-desc-${idx}"
+      style="width:100%;border:1px solid ${meta.border};border-radius:5px;padding:.22rem .45rem;font-size:.82rem;background:#fff">`;
+  } else if (newType === 'detailed') {
+    inner += `
+      <textarea placeholder="Full task description..." id="task-desc-${idx}"
+        style="width:100%;border:1px solid ${meta.border};border-radius:5px;padding:.3rem .45rem;font-size:.82rem;background:#fff;resize:vertical;min-height:60px">${esc(saved.description)}</textarea>
+      <input placeholder="Additional notes (optional)" value="${esc(saved.notes)}" id="task-notes-${idx}"
+        style="width:100%;border:1px solid ${meta.border};border-radius:5px;padding:.22rem .45rem;font-size:.8rem;background:#fff;margin-top:.35rem;color:#6b7280">`;
+  } else if (newType === 'checklist') {
+    const steps = saved.steps.length ? saved.steps : [''];
+    inner += `<div id="task-steps-${idx}" style="display:flex;flex-direction:column;gap:.3rem">`;
+    steps.forEach((st, si) => { inner += checklistStepHtml(idx, si, st); });
+    inner += `</div>
+      <button type="button" onclick="addChecklistStep(${idx})"
+        style="margin-top:.35rem;font-size:.75rem;padding:.18rem .55rem;border-radius:5px;border:1px solid ${meta.border};background:#fff;color:${meta.color};cursor:pointer;font-weight:600">+ Add Step</button>`;
+  }
+  row.innerHTML = inner;
+}
+
+function removeTask(idx) {
+  const el = document.getElementById(`task-row-${idx}`);
+  if (el) el.remove();
+  updateTasksEmpty();
+}
+
+function updateTasksEmpty() {
+  const list = document.getElementById('aTasksList');
+  document.getElementById('aTasksEmpty').style.display = list.children.length ? 'none' : '';
+}
+
+function getTasksJson() {
+  const list = document.getElementById('aTasksList');
+  const tasks = [...list.children].map(row => {
+    const idx = row.id.replace('task-row-', '');
+    const type = row.dataset.type || 'simple';
+    const name = document.getElementById(`task-name-${idx}`)?.value?.trim() || '';
+    if (type === 'simple') {
+      return { type, name, description: document.getElementById(`task-desc-${idx}`)?.value?.trim() || '' };
+    } else if (type === 'detailed') {
+      return { type, name,
+        description: document.getElementById(`task-desc-${idx}`)?.value?.trim() || '',
+        notes: document.getElementById(`task-notes-${idx}`)?.value?.trim() || '' };
+    } else if (type === 'checklist') {
+      const steps = [...(document.getElementById(`task-steps-${idx}`)?.querySelectorAll('input[id^="task-step-"]') || [])]
+        .map(i => i.value.trim()).filter(Boolean);
+      return { type, name, steps };
+    }
+    return { type, name };
+  }).filter(t => t.name);
+  return JSON.stringify(tasks);
 }
 // ─────────────────────────────────────────────────────────────────
 
@@ -4740,7 +4823,8 @@ async function saveAssignment() {
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
     benefits,
-    work_schedule: getSchedJson(),
+    work_schedule: getEstimateTimeJson(),
+    task_requirements: getTasksJson(),
     work_address: document.getElementById('aWorkAddress').value.trim(),
     work_lat: parseFloat(document.getElementById('aWorkLat').value) || null,
     work_lng: parseFloat(document.getElementById('aWorkLng').value) || null,
