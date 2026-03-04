@@ -1712,6 +1712,20 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Worker Account History Modal -->
+<div class="modal-bg" id="workerHistoryModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal modal-lg" style="max-width:640px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <div>
+        <h2 id="workerHistoryTitle" style="margin:0;font-size:1.1rem">账户变更历史</h2>
+        <div id="workerHistorySubtitle" style="font-size:.8rem;color:var(--gray-400);margin-top:.2rem"></div>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('workerHistoryModal').classList.remove('show')">关闭</button>
+    </div>
+    <div id="workerHistoryContent" style="max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
 <!-- Job History Modal -->
 <div class="modal-bg" id="jobHistoryModal"><div class="modal modal-lg">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
@@ -7901,6 +7915,7 @@ async function loadWorkerAccounts() {
     if (w.active && w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-green" onclick="suspendWorkerAccount(${w.id},0)">▶️ 恢复</button>`;
     if (w.active && !w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="suspendWorkerAccount(${w.id},1)">⏸️ 暂停</button>`;
     extraBtns += `<button class="btn btn-sm wa-abtn-reset" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">🔑 重置</button>`;
+    extraBtns += `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="showWorkerHistory(${w.id},'${esc(w.name||w.username)}')">📋 历史</button>`;
     extraBtns += `<button class="btn btn-sm wa-abtn-del" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除</button>`;
     return `<tr>
     <td style="font-family:monospace;font-size:.78rem;white-space:nowrap;color:var(--sky)">${w.worker_code ? esc(w.worker_code) : '<span style="color:var(--gray-300)">—</span>'}</td>
@@ -8275,6 +8290,43 @@ async function activateWorkerAccount(id) {
 async function updateWorkerStatus(id, work_status) {
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ work_status }) });
   showToast('✅ 身份已更新');
+}
+
+async function showWorkerHistory(id, name) {
+  document.getElementById('workerHistoryTitle').textContent = `账户变更历史 — ${name}`;
+  document.getElementById('workerHistorySubtitle').textContent = `Worker ID: ${id}`;
+  const content = document.getElementById('workerHistoryContent');
+  content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0">加载中…</div>';
+  document.getElementById('workerHistoryModal').classList.add('show');
+  try {
+    const rows = await api(`/admin/worker-accounts/${id}/history`);
+    if (!rows || !rows.length) {
+      content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无变更记录</div>';
+      return;
+    }
+    content.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.83rem">
+      <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.75rem">
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">时间</th>
+        <th style="text-align:left;padding:.4rem .5rem">操作人</th>
+        <th style="text-align:left;padding:.4rem .5rem">字段</th>
+        <th style="text-align:left;padding:.4rem .5rem">原值</th>
+        <th style="text-align:left;padding:.4rem .5rem">新值</th>
+      </tr></thead>
+      <tbody>${rows.map(r => {
+        const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+        const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
+        const oldV = fmtWdVal(r.old_value);
+        const newV = fmtWdVal(r.new_value);
+        return `<tr style="border-bottom:1px solid var(--gray-100)">
+          <td style="padding:.45rem .5rem;color:var(--gray-400);white-space:nowrap">${ts}</td>
+          <td style="padding:.45rem .5rem;color:var(--sky);white-space:nowrap">${esc(r.changed_by||'—')}</td>
+          <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}</td>
+          <td style="padding:.45rem .5rem;color:#dc2626">${esc(oldV)}</td>
+          <td style="padding:.45rem .5rem;color:#16a34a">${esc(newV)}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  } catch { content.innerHTML = '<div style="color:#dc2626;padding:1rem 0">加载失败，请重试</div>'; }
 }
 
 async function deleteWorkerAccount(id, name) {
