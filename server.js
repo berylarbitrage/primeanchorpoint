@@ -616,6 +616,10 @@ try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); }
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
 try { db.exec(`ALTER TABLE assignments ADD COLUMN work_schedule TEXT DEFAULT '{}'`); } catch(e) {}
+try { db.exec("ALTER TABLE assignments ADD COLUMN work_address TEXT DEFAULT ''"); } catch(e) {}
+try { db.exec("ALTER TABLE assignments ADD COLUMN work_lat REAL DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE assignments ADD COLUMN work_lng REAL DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE assignments ADD COLUMN work_radius INTEGER DEFAULT 200"); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
 
 db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
@@ -2835,19 +2839,21 @@ app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
 });
 
 app.post('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
-  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule } = req.body;
+  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius } = req.body;
   if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
   const r = db.prepare(`INSERT INTO assignments
-    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}');
+    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}',
+         work_address || '', work_lat || null, work_lng || null, work_radius || 200);
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('update', 'assignments'), (req, res) => {
-  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule } = req.body;
-  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=?, work_schedule=? WHERE id=?`)
-    .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}', req.params.id);
+  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius } = req.body;
+  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=?, work_schedule=?, work_address=?, work_lat=?, work_lng=?, work_radius=? WHERE id=?`)
+    .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}',
+         work_address || '', work_lat || null, work_lng || null, work_radius || 200, req.params.id);
   res.json({ success: true });
 });
 
@@ -4117,20 +4123,44 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     `).get(req.workerEmployeeId, job_id);
     if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
 
-    // GPS Geofencing: check against this job's site only
-    if (latitude && longitude && activeJob.js_id) {
-      const dist = haversineDistance(latitude, longitude, activeJob.site_lat, activeJob.site_lng);
-      if (dist <= activeJob.radius_meters) {
-        geoVerified = 1;
-        matchedSiteId = activeJob.js_id;
-      } else {
-        console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(dist)}m from site "${activeJob.site_name}" (max ${activeJob.radius_meters}m)`);
+    // GPS Geofencing: check job site, then fall back to assignment location
+    let geoWarning = false;
+    let assignSite = null;
+    if (latitude && longitude) {
+      if (activeJob.js_id) {
+        const dist = haversineDistance(latitude, longitude, activeJob.site_lat, activeJob.site_lng);
+        if (dist <= activeJob.radius_meters) {
+          geoVerified = 1;
+          matchedSiteId = activeJob.js_id;
+        } else {
+          console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(dist)}m from site "${activeJob.site_name}" (max ${activeJob.radius_meters}m)`);
+        }
+      }
+      // Also check assignment-level GPS (takes precedence for geo_warning)
+      if (!geoVerified) {
+        assignSite = db.prepare(`
+          SELECT a.work_lat, a.work_lng, a.work_radius, a.work_address
+          FROM assignments a
+          JOIN worker_accounts w ON a.inquiry_id = w.linked_inquiry_id
+          WHERE w.id = ? AND a.status IN ('assigned','working') AND a.work_lat IS NOT NULL
+          ORDER BY a.assigned_at DESC LIMIT 1
+        `).get(req.workerId);
+        if (assignSite) {
+          const dist2 = haversineDistance(latitude, longitude, assignSite.work_lat, assignSite.work_lng);
+          if (dist2 <= (assignSite.work_radius || 200)) {
+            geoVerified = 1;
+          } else {
+            geoWarning = true;
+            console.log(`[Geo] Worker ${req.workerId} is ${Math.round(dist2)}m from assignment site (max ${assignSite.work_radius || 200}m)`);
+          }
+        }
       }
     }
 
     const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id) VALUES(?,?,'open',?,?,?,?,?)")
       .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id);
-    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified, site_name: activeJob.site_name || null, job_title: activeJob.title });
+    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
+      geo_warning: geoWarning, site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
   }
 });
 
