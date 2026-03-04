@@ -1806,21 +1806,69 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field">
-    <label>工作日</label>
-    <div id="jWorkDaysWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
-      <button type="button" class="day-btn" data-day="Mon">Mon</button>
-      <button type="button" class="day-btn" data-day="Tue">Tue</button>
-      <button type="button" class="day-btn" data-day="Wed">Wed</button>
-      <button type="button" class="day-btn" data-day="Thu">Thu</button>
-      <button type="button" class="day-btn" data-day="Fri">Fri</button>
-      <button type="button" class="day-btn" data-day="Sat">Sat</button>
-      <button type="button" class="day-btn" data-day="Sun">Sun</button>
-    </div>
-  </div>
-
-  <div class="field-row">
-    <div class="field"><label>上班时间</label><input type="time" step="60" id="jWorkStart"></div>
-    <div class="field"><label>下班时间</label><input type="time" step="60" id="jWorkEnd"></div>
+    <label>工作日 / 工作时间 <span style="color:var(--red)">*</span></label>
+    <table id="jScheduleTable" style="width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.82rem">
+      <thead>
+        <tr style="color:var(--gray-400);font-weight:600;font-size:.74rem;border-bottom:1px solid var(--gray-200)">
+          <th style="padding:.25rem .4rem;width:30px"></th>
+          <th style="padding:.25rem .5rem;text-align:left">工作日</th>
+          <th style="padding:.25rem .5rem;text-align:left">上班时间 *</th>
+          <th style="padding:.25rem .5rem;text-align:left">下班时间 *</th>
+          <th style="padding:.25rem .4rem;width:54px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr data-day="Mon" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Mon</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Tue" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Tue</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Wed" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Wed</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Thu" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Thu</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Fri" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Fri</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Sat" style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Sat</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+        <tr data-day="Sun">
+          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Sun</td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+          <td style="padding:.3rem .4rem"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button></td>
+        </tr>
+      </tbody>
+    </table>
   </div>
 
   <div class="field">
@@ -2615,6 +2663,85 @@ function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor, 
 function closeGenericConfirm() { document.getElementById('genericConfirmModal').classList.remove('show'); _gcmCallback = null; }
 async function execGenericConfirm() { const cb = _gcmCallback; closeGenericConfirm(); if (cb) await cb(); }
 
+// ─── Per-day work schedule helpers ───────────────────────────────────────────
+function _jDayToggle(cb) {
+  const row = cb.closest('tr');
+  const start = row.querySelector('.jDayStart');
+  const end   = row.querySelector('.jDayEnd');
+  const copy  = row.querySelector('.jCopyDay');
+  start.disabled = !cb.checked;
+  end.disabled   = !cb.checked;
+  copy.disabled  = !cb.checked;
+  if (cb.checked) {
+    start.style.background = '#fff';
+    end.style.background   = '#fff';
+    copy.style.color       = 'var(--sky)';
+    copy.style.borderColor = 'var(--sky)';
+  } else {
+    start.value = ''; end.value = '';
+    start.style.background = 'var(--off-white)';
+    end.style.background   = 'var(--off-white)';
+    copy.style.color       = 'var(--gray-400)';
+    copy.style.borderColor = 'var(--gray-200)';
+  }
+}
+function _jCopyDay(btn) {
+  const row   = btn.closest('tr');
+  const start = row.querySelector('.jDayStart').value;
+  const end   = row.querySelector('.jDayEnd').value;
+  if (!start && !end) return;
+  document.querySelectorAll('#jScheduleTable tbody tr').forEach(r => {
+    if (r === row) return;
+    if (r.querySelector('.jDayCheck').checked) {
+      r.querySelector('.jDayStart').value = start;
+      r.querySelector('.jDayEnd').value   = end;
+    }
+  });
+}
+function populateScheduleTable(workSchedule, workDays, workStart, workEnd) {
+  let sched = {};
+  if (workSchedule) { try { sched = JSON.parse(workSchedule); } catch(e) {} }
+  if (!Object.keys(sched).length && workDays) {
+    workDays.split(',').map(d => d.trim()).filter(Boolean).forEach(day => {
+      sched[day] = { start: workStart || '', end: workEnd || '' };
+    });
+  }
+  document.querySelectorAll('#jScheduleTable tbody tr').forEach(row => {
+    const day  = row.dataset.day;
+    const data = sched[day];
+    const cb    = row.querySelector('.jDayCheck');
+    const start = row.querySelector('.jDayStart');
+    const end   = row.querySelector('.jDayEnd');
+    const copy  = row.querySelector('.jCopyDay');
+    cb.checked      = !!data;
+    start.disabled  = !data;
+    end.disabled    = !data;
+    copy.disabled   = !data;
+    start.value     = data ? (data.start || '') : '';
+    end.value       = data ? (data.end   || '') : '';
+    start.style.background = data ? '#fff' : 'var(--off-white)';
+    end.style.background   = data ? '#fff' : 'var(--off-white)';
+    copy.style.color       = data ? 'var(--sky)' : 'var(--gray-400)';
+    copy.style.borderColor = data ? 'var(--sky)' : 'var(--gray-200)';
+  });
+}
+function collectScheduleTable() {
+  const sched = {};
+  let firstStart = '', firstEnd = '', anyDay = false, allFilled = true;
+  document.querySelectorAll('#jScheduleTable tbody tr').forEach(row => {
+    if (!row.querySelector('.jDayCheck').checked) return;
+    anyDay = true;
+    const day   = row.dataset.day;
+    const start = row.querySelector('.jDayStart').value;
+    const end   = row.querySelector('.jDayEnd').value;
+    if (!start || !end) { allFilled = false; return; }
+    sched[day] = { start, end };
+    if (!firstStart) { firstStart = start; firstEnd = end; }
+  });
+  return { sched, firstStart, firstEnd, anyDay, allFilled };
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 /** Promise-based confirm dialog matching site style. Returns Promise<boolean>. */
 function showConfirm(message, { confirmLabel = '确认', cancelLabel = '取消', danger = false } = {}) {
   return new Promise(resolve => {
@@ -3370,8 +3497,6 @@ async function openJobModal(job) {
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
-  document.getElementById('jWorkStart').value = job ? (job.work_start || '') : '';
-  document.getElementById('jWorkEnd').value = job ? (job.work_end || '') : '';
   // Parse location into 5 fields
   const _loc = parseAddressString(job ? (job.location||'') : '');
   document.getElementById('jStreet').value  = _loc.street;
@@ -3383,11 +3508,13 @@ async function openJobModal(job) {
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
   document.getElementById('jHeadcount').value = job ? (job.headcount || 1) : 1;
 
-  // Work days toggle
-  const activeDays = job && job.work_days ? job.work_days.split(',').map(s=>s.trim()) : [];
-  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
-    btn.classList.toggle('active', activeDays.includes(btn.dataset.day));
-  });
+  // Per-day work schedule
+  populateScheduleTable(
+    job ? (job.work_schedule || '') : '',
+    job ? (job.work_days || '') : '',
+    job ? (job.work_start || '') : '',
+    job ? (job.work_end   || '') : ''
+  );
 
   // Benefits toggle
   const activeBenefits = job && job.benefits ? job.benefits.split(',').map(s=>s.trim()) : [];
@@ -3453,9 +3580,6 @@ document.addEventListener('DOMContentLoaded', () => {
   fillStateSelect(document.getElementById('eState'), '');
   fillStateSelect(document.getElementById('jState'), '');
 
-  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
-    btn.addEventListener('click', () => btn.classList.toggle('active'));
-  });
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
     btn.addEventListener('click', () => btn.classList.toggle('active'));
   });
@@ -3513,15 +3637,9 @@ function randomFillJob() {
   document.getElementById('jLang').value           = r.lang;
   document.getElementById('jWorkAuth').value       = r.work_auth || '';
   document.getElementById('jEmploymentType').value = r.employment_type || '';
-  document.getElementById('jWorkStart').value      = r.work_start || '';
-  document.getElementById('jWorkEnd').value        = r.work_end || '';
   loadJobDesc(r.desc || '');
   document.getElementById('jUrgent').checked       = !!r.urgent;
-  // Days
-  const days = r.work_days ? r.work_days.split(',') : [];
-  document.querySelectorAll('#jWorkDaysWrap .day-btn').forEach(btn => {
-    btn.classList.toggle('active', days.includes(btn.dataset.day));
-  });
+  populateScheduleTable('', r.work_days || '', r.work_start || '', r.work_end || '');
   // Benefits
   const bens = r.benefits ? r.benefits.split(',') : [];
   document.querySelectorAll('#jBenefitsWrap .benefit-btn').forEach(btn => {
@@ -3924,7 +4042,10 @@ async function saveJob() {
   const langVal = document.getElementById('jLang').value;
   const partnerId = document.getElementById('jPartnerId').value || null;
   const partnerName = partnerId ? ((_jobPartners||[]).find(p=>p.id==partnerId)||{}).name||'' : '';
-  const workDays = [...document.querySelectorAll('#jWorkDaysWrap .day-btn.active')].map(b=>b.dataset.day).join(',');
+  const { sched: _sched, firstStart: _wStart, firstEnd: _wEnd, anyDay: _anyDay, allFilled: _allFilled } = collectScheduleTable();
+  if (!_anyDay) return alert('请至少选择一个工作日');
+  if (!_allFilled) return alert('请填写所有选中工作日的上班和下班时间');
+  const workDays = Object.keys(_sched).join(',');
   const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const requiredSkills = [...document.getElementById('jRequiredSkills').selectedOptions].map(o=>o.value).join(',');
   const data = {
@@ -3947,8 +4068,9 @@ async function saveJob() {
     company_id: partnerId,
     company_name: partnerName,
     work_days: workDays,
-    work_start: document.getElementById('jWorkStart').value,
-    work_end: document.getElementById('jWorkEnd').value,
+    work_start: _wStart,
+    work_end: _wEnd,
+    work_schedule: JSON.stringify(_sched),
     benefits,
     required_skills: requiredSkills,
     schedule: '',
