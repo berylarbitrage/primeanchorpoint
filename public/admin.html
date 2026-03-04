@@ -632,8 +632,8 @@ tr:hover td{background:var(--sky-light)}
     </select>
     <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
-  <div class="card">
-    <table><thead><tr><th>员工号</th><th>工人编码</th><th>姓名</th><th>当前职位</th><th>所属公司</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
+  <div class="card" style="overflow-x:auto">
+    <table style="min-width:900px;width:100%"><thead><tr><th>员工号</th><th>工人编码</th><th>姓名</th><th>当前职位</th><th>所属公司</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
     <tbody id="empTable"></tbody></table>
   </div>
 </div>
