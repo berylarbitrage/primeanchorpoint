@@ -407,6 +407,7 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
   <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
   <a onclick="showTab('integrations')" data-role="admin">🔗 集成设置</a>
+  <a onclick="showTab('referral-settings')" data-role="admin">🎁 推荐奖励设置</a>
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -1126,6 +1127,42 @@ tr:hover td{background:var(--sky-light)}
 <div id="tab-integrations" style="display:none">
   <div class="top"><h1>第三方集成设置</h1></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem" id="integrationsGrid"></div>
+</div>
+
+<!-- Referral Bonus Settings 推荐奖励设置 -->
+<div id="tab-referral-settings" style="display:none">
+  <div class="top"><h1>🎁 推荐奖励设置</h1></div>
+  <div style="max-width:520px;margin:1.5rem auto">
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
+      <p style="color:#64748b;font-size:.875rem;margin:0 0 1.5rem">
+        设置员工推荐奖励规则：被推荐人工作满指定小时数后，推荐人可获得奖励金额。
+      </p>
+      <div style="display:flex;flex-direction:column;gap:1.25rem">
+        <div>
+          <label style="display:block;font-size:.8rem;font-weight:700;color:#374151;margin-bottom:.4rem">
+            工作小时门槛（小时）
+          </label>
+          <input id="refMinHours" type="number" min="0" step="0.5"
+            style="width:100%;padding:.6rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.95rem;box-sizing:border-box"
+            placeholder="例如：8">
+          <span style="font-size:.75rem;color:#94a3b8">被推荐人需累计完成的工时（已结算），才算满足奖励条件</span>
+        </div>
+        <div>
+          <label style="display:block;font-size:.8rem;font-weight:700;color:#374151;margin-bottom:.4rem">
+            每次推荐奖励金额（$）
+          </label>
+          <input id="refBonusAmount" type="number" min="0" step="0.01"
+            style="width:100%;padding:.6rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.95rem;box-sizing:border-box"
+            placeholder="例如：50">
+          <span style="font-size:.75rem;color:#94a3b8">每位被推荐人满足门槛后，推荐人获得的奖励金额</span>
+        </div>
+        <div style="padding-top:.5rem">
+          <button class="btn" onclick="saveReferralConfig()" style="width:100%">保存设置</button>
+        </div>
+      </div>
+    </div>
+    <div id="refConfigStatus" style="margin-top:1rem;font-size:.85rem;color:#64748b;text-align:center"></div>
+  </div>
 </div>
 
 </div></div>
@@ -2948,6 +2985,7 @@ function showTab(t) {
   if (t === 'compliance') loadComplianceDocs();
   if (t === 'jobsites')   loadJobSites();
   if (t === 'integrations') loadIntegrations();
+  if (t === 'referral-settings') loadReferralConfig();
 }
 
 // ─── Dashboard ───
@@ -9584,6 +9622,28 @@ async function saveIntegration() {
   closeModal('integrationModal');
   showToast('✅ 集成设置已保存');
   loadIntegrations();
+}
+
+// ─── Referral Bonus Config ───
+async function loadReferralConfig() {
+  const cfg = await api('/admin/referral-config');
+  if (!cfg) return;
+  document.getElementById('refMinHours').value = cfg.min_hours_to_qualify ?? 8;
+  document.getElementById('refBonusAmount').value = cfg.bonus_per_referral ?? 50;
+  const ts = cfg.updated_at ? `上次更新：${new Date(cfg.updated_at).toLocaleString('zh-CN')}` : '';
+  document.getElementById('refConfigStatus').textContent = ts;
+}
+
+async function saveReferralConfig() {
+  const min_hours_to_qualify = parseFloat(document.getElementById('refMinHours').value);
+  const bonus_per_referral = parseFloat(document.getElementById('refBonusAmount').value);
+  if (isNaN(min_hours_to_qualify) || min_hours_to_qualify < 0) return alert('请输入有效的工时门槛');
+  if (isNaN(bonus_per_referral) || bonus_per_referral < 0) return alert('请输入有效的奖励金额');
+  const res = await api('/admin/referral-config', { method: 'PUT', body: JSON.stringify({ min_hours_to_qualify, bonus_per_referral }) });
+  if (res && res.success) {
+    showToast('✅ 推荐奖励设置已保存');
+    document.getElementById('refConfigStatus').textContent = `上次更新：${new Date().toLocaleString('zh-CN')}`;
+  }
 }
 
 </script>
