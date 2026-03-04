@@ -127,6 +127,7 @@ tr:hover td{background:var(--sky-light)}
 @keyframes toastIn{from{opacity:0;transform:translateY(-12px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes toastOut{to{opacity:0;transform:translateY(-8px) scale(.96)}}
 .badge-pending{background:#FFF3E0;color:#b45309}.badge-assigned{background:#E8F0FE;color:var(--sky)}.badge-working{background:#f0fdf4;color:#16a34a}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-terminated{background:#fef2f2;color:#b91c1c}.badge-resigned{background:#fff7ed;color:#c2410c}.badge-no_show{background:#fafafa;color:#6b7280;border:1px solid #e5e7eb}.badge-cancelled{background:var(--gray-200);color:var(--gray-600)}
+.assign-status-select{border:none;border-radius:10px;padding:2px 8px;font-size:.72rem;font-weight:700;cursor:pointer;outline:none;appearance:auto}
 .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:100}
 .modal-bg.show{display:flex}
 .modal{background:var(--white);border-radius:12px;padding:2rem;width:100%;max-width:540px;max-height:90vh;overflow-y:auto}
@@ -406,7 +407,9 @@ tr:hover td{background:var(--sky-light)}
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
   <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
   <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
+  <a onclick="showTab('referrals')" data-role="admin,staff">🎁 推荐奖励</a>
   <a onclick="showTab('integrations')" data-role="admin">🔗 集成设置</a>
+  <a onclick="showTab('skill-settings')" data-role="admin">🛠️ 必备技能设置</a>
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -516,7 +519,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="cancelled">已取消</option>
     </select>
   </div>
-  <div class="card" style="padding:0"><div style="overflow-x:auto;padding:1rem"><table style="min-width:780px"><thead><tr><th>日期</th><th>人员</th><th>分配职位</th><th>合同/薪资</th><th>福利</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div></div>
+  <div class="card" style="padding:0"><div style="overflow-x:auto;padding:1rem"><table style="min-width:700px"><thead><tr><th>人员</th><th>分配职位</th><th>合同/薪资</th><th>福利</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div></div>
 </div>
 
 <!-- Jobs -->
@@ -1122,10 +1125,77 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Referral Rewards 推荐奖励 -->
+<div id="tab-referrals" style="display:none">
+  <div class="top"><h1>🎁 推荐奖励记录</h1></div>
+
+  <!-- Config card -->
+  <div class="card" style="margin-bottom:1rem" id="referralConfigCard">
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div style="font-weight:700;font-size:.95rem;color:var(--blue)">奖励规则配置</div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <label style="font-size:.85rem;color:var(--gray-500)">每笔奖励</label>
+        <span style="font-weight:600">$</span>
+        <input id="refBonusAmtAll" type="number" min="0" step="1" style="width:80px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <label style="font-size:.85rem;color:var(--gray-500)">最低达标工时</label>
+        <input id="refMinHoursAll" type="number" min="0" step="1" style="width:70px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+        <span style="font-size:.85rem;color:var(--gray-500)">小时</span>
+      </div>
+      <button class="btn btn-green" onclick="saveAllReferralConfig()">保存配置</button>
+      <div style="margin-left:auto;font-size:.82rem;color:var(--gray-400)">被推荐人工作满指定小时后，推荐人获得奖励</div>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  <div id="referralStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem"></div>
+
+  <!-- Table -->
+  <div class="card" style="overflow-x:auto">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
+      <input id="refSearch" type="text" placeholder="搜索推荐人或被推荐人…" style="padding:.4rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;width:220px" oninput="filterReferralTable()">
+      <select id="refFilter" onchange="filterReferralTable()" style="padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        <option value="">全部状态</option>
+        <option value="qualified">✅ 已达标</option>
+        <option value="pending">⏳ 进行中</option>
+        <option value="none">⬜ 未开始</option>
+      </select>
+      <span id="refCount" style="font-size:.82rem;color:var(--gray-400);margin-left:auto"></span>
+    </div>
+    <table style="font-size:.84rem">
+      <thead><tr>
+        <th>推荐人</th><th>推荐人编码</th><th>被推荐人</th><th>被推荐人编码</th>
+        <th>注册时间</th><th>已工作工时</th><th>状态</th><th>奖励金额</th>
+      </tr></thead>
+      <tbody id="referralTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- Integration Settings 集成设置 -->
 <div id="tab-integrations" style="display:none">
   <div class="top"><h1>第三方集成设置</h1></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem" id="integrationsGrid"></div>
+</div>
+
+
+<!-- Skill Options Settings 必备技能设置 -->
+<div id="tab-skill-settings" style="display:none">
+  <div class="top"><h1>🛠️ 必备技能设置</h1></div>
+  <div style="max-width:640px;margin:1.5rem auto">
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
+      <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
+        在此管理「必备技能」选项列表，修改后会自动应用到职位发布等所有使用该列表的地方。
+      </p>
+      <div style="display:flex;gap:.6rem;margin-bottom:1.25rem;flex-wrap:wrap">
+        <input id="newSkillZh" placeholder="技能名称（中文）*" style="flex:1;min-width:130px;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem">
+        <input id="newSkillEn" placeholder="Skill name (English)" style="flex:1;min-width:130px;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem">
+        <button class="btn" onclick="addSkillOption()" style="white-space:nowrap">＋ 添加</button>
+      </div>
+      <div id="skillOptionsList"></div>
+    </div>
+  </div>
 </div>
 
 </div></div>
@@ -1712,6 +1782,20 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Worker Account History Modal -->
+<div class="modal-bg" id="workerHistoryModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal modal-lg" style="max-width:640px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <div>
+        <h2 id="workerHistoryTitle" style="margin:0;font-size:1.1rem">账户变更历史</h2>
+        <div id="workerHistorySubtitle" style="font-size:.8rem;color:var(--gray-400);margin-top:.2rem"></div>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('workerHistoryModal').classList.remove('show')">关闭</button>
+    </div>
+    <div id="workerHistoryContent" style="max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
 <!-- Job History Modal -->
 <div class="modal-bg" id="jobHistoryModal"><div class="modal modal-lg">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
@@ -1889,25 +1973,8 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="field">
     <label>必备技能（多选）</label>
-    <select id="jRequiredSkills" multiple style="width:100%;min-height:120px;padding:6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-      <option value="仓库操作">仓库操作 / Warehouse Operation</option>
-      <option value="叉车操作">叉车操作 / Forklift</option>
-      <option value="驾照">驾照 / Driver's License</option>
-      <option value="搬运">搬运 / Heavy Lifting</option>
-      <option value="分拣">分拣 / Sorting</option>
-      <option value="包装">包装 / Packing</option>
-      <option value="收货">收货 / Receiving</option>
-      <option value="发货">发货 / Shipping</option>
-      <option value="盘点">盘点 / Inventory</option>
-      <option value="清洁">清洁 / Cleaning</option>
-      <option value="机器操作">机器操作 / Machine Operation</option>
-      <option value="质量检查">质量检查 / Quality Inspection</option>
-      <option value="组装">组装 / Assembly</option>
-      <option value="基本英语">基本英语 / Basic English</option>
-      <option value="普通话">普通话 / Mandarin</option>
-      <option value="体力劳动">体力劳动 / Physical Labor</option>
-    </select>
-    <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选</div>
+    <select id="jRequiredSkills" multiple style="width:100%;min-height:120px;padding:6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem"></select>
+    <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选 · <a onclick="showTab('skill-settings')" style="cursor:pointer;color:var(--primary)">管理技能选项</a></div>
   </div>
 
   <div class="field">
@@ -2042,6 +2109,44 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Assignment History Modal -->
+<div class="modal-bg" id="assignHistoryModal"><div class="modal" style="max-width:680px">
+  <h2 id="assignHistoryTitle">状态历史</h2>
+  <div style="overflow-x:auto;overflow-y:auto;max-height:420px;margin-top:.75rem;border:1px solid var(--gray-200);border-radius:6px">
+    <table style="width:100%;border-collapse:collapse;min-width:560px">
+      <thead style="position:sticky;top:0;background:#fff;z-index:1">
+        <tr>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200);white-space:nowrap">时间</th>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200);white-space:nowrap">原状态</th>
+          <th style="padding:8px 4px;border-bottom:2px solid var(--gray-200)"></th>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200);white-space:nowrap">新状态</th>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200);white-space:nowrap">操作人</th>
+          <th style="text-align:left;padding:8px 10px;font-size:.8rem;color:var(--gray-500);border-bottom:2px solid var(--gray-200)">原因</th>
+        </tr>
+      </thead>
+      <tbody id="assignHistoryList"></tbody>
+    </table>
+  </div>
+  <div style="margin-top:1rem;text-align:right">
+    <button class="btn" onclick="document.getElementById('assignHistoryModal').classList.remove('show')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Status Change Reason Modal -->
+<div class="modal-bg" id="statusReasonModal"><div class="modal" style="max-width:420px">
+  <h2>更改状态原因</h2>
+  <p style="margin:.5rem 0 1rem;color:var(--gray-500);font-size:.9rem">请填写更改状态的原因（必填）</p>
+  <div style="margin-bottom:1rem">
+    <label style="font-size:.85rem;font-weight:600;display:block;margin-bottom:.4rem">原因</label>
+    <textarea id="statusReasonInput" rows="4" style="width:100%;padding:.6rem .8rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.9rem;resize:vertical;box-sizing:border-box" placeholder="请输入更改原因…"></textarea>
+    <div id="statusReasonErr" style="color:#dc2626;font-size:.82rem;margin-top:.3rem;display:none">原因不能为空</div>
+  </div>
+  <div style="display:flex;gap:.75rem;justify-content:flex-end">
+    <button class="btn" onclick="cancelStatusChange()">取消</button>
+    <button class="btn btn-green" onclick="confirmStatusChange()">确认更改</button>
+  </div>
+</div></div>
+
 <!-- Assignment Modal -->
 <div class="modal-bg" id="assignModal"><div class="modal">
   <h2 id="assignModalTitle">新建派工</h2>
@@ -2132,14 +2237,21 @@ tr:hover td{background:var(--sky-light)}
     <div id="aContractFileInfo" style="font-size:.82rem;color:var(--gray-500);margin:.3rem 0"></div>
     <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%;margin-top:.3rem">
   </div>
-  <!-- Estimate Time (multi-shift) -->
+  <!-- Work period dates -->
+  <div style="display:flex;align-items:center;gap:.5rem;margin-top:.75rem;flex-wrap:wrap">
+    <span style="font-size:.78rem;color:#6366f1;font-weight:600;white-space:nowrap">开始日期</span>
+    <input type="date" id="aWorkStart" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;box-sizing:border-box">
+    <span style="font-size:.78rem;color:#6366f1;font-weight:600;white-space:nowrap">结束日期</span>
+    <input type="date" id="aWorkEnd" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;box-sizing:border-box">
+    <label style="display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:#4338ca;cursor:pointer;white-space:nowrap">
+      <input type="checkbox" id="aWorkUntilFurther" onchange="toggleUntilFurther(this)"> Until further notice
+    </label>
+  </div>
+  <!-- Estimate Time (weekly schedule) -->
   <div class="form-section" style="margin-top:.75rem;border:1px solid #e0e7ff;border-radius:8px;padding:.75rem 1rem;background:#f5f7ff">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
-      <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#4338ca;letter-spacing:.04em">⏱ Estimate Time</label>
-      <button type="button" onclick="addShift()" style="font-size:.78rem;padding:.25rem .7rem;border-radius:6px;border:1px solid #a5b4fc;background:#eef2ff;color:#4338ca;cursor:pointer;font-weight:600">+ Add Shift</button>
-    </div>
-    <div id="aShiftsList" style="display:flex;flex-direction:column;gap:.5rem"></div>
-    <div id="aShiftsEmpty" style="font-size:.82rem;color:var(--gray-400);padding:.4rem 0">No shifts added yet. Click "+ Add Shift" to add a time block.</div>
+    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#4338ca;letter-spacing:.04em;display:block;margin-bottom:.65rem">⏱ Estimate Time</label>
+    <!-- Weekly schedule rows (built by JS) -->
+    <div id="aWeeklySchedule"></div>
   </div>
 
   <!-- Task Requirements -->
@@ -3097,6 +3209,8 @@ function showTab(t) {
   if (t === 'compliance') loadComplianceDocs();
   if (t === 'jobsites')   loadJobSites();
   if (t === 'integrations') loadIntegrations();
+  if (t === 'skill-settings')   loadSkillSettings();
+  if (t === 'referrals')   loadAllReferrals();
 }
 
 // ─── Dashboard ───
@@ -3159,6 +3273,15 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+// Format SQLite date/datetime string to "YYYY/MM/DD"
+function fmtDate(s) {
+  if (!s) return '';
+  // Accept "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS"
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
 // ─── Danger Confirm Modal ───
@@ -3319,12 +3442,35 @@ function showJobAppDetail(id) {
 async function scheduleInterview(id) {
   const a = _allJobApps.find(x => x.id === id);
   const name = a ? (a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'') : '';
-  // Load interview locations
+  // Load interview locations from system settings
   const locs = await api('/admin/interview-locations').catch(() => []) || [];
+  // Parse existing times if rescheduling
+  let existingTimes = [];
+  if (a?.interview_times_json) { try { existingTimes = JSON.parse(a.interview_times_json); } catch(e) {} }
+  if (!existingTimes.length && a?.interview_datetime) existingTimes = [a.interview_datetime.slice(0,16)];
+  if (!existingTimes.length) existingTimes = [''];
+
+  const locsSelectHtml = locs.length ? `
+    <div style="margin-bottom:.5rem">
+      <label style="font-size:.78rem;color:var(--gray-500);font-weight:600;display:block;margin-bottom:.3rem">从系统面试地址列表导入：</label>
+      <select id="_ivLocSelect" style="width:100%;padding:.5rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.85rem;box-sizing:border-box" onchange="if(this.value){document.getElementById('_ivLocText').value=this.options[this.selectedIndex].dataset.addr||this.value;this.value=''}">
+        <option value="">— 选择系统预设地点 —</option>
+        ${locs.map(l => `<option value="${esc(l.name)}" data-addr="${esc([l.name,l.address].filter(Boolean).join(' · '))}">${esc(l.name)}${l.address ? ' · '+esc(l.address) : ''}</option>`).join('')}
+      </select>
+    </div>` : '';
+
+  const jobLocVal = a?.job_location ? esc(a.job_location) : '';
+
+  const renderTimeSlots = (times) => times.map((t, i) => `
+    <div class="_ivTimeRow" style="display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem">
+      <input type="datetime-local" class="_ivTimeInput" style="flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(t)}">
+      ${i > 0 ? `<button type="button" onclick="this.closest('._ivTimeRow').remove()" style="flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1">×</button>` : '<div style="width:28px"></div>'}
+    </div>`).join('');
+
   const result = await new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
-    overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(460px,94vw);max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(480px,95vw);max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <div style="font-weight:700;font-size:1.05rem">📅 安排面试</div>
         <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
@@ -3332,17 +3478,23 @@ async function scheduleInterview(id) {
       ${name ? `<div style="font-size:.88rem;color:var(--gray-500);margin-bottom:1rem;padding:.6rem .8rem;background:#f8fafc;border-radius:8px">申请人：<strong>${esc(name)}</strong>${a.job_title ? `　职位：<strong>${esc(a.job_title)}</strong>` : ''}</div>` : ''}
       <div style="display:grid;gap:1rem">
         <div>
-          <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试时间 *</label>
-          <input type="datetime-local" id="_ivDateTime" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.92rem;box-sizing:border-box" value="${a?.interview_datetime ? a.interview_datetime.slice(0,16) : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+            <label style="font-size:.83rem;font-weight:600;color:var(--gray-600)">面试时间 * <span style="font-weight:400;color:var(--gray-400);font-size:.78rem">（可添加多个时间选项）</span></label>
+          </div>
+          <div id="_ivTimeSlots">${renderTimeSlots(existingTimes)}</div>
+          <button type="button" onclick="
+            const row=document.createElement('div');
+            row.className='_ivTimeRow';
+            row.style.cssText='display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem';
+            row.innerHTML='<input type=\\'datetime-local\\' class=\\'_ivTimeInput\\' style=\\'flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box\\'><button type=\\'button\\' onclick=\\'this.closest(\"._ivTimeRow\").remove()\\' style=\\'flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1\\'>×</button>';
+            document.getElementById('_ivTimeSlots').appendChild(row);
+          " style="font-size:.82rem;padding:.35rem .8rem;border:1.5px dashed #93c5fd;border-radius:7px;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-weight:600">+ 添加时间选项</button>
         </div>
         <div>
           <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试地点</label>
-          ${locs.length ? `<select id="_ivLocSelect" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;margin-bottom:.5rem;box-sizing:border-box" onchange="document.getElementById('_ivLocText').value=this.value==='__custom__'?'':this.options[this.selectedIndex].dataset.addr||''">
-            <option value="">— 选择预设地点 —</option>
-            ${locs.map(l => `<option value="${esc(l.name)}" data-addr="${esc([l.name,l.address].filter(Boolean).join(' · '))}">${esc(l.name)}${l.address ? ' · '+esc(l.address) : ''}</option>`).join('')}
-            <option value="__custom__">✏️ 自定义地点</option>
-          </select>` : ''}
-          <input type="text" id="_ivLocText" placeholder="地址 / 详细信息（可选）" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(a?.interview_location_text||'')}">
+          ${locsSelectHtml}
+          ${jobLocVal ? `<button type="button" onclick="document.getElementById('_ivLocText').value=${JSON.stringify(a.job_location || '').replace(/</g,'\\x3c')}" style="font-size:.8rem;padding:.3rem .75rem;border:1.5px solid #6ee7b7;border-radius:7px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;margin-bottom:.5rem">📌 从本职位导入地点</button>` : ''}
+          <input type="text" id="_ivLocText" placeholder="地址 / 详细信息（可选，也可手动填写）" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(a?.interview_location_text||'')}">
         </div>
         <div>
           <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">备注 / 说明</label>
@@ -3356,13 +3508,13 @@ async function scheduleInterview(id) {
       <div style="display:flex;gap:.75rem;margin-top:1.25rem;justify-content:flex-end">
         <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="padding:.6rem 1.1rem;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;cursor:pointer;font-size:.9rem">取消</button>
         <button onclick="
-          const dt=document.getElementById('_ivDateTime').value;
-          if(!dt){document.getElementById('_ivDateTime').style.borderColor='#ef4444';return;}
-          const loc=document.getElementById('_ivLocText').value.trim()||(document.getElementById('_ivLocSelect')&&document.getElementById('_ivLocSelect').value!=='__custom__'?document.getElementById('_ivLocSelect').value:'');
+          const times=[...document.querySelectorAll('#_ivTimeSlots ._ivTimeInput')].map(i=>i.value).filter(Boolean);
+          if(!times.length){document.querySelector('#_ivTimeSlots ._ivTimeInput').style.borderColor='#ef4444';return;}
+          const loc=document.getElementById('_ivLocText').value.trim();
           const note=document.getElementById('_ivNote').value.trim();
           const notify=document.getElementById('_ivNotify').checked;
           this.closest('[style*=fixed]').remove();
-          window._ivResolve({dt,loc,note,notify});
+          window._ivResolve({times,loc,note,notify});
         " style="padding:.6rem 1.4rem;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;font-size:.9rem">确认安排</button>
       </div>
     </div>`;
@@ -3373,7 +3525,7 @@ async function scheduleInterview(id) {
   const r = await api(`/admin/job-applications/${id}`, { method:'PUT', body: JSON.stringify({
     status: 'interview_scheduled',
     admin_note: result.note,
-    interview_datetime: result.dt,
+    interview_times: result.times,
     interview_location_text: result.loc,
     notify: result.notify
   })});
@@ -3449,17 +3601,31 @@ function renderJobsFiltered() {
       <td style="text-align:center">${j.headcount||1}</td>
       <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
       <td>${esc(j.pay||'')}</td>
-      <td><span class="badge ${si.cls}">${si.text}</span>${reasonTip}</td>
+      <td>
+        <span class="badge ${si.cls}">${si.text}</span>${reasonTip}
+        ${j.visible === 0 ? `<br><span class="badge" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;font-size:.7rem">隐藏</span>` : ''}
+      </td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button>
         ${!isHistory
           ? `<button class="btn btn-sm" style="background:var(--orange-light,#fff3e0);color:#c05621;border:1px solid #fbd38d" onclick='openCloseJobModal(${JSON.stringify(j).replace(/'/g,"&#39;")})'>关闭</button>`
           : `<button class="btn btn-sm btn-green" onclick="reopenJob(${j.id})">重新开放</button>`}
+        <button class="btn btn-sm" style="${j.visible === 0 ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1'}" onclick="toggleJobVisible(${j.id}, this)">
+          ${j.visible === 0 ? '👁 显示' : '🚫 隐藏'}
+        </button>
         <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
         <button class="btn btn-sm btn-outline" onclick="showJobHistory(${j.id},'${esc(j.title)}')">历史</button>
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="8" class="empty">${isHistory ? '暂无历史职位' : '暂无在招职位，点击 "+ 新增职位" 添加'}</td></tr>`;
+}
+
+async function toggleJobVisible(id, btn) {
+  const res = await api(`/admin/jobs/${id}/visible`, { method: 'PUT' });
+  if (!res || !res.success) return;
+  const job = _allJobs.find(j => j.id === id);
+  if (job) job.visible = res.visible;
+  renderJobsFiltered();
 }
 
 async function loadJobs() {
@@ -3523,10 +3689,17 @@ async function openJobModal(job) {
     btn.classList.toggle('active', activeBenefits.includes(btn.dataset.val));
   });
 
-  // Required skills
-  const activeSkills = job && job.required_skills ? job.required_skills.split(',').map(s=>s.trim()) : [];
+  // Required skills – load options dynamically from server
+  const activeSkills = job && job.required_skills ? job.required_skills.split(',').map(s=>s.trim()).filter(Boolean) : [];
   const skillsEl = document.getElementById('jRequiredSkills');
-  [...skillsEl.options].forEach(opt => { opt.selected = activeSkills.includes(opt.value); });
+  try {
+    const skillOpts = await api('/admin/skill-options');
+    skillsEl.innerHTML = (skillOpts || []).map(s => {
+      const label = s.name_en ? `${s.name_zh} / ${s.name_en}` : s.name_zh;
+      const sel = activeSkills.includes(s.name_zh) ? ' selected' : '';
+      return `<option value="${esc(s.name_zh)}"${sel}>${esc(label)}</option>`;
+    }).join('');
+  } catch(e) { /* keep empty on error */ }
 
   document.getElementById('jobModal').classList.add('show');
   captureModalState('jobModal');
@@ -4598,14 +4771,21 @@ const DS_STATUS_LABELS = { sent:'已发送(待签)', delivered:'已送达', comp
 const DS_STATUS_COLORS = { sent:'#F59E0B', delivered:'#3B82F6', completed:'#10B981', declined:'#EF4444', voided:'#6B7280' };
 
 function renderAssignments(assigns) {
+  const statusOpts = [
+    ['pending','待确认'],['assigned','已分配'],['working','进行中'],
+    ['completed','已完成'],['terminated','已解雇'],['resigned','已辞职'],
+    ['no_show','未出勤'],['cancelled','已取消']
+  ];
   document.getElementById('assignTable').innerHTML = assigns.length ? assigns.map(a => {
     const dsLabel = a.ds_status ? (DS_STATUS_LABELS[a.ds_status] || a.ds_status) : '';
     const dsColor = DS_STATUS_COLORS[a.ds_status] || '#6B7280';
     const dsBadge = a.ds_envelope_id
       ? `<br><span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer" onclick="refreshDsStatus('assignment',${a.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
       : (a.contract_file ? `<br><button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-top:2px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('assignment',${a.id},'${esc(a.inquiry_email||'')}','${esc(a.inquiry_name||'')}')">✍ DocuSign</button>` : '');
+    const statusSelect = `<select class="assign-status-select badge-select badge-${a.status}" onchange="updateAssignmentStatus(${a.id},this.value,this)">
+      ${statusOpts.map(([v,l]) => `<option value="${v}"${a.status===v?' selected':''}>${l}</option>`).join('')}
+    </select>`;
     return `<tr>
-    <td>${new Date(a.assigned_at).toLocaleDateString()}${a.start_date ? '<br><span style="font-size:.72rem;color:var(--gray-400)">开始：' + a.start_date + '</span>' : ''}</td>
     <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
     <td>${esc(a.job_title || '未知职位')}<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(a.job_location || '')}</span></td>
     <td>
@@ -4615,14 +4795,12 @@ function renderAssignments(assigns) {
       ${dsBadge}
     </td>
     <td style="font-size:.78rem;max-width:160px;white-space:normal">${esc(a.benefits || '—')}</td>
-    <td><span class="badge badge-${a.status}">${statusLabel(a.status)}</span></td>
+    <td>${statusSelect}</td>
     <td>
-      <button class="btn btn-sm" onclick='editAssignment(${JSON.stringify(a).replace(/'/g,"&#39;")})'>编辑</button>
-      <button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick='addMoreDispatch(${JSON.stringify({inquiry_id:a.inquiry_id,inquiry_name:a.inquiry_name,inquiry_phone:a.inquiry_phone,inquiry_email:a.inquiry_email,job_id:a.job_id,job_title:a.job_title,job_location:a.job_location}).replace(/'/g,"&#39;")})'>+ 再派工</button>
-      <button class="btn btn-sm btn-red" onclick="deleteAssignment(${a.id})">删除</button>
+      <button class="btn btn-sm" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe" onclick="showAssignmentHistory(${a.id},'${esc(a.inquiry_name||'')}')">历史</button>
     </td>
   </tr>`;
-  }).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+  }).join('') : '<tr><td colspan="6" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
 }
 
 async function sendForDocuSign(type, id, defaultEmail, defaultName) {
@@ -4737,65 +4915,99 @@ function selectPartnerItem(id, name) {
   document.getElementById('jPartnerId').value = id;
   document.getElementById('jPartnerSearch').value = name;
   document.getElementById('jPartnerDrop').classList.remove('open');
+
+  // Offer to import company address into work location fields
+  const partner = (_jobPartners || []).find(p => p.id == id);
+  if (!partner) return;
+  let addrs = [];
+  try { addrs = JSON.parse(partner.addresses || '[]'); } catch(e) {}
+  if (!addrs.length && partner.address) addrs = [partner.address];
+  if (!addrs.length) return;
+
+  // Only prompt if address fields are currently empty
+  const hasAddr = document.getElementById('jStreet').value.trim() ||
+                  document.getElementById('jCity').value.trim() ||
+                  document.getElementById('jZip').value.trim();
+  const msg = hasAddr
+    ? `是否用「${name}」的公司地址覆盖当前工作地点？\n\n${addrs[0]}`
+    : `是否将「${name}」的公司地址导入到工作地点？\n\n${addrs[0]}`;
+  if (!confirm(msg)) return;
+
+  const parsed = parseAddressString(addrs[0]);
+  document.getElementById('jStreet').value  = parsed.street;
+  document.getElementById('jStreet2').value = parsed.street2;
+  document.getElementById('jCity').value    = parsed.city;
+  if (parsed.state) document.getElementById('jState').value = parsed.state;
+  document.getElementById('jZip').value     = parsed.zip;
+  document.getElementById('jAddrStatus').textContent = '';
 }
 
-// ── Estimate Time (multi-shift) helpers ──────────────────────────
-let _shiftCounter = 0;
+// ── Estimate Time (weekly schedule) helpers ───────────────────────
+const WEEK_DAYS = [
+  { key: 'mon', label: 'Mon' },
+  { key: 'tue', label: 'Tue' },
+  { key: 'wed', label: 'Wed' },
+  { key: 'thu', label: 'Thu' },
+  { key: 'fri', label: 'Fri' },
+  { key: 'sat', label: 'Sat' },
+  { key: 'sun', label: 'Sun' },
+];
 
-const SHIFT_INP = 'border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.83rem;background:#fff';
-const TIME_INP  = `${SHIFT_INP};width:80px;text-align:center`;
+const _SINP = 'border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.83rem;background:#fff';
+const _TINP = `${_SINP};text-align:center`;
 
-function initEstimateTime(schedJson) {
-  _shiftCounter = 0;
-  const list = document.getElementById('aShiftsList');
-  list.innerHTML = '';
-  let data = null;
-  try { data = JSON.parse(schedJson || 'null'); } catch {}
-  const shifts = (data && data.type === 'estimate' && Array.isArray(data.shifts)) ? data.shifts : [];
-  if (shifts.length) {
-    shifts.forEach(s => addShift(s));
-  }
-  updateShiftsEmpty();
+function buildWeeklySchedule() {
+  const wrap = document.getElementById('aWeeklySchedule');
+  wrap.innerHTML = '';
+  WEEK_DAYS.forEach(d => {
+    const row = document.createElement('div');
+    row.id = `week-row-${d.key}`;
+    row.style.cssText = 'display:grid;grid-template-columns:38px 60px 1fr auto 1fr auto;gap:.35rem;align-items:center;padding:.35rem .5rem;border-radius:6px;margin-bottom:.3rem;background:#eef2ff;border:1px solid #c7d2fe';
+    row.innerHTML = `
+      <span style="font-weight:700;font-size:.82rem;color:#4338ca">${d.label}</span>
+      <label style="display:flex;align-items:center;gap:.2rem;font-size:.76rem;color:#6b7280;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="rest-${d.key}" onchange="toggleDayRest('${d.key}')"> 休息
+      </label>
+      <input type="text" id="start-${d.key}" placeholder="09:00" maxlength="5"
+        style="${_TINP};width:100%" onblur="fmtShiftTime(this)">
+      <span style="color:#a5b4fc;font-weight:700">→</span>
+      <input type="text" id="end-${d.key}" placeholder="17:00" maxlength="5"
+        style="${_TINP};width:100%" onblur="fmtShiftTime(this)">
+      <button type="button" onclick="copyDayTime('${d.key}')" title="Copy to all working days"
+        style="font-size:.72rem;padding:.2rem .4rem;border-radius:5px;border:1px solid #a5b4fc;background:#e0e7ff;color:#4338ca;cursor:pointer;white-space:nowrap">Copy</button>
+    `;
+    wrap.appendChild(row);
+  });
 }
 
-const WEEKDAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
-
-function addShift(saved) {
-  const idx = _shiftCounter++;
-  const s = saved || {};
-  const list = document.getElementById('aShiftsList');
-  const div = document.createElement('div');
-  div.id = `shift-row-${idx}`;
-  div.style.cssText = 'display:grid;grid-template-columns:1fr auto auto auto auto auto;gap:.4rem;align-items:center;background:#eef2ff;border:1px solid #c7d2fe;border-radius:7px;padding:.45rem .6rem';
-  const dayOptions = WEEKDAYS.map(d => `<option value="${d}"${s.day===d?' selected':''}>${d}</option>`).join('');
-  div.innerHTML = `
-    <input placeholder="Shift name (e.g. Morning Shift)" value="${esc(s.name||'')}"
-      style="${SHIFT_INP};width:100%" id="shift-name-${idx}">
-    <select style="${SHIFT_INP};width:120px" id="shift-day-${idx}">
-      <option value="">-- Day --</option>
-      ${dayOptions}
-    </select>
-    <input type="text" placeholder="Start" value="${esc(s.start||'')}" maxlength="5"
-      style="${TIME_INP}" id="shift-start-${idx}" onblur="fmtShiftTime(this)">
-    <span style="color:#a5b4fc;font-weight:700">→</span>
-    <input type="text" placeholder="End" value="${esc(s.end||'')}" maxlength="5"
-      style="${TIME_INP}" id="shift-end-${idx}" onblur="fmtShiftTime(this)">
-    <button type="button" onclick="removeShift(${idx})"
-      style="background:#fef2f2;border:1px solid #fecaca;color:#dc2626;border-radius:5px;padding:.2rem .5rem;cursor:pointer;font-size:.82rem;flex-shrink:0">✕</button>
-  `;
-  list.appendChild(div);
-  updateShiftsEmpty();
+function toggleDayRest(key) {
+  const isRest = document.getElementById(`rest-${key}`).checked;
+  const row = document.getElementById(`week-row-${key}`);
+  const s = document.getElementById(`start-${key}`);
+  const e = document.getElementById(`end-${key}`);
+  s.disabled = isRest; e.disabled = isRest;
+  row.style.background = isRest ? '#f3f4f6' : '#eef2ff';
+  row.style.borderColor = isRest ? '#d1d5db' : '#c7d2fe';
+  s.style.background = isRest ? '#f3f4f6' : '#fff';
+  e.style.background = isRest ? '#f3f4f6' : '#fff';
 }
 
-function removeShift(idx) {
-  const el = document.getElementById(`shift-row-${idx}`);
-  if (el) el.remove();
-  updateShiftsEmpty();
+function copyDayTime(key) {
+  const start = document.getElementById(`start-${key}`).value;
+  const end   = document.getElementById(`end-${key}`).value;
+  WEEK_DAYS.forEach(d => {
+    if (d.key === key) return;
+    if (document.getElementById(`rest-${d.key}`).checked) return;
+    document.getElementById(`start-${d.key}`).value = start;
+    document.getElementById(`end-${d.key}`).value   = end;
+  });
 }
 
-function updateShiftsEmpty() {
-  const list = document.getElementById('aShiftsList');
-  document.getElementById('aShiftsEmpty').style.display = list.children.length ? 'none' : '';
+function toggleUntilFurther(cb) {
+  const endInput = document.getElementById('aWorkEnd');
+  endInput.disabled = cb.checked;
+  endInput.style.opacity = cb.checked ? '0.4' : '1';
+  if (cb.checked) endInput.value = '';
 }
 
 function fmtShiftTime(el) {
@@ -4817,18 +5029,44 @@ function fmtShiftTime(el) {
   }
 }
 
+function initEstimateTime(schedJson) {
+  buildWeeklySchedule();
+  let data = null;
+  try { data = JSON.parse(schedJson || 'null'); } catch {}
+  // Work period
+  document.getElementById('aWorkStart').value = (data && data.workStart) || '';
+  const untilFurther = !!(data && data.untilFurther);
+  document.getElementById('aWorkUntilFurther').checked = untilFurther;
+  document.getElementById('aWorkEnd').value = (!untilFurther && data && data.workEnd) ? data.workEnd : '';
+  toggleUntilFurther(document.getElementById('aWorkUntilFurther'));
+  // Weekly days
+  const days = (data && data.days) || {};
+  WEEK_DAYS.forEach(d => {
+    const info = days[d.key] || {};
+    document.getElementById(`rest-${d.key}`).checked = !!info.rest;
+    document.getElementById(`start-${d.key}`).value  = info.start || '';
+    document.getElementById(`end-${d.key}`).value    = info.end   || '';
+    toggleDayRest(d.key);
+  });
+}
+
 function getEstimateTimeJson() {
-  const list = document.getElementById('aShiftsList');
-  const shifts = [...list.children].map(row => {
-    const idx = row.id.replace('shift-row-', '');
-    return {
-      name:  document.getElementById(`shift-name-${idx}`)?.value?.trim() || '',
-      day:   document.getElementById(`shift-day-${idx}`)?.value || '',
-      start: document.getElementById(`shift-start-${idx}`)?.value || '',
-      end:   document.getElementById(`shift-end-${idx}`)?.value || '',
+  const days = {};
+  WEEK_DAYS.forEach(d => {
+    days[d.key] = {
+      rest:  document.getElementById(`rest-${d.key}`).checked,
+      start: document.getElementById(`start-${d.key}`).value || '',
+      end:   document.getElementById(`end-${d.key}`).value   || '',
     };
-  }).filter(s => s.name || s.day || s.start || s.end);
-  return JSON.stringify({ type: 'estimate', shifts });
+  });
+  const untilFurther = document.getElementById('aWorkUntilFurther').checked;
+  return JSON.stringify({
+    type: 'estimate',
+    workStart: document.getElementById('aWorkStart').value || '',
+    workEnd:   untilFurther ? '' : (document.getElementById('aWorkEnd').value || ''),
+    untilFurther,
+    days,
+  });
 }
 
 // ── Task Requirements helpers ─────────────────────────────────────
@@ -5303,6 +5541,72 @@ async function deleteAssignment(id) {
   if (!await showConfirm('确定删除此派工记录？', { danger: true })) return;
   await api(`/admin/assignments/${id}`, { method: 'DELETE' });
   loadAssignments();
+}
+
+let _pendingStatusChange = null;
+
+function updateAssignmentStatus(id, newStatus, selectEl) {
+  const prev = selectEl.dataset.prevStatus || selectEl.querySelector('option[selected]')?.value || selectEl.value;
+  if (prev === newStatus) return;
+  // Store pending change and show reason modal
+  _pendingStatusChange = { id, newStatus, prev, selectEl };
+  document.getElementById('statusReasonInput').value = '';
+  document.getElementById('statusReasonErr').style.display = 'none';
+  document.getElementById('statusReasonModal').classList.add('show');
+}
+
+function cancelStatusChange() {
+  if (_pendingStatusChange) {
+    _pendingStatusChange.selectEl.value = _pendingStatusChange.prev;
+    _pendingStatusChange = null;
+  }
+  document.getElementById('statusReasonModal').classList.remove('show');
+}
+
+async function confirmStatusChange() {
+  const reason = document.getElementById('statusReasonInput').value.trim();
+  if (!reason) {
+    document.getElementById('statusReasonErr').style.display = 'block';
+    return;
+  }
+  document.getElementById('statusReasonErr').style.display = 'none';
+  const { id, newStatus, prev, selectEl } = _pendingStatusChange;
+  _pendingStatusChange = null;
+  document.getElementById('statusReasonModal').classList.remove('show');
+  selectEl.disabled = true;
+  try {
+    await api(`/admin/assignments/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: newStatus, reason }) });
+    selectEl.className = selectEl.className.replace(/badge-\S+/, `badge-${newStatus}`);
+    selectEl.dataset.prevStatus = newStatus;
+  } catch(e) {
+    alert('更新失败：' + e.message);
+    selectEl.value = prev;
+  } finally {
+    selectEl.disabled = false;
+  }
+}
+
+async function showAssignmentHistory(id, name) {
+  const modal = document.getElementById('assignHistoryModal');
+  document.getElementById('assignHistoryTitle').textContent = `状态历史 — ${name || ''}`;
+  document.getElementById('assignHistoryList').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  modal.classList.add('show');
+  try {
+    const rows = await api(`/admin/assignments/${id}/history`);
+    const statusLabelMap = { pending:'待确认', assigned:'已分配', working:'进行中', completed:'已完成', terminated:'已解雇', resigned:'已辞职', no_show:'未出勤', cancelled:'已取消' };
+    document.getElementById('assignHistoryList').innerHTML = rows.length
+      ? rows.map(r => `<tr style="border-bottom:1px solid var(--gray-100)">
+          <td style="white-space:nowrap;font-size:.82rem;padding:8px 10px">${new Date(r.changed_at).toLocaleString()}</td>
+          <td style="padding:8px 10px"><span class="badge badge-${r.old_status||''}">${statusLabelMap[r.old_status] || r.old_status || '—'}</span></td>
+          <td style="padding:8px 4px;color:var(--gray-400)">→</td>
+          <td style="padding:8px 10px"><span class="badge badge-${r.new_status}">${statusLabelMap[r.new_status] || r.new_status}</span></td>
+          <td style="font-size:.8rem;color:var(--gray-400);padding:8px 10px;white-space:nowrap">${esc(r.changed_by||'')}</td>
+          <td style="font-size:.82rem;padding:8px 10px;max-width:200px;word-break:break-word">${esc(r.reason||'—')}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:16px">暂无状态变更记录</td></tr>';
+  } catch(e) {
+    document.getElementById('assignHistoryList').innerHTML = '<tr><td colspan="5" style="color:#dc2626">加载失败</td></tr>';
+  }
 }
 
 // ─── Partners (合作公司管理) ───
@@ -6043,7 +6347,7 @@ async function loadEditEmpJobRecords(empId) {
       const company = r.partner_name || r.company_name || '';
       const loc = r.location || '';
       const meta = [company, loc].filter(Boolean).map(esc).join(' · ');
-      const dates = `${r.start_date||'—'} → ${r.end_date||'至今'}`;
+      const dates = `${fmtDate(r.start_date)||'—'} → ${fmtDate(r.end_date)||'至今'}`;
       const pay = r.emp_hourly_rate ? ` · $${r.emp_hourly_rate}/hr` : '';
       return `<div style="display:flex;align-items:flex-start;gap:.4rem;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;margin-bottom:.35rem;background:#fafcff">
         <div style="flex:1;min-width:0">
@@ -6563,7 +6867,7 @@ async function viewEmployee(id) {
           <button class="btn btn-sm btn-outline" onclick='openAssignJobModal(${id},"${esc(emp.first_name)} ${esc(emp.last_name)}");setTimeout(()=>prefillJobRecord(${JSON.stringify(r).replace(/'/g,"&#39;")}),300)' style="font-size:.78rem">编辑</button>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.3rem .75rem;font-size:.82rem">
-          <div><span style="color:var(--gray-400)">时间：</span>${r.start_date||'—'} ~ ${r.end_date||'—'}</div>
+          <div><span style="color:var(--gray-400)">时间：</span>${fmtDate(r.start_date)||'—'} ~ ${fmtDate(r.end_date)||'—'}</div>
           <div><span style="color:var(--gray-400)">员工时薪：</span>${r.emp_hourly_rate>0?'$'+r.emp_hourly_rate+'/h':'—'}</div>
           <div><span style="color:var(--gray-400)">工时：</span>${r.emp_total_hours>0?r.emp_total_hours+'h':'—'}</div>
         </div>
@@ -8188,17 +8492,26 @@ async function loadWorkerAccounts() {
     const skills = w.skills || [];
     // Build inline action buttons
     let extraBtns = '';
-    if (!w.active) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="resendWorkerVerify(${w.id})">📨 重发验证</button>`;
+    if (!w.active) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="resendWorkerVerify(${w.id})">📨 重发验证</button><button class="btn btn-sm" style="background:#d1fae5;color:#065f46;border:1px solid #6ee7b7" onclick="activateWorkerAccount(${w.id})">✅ 手动激活</button>`;
     if (w.active && w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-green" onclick="suspendWorkerAccount(${w.id},0)">▶️ 恢复</button>`;
     if (w.active && !w.suspended) extraBtns += `<button class="btn btn-sm wa-abtn-warn" onclick="suspendWorkerAccount(${w.id},1)">⏸️ 暂停</button>`;
     extraBtns += `<button class="btn btn-sm wa-abtn-reset" onclick="sendResetLink(${w.id},'${esc(w.name||w.username)}')">🔑 重置</button>`;
+    extraBtns += `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="showWorkerHistory(${w.id},'${esc(w.name||w.username)}')">📋 历史</button>`;
     extraBtns += `<button class="btn btn-sm wa-abtn-del" onclick="deleteWorkerAccount(${w.id},'${esc(w.name||w.username)}')">🗑️ 删除</button>`;
     return `<tr>
     <td style="font-family:monospace;font-size:.78rem;white-space:nowrap;color:var(--sky)">${w.worker_code ? esc(w.worker_code) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div></td>
     <td style="font-size:.8rem;white-space:nowrap">${esc(w.phone||'—')}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
-    <td style="font-size:.8rem;white-space:nowrap">${WORK_STATUS_MAP[w.work_status]||esc(w.work_status||'—')}</td>
+    <td><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:110px" onchange="updateWorkerStatus(${w.id},this.value)">
+      <option value="">— 未填 —</option>
+      <option value="citizen" ${w.work_status==='citizen'?'selected':''}>🇺🇸 公民</option>
+      <option value="green_card" ${w.work_status==='green_card'?'selected':''}>🟢 绿卡</option>
+      <option value="ead" ${w.work_status==='ead'?'selected':''}>📄 EAD</option>
+      <option value="h1b" ${w.work_status==='h1b'?'selected':''}>H-1B</option>
+      <option value="opt" ${w.work_status==='opt'?'selected':''}>OPT/CPT</option>
+      <option value="other" ${w.work_status==='other'?'selected':''}>其他</option>
+    </select></td>
     <td><div class="wa-compliance">
       ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
       ${complianceBadge2('SSN', c.ssn_card)}
@@ -8297,31 +8610,33 @@ function renderOnboardingTasks(tasks) {
   document.getElementById('onboardingTaskList').innerHTML = tasks.map(t => {
     const s = t.status;
     const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
-    const canWaive = (s === 'pending' || s === 'locked') && !t.required;
+    const canWaive = s !== 'completed' && s !== 'waived';
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
     const isVisible = t.visible_to_worker !== 0;
+    const tk = JSON.stringify(t.key);
+    const tt = JSON.stringify(t.title);
     return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100);${!isVisible?'opacity:.55':''}">
       <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--blue);font-size:.9rem">${esc(t.title)}</span>
           <span style="padding:1px 7px;border-radius:20px;font-size:.7rem;font-weight:600;${sBadge[s]||''}">${sLabel[s]||s}</span>
-          ${!t.required?'<span style="font-size:.7rem;color:var(--gray-400)">(可豁免)</span>':''}
+          ${t.required?'<span style="font-size:.7rem;color:#dc2626;font-weight:600">(必须)</span>':'<span style="font-size:.7rem;color:var(--gray-400)">(可豁免)</span>'}
           ${!isVisible?'<span style="font-size:.7rem;color:#dc2626;font-weight:600">（工人不可见）</span>':''}
         </div>
         ${t.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);font-style:italic;margin-top:.15rem">💬 ${esc(t.admin_note)}</div>`:''}
         ${t.action_url?`<div style="font-size:.78rem;margin-top:.15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px">🔗 <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)" title="${esc(t.action_url)}">${esc(t.action_url.length>60?t.action_url.substring(0,60)+'...':t.action_url)}</a></div>`:''}
         ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 工人门户 — 已通知</div>`:''}
         <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
-          ${canComplete?`<button class="btn btn-sm btn-green" onclick="updateOnboardingTask('${t.key}','completed')">✅ 完成</button>`:''}
-          ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="updateOnboardingTask('${t.key}','waived')">⏭️ 豁免</button>`:''}
-          ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="updateOnboardingTask('${t.key}','pending')">↩️ 重置</button>`:''}
+          ${canComplete?`<button class="btn btn-sm btn-green" onclick="confirmOnboardingComplete(${tk},${tt})">✅ 完成</button>`:''}
+          ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="confirmOnboardingWaive(${tk},${tt})">⏭️ Waive</button>`:''}
+          ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${t.key==='persona_verify'
-            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="sendPersonaFromOnboarding()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
             : t.key==='background_check'
-            ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="sendCheckrFromOnboarding()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
+            ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -8346,6 +8661,22 @@ function toggleOnboardingVisibility(key, visible) {
       refreshOnboardingModal();
     }, 'amber');
   }
+}
+
+function confirmOnboardingComplete(key, title) {
+  showConfirmModal(`标记完成：${title}`, '确认将此任务标记为已完成？', '✅ 确认完成', 'btn-green', () => updateOnboardingTask(key, 'completed'), 'green');
+}
+function confirmOnboardingWaive(key, title) {
+  showConfirmModal(`Waive 任务：${title}`, '确认豁免此任务？豁免后该任务视为无需完成，不影响入职进度。', '⏭️ 确认 Waive', 'btn-outline', () => updateOnboardingTask(key, 'waived'), 'amber');
+}
+function confirmOnboardingReset(key, title) {
+  showConfirmModal(`重置任务：${title}`, '确认将此任务重置为"待处理"状态？', '↩️ 确认重置', 'btn-outline', () => updateOnboardingTask(key, 'pending'), 'amber');
+}
+function confirmSendPersona() {
+  showConfirmModal('发送 Persona 身份验证', '确认向该工人发送 Persona 身份验证（驾照 + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
+}
+function confirmSendCheckr() {
+  showConfirmModal('发送 Checkr 背调邀请', '确认向该工人发送 Checkr 背景调查邀请？邀请链接将通过短信和邮件发送。', '🔍 确认发送', 'btn-blue', sendCheckrFromOnboarding, 'blue');
 }
 
 async function updateOnboardingTask(key, status, note, actionUrl) {
@@ -8553,6 +8884,48 @@ async function activateWorkerAccount(id) {
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ active: 1 }) });
   loadWorkerAccounts();
   showToast('✅ 账户已激活');
+}
+
+async function updateWorkerStatus(id, work_status) {
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ work_status }) });
+  showToast('✅ 身份已更新');
+}
+
+async function showWorkerHistory(id, name) {
+  document.getElementById('workerHistoryTitle').textContent = `账户变更历史 — ${name}`;
+  document.getElementById('workerHistorySubtitle').textContent = `Worker ID: ${id}`;
+  const content = document.getElementById('workerHistoryContent');
+  content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0">加载中…</div>';
+  document.getElementById('workerHistoryModal').classList.add('show');
+  try {
+    const rows = await api(`/admin/worker-accounts/${id}/history`);
+    if (!rows || !rows.length) {
+      content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无变更记录</div>';
+      return;
+    }
+    content.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.83rem">
+      <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.75rem">
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">时间</th>
+        <th style="text-align:left;padding:.4rem .5rem">操作人</th>
+        <th style="text-align:left;padding:.4rem .5rem">字段</th>
+        <th style="text-align:left;padding:.4rem .5rem">原值</th>
+        <th style="text-align:left;padding:.4rem .5rem">新值</th>
+      </tr></thead>
+      <tbody>${rows.map(r => {
+        const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+        const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
+        const oldV = fmtWdVal(r.old_value);
+        const newV = fmtWdVal(r.new_value);
+        return `<tr style="border-bottom:1px solid var(--gray-100)">
+          <td style="padding:.45rem .5rem;color:var(--gray-400);white-space:nowrap">${ts}</td>
+          <td style="padding:.45rem .5rem;color:var(--sky);white-space:nowrap">${esc(r.changed_by||'—')}</td>
+          <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}</td>
+          <td style="padding:.45rem .5rem;color:#dc2626">${esc(oldV)}</td>
+          <td style="padding:.45rem .5rem;color:#16a34a">${esc(newV)}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  } catch { content.innerHTML = '<div style="color:#dc2626;padding:1rem 0">加载失败，请重试</div>'; }
 }
 
 async function deleteWorkerAccount(id, name) {
@@ -8826,19 +9199,20 @@ async function suspendWorkerAccount(id, doSuspend) {
   showToast(`✅ 账户已${label}`);
 }
 
-async function resendWorkerVerify(id) {
-  const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
-  if (r && r.success) {
-    const msgs = [];
-    if (r.sms_sent) msgs.push('短信已发送 ✅');
-    if (r.email_sent) msgs.push('邮件已发送 ✅');
-    // Only show codes if delivery failed (so admin can tell user manually)
-    if (r.phone_code) msgs.push(`⚠️ 短信发送失败，手机验证码: ${r.phone_code}`);
-    if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
-    if (!msgs.length) msgs.push('未配置短信/邮件发送');
-    showToast('✅ 验证码已重新生成');
-    alert(msgs.join('\n'));
-  }
+function resendWorkerVerify(id) {
+  showConfirmModal('重发验证码', '确认重新向该工人发送手机和邮箱验证码？', '📨 确认发送', 'btn-blue', async () => {
+    const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
+    if (r && r.success) {
+      const msgs = [];
+      if (r.sms_sent) msgs.push('短信已发送 ✅');
+      if (r.email_sent) msgs.push('邮件已发送 ✅');
+      if (r.phone_code) msgs.push(`⚠️ 短信发送失败，手机验证码: ${r.phone_code}`);
+      if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
+      if (!msgs.length) msgs.push('未配置短信/邮件发送');
+      showToast('✅ 验证码已重新生成');
+      alert(msgs.join('\n'));
+    }
+  }, 'blue');
 }
 
 // ── Customer: suspend / restore ──
@@ -9767,6 +10141,159 @@ async function saveIntegration() {
   closeModal('integrationModal');
   showToast('✅ 集成设置已保存');
   loadIntegrations();
+}
+
+
+async function saveAllReferralConfig() {
+  const bonus = parseFloat(document.getElementById('refBonusAmtAll').value);
+  const hours = parseFloat(document.getElementById('refMinHoursAll').value);
+  if (isNaN(bonus) || isNaN(hours) || bonus < 0 || hours < 0) { showToast('请输入有效数字', 'error'); return; }
+  showConfirmModal('保存奖励配置', `确认将奖励金额改为 $${bonus}，达标工时改为 ${hours} 小时？`, '保存', 'btn-green', async () => {
+    await api('/admin/referral-config', { method:'PUT', body: JSON.stringify({ bonus_per_referral: bonus, min_hours_to_qualify: hours }) });
+    showToast('✅ 奖励配置已保存');
+    loadAllReferrals();
+  }, 'green');
+}
+
+// ── Referral Rewards Admin (referrals tab) ──────────────────────
+let _referralRows = [];
+let _referralConfig = { bonus_per_referral: 50, min_hours_to_qualify: 8 };
+
+async function loadAllReferrals() {
+  const data = await api('/admin/all-referrals');
+  if (!data) return;
+  _referralRows = data.rows || [];
+  _referralConfig = data.config || _referralConfig;
+
+  document.getElementById('refBonusAmtAll').value = _referralConfig.bonus_per_referral;
+  document.getElementById('refMinHoursAll').value = _referralConfig.min_hours_to_qualify;
+
+  const qualified = _referralRows.filter(r => r.total_hours >= _referralConfig.min_hours_to_qualify);
+  const pending   = _referralRows.filter(r => r.total_hours > 0 && r.total_hours < _referralConfig.min_hours_to_qualify);
+  const totalBonus = qualified.length * _referralConfig.bonus_per_referral;
+
+  document.getElementById('referralStats').innerHTML = [
+    { label:'总邀请记录', value: _referralRows.length + ' 条', color:'#dbeafe', text:'#1d4ed8' },
+    { label:'已达标 (奖励已赚)', value: qualified.length + ' 条', color:'#d1fae5', text:'#065f46' },
+    { label:'进行中', value: pending.length + ' 条', color:'#fef3c7', text:'#92400e' },
+    { label:'累计奖励金额', value: '$' + totalBonus.toFixed(2), color:'#f3e8ff', text:'#7c3aed' }
+  ].map(s => `<div style="background:${s.color};border-radius:10px;padding:.75rem 1rem">
+    <div style="font-size:.75rem;color:${s.text};font-weight:600;margin-bottom:.2rem">${s.label}</div>
+    <div style="font-size:1.3rem;font-weight:800;color:${s.text}">${s.value}</div>
+  </div>`).join('');
+
+  filterReferralTable();
+}
+
+function filterReferralTable() {
+  const q = (document.getElementById('refSearch').value || '').toLowerCase();
+  const f = document.getElementById('refFilter').value;
+  const min = _referralConfig.min_hours_to_qualify;
+
+  const filtered = _referralRows.filter(r => {
+    const status = r.total_hours >= min ? 'qualified' : r.total_hours > 0 ? 'pending' : 'none';
+    if (f && f !== status) return false;
+    if (q) {
+      const hay = `${r.referrer_name} ${r.referrer_code} ${r.referred_name} ${r.referred_code}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById('refCount').textContent = `共 ${filtered.length} 条`;
+
+  const statusLabel = { qualified:'✅ 已达标', pending:'⏳ 进行中', none:'⬜ 未开始' };
+  const statusStyle = {
+    qualified:'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7',
+    pending:'background:#fef3c7;color:#92400e;border:1px solid #fde68a',
+    none:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)'
+  };
+
+  document.getElementById('referralTableBody').innerHTML = filtered.length === 0
+    ? `<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:2rem">暂无邀请记录</td></tr>`
+    : filtered.map(r => {
+        const status = r.total_hours >= _referralConfig.min_hours_to_qualify ? 'qualified'
+                     : r.total_hours > 0 ? 'pending' : 'none';
+        const bonus = status === 'qualified' ? `<span style="font-weight:700;color:#065f46">$${_referralConfig.bonus_per_referral.toFixed(2)}</span>` : '—';
+        const hrs = r.total_hours ? r.total_hours.toFixed(1) + ' h' : '0 h';
+        const date = r.created_at ? r.created_at.substring(0, 10) : '—';
+        return `<tr>
+          <td style="font-weight:600">${esc(r.referrer_name || '—')}</td>
+          <td><span style="font-family:monospace;font-size:.78rem;background:#f0f9ff;padding:1px 6px;border-radius:4px">${esc(r.referrer_code || '—')}</span></td>
+          <td>${esc(r.referred_name || '—')}</td>
+          <td><span style="font-family:monospace;font-size:.78rem;background:#f0f9ff;padding:1px 6px;border-radius:4px">${esc(r.referred_code || '—')}</span></td>
+          <td style="color:var(--gray-400);font-size:.8rem">${date}</td>
+          <td style="font-weight:600">${hrs}</td>
+          <td><span style="padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600;${statusStyle[status]}">${statusLabel[status]}</span></td>
+          <td>${bonus}</td>
+        </tr>`;
+      }).join('');
+}
+
+// ─── Skill Options Settings ───
+let _skillOptions = [];
+
+async function loadSkillSettings() {
+  _skillOptions = await api('/admin/skill-options') || [];
+  renderSkillOptions();
+}
+
+function renderSkillOptions() {
+  const el = document.getElementById('skillOptionsList');
+  if (!_skillOptions.length) {
+    el.innerHTML = '<p style="color:#94a3b8;font-size:.875rem;text-align:center;padding:1rem 0">暂无技能选项</p>';
+    return;
+  }
+  el.innerHTML = _skillOptions.map((s, i) => `
+    <div style="display:flex;gap:.5rem;align-items:center;padding:.45rem 0;border-bottom:1px solid #f1f5f9">
+      <span style="color:#94a3b8;font-size:.75rem;width:1.6rem;text-align:right;flex-shrink:0">${i+1}</span>
+      <input value="${esc(s.name_zh)}" data-id="${s.id}" data-field="name_zh"
+        onchange="_skillOptChange(this)"
+        style="flex:1;padding:.4rem .6rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.875rem">
+      <input value="${esc(s.name_en)}" data-id="${s.id}" data-field="name_en"
+        onchange="_skillOptChange(this)"
+        placeholder="English"
+        style="flex:1;padding:.4rem .6rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.875rem">
+      <button onclick="_skillOptSave(${s.id})" title="保存"
+        style="padding:.35rem .65rem;border:1px solid #86efac;background:#f0fdf4;color:#15803d;border-radius:6px;cursor:pointer;font-size:.8rem;white-space:nowrap">保存</button>
+      <button onclick="_skillOptDelete(${s.id})" title="删除"
+        style="padding:.35rem .6rem;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:6px;cursor:pointer;font-size:.8rem">✕</button>
+    </div>
+  `).join('');
+}
+
+function _skillOptChange(input) {
+  const id = parseInt(input.dataset.id);
+  const field = input.dataset.field;
+  const s = _skillOptions.find(x => x.id === id);
+  if (s) s[field] = input.value;
+}
+
+async function _skillOptSave(id) {
+  const s = _skillOptions.find(x => x.id === id);
+  if (!s) return;
+  const res = await api(`/admin/skill-options/${id}`, { method:'PUT', body: JSON.stringify({ name_zh: s.name_zh, name_en: s.name_en, sort_order: s.sort_order }) });
+  if (res && res.success) showToast('✅ 已保存');
+  else alert('保存失败');
+}
+
+async function _skillOptDelete(id) {
+  if (!confirm('确认删除此技能选项？')) return;
+  const res = await api(`/admin/skill-options/${id}`, { method:'DELETE' });
+  if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
+}
+
+async function addSkillOption() {
+  const zh = document.getElementById('newSkillZh').value.trim();
+  const en = document.getElementById('newSkillEn').value.trim();
+  if (!zh) return alert('请输入技能名称（中文）');
+  const res = await api('/admin/skill-options', { method:'POST', body: JSON.stringify({ name_zh: zh, name_en: en }) });
+  if (res && res.success) {
+    document.getElementById('newSkillZh').value = '';
+    document.getElementById('newSkillEn').value = '';
+    await loadSkillSettings();
+    showToast('✅ 已添加');
+  }
 }
 
 </script>

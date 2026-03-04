@@ -99,7 +99,7 @@ tr:last-child td{border-bottom:none}
 .empty{color:var(--gray-400);padding:2rem;text-align:center}
 /* Toast */
 #toast-wrap{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
-.toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
+.toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:pre-wrap;max-width:90vw;text-align:center}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
 /* Onboarding steps */
@@ -464,10 +464,30 @@ tr:last-child td{border-bottom:none}
 
     <!-- My Tasks -->
     <div id="tabInterview" style="display:none">
-      <!-- Today's shift confirmations -->
+      <!-- Work Calendar -->
+      <div id="workCalendarCard" style="display:none;margin-bottom:1rem">
+        <div class="card" style="padding:.85rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+            <h2 style="color:#1d4ed8;margin:0;font-size:1rem">📆 我的工作日历</h2>
+            <div style="display:flex;gap:.35rem;align-items:center">
+              <button onclick="calChangeMonth(-1)" style="width:28px;height:28px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;align-items:center;justify-content:center">‹</button>
+              <span id="calMonthLabel" style="font-weight:700;font-size:.92rem;color:#1e293b;min-width:72px;text-align:center"></span>
+              <button onclick="calChangeMonth(1)" style="width:28px;height:28px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;align-items:center;justify-content:center">›</button>
+            </div>
+          </div>
+          <div id="calGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center"></div>
+          <div style="display:flex;gap:.65rem;margin-top:.7rem;flex-wrap:wrap;font-size:.73rem;color:#475569">
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;display:inline-block"></span>已确认</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span>待确认</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span>已请假</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:2px;background:#bfdbfe;display:inline-block;border:1px solid #93c5fd"></span>排班中</span>
+          </div>
+        </div>
+      </div>
+      <!-- Weekly shift confirmations -->
       <div id="shiftConfirmCard" style="display:none;margin-bottom:1rem">
         <div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
-          <h2 style="color:#92400e;margin-bottom:.75rem">📅 今日出勤确认</h2>
+          <h2 style="color:#92400e;margin-bottom:.75rem">📅 本周班次确认</h2>
           <div id="shiftConfirmList"></div>
         </div>
       </div>
@@ -483,6 +503,17 @@ tr:last-child td{border-bottom:none}
         <h2>我的申请记录</h2>
         <table><thead><tr><th>职位</th><th>地点</th><th>申请状态</th><th>申请时间</th></tr></thead>
         <tbody id="applicationsTable"></tbody></table>
+      </div>
+    </div>
+
+    <!-- Calendar Day Detail Modal -->
+    <div class="modal-overlay" id="calDayModal" style="display:none" onclick="if(event.target===this)closeCalDayModal()">
+      <div class="modal" style="max-width:400px;padding:1.5rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h3 id="calDayModalTitle" style="margin:0;font-size:1.05rem"></h3>
+          <button onclick="closeCalDayModal()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
+        </div>
+        <div id="calDayModalBody"></div>
       </div>
     </div>
 
@@ -518,8 +549,10 @@ tr:last-child td{border-bottom:none}
           <div id="punchBtnsWrap" style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:.5rem">
             <button class="btn-punch btn-punch-in" id="btnPunchIn" onclick="startPunchFlow('in')" disabled style="width:100%">▶ Check In</button>
             <div id="punchWorkingBtns" style="display:none;gap:.5rem">
-              <button onclick="startPunchFlow('out')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:var(--red);color:#fff">⏹ Check Out</button>
+              <button onclick="startPunchFlow('break_start')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff">⏸ Pause Job</button>
+              <button onclick="startPunchFlow('out')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:var(--red);color:#fff">⏹ 下班打卡</button>
             </div>
+            <button id="btnBreakEnd" onclick="startPunchFlow('break_end')" style="display:none;width:100%;padding:.85rem;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff">▶ Resume Job</button>
           </div>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
           <!-- Punch confirmation modal overlay -->
@@ -543,7 +576,7 @@ tr:last-child td{border-bottom:none}
             </div>
             <input type="file" id="punchPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="onPunchPhotoSelected(this)">
             <button type="button" onclick="document.getElementById('punchPhotoInput').click()" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:8px;padding:.55rem 1.2rem;font-size:.9rem;font-weight:600;cursor:pointer;width:100%">📷 拍照</button>
-            <div id="punchPhotoConfirmRow" style="display:none;display:flex;gap:.6rem;margin-top:.6rem;justify-content:center">
+            <div id="punchPhotoConfirmRow" style="display:none;gap:.6rem;margin-top:.6rem;justify-content:center">
               <button type="button" id="btnPunchConfirm" onclick="confirmPunchWithPhoto()" style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:8px;padding:.6rem;font-size:.9rem;font-weight:700;cursor:pointer">✅ 确认打卡</button>
               <button type="button" onclick="cancelPunchPhoto()" style="flex:0 0 auto;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .9rem;font-size:.88rem;cursor:pointer">取消</button>
             </div>
@@ -877,9 +910,26 @@ tr:last-child td{border-bottom:none}
         <!-- Referral link card -->
         <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:1rem;margin-bottom:1.25rem">
           <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.4rem">您的专属邀请链接 / Your referral link</div>
-          <div style="display:flex;gap:.5rem;align-items:center">
+          <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:1rem">
             <input id="referralLinkInput" readonly style="flex:1;padding:.5rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.8rem;background:#fff;color:var(--gray-700)">
             <button onclick="copyReferralLink()" style="background:var(--sky);color:#fff;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap">复制 / Copy</button>
+          </div>
+
+          <!-- Share buttons -->
+          <div style="margin-bottom:1rem">
+            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem">分享给朋友 / Share with friends</div>
+            <div style="display:flex;flex-wrap:wrap;gap:.45rem">
+              <button id="refNativeShareBtn" onclick="shareReferral('native')" style="display:none;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#0F2B5B;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer">📤 分享</button>
+              <button onclick="shareReferral('sms')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#22c55e;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer">💬 短信 SMS</button>
+              <button onclick="shareReferral('whatsapp')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#25D366;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.557 4.126 1.527 5.858L0 24l6.335-1.501A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.885 0-3.64-.52-5.144-1.422l-.366-.217-3.762.891.948-3.668-.239-.378A9.96 9.96 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg> WhatsApp</button>
+              <button onclick="shareReferral('facebook')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#1877F2;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Facebook</button>
+            </div>
+          </div>
+
+          <!-- QR Code -->
+          <div style="text-align:center">
+            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem">扫码注册 / Scan to Register</div>
+            <div id="referralQR" style="display:inline-block;background:#fff;padding:10px;border:1px solid var(--gray-200);border-radius:10px;min-width:120px;min-height:120px"></div>
           </div>
         </div>
 
@@ -1072,12 +1122,17 @@ function _closeDialog(result) {
 }
 
 async function wApi(path, opts={}) {
-  const r = await fetch('/api/worker' + path, {
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
-    ...opts
-  });
-  if (r.status === 401) { workerLogout(); return null; }
-  return r.json();
+  try {
+    const r = await fetch('/api/worker' + path, {
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
+      ...opts
+    });
+    if (r.status === 401) { workerLogout(); return null; }
+    return await r.json();
+  } catch (e) {
+    showToast('❌ 网络错误，请检查连接后重试', 'error');
+    return null;
+  }
 }
 
 async function workerLogin() {
@@ -1261,38 +1316,86 @@ function showTab(tab) {
 }
 
 async function loadInterview() {
-  await loadTasks();
+  await Promise.all([loadTasks(), loadWorkCalendar()]);
 }
 
 async function loadTasks() {
   const el = document.getElementById('myTasksList');
   el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">加载中…</p>';
 
-  // Load today's shift confirmations
-  const today = new Date().toISOString().slice(0, 10);
+  // Load this week's shift confirmations
   const confirmations = await wApi('/shift-confirmations');
-  const todayConfs = (confirmations || []).filter(c => c.date === today);
   const confCard = document.getElementById('shiftConfirmCard');
   const confList = document.getElementById('shiftConfirmList');
-  if (todayConfs.length) {
+  if (confirmations && confirmations.length) {
     confCard.style.display = '';
-    confList.innerHTML = todayConfs.map(c => {
-      const fmt = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
-      const timeStr = (c.work_start && c.work_end) ? `${fmt(c.work_start)} – ${fmt(c.work_end)}` : '';
+    const _DAY_NAMES = ['周日','周一','周二','周三','周四','周五','周六'];
+    const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+    const todayStr = new Date().toISOString().slice(0,10);
+    const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrowStr = tomorrowDate.toISOString().slice(0,10);
+
+    // Urgent banner: pending shifts tomorrow
+    const urgentShifts = confirmations.filter(c => c.date === tomorrowStr && c.status === 'pending');
+    const urgentBanner = urgentShifts.length ? `
+      <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;display:flex;align-items:flex-start;gap:.65rem">
+        <span style="font-size:1.3rem;line-height:1">🔔</span>
+        <div>
+          <div style="font-weight:700;font-size:.95rem;color:#dc2626;margin-bottom:.2rem">明天有 ${urgentShifts.length} 个班次待确认</div>
+          <div style="font-size:.83rem;color:#7f1d1d">
+            ${urgentShifts.map(c => {
+              const t = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)}–${fmt12(c.shift_end)}` : '';
+              return `${esc(c.title||'—')}${t?' ('+t+')':''}`;
+            }).join('、')}
+          </div>
+          <div style="font-size:.8rem;color:#b91c1c;margin-top:.3rem">请在下方确认是否出勤</div>
+        </div>
+      </div>` : '';
+
+    // Determine current week's Sunday for next-week separator
+    const _nowDate = new Date(); _nowDate.setHours(0,0,0,0);
+    const _curDow = _nowDate.getDay();
+    const _curSunday = new Date(_nowDate);
+    _curSunday.setDate(_nowDate.getDate() + (7 - _curDow) % 7);
+    const curSundayStr = _curSunday.toISOString().slice(0,10);
+    let shownNextWeekHeader = false;
+
+    confList.innerHTML = urgentBanner + confirmations.map(c => {
+      const d = new Date(c.date + 'T00:00:00');
+      const isToday = c.date === todayStr;
+      const isTomorrow = c.date === tomorrowStr;
+      const isNextWeek = c.date > curSundayStr;
+      const dayLabel = `${_DAY_NAMES[d.getDay()]} ${c.date.slice(5).replace('-','/')}${isToday ? ' <span style="background:#f59e0b;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">今天</span>' : isTomorrow ? ' <span style="background:#ef4444;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">明天</span>' : ''}`;
+      const timeStr = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)} – ${fmt12(c.shift_end)}` : '';
       const statusBadge = c.status === 'confirmed'
-        ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700">✓ 已确认出勤</span>`
+        ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✓ 已确认</span>`
         : c.status === 'declined'
-        ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700">✕ 已请假</span>`
-        : `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700">待确认</span>`;
+        ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✕ 已请假</span>`
+        : `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">待确认</span>`;
       const actionBtns = c.status === 'pending' ? `
-        <div style="display:flex;gap:.6rem;margin-top:.85rem">
-          <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.6rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
-          <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.6rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer">❌ 今天请假</button>
+        <div style="display:flex;gap:.6rem;margin-top:.75rem">
+          <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
+          <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 请假</button>
         </div>` : '';
-      return `
-        <div style="border:1px solid #fcd34d;border-radius:10px;padding:.9rem;margin-bottom:.6rem;background:#fff">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
-            <div style="font-weight:700;font-size:.95rem;color:var(--gray-800)">${esc(c.title||'—')}${c.company_name?`<span style="font-weight:400;color:var(--gray-500);font-size:.82rem"> · ${esc(c.company_name)}</span>`:''}</div>
+      const cardBorder = (isTomorrow && c.status === 'pending') ? '2px solid #ef4444' : isNextWeek ? '1px solid #bfdbfe' : '1px solid #fcd34d';
+      const cardBg = (isTomorrow && c.status === 'pending') ? '#fff5f5' : isNextWeek ? '#f0f9ff' : '#fff';
+      // Insert next-week section header before first next-week card
+      let header = '';
+      if (isNextWeek && !shownNextWeekHeader) {
+        shownNextWeekHeader = true;
+        header = `<div style="display:flex;align-items:center;gap:.5rem;margin:.9rem 0 .5rem">
+          <div style="flex:1;height:1px;background:#e5e7eb"></div>
+          <span style="font-size:.8rem;font-weight:700;color:#3b82f6;white-space:nowrap">下周班次（等待确认）</span>
+          <div style="flex:1;height:1px;background:#e5e7eb"></div>
+        </div>`;
+      }
+      return header + `
+        <div style="border:${cardBorder};border-radius:10px;padding:.85rem;margin-bottom:.55rem;background:${cardBg}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.3rem">
+            <div>
+              <span style="font-weight:700;font-size:.92rem;color:${isNextWeek ? '#1d4ed8' : '#92400e'}">${dayLabel}</span>
+              <div style="font-size:.82rem;color:var(--gray-700);margin-top:.15rem">${esc(c.title||'—')}${c.company_name?` · <span style="color:var(--gray-500)">${esc(c.company_name)}</span>`:''}</div>
+            </div>
             ${statusBadge}
           </div>
           ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ ${esc(timeStr)}</div>` : ''}
@@ -1353,7 +1456,7 @@ async function loadTasks() {
           </div>
         </div>` : ''}
         <div style="font-size:.83rem;color:var(--gray-600);display:grid;gap:.22rem">
-          ${t.start_date ? `<div>📅 <span style="color:var(--gray-400)">开始日期：</span>${esc(t.start_date)}</div>` : ''}
+          ${t.start_date ? `<div>📅 <span style="color:var(--gray-400)">开始日期：</span>${fmtDate(t.start_date)}</div>` : ''}
           ${(t.work_address||t.location) ? `<div>📍 <span style="color:var(--gray-400)">地点：</span>${esc(t.work_address||t.location)}</div>` : ''}
           ${t.pay_rate ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay_rate)}${t.pay_type==='hourly'?' /hr':''}</div>` : (t.pay ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay)}</div>` : '')}
           ${t.contract_type ? `<div>📄 <span style="color:var(--gray-400)">合同类型：</span>${esc(t.contract_type)}</div>` : ''}
@@ -1375,10 +1478,183 @@ async function respondTask(id, response) {
 async function respondShiftConfirm(id, response) {
   const r = await wApi(`/shift-confirmations/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
   if (r && r.success) {
-    showToast(response === 'confirmed' ? '✅ 已确认今日出勤' : '已登记今日请假');
+    showToast(response === 'confirmed' ? '✅ 已确认出勤' : '已登记请假');
     loadTasks();
+    loadWorkCalendar(); // refresh calendar dots after responding
   }
 }
+
+// ── Work Calendar ─────────────────────────────────────────────────
+const _CAL_DOW_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
+const _CAL_DAY_LABELS = ['日','一','二','三','四','五','六'];
+let _calYear = new Date().getFullYear();
+let _calMonth = new Date().getMonth() + 1; // 1–12
+let _calData = null;
+
+async function loadWorkCalendar() {
+  const card = document.getElementById('workCalendarCard');
+  _calData = await wApi(`/work-calendar?year=${_calYear}&month=${_calMonth}`);
+  if (!_calData || (!_calData.confirmations.length && !_calData.assignments.length)) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = '';
+  renderCalendar();
+}
+
+function calChangeMonth(delta) {
+  _calMonth += delta;
+  if (_calMonth > 12) { _calMonth = 1; _calYear++; }
+  if (_calMonth < 1)  { _calMonth = 12; _calYear--; }
+  loadWorkCalendar();
+}
+
+function renderCalendar() {
+  document.getElementById('calMonthLabel').textContent = `${_calYear}年${_calMonth}月`;
+  const grid = document.getElementById('calGrid');
+
+  // Build date → confirmations lookup
+  const confMap = {};
+  (_calData.confirmations || []).forEach(c => {
+    if (!confMap[c.date]) confMap[c.date] = [];
+    confMap[c.date].push(c);
+  });
+
+  // Project work days from assignments' recurring schedule
+  const projectedDays = new Set();
+  const daysInMonth = new Date(_calYear, _calMonth, 0).getDate();
+  (_calData.assignments || []).forEach(a => {
+    let sched = {};
+    try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+    const workStart = sched.workStart || a.start_date || null;
+    const workEnd   = sched.workEnd   || null;
+    const untilFurther = !!sched.untilFurther;
+    const days = sched.days || {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateObj = new Date(_calYear, _calMonth - 1, d);
+      const dateStr = dateObj.toISOString().slice(0, 10);
+      if (confMap[dateStr]) continue; // already confirmed, don't double-mark
+      if (workStart && dateStr < workStart) continue;
+      if (!untilFurther && workEnd && dateStr > workEnd) continue;
+      const dayInfo = days[_CAL_DOW_KEYS[dateObj.getDay()]];
+      if (dayInfo && !dayInfo.rest) projectedDays.add(dateStr);
+    }
+  });
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const firstDow = new Date(_calYear, _calMonth - 1, 1).getDay(); // 0=Sun
+  const statusColor = { confirmed: '#16a34a', pending: '#f59e0b', declined: '#dc2626' };
+
+  // Header row
+  let html = _CAL_DAY_LABELS.map(l =>
+    `<div style="font-weight:700;font-size:.72rem;color:#94a3b8;padding:.25rem 0">${l}</div>`
+  ).join('');
+
+  // Empty leading cells
+  for (let i = 0; i < firstDow; i++) html += '<div></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${_calYear}-${String(_calMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday = dateStr === todayStr;
+    const confs = confMap[dateStr] || [];
+    const isProjected = projectedDays.has(dateStr);
+    const hasWork = confs.length > 0 || isProjected;
+
+    // Status dots
+    let dotsHtml = '';
+    if (confs.length) {
+      dotsHtml = confs.slice(0, 3).map(c =>
+        `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor[c.status]||'#94a3b8'};margin:0 1px"></span>`
+      ).join('');
+    } else if (isProjected) {
+      dotsHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:2px;background:#bfdbfe;border:1px solid #93c5fd;margin:0 1px"></span>`;
+    }
+
+    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : isProjected ? '#eff6ff' : 'transparent');
+    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : isProjected ? '1px solid #bfdbfe' : '1px solid transparent';
+    const numColor = isToday ? '#fff' : hasWork ? '#1e293b' : '#cbd5e1';
+    const numWeight = (isToday || hasWork) ? '700' : '400';
+
+    const clickable = confs.length > 0 || isProjected;
+    html += `<div style="border-radius:8px;padding:.28rem .05rem;background:${bg};border:${border};min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px${clickable ? ';cursor:pointer' : ''}" ${clickable ? `onclick="calDayClick('${dateStr}')"` : ''}>
+      <span style="font-size:.8rem;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>
+      ${dotsHtml ? `<div style="line-height:1">${dotsHtml}</div>` : ''}
+    </div>`;
+  }
+
+  grid.innerHTML = html;
+}
+function calDayClick(dateStr) {
+  if (!_calData) return;
+  const confs = (_calData.confirmations || []).filter(c => c.date === dateStr);
+  const d = new Date(dateStr + 'T00:00:00');
+  const dow = _CAL_DOW_KEYS[d.getDay()];
+  const dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
+  const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+
+  // Find projected assignments for this date (not already in confirmations)
+  const projItems = [];
+  if (!confs.length) {
+    (_calData.assignments || []).forEach(a => {
+      let sched = {};
+      try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+      const workStart = sched.workStart || a.start_date || null;
+      const workEnd = sched.workEnd || null;
+      const untilFurther = !!sched.untilFurther;
+      const days = sched.days || {};
+      if (workStart && dateStr < workStart) return;
+      if (!untilFurther && workEnd && dateStr > workEnd) return;
+      const dayInfo = days[dow];
+      if (dayInfo && !dayInfo.rest) projItems.push({ title: a.title, start: dayInfo.start, end: dayInfo.end });
+    });
+  }
+
+  if (!confs.length && !projItems.length) return;
+
+  document.getElementById('calDayModalTitle').textContent = `${dayNames[d.getDay()]} ${dateStr}`;
+  const statusColor = { confirmed:'#16a34a', pending:'#f59e0b', declined:'#dc2626' };
+  const statusLabel = { confirmed:'✓ 已确认', pending:'待确认', declined:'✕ 已请假' };
+  const statusBg    = { confirmed:'#dcfce7', pending:'#fef3c7', declined:'#fee2e2' };
+
+  let html = confs.map(c => {
+    const timeStr = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)} – ${fmt12(c.shift_end)}` : '';
+    const badge = `<span style="background:${statusBg[c.status]};color:${statusColor[c.status]};border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">${statusLabel[c.status]||c.status}</span>`;
+    const actionBtns = c.status === 'pending' ? `
+      <div style="display:flex;gap:.6rem;margin-top:.75rem">
+        <button onclick="respondShiftConfirm(${c.id},'confirmed');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
+        <button onclick="respondShiftConfirm(${c.id},'declined');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 请假</button>
+      </div>` : '';
+    return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:.85rem;margin-bottom:.6rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+        <span style="font-weight:700;font-size:.95rem;color:#1e293b">${esc(c.title||'—')}</span>
+        ${badge}
+      </div>
+      ${timeStr ? `<div style="font-size:.85rem;color:#475569">🕐 ${timeStr}</div>` : ''}
+      ${actionBtns}
+    </div>`;
+  }).join('');
+
+  html += projItems.map(p => {
+    const timeStr = (p.start && p.end) ? `${fmt12(p.start)} – ${fmt12(p.end)}` : '';
+    const badge = `<span style="background:#dbeafe;color:#1d4ed8;border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">排班中</span>`;
+    return `<div style="border:1px solid #bfdbfe;border-radius:10px;padding:.85rem;margin-bottom:.6rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+        <span style="font-weight:700;font-size:.95rem;color:#1e293b">${esc(p.title||'—')}</span>
+        ${badge}
+      </div>
+      ${timeStr ? `<div style="font-size:.85rem;color:#475569">🕐 ${timeStr}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('calDayModalBody').innerHTML = html;
+  document.getElementById('calDayModal').style.display = 'flex';
+}
+
+function closeCalDayModal() {
+  document.getElementById('calDayModal').style.display = 'none';
+}
+
+// ─────────────────────────────────────────────────────────────────
 
 function bookSlot(slotId) {
   // Find slot data from the rendered list
@@ -1638,21 +1914,26 @@ function openAppDetail(idx) {
         ${a.interview_availability ? `<div><span style="color:var(--gray-400)">面试时间：</span>${esc(a.interview_availability)}</div>` : ''}
         ${a.applicant_message ? `<div style="margin-top:.3rem;color:var(--gray-600);font-size:.83rem;white-space:pre-wrap">${esc(a.applicant_message)}</div>` : ''}
       </div>
-      ${st === 'interview_scheduled' && a.interview_datetime ? `
-      <div style="border-radius:8px;padding:.9rem;border:2px solid #2563eb40;background:#eff6ff;display:grid;gap:.5rem;font-size:.88rem">
-        <div style="font-weight:700;color:#1d4ed8;font-size:.95rem">📅 面试通知</div>
-        <div style="display:flex;align-items:flex-start;gap:.5rem">
-          <span style="font-size:1.1rem;line-height:1.3">📆</span>
-          <div>
-            <div style="font-weight:600">${new Date(a.interview_datetime).toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit'})}</div>
-          </div>
-        </div>
-        ${a.interview_location_text ? `<div style="display:flex;align-items:flex-start;gap:.5rem">
-          <span style="font-size:1.1rem;line-height:1.3">📍</span>
-          <div style="font-weight:600">${esc(a.interview_location_text)}</div>
-        </div>` : ''}
-        ${a.admin_note ? `<div style="margin-top:.2rem;color:var(--gray-600);white-space:pre-wrap;font-size:.83rem">${esc(a.admin_note)}</div>` : ''}
-      </div>` : `
+      ${st === 'interview_scheduled' && (a.interview_datetime || a.interview_times_json) ? (() => {
+        let times = [];
+        if (a.interview_times_json) { try { times = JSON.parse(a.interview_times_json); } catch(e) {} }
+        if (!times.length && a.interview_datetime) times = [a.interview_datetime];
+        const fmtDt = dt => new Date(dt).toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit'});
+        const multiTime = times.length > 1;
+        return `<div style="border-radius:8px;padding:.9rem;border:2px solid #2563eb40;background:#eff6ff;display:grid;gap:.5rem;font-size:.88rem">
+          <div style="font-weight:700;color:#1d4ed8;font-size:.95rem">📅 面试通知</div>
+          ${multiTime ? `<div style="font-size:.8rem;color:#1d4ed8;font-weight:600;margin-bottom:.1rem">以下为可选时间，请留意HR后续确认：</div>` : ''}
+          ${times.map((t, i) => `<div style="display:flex;align-items:flex-start;gap:.5rem">
+            <span style="font-size:1.1rem;line-height:1.3">📆</span>
+            <div><div style="font-weight:600">${multiTime ? `<span style="font-size:.78rem;color:#6b7280;margin-right:.3rem">选项${i+1}</span>` : ''}${fmtDt(t)}</div></div>
+          </div>`).join('')}
+          ${a.interview_location_text ? `<div style="display:flex;align-items:flex-start;gap:.5rem">
+            <span style="font-size:1.1rem;line-height:1.3">📍</span>
+            <div style="font-weight:600">${esc(a.interview_location_text)}</div>
+          </div>` : ''}
+          ${a.admin_note ? `<div style="margin-top:.2rem;color:var(--gray-600);white-space:pre-wrap;font-size:.83rem">${esc(a.admin_note)}</div>` : ''}
+        </div>`;
+      })() : `
       <div style="border-radius:8px;padding:.9rem;border:2px solid ${statusColor[st]}20;background:${statusColor[st]}08;display:grid;gap:.4rem;font-size:.88rem">
         <div style="font-weight:700;color:${statusColor[st]}">处理结果：${statusLabel[st]||st}</div>
         ${a.admin_note ? `<div style="color:var(--gray-600);white-space:pre-wrap">${esc(a.admin_note)}</div>` : `<div style="color:var(--gray-400)">—</div>`}
@@ -1780,8 +2061,8 @@ let _pendingPunchPhoto = null;
 
 function startPunchFlow(type) {
   _pendingPunchType = type;
-  const labels = { in: '▶ Check In', out: '⏹ Check Out' };
-  const colors  = { in: 'var(--green)', out: 'var(--red)' };
+  const labels = { in: '▶ 上班打卡 / Clock In', break_start: '⏸ Pause Job', break_end: '▶ Resume Job', out: '⏹ 下班打卡 / Clock Out' };
+  const colors  = { in: 'var(--green)', break_start: '#f97316', break_end: '#7c3aed', out: 'var(--red)' };
   document.getElementById('punchConfirmTypeLabel').textContent = labels[type] || type;
   document.getElementById('btnExecutePunch').style.background = colors[type] || 'var(--green)';
   if (_confirmClockTimer) clearInterval(_confirmClockTimer);
@@ -1799,10 +2080,9 @@ function closePunchConfirm() {
   _pendingPunchType = null;
 }
 function executePunch() {
-  closePunchConfirm();
-  if (!_pendingPunchType) return;
   const type = _pendingPunchType;
-  _pendingPunchType = null;
+  closePunchConfirm();
+  if (!type) return;
   if (type === 'in') {
     // Clock-in: require photo first
     _pendingPunchPhoto = null;
@@ -1833,13 +2113,18 @@ function cancelPunchPhoto() {
 }
 
 async function confirmPunchWithPhoto() {
-  if (!_pendingPunchPhoto) return;
+  if (!_pendingPunchPhoto) { showToast('⚠️ 请先拍照后再确认打卡 / Please take a photo first', 'error'); return; }
   const confirmBtn = document.getElementById('btnPunchConfirm');
   confirmBtn.disabled = true;
   confirmBtn.textContent = '打卡中…';
-  await doPunch('in', _pendingPunchPhoto);
-  confirmBtn.disabled = false;
-  confirmBtn.textContent = '✅ 确认打卡';
+  try {
+    await doPunch('in', _pendingPunchPhoto);
+  } catch (e) {
+    await customAlert('打卡失败，请重试。\nClock-in failed, please try again.', '打卡失败', '❌');
+  } finally {
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = '✅ 确认打卡';
+  }
 }
 
 async function doPunch(type, photo) {
@@ -1847,12 +2132,21 @@ async function doPunch(type, photo) {
   if (type === 'in') {
     const sel = document.getElementById('jobSelector');
     body.job_id = sel ? parseInt(sel.value) || null : null;
+    if (photo) {
+      body.photo_data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(photo);
+      });
+    }
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
-  if (!r) { enablePunchBtn(true); cancelPunchPhoto(); return; }
+  if (!r) { enablePunchBtn(true); cancelPunchPhoto(); await customAlert('打卡失败，请重新登录后重试。\nFailed to clock in, please re-login.', '打卡失败', '❌'); return; }
   if (r.error) {
-    showToast('❌ ' + r.error, 'error');
     cancelPunchPhoto();
+    await customAlert(r.error, r.geo_blocked ? '📍 不在工作地点' : '打卡失败', '❌');
+    enablePunchBtn(true);
     await loadPunchStatus();
     return;
   }
@@ -1868,12 +2162,11 @@ async function doPunch(type, photo) {
   }
   const toasts = {
     in: () => {
-      if (r.geo_warning) return showToast('⚠️ 上班打卡成功，但不在指定地点范围内！', 'error');
       const geoMsg = r.geo_verified ? (r.site_name ? ` · 📍${r.site_name}` : ' · 位置已验证') : '';
       showToast(`✅ 上班打卡成功！${r.job_title ? ' · ' + r.job_title : ''}${geoMsg}`, 'success');
     },
-    break_start: () => showToast('☕ 休息开始，注意休息！', 'success'),
-    break_end:   () => showToast('▶ 休息结束，继续工作！', 'success'),
+    break_start: () => showToast('⏸ Job paused.', 'success'),
+    break_end:   () => showToast('▶ Job resumed!', 'success'),
     out:         () => showToast(`✅ 下班打卡成功！本次 ${r.total_hours?.toFixed(2) || 0}h`, 'success'),
   };
   (toasts[type] || (() => {}))();
@@ -1882,7 +2175,8 @@ async function doPunch(type, photo) {
   document.getElementById('punchBtnsWrap').style.display = '';
   _gpsCoords = null;
   document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
-  await loadMyJobs();tatus();
+  await loadMyJobs();
+  await loadPunchStatus();
   loadTimeclock();
   initGPS();
 }
@@ -1904,7 +2198,7 @@ async function loadMyJobs() {
           ${j.location ? `📍 ${esc(j.location)}` : ''}
           ${j.site_name ? ` · 🏭 ${esc(j.site_name)}` : ''}
         </div>
-        ${j.start_date ? `<div style="font-size:.78rem;color:var(--gray-400);margin-top:.15rem">开始：${esc(j.start_date)}</div>` : ''}
+        ${j.start_date ? `<div style="font-size:.78rem;color:var(--gray-400);margin-top:.15rem">开始：${fmtDate(j.start_date)}</div>` : ''}
       </div>
       <div style="text-align:right;flex-shrink:0;margin-left:1rem">
         ${j.emp_hourly_rate ? `<div style="font-weight:700;color:var(--sky)">$${(+j.emp_hourly_rate).toFixed(2)}/hr</div>` : (j.pay ? `<div style="font-size:.85rem;color:var(--sky)">${esc(j.pay)}</div>` : '')}
@@ -1993,10 +2287,18 @@ async function loadReferrals() {
   // Referral link
   const linkInput = document.getElementById('referralLinkInput');
   const base = window.location.origin + '/register';
-  linkInput.value = data.worker_code ? `${base}?ref=${data.worker_code}` : '（账号尚未激活，无法生成链接）';
+  const refUrl = data.worker_code ? `${base}?ref=${data.worker_code}` : '';
+  linkInput.value = refUrl || '（账号尚未激活，无法生成链接）';
+
+  // Show native share button if supported
+  const nativeBtn = document.getElementById('refNativeShareBtn');
+  if (nativeBtn && navigator.share) nativeBtn.style.display = 'inline-flex';
+
+  // Generate QR code
+  if (refUrl) _generateReferralQR(refUrl);
 
   // Summary cards
-  document.getElementById('refCountEl').textContent = data.qualified_count;
+  document.getElementById('refCountEl').textContent = (data.referred || []).length;
   document.getElementById('refPendingEl').textContent = data.pending_count;
   document.getElementById('refBonusEl').textContent = '$' + (data.total_earned || 0).toFixed(0);
 
@@ -2037,6 +2339,42 @@ async function loadReferrals() {
     }).join('')}</tbody>
   </table>`;
 }
+function _generateReferralQR(url) {
+  const qrDiv = document.getElementById('referralQR');
+  if (!qrDiv) return;
+  qrDiv.innerHTML = '';
+  const render = () => {
+    const container = document.createElement('div');
+    qrDiv.appendChild(container);
+    try {
+      new QRCode(container, { text: url, width: 160, height: 160, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    } catch(e) {
+      qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+    }
+  };
+  if (typeof QRCode !== 'undefined') { render(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+  s.onload = render;
+  s.onerror = () => {
+    qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+  };
+  document.head.appendChild(s);
+}
+
+function shareReferral(platform) {
+  const link = document.getElementById('referralLinkInput').value;
+  if (!link || link.includes('尚未')) { showToast('账号未激活，暂无邀请链接', 'error'); return; }
+  const text = `我在Prime Anchorpoint找到工作了！扫码或点击链接注册，一起来工作吧 👇\n${link}`;
+  if (platform === 'native') {
+    navigator.share({ title: 'Prime Anchorpoint 招工', text, url: link }).catch(() => {});
+    return;
+  }
+  if (platform === 'sms') { window.open(`sms:?&body=${encodeURIComponent(text)}`); return; }
+  if (platform === 'whatsapp') { window.open(`https://wa.me/?text=${encodeURIComponent(text)}`); return; }
+  if (platform === 'facebook') { window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`); return; }
+}
+
 function copyReferralLink() {
   const inp = document.getElementById('referralLinkInput');
   if (!inp.value || inp.value.includes('尚未')) return;
@@ -3127,6 +3465,12 @@ document.addEventListener('click', (e) => {
 
 function esc(s) {
   const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML;
+}
+function fmtDate(s) {
+  if (!s) return '';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return s;
+  return `${m[2]}/${m[3]}/${m[1]}`;
 }
 
 // Auto-login if token exists
