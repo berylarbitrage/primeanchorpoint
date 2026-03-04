@@ -68,6 +68,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .mobile-topbar-right{display:flex;align-items:center;gap:.6rem;font-size:.82rem}
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199}
 .content{max-width:960px;margin:1.5rem auto;padding:0 1rem;width:100%}
+.page-header{background:var(--blue);border-radius:var(--radius);padding:1rem 1.5rem;margin-bottom:1.25rem}
+.page-header h2{font-size:1.05rem;font-weight:700;color:#fff;margin-bottom:.2rem}
+.page-header p{font-size:.8rem;color:rgba(255,255,255,.7);margin:0}
 @media(max-width:768px){
   .sidebar{transform:translateX(-100%);transition:transform .25s ease}
   .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,.3)}
@@ -202,6 +205,7 @@ tr:last-child td{border-bottom:none}
 
     <!-- Post Job -->
     <div id="tabPost">
+      <div class="page-header"><h2>发布用工需求</h2><p>填写并提交新的人员调配请求</p></div>
       <div class="card">
         <h2>发布新用工需求</h2>
         <div class="field-row">
@@ -236,6 +240,7 @@ tr:last-child td{border-bottom:none}
 
     <!-- My Posts -->
     <div id="tabPosts" style="display:none">
+      <div class="page-header"><h2>我的需求记录</h2><p>查看历史用工需求及当前处理状态</p></div>
       <div class="card">
         <h2>我的用工需求记录</h2>
         <table>
@@ -247,6 +252,7 @@ tr:last-child td{border-bottom:none}
 
     <!-- Workers -->
     <div id="tabWorkers" style="display:none">
+      <div class="page-header"><h2>派遣工人列表</h2><p>查看 Prime Anchorpoint 为贵公司派遣的所有工人</p></div>
       <div class="card">
         <h2>派遣工人列表</h2>
         <p style="font-size:.85rem;color:var(--gray-400);margin-bottom:1rem">显示由 Prime Anchorpoint 派遣至贵公司的工人信息</p>
@@ -259,6 +265,7 @@ tr:last-child td{border-bottom:none}
 
     <!-- Profile -->
     <div id="tabProfile" style="display:none">
+      <div class="page-header"><h2>我的信息</h2><p>查看并更新公司及联系人资料</p></div>
       <div class="card" id="profileCard">
         <h2>我的公司信息</h2>
         <div id="profileContent"></div>
