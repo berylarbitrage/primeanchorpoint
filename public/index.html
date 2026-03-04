@@ -129,9 +129,14 @@
 .pg-header .subtitle{font-size:.92rem;color:rgba(255,255,255,.55);margin-top:.5rem;position:relative;z-index:1}
 
 /* JOBS */
-.job-filters{display:flex;gap:.5rem;margin-bottom:2rem;flex-wrap:wrap}
-.job-filter-btn{padding:8px 20px;background:var(--off-white);color:var(--gray-600);border:1px solid var(--gray-200);border-radius:20px;font-size:.82rem;font-weight:600;cursor:pointer;transition:var(--tr)}
+.job-filter-section{margin-bottom:2rem;border:1px solid var(--gray-200);border-radius:var(--radius);padding:1rem 1.2rem;background:var(--off-white)}
+.filter-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem}
+.filter-row:last-child{margin-bottom:0}
+.filter-label{font-size:.72rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px;min-width:90px;flex-shrink:0}
+.filter-chips{display:flex;gap:.35rem;flex-wrap:wrap}
+.job-filter-btn{padding:6px 16px;background:var(--white);color:var(--gray-600);border:1px solid var(--gray-200);border-radius:20px;font-size:.78rem;font-weight:600;cursor:pointer;transition:var(--tr)}
 .job-filter-btn.active,.job-filter-btn:hover{background:var(--sky);color:#fff;border-color:var(--sky)}
+@media(max-width:768px){.filter-label{min-width:70px;font-size:.68rem}.job-filter-btn{padding:5px 12px;font-size:.74rem}}
 .job-list{display:grid;gap:.75rem}
 .job-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.25rem 1.5rem;display:flex;justify-content:space-between;align-items:center;transition:var(--tr);cursor:pointer}
 .job-card:hover{border-color:var(--sky);box-shadow:var(--shadow)}
@@ -283,7 +288,7 @@ input.input-err,textarea.input-err{border-color:#e53e3e!important}input.input-er
 @media(max-width:768px){.quote-steps{grid-template-columns:1fr;gap:1.5rem}.quote-card{padding:1.5rem}.quote-body{padding:1.5rem 1rem 3rem}}
 
 @media(max-width:1024px){.svc-cards,.ind-grid{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}.split.reverse .split-img{order:1}.split.reverse .split-text{order:2}.split-img img{min-height:300px;height:300px}.photo-strip{grid-template-columns:1fr 1fr}.mosaic{grid-template-columns:1fr 1fr;grid-template-rows:auto}.mosaic-item:first-child{grid-row:auto}.stats-grid{grid-template-columns:1fr 1fr}.footer-inner{grid-template-columns:1fr 1fr}.pos-grid{grid-template-columns:1fr 1fr}}
-@media(max-width:768px){.top-bar{display:none}.nav-menu,.nav-cta{display:none}.mobile-toggle{display:block}.nav-menu.open{display:flex;flex-direction:column;position:absolute;top:72px;left:0;right:0;background:var(--white);box-shadow:var(--shadow-lg);z-index:100}.nav-menu.open .nav-item>a{height:auto;padding:14px 2rem;border-bottom:1px solid var(--gray-100)}.nav-dropdown{display:none}.svc-cards,.ind-grid{grid-template-columns:1fr}.photo-strip{grid-template-columns:1fr 1fr}.photo-item{height:160px}.stats-grid{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.footer-inner{grid-template-columns:1fr}.mega-footer{padding-bottom:80px}body{padding-bottom:56px}.split-text{padding:2.5rem 1.5rem}.pos-grid{grid-template-columns:1fr 1fr}.mosaic{grid-template-columns:1fr}.hero-btns{flex-direction:column;align-items:flex-start}}
+@media(max-width:768px){.top-bar{display:none}.nav-menu,.nav-cta{display:none}.mobile-toggle{display:block}.main-nav{background:var(--blue)}.nav-inner{justify-content:center;position:relative}.logo-link{position:absolute;left:50%;transform:translateX(-50%)}.logo-text{color:#fff}.logo-text span{color:var(--accent)}.mobile-toggle{position:absolute;right:1rem;top:50%;transform:translateY(-50%);color:#fff}.nav-menu.open{display:flex;flex-direction:column;position:absolute;top:72px;left:0;right:0;background:var(--blue);box-shadow:var(--shadow-lg);z-index:100}.nav-menu.open .nav-item>a{height:auto;padding:14px 2rem;border-bottom:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.85)}.nav-menu.open .nav-item>a:hover{color:#fff}.nav-dropdown{display:none}.svc-cards,.ind-grid{grid-template-columns:1fr}.photo-strip{grid-template-columns:1fr 1fr}.photo-item{height:160px}.stats-grid{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.footer-inner{grid-template-columns:1fr}.mega-footer{padding-bottom:80px}body{padding-bottom:56px}.split-text{padding:2.5rem 1.5rem}.pos-grid{grid-template-columns:1fr 1fr}.mosaic{grid-template-columns:1fr}.hero-btns{flex-direction:column;align-items:flex-start}}
 .job-apply-modal-bg{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,43,91,.45);z-index:9999;align-items:center;justify-content:center}
 .job-apply-modal-bg.show{display:flex}
 .job-apply-modal{background:var(--white);border-radius:12px;padding:2rem;max-width:480px;width:90%;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg);position:relative}
@@ -500,11 +505,53 @@ input.input-err,textarea.input-err{border-color:#e53e3e!important}input.input-er
 <div class="page" id="pg-jobs">
 <div class="pg-header"><div class="pg-header-bg" style="background-image:url('https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg?auto=compress&cs=tinysrgb&w=1400')"></div><div class="pg-header-ov"></div><h1 data-i18n="jobsH1">Open Positions</h1><div class="subtitle" data-i18n="jobsSub">Find Your Next Role</div></div>
 <section class="section"><div class="section-inner">
-  <div class="job-filters" id="jobFilters">
-    <button class="job-filter-btn active" onclick="filterJobs('all',this)">All</button>
-    <button class="job-filter-btn" onclick="filterJobs('en',this)">English</button>
-    <button class="job-filter-btn" onclick="filterJobs('zh',this)">中文</button>
-    <button class="job-filter-btn" onclick="filterJobs('es',this)">Español</button>
+  <div class="job-filter-section" id="jobFilters">
+    <div class="filter-row">
+      <span class="filter-label">Language</span>
+      <div class="filter-chips">
+        <button class="job-filter-btn active" data-filter="lang" data-value="all" onclick="setJobFilter('lang','all',this)">All</button>
+        <button class="job-filter-btn" data-filter="lang" data-value="en" onclick="setJobFilter('lang','en',this)">English</button>
+        <button class="job-filter-btn" data-filter="lang" data-value="zh" onclick="setJobFilter('lang','zh',this)">中文</button>
+        <button class="job-filter-btn" data-filter="lang" data-value="es" onclick="setJobFilter('lang','es',this)">Español</button>
+      </div>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Job Type</span>
+      <div class="filter-chips">
+        <button class="job-filter-btn active" data-filter="type" data-value="all" onclick="setJobFilter('type','all',this)">All Types</button>
+        <button class="job-filter-btn" data-filter="type" data-value="full" onclick="setJobFilter('type','full',this)">Full-time</button>
+        <button class="job-filter-btn" data-filter="type" data-value="part" onclick="setJobFilter('type','part',this)">Part-time</button>
+        <button class="job-filter-btn" data-filter="type" data-value="temp" onclick="setJobFilter('type','temp',this)">Temp</button>
+        <button class="job-filter-btn" data-filter="type" data-value="contract" onclick="setJobFilter('type','contract',this)">Contract</button>
+      </div>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Work Auth</span>
+      <div class="filter-chips">
+        <button class="job-filter-btn active" data-filter="auth" data-value="all" onclick="setJobFilter('auth','all',this)">Any Auth</button>
+        <button class="job-filter-btn" data-filter="auth" data-value="any" onclick="setJobFilter('auth','any',this)">Open to All</button>
+        <button class="job-filter-btn" data-filter="auth" data-value="gc" onclick="setJobFilter('auth','gc',this)">GC / Citizen</button>
+        <button class="job-filter-btn" data-filter="auth" data-value="citizen" onclick="setJobFilter('auth','citizen',this)">US Citizen</button>
+      </div>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Schedule</span>
+      <div class="filter-chips">
+        <button class="job-filter-btn active" data-filter="shift" data-value="all" onclick="setJobFilter('shift','all',this)">Any Shift</button>
+        <button class="job-filter-btn" data-filter="shift" data-value="1st" onclick="setJobFilter('shift','1st',this)">1st Shift</button>
+        <button class="job-filter-btn" data-filter="shift" data-value="2nd" onclick="setJobFilter('shift','2nd',this)">2nd Shift</button>
+        <button class="job-filter-btn" data-filter="shift" data-value="3rd" onclick="setJobFilter('shift','3rd',this)">3rd Shift</button>
+        <button class="job-filter-btn" data-filter="shift" data-value="night" onclick="setJobFilter('shift','night',this)">Night</button>
+        <button class="job-filter-btn" data-filter="shift" data-value="flex" onclick="setJobFilter('shift','flex',this)">Flexible</button>
+      </div>
+    </div>
+    <div class="filter-row">
+      <span class="filter-label">Status</span>
+      <div class="filter-chips">
+        <button class="job-filter-btn active" data-filter="urgent" data-value="all" onclick="setJobFilter('urgent','all',this)">All Jobs</button>
+        <button class="job-filter-btn" data-filter="urgent" data-value="1" onclick="setJobFilter('urgent','1',this)">🔥 Urgent Only</button>
+      </div>
+    </div>
   </div>
   <div class="job-list" id="jobList"></div>
 </div></section></div>
@@ -1060,7 +1107,10 @@ let allJobs=[];
 async function loadJobs(){try{const r=await fetch(WP_API+'/jobs?lang=all');if(!r.ok)throw 0;allJobs=await r.json();renderJobs(allJobs);const jid=new URLSearchParams(location.search).get('job');if(jid){const card=document.querySelector('.job-card[data-job-id="'+jid+'"]');if(card)setTimeout(()=>{card.scrollIntoView({behavior:'smooth',block:'center'});card.querySelector('.job-detail').style.display='block'},400)}}catch(e){document.getElementById('jobList').innerHTML='<div style="text-align:center;padding:3rem;color:var(--gray-400)"><p style="font-size:1.05rem;margin-bottom:.5rem">Coming Soon</p><p style="font-size:.85rem">Job listings will appear once the backend is connected.</p></div>'}}
 function jobCityStateZip(loc){if(!loc)return'';const p=loc.split(',').map(s=>s.trim()).filter(Boolean);return p.length<=2?loc:p.slice(-2).join(', ');}
 function renderJobs(j){const l=document.getElementById('jobList');if(!j.length){l.innerHTML='<p style="text-align:center;color:var(--gray-400);padding:2rem">No positions right now.</p>';return}const authLabel=a=>({any:'Any Work Auth',gc:'Green Card / Citizen',citizen:'US Citizen Only'})[a]||'';const applyLabel=(T[currentLang]&&T[currentLang].applyBtn)||'Apply Now';const shareLabel=(T[currentLang]&&T[currentLang].shareLabel)||'Share:';const copyLabel=(T[currentLang]&&T[currentLang].shareCopy)||'Copy Link';l.innerHTML=j.map(jb=>{const safeTitle=(jb.title||'').replace(/'/g,"\\'").replace(/`/g,'\\`');const shareRow=`<div class="job-share-row"><span class="job-share-label">${shareLabel}</span><button class="share-btn share-wa" onclick="event.stopPropagation();shareJob('wa',${jb.id},'${safeTitle}')">WhatsApp</button><button class="share-btn share-fb" onclick="event.stopPropagation();shareJob('fb',${jb.id},'${safeTitle}')">Facebook</button><button class="share-btn share-tw" onclick="event.stopPropagation();shareJob('tw',${jb.id},'${safeTitle}')">&#x1D54F;</button><button class="share-btn share-line" onclick="event.stopPropagation();shareJob('line',${jb.id},'${safeTitle}')">LINE</button><button class="share-btn share-copy" id="copyBtn${jb.id}" onclick="event.stopPropagation();copyJobLink(${jb.id},this)">${copyLabel}</button></div>`;return `<div class="job-card" data-job-id="${jb.id}" onclick="this.querySelector('.job-detail').style.display=this.querySelector('.job-detail').style.display==='block'?'none':'block'"><div><h3>${jb.title}</h3><div class="meta"><span>${jb.type||''}</span><span>${jobCityStateZip(jb.location)}</span>${jb.pay?'<span>'+jb.pay+'</span>':''}${jb.schedule?'<span>🕐 '+jb.schedule+'</span>':''}${jb.work_auth?'<span>🪪 '+authLabel(jb.work_auth)+'</span>':''}</div><div class="job-detail">${jb.benefits?'<p>🎁 '+jb.benefits+'</p>':''}<p>${jb.desc||''}</p><button class="job-apply-btn" onclick="event.stopPropagation();openJobApply(${jb.id},'${safeTitle}')">${applyLabel}</button>${shareRow}</div></div><div class="job-badge${jb.urgent?' urgent':''}">${jb.urgent?'URGENT':jb.lang_name||''}</div></div>`}).join('')}
-function filterJobs(lang,btn){document.querySelectorAll('.job-filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');if(lang==='all')renderJobs(allJobs);else renderJobs(allJobs.filter(j=>j.lang===lang))}
+let _jobFilters={lang:'all',type:'all',auth:'all',shift:'all',urgent:'all'};
+function setJobFilter(dim,val,btn){_jobFilters[dim]=val;document.querySelectorAll('[data-filter="'+dim+'"]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');applyJobFilters()}
+function applyJobFilters(){let r=allJobs;const f=_jobFilters;if(f.lang!=='all')r=r.filter(j=>j.lang===f.lang);if(f.type!=='all')r=r.filter(j=>(j.type||'').toLowerCase().includes(f.type));if(f.auth!=='all'&&f.auth!=='any')r=r.filter(j=>j.work_auth===f.auth);if(f.auth==='any')r=r.filter(j=>!j.work_auth||j.work_auth==='any'||j.work_auth==='');if(f.shift!=='all')r=r.filter(j=>(j.schedule||'').toLowerCase().includes(f.shift));if(f.urgent!=='all')r=r.filter(j=>String(j.urgent)===f.urgent);renderJobs(r)}
+function filterJobs(lang,btn){setJobFilter('lang',lang,btn)}
 
 function shareJob(platform, jobId, title){
   const url=encodeURIComponent(window.location.origin+window.location.pathname+'?job='+jobId);
