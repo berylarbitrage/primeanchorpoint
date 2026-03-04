@@ -73,9 +73,6 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .mobile-topbar-right{display:flex;align-items:center;gap:.6rem;font-size:.82rem}
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199}
 .content{max-width:900px;margin:1.5rem auto;padding:0 1rem;width:100%}
-.page-header{background:var(--blue);border-radius:var(--radius);padding:1rem 1.5rem;margin-bottom:1.25rem}
-.page-header h2{font-size:1.05rem;font-weight:700;color:#fff;margin-bottom:.2rem}
-.page-header p{font-size:.8rem;color:rgba(255,255,255,.7);margin:0}
 .card{background:#fff;border-radius:var(--radius);padding:1.25rem;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:1rem}
 .card h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1rem}
 /* Job cards */
@@ -435,6 +432,7 @@ tr:last-child td{border-bottom:none}
       <button class="hamburger" onclick="toggleSidebar()" aria-label="菜单">
         <span></span><span></span><span></span>
       </button>
+      <span id="mobilPageTitle" style="font-weight:700;font-size:.9rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">职位浏览</span>
       <div class="mobile-topbar-right">
         <span id="workerNameDisplayMobile" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px"></span>
         <button onclick="workerLogout()" style="background:rgba(255,255,255,.15);color:#fff;border:none;padding:.3rem .7rem;border-radius:6px;cursor:pointer;font-size:.8rem">退出</button>
@@ -444,7 +442,6 @@ tr:last-child td{border-bottom:none}
 
     <!-- Jobs -->
     <div id="tabJobs">
-      <div class="page-header"><h2>职位浏览</h2><p>查找并申请适合您的工作岗位</p></div>
       <div class="card" style="display:flex;align-items:center;gap:1rem;padding:.85rem 1.25rem">
         <input type="text" id="jobSearchInput" placeholder="搜索职位、地点..." oninput="filterJobs()" style="flex:1;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem">
         <select id="jobTypeFilter" onchange="filterJobs()" style="padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem">
@@ -460,7 +457,6 @@ tr:last-child td{border-bottom:none}
 
     <!-- My Schedule -->
     <div id="tabInterview" style="display:none">
-      <div class="page-header"><h2>我的安排</h2><p>查看工作日程安排与到岗时间</p></div>
       <!-- Today's Schedule Card -->
       <div class="card" id="todayScheduleCard">
         <h2>📅 今日安排</h2>
@@ -470,7 +466,6 @@ tr:last-child td{border-bottom:none}
 
     <!-- My Applications -->
     <div id="tabApplications" style="display:none">
-      <div class="page-header"><h2>我的申请</h2><p>追踪您提交的职位申请状态</p></div>
       <div class="card">
         <h2>我的申请记录</h2>
         <table><thead><tr><th>职位</th><th>地点</th><th>薪资</th><th>申请状态</th><th>申请时间</th></tr></thead>
@@ -480,7 +475,6 @@ tr:last-child td{border-bottom:none}
 
     <!-- Timeclock -->
     <div id="tabTimeclock" style="display:none">
-      <div class="page-header"><h2>打卡记录</h2><p>上下班打卡及工时查询</p></div>
       <!-- Current dispatched jobs -->
       <div class="card" style="margin-bottom:1rem">
         <h2 style="margin-bottom:.75rem">💼 当前工作安排</h2>
@@ -509,7 +503,6 @@ tr:last-child td{border-bottom:none}
 
     <!-- Payments -->
     <div id="tabPayments" style="display:none">
-      <div class="page-header"><h2>打款记录</h2><p>查看薪资发放历史与金额明细</p></div>
       <div class="card">
         <h2>打款记录</h2>
         <table><thead><tr><th>日期</th><th>工作</th><th>周期</th><th>金额</th><th>付款方式</th><th>备注</th></tr></thead>
@@ -519,7 +512,6 @@ tr:last-child td{border-bottom:none}
 
     <!-- Compliance 合规文件 -->
     <div id="tabCompliance" style="display:none">
-      <div class="page-header"><h2>合规文件</h2><p>上传并管理入职所需的合规材料</p></div>
       <!-- Overview cards -->
       <div class="card">
         <h2>合规文件概览 / Compliance Overview</h2>
@@ -783,7 +775,6 @@ tr:last-child td{border-bottom:none}
 
     <!-- Todos / Onboarding -->
     <div id="tabTodos" style="display:none">
-      <div class="page-header"><h2>📋 待办事项</h2><p>完成入职所需的各项步骤</p></div>
       <div class="card">
         <h2>📋 我的入职待办事项</h2>
         <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1.25rem">请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。</p>
@@ -808,7 +799,6 @@ tr:last-child td{border-bottom:none}
 
     <!-- Profile -->
     <div id="tabProfile" style="display:none">
-      <div class="page-header"><h2>我的信息</h2><p>查看并更新您的个人资料</p></div>
       <!-- Basic info -->
       <div class="card" style="margin-bottom:1rem">
         <h2 style="margin-bottom:1rem">👤 我的信息</h2>
@@ -1144,6 +1134,8 @@ function showTab(tab) {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  const _tabLabels={jobs:'职位浏览',interview:'我的安排',applications:'我的申请',timeclock:'打卡记录',payments:'打款记录',compliance:'合规文件',todos:'待办事项',profile:'我的信息'};
+  const _tEl=document.getElementById('mobilPageTitle');if(_tEl)_tEl.textContent=_tabLabels[tab]||'';
   closeSidebar();
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
