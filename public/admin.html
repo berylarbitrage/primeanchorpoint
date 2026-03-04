@@ -2456,6 +2456,7 @@ tr:hover td{background:var(--sky-light)}
 <script>
 let _gcmCallback = null;
 let _pendingDupSave = null; // { data, empId, field, fieldLabel, existingEmpName }
+let _pendingWorkerLink = null; // { workerId, empId } - link after editing existing employee
 function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor, cancelText) {
   const colors = {
     blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
@@ -4967,7 +4968,7 @@ function openEmpModal(id) {
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
-function closeEmpModal() { _convertFromWorkerId = null; guardClose('empModal'); }
+function closeEmpModal() { _convertFromWorkerId = null; _pendingWorkerLink = null; guardClose('empModal'); }
 
 // ── Address verify helpers ──
 function _setAddrStatus(el, verified) {
@@ -5285,6 +5286,7 @@ async function _forceSaveEmployee(p) {
   } else {
     showToast(`❌ ${r.error || '保存失败'}`, 'error');
   }
+  return r;
 }
 
 function _showDupActionBar(p) {
@@ -5321,15 +5323,30 @@ async function _execDupReplace() {
   _pendingDupSave = null;
   document.getElementById('dupActionBar').style.display = 'none';
   closeEmpDetailModal();
-  if (p) await _forceSaveEmployee(p);
+  if (!p) return;
+  const r = await _forceSaveEmployee(p);
+  if (p.convertFromWorkerId && r && (r.id || p.empId)) {
+    const empId = r.id || p.empId;
+    await api(`/admin/worker-accounts/${p.convertFromWorkerId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ employee_id: empId })
+    });
+    _convertFromWorkerId = null;
+    await loadWorkerAccounts();
+    showToast(`✅ 工人账户已绑定到员工档案`);
+  }
 }
 
 function _execDupEdit() {
+  const p = _pendingDupSave;
   _pendingDupSave = null;
   document.getElementById('dupActionBar').style.display = 'none';
   const empId = currentEmpForDetail && currentEmpForDetail.id;
   closeEmpDetailModal();
-  if (empId) setTimeout(() => openEmpModal(empId), 100);
+  if (empId) setTimeout(() => {
+    if (p && p.convertFromWorkerId) _pendingWorkerLink = { workerId: p.convertFromWorkerId, empId };
+    openEmpModal(empId);
+  }, 100);
 }
 
 function _execDupMerge() {
@@ -5340,6 +5357,7 @@ function _execDupMerge() {
   closeEmpDetailModal();
   if (!empId || !p) return;
   setTimeout(() => {
+    if (p.convertFromWorkerId) _pendingWorkerLink = { workerId: p.convertFromWorkerId, empId };
     openEmpModal(empId);
     const toMerge = [
       ['ePhone', p.field !== 'phone' ? p.data.phone : null],
@@ -5408,21 +5426,33 @@ async function saveEmployee() {
   }
   async function finishSave(r2) {
     if (r2.success || r2.id) {
+      // Capture pending link before closeEmpModal() clears it
+      const workerLink = (_pendingWorkerLink && id && String(id) === String(_pendingWorkerLink.empId))
+        ? { ..._pendingWorkerLink } : null;
+      const workerLinkNew = (!id && _convertFromWorkerId && r2.id) ? _convertFromWorkerId : null;
       clearModalState('empModal');
       closeEmpModal();
       await loadEmployees();
-      // If this was a "convert worker → employee" action, link the account
-      if (!id && _convertFromWorkerId && r2.id) {
-        await api(`/admin/worker-accounts/${_convertFromWorkerId}`, {
+      // If this was a "convert worker → new employee" action, link the account
+      if (workerLinkNew && r2.id) {
+        await api(`/admin/worker-accounts/${workerLinkNew}`, {
           method: 'PUT',
           body: JSON.stringify({ employee_id: r2.id })
         });
-        _convertFromWorkerId = null;
         await loadWorkerAccounts();
         showToast(`✅ 员工「${data.first_name} ${data.last_name}」创建成功（员工号：${r2.employee_id}），工人账户已自动绑定`);
         if (document.getElementById('onboardingModal').classList.contains('show')) refreshOnboardingModal();
+      // If editing/merging an existing employee with a pending worker link, link now
+      } else if (workerLink) {
+        _pendingWorkerLink = null;
+        await api(`/admin/worker-accounts/${workerLink.workerId}`, {
+          method: 'PUT',
+          body: JSON.stringify({ employee_id: parseInt(id) })
+        });
+        await loadWorkerAccounts();
+        showToast(`✅ 员工「${data.first_name} ${data.last_name}」信息已更新，工人账户已绑定`);
+        if (document.getElementById('onboardingModal').classList.contains('show')) refreshOnboardingModal();
       } else {
-        _convertFromWorkerId = null;
         showToast(id
           ? `✅ 员工「${data.first_name} ${data.last_name}」(${data.employee_id || id}) 信息已更新`
           : `✅ 员工「${data.first_name} ${data.last_name}」创建成功，员工号：${r2.employee_id}`);
