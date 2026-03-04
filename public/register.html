@@ -107,15 +107,25 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
     <div class="form-section active" id="formWorker">
       <h2 id="workerH2"></h2>
 
-      <div class="field">
-        <label id="lWName"></label>
-        <input type="text" id="wName">
+      <div class="field-row">
+        <div class="field">
+          <label id="lWFirstName"></label>
+          <input type="text" id="wFirstName" autocomplete="given-name">
+        </div>
+        <div class="field" style="max-width:120px">
+          <label id="lWMiddleName"></label>
+          <input type="text" id="wMiddleName" autocomplete="additional-name">
+        </div>
+        <div class="field">
+          <label id="lWLastName"></label>
+          <input type="text" id="wLastName" autocomplete="family-name">
+        </div>
       </div>
 
       <div class="field-row">
         <div class="field">
           <label id="lWPhone"></label>
-          <input type="tel" id="wPhone" onblur="checkDuplicate('phone')" autocomplete="tel">
+          <input type="tel" id="wPhone" onblur="checkDuplicate('phone')" oninput="formatPhoneInput(this)" autocomplete="tel" placeholder="(312) 555-1234" maxlength="14">
           <div class="field-hint" id="dupPhone" style="color:var(--red);display:none"></div>
         </div>
         <div class="field">
@@ -128,6 +138,17 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <div class="field">
         <label id="lWDob"></label>
         <input type="date" id="wDob">
+      </div>
+
+      <div class="field-row">
+        <div class="field">
+          <label id="lWCity"></label>
+          <input type="text" id="wCity" placeholder="Chicago" autocomplete="address-level2">
+        </div>
+        <div class="field" style="max-width:130px">
+          <label id="lWState"></label>
+          <input type="text" id="wState" placeholder="IL" maxlength="2" autocomplete="address-level1" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+        </div>
       </div>
 
       <div class="field">
@@ -308,10 +329,14 @@ const L = {
     typeEDesc:        '招聘用工单位',
 
     workerH2:         '👷 工人注册',
-    lName:            '姓名 *',
+    lFirstName:       '名 *',
+    lMiddleName:      '中间名',
+    lLastName:        '姓 *',
     lPhone:           '手机号 *',
     lEmail:           '邮箱 *',
     lDob:             '出生日期 *',
+    lCity:            '城市 *',
+    lState:           '州 *',
     lStatus:          '身份状态 *',
     lPos:             '感兴趣的工种',
     hPos:             '可多选',
@@ -385,12 +410,15 @@ const L = {
     statOPT:     '🎓 OPT/CPT',
     statOther:   '其他',
 
-    errName:     '请输入姓名',
+    errFirstName:'请输入名字',
+    errLastName: '请输入姓氏',
     errPhone:    '请输入手机号',
     errPhoneFmt: '手机号格式不正确，请输入10-11位数字',
     errEmail:    '请输入邮箱',
     errEmailFmt: '邮箱格式不正确',
     errDob:      '请选择出生日期',
+    errCity:     '请输入城市',
+    errState:    '请输入州（2个字母，如 IL）',
     errStatus:   '请选择身份状态',
     errPwd:      '密码至少6位',
     errPwdMatch: '两次密码不一致',
@@ -492,12 +520,20 @@ const L = {
     statOPT:     '🎓 OPT/CPT',
     statOther:   'Other',
 
-    errName:     'Name is required',
+    lFirstName:  'First Name *',
+    lMiddleName: 'Middle Name',
+    lLastName:   'Last Name *',
+    lCity:       'City *',
+    lState:      'State *',
+    errFirstName:'First name is required',
+    errLastName: 'Last name is required',
     errPhone:    'Phone is required',
     errPhoneFmt: 'Please enter a valid phone number (10-11 digits)',
     errEmail:    'Email is required',
     errEmailFmt: 'Please enter a valid email address',
     errDob:      'Date of birth is required',
+    errCity:     'City is required',
+    errState:    'State is required (2-letter, e.g. IL)',
     errStatus:   'Work status is required',
     errPwd:      'Password must be at least 6 characters',
     errPwdMatch: 'Passwords do not match',
@@ -725,10 +761,14 @@ function setLang(lang) {
 
   // Worker form
   setText('workerH2', 'workerH2');
-  setText('lWName', 'lName');   setPh('wName', 'phName');
+  setText('lWFirstName', 'lFirstName');
+  setText('lWMiddleName', 'lMiddleName');
+  setText('lWLastName', 'lLastName');
   setText('lWPhone', 'lPhone'); setPh('wPhone', 'phPhone');
   setText('lWEmail', 'lEmail'); setPh('wEmail', 'phEmail');
   setText('lWDob', 'lDob');
+  setText('lWCity', 'lCity');
+  setText('lWState', 'lState');
   setText('lWStatus', 'lStatus');
   setText('lWPos', 'lPos');     setText('hWPos', 'hPos');
   setText('lWPwd', 'lPwd');     setPh('wPassword', 'phPwd');
@@ -818,6 +858,14 @@ if (typeParam === 'enterprise') {
   document.getElementById('typeSelector').style.display = 'none';
 }
 
+function formatPhoneInput(el) {
+  const digits = el.value.replace(/\D/g, '').slice(0, 10);
+  if (digits.length === 0) { el.value = ''; return; }
+  if (digits.length <= 3)  { el.value = '(' + digits; return; }
+  if (digits.length <= 6)  { el.value = '(' + digits.slice(0,3) + ') ' + digits.slice(3); return; }
+  el.value = '(' + digits.slice(0,3) + ') ' + digits.slice(3,6) + '-' + digits.slice(6);
+}
+
 function togglePw(id, btn) {
   const inp = document.getElementById(id);
   if (inp.type === 'password') { inp.type = 'text'; btn.style.opacity = '1'; }
@@ -879,19 +927,27 @@ function hideError() { document.getElementById('errorMsg').classList.remove('sho
 
 async function registerWorker() {
   hideError();
-  const name  = document.getElementById('wName').value.trim();
+  const firstName  = document.getElementById('wFirstName').value.trim();
+  const middleName = document.getElementById('wMiddleName').value.trim();
+  const lastName   = document.getElementById('wLastName').value.trim();
+  const name = [firstName, middleName, lastName].filter(Boolean).join(' ');
   const phone = document.getElementById('wPhone').value.trim();
   const email = document.getElementById('wEmail').value.trim();
   const dob   = document.getElementById('wDob').value;
+  const city  = document.getElementById('wCity').value.trim();
+  const state = document.getElementById('wState').value.trim().toUpperCase();
   const pwd   = document.getElementById('wPassword').value;
   const pwd2  = document.getElementById('wPassword2').value;
 
-  if (!name)  return showError(t('errName'));
+  if (!firstName) return showError(t('errFirstName'));
+  if (!lastName)  return showError(t('errLastName'));
   if (!phone) return showError(t('errPhone'));
   if (!/^\d{10,11}$/.test(phone.replace(/[\s\-()]+/g, ''))) return showError(t('errPhoneFmt'));
   if (!email) return showError(t('errEmail'));
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError(t('errEmailFmt'));
   if (!dob)   return showError(t('errDob'));
+  if (!city)  return showError(t('errCity'));
+  if (!state || state.length !== 2) return showError(t('errState'));
   if (!_selectedStatus) return showError(t('errStatus'));
   if (!pwd || pwd.length < 6) return showError(t('errPwd'));
   if (pwd !== pwd2) return showError(t('errPwdMatch'));
@@ -904,7 +960,7 @@ async function registerWorker() {
     const r = await fetch('/api/register/worker', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, phone, email, dob, work_status: _selectedStatus, position_interests: interests, password: pwd })
+      body: JSON.stringify({ first_name: firstName, middle_name: middleName, last_name: lastName, name, phone, email, dob, city, state, work_status: _selectedStatus, position_interests: interests, password: pwd })
     });
     const d = await r.json();
     if (!r.ok || d.error) return showError(d.error || 'Registration failed');

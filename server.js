@@ -110,15 +110,24 @@ async function createPersonaInquiry(workerId, workerName, workerPhone) {
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Persona-Version': '2023-01-05' },
       body: JSON.stringify({ data: { attributes: {
         'inquiry-template-id': templateId,
-        'reference-id': String(workerId),
+        'reference-id': `worker-${workerId}`,
         fields: { 'name-first': firstName, 'name-last': lastName, 'phone-number': formatPhoneE164(workerPhone || '') || undefined }
       }}})
     });
     if (!resp.ok) { console.error('[Persona] Create inquiry failed:', await resp.text()); return null; }
     const d = await resp.json();
     const inqId = d.data.id;
-    const token = d.data.attributes['session-token'];
-    return { inquiryId: inqId, sessionToken: token, link: `https://withpersona.com/verify?inquiry-id=${inqId}&session-token=${token}` };
+    let token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'] || '';
+    // Persona may not return session-token on create; call /resume to obtain it
+    if (!token) {
+      const resumeLink = await resumePersonaInquiry(inqId);
+      if (resumeLink) {
+        const m = resumeLink.match(/session-token=([^&]+)/);
+        if (m) token = m[1];
+      }
+    }
+    const link = token ? `https://withpersona.com/verify?inquiry-id=${inqId}&session-token=${token}` : '';
+    return { inquiryId: inqId, sessionToken: token, link };
   } catch (e) { console.error('[Persona] createPersonaInquiry error:', e.message); return null; }
 }
 
@@ -132,7 +141,7 @@ async function resumePersonaInquiry(inquiryId) {
     });
     if (!resp.ok) return null;
     const d = await resp.json();
-    const token = d.data?.attributes?.['session-token'];
+    const token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'];
     return token ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${token}` : null;
   } catch (e) { return null; }
 }
@@ -523,6 +532,10 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN persona_inquiry_id TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN identity_status TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN identity_sent_at TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN checkr_candidate_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN checkr_invitation_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN checkr_report_id TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN bgcheck_status TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN applicant_message TEXT DEFAULT ''`); } catch(e) {}
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
@@ -600,6 +613,7 @@ try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); }
 
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
+try { db.exec(`ALTER TABLE assignments ADD COLUMN work_schedule TEXT DEFAULT '{}'`); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
 
 db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
@@ -765,6 +779,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS enterprise_verification_codes (
 // Migrate: suspended flag for worker accounts (distinct from unverified)
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN suspended INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN assigned_tasks TEXT DEFAULT '[]'"); } catch {}
+// Migrate: city / state / worker_code / linked_inquiry_id (stored) / split name
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN city TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN state TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN first_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN middle_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN last_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN worker_code TEXT DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN linked_inquiry_id INTEGER DEFAULT NULL"); } catch {}
+// Backfill: assign worker_code + linked_inquiry_id to existing verified workers
+// (runs once on startup; activateWorkerAccount is idempotent — skips if code already set)
+setTimeout(() => {
+  try {
+    const unlinked = db.prepare("SELECT id FROM worker_accounts WHERE active=1 AND worker_code IS NULL").all();
+    unlinked.forEach(w => { try { activateWorkerAccount(w.id); } catch {} });
+  } catch {}
+}, 0);
 // Migrate: richer fields on job_applications
 try { db.exec("ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE job_applications ADD COLUMN work_auth_confirmed TEXT DEFAULT ''"); } catch {}
@@ -894,6 +924,28 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
+
+// Migrate old id_verify + ssn_verify → persona_verify
+try {
+  const oldRows = db.prepare(`SELECT DISTINCT worker_account_id FROM worker_onboarding WHERE task_key IN ('id_verify','ssn_verify')`).all();
+  if (oldRows.length) {
+    const tx = db.transaction(() => {
+      for (const r of oldRows) {
+        const id_row = db.prepare(`SELECT * FROM worker_onboarding WHERE worker_account_id=? AND task_key='id_verify'`).get(r.worker_account_id);
+        const ssn_row = db.prepare(`SELECT * FROM worker_onboarding WHERE worker_account_id=? AND task_key='ssn_verify'`).get(r.worker_account_id);
+        // Use the best status: completed > submitted > pending
+        const statusOrder = { completed: 3, waived: 3, submitted: 2, pending: 1, locked: 0 };
+        const bestStatus = (statusOrder[id_row?.status]||0) >= (statusOrder[ssn_row?.status]||0) ? (id_row?.status||'pending') : (ssn_row?.status||'pending');
+        const visible = (id_row?.visible_to_worker || ssn_row?.visible_to_worker) ? 1 : 0;
+        db.prepare(`INSERT OR IGNORE INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker) VALUES (?,'persona_verify',?,?)`)
+          .run(r.worker_account_id, bestStatus, visible);
+      }
+      db.prepare(`DELETE FROM worker_onboarding WHERE task_key IN ('id_verify','ssn_verify')`).run();
+    });
+    tx();
+    console.log(`[Migration] Migrated ${oldRows.length} workers from id_verify+ssn_verify → persona_verify`);
+  }
+} catch (e) { console.warn('[Migration] id_verify+ssn_verify → persona_verify:', e.message); }
 
 // ─── Worker Skills ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
@@ -1120,6 +1172,60 @@ function nextEmployeeId(city, hireDate) {
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
   return `EMEE-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+}
+
+// ─── Auto-generate worker code: WORKER-CITY-MMDDYY-000001 ───
+function generateWorkerCode(city) {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const dateStr = mm + dd + yy;
+  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
+  const last = db.prepare("SELECT worker_code FROM worker_accounts WHERE worker_code LIKE 'WORKER-%' ORDER BY id DESC LIMIT 1").get();
+  let num = 1;
+  if (last) {
+    const parts = last.worker_code.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) num = lastNum + 1;
+  }
+  return `WORKER-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+}
+
+// ─── On verification: assign worker_code + ensure linked inquiry exists ───
+function activateWorkerAccount(accountId) {
+  const acc = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(accountId);
+  if (!acc) return;
+  // Generate worker_code if not already set
+  if (!acc.worker_code) {
+    const code = generateWorkerCode(acc.city);
+    db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
+  }
+  // Ensure a linked inquiry exists (by phone → email → name → create)
+  const normPhone = s => (s || '').replace(/\D/g, '');
+  const wPhone = normPhone(acc.phone);
+  const wEmail = (acc.email || '').toLowerCase();
+  const wName  = (acc.name || '').trim();
+  let inqId = null;
+  if (wPhone) {
+    const row = db.prepare('SELECT id FROM inquiries WHERE REPLACE(REPLACE(REPLACE(phone,\' \',\'\'),\'-\',\'\'),\'(\',\'\') LIKE ?').get('%' + wPhone + '%');
+    if (row) inqId = row.id;
+  }
+  if (!inqId && wEmail) {
+    const row = db.prepare('SELECT id FROM inquiries WHERE lower(email)=?').get(wEmail);
+    if (row) inqId = row.id;
+  }
+  if (!inqId && wName) {
+    const row = db.prepare('SELECT id FROM inquiries WHERE lower(trim(name))=?').get(wName.toLowerCase());
+    if (row) inqId = row.id;
+  }
+  if (!inqId) {
+    // No existing inquiry — create one so dispatch always works
+    const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
+    inqId = r.lastInsertRowid;
+  }
+  // Persist the link directly on the worker account
+  db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inqId, accountId);
 }
 
 // ─── Auto-generate employer ID: EMER-CITY-MMDDYY-000001 ───
@@ -1563,7 +1669,10 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
 app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
   const workers = db.prepare(`
     SELECT w.*, e.first_name, e.last_name, e.employee_id as emp_code,
-      e.pay_rate, e.pay_type, e.position, e.department
+      e.pay_rate, e.pay_type, e.position, e.department,
+      COALESCE(w.linked_inquiry_id,
+        (SELECT id FROM inquiries WHERE phone=w.phone OR (w.email!='' AND email=w.email) ORDER BY id DESC LIMIT 1)
+      ) as linked_inquiry_id
     FROM worker_accounts w LEFT JOIN employees e ON w.employee_id=e.id ORDER BY w.id DESC
   `).all();
 
@@ -1637,8 +1746,8 @@ const ONBOARDING_STEPS = [
   { key: 'phone_verify', title: '手机号验证',      desc: '必须通过手机号验证才能继续',                     required: true  },
   { key: 'email_verify', title: '邮箱验证',        desc: '必须通过邮箱验证才能继续',                       required: true  },
   { key: 'interview',    title: '完成面试',          desc: '预约并参加 HR 面试',                              required: true  },
-  { key: 'id_verify',    title: 'ID 证件认证',       desc: '上传护照、驾照或州 ID 卡等政府颁发证件',         required: true  },
-  { key: 'ssn_verify',   title: 'SSN 社安号验证',    desc: 'HR 核实社会安全号码',                             required: true  },
+  { key: 'persona_verify', title: '身份验证 (Persona)', desc: '驾照 + 自拍核验 · 由 HR 发起 · 通过 Persona 平台', required: true },
+  { key: 'background_check', title: '背景调查 (Checkr)', desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台', required: true },
   { key: 'ead_upload',   title: 'EAD / 工卡上传',    desc: 'EAD 工卡（如适用）',                              required: false },
   { key: 'i9',           title: 'I-9 就业资格',      desc: '填写并提交 I-9 就业资格验证表',                  required: true  },
   { key: 'w9',           title: 'W-9 税表',           desc: '独立承包商 W-9 税务信息表',                      required: true  },
@@ -1665,6 +1774,14 @@ function initWorkerOnboarding(workerId) {
   const passed = db.prepare(`SELECT i.id FROM interviews i WHERE i.worker_account_id=? AND i.status='passed'`).get(workerId);
   if (passed) {
     db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status='pending'`).run(workerId);
+  }
+  // auto-complete persona_verify if identity already approved
+  if (w.identity_status === 'approved') {
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify' AND status='pending'`).run(workerId);
+  }
+  // auto-complete background_check if Checkr already clear
+  if (w.bgcheck_status === 'clear') {
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check' AND status='pending'`).run(workerId);
   }
 }
 
@@ -1713,8 +1830,8 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
 });
 
 app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res) => {
-  const { ready } = req.body;
-  db.prepare('UPDATE worker_accounts SET dispatch_ready=? WHERE id=?').run(ready ? 1 : 0, req.params.id);
+  const { dispatch_ready } = req.body;
+  db.prepare('UPDATE worker_accounts SET dispatch_ready=? WHERE id=?').run(dispatch_ready ? 1 : 0, req.params.id);
   res.json({ success: true });
 });
 
@@ -1726,10 +1843,225 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmi
   res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
 });
 
+// Admin: send Persona identity verification from onboarding modal
+app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
+      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    const { force } = req.body || {};
+    if (w.identity_status === 'approved' && !force)
+      return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
+    const result = await createPersonaInquiry(workerId, w.name || w.username, w.phone);
+    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    // Auto-add drivers_license to assigned_tasks so compliance tab shows it
+    let curTasks = [];
+    try { curTasks = JSON.parse(w.assigned_tasks || '[]'); } catch {}
+    if (!curTasks.includes('drivers_license')) {
+      curTasks.push('drivers_license');
+      db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(curTasks), workerId);
+    }
+    db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(result.inquiryId, workerId);
+    // Store in worker_compliance_docs so worker portal compliance tab can pick it up
+    const compFormData = JSON.stringify({ persona_inquiry_id: result.inquiryId, persona_status: 'created', persona_session_token: result.sessionToken || '', persona_hosted_url: result.link || '' });
+    const existingDoc = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(workerId);
+    if (existingDoc) {
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .run(compFormData, existingDoc.id);
+    } else {
+      db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'drivers_license', ?, 'pending')")
+        .run(workerId, compFormData);
+    }
+    // Mark onboarding step as pending + visible
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
+      VALUES (?,'persona_verify','pending',1,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, '已发送 Persona 验证链接', result.link || '');
+    // Send SMS
+    let smsSent = false;
+    if (w.phone) {
+      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照+自拍）以继续入职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      smsSent = await sendSMS(w.phone, smsText);
+    }
+    // Send email
+    let emailSent = false;
+    if (w.email) {
+      const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+      emailSent = await sendEmail(w.email,
+        'Prime Anchorpoint — 身份验证请求 / Identity Verification',
+        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
+        `<p>您好 ${w.name||w.username||''}，</p>
+         <p>HR 已为您发起身份验证（驾照 + 自拍核验）。您可以通过以下任一方式完成：</p>
+         <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
+           <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
+           ${result.link ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${result.link}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
+           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.link}</span></td></tr>` : ''}
+         </table>`
+      );
+    }
+    res.json({ success: true, smsSent, emailSent, portalReady: true, inquiryId: result.inquiryId, link: result.link || '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Checkr Background Check Integration ──
+async function checkrApiCall(method, path, body) {
+  const settings = db.prepare("SELECT * FROM integration_settings WHERE provider='checkr'").get();
+  const apiKey = settings?.api_key || process.env.CHECKR_API_KEY;
+  if (!apiKey) throw new Error('Checkr API key not configured');
+  const url = `https://api.checkr.com/v1${path}`;
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Basic ${Buffer.from(apiKey + ':').toString('base64')}` },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(url, opts);
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Checkr API ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
+
+// Admin: send Checkr background check invitation to worker
+app.post('/api/admin/worker-accounts/:id/send-checkr', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    if (!w.email) return res.status(400).json({ error: '该工人没有邮箱地址，无法发送 Checkr 邀请' });
+
+    const settings = db.prepare("SELECT * FROM integration_settings WHERE provider='checkr'").get();
+    const apiKey = settings?.api_key || process.env.CHECKR_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'Checkr 未配置，请先在集成设置中配置 Checkr API Key' });
+
+    const config = JSON.parse(settings?.config || '{}');
+    const packageSlug = config.package || process.env.CHECKR_PACKAGE || 'tasker_standard';
+
+    // Create candidate
+    let candidateId = w.checkr_candidate_id;
+    if (!candidateId) {
+      const candidate = await checkrApiCall('POST', '/candidates', {
+        first_name: (w.name || w.username || '').split(' ')[0] || w.username,
+        last_name: (w.name || '').split(' ').slice(1).join(' ') || '',
+        email: w.email,
+        phone: w.phone || undefined,
+        dob: w.dob || undefined,
+      });
+      candidateId = candidate.id;
+      db.prepare('UPDATE worker_accounts SET checkr_candidate_id=? WHERE id=?').run(candidateId, workerId);
+    }
+
+    // Create invitation (Checkr sends email to candidate with SSN + consent collection)
+    const invitation = await checkrApiCall('POST', '/invitations', {
+      candidate_id: candidateId,
+      package: packageSlug,
+    });
+
+    db.prepare('UPDATE worker_accounts SET checkr_invitation_id=?, bgcheck_status=? WHERE id=?')
+      .run(invitation.id, 'invitation_sent', workerId);
+
+    // Mark onboarding step as pending + visible
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
+      VALUES (?,'background_check','pending',1,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, '已发送 Checkr 背景调查邀请', invitation.invitation_url || '');
+
+    // Notify worker via SMS
+    let smsSent = false;
+    if (w.phone) {
+      smsSent = await sendSMS(w.phone, `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，我们已通过 Checkr 向您的邮箱 (${w.email}) 发送了背景调查邀请，请查收邮件并完成。`);
+    }
+
+    res.json({ success: true, smsSent, candidateId, invitationId: invitation.id, invitationUrl: invitation.invitation_url || '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Checkr webhook — called when background check status changes
+app.post('/api/webhooks/checkr', express.json(), (req, res) => {
+  try {
+    const event = req.body;
+    const eventType = event.type || '';
+    console.log(`[Checkr Webhook] ${eventType}`);
+
+    if (eventType === 'invitation.completed') {
+      // Candidate completed the invitation (provided SSN, consent, etc.)
+      const candidateId = event.data?.object?.candidate_id;
+      if (candidateId) {
+        const w = db.prepare('SELECT id FROM worker_accounts WHERE checkr_candidate_id=?').get(candidateId);
+        if (w) {
+          db.prepare('UPDATE worker_accounts SET bgcheck_status=? WHERE id=?').run('pending', w.id);
+          db.prepare(`UPDATE worker_onboarding SET admin_note='工人已提交信息，等待 Checkr 审核…', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
+        }
+      }
+    } else if (eventType === 'report.completed') {
+      const reportId = event.data?.object?.id;
+      const candidateId = event.data?.object?.candidate_id;
+      const result = event.data?.object?.result; // 'clear' or 'consider'
+      if (candidateId) {
+        const w = db.prepare('SELECT id FROM worker_accounts WHERE checkr_candidate_id=?').get(candidateId);
+        if (w) {
+          const status = result === 'clear' ? 'clear' : 'review';
+          db.prepare('UPDATE worker_accounts SET checkr_report_id=?, bgcheck_status=? WHERE id=?').run(reportId || '', status, w.id);
+          if (status === 'clear') {
+            db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='Checkr: Clear ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
+            console.log(`[Checkr Webhook] Auto-completed background_check for worker ${w.id}`);
+          } else {
+            db.prepare(`UPDATE worker_onboarding SET admin_note='Checkr: 需人工审核 (consider)', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
+            console.log(`[Checkr Webhook] Report needs review for worker ${w.id}`);
+          }
+        }
+      }
+    } else if (eventType === 'report.suspended' || eventType === 'report.disputed') {
+      const candidateId = event.data?.object?.candidate_id;
+      if (candidateId) {
+        const w = db.prepare('SELECT id FROM worker_accounts WHERE checkr_candidate_id=?').get(candidateId);
+        if (w) {
+          db.prepare('UPDATE worker_accounts SET bgcheck_status=? WHERE id=?').run('suspended', w.id);
+          db.prepare(`UPDATE worker_onboarding SET admin_note='Checkr: 调查暂停/有争议', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='background_check'`).run(w.id);
+        }
+      }
+    }
+
+    res.json({ received: true });
+  } catch (e) { console.error('[Checkr Webhook]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Admin: check Checkr status for a worker
+app.get('/api/admin/worker-accounts/:id/checkr-status', requireAdmin, async (req, res) => {
+  try {
+    const w = db.prepare('SELECT checkr_candidate_id, checkr_invitation_id, checkr_report_id, bgcheck_status FROM worker_accounts WHERE id=?').get(req.params.id);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    let report = null;
+    if (w.checkr_report_id) {
+      try { report = await checkrApiCall('GET', `/reports/${w.checkr_report_id}`); } catch {}
+    }
+    res.json({ ...w, report });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Worker: view own onboarding tasks (only visible ones)
 app.get('/api/worker/onboarding', requireWorker, (req, res) => {
   const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.workerId);
   if (!existing) initWorkerOnboarding(req.workerId);
+
+  // Auto-sync persona_verify status from worker_accounts.identity_status (may have been updated by webhook)
+  const personaOnboard = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='persona_verify'").get(req.workerId);
+  if (personaOnboard && personaOnboard.status === 'pending') {
+    const w = db.prepare('SELECT identity_status FROM worker_accounts WHERE id=?').get(req.workerId);
+    if (w && w.identity_status === 'approved') {
+      db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+    } else if (w && (w.identity_status === 'completed' || w.identity_status === 'needs_review')) {
+      db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+    } else if (w && w.identity_status === 'declined') {
+      db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+    }
+  }
+
   const tasks = getOnboardingTasks(req.workerId).filter(t => t.visible_to_worker !== 0);
   res.json(tasks);
 });
@@ -2501,19 +2833,19 @@ app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
 });
 
 app.post('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
-  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date } = req.body;
+  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule } = req.body;
   if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
   const r = db.prepare(`INSERT INTO assignments
-    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '');
+    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('update', 'assignments'), (req, res) => {
-  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date } = req.body;
-  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=? WHERE id=?`)
-    .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', req.params.id);
+  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule } = req.body;
+  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=?, work_schedule=? WHERE id=?`)
+    .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}', req.params.id);
   res.json({ success: true });
 });
 
@@ -2795,7 +3127,8 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
     SELECT e.*,
       (SELECT COUNT(*) FROM time_entries t WHERE t.employee_id = e.id) as time_count,
       (SELECT COUNT(*) FROM employee_documents d WHERE d.employee_id = e.id) as doc_count,
-      (SELECT COUNT(*) FROM background_checks b WHERE b.employee_id = e.id) as bg_count
+      (SELECT COUNT(*) FROM background_checks b WHERE b.employee_id = e.id) as bg_count,
+      (SELECT worker_code FROM worker_accounts WHERE employee_id=e.id AND active=1 LIMIT 1) as worker_code
     FROM employees e`;
   const params = [];
   if (req.userRole === 'manager' && pids.length) {
@@ -2916,7 +3249,12 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       d.hire_date||'',d.position||'',d.department||'',
       parseFloat(d.pay_rate)||0,d.pay_type||'hourly',d.status||'active',
       pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'');
-    res.json({ success: true, id: r.lastInsertRowid, employee_id: empId });
+    const newId = r.lastInsertRowid;
+    if (d.force) {
+      if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), newId);
+      if (d.email && d.email.trim()) db.prepare('UPDATE employees SET email=? WHERE email=? AND id!=?').run('', d.email.trim(), newId);
+    }
+    res.json({ success: true, id: newId, employee_id: empId });
   } catch(e) {
     if (e.message.includes('UNIQUE')) return res.status(400).json({ error: '员工编号已存在' });
     res.status(500).json({ error: e.message });
@@ -2965,6 +3303,10 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     JSON.stringify(d.extra_phones || JSON.parse(emp.extra_phones || '[]')),
     JSON.stringify(d.extra_emails || JSON.parse(emp.extra_emails || '[]')),
     req.params.id);
+  if (d.force) {
+    if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), req.params.id);
+    if (d.email && d.email.trim()) db.prepare('UPDATE employees SET email=? WHERE email=? AND id!=?').run('', d.email.trim(), req.params.id);
+  }
   res.json({ success: true });
 });
 
@@ -3500,6 +3842,7 @@ app.get('/ts', (req, res) => {
 
 // ─── Admin Panel Page ───
 app.get('/admin', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
@@ -4042,7 +4385,15 @@ app.post('/api/worker/persona/inquiry', requireWorker, async (req, res) => {
       return res.status(resp.status).json({ error: 'Persona API error', details: data });
     }
     const inquiryId = data.data?.id;
-    const sessionToken = data.meta?.['session-token'] || '';
+    let sessionToken = data.meta?.['session-token'] || data.data?.attributes?.['session-token'] || '';
+    // Persona may not return session-token on create; call /resume to obtain it
+    if (!sessionToken && inquiryId) {
+      const resumeLink = await resumePersonaInquiry(inquiryId);
+      if (resumeLink) {
+        const m = resumeLink.match(/session-token=([^&]+)/);
+        if (m) sessionToken = m[1];
+      }
+    }
     // Build hosted flow URL for link/QR sharing
     const hostedUrl = sessionToken
       ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${sessionToken}`
@@ -4184,8 +4535,8 @@ app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (re
 
     if (!inquiryId) return res.json({ received: true });
 
-    // Extract worker ID from reference-id (format: "worker-123")
-    const workerIdMatch = referenceId.match(/^worker-(\d+)$/);
+    // Extract worker ID from reference-id (format: "worker-123" or legacy plain "123")
+    const workerIdMatch = referenceId.match(/^(?:worker-)?(\d+)$/);
     let docRow = null;
     if (workerIdMatch) {
       docRow = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(parseInt(workerIdMatch[1]));
@@ -4229,7 +4580,7 @@ app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (re
       newStatus = 'rejected';
       existingForm.decline_reasons = inquiryData?.attributes?.['decision-reasons'] || [];
     } else if (eventType === 'inquiry.completed' || inquiryStatus === 'completed') {
-      newStatus = 'pending'; // awaiting auto-approval or manual review
+      newStatus = 'submitted'; // user completed verification, awaiting auto-approval or manual review
     } else if (eventType === 'inquiry.failed' || inquiryStatus === 'failed') {
       newStatus = 'rejected';
     }
@@ -4238,10 +4589,137 @@ app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (re
       .run(JSON.stringify(existingForm), newStatus, `Persona: ${eventType}`, docRow.id);
 
     console.log(`[Persona Webhook] Updated doc ${docRow.id} → status=${newStatus}`);
+
+    // Also update worker_accounts.identity_status and auto-complete onboarding
+    let identityStatus = '';
+    if (inquiryStatus === 'approved' || eventType.includes('approved')) identityStatus = 'approved';
+    else if (inquiryStatus === 'declined' || eventType.includes('declined') || eventType.includes('failed')) identityStatus = 'declined';
+    else if (inquiryStatus === 'completed' || eventType.includes('completed')) identityStatus = 'completed';
+    if (identityStatus) {
+      db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
+      console.log(`[Persona Webhook] Updated worker_accounts identity_status → ${identityStatus}`);
+      const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(inquiryId);
+      if (w) {
+        if (identityStatus === 'approved') {
+          db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
+          console.log(`[Persona Webhook] Auto-completed persona_verify onboarding for worker ${w.id}`);
+        } else if (identityStatus === 'completed') {
+          db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
+          console.log(`[Persona Webhook] Updated persona_verify to submitted for worker ${w.id}`);
+        } else if (identityStatus === 'declined') {
+          db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
+          console.log(`[Persona Webhook] Persona verification declined for worker ${w.id}`);
+        }
+      }
+    }
+
     res.json({ received: true });
   } catch (e) {
     console.error('[Persona Webhook] Error processing:', e.message);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Worker: actively poll Persona API for latest inquiry status (does not rely on webhook)
+app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
+  const apiKey = process.env.PERSONA_API_KEY;
+
+  // Fallback: even without Persona API key, check if identity_status was updated (e.g., by webhook or admin)
+  const w = db.prepare('SELECT identity_status, persona_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (w && (w.identity_status === 'approved' || w.identity_status === 'completed' || w.identity_status === 'declined')) {
+    // Sync to worker_onboarding if not already synced
+    const onboard = db.prepare("SELECT status FROM worker_onboarding WHERE worker_account_id=? AND task_key='persona_verify'").get(req.workerId);
+    if (onboard && onboard.status === 'pending') {
+      if (w.identity_status === 'approved') {
+        db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+      } else if (w.identity_status === 'completed') {
+        db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+      } else if (w.identity_status === 'declined') {
+        db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+      }
+    }
+    const docStatus = w.identity_status === 'approved' ? 'approved' : w.identity_status === 'declined' ? 'rejected' : 'submitted';
+    return res.json({ status: docStatus, persona_status: w.identity_status, updated: onboard && onboard.status === 'pending' });
+  }
+
+  if (!apiKey) {
+    // No API key + identity_status not yet set → return current DB state
+    const doc = db.prepare("SELECT status FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
+    return res.json({ status: doc ? doc.status : 'not_started', persona_status: null });
+  }
+  const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
+  if (!doc) return res.json({ status: 'not_started' });
+  let formData;
+  try { formData = JSON.parse(doc.form_data || '{}'); } catch { formData = {}; }
+  const inquiryId = formData.persona_inquiry_id;
+  if (!inquiryId) return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+
+  try {
+    const resp = await fetch(`https://withpersona.com/api/v1/inquiries/${inquiryId}`, {
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Persona-Version': '2023-01-05', 'Accept': 'application/json' }
+    });
+    if (!resp.ok) {
+      console.error('[Persona Poll] API error:', resp.status);
+      return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+    }
+    const data = await resp.json();
+    const inquiryStatus = data.data?.attributes?.status;
+    if (!inquiryStatus || inquiryStatus === formData.persona_status) {
+      return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+    }
+
+    // Status changed — update local DB (mirrors webhook logic)
+    formData.persona_status = inquiryStatus;
+    formData.persona_polled_at = new Date().toISOString();
+
+    // Extract verification fields if included
+    const included = data.included || [];
+    const govIdVerification = included.find(i => i.type === 'verification/government-id');
+    if (govIdVerification) {
+      const attrs = govIdVerification.attributes || {};
+      formData.dl_number = attrs['id-number'] || formData.dl_number || '';
+      formData.dl_state = attrs['address-subdivision'] || formData.dl_state || '';
+      formData.dl_expiry = attrs['expiration-date'] || formData.dl_expiry || '';
+      formData.dl_first_name = attrs['name-first'] || formData.dl_first_name || '';
+      formData.dl_last_name = attrs['name-last'] || formData.dl_last_name || '';
+      formData.dl_dob = attrs['birthdate'] || formData.dl_dob || '';
+      formData.id_class = attrs['id-class'] || formData.id_class || '';
+    }
+
+    let newStatus = doc.status;
+    if (inquiryStatus === 'approved') newStatus = 'approved';
+    else if (inquiryStatus === 'declined') newStatus = 'rejected';
+    else if (inquiryStatus === 'completed') newStatus = 'submitted';
+    else if (inquiryStatus === 'failed') newStatus = 'rejected';
+    else if (inquiryStatus === 'needs_review') newStatus = 'submitted';
+
+    if (newStatus !== doc.status || inquiryStatus !== (formData.persona_status_prev || '')) {
+      formData.persona_status_prev = inquiryStatus;
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, status=?, reviewer_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .run(JSON.stringify(formData), newStatus, `Persona poll: ${inquiryStatus}`, doc.id);
+
+      // Also update worker_accounts and onboarding (same as webhook)
+      let identityStatus = '';
+      if (inquiryStatus === 'approved') identityStatus = 'approved';
+      else if (inquiryStatus === 'declined' || inquiryStatus === 'failed') identityStatus = 'declined';
+      else if (inquiryStatus === 'completed' || inquiryStatus === 'needs_review') identityStatus = 'completed';
+      if (identityStatus) {
+        db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE id=?`).run(identityStatus, req.workerId);
+        if (identityStatus === 'approved') {
+          db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+        } else if (identityStatus === 'completed') {
+          db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+        } else if (identityStatus === 'declined') {
+          db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
+        }
+      }
+      console.log(`[Persona Poll] Updated worker ${req.workerId} → doc.status=${newStatus}, persona_status=${inquiryStatus}`);
+    }
+
+    res.json({ status: newStatus, persona_status: inquiryStatus, updated: true });
+  } catch (e) {
+    console.error('[Persona Poll] Error:', e.message);
+    res.json({ status: doc.status, persona_status: formData.persona_status || null });
   }
 });
 
@@ -4453,9 +4931,13 @@ app.get('/api/register/check', (req, res) => {
 
 app.post('/api/register/worker', async (req, res) => {
   try {
-  const { name, phone, email, dob, work_status, position_interests, password } = req.body;
-  if (!name || !phone || !email || !password)
-    return res.status(400).json({ error: '请填写姓名、手机号、邮箱和密码 / Name, phone, email, and password are required' });
+  const { first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, password, city, state } = req.body;
+  const nameParts = [first_name, middle_name, last_name].filter(Boolean);
+  if (!first_name || !last_name || !phone || !email || !password)
+    return res.status(400).json({ error: '请填写名字、姓氏、手机号、邮箱和密码 / First name, last name, phone, email, and password are required' });
+  if (!city || !state)
+    return res.status(400).json({ error: '请填写城市和州 / City and state are required' });
+  const name = nameParts.join(' ');
   // Check phone or email uniqueness; allow re-registration only if previous account was never verified AND codes have expired
   const existing = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=? OR email=? OR username=?').get(phone, email, phone);
   if (existing && existing.active) return res.status(400).json({ error: '该手机号或邮箱已注册 / An account with this phone or email already exists' });
@@ -4498,13 +4980,14 @@ app.post('/api/register/worker', async (req, res) => {
   const canEmail = !!(_sgKey || emailTransporter);
   const needsVerification = canSMS || canEmail;
 
-  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, phone, email, dob, work_status, position_interests, active)
-    VALUES (?,?,?,?,?,?,?,?,?,?)`)
-    .run(phone, hash, salt, name, phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), needsVerification ? 0 : 1);
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1);
   const accountId = r.lastInsertRowid;
 
   if (!needsVerification) {
     // No verification channels configured — activate immediately and auto-login
+    activateWorkerAccount(accountId);
     const token = crypto.randomBytes(32).toString('hex');
     workerSessions.set(token, { created: Date.now(), workerId: accountId, employeeId: null });
     console.log(`[Register] Worker #${accountId} activated immediately (no verification channels configured)`);
@@ -4614,6 +5097,7 @@ app.post('/api/register/verify', async (req, res) => {
   // Activate account
   db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
   db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(account_id);
+  activateWorkerAccount(account_id);
   // Auto-login
   const token = crypto.randomBytes(32).toString('hex');
   workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
@@ -4654,6 +5138,7 @@ app.post('/api/register/verify-step', async (req, res) => {
   if (remaining.length === 0) {
     // All done — activate account and auto-login
     db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
+    activateWorkerAccount(account_id);
     const token = crypto.randomBytes(32).toString('hex');
     workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
     return res.json({ success: true, all_done: true, token });
@@ -5040,50 +5525,59 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
     const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
     if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    // Auto-add drivers_license to assigned_tasks
+    const wAcct = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(interview.worker_id);
+    let curTasks = [];
+    try { curTasks = JSON.parse(wAcct?.assigned_tasks || '[]'); } catch {}
+    if (!curTasks.includes('drivers_license')) {
+      curTasks.push('drivers_license');
+      db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(curTasks), interview.worker_id);
+    }
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(result.inquiryId, interview.worker_id);
-    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍+SSN）以继续求职流程。点击链接在手机完成：${result.link}`;
-    const smsSent = await sendSMS(interview.worker_phone, smsText);
+    // Sync to worker_compliance_docs for portal
+    const compFormData = JSON.stringify({ persona_inquiry_id: result.inquiryId, persona_status: 'created', persona_session_token: result.sessionToken || '', persona_hosted_url: result.link || '' });
+    const existingDoc = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(interview.worker_id);
+    if (existingDoc) {
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(compFormData, existingDoc.id);
+    } else {
+      db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'drivers_license', ?, 'pending')").run(interview.worker_id, compFormData);
+    }
+    // Sync onboarding
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
+      VALUES (?,'persona_verify','pending',1,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(interview.worker_id, '已发送 Persona 验证链接', result.link || '');
+    // Send SMS
+    let smsSent = false;
+    if (interview.worker_phone) {
+      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍）以继续求职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      smsSent = await sendSMS(interview.worker_phone, smsText);
+    }
+    // Send email
+    let emailSent = false;
     if (interview.worker_email) {
-      await sendEmail(interview.worker_email,
+      const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+      emailSent = await sendEmail(interview.worker_email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证：${result.link}`,
-        `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请在手机上点击以下链接，按提示上传驾照、完成自拍及 SSN 核验：</p><p><a href="${result.link}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.link}</p>`
+        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
+        `<p>您好 ${interview.worker_name||''}，</p>
+         <p>HR 已为您发起身份验证（驾照 + 自拍核验）。您可以通过以下任一方式完成：</p>
+         <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
+           <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
+           ${result.link ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${result.link}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
+           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.link}</span></td></tr>` : ''}
+         </table>`
       );
     }
-    res.json({ success: true, smsSent, inquiryId: result.inquiryId, link: result.link });
+    res.json({ success: true, smsSent, emailSent, portalReady: true, inquiryId: result.inquiryId, link: result.link || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Persona webhook — called by Persona when verification status changes
-app.post('/api/webhooks/persona', express.raw({ type: '*/*' }), (req, res) => {
-  try {
-    const rawBody = req.body.toString('utf8');
-    const sig = req.headers['persona-signature'];
-    if (!verifyPersonaWebhook(rawBody, sig)) {
-      console.warn('[Persona Webhook] Signature mismatch');
-      return res.status(400).json({ error: 'Invalid signature' });
-    }
-    const event = JSON.parse(rawBody);
-    // Persona sends the inquiry object nested under payload.data
-    const payload = event.data?.attributes?.payload?.data || event.data;
-    const inquiryId = payload?.id;
-    const eventName = event.data?.attributes?.name || '';
-    const status = payload?.attributes?.status || '';
-    console.log(`[Persona Webhook] ${eventName} | inquiry=${inquiryId} | status=${status}`);
-    if (inquiryId) {
-      let identityStatus = '';
-      if (status === 'approved' || eventName.includes('approved')) identityStatus = 'approved';
-      else if (status === 'declined' || eventName.includes('declined') || eventName.includes('failed')) identityStatus = 'declined';
-      else if (status === 'completed' || eventName.includes('completed')) identityStatus = 'completed';
-      if (identityStatus) {
-        db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
-        console.log(`[Persona Webhook] Updated ${inquiryId} → ${identityStatus}`);
-      }
-    }
-    res.json({ received: true });
-  } catch (e) { console.error('[Persona Webhook]', e.message); res.status(500).json({ error: e.message }); }
-});
+// NOTE: Duplicate Persona webhook handler was removed.
+// All Persona webhook logic is now consolidated in the handler above (around line 4405).
 
 // Worker: get own identity verification status + fresh session link
 app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
@@ -5158,6 +5652,88 @@ app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
   res.json({ success: true });
 });
 
+// ─── Google Address Validation ───
+app.post('/api/validate-address', async (req, res) => {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    return res.json({ skipped: true });
+  }
+  const { street, street2, city, state, zip } = req.body || {};
+  if (!street) return res.status(400).json({ error: 'street is required' });
+
+  const addressLines = [street];
+  if (street2) addressLines.push(street2);
+
+  const payload = {
+    address: {
+      regionCode: 'US',
+      addressLines,
+      ...(city  && { locality: city }),
+      ...(state && { administrativeArea: state }),
+      ...(zip   && { postalCode: zip })
+    }
+  };
+
+  const url = `https://addressvalidation.googleapis.com/v1:validateAddress?key=${apiKey}`;
+  try {
+    const https = require('https');
+    const raw = await new Promise((resolve, reject) => {
+      const body = JSON.stringify(payload);
+      const opts = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      };
+      const req2 = https.request(url, opts, r => {
+        let data = '';
+        r.on('data', chunk => data += chunk);
+        r.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid JSON from Google')); } });
+      });
+      req2.setTimeout(10000, () => { req2.destroy(new Error('Google API request timed out')); });
+      req2.on('error', reject);
+      req2.write(body);
+      req2.end();
+    });
+
+    if (raw.error) {
+      console.error('[Google Address Validation] API error:', raw.error.message);
+      return res.status(500).json({ error: 'Address validation service error' });
+    }
+
+    const result = raw.result || {};
+    const verdict = result.verdict || {};
+    const postalAddress = result.address?.postalAddress || {};
+    const uspsData = result.uspsData || {};
+
+    const dpv = uspsData.dpvConfirmation;
+    const granularity = verdict.validationGranularity;
+    const undeliverable = dpv === 'N' || granularity === 'OTHER' || granularity === 'ROUTE';
+
+    if (undeliverable) {
+      return res.json({ valid: false });
+    }
+
+    const addrLines = postalAddress.addressLines || [];
+    const fullZip = postalAddress.postalCode || zip || '';
+    const zipParts = fullZip.replace('-', '').match(/^(\d{5})(\d{4})?$/);
+
+    return res.json({
+      valid: true,
+      dpv_match_code: dpv,
+      standardized: {
+        street:  addrLines[0] || street,
+        street2: addrLines[1] || '',
+        city:    postalAddress.locality || city || '',
+        state:   postalAddress.administrativeArea || state || '',
+        zip:     zipParts ? zipParts[1] : fullZip.substring(0, 5),
+        zip4:    zipParts ? (zipParts[2] || '') : ''
+      }
+    });
+  } catch (e) {
+    console.error('[Google Address Validation] Error:', e.message);
+    return res.status(500).json({ error: 'Address validation service error' });
+  }
+});
+
 // Global error handler — return JSON instead of Express's default HTML error page
 app.use((err, req, res, next) => {
   console.error('[Unhandled Error]', err.message);
@@ -5187,4 +5763,6 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
+  console.log(`[Address Validation] GOOGLE_MAPS_API_KEY: ${process.env.GOOGLE_MAPS_API_KEY ? 'SET (' + process.env.GOOGLE_MAPS_API_KEY.substring(0, 8) + '...)' : 'NOT SET — address validation will be skipped'}`);
+
 });

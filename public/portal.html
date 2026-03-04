@@ -130,6 +130,7 @@ tr:last-child td{border-bottom:none}
 @media(max-width:600px){.job-card{flex-direction:column}.header h1{font-size:.9rem}.form-row{grid-template-columns:1fr}.compliance-grid{grid-template-columns:1fr}}
 </style>
 <script src="https://cdn.withpersona.com/dist/persona-v5.5.0.js" defer></script>
+<script src="/address-validator.js"></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -449,18 +450,22 @@ tr:last-child td{border-bottom:none}
               <div class="form-group"><label>中间名首字母 Middle Initial</label><input name="middle_initial" maxlength="2"></div>
               <div class="form-group"><label>曾用姓 Other Last Names</label><input name="other_last_names"></div>
             </div>
-            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required></div></div>
+            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required oninput="clearI9AddrStatus()"></div></div>
             <div class="form-row">
-              <div class="form-group"><label>公寓号 Apt</label><input name="apt"></div>
-              <div class="form-group"><label>城市 City *</label><input name="city" required></div>
+              <div class="form-group"><label>公寓号 Apt</label><input name="apt" oninput="clearI9AddrStatus()"></div>
+              <div class="form-group"><label>城市 City *</label><input name="city" required oninput="clearI9AddrStatus()"></div>
             </div>
             <div class="form-row">
               <div class="form-group"><label>州 State *</label>
-                <select name="state" required><option value="">选择...</option>
+                <select name="state" required onchange="clearI9AddrStatus()"><option value="">选择...</option>
                 <option>AL</option><option>AK</option><option>AZ</option><option>AR</option><option>CA</option><option>CO</option><option>CT</option><option>DE</option><option>FL</option><option>GA</option><option>HI</option><option>ID</option><option>IL</option><option>IN</option><option>IA</option><option>KS</option><option>KY</option><option>LA</option><option>ME</option><option>MD</option><option>MA</option><option>MI</option><option>MN</option><option>MS</option><option>MO</option><option>MT</option><option>NE</option><option>NV</option><option>NH</option><option>NJ</option><option>NM</option><option>NY</option><option>NC</option><option>ND</option><option>OH</option><option>OK</option><option>OR</option><option>PA</option><option>RI</option><option>SC</option><option>SD</option><option>TN</option><option>TX</option><option>UT</option><option>VT</option><option>VA</option><option>WA</option><option>WV</option><option>WI</option><option>WY</option><option>DC</option>
                 </select>
               </div>
-              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required pattern="[0-9]{5}(-[0-9]{4})?"></div>
+              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required pattern="[0-9]{5}(-[0-9]{4})?" oninput="clearI9AddrStatus()" onblur="autoVerifyI9Addr()"></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+              <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyI9Addr()">🔍 验证地址 Verify</button>
+              <span id="i9AddrStatus" style="font-size:.8rem;font-weight:600"></span>
             </div>
             <div class="form-row">
               <div class="form-group"><label>出生日期 DOB *</label><input name="dob" type="date" required></div>
@@ -646,13 +651,17 @@ tr:last-child td{border-bottom:none}
           </div>
           <div class="form-section">
             <h3>地址 / Address</h3>
-            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required></div></div>
+            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required oninput="clearW9AddrStatus()"></div></div>
             <div class="form-row">
-              <div class="form-group"><label>城市 City *</label><input name="city" required></div>
-              <div class="form-group"><label>州 State *</label><input name="state" required maxlength="2"></div>
+              <div class="form-group"><label>城市 City *</label><input name="city" required oninput="clearW9AddrStatus()"></div>
+              <div class="form-group"><label>州 State *</label><input name="state" required maxlength="2" oninput="clearW9AddrStatus()"></div>
             </div>
             <div class="form-row">
-              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required></div>
+              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required oninput="clearW9AddrStatus()" onblur="autoVerifyW9Addr()"></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+              <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyW9Addr()">🔍 验证地址 Verify</button>
+              <span id="w9AddrStatus" style="font-size:.8rem;font-weight:600"></span>
             </div>
           </div>
           <div class="form-section">
@@ -769,6 +778,18 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Generic Confirm / Alert Modal -->
+<div class="modal-overlay" id="customDialogModal">
+  <div class="modal-box" style="max-width:400px;width:92%">
+    <div style="text-align:center;margin-bottom:1rem">
+      <div id="customDialogIcon" style="width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:1.5rem;margin-bottom:.6rem"></div>
+      <h2 id="customDialogTitle" style="font-size:1.05rem;font-weight:700;color:var(--blue);margin:0"></h2>
+    </div>
+    <div id="customDialogBody" style="font-size:.88rem;color:var(--gray-500);line-height:1.6;text-align:center;margin-bottom:1.25rem;white-space:pre-line"></div>
+    <div id="customDialogBtns" style="display:flex;gap:.6rem"></div>
+  </div>
+</div>
+
 <script>
 let WORKER_TOKEN = localStorage.getItem('pa_worker_token') || '';
 let _allJobs = [];
@@ -784,6 +805,39 @@ function showToast(msg, type='success') {
   setTimeout(() => { t.classList.remove('in'); setTimeout(() => t.remove(), 300); }, 3000);
 }
 
+// ─── Custom Dialog (replaces native alert/confirm) ───
+let _dialogResolve = null;
+function customAlert(msg, title = '提示', icon = 'ℹ️') {
+  return new Promise(resolve => {
+    _dialogResolve = resolve;
+    const modal = document.getElementById('customDialogModal');
+    document.getElementById('customDialogIcon').textContent = icon;
+    document.getElementById('customDialogIcon').style.background = '#DBEAFE';
+    document.getElementById('customDialogTitle').textContent = title;
+    document.getElementById('customDialogBody').textContent = msg;
+    document.getElementById('customDialogBtns').innerHTML = `<button class="modal-btn modal-btn-primary" onclick="_closeDialog(true)" style="flex:1">确定 / OK</button>`;
+    modal.classList.add('show');
+  });
+}
+function customConfirm(msg, title = '确认', icon = '❓') {
+  return new Promise(resolve => {
+    _dialogResolve = resolve;
+    const modal = document.getElementById('customDialogModal');
+    document.getElementById('customDialogIcon').textContent = icon;
+    document.getElementById('customDialogIcon').style.background = '#FEF3C7';
+    document.getElementById('customDialogTitle').textContent = title;
+    document.getElementById('customDialogBody').textContent = msg;
+    document.getElementById('customDialogBtns').innerHTML = `
+      <button class="modal-btn modal-btn-secondary" onclick="_closeDialog(false)" style="flex:1">取消 / Cancel</button>
+      <button class="modal-btn modal-btn-primary" onclick="_closeDialog(true)" style="flex:1">确认 / Confirm</button>`;
+    modal.classList.add('show');
+  });
+}
+function _closeDialog(result) {
+  document.getElementById('customDialogModal').classList.remove('show');
+  if (_dialogResolve) { _dialogResolve(result); _dialogResolve = null; }
+}
+
 async function wApi(path, opts={}) {
   const r = await fetch('/api/worker' + path, {
     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
@@ -796,13 +850,13 @@ async function wApi(path, opts={}) {
 async function workerLogin() {
   const login = document.getElementById('wLogin').value.trim();
   const password = document.getElementById('wPassword').value;
-  if (!login || !password) return alert('请输入邮箱/手机号和密码');
+  if (!login || !password) { await customAlert('请输入邮箱/手机号和密码', '登录提示', '⚠️'); return; }
   const r = await fetch('/api/worker/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ login, password })
   });
-  if (!r.ok) { const e = await r.json(); return alert(e.error || '登录失败'); }
+  if (!r.ok) { const e = await r.json(); await customAlert(e.error || '登录失败', '登录失败', '❌'); return; }
   const data = await r.json();
   WORKER_TOKEN = data.token;
   localStorage.setItem('pa_worker_token', WORKER_TOKEN);
@@ -899,15 +953,34 @@ let _pendingSlot = null;
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').style.display = 'block';
-  const [me, interview] = await Promise.all([wApi('/me'), wApi('/interview')]);
+  const [me, interview, personaStatus] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status')]);
   if (!me) return;
   _workerInfo = me;
   const name = me.employee ? `${me.employee.first_name} ${me.employee.last_name}` : me.account.username;
   document.getElementById('workerNameDisplay').textContent = name;
 
-  // Only show compliance tab if interview passed
+  // If persona verification is still pending, actively check Persona API for latest status
+  if (personaStatus && personaStatus.status === 'pending') {
+    wApi('/persona/poll-status', { method: 'POST' }).then(pollResult => {
+      if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted' || pollResult.updated)) {
+        // Status changed — refresh UI
+        const _pInit2 = true;
+        document.getElementById('navCompliance').style.display = '';
+        // Refresh active tab if on todos or compliance
+        const activeTab = document.querySelector('.nav-btn.active');
+        if (activeTab) {
+          const t = activeTab.dataset.tab;
+          if (t === 'todos') loadOnboarding();
+          else if (t === 'compliance') loadCompliance();
+        }
+      }
+    });
+  }
+
+  // Show compliance tab if interview passed OR persona verification has been initiated
   _interviewPassed = interview && interview.status === 'passed';
-  document.getElementById('navCompliance').style.display = _interviewPassed ? '' : 'none';
+  const _personaInitiated = personaStatus && personaStatus.status !== 'not_started';
+  document.getElementById('navCompliance').style.display = (_interviewPassed || _personaInitiated) ? '' : 'none';
   // Show todos tab (always visible for logged-in workers)
   document.getElementById('navTodos').style.display = '';
 
@@ -935,6 +1008,12 @@ async function loadInterview() {
     wApi('/punch/status')
   ]);
   if (me) _workerInfo = me;
+
+  // Update compliance tab visibility (also show if persona verification initiated)
+  _interviewPassed = interview && interview.status === 'passed';
+  const _pStatus = await wApi('/persona/status');
+  const _pInit = _pStatus && _pStatus.status !== 'not_started';
+  document.getElementById('navCompliance').style.display = (_interviewPassed || _pInit) ? '' : 'none';
 
   const scheduleEl = document.getElementById('todayScheduleContent');
   const DAY_MAP = { 0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat' };
@@ -1628,7 +1707,17 @@ const STATUS_CLASS = { pending: 'ci-pending', approved: 'ci-approved', rejected:
 
 async function loadCompliance() {
   const grid = document.getElementById('complianceOverview');
-  if (!_interviewPassed) {
+  // Check if persona verification has been initiated
+  let pStatus = await wApi('/persona/status');
+  // If still pending, actively check Persona API for latest status
+  if (pStatus && pStatus.status === 'pending') {
+    const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
+    if (pollResult && pollResult.updated) {
+      pStatus = { ...pStatus, status: pollResult.status, persona_status: pollResult.persona_status };
+    }
+  }
+  const personaInitiated = pStatus && pStatus.status !== 'not_started';
+  if (!_interviewPassed && !personaInitiated) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2.5rem 1rem">
       <div style="font-size:2.5rem;margin-bottom:.75rem">🔒</div>
       <div style="font-weight:700;font-size:1.05rem;color:var(--gray-600);margin-bottom:.5rem">合规文件尚未开放</div>
@@ -1679,13 +1768,19 @@ async function loadCompliance() {
     const label = DOC_LABELS[item.type];
     const d = item.doc;
     const status = d ? (d.status || d.result || 'pending') : 'not_submitted';
-    const statusLabel = STATUS_LABELS[status] || status;
-    const statusClass = STATUS_CLASS[status] || 'ci-not-submitted';
+    // For drivers_license (Persona): if inquiry created but user hasn't completed verification,
+    // show "待验证" status and allow action button
+    const personaAwaitingUser = item.type === 'drivers_license' && status === 'pending'
+      && pStatus && pStatus.persona_status === 'created';
+    const statusLabel = personaAwaitingUser ? '待验证' : (STATUS_LABELS[status] || status);
+    const statusClass = personaAwaitingUser ? 'ci-pending' : (STATUS_CLASS[status] || 'ci-not-submitted');
     const date = d && d.created_at ? d.created_at.slice(0, 10) : '';
     const note = d && d.reviewer_notes ? `<div class="ci-note">${esc(d.reviewer_notes)}</div>` : '';
-    const canSubmit = !d || status === 'not_submitted' || status === 'rejected';
+    const canSubmit = !d || status === 'not_submitted' || status === 'rejected' || personaAwaitingUser;
+    let actionBtnLabel = d && status === 'rejected' ? '重新提交' : '填写提交';
+    if (personaAwaitingUser) actionBtnLabel = '开始验证';
     const actionBtn = item.action && canSubmit
-      ? `<button class="btn btn-sky" onclick="${item.action}" style="margin-top:.75rem;font-size:.8rem">${d && status === 'rejected' ? '重新提交' : '填写提交'}</button>`
+      ? `<button class="btn btn-sky" onclick="${item.action}" style="margin-top:.75rem;font-size:.8rem">${actionBtnLabel}</button>`
       : '';
 
     html += `<div class="compliance-item">
@@ -1732,6 +1827,13 @@ async function showDLForm() {
         document.getElementById('personaChoiceScreen').style.display = 'none';
         document.getElementById('personaEmbeddedScreen').style.display = 'none';
         document.getElementById('personaOtherPlatformScreen').style.display = 'none';
+      } else if (status.status === 'pending' && status.persona_status === 'created') {
+        // Inquiry created but user hasn't completed verification yet
+        box.style.display = '';
+        box.style.background = '#eff6ff';
+        box.style.border = '1px solid #93c5fd';
+        box.innerHTML = '<div style="color:#1d4ed8;font-weight:700">📋 请完成身份验证 / Please Complete ID Verification</div><div style="font-size:.82rem;color:#1e40af;margin-top:.3rem">HR 已为您发起身份验证，请选择以下方式完成验证。<br>HR has initiated identity verification. Please choose a method below to complete it.</div>';
+        document.getElementById('personaStartBtn').textContent = '🖥️ 开始验证 / Start Verification';
       } else if (status.status === 'pending') {
         box.style.display = '';
         box.style.background = '#fefce8';
@@ -1749,6 +1851,21 @@ async function showDLForm() {
 function hideDLForm() { document.getElementById('dlFormCard').style.display = 'none'; }
 function showW9Form() { document.getElementById('w9FormCard').style.display = ''; }
 function hideW9Form() { document.getElementById('w9FormCard').style.display = 'none'; }
+
+// Open Persona verification from onboarding tab — switch to compliance and auto-show DL form
+async function openPersonaInPortal() {
+  // Switch to compliance tab visually (without calling showTab to avoid loadCompliance race)
+  ['jobs','interview','applications','timeclock','payments','compliance','todos','profile'].forEach(t => {
+    document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t==='compliance'?'':'none';
+  });
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'compliance'));
+  // Wait for compliance content to fully load (loadCompliance hides all forms at the end)
+  await loadCompliance();
+  // Now safely show the DL form — no race condition
+  showDLForm();
+  // Scroll to the DL form card so user sees it immediately
+  document.getElementById('dlFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 // ── Persona Verification ──
 let _personaClient = null;
@@ -1789,6 +1906,8 @@ async function personaOpenNewTab() {
     }
     window.open(_personaHostedUrl, '_blank');
     showPersonaSendStatus('✅ 已在新标签页中打开验证页面 / Verification opened in new tab', 'ok');
+    // Start polling since we can't detect when user finishes in new tab
+    startPersonaStatusPoll();
   } catch (e) {
     showPersonaSendStatus('❌ ' + e.message, 'error');
   }
@@ -1837,22 +1956,31 @@ async function startPersonaVerification() {
         btn.disabled = false;
         btn.textContent = '🖥️ 开始验证 / Start Verification';
       },
-      onComplete: ({ inquiryId, status, fields }) => {
+      onComplete: async ({ inquiryId, status, fields }) => {
         console.log('[Persona] Complete:', inquiryId, status);
         const box = document.getElementById('personaStatusBox');
         box.style.display = '';
-        if (status === 'completed') {
-          box.style.background = '#fefce8';
-          box.style.border = '1px solid #fde047';
-          box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Processing...</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">证件已提交，系统正在自动验证。通过后状态会自动更新。</div>';
-        } else {
-          box.style.background = '#f0fdf4';
-          box.style.border = '1px solid #86efac';
-          box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 验证已提交 / Submitted</div>';
-        }
+        box.style.background = '#fefce8';
+        box.style.border = '1px solid #fde047';
+        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Processing...</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">证件已提交，系统正在自动验证。通过后状态会自动更新。<br>Verification submitted. Status will update automatically.</div>';
         showToast('✅ 证件已提交验证');
         _personaHostedUrl = null; // reset after completion
+        // Immediately trigger active poll to fetch latest status from Persona API
+        const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
         loadCompliance();
+        loadOnboarding();
+        if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted')) {
+          if (pollResult.status === 'approved') {
+            box.style.background = '#f0fdf4';
+            box.style.border = '1px solid #86efac';
+            box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
+          } else {
+            box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证已提交，等待审核 / Submitted, Pending Review</div>';
+          }
+        } else {
+          // Continue polling if not yet updated
+          startPersonaStatusPoll();
+        }
       },
       onCancel: ({ inquiryId }) => {
         console.log('[Persona] Cancelled:', inquiryId);
@@ -1893,8 +2021,42 @@ function showPersonaSendStatus(msg, type) {
   setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
 
-// Send verification link via SMS
+// Poll Persona status after verification completion — actively queries Persona API
+let _personaPollTimer = null;
+function startPersonaStatusPoll() {
+  if (_personaPollTimer) clearInterval(_personaPollTimer);
+  let attempts = 0;
+  _personaPollTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > 20) { clearInterval(_personaPollTimer); _personaPollTimer = null; return; } // stop after ~100s
+    // Use active poll endpoint that queries Persona API directly (not just local DB)
+    const st = await wApi('/persona/poll-status', { method: 'POST' });
+    if (st && (st.status === 'approved' || st.status === 'submitted' || st.persona_status === 'approved' || st.persona_status === 'completed' || st.persona_status === 'needs_review')) {
+      clearInterval(_personaPollTimer);
+      _personaPollTimer = null;
+      loadOnboarding();
+      loadCompliance();
+      if (st.status === 'approved') {
+        showToast('✅ 身份验证已通过！');
+      } else {
+        showToast('✅ 验证已提交，等待审核');
+      }
+    }
+  }, 5000);
+}
+
+// Send verification link via SMS - with phone confirmation
 async function personaSendSMS() {
+  const acc = _workerInfo && _workerInfo.account;
+  const phone = acc && acc.phone;
+  if (!phone) {
+    showPersonaSendStatus('❌ 未设置手机号，请先在"个人信息"页面添加手机号 / No phone number set, please add one in Profile first', 'error');
+    return;
+  }
+  // Show masked phone and ask for confirmation
+  const maskedPhone = phone.slice(0, 3) + '****' + phone.slice(-4);
+  if (!await customConfirm(`将发送验证链接到以下手机号 / Verification link will be sent to:\n\n📱 ${maskedPhone}\n\n是否确认发送？ / Confirm send?`, '发送短信', '📱')) return;
+
   const btn = document.getElementById('personaSmsBtn');
   btn.disabled = true;
   btn.textContent = '发送中...';
@@ -1908,7 +2070,7 @@ async function personaSendSMS() {
     }
     const r = await wApi('/persona/send-sms', { method: 'POST', body: JSON.stringify({}) });
     if (r && r.success) {
-      showPersonaSendStatus('✅ 短信已发送到您的手机 / SMS sent to your phone', 'ok');
+      showPersonaSendStatus(`✅ 短信已发送到 ${maskedPhone} / SMS sent to ${maskedPhone}`, 'ok');
     } else {
       showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
     }
@@ -1918,8 +2080,18 @@ async function personaSendSMS() {
   btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS';
 }
 
-// Send verification link via email
+// Send verification link via email - with email confirmation
 async function personaSendEmail() {
+  const acc = _workerInfo && _workerInfo.account;
+  const email = acc && acc.email;
+  if (!email) {
+    showPersonaSendStatus('❌ 未设置邮箱，请先在"个人信息"页面添加邮箱 / No email set, please add one in Profile first', 'error');
+    return;
+  }
+  // Show masked email and ask for confirmation
+  const maskedEmail = email.replace(/(.{2}).*(@.*)/, '$1****$2');
+  if (!await customConfirm(`将发送验证链接到以下邮箱 / Verification link will be sent to:\n\n📧 ${maskedEmail}\n\n是否确认发送？ / Confirm send?`, '发送邮件', '📧')) return;
+
   const btn = document.getElementById('personaEmailBtn');
   btn.disabled = true;
   btn.textContent = '发送中...';
@@ -1933,7 +2105,7 @@ async function personaSendEmail() {
     }
     const r = await wApi('/persona/send-email', { method: 'POST', body: JSON.stringify({}) });
     if (r && r.success) {
-      showPersonaSendStatus('✅ 邮件已发送 / Email sent', 'ok');
+      showPersonaSendStatus(`✅ 邮件已发送到 ${maskedEmail} / Email sent to ${maskedEmail}`, 'ok');
     } else {
       showPersonaSendStatus('❌ ' + (r?.error || '发送失败'), 'error');
     }
@@ -2009,6 +2181,95 @@ async function personaCopyLink() {
   }
 }
 
+// ── Portal address verify helpers ──
+function _setPortalAddrStatus(id, verified) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (verified === null || verified === undefined) { el.textContent = ''; return; }
+  if (verified) {
+    el.textContent = '✓ 已验证';
+    el.style.color = '#16a34a';
+  } else {
+    el.textContent = '⚠ 未能验证';
+    el.style.color = '#d97706';
+  }
+}
+
+function clearI9AddrStatus() { _setPortalAddrStatus('i9AddrStatus', null); }
+function clearW9AddrStatus() { _setPortalAddrStatus('w9AddrStatus', null); }
+
+async function _doVerifyI9Addr(silent) {
+  const form = document.getElementById('i9Form');
+  if (!form) return;
+  const street = form.address.value.trim();
+  const city   = form.city.value.trim();
+  const zip    = form.zip.value.trim();
+  if (!street && !city && !zip) return;
+  const statusEl = document.getElementById('i9AddrStatus');
+  statusEl.textContent = '验证中…'; statusEl.style.color = '#94a3b8';
+  try {
+    const result = await validateAddress({
+      street, street2: form.apt ? form.apt.value.trim() : '',
+      city, state: form.state.value, zip
+    }, { silent });
+    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
+    if (!result.proceed) { _setPortalAddrStatus('i9AddrStatus', false); return; }
+    if (result.standardized) {
+      const s = result.standardized;
+      form.address.value = s.street;
+      if (form.apt && s.street2) form.apt.value = s.street2;
+      form.city.value  = s.city;
+      form.state.value = s.state;
+      form.zip.value   = s.zip;
+    }
+    _setPortalAddrStatus('i9AddrStatus', result.verified === true);
+  } catch (e) {
+    console.error('[verifyI9Addr]', e);
+    _setPortalAddrStatus('i9AddrStatus', false);
+  }
+}
+
+function verifyI9Addr()     { _doVerifyI9Addr(false); }
+function autoVerifyI9Addr() {
+  const form = document.getElementById('i9Form');
+  if (!form || !form.address.value.trim()) return;
+  _doVerifyI9Addr(true);
+}
+
+async function _doVerifyW9Addr(silent) {
+  const form = document.getElementById('w9Form');
+  if (!form) return;
+  const street = form.address.value.trim();
+  const city   = form.city.value.trim();
+  const zip    = form.zip.value.trim();
+  if (!street && !city && !zip) return;
+  const statusEl = document.getElementById('w9AddrStatus');
+  statusEl.textContent = '验证中…'; statusEl.style.color = '#94a3b8';
+  try {
+    const result = await validateAddress({ street, city, state: form.state.value.trim(), zip }, { silent });
+    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
+    if (!result.proceed) { _setPortalAddrStatus('w9AddrStatus', false); return; }
+    if (result.standardized) {
+      const s = result.standardized;
+      form.address.value = s.street;
+      form.city.value    = s.city;
+      form.state.value   = s.state;
+      form.zip.value     = s.zip;
+    }
+    _setPortalAddrStatus('w9AddrStatus', result.verified === true);
+  } catch (e) {
+    console.error('[verifyW9Addr]', e);
+    _setPortalAddrStatus('w9AddrStatus', false);
+  }
+}
+
+function verifyW9Addr()     { _doVerifyW9Addr(false); }
+function autoVerifyW9Addr() {
+  const form = document.getElementById('w9Form');
+  if (!form || !form.address.value.trim()) return;
+  _doVerifyW9Addr(true);
+}
+
 function toggleI9Fields(val) {
   document.getElementById('i9AlienFields').style.display = (val === 'permanent_resident' || val === 'work_authorized') ? '' : 'none';
 }
@@ -2016,6 +2277,22 @@ function toggleI9Fields(val) {
 async function submitI9(e) {
   e.preventDefault();
   const form = e.target;
+  const addrResult = await validateAddress({
+    street:  form.address.value.trim(),
+    street2: form.apt ? form.apt.value.trim() : '',
+    city:    form.city.value.trim(),
+    state:   form.state.value,
+    zip:     form.zip.value.trim()
+  });
+  if (!addrResult.proceed) return;
+  if (addrResult.standardized) {
+    const s = addrResult.standardized;
+    form.address.value = s.street;
+    if (form.apt && s.street2) form.apt.value = s.street2;
+    form.city.value  = s.city;
+    form.state.value = s.state;
+    form.zip.value   = s.zip;
+  }
   const fd = new FormData(form);
   fd.set('signature_confirm', form.signature_confirm.checked ? '1' : '');
   try {
@@ -2026,8 +2303,8 @@ async function submitI9(e) {
     });
     const data = await r.json();
     if (data.success) { showToast('✅ I-9 已提交，等待审核'); form.reset(); loadCompliance(); }
-    else alert(data.error || '提交失败');
-  } catch { alert('网络错误'); }
+    else customAlert(data.error || '提交失败', '提交失败', '❌');
+  } catch { customAlert('网络错误', '错误', '❌'); }
 }
 
 async function submitDL(e) {
@@ -2042,13 +2319,27 @@ async function submitDL(e) {
     });
     const data = await r.json();
     if (data.success) { showToast('✅ 驾照已提交，等待验证'); form.reset(); loadCompliance(); }
-    else alert(data.error || '提交失败');
-  } catch { alert('网络错误'); }
+    else customAlert(data.error || '提交失败', '提交失败', '❌');
+  } catch { customAlert('网络错误', '错误', '❌'); }
 }
 
 async function submitW9(e) {
   e.preventDefault();
   const form = e.target;
+  const addrResult = await validateAddress({
+    street: form.address.value.trim(),
+    city:   form.city.value.trim(),
+    state:  form.state.value.trim(),
+    zip:    form.zip.value.trim()
+  });
+  if (!addrResult.proceed) return;
+  if (addrResult.standardized) {
+    const s = addrResult.standardized;
+    form.address.value = s.street;
+    form.city.value    = s.city;
+    form.state.value   = s.state;
+    form.zip.value     = s.zip;
+  }
   const body = {};
   new FormData(form).forEach((v, k) => { body[k] = v; });
   body.signature_confirm = form.signature_confirm.checked ? '1' : '';
@@ -2060,20 +2351,32 @@ async function submitW9(e) {
     });
     const data = await r.json();
     if (data.success) { showToast('✅ W-9 已提交，等待审核'); form.reset(); loadCompliance(); }
-    else alert(data.error || '提交失败');
-  } catch { alert('网络错误'); }
+    else customAlert(data.error || '提交失败', '提交失败', '❌');
+  } catch { customAlert('网络错误', '错误', '❌'); }
 }
 
 // ─── Onboarding / 待办事项 ───
 async function loadOnboarding() {
-  const tasks = await wApi('/onboarding');
+  let tasks = await wApi('/onboarding');
   const list = document.getElementById('onboardingList');
   if (!tasks) return;
   if (!tasks.length) {
     list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
     return;
   }
-  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  // If persona_verify is still pending, actively check for latest status (Persona API or identity_status fallback)
+  const personaTask = tasks.find(t => t.key === 'persona_verify' && t.status === 'pending');
+  if (personaTask) {
+    try {
+      const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
+      if (pollResult && !pollResult.error && (pollResult.status === 'approved' || pollResult.status === 'submitted' || pollResult.updated)) {
+        // Status was updated — reload tasks to get fresh data
+        tasks = await wApi('/onboarding');
+        if (!tasks) return;
+      }
+    } catch (e) { /* poll-status unavailable, backend /onboarding already handles sync */ }
+  }
+  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadgeStyle = {
     locked:'color:var(--gray-400);background:var(--gray-100);border:1px solid var(--gray-200)',
@@ -2088,6 +2391,13 @@ async function loadOnboarding() {
     if (s === 'pending') {
       if (t.key === 'interview') {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openInterviewBookModal()">去预约面试</button>`;
+      } else if (t.key === 'persona_verify') {
+        actionHtml = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
+          <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="openPersonaInPortal()">🖥️ 在Portal中验证</button>
+          ${t.action_url ? `<a class="btn" style="font-size:.8rem;padding:.3rem .75rem;text-decoration:none;display:inline-block;background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5" href="${esc(t.action_url)}" target="_blank">🔗 打开链接验证</a>` : ''}
+        </div>`;
+      } else if (t.key === 'background_check') {
+        actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">📧 请查收 Checkr 发送的邮件完成背景调查${t.action_url ? ` · <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">打开链接</a>` : ''}</div>`;
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">去提交文件 →</button>`;
       } else if ((t.key === 'contract' || t.key === 'gusto') && t.action_url) {
@@ -2116,12 +2426,12 @@ async function loadOnboarding() {
 async function submitOnboardingTask(key) {
   const r = await wApi(`/onboarding/${key}/submit`, { method:'POST', body:'{}' });
   if (r && r.success) { showToast('✅ 已提交，等待 HR 审核'); loadOnboarding(); }
-  else alert(r?.error || '提交失败');
+  else customAlert(r?.error || '提交失败', '提交失败', '❌');
 }
 
 // ── Cancel / Reschedule Interview ──
 async function cancelInterview() {
-  if (!confirm('确认取消面试预约吗？\nAre you sure you want to cancel your interview booking?')) return;
+  if (!await customConfirm('确认取消面试预约吗？\nAre you sure you want to cancel your interview booking?', '取消面试', '📅')) return;
   const r = await wApi('/interview/cancel', { method: 'POST', body: '{}' });
   if (!r) return;
   if (r.success) {
@@ -2133,8 +2443,8 @@ async function cancelInterview() {
   }
 }
 
-function rescheduleInterview() {
-  if (!confirm('更改预约时间将取消当前预约，然后您可以选择新的时间。\nRescheduling will cancel your current booking, then you can pick a new time.\n\n继续？Continue?')) return;
+async function rescheduleInterview() {
+  if (!await customConfirm('更改预约时间将取消当前预约，然后您可以选择新的时间。\nRescheduling will cancel your current booking, then you can pick a new time.\n\n继续？Continue?', '更改预约', '🔄')) return;
   wApi('/interview/cancel', { method: 'POST', body: '{}' }).then(r => {
     if (r && r.success) {
       showToast('当前预约已取消，请选择新时间 / Booking cancelled, please select a new time');
@@ -2254,6 +2564,7 @@ async function modalBookSlot(slotId) {
 // Close modal on overlay click
 document.addEventListener('click', (e) => {
   if (e.target.id === 'interviewBookModal') closeInterviewBookModal();
+  if (e.target.id === 'customDialogModal') _closeDialog(false);
 });
 
 function esc(s) {
