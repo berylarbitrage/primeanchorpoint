@@ -2166,18 +2166,14 @@ tr:hover td{background:var(--sky-light)}
     <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%;margin-top:.3rem">
   </div>
   <!-- Work period dates -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.75rem;align-items:end">
-    <div>
-      <div style="font-size:.78rem;color:#6366f1;font-weight:600;margin-bottom:.25rem">开始日期</div>
-      <input type="date" id="aWorkStart" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;width:100%;box-sizing:border-box">
-    </div>
-    <div>
-      <div style="font-size:.78rem;color:#6366f1;font-weight:600;margin-bottom:.25rem">结束日期</div>
-      <input type="date" id="aWorkEnd" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;width:100%;box-sizing:border-box;margin-bottom:.3rem">
-      <label style="display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:#4338ca;cursor:pointer;margin-top:.3rem">
-        <input type="checkbox" id="aWorkUntilFurther" onchange="toggleUntilFurther(this)"> Until further notice
-      </label>
-    </div>
+  <div style="display:flex;align-items:center;gap:.5rem;margin-top:.75rem;flex-wrap:wrap">
+    <span style="font-size:.78rem;color:#6366f1;font-weight:600;white-space:nowrap">开始日期</span>
+    <input type="date" id="aWorkStart" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;box-sizing:border-box">
+    <span style="font-size:.78rem;color:#6366f1;font-weight:600;white-space:nowrap">结束日期</span>
+    <input type="date" id="aWorkEnd" style="border:1px solid #c7d2fe;border-radius:5px;padding:.28rem .45rem;font-size:.83rem;background:#fff;box-sizing:border-box">
+    <label style="display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:#4338ca;cursor:pointer;white-space:nowrap">
+      <input type="checkbox" id="aWorkUntilFurther" onchange="toggleUntilFurther(this)"> Until further notice
+    </label>
   </div>
   <!-- Estimate Time (weekly schedule) -->
   <div class="form-section" style="margin-top:.75rem;border:1px solid #e0e7ff;border-radius:8px;padding:.75rem 1rem;background:#f5f7ff">
