@@ -1866,18 +1866,32 @@ tr:hover td{background:var(--sky-light)}
       <span>Job Description</span>
       <button type="button" onclick="toggleDescTemplates()" id="btnDescTpl"
         style="font-size:.74rem;padding:.2rem .65rem;border-radius:6px;border:1px solid #a5b4fc;background:#eef2ff;color:#4338ca;cursor:pointer;font-weight:600;text-transform:none;letter-spacing:0">
-        📝 Description Templates
+        📝 My Wordings
       </button>
     </label>
 
-    <!-- Template picker panel -->
+    <!-- Wording bank panel -->
     <div id="descTplPanel" style="display:none;border:1px solid #c7d2fe;border-radius:8px;background:#f5f7ff;padding:.65rem .75rem;margin-bottom:.5rem">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem">
-        <span style="font-size:.75rem;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:.04em">Select a template to apply</span>
-        <button type="button" onclick="addDescTemplate()"
-          style="font-size:.72rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #a5b4fc;background:#e0e7ff;color:#3730a3;cursor:pointer;font-weight:600">+ Add Template</button>
+        <span style="font-size:.75rem;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:.04em">My Wordings</span>
+        <button type="button" onclick="addDescEntry()"
+          style="font-size:.72rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #a5b4fc;background:#e0e7ff;color:#3730a3;cursor:pointer;font-weight:600">+ New Wording</button>
       </div>
-      <div id="descTplList" style="display:flex;flex-direction:column;gap:.45rem;max-height:340px;overflow-y:auto"></div>
+      <div id="descTplList" style="display:flex;flex-direction:column;gap:.45rem;max-height:360px;overflow-y:auto"></div>
+      <!-- Inline editor -->
+      <div id="descEditorPanel" style="display:none;margin-top:.6rem;border:1px solid #a5b4fc;border-radius:7px;background:#fff;padding:.6rem .7rem">
+        <input type="hidden" id="descEditorIdx">
+        <input id="descEditorName" placeholder="Label (e.g. Version A, Warehousing v2…)"
+          style="width:100%;border:1px solid #c7d2fe;border-radius:5px;padding:.25rem .45rem;font-size:.82rem;margin-bottom:.4rem">
+        <textarea id="descEditorText" placeholder="Write your wording here…"
+          style="width:100%;border:1px solid #c7d2fe;border-radius:5px;padding:.3rem .45rem;font-size:.82rem;resize:vertical;min-height:80px"></textarea>
+        <div style="display:flex;gap:.4rem;margin-top:.4rem">
+          <button type="button" onclick="saveDescEntry()"
+            style="font-size:.75rem;padding:.22rem .65rem;border-radius:5px;border:1px solid #6ee7b7;background:#d1fae5;color:#065f46;cursor:pointer;font-weight:600">Save</button>
+          <button type="button" onclick="cancelDescEditor()"
+            style="font-size:.75rem;padding:.22rem .55rem;border-radius:5px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer">Cancel</button>
+        </div>
+      </div>
     </div>
 
     <textarea id="jDesc" placeholder="Describe the scope of services, deliverables, and requirements..."></textarea>
@@ -3648,119 +3662,148 @@ async function autoGenerateJobs() {
   loadJobs();
 }
 
-// ── Job Description Templates (1099-compliant language) ──────────
-const _DEFAULT_DESC_TEMPLATES = [
-  {
-    name: 'Project-Based Services',
-    text: `This engagement covers project-based services to be completed at the contractor's discretion. The contractor will determine the methods, tools, and schedule needed to fulfill the agreed-upon deliverables. Work is performed independently without day-to-day supervision. Compensation is based on completed work rather than hours worked.`
-  },
-  {
-    name: 'Specialized Labor Services',
-    text: `Contractor provides specialized labor services on an as-needed basis. The scope of services includes physical handling, staging, and organization of materials per site requirements. The contractor retains full control over work methods and may engage their own tools or assistants as appropriate. Services are rendered on a per-project or per-task basis.`
-  },
-  {
-    name: 'Independent Field Operations',
-    text: `Independent contractor is engaged to perform field operations support, including but not limited to: logistics coordination, material movement, and site preparation. The contractor operates under their own professional judgment to meet project specifications. No employment relationship is created or implied. The contractor is responsible for their own equipment and compliance obligations.`
-  },
-  {
-    name: 'On-Demand Task Fulfillment',
-    text: `Contractor is retained to fulfill specific operational tasks on an on-demand basis as business needs arise. Each service request defines the scope and expected outcome; the contractor determines the best approach to complete the task efficiently. The contractor is free to accept or decline individual requests and may provide services to other clients simultaneously.`
-  },
-  {
-    name: 'Skilled Trade & Manual Services',
-    text: `Provision of skilled trade and manual services for short-term project needs. Contractor brings their own expertise to complete defined tasks — including loading, unloading, assembly, sorting, or site cleanup — according to project specifications. Work is outcome-based; the client does not direct the contractor's means or methods of performance.`
-  },
-  {
-    name: 'Logistics & Warehousing Support',
-    text: `Contractor provides logistics and warehousing support services including freight handling, inventory movement, and order processing assistance. Contractor operates independently, scheduling their own workflow to meet project milestones. Services are invoiced per completed engagement. Contractor maintains the right to subcontract or use their own equipment as needed.`
-  },
-  {
-    name: 'Event & Temporary Operational Support',
-    text: `Short-term operational support services for specific events, projects, or seasonal peaks. Contractor provides their availability for defined work windows and completes assigned tasks using their own professional methods. Client provides site access and safety guidelines; contractor is responsible for performance quality and time management within the agreed scope.`
-  },
-];
+// ── Job Description Wording Bank ─────────────────────────────────
+const DESC_BANK_KEY = 'jobDescBank_v1';
+const DESC_FREQ_KEY = 'jobDescRotateFreq_v1';
 
-const DESC_TPL_KEY = 'jobDescTemplates_v1';
-
-function getDescTemplates() {
-  try {
-    const saved = localStorage.getItem(DESC_TPL_KEY);
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return _DEFAULT_DESC_TEMPLATES.map(t => ({ ...t }));
+function getDescBank() {
+  try { const s = localStorage.getItem(DESC_BANK_KEY); if (s) return JSON.parse(s); } catch {}
+  return [];
 }
-
-function saveDescTemplatesToStorage(list) {
-  localStorage.setItem(DESC_TPL_KEY, JSON.stringify(list));
+function saveDescBank(list) { localStorage.setItem(DESC_BANK_KEY, JSON.stringify(list)); }
+function getDescFreq() {
+  try { const s = localStorage.getItem(DESC_FREQ_KEY); if (s) return JSON.parse(s); } catch {}
+  return { every: 30, unit: 'days' }; // default: rotate every 30 days
 }
+function saveDescFreq(f) { localStorage.setItem(DESC_FREQ_KEY, JSON.stringify(f)); }
 
 function toggleDescTemplates() {
   const panel = document.getElementById('descTplPanel');
   const isOpen = panel.style.display !== 'none';
   if (isOpen) { panel.style.display = 'none'; return; }
   panel.style.display = '';
-  renderDescTemplates();
+  renderDescBank();
 }
 
-function renderDescTemplates() {
-  const list = getDescTemplates();
+function descRotationStatus(entry) {
+  if (!entry.last_used) return { label: 'Never used', color: '#94a3b8', urgent: false };
+  const freq = getDescFreq();
+  const days = freq.unit === 'days' ? freq.every : freq.every * 7;
+  const elapsed = Math.floor((Date.now() - entry.last_used) / 86400000);
+  const due = elapsed >= days;
+  if (due) return { label: `⚠ Due for rotation (used ${elapsed}d ago)`, color: '#dc2626', urgent: true };
+  const remaining = days - elapsed;
+  return { label: `Rotate in ${remaining}d`, color: '#64748b', urgent: false };
+}
+
+function renderDescBank() {
+  const list = getDescBank();
+  const freq = getDescFreq();
   const container = document.getElementById('descTplList');
+
+  // Frequency setting row
+  let html = `<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem .5rem;background:#fff;border:1px solid #e2e8f0;border-radius:7px;margin-bottom:.5rem;flex-wrap:wrap">
+    <span style="font-size:.75rem;font-weight:700;color:#475569;white-space:nowrap">🔄 Rotate every</span>
+    <input type="number" id="descFreqNum" min="1" max="365" value="${freq.every}"
+      style="width:52px;border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.82rem;text-align:center"
+      onchange="saveDescFreqNow()">
+    <select id="descFreqUnit" style="border:1px solid #cbd5e1;border-radius:5px;padding:.2rem .35rem;font-size:.82rem;background:#fff" onchange="saveDescFreqNow()">
+      <option value="days" ${freq.unit==='days'?'selected':''}>Days</option>
+      <option value="weeks" ${freq.unit==='weeks'?'selected':''}>Weeks</option>
+    </select>
+    <span style="font-size:.72rem;color:#94a3b8">— reminder to change wording</span>
+  </div>`;
+
   if (!list.length) {
-    container.innerHTML = '<div style="font-size:.82rem;color:var(--gray-400);text-align:center;padding:.5rem">No templates yet. Click "+ Add Template" to create one.</div>';
-    return;
+    html += `<div style="font-size:.82rem;color:var(--gray-400);text-align:center;padding:.75rem">
+      No wording saved yet. Click <strong>+ New Wording</strong> to add your own.
+    </div>`;
+  } else {
+    html += list.map((entry, i) => {
+      const status = descRotationStatus(entry);
+      const lastUsedStr = entry.last_used ? new Date(entry.last_used).toLocaleDateString() : '—';
+      return `<div style="border:1px solid ${status.urgent?'#fecaca':'#e2e8f0'};border-radius:7px;background:${status.urgent?'#fff5f5':'#fff'};padding:.5rem .65rem">
+        <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem;flex-wrap:wrap">
+          <span style="font-size:.78rem;font-weight:700;color:#1e293b;flex:1;min-width:80px">${esc(entry.name)}</span>
+          <span style="font-size:.68rem;color:${status.color};white-space:nowrap">${status.label}</span>
+          <span style="font-size:.68rem;color:#94a3b8;white-space:nowrap">Last: ${lastUsedStr}</span>
+        </div>
+        <div style="font-size:.75rem;color:#475569;line-height:1.45;max-height:48px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;margin-bottom:.4rem">${esc(entry.text)}</div>
+        <div style="display:flex;gap:.3rem;flex-wrap:wrap">
+          <button type="button" onclick="applyDescEntry(${i})"
+            style="font-size:.72rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #6ee7b7;background:#d1fae5;color:#065f46;cursor:pointer;font-weight:600">✓ Use</button>
+          <button type="button" onclick="editDescEntry(${i})"
+            style="font-size:.72rem;padding:.18rem .5rem;border-radius:5px;border:1px solid #e2e8f0;background:#f8fafc;color:#475569;cursor:pointer">Edit</button>
+          <button type="button" onclick="deleteDescEntry(${i})"
+            style="font-size:.72rem;padding:.18rem .5rem;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;cursor:pointer">✕</button>
+        </div>
+      </div>`;
+    }).join('');
   }
-  container.innerHTML = list.map((t, i) => `
-    <div style="border:1px solid #c7d2fe;border-radius:7px;background:#fff;padding:.5rem .65rem">
-      <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem;flex-wrap:wrap">
-        <span style="font-size:.78rem;font-weight:700;color:#3730a3;flex:1;min-width:100px">${esc(t.name)}</span>
-        <button type="button" onclick="applyDescTemplate(${i})"
-          style="font-size:.72rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #6ee7b7;background:#d1fae5;color:#065f46;cursor:pointer;font-weight:600">✓ Use</button>
-        <button type="button" onclick="editDescTemplate(${i})"
-          style="font-size:.72rem;padding:.18rem .5rem;border-radius:5px;border:1px solid #e2e8f0;background:#f8fafc;color:#475569;cursor:pointer">Edit</button>
-        <button type="button" onclick="deleteDescTemplate(${i})"
-          style="font-size:.72rem;padding:.18rem .5rem;border-radius:5px;border:1px solid #fecaca;background:#fef2f2;color:#dc2626;cursor:pointer">✕</button>
-      </div>
-      <div style="font-size:.76rem;color:#64748b;line-height:1.4;max-height:52px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical">${esc(t.text)}</div>
-    </div>
-  `).join('');
+
+  container.innerHTML = html;
 }
 
-function applyDescTemplate(idx) {
-  const list = getDescTemplates();
+function saveDescFreqNow() {
+  const num = parseInt(document.getElementById('descFreqNum')?.value) || 30;
+  const unit = document.getElementById('descFreqUnit')?.value || 'days';
+  saveDescFreq({ every: num, unit });
+  renderDescBank();
+}
+
+function applyDescEntry(idx) {
+  const list = getDescBank();
   if (!list[idx]) return;
   document.getElementById('jDesc').value = list[idx].text;
+  list[idx].last_used = Date.now();
+  saveDescBank(list);
   document.getElementById('descTplPanel').style.display = 'none';
 }
 
-function addDescTemplate() {
-  const name = prompt('Template name:');
-  if (!name || !name.trim()) return;
-  const text = prompt('Template description text:');
-  if (!text || !text.trim()) return;
-  const list = getDescTemplates();
-  list.push({ name: name.trim(), text: text.trim() });
-  saveDescTemplatesToStorage(list);
-  renderDescTemplates();
+function addDescEntry() {
+  openDescEditor(-1, '', '');
 }
 
-function editDescTemplate(idx) {
-  const list = getDescTemplates();
+function editDescEntry(idx) {
+  const list = getDescBank();
   if (!list[idx]) return;
-  const name = prompt('Edit template name:', list[idx].name);
-  if (name === null) return;
-  const text = prompt('Edit template text:', list[idx].text);
-  if (text === null) return;
-  list[idx] = { name: name.trim() || list[idx].name, text: text.trim() || list[idx].text };
-  saveDescTemplatesToStorage(list);
-  renderDescTemplates();
+  openDescEditor(idx, list[idx].name, list[idx].text);
 }
 
-function deleteDescTemplate(idx) {
-  if (!confirm('Delete this template?')) return;
-  const list = getDescTemplates();
+function openDescEditor(idx, name, text) {
+  document.getElementById('descEditorIdx').value = idx;
+  document.getElementById('descEditorName').value = name;
+  document.getElementById('descEditorText').value = text;
+  document.getElementById('descEditorPanel').style.display = '';
+  document.getElementById('descEditorName').focus();
+}
+
+function saveDescEntry() {
+  const idx = parseInt(document.getElementById('descEditorIdx').value);
+  const name = document.getElementById('descEditorName').value.trim();
+  const text = document.getElementById('descEditorText').value.trim();
+  if (!name || !text) { alert('Please fill in both the label and the wording.'); return; }
+  const list = getDescBank();
+  if (idx === -1) {
+    list.push({ name, text, last_used: null });
+  } else {
+    list[idx] = { ...list[idx], name, text };
+  }
+  saveDescBank(list);
+  document.getElementById('descEditorPanel').style.display = 'none';
+  renderDescBank();
+}
+
+function cancelDescEditor() {
+  document.getElementById('descEditorPanel').style.display = 'none';
+}
+
+function deleteDescEntry(idx) {
+  if (!confirm('Delete this wording?')) return;
+  const list = getDescBank();
   list.splice(idx, 1);
-  saveDescTemplatesToStorage(list);
-  renderDescTemplates();
+  saveDescBank(list);
+  renderDescBank();
 }
 // ─────────────────────────────────────────────────────────────────
 
