@@ -631,6 +631,7 @@ try { db.exec("ALTER TABLE assignments ADD COLUMN work_address TEXT DEFAULT ''")
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_lat REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_lng REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_radius INTEGER DEFAULT 200"); } catch(e) {}
+try { db.exec("ALTER TABLE assignments ADD COLUMN worker_response TEXT DEFAULT NULL"); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
 
 db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
@@ -4368,6 +4369,39 @@ app.get('/api/admin/punch-photo/:filename', requireAdmin, (req, res) => {
   const fp = path.join(punchPhotosDir, path.basename(req.params.filename));
   if (!fs.existsSync(fp)) return res.status(404).send('Not found');
   res.sendFile(fp);
+});
+
+// ─── Worker task (my-tasks) endpoints ────────────────────────────
+app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
+  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!wa || !wa.linked_inquiry_id) return res.json([]);
+  const tasks = db.prepare(`
+    SELECT a.id, a.status, a.notes, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
+           a.start_date, a.work_schedule, a.work_address, a.assigned_at, a.worker_response,
+           j.title, j.location, j.pay, j.company_name, j.employment_type,
+           j.work_days, j.work_start, j.work_end, j.description
+    FROM assignments a
+    LEFT JOIN jobs j ON a.job_id = j.id
+    WHERE a.inquiry_id = ? AND a.status != 'cancelled'
+    ORDER BY a.assigned_at DESC
+  `).all(wa.linked_inquiry_id);
+  res.json(tasks);
+});
+
+app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
+  const { response } = req.body; // 'accepted' or 'rejected'
+  if (!['accepted', 'rejected'].includes(response))
+    return res.status(400).json({ error: 'Invalid response' });
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!wa || !wa.linked_inquiry_id) return res.status(403).json({ error: '账号未关联' });
+  const task = db.prepare('SELECT id, status FROM assignments WHERE id=? AND inquiry_id=?').get(req.params.id, wa.linked_inquiry_id);
+  if (!task) return res.status(404).json({ error: '任务不存在' });
+  if (response === 'rejected') {
+    db.prepare("UPDATE assignments SET worker_response='rejected', status='cancelled' WHERE id=?").run(task.id);
+  } else {
+    db.prepare("UPDATE assignments SET worker_response='accepted' WHERE id=?").run(task.id);
+  }
+  res.json({ success: true });
 });
 
 // ─── Referral endpoints ───────────────────────────────────────────
