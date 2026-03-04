@@ -34,7 +34,7 @@
 .nav-dropdown{position:absolute;top:100%;left:0;background:var(--white);min-width:220px;box-shadow:var(--shadow-lg);border-top:3px solid var(--sky);border-radius:0 0 var(--radius) var(--radius);opacity:0;visibility:hidden;transform:translateY(4px);transition:all .25s;z-index:100;list-style:none}
 .nav-item:hover .nav-dropdown{opacity:1;visibility:visible;transform:translateY(0)}
 .nav-dropdown li a{display:block;padding:12px 20px;font-size:.85rem;font-weight:500;color:var(--gray-600);transition:var(--tr)}.nav-dropdown li a:hover{color:var(--blue);background:var(--sky-light);padding-left:24px}
-.nav-cta{margin-left:1rem}
+.nav-cta{margin-left:1rem;display:flex;gap:.5rem;align-items:center}
 .btn-blue{display:inline-block;padding:10px 24px;background:var(--blue);color:#fff;font-family:'DM Sans',sans-serif;font-weight:700;font-size:.82rem;border-radius:var(--radius);border:none;cursor:pointer;transition:var(--tr)}
 .btn-blue:hover{background:var(--blue-mid);transform:translateY(-1px);box-shadow:0 4px 16px rgba(15,43,91,.25)}
 .btn-sky{display:inline-block;padding:12px 32px;background:var(--sky);color:#fff;font-family:'DM Sans',sans-serif;font-weight:700;font-size:.88rem;border-radius:var(--radius);border:none;cursor:pointer;transition:var(--tr)}
@@ -283,7 +283,7 @@ input.input-err,textarea.input-err{border-color:#e53e3e!important}input.input-er
 @media(max-width:768px){.quote-steps{grid-template-columns:1fr;gap:1.5rem}.quote-card{padding:1.5rem}.quote-body{padding:1.5rem 1rem 3rem}}
 
 @media(max-width:1024px){.svc-cards,.ind-grid{grid-template-columns:1fr 1fr}.split{grid-template-columns:1fr}.split.reverse .split-img{order:1}.split.reverse .split-text{order:2}.split-img img{min-height:300px;height:300px}.photo-strip{grid-template-columns:1fr 1fr}.mosaic{grid-template-columns:1fr 1fr;grid-template-rows:auto}.mosaic-item:first-child{grid-row:auto}.stats-grid{grid-template-columns:1fr 1fr}.footer-inner{grid-template-columns:1fr 1fr}.pos-grid{grid-template-columns:1fr 1fr}}
-@media(max-width:768px){.tb-inner{flex-direction:column;gap:6px;text-align:center}.tb-right{justify-content:center}.nav-menu,.nav-cta{display:none}.mobile-toggle{display:block}.nav-menu.open{display:flex;flex-direction:column;position:absolute;top:72px;left:0;right:0;background:var(--white);box-shadow:var(--shadow-lg);z-index:100}.nav-menu.open .nav-item>a{height:auto;padding:14px 2rem;border-bottom:1px solid var(--gray-100)}.nav-dropdown{display:none}.svc-cards,.ind-grid{grid-template-columns:1fr}.photo-strip{grid-template-columns:1fr 1fr}.photo-item{height:160px}.stats-grid{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.footer-inner{grid-template-columns:1fr}.mega-footer{padding-bottom:80px}body{padding-bottom:56px}.split-text{padding:2.5rem 1.5rem}.pos-grid{grid-template-columns:1fr 1fr}.mosaic{grid-template-columns:1fr}.hero-btns{flex-direction:column;align-items:flex-start}}
+@media(max-width:768px){.top-bar{display:none}.nav-menu,.nav-cta{display:none}.mobile-cta-row{display:none}.mobile-toggle{display:block}.nav-menu.open{display:flex;flex-direction:column;position:fixed;top:72px;left:0;right:0;background:#fff;box-shadow:var(--shadow-lg);z-index:9998;max-height:calc(100vh - 72px);overflow-y:auto}.nav-menu.open .nav-item>a{height:auto;padding:14px 2rem;border-bottom:1px solid var(--gray-100)}.nav-menu.open .mobile-cta-row{display:flex;gap:.75rem;padding:1rem 2rem 1.25rem;border-top:2px solid var(--sky-light)}.nav-menu.open .mobile-cta-row .btn-outline-blue,.nav-menu.open .mobile-cta-row .btn-blue{flex:1;text-align:center;padding:10px 0;font-size:.9rem}.nav-dropdown{display:none}.svc-cards,.ind-grid{grid-template-columns:1fr}.photo-strip{grid-template-columns:1fr 1fr}.photo-item{height:160px}.stats-grid{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.footer-inner{grid-template-columns:1fr}.mega-footer{padding-bottom:80px}body{padding-bottom:56px}.split-text{padding:2.5rem 1.5rem}.pos-grid{grid-template-columns:1fr 1fr}.mosaic{grid-template-columns:1fr}.hero-btns{flex-direction:column;align-items:flex-start}}
 .job-apply-modal-bg{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,43,91,.45);z-index:9999;align-items:center;justify-content:center}
 .job-apply-modal-bg.show{display:flex}
 .job-apply-modal{background:var(--white);border-radius:12px;padding:2rem;max-width:480px;width:90%;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-lg);position:relative}
@@ -396,8 +396,12 @@ input.input-err,textarea.input-err{border-color:#e53e3e!important}input.input-er
     <li class="nav-item"><a href="#" onclick="go('supplies')" data-i18n="navSupplies">Supplies</a></li>
     <li class="nav-item"><a href="#" onclick="go('about')" data-i18n="navAbout">About</a></li>
     <li class="nav-item"><a href="#" onclick="go('contact')" data-i18n="navContact">Contact</a></li>
+    <li class="mobile-cta-row">
+      <a href="javascript:void(0)" class="btn-outline-blue" onclick="document.getElementById('navMenu').classList.remove('open');openIdModal('login')" data-i18n="navLogin">Login</a>
+      <a href="javascript:void(0)" class="btn-blue" onclick="document.getElementById('navMenu').classList.remove('open');openIdModal('register')" data-i18n="navRegister">Register</a>
+    </li>
   </ul>
-  <div class="nav-cta" style="display:flex;gap:.5rem;align-items:center">
+  <div class="nav-cta">
     <a href="javascript:void(0)" class="btn-outline-blue" onclick="openIdModal('login')" data-i18n="navLogin">Login</a>
     <a href="javascript:void(0)" class="btn-blue" onclick="openIdModal('register')" data-i18n="navRegister">Register</a>
   </div>

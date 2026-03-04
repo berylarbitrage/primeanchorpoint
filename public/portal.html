@@ -464,6 +464,13 @@ tr:last-child td{border-bottom:none}
 
     <!-- My Tasks -->
     <div id="tabInterview" style="display:none">
+      <!-- Today's shift confirmations -->
+      <div id="shiftConfirmCard" style="display:none;margin-bottom:1rem">
+        <div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
+          <h2 style="color:#92400e;margin-bottom:.75rem">📅 今日出勤确认</h2>
+          <div id="shiftConfirmList"></div>
+        </div>
+      </div>
       <div class="card">
         <h2>📋 我的任务</h2>
         <div id="myTasksList" style="margin-top:.75rem"></div>
@@ -509,12 +516,12 @@ tr:last-child td{border-bottom:none}
           </div>
           <!-- Context-aware punch buttons -->
           <div id="punchBtnsWrap" style="width:100%;max-width:340px;display:flex;flex-direction:column;gap:.5rem">
-            <button class="btn-punch btn-punch-in" id="btnPunchIn" onclick="startPunchFlow('in')" disabled style="width:100%">▶ 上班打卡 / Clock In</button>
+            <button class="btn-punch btn-punch-in" id="btnPunchIn" onclick="startPunchFlow('in')" disabled style="width:100%">▶ Check In</button>
             <div id="punchWorkingBtns" style="display:none;gap:.5rem">
-              <button onclick="startPunchFlow('break_start')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff">☕ 休息开始</button>
+              <button onclick="startPunchFlow('break_start')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff">⏸ Pause Job</button>
               <button onclick="startPunchFlow('out')" style="flex:1;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;background:var(--red);color:#fff">⏹ 下班打卡</button>
             </div>
-            <button id="btnBreakEnd" onclick="startPunchFlow('break_end')" style="display:none;width:100%;padding:.85rem;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff">▶ 休息结束 / Resume Work</button>
+            <button id="btnBreakEnd" onclick="startPunchFlow('break_end')" style="display:none;width:100%;padding:.85rem;border:none;border-radius:10px;font-size:1.05rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff">▶ Resume Job</button>
           </div>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
           <!-- Punch confirmation modal overlay -->
@@ -872,9 +879,26 @@ tr:last-child td{border-bottom:none}
         <!-- Referral link card -->
         <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:1rem;margin-bottom:1.25rem">
           <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.4rem">您的专属邀请链接 / Your referral link</div>
-          <div style="display:flex;gap:.5rem;align-items:center">
+          <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:1rem">
             <input id="referralLinkInput" readonly style="flex:1;padding:.5rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.8rem;background:#fff;color:var(--gray-700)">
             <button onclick="copyReferralLink()" style="background:var(--sky);color:#fff;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap">复制 / Copy</button>
+          </div>
+
+          <!-- Share buttons -->
+          <div style="margin-bottom:1rem">
+            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem">分享给朋友 / Share with friends</div>
+            <div style="display:flex;flex-wrap:wrap;gap:.45rem">
+              <button id="refNativeShareBtn" onclick="shareReferral('native')" style="display:none;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#0F2B5B;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer">📤 分享</button>
+              <button onclick="shareReferral('sms')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#22c55e;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer">💬 短信 SMS</button>
+              <button onclick="shareReferral('whatsapp')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#25D366;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.557 4.126 1.527 5.858L0 24l6.335-1.501A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.885 0-3.64-.52-5.144-1.422l-.366-.217-3.762.891.948-3.668-.239-.378A9.96 9.96 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg> WhatsApp</button>
+              <button onclick="shareReferral('facebook')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#1877F2;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Facebook</button>
+            </div>
+          </div>
+
+          <!-- QR Code -->
+          <div style="text-align:center">
+            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem">扫码注册 / Scan to Register</div>
+            <div id="referralQR" style="display:inline-block;background:#fff;padding:10px;border:1px solid var(--gray-200);border-radius:10px;min-width:120px;min-height:120px"></div>
           </div>
         </div>
 
@@ -1067,12 +1091,17 @@ function _closeDialog(result) {
 }
 
 async function wApi(path, opts={}) {
-  const r = await fetch('/api/worker' + path, {
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
-    ...opts
-  });
-  if (r.status === 401) { workerLogout(); return null; }
-  return r.json();
+  try {
+    const r = await fetch('/api/worker' + path, {
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
+      ...opts
+    });
+    if (r.status === 401) { workerLogout(); return null; }
+    return r.json();
+  } catch (e) {
+    showToast('❌ 网络错误，请检查连接后重试', 'error');
+    return null;
+  }
 }
 
 async function workerLogin() {
@@ -1262,6 +1291,43 @@ async function loadInterview() {
 async function loadTasks() {
   const el = document.getElementById('myTasksList');
   el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">加载中…</p>';
+
+  // Load today's shift confirmations
+  const today = new Date().toISOString().slice(0, 10);
+  const confirmations = await wApi('/shift-confirmations');
+  const todayConfs = (confirmations || []).filter(c => c.date === today);
+  const confCard = document.getElementById('shiftConfirmCard');
+  const confList = document.getElementById('shiftConfirmList');
+  if (todayConfs.length) {
+    confCard.style.display = '';
+    confList.innerHTML = todayConfs.map(c => {
+      const fmt = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+      const timeStr = (c.work_start && c.work_end) ? `${fmt(c.work_start)} – ${fmt(c.work_end)}` : '';
+      const statusBadge = c.status === 'confirmed'
+        ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700">✓ 已确认出勤</span>`
+        : c.status === 'declined'
+        ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700">✕ 已请假</span>`
+        : `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700">待确认</span>`;
+      const actionBtns = c.status === 'pending' ? `
+        <div style="display:flex;gap:.6rem;margin-top:.85rem">
+          <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.6rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
+          <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.6rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.95rem;font-weight:700;cursor:pointer">❌ 今天请假</button>
+        </div>` : '';
+      return `
+        <div style="border:1px solid #fcd34d;border-radius:10px;padding:.9rem;margin-bottom:.6rem;background:#fff">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+            <div style="font-weight:700;font-size:.95rem;color:var(--gray-800)">${esc(c.title||'—')}${c.company_name?`<span style="font-weight:400;color:var(--gray-500);font-size:.82rem"> · ${esc(c.company_name)}</span>`:''}</div>
+            ${statusBadge}
+          </div>
+          ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ ${esc(timeStr)}</div>` : ''}
+          ${c.work_address ? `<div style="font-size:.83rem;color:#4b5563">📍 ${esc(c.work_address)}</div>` : ''}
+          ${actionBtns}
+        </div>`;
+    }).join('');
+  } else {
+    confCard.style.display = 'none';
+  }
+
   const tasks = await wApi('/my-tasks');
   if (!tasks || !tasks.length) {
     el.innerHTML = '<p style="color:var(--gray-500);font-size:.9rem;padding:.5rem 0">暂无任务安排，请联系 HR。</p>';
@@ -1326,6 +1392,14 @@ async function respondTask(id, response) {
   const r = await wApi(`/my-tasks/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
   if (r && r.success) {
     showToast(response === 'accepted' ? '✅ 已接受任务' : '已拒绝任务');
+    loadTasks();
+  }
+}
+
+async function respondShiftConfirm(id, response) {
+  const r = await wApi(`/shift-confirmations/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
+  if (r && r.success) {
+    showToast(response === 'confirmed' ? '✅ 已确认今日出勤' : '已登记今日请假');
     loadTasks();
   }
 }
@@ -1623,8 +1697,8 @@ let _confirmClockTimer = null;
 
 function initGPS() {
   if (!navigator.geolocation) {
-    document.getElementById('gpsIndicator').textContent = '⚠️ 设备不支持GPS定位';
-    enablePunchBtn(true);
+    document.getElementById('gpsIndicator').textContent = '🚫 设备不支持GPS，无法打卡';
+    enablePunchBtn(false);
     return;
   }
   navigator.geolocation.getCurrentPosition(
@@ -1635,8 +1709,8 @@ function initGPS() {
       enablePunchBtn(true);
     },
     err => {
-      document.getElementById('gpsIndicator').innerHTML = '⚠️ 无法获取位置（将不记录GPS）';
-      enablePunchBtn(true);
+      document.getElementById('gpsIndicator').innerHTML = '🚫 位置获取失败 — 打卡需要位置权限，请在浏览器设置中允许定位后刷新。';
+      enablePunchBtn(false);
     },
     { enableHighAccuracy: true, timeout: 10000 }
   );
@@ -1647,27 +1721,22 @@ function enablePunchBtn(ready) {
   const s = _punchStatus;
   const btnIn = document.getElementById('btnPunchIn');
   const workingBtns = document.getElementById('punchWorkingBtns');
-  const btnBreakEnd = document.getElementById('btnBreakEnd');
   if (!btnIn) return;
 
   // Hide all first
   btnIn.style.display = 'none';
   workingBtns.style.display = 'none';
-  btnBreakEnd.style.display = 'none';
 
   if (s.no_employee || !ready) return;
 
   if (!s.clocked_in) {
-    // Not clocked in: show clock-in button (only if has active job)
+    // Not clocked in: show Check In button (only if has active job)
     if (s.has_active_job) {
       btnIn.style.display = '';
       btnIn.disabled = false;
     }
-  } else if (s.on_break) {
-    // On break: show resume button
-    btnBreakEnd.style.display = '';
   } else {
-    // Working: show break + clock-out buttons
+    // Working: show Check Out button
     workingBtns.style.display = 'flex';
   }
 }
@@ -1685,7 +1754,7 @@ async function loadPunchStatus() {
   if (s.no_employee) {
     statusEl.innerHTML = '<span style="color:var(--red)">⚠ 账号未关联员工档案</span>';
     timeEl.textContent = '—';
-    subEl.textContent = '请联系HR关联您的员工档案后方可打卡';
+    subEl.textContent = '请联系HR关联您的员工档案后方可 Check In';
     selectorWrap.style.display = 'none';
     enablePunchBtn(false);
     return;
@@ -1694,23 +1763,29 @@ async function loadPunchStatus() {
   if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = '休息中 · 点击"休息结束"继续工作';
+    subEl.textContent = 'On break · Click "Resume Job" to continue';
     selectorWrap.style.display = 'none';
   } else if (s.clocked_in && s.open_entry) {
     const ci = new Date(s.open_entry.clock_in);
-    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● 当前在班</span>';
+    statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● Checked In</span>';
     timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = '上班时间 · ' + ci.toLocaleDateString();
+    subEl.textContent = 'Check In · ' + ci.toLocaleDateString();
     selectorWrap.style.display = 'none';
   } else if (!s.has_active_job) {
-    statusEl.innerHTML = '<span style="color:var(--orange)">● 未在班</span>';
+    statusEl.innerHTML = '<span style="color:var(--orange)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = '当前无有效工作安排';
     selectorWrap.style.display = 'none';
+    if (s.pending_tasks_count > 0) {
+      subEl.innerHTML = `您有 <strong>${s.pending_tasks_count}</strong> 个待接受的工作安排，请前往
+        <a href="#" onclick="showTab('interview');return false;" style="color:var(--sky);font-weight:600">我的任务</a>
+        接受后方可打卡。`;
+    } else {
+      subEl.textContent = '当前无有效工作安排，请联系HR。';
+    }
     enablePunchBtn(false);
     return;
   } else {
-    statusEl.innerHTML = '<span style="color:var(--gray-400)">● 未在班</span>';
+    statusEl.innerHTML = '<span style="color:var(--gray-400)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = '请选择工作后打卡';
     const jobs = s.active_jobs || [];
@@ -1721,7 +1796,7 @@ async function loadPunchStatus() {
     if (jobs.length === 1)
       selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
   }
-  const gpsReady = _gpsCoords !== null || (document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
+  const gpsReady = _gpsCoords !== null;
   enablePunchBtn(gpsReady);
 }
 
@@ -1729,7 +1804,7 @@ let _pendingPunchPhoto = null;
 
 function startPunchFlow(type) {
   _pendingPunchType = type;
-  const labels = { in: '▶ 上班打卡 / Clock In', break_start: '☕ 休息开始 / Start Break', break_end: '▶ 休息结束 / Resume Work', out: '⏹ 下班打卡 / Clock Out' };
+  const labels = { in: '▶ 上班打卡 / Clock In', break_start: '⏸ Pause Job', break_end: '▶ Resume Job', out: '⏹ 下班打卡 / Clock Out' };
   const colors  = { in: 'var(--green)', break_start: '#f97316', break_end: '#7c3aed', out: 'var(--red)' };
   document.getElementById('punchConfirmTypeLabel').textContent = labels[type] || type;
   document.getElementById('btnExecutePunch').style.background = colors[type] || 'var(--green)';
@@ -1798,7 +1873,7 @@ async function doPunch(type, photo) {
     body.job_id = sel ? parseInt(sel.value) || null : null;
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
-  if (!r) { enablePunchBtn(true); cancelPunchPhoto(); return; }
+  if (!r) { enablePunchBtn(true); cancelPunchPhoto(); showToast('❌ 打卡失败，请重新登录后重试', 'error'); return; }
   if (r.error) {
     showToast('❌ ' + r.error, 'error');
     cancelPunchPhoto();
@@ -1817,12 +1892,11 @@ async function doPunch(type, photo) {
   }
   const toasts = {
     in: () => {
-      if (r.geo_warning) return showToast('⚠️ 上班打卡成功，但不在指定地点范围内！', 'error');
       const geoMsg = r.geo_verified ? (r.site_name ? ` · 📍${r.site_name}` : ' · 位置已验证') : '';
       showToast(`✅ 上班打卡成功！${r.job_title ? ' · ' + r.job_title : ''}${geoMsg}`, 'success');
     },
-    break_start: () => showToast('☕ 休息开始，注意休息！', 'success'),
-    break_end:   () => showToast('▶ 休息结束，继续工作！', 'success'),
+    break_start: () => showToast('⏸ Job paused.', 'success'),
+    break_end:   () => showToast('▶ Job resumed!', 'success'),
     out:         () => showToast(`✅ 下班打卡成功！本次 ${r.total_hours?.toFixed(2) || 0}h`, 'success'),
   };
   (toasts[type] || (() => {}))();
@@ -1868,7 +1942,7 @@ async function loadTimeclock() {
   const entries = await wApi('/timeclock');
   if (!entries) return;
   if (!Array.isArray(entries)) {
-    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="11" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录</td></tr>';
+    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="11" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看 Check In / Out 记录</td></tr>';
     return;
   }
   const fmt = d => d ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—';
@@ -1904,7 +1978,7 @@ async function loadTimeclock() {
       <td>${statusCell}</td>
       <td>${mapLink}</td>
     </tr>`;
-  }).join('') : '<tr><td colspan="11" class="empty">暂无打卡记录</td></tr>';
+  }).join('') : '<tr><td colspan="11" class="empty">暂无 Check In / Out 记录</td></tr>';
 }
 
 async function loadPayments() {
@@ -1943,7 +2017,15 @@ async function loadReferrals() {
   // Referral link
   const linkInput = document.getElementById('referralLinkInput');
   const base = window.location.origin + '/register';
-  linkInput.value = data.worker_code ? `${base}?ref=${data.worker_code}` : '（账号尚未激活，无法生成链接）';
+  const refUrl = data.worker_code ? `${base}?ref=${data.worker_code}` : '';
+  linkInput.value = refUrl || '（账号尚未激活，无法生成链接）';
+
+  // Show native share button if supported
+  const nativeBtn = document.getElementById('refNativeShareBtn');
+  if (nativeBtn && navigator.share) nativeBtn.style.display = 'inline-flex';
+
+  // Generate QR code
+  if (refUrl) _generateReferralQR(refUrl);
 
   // Summary cards
   document.getElementById('refCountEl').textContent = (data.referred || []).length;
@@ -1987,6 +2069,42 @@ async function loadReferrals() {
     }).join('')}</tbody>
   </table>`;
 }
+function _generateReferralQR(url) {
+  const qrDiv = document.getElementById('referralQR');
+  if (!qrDiv) return;
+  qrDiv.innerHTML = '';
+  const render = () => {
+    const container = document.createElement('div');
+    qrDiv.appendChild(container);
+    try {
+      new QRCode(container, { text: url, width: 160, height: 160, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    } catch(e) {
+      qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+    }
+  };
+  if (typeof QRCode !== 'undefined') { render(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+  s.onload = render;
+  s.onerror = () => {
+    qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+  };
+  document.head.appendChild(s);
+}
+
+function shareReferral(platform) {
+  const link = document.getElementById('referralLinkInput').value;
+  if (!link || link.includes('尚未')) { showToast('账号未激活，暂无邀请链接', 'error'); return; }
+  const text = `我在Prime Anchorpoint找到工作了！扫码或点击链接注册，一起来工作吧 👇\n${link}`;
+  if (platform === 'native') {
+    navigator.share({ title: 'Prime Anchorpoint 招工', text, url: link }).catch(() => {});
+    return;
+  }
+  if (platform === 'sms') { window.open(`sms:?&body=${encodeURIComponent(text)}`); return; }
+  if (platform === 'whatsapp') { window.open(`https://wa.me/?text=${encodeURIComponent(text)}`); return; }
+  if (platform === 'facebook') { window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`); return; }
+}
+
 function copyReferralLink() {
   const inp = document.getElementById('referralLinkInput');
   if (!inp.value || inp.value.includes('尚未')) return;
