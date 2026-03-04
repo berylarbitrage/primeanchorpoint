@@ -2672,23 +2672,36 @@ function finishLogin(r) {
 }
 
 async function doLogin() {
-  const username = document.getElementById('userInput').value;
+  const username = document.getElementById('userInput').value.trim();
   const password = document.getElementById('passInput').value;
-  if (!username || !password) { document.getElementById('loginErr').textContent = '请输入用户名和密码'; return; }
-  const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
-  if (r.success) {
-    finishLogin(r);
-  } else if (r.needs_activation) {
-    // Password correct but account needs self-verification
-    document.getElementById('loginErr').textContent = '';
-    document.getElementById('activateUsername').value = username;
-    document.getElementById('activateCurrent').value = password;
-    document.getElementById('activateNew').value = '';
-    document.getElementById('activateConfirm').value = '';
-    document.getElementById('activateErr').textContent = '';
-    document.getElementById('activationModal').classList.add('show');
-  } else {
-    document.getElementById('loginErr').textContent = '用户名或密码错误';
+  const errEl = document.getElementById('loginErr');
+  errEl.textContent = '';
+  if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return; }
+  const btn = document.querySelector('#loginWrap button');
+  btn.disabled = true;
+  btn.textContent = '登录中…';
+  try {
+    const r = await api('/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    if (r.success) {
+      finishLogin(r);
+    } else if (r.needs_activation) {
+      // Password correct but account needs self-verification
+      document.getElementById('activateUsername').value = username;
+      document.getElementById('activateCurrent').value = password;
+      document.getElementById('activateNew').value = '';
+      document.getElementById('activateConfirm').value = '';
+      document.getElementById('activateErr').textContent = '';
+      document.getElementById('activationModal').classList.add('show');
+    } else {
+      errEl.textContent = r.message || r.error || '用户名或密码错误';
+    }
+  } catch (e) {
+    errEl.textContent = '网络错误，请检查连接后重试';
+  } finally {
+    if (!document.getElementById('loginWrap').hidden && document.getElementById('loginWrap').style.display !== 'none') {
+      btn.disabled = false;
+      btn.textContent = '登录';
+    }
   }
 }
 
