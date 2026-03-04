@@ -519,7 +519,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="cancelled">已取消</option>
     </select>
   </div>
-  <div class="card" style="padding:0"><div style="overflow-x:auto;padding:1rem"><table style="min-width:700px"><thead><tr><th>人员</th><th>分配职位</th><th>合同/薪资</th><th>福利</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div></div>
+  <div class="card" style="padding:0"><div style="overflow-x:auto;padding:1rem"><table style="min-width:780px"><thead><tr><th>人员</th><th>分配职位</th><th>合同类型</th><th>薪资</th><th>福利</th><th>状态</th><th>操作</th></tr></thead><tbody id="assignTable"></tbody></table></div></div>
 </div>
 
 <!-- Jobs -->
@@ -635,8 +635,8 @@ tr:hover td{background:var(--sky-light)}
     </select>
     <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
-  <div class="card">
-    <table><thead><tr><th>员工号</th><th>工人编码</th><th>姓名</th><th>当前职位</th><th>所属公司</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
+  <div class="card" style="overflow-x:auto">
+    <table style="min-width:900px;width:100%"><thead><tr><th>员工号</th><th>工人编码</th><th>姓名</th><th>当前职位</th><th>所属公司</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
     <tbody id="empTable"></tbody></table>
   </div>
 </div>
@@ -4788,19 +4788,22 @@ function renderAssignments(assigns) {
     return `<tr>
     <td><strong>${esc(a.inquiry_name || '未知')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(a.inquiry_phone || '')} ${esc(a.inquiry_email || '')}</span></td>
     <td>${esc(a.job_title || '未知职位')}<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(a.job_location || '')}</span></td>
-    <td>
+    <td style="white-space:nowrap">
       <span class="badge" style="background:${a.contract_type==='1099'?'var(--orange-light,#fff3e0)':'var(--sky-light)'};color:${a.contract_type==='1099'?'#e65100':'var(--blue)'};font-weight:700">${esc(a.contract_type||'W2')}</span>
-      ${a.pay_rate ? '<br><span style="font-size:.8rem;font-weight:600">' + esc(a.pay_rate) + '</span>' : ''}
-      ${a.pay_type ? '<br><span style="font-size:.72rem;color:var(--gray-400)">' + payTypeLabel(a.pay_type) + '</span>' : ''}
       ${dsBadge}
+    </td>
+    <td style="white-space:nowrap">
+      ${a.pay_rate ? '<span style="font-size:.88rem;font-weight:700;color:var(--gray-800)">' + esc(a.pay_rate) + '</span>' : '<span style="color:var(--gray-400)">—</span>'}
+      ${a.pay_type ? '<br><span style="font-size:.72rem;color:var(--gray-400)">' + payTypeLabel(a.pay_type) + '</span>' : ''}
     </td>
     <td style="font-size:.78rem;max-width:160px;white-space:normal">${esc(a.benefits || '—')}</td>
     <td>${statusSelect}</td>
-    <td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" style="background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe" onclick="openAssignModal(allAssignments.find(x=>x.id===${a.id}))">修改</button>
       <button class="btn btn-sm" style="background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe" onclick="showAssignmentHistory(${a.id},'${esc(a.inquiry_name||'')}')">历史</button>
     </td>
   </tr>`;
-  }).join('') : '<tr><td colspan="6" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
+  }).join('') : '<tr><td colspan="7" class="empty">暂无派工记录，点击 "+ 新建派工" 添加</td></tr>';
 }
 
 async function sendForDocuSign(type, id, defaultEmail, defaultName) {
