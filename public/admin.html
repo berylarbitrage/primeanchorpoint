@@ -4896,14 +4896,34 @@ async function saveEmployee() {
     const fieldLabel = r.field === 'phone' ? '手机号' : '邮箱';
     const emp = r.existing;
     const empName = `${emp.first_name} ${emp.last_name}（员工号：${emp.employee_id}）`;
-    const openExisting = confirm(`该${fieldLabel}已登记在员工「${empName}」名下。\n\n点击「确定」打开该员工档案查看，点击「取消」忽略重复继续保存当前信息。`);
-    if (openExisting) {
-      clearModalState('empModal');
-      closeEmpModal();
-      await loadEmployees();
-      openEmpModal(emp.id);
+    if (_convertFromWorkerId) {
+      // Converting worker → employee: offer to link directly to the existing record
+      const linkDirectly = confirm(`该${fieldLabel}已登记在员工「${empName}」名下。\n\n点击「确定」直接将此工人账户绑定到现有员工「${empName}」（推荐，无需重复建档）。\n\n点击「取消」忽略重复、强制新建一个员工档案。`);
+      if (linkDirectly) {
+        const wid = _convertFromWorkerId;
+        _convertFromWorkerId = null;
+        await api(`/admin/worker-accounts/${wid}`, {
+          method: 'PUT',
+          body: JSON.stringify({ employee_id: emp.id })
+        });
+        clearModalState('empModal');
+        closeEmpModal();
+        await loadEmployees();
+        await loadWorkerAccounts();
+        showToast(`✅ 工人账户已绑定到员工「${empName}」`);
+      } else {
+        await finishSave(await doSave({ ...data, force: true }));
+      }
     } else {
-      await finishSave(await doSave({ ...data, force: true }));
+      const openExisting = confirm(`该${fieldLabel}已登记在员工「${empName}」名下。\n\n点击「确定」打开该员工档案查看，点击「取消」忽略重复继续保存当前信息。`);
+      if (openExisting) {
+        clearModalState('empModal');
+        closeEmpModal();
+        await loadEmployees();
+        openEmpModal(emp.id);
+      } else {
+        await finishSave(await doSave({ ...data, force: true }));
+      }
     }
     return;
   }
