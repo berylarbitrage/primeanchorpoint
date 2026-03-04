@@ -4040,7 +4040,7 @@ async function openAssignModal(assignment) {
   document.getElementById('aDispatchWarn').style.display = 'none';
   closeAssignDropdowns();
 
-  const [inqs, jobs] = await Promise.all([api('/admin/inquiries'), api('/admin/jobs')]);
+  const [inqs, jobs] = await Promise.all([api('/admin/inquiries?all=1'), api('/admin/jobs')]);
   _assignInqs = inqs;
   _assignJobs = jobs.filter(j => j.active);
 
