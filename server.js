@@ -632,6 +632,7 @@ try { db.exec("ALTER TABLE assignments ADD COLUMN work_lat REAL DEFAULT NULL"); 
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_lng REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_radius INTEGER DEFAULT 200"); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN worker_response TEXT DEFAULT NULL"); } catch(e) {}
+try { db.exec("ALTER TABLE assignments ADD COLUMN task_requirements TEXT DEFAULT '[]'"); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
 
 db.exec(`CREATE TABLE IF NOT EXISTS shift_confirmations (
@@ -981,6 +982,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS referral_bonus_config (
 )`);
 if (!db.prepare('SELECT id FROM referral_bonus_config WHERE id=1').get())
   db.prepare('INSERT INTO referral_bonus_config (id) VALUES (1)').run();
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
@@ -1953,7 +1955,7 @@ function syncOnboardedStatus(workerId) {
   if (!w) return;
   let assigned = [];
   try { assigned = JSON.parse(w.assigned_tasks || '[]'); } catch {}
-  if (!assigned.length) return;
+  if (!assigned.length) return; // no tasks assigned — don't auto-mark
   const tasks = db.prepare('SELECT task_key, status FROM worker_onboarding WHERE worker_account_id=?').all(workerId);
   const statusMap = Object.fromEntries(tasks.map(t => [t.task_key, t.status]));
   const allDone = assigned.every(key => statusMap[key] === 'completed' || statusMap[key] === 'waived');
@@ -3057,21 +3059,21 @@ app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
 });
 
 app.post('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
-  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius } = req.body;
+  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements } = req.body;
   if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
   const r = db.prepare(`INSERT INTO assignments
-    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}',
-         work_address || '', work_lat || null, work_lng || null, work_radius || 200);
+         work_address || '', work_lat || null, work_lng || null, work_radius || 200, task_requirements || '[]');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('update', 'assignments'), (req, res) => {
-  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius } = req.body;
-  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=?, work_schedule=?, work_address=?, work_lat=?, work_lng=?, work_radius=? WHERE id=?`)
+  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements } = req.body;
+  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=?, work_schedule=?, work_address=?, work_lat=?, work_lng=?, work_radius=?, task_requirements=? WHERE id=?`)
     .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}',
-         work_address || '', work_lat || null, work_lng || null, work_radius || 200, req.params.id);
+         work_address || '', work_lat || null, work_lng || null, work_radius || 200, task_requirements || '[]', req.params.id);
   res.json({ success: true });
 });
 
