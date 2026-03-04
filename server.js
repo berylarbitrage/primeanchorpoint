@@ -647,6 +647,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS assignment_status_history (
   changed_by TEXT DEFAULT '',
   changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+try { db.exec(`ALTER TABLE assignment_status_history ADD COLUMN reason TEXT DEFAULT ''`); } catch {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS shift_confirmations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3194,14 +3195,14 @@ app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('up
 
 // PATCH status only — lightweight inline update
 app.patch('/api/admin/assignments/:id/status', requireAdmin, blockManager, (req, res) => {
-  const { status } = req.body;
+  const { status, reason } = req.body;
   if (!status) return res.status(400).json({ error: 'status required' });
   const old = db.prepare('SELECT status FROM assignments WHERE id=?').get(req.params.id);
   if (!old) return res.status(404).json({ error: 'not found' });
   db.prepare('UPDATE assignments SET status=? WHERE id=?').run(status, req.params.id);
   if (old.status !== status) {
-    db.prepare('INSERT INTO assignment_status_history (assignment_id, old_status, new_status, changed_by) VALUES (?,?,?,?)')
-      .run(req.params.id, old.status, status, req.admin?.username || req.admin?.display_name || 'admin');
+    db.prepare('INSERT INTO assignment_status_history (assignment_id, old_status, new_status, changed_by, reason) VALUES (?,?,?,?,?)')
+      .run(req.params.id, old.status, status, req.admin?.username || req.admin?.display_name || 'admin', reason || '');
   }
   res.json({ success: true });
 });
