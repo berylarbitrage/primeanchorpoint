@@ -2528,9 +2528,10 @@ app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete
 // Inquiries
 app.get('/api/admin/inquiries', requireAdmin, blockManager, (req, res) => {
   const history = req.query.history === '1';
-  const rows = db.prepare(
-    `SELECT * FROM inquiries WHERE processed=? ORDER BY created_at DESC`
-  ).all(history ? 1 : 0);
+  const all = req.query.all === '1';
+  const rows = all
+    ? db.prepare(`SELECT * FROM inquiries ORDER BY created_at DESC`).all()
+    : db.prepare(`SELECT * FROM inquiries WHERE processed=? ORDER BY created_at DESC`).all(history ? 1 : 0);
   res.json(rows);
 });
 
