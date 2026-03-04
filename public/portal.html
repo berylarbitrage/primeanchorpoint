@@ -1009,12 +1009,6 @@ async function loadInterview() {
   ]);
   if (me) _workerInfo = me;
 
-  // Update compliance tab visibility (also show if persona verification initiated)
-  _interviewPassed = interview && interview.status === 'passed';
-  const _pStatus = await wApi('/persona/status');
-  const _pInit = _pStatus && _pStatus.status !== 'not_started';
-  document.getElementById('navCompliance').style.display = (_interviewPassed || _pInit) ? '' : 'none';
-
   const scheduleEl = document.getElementById('todayScheduleContent');
   const DAY_MAP = { 0:'Sun',1:'Mon',2:'Tue',3:'Wed',4:'Thu',5:'Fri',6:'Sat' };
   const DAY_KEY_LOW = { 0:'sun',1:'mon',2:'tue',3:'wed',4:'thu',5:'fri',6:'sat' };
