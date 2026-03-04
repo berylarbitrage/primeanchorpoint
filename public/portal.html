@@ -1575,7 +1575,7 @@ function renderCalendar() {
     const numColor = isToday ? '#fff' : hasWork ? '#1e293b' : '#cbd5e1';
     const numWeight = (isToday || hasWork) ? '700' : '400';
 
-    const clickable = confs.length > 0;
+    const clickable = confs.length > 0 || isProjected;
     html += `<div style="border-radius:8px;padding:.28rem .05rem;background:${bg};border:${border};min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px${clickable ? ';cursor:pointer' : ''}" ${clickable ? `onclick="calDayClick('${dateStr}')"` : ''}>
       <span style="font-size:.8rem;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>
       ${dotsHtml ? `<div style="line-height:1">${dotsHtml}</div>` : ''}
@@ -1587,15 +1587,36 @@ function renderCalendar() {
 function calDayClick(dateStr) {
   if (!_calData) return;
   const confs = (_calData.confirmations || []).filter(c => c.date === dateStr);
-  if (!confs.length) return;
   const d = new Date(dateStr + 'T00:00:00');
+  const dow = _CAL_DOW_KEYS[d.getDay()];
   const dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
-  document.getElementById('calDayModalTitle').textContent = `${dayNames[d.getDay()]} ${dateStr}`;
   const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+
+  // Find projected assignments for this date (not already in confirmations)
+  const projItems = [];
+  if (!confs.length) {
+    (_calData.assignments || []).forEach(a => {
+      let sched = {};
+      try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+      const workStart = sched.workStart || a.start_date || null;
+      const workEnd = sched.workEnd || null;
+      const untilFurther = !!sched.untilFurther;
+      const days = sched.days || {};
+      if (workStart && dateStr < workStart) return;
+      if (!untilFurther && workEnd && dateStr > workEnd) return;
+      const dayInfo = days[dow];
+      if (dayInfo && !dayInfo.rest) projItems.push({ title: a.title, start: dayInfo.start, end: dayInfo.end });
+    });
+  }
+
+  if (!confs.length && !projItems.length) return;
+
+  document.getElementById('calDayModalTitle').textContent = `${dayNames[d.getDay()]} ${dateStr}`;
   const statusColor = { confirmed:'#16a34a', pending:'#f59e0b', declined:'#dc2626' };
   const statusLabel = { confirmed:'✓ 已确认', pending:'待确认', declined:'✕ 已请假' };
   const statusBg    = { confirmed:'#dcfce7', pending:'#fef3c7', declined:'#fee2e2' };
-  document.getElementById('calDayModalBody').innerHTML = confs.map(c => {
+
+  let html = confs.map(c => {
     const timeStr = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)} – ${fmt12(c.shift_end)}` : '';
     const badge = `<span style="background:${statusBg[c.status]};color:${statusColor[c.status]};border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">${statusLabel[c.status]||c.status}</span>`;
     const actionBtns = c.status === 'pending' ? `
@@ -1612,6 +1633,20 @@ function calDayClick(dateStr) {
       ${actionBtns}
     </div>`;
   }).join('');
+
+  html += projItems.map(p => {
+    const timeStr = (p.start && p.end) ? `${fmt12(p.start)} – ${fmt12(p.end)}` : '';
+    const badge = `<span style="background:#dbeafe;color:#1d4ed8;border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">排班中</span>`;
+    return `<div style="border:1px solid #bfdbfe;border-radius:10px;padding:.85rem;margin-bottom:.6rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+        <span style="font-weight:700;font-size:.95rem;color:#1e293b">${esc(p.title||'—')}</span>
+        ${badge}
+      </div>
+      ${timeStr ? `<div style="font-size:.85rem;color:#475569">🕐 ${timeStr}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('calDayModalBody').innerHTML = html;
   document.getElementById('calDayModal').style.display = 'flex';
 }
 
