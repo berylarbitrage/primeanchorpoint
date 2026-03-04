@@ -3243,12 +3243,35 @@ function showJobAppDetail(id) {
 async function scheduleInterview(id) {
   const a = _allJobApps.find(x => x.id === id);
   const name = a ? (a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'') : '';
-  // Load interview locations
+  // Load interview locations from system settings
   const locs = await api('/admin/interview-locations').catch(() => []) || [];
+  // Parse existing times if rescheduling
+  let existingTimes = [];
+  if (a?.interview_times_json) { try { existingTimes = JSON.parse(a.interview_times_json); } catch(e) {} }
+  if (!existingTimes.length && a?.interview_datetime) existingTimes = [a.interview_datetime.slice(0,16)];
+  if (!existingTimes.length) existingTimes = [''];
+
+  const locsSelectHtml = locs.length ? `
+    <div style="margin-bottom:.5rem">
+      <label style="font-size:.78rem;color:var(--gray-500);font-weight:600;display:block;margin-bottom:.3rem">从系统面试地址列表导入：</label>
+      <select id="_ivLocSelect" style="width:100%;padding:.5rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.85rem;box-sizing:border-box" onchange="if(this.value){document.getElementById('_ivLocText').value=this.options[this.selectedIndex].dataset.addr||this.value;this.value=''}">
+        <option value="">— 选择系统预设地点 —</option>
+        ${locs.map(l => `<option value="${esc(l.name)}" data-addr="${esc([l.name,l.address].filter(Boolean).join(' · '))}">${esc(l.name)}${l.address ? ' · '+esc(l.address) : ''}</option>`).join('')}
+      </select>
+    </div>` : '';
+
+  const jobLocVal = a?.job_location ? esc(a.job_location) : '';
+
+  const renderTimeSlots = (times) => times.map((t, i) => `
+    <div class="_ivTimeRow" style="display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem">
+      <input type="datetime-local" class="_ivTimeInput" style="flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(t)}">
+      ${i > 0 ? `<button type="button" onclick="this.closest('._ivTimeRow').remove()" style="flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1">×</button>` : '<div style="width:28px"></div>'}
+    </div>`).join('');
+
   const result = await new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
-    overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(460px,94vw);max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(480px,95vw);max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
         <div style="font-weight:700;font-size:1.05rem">📅 安排面试</div>
         <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
@@ -3256,17 +3279,23 @@ async function scheduleInterview(id) {
       ${name ? `<div style="font-size:.88rem;color:var(--gray-500);margin-bottom:1rem;padding:.6rem .8rem;background:#f8fafc;border-radius:8px">申请人：<strong>${esc(name)}</strong>${a.job_title ? `　职位：<strong>${esc(a.job_title)}</strong>` : ''}</div>` : ''}
       <div style="display:grid;gap:1rem">
         <div>
-          <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试时间 *</label>
-          <input type="datetime-local" id="_ivDateTime" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.92rem;box-sizing:border-box" value="${a?.interview_datetime ? a.interview_datetime.slice(0,16) : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+            <label style="font-size:.83rem;font-weight:600;color:var(--gray-600)">面试时间 * <span style="font-weight:400;color:var(--gray-400);font-size:.78rem">（可添加多个时间选项）</span></label>
+          </div>
+          <div id="_ivTimeSlots">${renderTimeSlots(existingTimes)}</div>
+          <button type="button" onclick="
+            const row=document.createElement('div');
+            row.className='_ivTimeRow';
+            row.style.cssText='display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem';
+            row.innerHTML='<input type=\\'datetime-local\\' class=\\'_ivTimeInput\\' style=\\'flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box\\'><button type=\\'button\\' onclick=\\'this.closest(\"._ivTimeRow\").remove()\\' style=\\'flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1\\'>×</button>';
+            document.getElementById('_ivTimeSlots').appendChild(row);
+          " style="font-size:.82rem;padding:.35rem .8rem;border:1.5px dashed #93c5fd;border-radius:7px;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-weight:600">+ 添加时间选项</button>
         </div>
         <div>
           <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试地点</label>
-          ${locs.length ? `<select id="_ivLocSelect" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;margin-bottom:.5rem;box-sizing:border-box" onchange="document.getElementById('_ivLocText').value=this.value==='__custom__'?'':this.options[this.selectedIndex].dataset.addr||''">
-            <option value="">— 选择预设地点 —</option>
-            ${locs.map(l => `<option value="${esc(l.name)}" data-addr="${esc([l.name,l.address].filter(Boolean).join(' · '))}">${esc(l.name)}${l.address ? ' · '+esc(l.address) : ''}</option>`).join('')}
-            <option value="__custom__">✏️ 自定义地点</option>
-          </select>` : ''}
-          <input type="text" id="_ivLocText" placeholder="地址 / 详细信息（可选）" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(a?.interview_location_text||'')}">
+          ${locsSelectHtml}
+          ${jobLocVal ? `<button type="button" onclick="document.getElementById('_ivLocText').value=${JSON.stringify(a.job_location || '').replace(/</g,'\\x3c')}" style="font-size:.8rem;padding:.3rem .75rem;border:1.5px solid #6ee7b7;border-radius:7px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;margin-bottom:.5rem">📌 从本职位导入地点</button>` : ''}
+          <input type="text" id="_ivLocText" placeholder="地址 / 详细信息（可选，也可手动填写）" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(a?.interview_location_text||'')}">
         </div>
         <div>
           <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">备注 / 说明</label>
@@ -3280,13 +3309,13 @@ async function scheduleInterview(id) {
       <div style="display:flex;gap:.75rem;margin-top:1.25rem;justify-content:flex-end">
         <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="padding:.6rem 1.1rem;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;cursor:pointer;font-size:.9rem">取消</button>
         <button onclick="
-          const dt=document.getElementById('_ivDateTime').value;
-          if(!dt){document.getElementById('_ivDateTime').style.borderColor='#ef4444';return;}
-          const loc=document.getElementById('_ivLocText').value.trim()||(document.getElementById('_ivLocSelect')&&document.getElementById('_ivLocSelect').value!=='__custom__'?document.getElementById('_ivLocSelect').value:'');
+          const times=[...document.querySelectorAll('#_ivTimeSlots ._ivTimeInput')].map(i=>i.value).filter(Boolean);
+          if(!times.length){document.querySelector('#_ivTimeSlots ._ivTimeInput').style.borderColor='#ef4444';return;}
+          const loc=document.getElementById('_ivLocText').value.trim();
           const note=document.getElementById('_ivNote').value.trim();
           const notify=document.getElementById('_ivNotify').checked;
           this.closest('[style*=fixed]').remove();
-          window._ivResolve({dt,loc,note,notify});
+          window._ivResolve({times,loc,note,notify});
         " style="padding:.6rem 1.4rem;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;font-size:.9rem">确认安排</button>
       </div>
     </div>`;
@@ -3297,7 +3326,7 @@ async function scheduleInterview(id) {
   const r = await api(`/admin/job-applications/${id}`, { method:'PUT', body: JSON.stringify({
     status: 'interview_scheduled',
     admin_note: result.note,
-    interview_datetime: result.dt,
+    interview_times: result.times,
     interview_location_text: result.loc,
     notify: result.notify
   })});
