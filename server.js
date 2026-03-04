@@ -4556,6 +4556,32 @@ app.put('/api/admin/referral-config', requireAdmin, requireRole('admin'), (req, 
   res.json({ success: true });
 });
 
+// Admin: list ALL referral records across all workers
+app.get('/api/admin/all-referrals', requireAdmin, (req, res) => {
+  const config = db.prepare('SELECT bonus_per_referral, min_hours_to_qualify FROM referral_bonus_config WHERE id=1').get()
+    || { bonus_per_referral: 50, min_hours_to_qualify: 8 };
+
+  const rows = db.prepare(`
+    SELECT
+      referrer.id          AS referrer_id,
+      referrer.name        AS referrer_name,
+      referrer.worker_code AS referrer_code,
+      w.id                 AS referred_id,
+      w.name               AS referred_name,
+      w.worker_code        AS referred_code,
+      w.created_at,
+      COALESCE(SUM(t.total_hours), 0) AS total_hours
+    FROM worker_accounts w
+    JOIN worker_accounts referrer ON w.referred_by = referrer.id
+    LEFT JOIN employees e ON w.employee_id = e.id
+    LEFT JOIN time_entries t ON t.employee_id = e.id AND t.status = 'closed'
+    GROUP BY w.id
+    ORDER BY w.created_at DESC
+  `).all();
+
+  res.json({ rows, config });
+});
+
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
