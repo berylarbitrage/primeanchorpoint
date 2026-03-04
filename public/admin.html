@@ -29,6 +29,15 @@
 .sidebar a{display:block;padding:10px 1.5rem;color:rgba(255,255,255,.5);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}
 .sidebar a:hover,.sidebar a.active{color:#fff;background:rgba(255,255,255,.08)}
 .sidebar .logout{margin-top:auto;padding:10px 1.5rem;color:var(--red);font-size:.82rem}
+.sidebar .nav-group-header{display:flex;align-items:center;padding:6px 1.25rem 6px 1.5rem;color:rgba(255,255,255,.38);font-size:.64rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;cursor:pointer;user-select:none;transition:color .2s;margin-top:.6rem}
+.sidebar .nav-group-header:hover{color:rgba(255,255,255,.65)}
+.sidebar .nav-group.open>.nav-group-header{color:rgba(255,255,255,.7)}
+.sidebar .nav-group-header .chev{margin-left:auto;font-size:.6rem;transition:transform .2s;display:inline-block}
+.sidebar .nav-group.open>.nav-group-header .chev{transform:rotate(180deg)}
+.sidebar .nav-group-items{overflow:hidden;max-height:0;transition:max-height .28s ease}
+.sidebar .nav-group.open>.nav-group-items{max-height:400px}
+.sidebar .nav-group-items a{padding:8px 1.25rem 8px 2.25rem}
+.sidebar .nav-divider{border-top:1px solid rgba(255,255,255,.08);margin:.5rem 1.5rem .25rem}
 .main{margin-left:220px;padding:2rem}
 .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:2rem;flex-wrap:wrap;gap:.5rem}
 .top h1{font-size:1.5rem;color:var(--blue)}
@@ -385,31 +394,75 @@ tr:hover td{background:var(--sky-light)}
 <div class="app" id="app">
 <div class="sidebar" id="sidebar">
   <h2>⚓ 管理后台</h2>
-  <a class="active" onclick="showTab('dashboard')">仪表盘</a>
-  <a onclick="showTab('inquiries')" data-role="admin,staff">问卷管理</a>
-  <a onclick="showTab('quotes')" data-role="admin,staff">📋 报价请求</a>
-  <a onclick="showTab('assignments')" data-role="admin,staff">派工管理</a>
-  <a onclick="showTab('jobs')" data-role="admin,staff">职位管理</a>
-  <a onclick="showTab('partners')" data-role="admin,staff">合作公司</a>
-  <a onclick="showTab('backups')" data-role="admin">备份管理</a>
-  <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem"></div>
-  <a onclick="showTab('employees')" data-role="admin,staff">👥 员工管理</a>
-  <a onclick="showTab('time')">⏱ 工时打卡</a>
-  <a onclick="showTab('ts-verify')" data-role="admin,staff">📋 工时核对</a>
-  <a onclick="showTab('ts-payment')" data-role="admin,staff">💰 待付款</a>
-  <a onclick="showTab('ts-dividend')" data-role="staff">🎯 待分红</a>
-  <a onclick="showTab('ts-history')" data-role="admin,staff">📚 工时历史</a>
-  <a onclick="showTab('documents')" data-role="admin,staff">📄 HR 文件</a>
-  <a onclick="showTab('bgchecks')" data-role="admin,staff">🔍 背景调查</a>
-  <a onclick="showTab('interviews')" data-role="admin,staff">🗓️ 面试管理</a>
-  <a onclick="showTab('compliance')" data-role="admin,staff">📑 合规审核</a>
-  <a onclick="showTab('jobsites')" data-role="admin,staff">📍 工作地点</a>
-  <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
-  <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
-  <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
-  <a onclick="showTab('referrals')" data-role="admin,staff">🎁 推荐奖励</a>
-  <a onclick="showTab('integrations')" data-role="admin">🔗 集成设置</a>
-  <a onclick="showTab('skill-settings')" data-role="admin">🛠️ 必备技能设置</a>
+  <a class="active" onclick="showTab('dashboard')" data-tab="dashboard">🏠 仪表盘</a>
+
+  <!-- 客户管理 -->
+  <div class="nav-group open" id="sec-customer" data-role="admin,staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-customer')">
+      👤 客户管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('inquiries')" data-tab="inquiries" data-role="admin,staff">问卷管理</a>
+      <a onclick="showTab('quotes')" data-tab="quotes" data-role="admin,staff">📋 报价请求</a>
+      <a onclick="showTab('partners')" data-tab="partners" data-role="admin,staff">合作公司</a>
+    </div>
+  </div>
+
+  <!-- 员工管理 -->
+  <div class="nav-group open" id="sec-worker" data-role="admin,staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-worker')">
+      👷 员工管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('employees')" data-tab="employees" data-role="admin,staff">👥 员工列表</a>
+      <a onclick="showTab('bgchecks')" data-tab="bgchecks" data-role="admin,staff">🔍 背景调查</a>
+      <a onclick="showTab('compliance')" data-tab="compliance" data-role="admin,staff">📑 合规审核</a>
+      <a onclick="showTab('documents')" data-tab="documents" data-role="admin,staff">📄 HR 文件</a>
+      <a onclick="showTab('referrals')" data-tab="referrals" data-role="admin,staff">🎁 推荐奖励</a>
+    </div>
+  </div>
+
+  <!-- 职位派工 -->
+  <div class="nav-group open" id="sec-jobs" data-role="admin,staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-jobs')">
+      💼 职位派工<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('jobs')" data-tab="jobs" data-role="admin,staff">职位管理</a>
+      <a onclick="showTab('assignments')" data-tab="assignments" data-role="admin,staff">派工管理</a>
+      <a onclick="showTab('interviews')" data-tab="interviews" data-role="admin,staff">🗓️ 面试管理</a>
+      <a onclick="showTab('jobsites')" data-tab="jobsites" data-role="admin,staff">📍 工作地点</a>
+    </div>
+  </div>
+
+  <!-- 工时薪资 -->
+  <div class="nav-group open" id="sec-time">
+    <div class="nav-group-header" onclick="toggleNav('sec-time')">
+      ⏱ 工时薪资<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('time')" data-tab="time">工时打卡</a>
+      <a onclick="showTab('ts-verify')" data-tab="ts-verify" data-role="admin,staff">📋 工时核对</a>
+      <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
+      <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
+      <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
+    </div>
+  </div>
+
+  <!-- 系统管理 -->
+  <div class="nav-group open" id="sec-system" data-role="admin">
+    <div class="nav-group-header" onclick="toggleNav('sec-system')">
+      ⚙️ 系统管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('approvals')" data-tab="approvals" data-role="admin">📋 待审批</a>
+      <a onclick="showTab('accounts')" data-tab="accounts" data-role="admin">🔐 账户管理</a>
+      <a onclick="showTab('integrations')" data-tab="integrations" data-role="admin">🔗 集成设置</a>
+      <a onclick="showTab('skill-settings')" data-tab="skill-settings" data-role="admin">🛠️ 技能设置</a>
+      <a onclick="showTab('backups')" data-tab="backups" data-role="admin">备份管理</a>
+    </div>
+  </div>
+
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -2754,14 +2807,15 @@ async function api(path, opts = {}) {
 
 // ─── Login ───
 function applyRoleUI() {
-  // Show/hide sidebar items based on role
+  // Show/hide sidebar links based on role
   document.querySelectorAll('#sidebar a[data-role]').forEach(a => {
     const roles = a.getAttribute('data-role').split(',');
     a.style.display = roles.includes(USER_ROLE) ? '' : 'none';
   });
-  document.querySelectorAll('#sidebar div[data-role]').forEach(d => {
-    const roles = d.getAttribute('data-role').split(',');
-    d.style.display = roles.includes(USER_ROLE) ? '' : 'none';
+  // Show/hide nav-group sections based on role
+  document.querySelectorAll('#sidebar .nav-group[data-role]').forEach(g => {
+    const roles = g.getAttribute('data-role').split(',');
+    g.style.display = roles.includes(USER_ROLE) ? '' : 'none';
   });
   // Show/hide action buttons based on role
   document.querySelectorAll('[data-perm]').forEach(el => {
@@ -3023,11 +3077,28 @@ function logout() {
 })();
 
 // ─── Tabs ───
+const _TAB_TO_SEC = {
+  inquiries:'sec-customer', quotes:'sec-customer', partners:'sec-customer',
+  employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
+  jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time',
+  approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system'
+};
+
+function toggleNav(secId) {
+  document.getElementById(secId).classList.toggle('open');
+}
+
 function showTab(t) {
   document.querySelectorAll('[id^="tab-"]').forEach(el => el.style.display = 'none');
   document.getElementById('tab-' + t).style.display = 'block';
   document.querySelectorAll('.sidebar a:not(.logout)').forEach(a => a.classList.remove('active'));
-  if (event && event.target) event.target.classList.add('active');
+  // Mark the correct sidebar link active by data-tab
+  const link = document.querySelector(`.sidebar a[data-tab="${t}"]`);
+  if (link) link.classList.add('active');
+  // Ensure the containing section is expanded
+  const secId = _TAB_TO_SEC[t];
+  if (secId) document.getElementById(secId)?.classList.add('open');
   if (t === 'dashboard')  loadDashboard();
   if (t === 'jobs')       loadJobs();
   if (t === 'inquiries')  loadInquiries();
