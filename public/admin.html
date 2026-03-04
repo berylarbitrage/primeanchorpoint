@@ -8416,8 +8416,11 @@ function renderInterviews(rows) {
               ${idStatus === 'pending' ? '重发验证' : idStatus === 'declined' ? '重发验证' : '发身份验证'}
              </button>`)
       : '';
+    const payBadge  = i.expected_pay ? `<div style="font-size:.72rem;color:#0369a1;margin-top:2px">💰 ${esc(i.expected_pay)}</div>` : '';
+    const skillsLine = i.skills ? `<div style="font-size:.72rem;color:var(--gray-500);margin-top:1px">🛠 ${esc(i.skills)}</div>` : '';
+    const noteLine   = i.applicant_note ? `<div style="font-size:.72rem;color:var(--gray-500);margin-top:1px;font-style:italic">💬 ${esc(i.applicant_note)}</div>` : '';
     return `<tr>
-      <td><strong>${esc(i.worker_name||'')}</strong></td>
+      <td><strong>${esc(i.worker_name||'')}</strong>${payBadge}${skillsLine}${noteLine}</td>
       <td>${esc(i.worker_phone||'')}</td>
       <td>${dt}</td>
       <td style="font-size:.82rem">${esc(i.location||'—')}</td>

@@ -528,6 +528,8 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_availability TE
 try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_phone TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_email TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN applicant_note TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE interviews ADD COLUMN expected_pay TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE interviews ADD COLUMN skills TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN expected_pay TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN persona_inquiry_id TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE worker_accounts ADD COLUMN identity_status TEXT DEFAULT ''`); } catch(e) {}
@@ -5615,8 +5617,10 @@ app.get('/api/worker/interview', requireWorker, (req, res) => {
 
 // Worker: book a slot
 app.post('/api/worker/interviews', requireWorker, (req, res) => {
-  const { slot_id, confirm_phone, confirm_email, note } = req.body;
+  const { slot_id, confirm_phone, confirm_email, note, expected_pay, skills } = req.body;
   if (!slot_id) return res.status(400).json({ error: 'slot_id required' });
+  if (!expected_pay) return res.status(400).json({ error: '请填写期望薪资 / Expected pay is required' });
+  if (!skills) return res.status(400).json({ error: '请填写技能特长 / Skills are required' });
   // Check not already booked
   const existing = db.prepare(`SELECT id, status FROM interviews WHERE worker_account_id=?`).get(req.workerId);
   if (existing && existing.status !== 'cancelled') return res.status(400).json({ error: '您已有面试预约，如需更改请联系HR' });
@@ -5627,11 +5631,11 @@ app.post('/api/worker/interviews', requireWorker, (req, res) => {
 
   try {
     if (existing && existing.status === 'cancelled') {
-      db.prepare(`UPDATE interviews SET slot_id=?, status='scheduled', admin_notes='', doc_request_token='', confirm_phone=?, confirm_email=?, applicant_note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-        .run(slot_id, confirm_phone||'', confirm_email||'', note||'', existing.id);
+      db.prepare(`UPDATE interviews SET slot_id=?, status='scheduled', admin_notes='', doc_request_token='', confirm_phone=?, confirm_email=?, applicant_note=?, expected_pay=?, skills=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+        .run(slot_id, confirm_phone||'', confirm_email||'', note||'', expected_pay||'', skills||'', existing.id);
     } else {
-      db.prepare(`INSERT INTO interviews (worker_account_id, slot_id, confirm_phone, confirm_email, applicant_note) VALUES (?,?,?,?,?)`)
-        .run(req.workerId, slot_id, confirm_phone||'', confirm_email||'', note||'');
+      db.prepare(`INSERT INTO interviews (worker_account_id, slot_id, confirm_phone, confirm_email, applicant_note, expected_pay, skills) VALUES (?,?,?,?,?,?,?)`)
+        .run(req.workerId, slot_id, confirm_phone||'', confirm_email||'', note||'', expected_pay||'', skills||'');
     }
     db.prepare(`UPDATE interview_slots SET booked_count = booked_count+1 WHERE id=?`).run(slot_id);
     res.json({ success: true });

@@ -307,10 +307,22 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
 
-    <!-- Message -->
+    <!-- Expected Pay (required) -->
+    <div style="margin-bottom:.75rem">
+      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💰 期望薪资 / Expected Pay <span style="color:#dc2626">*</span></label>
+      <input type="text" id="bookExpectedPay" placeholder="例：$18/hr 或 $3,500/月 / e.g. $18/hr or $3,500/mo" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
+    </div>
+
+    <!-- Skills (required) -->
+    <div style="margin-bottom:.75rem">
+      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">🛠️ 技能特长 / Your Skills <span style="color:#dc2626">*</span></label>
+      <textarea id="bookSkills" rows="2" placeholder="例：叉车证、仓库经验2年、分拣/打包 / e.g. Forklift certified, 2yr warehouse, packing" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
+    </div>
+
+    <!-- Note (optional) -->
     <div style="margin-bottom:.9rem">
-      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 有什么想告诉我们的？/ Anything you'd like to share?</label>
-      <textarea id="bookNote" rows="3" placeholder="例：我没有驾照，只有护照 / e.g. I only have a passport, no driver's license" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
+      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 备注 / Notes <span style="font-weight:400;color:var(--gray-400)">(选填 / optional)</span></label>
+      <textarea id="bookNote" rows="2" placeholder="例：我没有驾照，只有护照 / e.g. I only have a passport, no driver's license" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
     </div>
 
     <div class="modal-msg error" id="bookModalError"></div>
@@ -1156,6 +1168,8 @@ function openBookModal(slotId, slot) {
   const acc = _workerInfo && _workerInfo.account;
   document.getElementById('bookPhone').value = (acc && acc.phone) || '';
   document.getElementById('bookEmail').value = (acc && acc.email) || '';
+  document.getElementById('bookExpectedPay').value = '';
+  document.getElementById('bookSkills').value = '';
   document.getElementById('bookNote').value = '';
 
   const errEl = document.getElementById('bookModalError');
@@ -1176,12 +1190,22 @@ async function confirmBookSlot() {
   const errEl = document.getElementById('bookModalError');
   errEl.textContent = ''; errEl.classList.remove('show');
 
-  const phone = document.getElementById('bookPhone').value.trim();
-  const email = document.getElementById('bookEmail').value.trim();
-  const note  = document.getElementById('bookNote').value.trim();
+  const phone       = document.getElementById('bookPhone').value.trim();
+  const email       = document.getElementById('bookEmail').value.trim();
+  const expectedPay = document.getElementById('bookExpectedPay').value.trim();
+  const skills      = document.getElementById('bookSkills').value.trim();
+  const note        = document.getElementById('bookNote').value.trim();
 
   if (!phone && !email) {
     errEl.textContent = '请至少填写一种联系方式 / Please provide at least one contact method';
+    errEl.classList.add('show'); return;
+  }
+  if (!expectedPay) {
+    errEl.textContent = '请填写期望薪资 / Expected pay is required';
+    errEl.classList.add('show'); return;
+  }
+  if (!skills) {
+    errEl.textContent = '请填写技能特长 / Please describe your skills';
     errEl.classList.add('show'); return;
   }
 
@@ -1190,7 +1214,7 @@ async function confirmBookSlot() {
 
   const r = await wApi('/interviews', {
     method: 'POST',
-    body: JSON.stringify({ slot_id: _pendingSlot, confirm_phone: phone, confirm_email: email, note })
+    body: JSON.stringify({ slot_id: _pendingSlot, confirm_phone: phone, confirm_email: email, note, expected_pay: expectedPay, skills })
   });
   btn.disabled = false; btn.textContent = '✅ 确认预约 / Confirm Booking';
   if (!r) return;
