@@ -5143,12 +5143,13 @@ function selectPartnerItem(id, name) {
   const hasAddr = document.getElementById('jStreet').value.trim() ||
                   document.getElementById('jCity').value.trim() ||
                   document.getElementById('jZip').value.trim();
+  const addr0Str = _addrStr(addrs[0]);
   const msg = hasAddr
-    ? `是否用「${name}」的公司地址覆盖当前工作地点？\n\n${addrs[0]}`
-    : `是否将「${name}」的公司地址导入到工作地点？\n\n${addrs[0]}`;
+    ? `是否用「${name}」的公司地址覆盖当前工作地点？\n\n${addr0Str}`
+    : `是否将「${name}」的公司地址导入到工作地点？\n\n${addr0Str}`;
   if (!confirm(msg)) return;
 
-  const parsed = parseAddressString(addrs[0]);
+  const parsed = parseAddressString(addr0Str);
   document.getElementById('jStreet').value  = parsed.street;
   document.getElementById('jStreet2').value = parsed.street2;
   document.getElementById('jCity').value    = parsed.city;
@@ -5983,7 +5984,12 @@ async function showPartnerById(id) {
   }
   if (addresses.length) {
     html += `<div class="detail-section"><h4>地址 (${addresses.length})</h4>` +
-      addresses.map(a=>`<div style="padding:.3rem 0;font-size:.85rem">📍 ${esc(a)}</div>`).join('')+'</div>';
+      addresses.map(a=>{
+        const addrText = _addrStr(a);
+        const lat = a?.lat, lng = a?.lng;
+        const mapLink = lat && lng ? ` <a href="https://www.google.com/maps?q=${lat},${lng}" target="_blank" style="font-size:.78rem;color:#1d4ed8;text-decoration:none">🗺 地图</a>` : '';
+        return `<div style="padding:.3rem 0;font-size:.85rem">📍 ${esc(addrText)}${mapLink}</div>`;
+      }).join('')+'</div>';
   }
   const linkEntries = Object.entries(links).filter(([k,v])=>v);
   if (linkEntries.length) {
@@ -6057,15 +6063,25 @@ function getPartnerContacts() {
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
 
 function addPartnerAddr(addr) {
-  // Parse existing "123 Main St, Ste 200, Chicago, IL 60601" string
-  let street='', street2='', city='', state='', zip='';
-  if (addr && typeof addr === 'string') {
-    // Try: Street, [Street2,] City, ST ZIP
-    const m5 = addr.match(/^(.*?),\s*(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
-    const m4 = addr.match(/^(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  // Parse existing address: string or object {address, lat, lng} or {street, city, state, zip, lat, lng}
+  let street='', street2='', city='', state='', zip='', lat='', lng='';
+  const parseStr = s => {
+    const m5 = s.match(/^(.*?),\s*(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    const m4 = s.match(/^(.*?),\s*([^,]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
     if (m5) { street=m5[1].trim(); street2=m5[2].trim(); city=m5[3].trim(); state=m5[4]; zip=m5[5]; }
     else if (m4) { street=m4[1].trim(); city=m4[2].trim(); state=m4[3]; zip=m4[4]; }
-    else { street = addr; }
+    else { street = s; }
+  };
+  if (addr && typeof addr === 'string') {
+    parseStr(addr);
+  } else if (addr && typeof addr === 'object') {
+    if (addr.street || addr.city) {
+      street=addr.street||''; street2=addr.street2||''; city=addr.city||''; state=addr.state||''; zip=addr.zip||'';
+    } else if (addr.address) {
+      parseStr(addr.address);
+    }
+    lat = addr.lat != null ? String(addr.lat) : '';
+    lng = addr.lng != null ? String(addr.lng) : '';
   }
 
   const inp = (cls, ph, val, extra='') =>
@@ -6073,6 +6089,7 @@ function addPartnerAddr(addr) {
       style="width:100%;padding:9px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;box-sizing:border-box">`;
 
   const stateOptions = US_STATES.map(s=>`<option value="${s}" ${s===state?'selected':''}>${s}</option>`).join('');
+  const inpStyle = 'width:100%;padding:7px 9px;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;box-sizing:border-box';
 
   const div = document.createElement('div');
   div.className = 'dyn-item pa-addr-row';
@@ -6091,12 +6108,32 @@ function addPartnerAddr(addr) {
       </select>
       ${inp('pa-zip','ZIP *',zip,'maxlength="10" oninput="this.value=this.value.replace(/[^\\d-]/g,\'\');clearPartnerAddrStatus(this)" onblur="autoVerifyPartnerAddr(this)"')}
     </div>
-    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem">
+    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem;flex-wrap:wrap">
       <button type="button" class="btn btn-sm btn-outline" onclick="verifyPartnerAddr(this)">🔍 验证地址 Verify</button>
+      <button type="button" class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="togglePartnerAddrLocation(this)">📍 修改定位</button>
       <span class="pa-addr-status" style="font-size:.8rem;font-weight:600"></span>
+    </div>
+    <div class="pa-loc-section" style="display:${lat&&lng?'':'none'};border-top:1px solid var(--gray-200);padding-top:.5rem;margin-top:.1rem">
+      <div style="display:flex;gap:.5rem;align-items:flex-end">
+        <div style="flex:1"><label style="font-size:.73rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">纬度 Lat</label>
+          <input class="pa-lat" type="number" step="any" placeholder="e.g. 41.882" value="${esc(lat)}" style="${inpStyle}" oninput="updatePartnerAddrMap(this.closest('.pa-addr-row'))"></div>
+        <div style="flex:1"><label style="font-size:.73rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">经度 Lng</label>
+          <input class="pa-lng" type="number" step="any" placeholder="e.g. -87.623" value="${esc(lng)}" style="${inpStyle}" oninput="updatePartnerAddrMap(this.closest('.pa-addr-row'))"></div>
+        <button type="button" class="btn btn-sm" style="white-space:nowrap;padding:.4rem .75rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-size:.82rem;font-weight:600;height:fit-content" onclick="geocodePartnerAddr(this)">🔍 查坐标</button>
+      </div>
+      <div class="pa-geo-status" style="font-size:.75rem;color:var(--gray-500);margin-top:.25rem"></div>
+      <div class="pa-map-wrap" style="display:none;margin-top:.4rem;border-radius:8px;overflow:hidden;border:1px solid #93c5fd">
+        <div class="pa-map" style="height:220px;width:100%"></div>
+        <div style="font-size:.73rem;color:#1d4ed8;padding:.3rem .6rem;background:#eff6ff;display:flex;align-items:center;gap:.4rem">
+          <span>🖱 拖动图钉可纠正位置，坐标将自动更新</span>
+          <span class="pa-map-coord" style="margin-left:auto;color:#6b7280;font-family:monospace"></span>
+        </div>
+      </div>
     </div>
     <div class="pa-err" style="color:var(--red);font-size:.78rem;display:none"></div>`;
   document.getElementById('pAddrList').appendChild(div);
+  // Auto-render map if coords exist
+  if (lat && lng) setTimeout(() => updatePartnerAddrMap(div), 120);
 }
 
 function validatePartnerAddrs() {
@@ -6141,8 +6178,99 @@ function getPartnerAddrs() {
     const parts = [street];
     if (street2) parts.push(street2);
     parts.push(city, state + (zip ? ' ' + zip : ''));
-    return parts.filter(Boolean).join(', ');
+    const address = parts.filter(Boolean).join(', ');
+    const lat = parseFloat(row.querySelector('.pa-lat')?.value) || null;
+    const lng = parseFloat(row.querySelector('.pa-lng')?.value) || null;
+    return { address, lat, lng };
   }).filter(Boolean);
+}
+
+// Helper: extract address string from string or object
+function _addrStr(a) { return typeof a === 'string' ? a : (a?.address || ''); }
+
+// ── Per-row partner address map (WeakMap keyed by row element) ──
+const _partnerAddrMaps = new WeakMap();
+
+function togglePartnerAddrLocation(btn) {
+  const row = btn.closest('.pa-addr-row');
+  const sec = row.querySelector('.pa-loc-section');
+  const hidden = sec.style.display === 'none';
+  sec.style.display = hidden ? '' : 'none';
+  if (hidden) {
+    const lat = row.querySelector('.pa-lat').value;
+    const lng = row.querySelector('.pa-lng').value;
+    if (lat && lng) setTimeout(() => updatePartnerAddrMap(row), 80);
+  } else {
+    destroyPartnerAddrMap(row);
+  }
+}
+
+function updatePartnerAddrMap(row) {
+  const lat = parseFloat(row.querySelector('.pa-lat').value);
+  const lng = parseFloat(row.querySelector('.pa-lng').value);
+  const mapWrap = row.querySelector('.pa-map-wrap');
+  const coordLabel = row.querySelector('.pa-map-coord');
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    mapWrap.style.display = 'none';
+    return;
+  }
+  mapWrap.style.display = '';
+  if (coordLabel) coordLabel.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  let ms = _partnerAddrMaps.get(row);
+  if (!ms) {
+    const mapEl = row.querySelector('.pa-map');
+    const map = L.map(mapEl, { zoomControl: true, scrollWheelZoom: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    const marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+    map.setView([lat, lng], 16);
+    marker.on('dragend', e => {
+      const pos = e.target.getLatLng();
+      row.querySelector('.pa-lat').value = pos.lat.toFixed(6);
+      row.querySelector('.pa-lng').value = pos.lng.toFixed(6);
+      if (coordLabel) coordLabel.textContent = `${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)}`;
+    });
+    ms = { map, marker };
+    _partnerAddrMaps.set(row, ms);
+  } else {
+    ms.marker.setLatLng([lat, lng]);
+    ms.map.setView([lat, lng], ms.map.getZoom() || 16);
+  }
+  setTimeout(() => { if (ms.map) ms.map.invalidateSize(); }, 60);
+}
+
+function destroyPartnerAddrMap(row) {
+  const ms = _partnerAddrMaps.get(row);
+  if (ms) { ms.map.remove(); _partnerAddrMaps.delete(row); }
+  const mapWrap = row.querySelector('.pa-map-wrap');
+  if (mapWrap) mapWrap.style.display = 'none';
+}
+
+async function geocodePartnerAddr(btn) {
+  const row = btn.closest('.pa-addr-row');
+  const street = row.querySelector('.pa-street').value.trim();
+  const city   = row.querySelector('.pa-city').value.trim();
+  const state  = row.querySelector('.pa-state').value;
+  const zip    = row.querySelector('.pa-zip').value.trim();
+  const addrStr = [street, city, state && zip ? `${state} ${zip}` : (state || zip), 'USA'].filter(Boolean).join(', ');
+  if (!addrStr.trim()) { showToast('请先填写地址', 'error'); return; }
+  const statusEl = row.querySelector('.pa-geo-status');
+  statusEl.textContent = '查询中…'; statusEl.style.color = 'var(--gray-400)';
+  try {
+    const data = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addrStr)}&limit=1&countrycodes=us`,
+      { headers: { 'Accept-Language': 'en' } }
+    ).then(r => r.json());
+    if (!data.length) { statusEl.textContent = '⚠ 未找到，请手动输入坐标'; statusEl.style.color = '#dc2626'; return; }
+    const lat = parseFloat(data[0].lat).toFixed(6);
+    const lng = parseFloat(data[0].lon).toFixed(6);
+    row.querySelector('.pa-lat').value = lat;
+    row.querySelector('.pa-lng').value = lng;
+    statusEl.textContent = `✅ ${data[0].display_name.split(',').slice(0,3).join(',')}`;
+    statusEl.style.color = '#16a34a';
+    updatePartnerAddrMap(row);
+  } catch(e) {
+    statusEl.textContent = '⚠ 查询失败，请手动输入坐标'; statusEl.style.color = '#dc2626';
+  }
 }
 
 function openPartnerModal(p) {
@@ -6189,7 +6317,10 @@ function openPartnerModal(p) {
   captureModalState('partnerModal');
 }
 
-function closePartnerModal() { guardClose('partnerModal'); }
+function closePartnerModal() {
+  document.querySelectorAll('#pAddrList .pa-addr-row').forEach(row => destroyPartnerAddrMap(row));
+  guardClose('partnerModal');
+}
 
 async function loadPartnerFiles(pid) {
   const files = await api(`/admin/partners/${pid}/files`);
@@ -6271,7 +6402,7 @@ async function savePartner() {
     contact_person: contacts.length ? `${contacts[0].first_name||''} ${contacts[0].last_name||''}`.trim() : '',
     phone: contacts.length ? contacts[0].phone : '',
     email: contacts.length ? contacts[0].email : '',
-    address: getPartnerAddrs()[0] || '',
+    address: _addrStr(getPartnerAddrs()[0]) || '',
     industry: document.getElementById('pIndustry').value,
     services: JSON.stringify(allSvcs),
     notes: document.getElementById('pNotes').value,
