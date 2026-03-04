@@ -984,6 +984,27 @@ db.exec(`CREATE TABLE IF NOT EXISTS referral_bonus_config (
 )`);
 if (!db.prepare('SELECT id FROM referral_bonus_config WHERE id=1').get())
   db.prepare('INSERT INTO referral_bonus_config (id) VALUES (1)').run();
+
+// Skill options (configurable required skills list)
+db.exec(`CREATE TABLE IF NOT EXISTS skill_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_zh TEXT NOT NULL,
+  name_en TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+// Seed default skills if table is empty
+if (!db.prepare('SELECT id FROM skill_options LIMIT 1').get()) {
+  const seeds = [
+    ['仓库操作','Warehouse Operation'],['叉车操作','Forklift'],['驾照',"Driver's License"],
+    ['搬运','Heavy Lifting'],['分拣','Sorting'],['包装','Packing'],['收货','Receiving'],
+    ['发货','Shipping'],['盘点','Inventory'],['清洁','Cleaning'],['机器操作','Machine Operation'],
+    ['质量检查','Quality Inspection'],['组装','Assembly'],['基本英语','Basic English'],
+    ['普通话','Mandarin'],['体力劳动','Physical Labor']
+  ];
+  const ins = db.prepare('INSERT INTO skill_options (name_zh, name_en, sort_order) VALUES (?,?,?)');
+  seeds.forEach(([zh, en], i) => ins.run(zh, en, i));
+}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 
@@ -4553,6 +4574,29 @@ app.put('/api/admin/referral-config', requireAdmin, requireRole('admin'), (req, 
   const { bonus_per_referral, min_hours_to_qualify } = req.body;
   db.prepare('UPDATE referral_bonus_config SET bonus_per_referral=?, min_hours_to_qualify=?, updated_at=CURRENT_TIMESTAMP WHERE id=1')
     .run(bonus_per_referral, min_hours_to_qualify);
+  res.json({ success: true });
+});
+
+// Admin: skill options CRUD
+app.get('/api/admin/skill-options', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM skill_options ORDER BY sort_order, id').all());
+});
+app.post('/api/admin/skill-options', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_zh, name_en } = req.body;
+  if (!name_zh || !name_zh.trim()) return res.status(400).json({ error: '技能名称不能为空' });
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM skill_options').get().m;
+  const r = db.prepare('INSERT INTO skill_options (name_zh, name_en, sort_order) VALUES (?,?,?)').run(name_zh.trim(), (name_en||'').trim(), maxOrder+1);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/skill-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_zh, name_en, sort_order } = req.body;
+  if (!name_zh || !name_zh.trim()) return res.status(400).json({ error: '技能名称不能为空' });
+  db.prepare('UPDATE skill_options SET name_zh=?, name_en=?, sort_order=? WHERE id=?')
+    .run(name_zh.trim(), (name_en||'').trim(), sort_order ?? 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/skill-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM skill_options WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 

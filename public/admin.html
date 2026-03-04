@@ -408,6 +408,7 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
   <a onclick="showTab('integrations')" data-role="admin">🔗 集成设置</a>
   <a onclick="showTab('referral-settings')" data-role="admin">🎁 推荐奖励设置</a>
+  <a onclick="showTab('skill-settings')" data-role="admin">🛠️ 必备技能设置</a>
   <a class="logout" onclick="logout()">退出登录</a>
 </div>
 <div class="main">
@@ -1165,6 +1166,24 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Skill Options Settings 必备技能设置 -->
+<div id="tab-skill-settings" style="display:none">
+  <div class="top"><h1>🛠️ 必备技能设置</h1></div>
+  <div style="max-width:640px;margin:1.5rem auto">
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
+      <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
+        在此管理「必备技能」选项列表，修改后会自动应用到职位发布等所有使用该列表的地方。
+      </p>
+      <div style="display:flex;gap:.6rem;margin-bottom:1.25rem;flex-wrap:wrap">
+        <input id="newSkillZh" placeholder="技能名称（中文）*" style="flex:1;min-width:130px;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem">
+        <input id="newSkillEn" placeholder="Skill name (English)" style="flex:1;min-width:130px;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem">
+        <button class="btn" onclick="addSkillOption()" style="white-space:nowrap">＋ 添加</button>
+      </div>
+      <div id="skillOptionsList"></div>
+    </div>
+  </div>
+</div>
+
 </div></div>
 
 <!-- Job Site Modal -->
@@ -1892,25 +1911,8 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="field">
     <label>必备技能（多选）</label>
-    <select id="jRequiredSkills" multiple style="width:100%;min-height:120px;padding:6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-      <option value="仓库操作">仓库操作 / Warehouse Operation</option>
-      <option value="叉车操作">叉车操作 / Forklift</option>
-      <option value="驾照">驾照 / Driver's License</option>
-      <option value="搬运">搬运 / Heavy Lifting</option>
-      <option value="分拣">分拣 / Sorting</option>
-      <option value="包装">包装 / Packing</option>
-      <option value="收货">收货 / Receiving</option>
-      <option value="发货">发货 / Shipping</option>
-      <option value="盘点">盘点 / Inventory</option>
-      <option value="清洁">清洁 / Cleaning</option>
-      <option value="机器操作">机器操作 / Machine Operation</option>
-      <option value="质量检查">质量检查 / Quality Inspection</option>
-      <option value="组装">组装 / Assembly</option>
-      <option value="基本英语">基本英语 / Basic English</option>
-      <option value="普通话">普通话 / Mandarin</option>
-      <option value="体力劳动">体力劳动 / Physical Labor</option>
-    </select>
-    <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选</div>
+    <select id="jRequiredSkills" multiple style="width:100%;min-height:120px;padding:6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem"></select>
+    <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选 · <a onclick="showTab('skill-settings')" style="cursor:pointer;color:var(--primary)">管理技能选项</a></div>
   </div>
 
   <div class="field">
@@ -3000,6 +3002,7 @@ function showTab(t) {
   if (t === 'jobsites')   loadJobSites();
   if (t === 'integrations') loadIntegrations();
   if (t === 'referral-settings') loadReferralConfig();
+  if (t === 'skill-settings')   loadSkillSettings();
 }
 
 // ─── Dashboard ───
@@ -3426,10 +3429,17 @@ async function openJobModal(job) {
     btn.classList.toggle('active', activeBenefits.includes(btn.dataset.val));
   });
 
-  // Required skills
-  const activeSkills = job && job.required_skills ? job.required_skills.split(',').map(s=>s.trim()) : [];
+  // Required skills – load options dynamically from server
+  const activeSkills = job && job.required_skills ? job.required_skills.split(',').map(s=>s.trim()).filter(Boolean) : [];
   const skillsEl = document.getElementById('jRequiredSkills');
-  [...skillsEl.options].forEach(opt => { opt.selected = activeSkills.includes(opt.value); });
+  try {
+    const skillOpts = await api('/admin/skill-options');
+    skillsEl.innerHTML = (skillOpts || []).map(s => {
+      const label = s.name_en ? `${s.name_zh} / ${s.name_en}` : s.name_zh;
+      const sel = activeSkills.includes(s.name_zh) ? ' selected' : '';
+      return `<option value="${esc(s.name_zh)}"${sel}>${esc(label)}</option>`;
+    }).join('');
+  } catch(e) { /* keep empty on error */ }
 
   document.getElementById('jobModal').classList.add('show');
   captureModalState('jobModal');
@@ -9727,6 +9737,72 @@ async function saveReferralConfig() {
   if (res && res.success) {
     showToast('✅ 推荐奖励设置已保存');
     document.getElementById('refConfigStatus').textContent = `上次更新：${new Date().toLocaleString('zh-CN')}`;
+  }
+}
+
+// ─── Skill Options Settings ───
+let _skillOptions = [];
+
+async function loadSkillSettings() {
+  _skillOptions = await api('/admin/skill-options') || [];
+  renderSkillOptions();
+}
+
+function renderSkillOptions() {
+  const el = document.getElementById('skillOptionsList');
+  if (!_skillOptions.length) {
+    el.innerHTML = '<p style="color:#94a3b8;font-size:.875rem;text-align:center;padding:1rem 0">暂无技能选项</p>';
+    return;
+  }
+  el.innerHTML = _skillOptions.map((s, i) => `
+    <div style="display:flex;gap:.5rem;align-items:center;padding:.45rem 0;border-bottom:1px solid #f1f5f9">
+      <span style="color:#94a3b8;font-size:.75rem;width:1.6rem;text-align:right;flex-shrink:0">${i+1}</span>
+      <input value="${esc(s.name_zh)}" data-id="${s.id}" data-field="name_zh"
+        onchange="_skillOptChange(this)"
+        style="flex:1;padding:.4rem .6rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.875rem">
+      <input value="${esc(s.name_en)}" data-id="${s.id}" data-field="name_en"
+        onchange="_skillOptChange(this)"
+        placeholder="English"
+        style="flex:1;padding:.4rem .6rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.875rem">
+      <button onclick="_skillOptSave(${s.id})" title="保存"
+        style="padding:.35rem .65rem;border:1px solid #86efac;background:#f0fdf4;color:#15803d;border-radius:6px;cursor:pointer;font-size:.8rem;white-space:nowrap">保存</button>
+      <button onclick="_skillOptDelete(${s.id})" title="删除"
+        style="padding:.35rem .6rem;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:6px;cursor:pointer;font-size:.8rem">✕</button>
+    </div>
+  `).join('');
+}
+
+function _skillOptChange(input) {
+  const id = parseInt(input.dataset.id);
+  const field = input.dataset.field;
+  const s = _skillOptions.find(x => x.id === id);
+  if (s) s[field] = input.value;
+}
+
+async function _skillOptSave(id) {
+  const s = _skillOptions.find(x => x.id === id);
+  if (!s) return;
+  const res = await api(`/admin/skill-options/${id}`, { method:'PUT', body: JSON.stringify({ name_zh: s.name_zh, name_en: s.name_en, sort_order: s.sort_order }) });
+  if (res && res.success) showToast('✅ 已保存');
+  else alert('保存失败');
+}
+
+async function _skillOptDelete(id) {
+  if (!confirm('确认删除此技能选项？')) return;
+  const res = await api(`/admin/skill-options/${id}`, { method:'DELETE' });
+  if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
+}
+
+async function addSkillOption() {
+  const zh = document.getElementById('newSkillZh').value.trim();
+  const en = document.getElementById('newSkillEn').value.trim();
+  if (!zh) return alert('请输入技能名称（中文）');
+  const res = await api('/admin/skill-options', { method:'POST', body: JSON.stringify({ name_zh: zh, name_en: en }) });
+  if (res && res.success) {
+    document.getElementById('newSkillZh').value = '';
+    document.getElementById('newSkillEn').value = '';
+    await loadSkillSettings();
+    showToast('✅ 已添加');
   }
 }
 
