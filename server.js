@@ -4142,7 +4142,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   } else {
     // Clock in — validate against selected job
     if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
-    const activeJob = db.prepare(`
+    let activeJob = db.prepare(`
       SELECT ej.id, ej.job_id, j.title, j.site_id,
              js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
       FROM employee_jobs ej
@@ -4150,6 +4150,28 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
       LEFT JOIN job_sites js ON j.site_id = js.id
       WHERE ej.employee_id = ? AND ej.job_id = ? AND ej.status = 'active'
     `).get(req.workerEmployeeId, job_id);
+    // Fallback: check assignments table (worker linked via inquiry, not employee_jobs)
+    if (!activeJob) {
+      const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+      const linkedInqId = wa?.linked_inquiry_id || null;
+      const wPhone = (wa?.phone || '').replace(/\D/g, '');
+      const wEmail = (wa?.email || '').toLowerCase();
+      activeJob = db.prepare(`
+        SELECT a.id, a.job_id, j.title, j.site_id,
+               js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+        FROM assignments a
+        JOIN jobs j ON a.job_id = j.id
+        LEFT JOIN job_sites js ON j.site_id = js.id
+        JOIN inquiries i ON a.inquiry_id = i.id
+        WHERE a.job_id = ? AND a.status != 'cancelled'
+          AND (
+            (? IS NOT NULL AND a.inquiry_id = ?)
+            OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
+            OR (? != '' AND lower(i.email) = ?)
+          )
+        ORDER BY a.assigned_at DESC LIMIT 1
+      `).get(job_id, linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+    }
     if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
 
     // GPS Geofencing: check job site, then fall back to assignment location
