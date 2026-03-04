@@ -406,6 +406,7 @@ tr:hover td{background:var(--sky-light)}
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
   <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
   <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
+  <a onclick="showTab('referrals')" data-role="admin,staff">🎁 推荐奖励</a>
   <a onclick="showTab('integrations')" data-role="admin">🔗 集成设置</a>
   <a onclick="showTab('referral-settings')" data-role="admin">🎁 推荐奖励设置</a>
   <a onclick="showTab('skill-settings')" data-role="admin">🛠️ 必备技能设置</a>
@@ -1121,6 +1122,54 @@ tr:hover td{background:var(--sky-light)}
       <th>名称</th><th>地址</th><th>坐标 (Lat, Lng)</th><th>半径</th><th>状态</th><th>操作</th>
     </tr></thead>
     <tbody id="jobSitesTable"></tbody></table>
+  </div>
+</div>
+
+<!-- Referral Rewards 推荐奖励 -->
+<div id="tab-referrals" style="display:none">
+  <div class="top"><h1>🎁 推荐奖励记录</h1></div>
+
+  <!-- Config card -->
+  <div class="card" style="margin-bottom:1rem" id="referralConfigCard">
+    <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+      <div style="font-weight:700;font-size:.95rem;color:var(--blue)">奖励规则配置</div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <label style="font-size:.85rem;color:var(--gray-500)">每笔奖励</label>
+        <span style="font-weight:600">$</span>
+        <input id="refBonusAmtAll" type="number" min="0" step="1" style="width:80px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <label style="font-size:.85rem;color:var(--gray-500)">最低达标工时</label>
+        <input id="refMinHoursAll" type="number" min="0" step="1" style="width:70px;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+        <span style="font-size:.85rem;color:var(--gray-500)">小时</span>
+      </div>
+      <button class="btn btn-green" onclick="saveAllReferralConfig()">保存配置</button>
+      <div style="margin-left:auto;font-size:.82rem;color:var(--gray-400)">被推荐人工作满指定小时后，推荐人获得奖励</div>
+    </div>
+  </div>
+
+  <!-- Summary stats -->
+  <div id="referralStats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1rem"></div>
+
+  <!-- Table -->
+  <div class="card" style="overflow-x:auto">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:.75rem;flex-wrap:wrap">
+      <input id="refSearch" type="text" placeholder="搜索推荐人或被推荐人…" style="padding:.4rem .75rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;width:220px" oninput="filterReferralTable()">
+      <select id="refFilter" onchange="filterReferralTable()" style="padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        <option value="">全部状态</option>
+        <option value="qualified">✅ 已达标</option>
+        <option value="pending">⏳ 进行中</option>
+        <option value="none">⬜ 未开始</option>
+      </select>
+      <span id="refCount" style="font-size:.82rem;color:var(--gray-400);margin-left:auto"></span>
+    </div>
+    <table style="font-size:.84rem">
+      <thead><tr>
+        <th>推荐人</th><th>推荐人编码</th><th>被推荐人</th><th>被推荐人编码</th>
+        <th>注册时间</th><th>已工作工时</th><th>状态</th><th>奖励金额</th>
+      </tr></thead>
+      <tbody id="referralTableBody"></tbody>
+    </table>
   </div>
 </div>
 
@@ -3003,6 +3052,7 @@ function showTab(t) {
   if (t === 'integrations') loadIntegrations();
   if (t === 'referral-settings') loadReferralConfig();
   if (t === 'skill-settings')   loadSkillSettings();
+  if (t === 'referrals')   loadAllReferrals();
 }
 
 // ─── Dashboard ───
@@ -3355,17 +3405,31 @@ function renderJobsFiltered() {
       <td style="text-align:center">${j.headcount||1}</td>
       <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
       <td>${esc(j.pay||'')}</td>
-      <td><span class="badge ${si.cls}">${si.text}</span>${reasonTip}</td>
+      <td>
+        <span class="badge ${si.cls}">${si.text}</span>${reasonTip}
+        ${j.visible === 0 ? `<br><span class="badge" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;font-size:.7rem">隐藏</span>` : ''}
+      </td>
       <td style="white-space:nowrap">
         <button class="btn btn-sm" onclick='editJob(${JSON.stringify(j).replace(/'/g,"&#39;")})'>编辑</button>
         ${!isHistory
           ? `<button class="btn btn-sm" style="background:var(--orange-light,#fff3e0);color:#c05621;border:1px solid #fbd38d" onclick='openCloseJobModal(${JSON.stringify(j).replace(/'/g,"&#39;")})'>关闭</button>`
           : `<button class="btn btn-sm btn-green" onclick="reopenJob(${j.id})">重新开放</button>`}
+        <button class="btn btn-sm" style="${j.visible === 0 ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1'}" onclick="toggleJobVisible(${j.id}, this)">
+          ${j.visible === 0 ? '👁 显示' : '🚫 隐藏'}
+        </button>
         <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
         <button class="btn btn-sm btn-outline" onclick="showJobHistory(${j.id},'${esc(j.title)}')">历史</button>
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="8" class="empty">${isHistory ? '暂无历史职位' : '暂无在招职位，点击 "+ 新增职位" 添加'}</td></tr>`;
+}
+
+async function toggleJobVisible(id, btn) {
+  const res = await api(`/admin/jobs/${id}/visible`, { method: 'PUT' });
+  if (!res || !res.success) return;
+  const job = _allJobs.find(j => j.id === id);
+  if (job) job.visible = res.visible;
+  renderJobsFiltered();
 }
 
 async function loadJobs() {
@@ -9718,7 +9782,7 @@ async function saveIntegration() {
   loadIntegrations();
 }
 
-// ─── Referral Bonus Config ───
+// ─── Referral Bonus Config (referral-settings tab) ───
 async function loadReferralConfig() {
   const cfg = await api('/admin/referral-config');
   if (!cfg) return;
@@ -9729,15 +9793,103 @@ async function loadReferralConfig() {
 }
 
 async function saveReferralConfig() {
-  const min_hours_to_qualify = parseFloat(document.getElementById('refMinHours').value);
-  const bonus_per_referral = parseFloat(document.getElementById('refBonusAmount').value);
-  if (isNaN(min_hours_to_qualify) || min_hours_to_qualify < 0) return alert('请输入有效的工时门槛');
-  if (isNaN(bonus_per_referral) || bonus_per_referral < 0) return alert('请输入有效的奖励金额');
-  const res = await api('/admin/referral-config', { method: 'PUT', body: JSON.stringify({ min_hours_to_qualify, bonus_per_referral }) });
-  if (res && res.success) {
-    showToast('✅ 推荐奖励设置已保存');
-    document.getElementById('refConfigStatus').textContent = `上次更新：${new Date().toLocaleString('zh-CN')}`;
-  }
+  const bonus = parseFloat(document.getElementById('refBonusAmount').value);
+  const hours = parseFloat(document.getElementById('refMinHours').value);
+  if (isNaN(bonus) || bonus < 0) return alert('请输入有效的奖励金额');
+  if (isNaN(hours) || hours < 0) return alert('请输入有效的工时门槛');
+  showConfirmModal('保存奖励配置', `确认将奖励金额改为 $${bonus}，达标工时改为 ${hours} 小时？`, '保存', 'btn-green', async () => {
+    const res = await api('/admin/referral-config', { method: 'PUT', body: JSON.stringify({ min_hours_to_qualify: hours, bonus_per_referral: bonus }) });
+    if (res && res.success) {
+      showToast('✅ 推荐奖励设置已保存');
+      document.getElementById('refConfigStatus').textContent = `上次更新：${new Date().toLocaleString('zh-CN')}`;
+    }
+  }, 'green');
+}
+
+async function saveAllReferralConfig() {
+  const bonus = parseFloat(document.getElementById('refBonusAmtAll').value);
+  const hours = parseFloat(document.getElementById('refMinHoursAll').value);
+  if (isNaN(bonus) || isNaN(hours) || bonus < 0 || hours < 0) { showToast('请输入有效数字', 'error'); return; }
+  showConfirmModal('保存奖励配置', `确认将奖励金额改为 $${bonus}，达标工时改为 ${hours} 小时？`, '保存', 'btn-green', async () => {
+    await api('/admin/referral-config', { method:'PUT', body: JSON.stringify({ bonus_per_referral: bonus, min_hours_to_qualify: hours }) });
+    showToast('✅ 奖励配置已保存');
+    loadAllReferrals();
+  }, 'green');
+}
+
+// ── Referral Rewards Admin (referrals tab) ──────────────────────
+let _referralRows = [];
+let _referralConfig = { bonus_per_referral: 50, min_hours_to_qualify: 8 };
+
+async function loadAllReferrals() {
+  const data = await api('/admin/all-referrals');
+  if (!data) return;
+  _referralRows = data.rows || [];
+  _referralConfig = data.config || _referralConfig;
+
+  document.getElementById('refBonusAmtAll').value = _referralConfig.bonus_per_referral;
+  document.getElementById('refMinHoursAll').value = _referralConfig.min_hours_to_qualify;
+
+  const qualified = _referralRows.filter(r => r.total_hours >= _referralConfig.min_hours_to_qualify);
+  const pending   = _referralRows.filter(r => r.total_hours > 0 && r.total_hours < _referralConfig.min_hours_to_qualify);
+  const totalBonus = qualified.length * _referralConfig.bonus_per_referral;
+
+  document.getElementById('referralStats').innerHTML = [
+    { label:'总邀请记录', value: _referralRows.length + ' 条', color:'#dbeafe', text:'#1d4ed8' },
+    { label:'已达标 (奖励已赚)', value: qualified.length + ' 条', color:'#d1fae5', text:'#065f46' },
+    { label:'进行中', value: pending.length + ' 条', color:'#fef3c7', text:'#92400e' },
+    { label:'累计奖励金额', value: '$' + totalBonus.toFixed(2), color:'#f3e8ff', text:'#7c3aed' }
+  ].map(s => `<div style="background:${s.color};border-radius:10px;padding:.75rem 1rem">
+    <div style="font-size:.75rem;color:${s.text};font-weight:600;margin-bottom:.2rem">${s.label}</div>
+    <div style="font-size:1.3rem;font-weight:800;color:${s.text}">${s.value}</div>
+  </div>`).join('');
+
+  filterReferralTable();
+}
+
+function filterReferralTable() {
+  const q = (document.getElementById('refSearch').value || '').toLowerCase();
+  const f = document.getElementById('refFilter').value;
+  const min = _referralConfig.min_hours_to_qualify;
+
+  const filtered = _referralRows.filter(r => {
+    const status = r.total_hours >= min ? 'qualified' : r.total_hours > 0 ? 'pending' : 'none';
+    if (f && f !== status) return false;
+    if (q) {
+      const hay = `${r.referrer_name} ${r.referrer_code} ${r.referred_name} ${r.referred_code}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  document.getElementById('refCount').textContent = `共 ${filtered.length} 条`;
+
+  const statusLabel = { qualified:'✅ 已达标', pending:'⏳ 进行中', none:'⬜ 未开始' };
+  const statusStyle = {
+    qualified:'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7',
+    pending:'background:#fef3c7;color:#92400e;border:1px solid #fde68a',
+    none:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)'
+  };
+
+  document.getElementById('referralTableBody').innerHTML = filtered.length === 0
+    ? `<tr><td colspan="8" style="text-align:center;color:var(--gray-400);padding:2rem">暂无邀请记录</td></tr>`
+    : filtered.map(r => {
+        const status = r.total_hours >= _referralConfig.min_hours_to_qualify ? 'qualified'
+                     : r.total_hours > 0 ? 'pending' : 'none';
+        const bonus = status === 'qualified' ? `<span style="font-weight:700;color:#065f46">$${_referralConfig.bonus_per_referral.toFixed(2)}</span>` : '—';
+        const hrs = r.total_hours ? r.total_hours.toFixed(1) + ' h' : '0 h';
+        const date = r.created_at ? r.created_at.substring(0, 10) : '—';
+        return `<tr>
+          <td style="font-weight:600">${esc(r.referrer_name || '—')}</td>
+          <td><span style="font-family:monospace;font-size:.78rem;background:#f0f9ff;padding:1px 6px;border-radius:4px">${esc(r.referrer_code || '—')}</span></td>
+          <td>${esc(r.referred_name || '—')}</td>
+          <td><span style="font-family:monospace;font-size:.78rem;background:#f0f9ff;padding:1px 6px;border-radius:4px">${esc(r.referred_code || '—')}</span></td>
+          <td style="color:var(--gray-400);font-size:.8rem">${date}</td>
+          <td style="font-weight:600">${hrs}</td>
+          <td><span style="padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600;${statusStyle[status]}">${statusLabel[status]}</span></td>
+          <td>${bonus}</td>
+        </tr>`;
+      }).join('');
 }
 
 // ─── Skill Options Settings ───

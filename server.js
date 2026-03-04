@@ -550,6 +550,7 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_location_text T
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN visible INTEGER DEFAULT 1`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
@@ -1649,7 +1650,7 @@ function requireCustomer(req, res, next) {
 // GET /api/jobs - public job listings
 app.get('/api/jobs', (req, res) => {
   const lang = req.query.lang;
-  const base = `SELECT j.*, p.name as partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id WHERE j.active=1`;
+  const base = `SELECT j.*, p.name as partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id WHERE j.active=1 AND j.visible=1`;
   const jobs = (lang && lang !== 'all')
     ? db.prepare(base + ' AND j.lang=? ORDER BY j.created_at DESC').all(lang)
     : db.prepare(base + ' ORDER BY j.created_at DESC').all();
@@ -2771,6 +2772,15 @@ app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete
   db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
   logJobAudit.run(req.params.id, 'deleted', JSON.stringify(old || {}), req.userName);
   res.json({ success: true });
+});
+
+app.put('/api/admin/jobs/:id/visible', requireAdmin, blockManager, (req, res) => {
+  const job = db.prepare('SELECT visible FROM jobs WHERE id=?').get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'not found' });
+  const newVisible = job.visible ? 0 : 1;
+  db.prepare('UPDATE jobs SET visible=? WHERE id=?').run(newVisible, req.params.id);
+  logJobAudit.run(req.params.id, newVisible ? 'shown' : 'hidden', '{}', req.userName);
+  res.json({ success: true, visible: newVisible });
 });
 
 // Inquiries
@@ -4598,6 +4608,32 @@ app.put('/api/admin/skill-options/:id', requireAdmin, requireRole('admin'), (req
 app.delete('/api/admin/skill-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM skill_options WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Admin: list ALL referral records across all workers
+app.get('/api/admin/all-referrals', requireAdmin, (req, res) => {
+  const config = db.prepare('SELECT bonus_per_referral, min_hours_to_qualify FROM referral_bonus_config WHERE id=1').get()
+    || { bonus_per_referral: 50, min_hours_to_qualify: 8 };
+
+  const rows = db.prepare(`
+    SELECT
+      referrer.id          AS referrer_id,
+      referrer.name        AS referrer_name,
+      referrer.worker_code AS referrer_code,
+      w.id                 AS referred_id,
+      w.name               AS referred_name,
+      w.worker_code        AS referred_code,
+      w.created_at,
+      COALESCE(SUM(t.total_hours), 0) AS total_hours
+    FROM worker_accounts w
+    JOIN worker_accounts referrer ON w.referred_by = referrer.id
+    LEFT JOIN employees e ON w.employee_id = e.id
+    LEFT JOIN time_entries t ON t.employee_id = e.id AND t.status = 'closed'
+    GROUP BY w.id
+    ORDER BY w.created_at DESC
+  `).all();
+
+  res.json({ rows, config });
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
