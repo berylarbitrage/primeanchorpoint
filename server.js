@@ -5732,6 +5732,13 @@ app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
   if (status === 'cancelled' && row.status !== 'cancelled') {
     db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
   }
+  // Sync to onboarding task
+  if (status === 'passed' && row.worker_account_id) {
+    db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(row.worker_account_id);
+  }
+  if ((status === 'cancelled' || status === 'scheduled') && row.worker_account_id) {
+    db.prepare(`UPDATE worker_onboarding SET status='pending', completed_at=NULL WHERE worker_account_id=? AND task_key='interview' AND status='completed'`).run(row.worker_account_id);
+  }
   // Update worker account fields decided after interview
   if (identity_status !== undefined) {
     db.prepare('UPDATE worker_accounts SET identity_status=? WHERE id=?').run(identity_status, row.worker_account_id);
@@ -5753,8 +5760,10 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
 
   // Check for existing pending doc request
   const existing = db.prepare(`SELECT token FROM employee_doc_requests WHERE employee_id=? AND status='pending' AND (expires_at IS NULL OR expires_at > datetime('now'))`).get(interview.employee_id);
+  const syncOnboarding = () => db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(interview.worker_account_id);
   if (existing) {
     db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(existing.token, req.params.id);
+    syncOnboarding();
     return res.json({ token: existing.token, already_exists: true });
   }
 
@@ -5764,6 +5773,7 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
   db.prepare(`INSERT INTO employee_doc_requests (token, employee_id, admin_note, requested_docs, lang, positions, expires_at)
     VALUES (?,?,?,?,?,?,?)`).run(token, interview.employee_id, admin_note || '', JSON.stringify(['gov_id','ssn','work_card','w9']), lang || 'zh', '[]', expiresAt);
   db.prepare(`UPDATE interviews SET status='passed', doc_request_token=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(token, req.params.id);
+  syncOnboarding();
   res.json({ token, expires_at: expiresAt });
 });
 
