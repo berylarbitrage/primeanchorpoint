@@ -1301,10 +1301,31 @@ async function loadTasks() {
     const _DAY_NAMES = ['周日','周一','周二','周三','周四','周五','周六'];
     const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
     const todayStr = new Date().toISOString().slice(0,10);
-    confList.innerHTML = confirmations.map(c => {
+    const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrowStr = tomorrowDate.toISOString().slice(0,10);
+
+    // Urgent banner: pending shifts tomorrow
+    const urgentShifts = confirmations.filter(c => c.date === tomorrowStr && c.status === 'pending');
+    const urgentBanner = urgentShifts.length ? `
+      <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;display:flex;align-items:flex-start;gap:.65rem">
+        <span style="font-size:1.3rem;line-height:1">🔔</span>
+        <div>
+          <div style="font-weight:700;font-size:.95rem;color:#dc2626;margin-bottom:.2rem">明天有 ${urgentShifts.length} 个班次待确认</div>
+          <div style="font-size:.83rem;color:#7f1d1d">
+            ${urgentShifts.map(c => {
+              const t = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)}–${fmt12(c.shift_end)}` : '';
+              return `${esc(c.title||'—')}${t?' ('+t+')':''}`;
+            }).join('、')}
+          </div>
+          <div style="font-size:.8rem;color:#b91c1c;margin-top:.3rem">请在下方确认是否出勤</div>
+        </div>
+      </div>` : '';
+
+    confList.innerHTML = urgentBanner + confirmations.map(c => {
       const d = new Date(c.date + 'T00:00:00');
       const isToday = c.date === todayStr;
-      const dayLabel = `${_DAY_NAMES[d.getDay()]} ${c.date.slice(5).replace('-','/')}${isToday ? ' <span style="background:#f59e0b;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">今天</span>' : ''}`;
+      const isTomorrow = c.date === tomorrowStr;
+      const dayLabel = `${_DAY_NAMES[d.getDay()]} ${c.date.slice(5).replace('-','/')}${isToday ? ' <span style="background:#f59e0b;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">今天</span>' : isTomorrow ? ' <span style="background:#ef4444;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">明天</span>' : ''}`;
       const timeStr = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)} – ${fmt12(c.shift_end)}` : '';
       const statusBadge = c.status === 'confirmed'
         ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✓ 已确认</span>`
@@ -1316,8 +1337,10 @@ async function loadTasks() {
           <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
           <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 请假</button>
         </div>` : '';
+      const cardBorder = (isTomorrow && c.status === 'pending') ? '2px solid #ef4444' : '1px solid #fcd34d';
+      const cardBg = (isTomorrow && c.status === 'pending') ? '#fff5f5' : '#fff';
       return `
-        <div style="border:1px solid #fcd34d;border-radius:10px;padding:.85rem;margin-bottom:.55rem;background:#fff">
+        <div style="border:${cardBorder};border-radius:10px;padding:.85rem;margin-bottom:.55rem;background:${cardBg}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.3rem">
             <div>
               <span style="font-weight:700;font-size:.92rem;color:#92400e">${dayLabel}</span>
