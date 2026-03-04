@@ -2327,8 +2327,14 @@ tr:hover td{background:var(--sky-light)}
     <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:#1d4ed8;display:block;margin-bottom:.5rem">📍 工作地点（打卡围栏）</label>
     <div class="field" style="margin-bottom:.5rem">
       <label>工作地址 *</label>
-      <div style="display:flex;gap:.5rem">
-        <input id="aWorkAddress" placeholder="例：1234 Main St, Los Angeles, CA" style="flex:1" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+      <div style="margin-bottom:.4rem">
+        <input id="aWorkStreet" placeholder="Street Address（例：1234 Main St）" style="width:100%;box-sizing:border-box" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:.4rem;align-items:flex-start">
+        <input id="aWorkCity" placeholder="City（城市）" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+        <input id="aWorkState" placeholder="State" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+        <input id="aWorkZip" placeholder="ZIP" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
+        <input id="aWorkCountry" placeholder="Country" value="USA" oninput="document.getElementById('aWorkAddrErr').style.display='none'">
         <button type="button" onclick="geocodeWorkAddress()" style="white-space:nowrap;padding:.4rem .75rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-size:.82rem;font-weight:600">🔍 查坐标</button>
       </div>
       <div id="aWorkAddrErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请填写工作地址</div>
@@ -4758,8 +4764,12 @@ async function openAssignModal(assignment) {
   document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
   document.getElementById('aPayType').value = assignment ? (assignment.pay_type || 'hourly') : 'hourly';
   document.getElementById('aPayRate').value = assignment ? (assignment.pay_rate || '') : '';
-  // Work location
-  document.getElementById('aWorkAddress').value = assignment ? (assignment.work_address || '') : '';
+  // Work location – populate 5 fields (existing data goes into street; other fields blank)
+  document.getElementById('aWorkStreet').value  = assignment ? (assignment.work_address || '') : '';
+  document.getElementById('aWorkCity').value    = '';
+  document.getElementById('aWorkState').value   = '';
+  document.getElementById('aWorkZip').value     = '';
+  document.getElementById('aWorkCountry').value = 'USA';
   document.getElementById('aWorkLat').value = assignment ? (assignment.work_lat || '') : '';
   document.getElementById('aWorkLng').value = assignment ? (assignment.work_lng || '') : '';
   document.getElementById('aWorkRadius').value = assignment ? (assignment.work_radius || 200) : 200;
@@ -5313,7 +5323,11 @@ function confirmAssignJobImport() {
   const j = _pendingImportJob;
   if (!j) return;
   if (document.getElementById('aImportAddr').checked && j.location) {
-    document.getElementById('aWorkAddress').value = j.location;
+    document.getElementById('aWorkStreet').value  = j.location;
+    document.getElementById('aWorkCity').value    = '';
+    document.getElementById('aWorkState').value   = '';
+    document.getElementById('aWorkZip').value     = '';
+    document.getElementById('aWorkCountry').value = 'USA';
     document.getElementById('aWorkAddrErr').style.display = 'none';
     geocodeWorkAddress();
   }
@@ -5337,8 +5351,17 @@ function confirmAssignJobImport() {
   _pendingImportJob = null;
 }
 
+function getWorkAddressString() {
+  const street  = document.getElementById('aWorkStreet').value.trim();
+  const city    = document.getElementById('aWorkCity').value.trim();
+  const state   = document.getElementById('aWorkState').value.trim();
+  const zip     = document.getElementById('aWorkZip').value.trim();
+  const country = document.getElementById('aWorkCountry').value.trim();
+  return [street, city, state && zip ? `${state} ${zip}` : (state || zip), country].filter(Boolean).join(', ');
+}
+
 async function geocodeWorkAddress() {
-  const addr = document.getElementById('aWorkAddress').value.trim();
+  const addr = getWorkAddressString();
   if (!addr) { document.getElementById('aWorkGeoStatus').textContent = '请先填写地址'; return; }
   const statusEl = document.getElementById('aWorkGeoStatus');
   statusEl.textContent = '🔍 正在查找坐标…';
@@ -5391,7 +5414,7 @@ async function saveAssignment() {
     benefits,
     work_schedule: getEstimateTimeJson(),
     task_requirements: getTasksJson(),
-    work_address: document.getElementById('aWorkAddress').value.trim(),
+    work_address: getWorkAddressString(),
     work_lat: parseFloat(document.getElementById('aWorkLat').value) || null,
     work_lng: parseFloat(document.getElementById('aWorkLng').value) || null,
     work_radius: parseInt(document.getElementById('aWorkRadius').value) || 200
