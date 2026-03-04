@@ -4225,7 +4225,8 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   let activeJobs = [];
   if (req.workerEmployeeId) {
     activeJobs = db.prepare(`
-      SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end, j.location, j.pay,
+      SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
+             COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
              j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
              a.work_schedule
       FROM employee_jobs ej
@@ -4239,7 +4240,8 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   // Fall back to assignments table: match by linked_inquiry_id, phone, or email
   if (!activeJobs.length) {
     activeJobs = db.prepare(`
-      SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end, j.location, j.pay,
+      SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
+             COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
              j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
              a.work_schedule
       FROM assignments a
@@ -4287,15 +4289,18 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json([]);
   const jobs = db.prepare(`
     SELECT ej.id, ej.job_id, ej.status, ej.start_date, ej.end_date, ej.emp_hourly_rate,
-           j.title, j.location, j.pay, j.pay_period, j.company_name, j.site_id,
+           j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
+           j.pay, j.pay_period, j.company_name, j.site_id,
            js.name AS site_name, js.address AS site_address,
            js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
     FROM employee_jobs ej
     JOIN jobs j ON ej.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
+    LEFT JOIN worker_accounts wa ON wa.id = ?
+    LEFT JOIN assignments a ON a.job_id = ej.job_id AND a.inquiry_id = wa.linked_inquiry_id
     WHERE ej.employee_id = ? AND ej.status = 'active'
     ORDER BY ej.assigned_at DESC
-  `).all(req.workerEmployeeId);
+  `).all(req.workerId, req.workerEmployeeId);
   res.json(jobs);
 });
 
