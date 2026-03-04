@@ -99,7 +99,7 @@ tr:last-child td{border-bottom:none}
 .empty{color:var(--gray-400);padding:2rem;text-align:center}
 /* Toast */
 #toast-wrap{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
-.toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
+.toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:pre-wrap;max-width:90vw;text-align:center}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
 /* Onboarding steps */
@@ -1875,8 +1875,13 @@ async function doPunch(type, photo) {
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { enablePunchBtn(true); cancelPunchPhoto(); showToast('❌ 打卡失败，请重新登录后重试', 'error'); return; }
   if (r.error) {
-    showToast('❌ ' + r.error, 'error');
     cancelPunchPhoto();
+    if (r.geo_blocked || r.no_site || r.need_gps) {
+      await customAlert(r.error, '📍 打卡失败', '❌');
+    } else {
+      showToast('❌ ' + r.error, 'error');
+    }
+    enablePunchBtn(true);
     await loadPunchStatus();
     return;
   }
