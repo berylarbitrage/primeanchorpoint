@@ -2414,9 +2414,17 @@ tr:hover td{background:var(--sky-light)}
       <div id="aWorkGeoMapLink" style="display:none;margin-top:.3rem"><a id="aWorkGeoMapAnchor" href="#" target="_blank" style="font-size:.75rem;color:#1d4ed8;text-decoration:none">🗺 在 Google Maps 中验证坐标（Nominatim 可能偏移，建议确认）</a></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>纬度 (Lat) *</label><input id="aWorkLat" type="number" step="any" placeholder="例：34.052235" oninput="document.getElementById('aWorkLatErr').style.display='none'"><div id="aWorkLatErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
-      <div class="field"><label>经度 (Lng) *</label><input id="aWorkLng" type="number" step="any" placeholder="例：-118.243683" oninput="document.getElementById('aWorkLngErr').style.display='none'"><div id="aWorkLngErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
-      <div class="field"><label>围栏半径（米）</label><input id="aWorkRadius" type="number" placeholder="200" value="200"></div>
+      <div class="field"><label>纬度 (Lat) *</label><input id="aWorkLat" type="number" step="any" placeholder="例：34.052235" oninput="document.getElementById('aWorkLatErr').style.display='none';updateAssignWorkMap()"><div id="aWorkLatErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
+      <div class="field"><label>经度 (Lng) *</label><input id="aWorkLng" type="number" step="any" placeholder="例：-118.243683" oninput="document.getElementById('aWorkLngErr').style.display='none';updateAssignWorkMap()"><div id="aWorkLngErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 必填</div></div>
+      <div class="field"><label>围栏半径（米）</label><input id="aWorkRadius" type="number" placeholder="200" value="200" oninput="updateAssignWorkMap()"></div>
+    </div>
+    <!-- Interactive map preview for work location -->
+    <div id="aWorkMapWrap" style="display:none;margin-top:.5rem;border-radius:8px;overflow:hidden;border:1px solid #93c5fd">
+      <div id="aWorkMap" style="height:260px;width:100%"></div>
+      <div style="font-size:.73rem;color:#1d4ed8;padding:.3rem .6rem;background:#eff6ff;display:flex;align-items:center;gap:.4rem">
+        <span>🖱 拖动图钉可纠正位置，坐标将自动更新</span>
+        <span id="aWorkMapCoordLabel" style="margin-left:auto;color:#6b7280;font-family:monospace"></span>
+      </div>
     </div>
   </div>
   <div class="field"><label>备注</label><textarea id="aNotes" placeholder="备注信息..."></textarea></div>
@@ -4993,6 +5001,11 @@ async function openAssignModal(assignment) {
   document.getElementById('aJobImportConfirm').style.display = 'none';
   document.getElementById('aJobAddrPickerStatus').textContent = '';
   ['aWorkAddrErr','aWorkLatErr','aWorkLngErr'].forEach(id => document.getElementById(id).style.display='none');
+  destroyAssignWorkMap();
+  // If editing an assignment that already has coords, show the map
+  if (assignment && assignment.work_lat && assignment.work_lng) {
+    setTimeout(updateAssignWorkMap, 100);
+  }
   // Benefits toggle
   const activeBens = assignment && assignment.benefits ? assignment.benefits.split(',').map(s=>s.trim()) : [];
   document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
@@ -5484,7 +5497,7 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#jPartnerDrop') && !e.target.closest('#jPartnerSearch')) document.getElementById('jPartnerDrop').classList.remove('open');
 });
 
-function closeAssignModal() { guardClose('assignModal', closeAssignDropdowns); }
+function closeAssignModal() { destroyAssignWorkMap(); guardClose('assignModal', closeAssignDropdowns); }
 
 function editAssignment(a) { openAssignModal(a); }
 
@@ -5581,9 +5594,70 @@ async function geocodeWorkAddress() {
     const mapLink = document.getElementById('aWorkGeoMapLink');
     document.getElementById('aWorkGeoMapAnchor').href = `https://www.google.com/maps?q=${lat},${lng}`;
     mapLink.style.display = 'block';
+    updateAssignWorkMap();
   } catch(e) {
     statusEl.textContent = '⚠ 查找失败，请手动输入坐标';
   }
+}
+
+// ─── Assignment work location map ───
+let _assignWorkMap = null;
+let _assignWorkMarker = null;
+let _assignWorkCircle = null;
+
+function updateAssignWorkMap() {
+  const lat = parseFloat(document.getElementById('aWorkLat').value);
+  const lng = parseFloat(document.getElementById('aWorkLng').value);
+  const radius = parseInt(document.getElementById('aWorkRadius').value) || 200;
+  const wrap = document.getElementById('aWorkMapWrap');
+
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  wrap.style.display = '';
+  document.getElementById('aWorkMapCoordLabel').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+  if (!_assignWorkMap) {
+    _assignWorkMap = L.map('aWorkMap', { zoomControl: true, scrollWheelZoom: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap', maxZoom: 19
+    }).addTo(_assignWorkMap);
+
+    _assignWorkMarker = L.marker([lat, lng], { draggable: true }).addTo(_assignWorkMap);
+    _assignWorkCircle = L.circle([lat, lng], {
+      radius, color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.12, weight: 2
+    }).addTo(_assignWorkMap);
+    _assignWorkMap.setView([lat, lng], 16);
+
+    // Drag: update inputs and circle
+    _assignWorkMarker.on('dragend', function(e) {
+      const pos = e.target.getLatLng();
+      const newLat = pos.lat.toFixed(6);
+      const newLng = pos.lng.toFixed(6);
+      document.getElementById('aWorkLat').value = newLat;
+      document.getElementById('aWorkLng').value = newLng;
+      document.getElementById('aWorkMapCoordLabel').textContent = `${parseFloat(newLat).toFixed(5)}, ${parseFloat(newLng).toFixed(5)}`;
+      _assignWorkCircle.setLatLng(pos);
+      // Update Google Maps link
+      document.getElementById('aWorkGeoMapAnchor').href = `https://www.google.com/maps?q=${newLat},${newLng}`;
+      document.getElementById('aWorkGeoMapLink').style.display = 'block';
+    });
+  } else {
+    _assignWorkMarker.setLatLng([lat, lng]);
+    _assignWorkCircle.setLatLng([lat, lng]);
+    _assignWorkCircle.setRadius(radius);
+    _assignWorkMap.setView([lat, lng], _assignWorkMap.getZoom() || 16);
+  }
+
+  setTimeout(() => { if (_assignWorkMap) _assignWorkMap.invalidateSize(); }, 60);
+}
+
+function destroyAssignWorkMap() {
+  if (_assignWorkMap) { _assignWorkMap.remove(); _assignWorkMap = null; _assignWorkMarker = null; _assignWorkCircle = null; }
+  const wrap = document.getElementById('aWorkMapWrap');
+  if (wrap) wrap.style.display = 'none';
 }
 
 async function addMoreDispatch(prefill) {
