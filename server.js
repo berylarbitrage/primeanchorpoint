@@ -4631,21 +4631,50 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
 
 // Worker: get currently dispatched (active) jobs with site info
 app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
-  if (!req.workerEmployeeId) return res.json([]);
-  const jobs = db.prepare(`
-    SELECT ej.id, ej.job_id, ej.status, ej.start_date, ej.end_date, ej.emp_hourly_rate,
-           j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
-           j.pay, j.pay_period, j.company_name, j.site_id,
-           js.name AS site_name, js.address AS site_address,
-           js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-    FROM employee_jobs ej
-    JOIN jobs j ON ej.job_id = j.id
-    LEFT JOIN job_sites js ON j.site_id = js.id
-    LEFT JOIN worker_accounts wa ON wa.id = ?
-    LEFT JOIN assignments a ON a.job_id = ej.job_id AND a.inquiry_id = wa.linked_inquiry_id
-    WHERE ej.employee_id = ? AND ej.status = 'active'
-    ORDER BY ej.assigned_at DESC
-  `).all(req.workerId, req.workerEmployeeId);
+  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const linkedInqId = wa?.linked_inquiry_id || null;
+  const wPhone = (wa?.phone || '').replace(/\D/g, '');
+  const wEmail = (wa?.email || '').toLowerCase();
+
+  let jobs = [];
+  if (req.workerEmployeeId) {
+    jobs = db.prepare(`
+      SELECT ej.id, ej.job_id, ej.status, ej.start_date, ej.end_date, ej.emp_hourly_rate,
+             j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
+             j.pay, j.pay_period, j.company_name, j.site_id,
+             js.name AS site_name, js.address AS site_address,
+             js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+      FROM employee_jobs ej
+      JOIN jobs j ON ej.job_id = j.id
+      LEFT JOIN job_sites js ON j.site_id = js.id
+      LEFT JOIN assignments a ON a.job_id = ej.job_id AND a.inquiry_id = ?
+      WHERE ej.employee_id = ? AND ej.status = 'active'
+      ORDER BY ej.assigned_at DESC
+    `).all(linkedInqId, req.workerEmployeeId);
+  }
+
+  // Fallback: check assignments table (same as punch/status)
+  if (!jobs.length) {
+    jobs = db.prepare(`
+      SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
+             j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
+             j.pay, j.pay_period, j.company_name, j.site_id,
+             js.name AS site_name, js.address AS site_address,
+             js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+      FROM assignments a
+      JOIN jobs j ON a.job_id = j.id
+      LEFT JOIN job_sites js ON j.site_id = js.id
+      JOIN inquiries i ON a.inquiry_id = i.id
+      WHERE a.status != 'cancelled'
+        AND (
+          (? IS NOT NULL AND a.inquiry_id = ?)
+          OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(i.phone,' ',''),'-',''),'(',''),')','') = ?)
+          OR (? != '' AND lower(i.email) = ?)
+        )
+      ORDER BY a.assigned_at DESC
+    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  }
+
   res.json(jobs);
 });
 
