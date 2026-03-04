@@ -275,6 +275,7 @@ tr:hover td{background:var(--sky-light)}
 .wa-cbadge.fail{background:#fef2f2;color:#dc2626}.wa-cbadge.na{background:var(--gray-100);color:var(--gray-300)}
 .wa-status{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:700;white-space:nowrap}
 .wa-status.active{background:#d1fae5;color:#065f46;border:1px solid #a7f3d0}
+.wa-status.onboarded{background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd}
 .wa-status.pending{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
 .wa-status.suspended{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
 .wa-dispatch{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:20px;font-size:.72rem;font-weight:700;white-space:nowrap}
@@ -7665,6 +7666,7 @@ async function loadWorkerAccounts() {
   const workerStatus = w => {
     if (!w.active) return '<span class="wa-status pending">⏳ 待验证</span>';
     if (w.suspended) return '<span class="wa-status suspended">⛔ 暂停</span>';
+    if (w.onboarded) return '<span class="wa-status onboarded">🎉 已入职</span>';
     return '<span class="wa-status active">✅ 正常</span>';
   };
   const dispatchBadge = w => w.dispatch_ready

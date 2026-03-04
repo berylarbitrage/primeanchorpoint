@@ -1673,8 +1673,8 @@ let _confirmClockTimer = null;
 
 function initGPS() {
   if (!navigator.geolocation) {
-    document.getElementById('gpsIndicator').textContent = '⚠️ 设备不支持GPS定位';
-    enablePunchBtn(true);
+    document.getElementById('gpsIndicator').textContent = '🚫 设备不支持GPS，无法打卡';
+    enablePunchBtn(false);
     return;
   }
   navigator.geolocation.getCurrentPosition(
@@ -1685,8 +1685,8 @@ function initGPS() {
       enablePunchBtn(true);
     },
     err => {
-      document.getElementById('gpsIndicator').innerHTML = '⚠️ 无法获取位置 — 如有地点限制将无法打卡，请开启定位权限';
-      enablePunchBtn(true);
+      document.getElementById('gpsIndicator').innerHTML = '🚫 位置获取失败 — 打卡需要位置权限，请在浏览器设置中允许定位后刷新。';
+      enablePunchBtn(false);
     },
     { enableHighAccuracy: true, timeout: 10000 }
   );
@@ -1739,7 +1739,7 @@ async function loadPunchStatus() {
   if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = '休息中 · 点击"休息结束"继续工作';
+    subEl.textContent = 'On break · Click "Resume Job" to continue';
     selectorWrap.style.display = 'none';
   } else if (s.clocked_in && s.open_entry) {
     const ci = new Date(s.open_entry.clock_in);
@@ -1750,8 +1750,14 @@ async function loadPunchStatus() {
   } else if (!s.has_active_job) {
     statusEl.innerHTML = '<span style="color:var(--orange)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = '当前无有效工作安排';
     selectorWrap.style.display = 'none';
+    if (s.pending_tasks_count > 0) {
+      subEl.innerHTML = `您有 <strong>${s.pending_tasks_count}</strong> 个待接受的工作安排，请前往
+        <a href="#" onclick="showTab('interview');return false;" style="color:var(--sky);font-weight:600">我的任务</a>
+        接受后方可打卡。`;
+    } else {
+      subEl.textContent = '当前无有效工作安排，请联系HR。';
+    }
     enablePunchBtn(false);
     return;
   } else {
@@ -1766,7 +1772,7 @@ async function loadPunchStatus() {
     if (jobs.length === 1)
       selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
   }
-  const gpsReady = _gpsCoords !== null || (document.getElementById('gpsIndicator').textContent.includes('不支持') || document.getElementById('gpsIndicator').textContent.includes('无法'));
+  const gpsReady = _gpsCoords !== null;
   enablePunchBtn(gpsReady);
 }
 
