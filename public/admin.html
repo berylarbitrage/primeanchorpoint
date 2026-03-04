@@ -4280,8 +4280,20 @@ function filterAssignSearch(which) {
   // Clear selected id when user edits text
   document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = '';
 
+  const qWords = q ? q.split(/\s+/).filter(Boolean) : [];
+  const matchInq = i => {
+    if (!q) return true;
+    const name = (i.name||'').toLowerCase();
+    const phone = (i.phone||'');
+    const email = (i.email||'').toLowerCase();
+    // Direct substring match
+    if (name.includes(q) || phone.includes(q) || email.includes(q)) return true;
+    // Word-order-independent name match (e.g. "xuan zhang" matches "Zhang Xuan")
+    if (qWords.length > 1 && qWords.every(w => name.includes(w))) return true;
+    return false;
+  };
   const items = isInq
-    ? _assignInqs.filter(i => !q || (i.name||'').toLowerCase().includes(q) || (i.phone||'').includes(q) || (i.email||'').toLowerCase().includes(q))
+    ? _assignInqs.filter(matchInq)
     : _assignJobs.filter(j => !q || (j.title||'').toLowerCase().includes(q) || (j.location||'').toLowerCase().includes(q));
 
   if (!items.length) { drop.classList.remove('open'); return; }
