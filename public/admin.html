@@ -8029,31 +8029,33 @@ function renderOnboardingTasks(tasks) {
   document.getElementById('onboardingTaskList').innerHTML = tasks.map(t => {
     const s = t.status;
     const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
-    const canWaive = (s === 'pending' || s === 'locked') && !t.required;
+    const canWaive = s !== 'completed' && s !== 'waived';
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
     const isVisible = t.visible_to_worker !== 0;
+    const tk = JSON.stringify(t.key);
+    const tt = JSON.stringify(t.title);
     return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100);${!isVisible?'opacity:.55':''}">
       <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
       <div style="flex:1;min-width:0">
         <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
           <span style="font-weight:700;color:var(--blue);font-size:.9rem">${esc(t.title)}</span>
           <span style="padding:1px 7px;border-radius:20px;font-size:.7rem;font-weight:600;${sBadge[s]||''}">${sLabel[s]||s}</span>
-          ${!t.required?'<span style="font-size:.7rem;color:var(--gray-400)">(可豁免)</span>':''}
+          ${t.required?'<span style="font-size:.7rem;color:#dc2626;font-weight:600">(必须)</span>':'<span style="font-size:.7rem;color:var(--gray-400)">(可豁免)</span>'}
           ${!isVisible?'<span style="font-size:.7rem;color:#dc2626;font-weight:600">（工人不可见）</span>':''}
         </div>
         ${t.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);font-style:italic;margin-top:.15rem">💬 ${esc(t.admin_note)}</div>`:''}
         ${t.action_url?`<div style="font-size:.78rem;margin-top:.15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px">🔗 <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)" title="${esc(t.action_url)}">${esc(t.action_url.length>60?t.action_url.substring(0,60)+'...':t.action_url)}</a></div>`:''}
         ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 工人门户 — 已通知</div>`:''}
         <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
-          ${canComplete?`<button class="btn btn-sm btn-green" onclick="updateOnboardingTask('${t.key}','completed')">✅ 完成</button>`:''}
-          ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="updateOnboardingTask('${t.key}','waived')">⏭️ 豁免</button>`:''}
-          ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="updateOnboardingTask('${t.key}','pending')">↩️ 重置</button>`:''}
+          ${canComplete?`<button class="btn btn-sm btn-green" onclick="confirmOnboardingComplete(${tk},${tt})">✅ 完成</button>`:''}
+          ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="confirmOnboardingWaive(${tk},${tt})">⏭️ Waive</button>`:''}
+          ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${t.key==='persona_verify'
-            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="sendPersonaFromOnboarding()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
             : t.key==='background_check'
-            ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="sendCheckrFromOnboarding()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
+            ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -8078,6 +8080,22 @@ function toggleOnboardingVisibility(key, visible) {
       refreshOnboardingModal();
     }, 'amber');
   }
+}
+
+function confirmOnboardingComplete(key, title) {
+  showConfirmModal(`标记完成：${title}`, '确认将此任务标记为已完成？', '✅ 确认完成', 'btn-green', () => updateOnboardingTask(key, 'completed'), 'green');
+}
+function confirmOnboardingWaive(key, title) {
+  showConfirmModal(`Waive 任务：${title}`, '确认豁免此任务？豁免后该任务视为无需完成，不影响入职进度。', '⏭️ 确认 Waive', 'btn-outline', () => updateOnboardingTask(key, 'waived'), 'amber');
+}
+function confirmOnboardingReset(key, title) {
+  showConfirmModal(`重置任务：${title}`, '确认将此任务重置为"待处理"状态？', '↩️ 确认重置', 'btn-outline', () => updateOnboardingTask(key, 'pending'), 'amber');
+}
+function confirmSendPersona() {
+  showConfirmModal('发送 Persona 身份验证', '确认向该工人发送 Persona 身份验证（驾照 + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
+}
+function confirmSendCheckr() {
+  showConfirmModal('发送 Checkr 背调邀请', '确认向该工人发送 Checkr 背景调查邀请？邀请链接将通过短信和邮件发送。', '🔍 确认发送', 'btn-blue', sendCheckrFromOnboarding, 'blue');
 }
 
 async function updateOnboardingTask(key, status, note, actionUrl) {
@@ -8600,19 +8618,20 @@ async function suspendWorkerAccount(id, doSuspend) {
   showToast(`✅ 账户已${label}`);
 }
 
-async function resendWorkerVerify(id) {
-  const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
-  if (r && r.success) {
-    const msgs = [];
-    if (r.sms_sent) msgs.push('短信已发送 ✅');
-    if (r.email_sent) msgs.push('邮件已发送 ✅');
-    // Only show codes if delivery failed (so admin can tell user manually)
-    if (r.phone_code) msgs.push(`⚠️ 短信发送失败，手机验证码: ${r.phone_code}`);
-    if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
-    if (!msgs.length) msgs.push('未配置短信/邮件发送');
-    showToast('✅ 验证码已重新生成');
-    alert(msgs.join('\n'));
-  }
+function resendWorkerVerify(id) {
+  showConfirmModal('重发验证码', '确认重新向该工人发送手机和邮箱验证码？', '📨 确认发送', 'btn-blue', async () => {
+    const r = await api(`/admin/worker-accounts/${id}/resend-verify`, { method:'POST' });
+    if (r && r.success) {
+      const msgs = [];
+      if (r.sms_sent) msgs.push('短信已发送 ✅');
+      if (r.email_sent) msgs.push('邮件已发送 ✅');
+      if (r.phone_code) msgs.push(`⚠️ 短信发送失败，手机验证码: ${r.phone_code}`);
+      if (r.email_code) msgs.push(`⚠️ 邮件发送失败，邮箱验证码: ${r.email_code}`);
+      if (!msgs.length) msgs.push('未配置短信/邮件发送');
+      showToast('✅ 验证码已重新生成');
+      alert(msgs.join('\n'));
+    }
+  }, 'blue');
 }
 
 // ── Customer: suspend / restore ──
