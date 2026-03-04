@@ -4663,11 +4663,62 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (punch_type === 'break_start') {
     if (!open) return res.status(400).json({ error: '尚未上班打卡，无法开始休息。' });
     if (open.on_break) return res.status(400).json({ error: '您已在休息中，请先打卡休息结束。' });
+
+    // GPS + geo-fence verification (same rules as clock-in)
+    let bsGeoVerified = 0;
+    if (latitude && longitude && open.job_id) {
+      const bsJob = db.prepare(`
+        SELECT js.id AS js_id, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters, js.name AS site_name
+        FROM jobs j LEFT JOIN job_sites js ON j.site_id = js.id
+        WHERE j.id = ?
+      `).get(open.job_id);
+      if (bsJob && bsJob.js_id) {
+        const dist = haversineDistance(latitude, longitude, bsJob.site_lat, bsJob.site_lng);
+        if (dist <= bsJob.radius_meters) {
+          bsGeoVerified = 1;
+        } else {
+          const distKm = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : Math.round(dist) + ' m';
+          return res.status(400).json({ error: `您的位置不在工作地点范围内（距"${bsJob.site_name}"约 ${distKm}，允许范围 ${bsJob.radius_meters}m）。\n请到达工作地点后再暂停打卡。`, geo_blocked: true });
+        }
+      }
+      if (!bsGeoVerified) {
+        const assignSite2 = db.prepare(`
+          SELECT a.work_lat, a.work_lng, a.work_radius
+          FROM assignments a JOIN worker_accounts w ON a.inquiry_id = w.linked_inquiry_id
+          WHERE w.id = ? AND a.job_id = ? AND a.status IN ('assigned','working') AND a.work_lat IS NOT NULL
+          ORDER BY a.assigned_at DESC LIMIT 1
+        `).get(req.workerId, open.job_id);
+        if (assignSite2) {
+          const dist2 = haversineDistance(latitude, longitude, assignSite2.work_lat, assignSite2.work_lng);
+          if (dist2 <= (assignSite2.work_radius || 200)) {
+            bsGeoVerified = 1;
+          } else {
+            const distKm2 = dist2 >= 1000 ? (dist2 / 1000).toFixed(1) + ' km' : Math.round(dist2) + ' m';
+            return res.status(400).json({ error: `您的位置不在工作地点范围内（距指定地址约 ${distKm2}）。\n请到达工作地点后再暂停打卡。`, geo_blocked: true });
+          }
+        }
+      }
+      if (!bsGeoVerified) return res.status(400).json({ error: '该工作暂未配置工作地点，无法验证位置，请联系HR。', no_site: true });
+    } else if (!latitude || !longitude) {
+      return res.status(400).json({ error: '暂停打卡需要开启位置权限，请允许浏览器获取您的位置后重试。', need_gps: true });
+    }
+
+    if (!photo_data) return res.status(400).json({ error: '暂停打卡需要上传照片 / Photo is required for pausing.', photo_required: true });
+
+    // Save pause photo to disk
+    let pausePhotoFilename = null;
+    try {
+      const base64Data = photo_data.replace(/^data:image\/\w+;base64,/, '');
+      const ext = (photo_data.match(/^data:image\/(\w+);base64,/) || [])[1] || 'jpg';
+      pausePhotoFilename = `pause-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      fs.writeFileSync(path.join(punchPhotosDir, pausePhotoFilename), Buffer.from(base64Data, 'base64'));
+    } catch (e) { /* photo save failure is non-fatal */ }
+
     const breaks = JSON.parse(open.break_records || '[]');
-    breaks.push({ start: now, end: null });
+    breaks.push({ start: now, end: null, latitude: latitude || null, longitude: longitude || null, geo_verified: bsGeoVerified, photo_path: pausePhotoFilename });
     db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?')
       .run(JSON.stringify(breaks), open.id);
-    return res.json({ action: 'break_start', break_index: breaks.length - 1 });
+    return res.json({ action: 'break_start', break_index: breaks.length - 1, entry_id: open.id, geo_verified: bsGeoVerified });
   }
 
   // ── Break end ────────────────────────────────────────────────────
