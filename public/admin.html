@@ -1718,16 +1718,20 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="form-section" style="margin:0;padding:0;border:0">
     <h4 style="margin-bottom:.5rem">工作地点 Work Location</h4>
-    <div class="field"><label>街道地址 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="jStreet" placeholder="e.g. 123 Main St"></div>
+    <div class="field"><label>街道地址 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="jStreet" placeholder="e.g. 123 Main St" oninput="document.getElementById('jAddrStatus').textContent=''"></div>
     <div class="field"><label>单元 / 楼层 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="jStreet2" placeholder="e.g. Suite 200"></div>
     <div class="field-row3">
-      <div class="field"><label>城市 City *</label><input id="jCity" placeholder="Chicago"></div>
+      <div class="field"><label>城市 City *</label><input id="jCity" placeholder="Chicago" oninput="document.getElementById('jAddrStatus').textContent=''"></div>
       <div class="field"><label>州 State *</label>
         <select id="jState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
           <option value="">-- 州 --</option>
         </select>
       </div>
-      <div class="field"><label>邮编 ZIP</label><input id="jZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'')"></div>
+      <div class="field"><label>邮编 ZIP</label><input id="jZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');document.getElementById('jAddrStatus').textContent=''"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:.75rem;margin-top:.35rem">
+      <button type="button" class="btn btn-sm btn-outline" onclick="verifyJobAddr()">🔍 验证地址 Verify</button>
+      <span id="jAddrStatus" style="font-size:.8rem"></span>
     </div>
   </div>
 
@@ -5138,6 +5142,34 @@ function _setAddrStatus(el, verified) {
 
 function clearEmpAddrStatus() {
   _setAddrStatus(document.getElementById('eAddrStatus'), null);
+}
+
+async function verifyJobAddr() {
+  const street  = document.getElementById('jStreet').value.trim();
+  const street2 = document.getElementById('jStreet2').value.trim();
+  const city    = document.getElementById('jCity').value.trim();
+  const state   = document.getElementById('jState').value;
+  const zip     = document.getElementById('jZip').value.trim();
+  if (!street && !city && !zip) return;
+  const statusEl = document.getElementById('jAddrStatus');
+  statusEl.textContent = '验证中…';
+  statusEl.style.color = 'var(--gray-400)';
+  try {
+    const result = await validateAddress({ street, street2, city, state, zip });
+    if (result.skipped) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; return; }
+    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
+    if (result.standardized) {
+      const s = result.standardized;
+      document.getElementById('jStreet').value = s.street;
+      document.getElementById('jStreet2').value = s.street2;
+      document.getElementById('jCity').value = s.city;
+      fillStateSelect(document.getElementById('jState'), s.state);
+      document.getElementById('jZip').value = s.zip;
+    }
+    _setAddrStatus(statusEl, result.verified === true);
+  } catch(e) {
+    _setAddrStatus(statusEl, false);
+  }
 }
 
 async function _doVerifyEmpAddr(silent) {
