@@ -417,6 +417,7 @@ tr:last-child td{border-bottom:none}
       <a data-tab="payments" onclick="showTab('payments')">打款记录</a>
       <a data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none">合规文件</a>
       <a data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none">📋 待办事项</a>
+      <a data-tab="referral" onclick="showTab('referral')">🎁 推荐奖励</a>
       <a data-tab="profile" onclick="showTab('profile')">我的信息</a>
     </nav>
     <div class="sidebar-bottom">
@@ -850,6 +851,48 @@ tr:last-child td{border-bottom:none}
     </div>
 
     <!-- Profile -->
+    <!-- Referral Tab -->
+    <div id="tabReferral" style="display:none">
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:.5rem">🎁 推荐奖励 / Referral Bonus</h2>
+        <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">把您的专属链接分享给朋友，朋友成功注册并完成规定工时后，您可获得奖励！<br>Share your link — earn a bonus for each friend who registers and works the required hours.</p>
+
+        <!-- Referral link card -->
+        <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:1rem;margin-bottom:1.25rem">
+          <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.4rem">您的专属邀请链接 / Your referral link</div>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <input id="referralLinkInput" readonly style="flex:1;padding:.5rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.8rem;background:#fff;color:var(--gray-700)">
+            <button onclick="copyReferralLink()" style="background:var(--sky);color:#fff;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap">复制 / Copy</button>
+          </div>
+        </div>
+
+        <!-- Bonus summary -->
+        <div id="referralSummary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-bottom:1.25rem">
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:.8rem;text-align:center">
+            <div style="font-size:1.4rem;font-weight:800;color:#16a34a" id="refCountEl">—</div>
+            <div style="font-size:.72rem;color:var(--gray-500)">成功邀请 / Referred</div>
+          </div>
+          <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:.8rem;text-align:center">
+            <div style="font-size:1.4rem;font-weight:800;color:#c2410c" id="refPendingEl">—</div>
+            <div style="font-size:.72rem;color:var(--gray-500)">待达标 / Pending</div>
+          </div>
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:.8rem;text-align:center">
+            <div style="font-size:1.4rem;font-weight:800;color:#1d4ed8" id="refBonusEl">—</div>
+            <div style="font-size:.72rem;color:var(--gray-500)">已获奖励 / Earned</div>
+          </div>
+        </div>
+
+        <!-- Rule hint -->
+        <div id="referralRuleHint" style="font-size:.8rem;color:var(--gray-500);margin-bottom:1rem"></div>
+      </div>
+
+      <!-- Referred workers table -->
+      <div class="card">
+        <h2 style="margin-bottom:.75rem">已邀请人员 / People You Referred</h2>
+        <div id="referralList"><p style="color:var(--gray-400);font-size:.88rem">加载中…</p></div>
+      </div>
+    </div>
+
     <div id="tabProfile" style="display:none">
       <!-- Basic info -->
       <div class="card" style="margin-bottom:1rem">
@@ -931,15 +974,15 @@ tr:last-child td{border-bottom:none}
 const PORTAL_I18N = {
   zh: {
     subtitle: '工人门户', logout: '退出',
-    tabs: { jobs:'职位浏览', interview:'我的安排', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'📋 待办事项', profile:'我的信息' }
+    tabs: { jobs:'职位浏览', interview:'我的安排', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'📋 待办事项', referral:'🎁 推荐奖励', profile:'我的信息' }
   },
   en: {
     subtitle: 'Worker Portal', logout: 'Logout',
-    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', compliance:'Compliance', todos:'📋 To-Do', profile:'Profile' }
+    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', compliance:'Compliance', todos:'📋 To-Do', referral:'🎁 Referrals', profile:'Profile' }
   },
   es: {
     subtitle: 'Portal del Trabajador', logout: 'Salir',
-    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', compliance:'Documentos', todos:'📋 Tareas', profile:'Perfil' }
+    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', compliance:'Documentos', todos:'📋 Tareas', referral:'🎁 Referidos', profile:'Perfil' }
   }
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
@@ -1182,11 +1225,11 @@ function closeSidebar() {
   document.getElementById('sidebarOverlay').classList.remove('show');
 }
 function showTab(tab) {
-  ['jobs','interview','applications','timeclock','payments','compliance','todos','profile'].forEach(t => {
+  ['jobs','interview','applications','timeclock','payments','compliance','todos','referral','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  const _tabLabels={jobs:'职位浏览',interview:'我的安排',applications:'我的申请',timeclock:'打卡记录',payments:'打款记录',compliance:'合规文件',todos:'待办事项',profile:'我的信息'};
+  const _tabLabels={jobs:'职位浏览',interview:'我的安排',applications:'我的申请',timeclock:'打卡记录',payments:'打款记录',compliance:'合规文件',todos:'待办事项',referral:'推荐奖励',profile:'我的信息'};
   const _tEl=document.getElementById('mobilPageTitle');if(_tEl)_tEl.textContent=_tabLabels[tab]||'';
   closeSidebar();
   if (tab === 'applications') loadApplications();
@@ -1196,6 +1239,7 @@ function showTab(tab) {
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
   else if (tab === 'todos') loadOnboarding();
+  else if (tab === 'referral') loadReferrals();
   else loadJobs();
 }
 
@@ -1859,6 +1903,68 @@ async function loadPayments() {
 
 const WORK_STATUS_LABELS = { citizen:'🇺🇸 美国公民', green_card:'🟢 绿卡', ead:'📄 EAD工卡', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'其他' };
 const DOC_STATUS_ZH = { pending:'审核中', approved:'已通过', rejected:'未通过' };
+
+// ─── Referral ─────────────────────────────────────────────────────
+let _referralData = null;
+async function loadReferrals() {
+  const data = await wApi('/referrals');
+  if (!data) return;
+  _referralData = data;
+
+  // Referral link
+  const linkInput = document.getElementById('referralLinkInput');
+  const base = window.location.origin + '/register';
+  linkInput.value = data.worker_code ? `${base}?ref=${data.worker_code}` : '（账号尚未激活，无法生成链接）';
+
+  // Summary cards
+  document.getElementById('refCountEl').textContent = data.qualified_count;
+  document.getElementById('refPendingEl').textContent = data.pending_count;
+  document.getElementById('refBonusEl').textContent = '$' + (data.total_earned || 0).toFixed(0);
+
+  // Rule hint
+  document.getElementById('referralRuleHint').textContent =
+    `规则：被推荐人工作满 ${data.min_hours_to_qualify} 小时后，您可获得 $${data.bonus_per_referral} 奖励。` +
+    (data.total_pending ? ` 当前有 ${data.pending_count} 人待达标，预计奖励 $${data.total_pending.toFixed(0)}。` : '');
+
+  // Table
+  const el = document.getElementById('referralList');
+  if (!data.referred || !data.referred.length) {
+    el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">暂无邀请记录，快去分享链接吧！</p>';
+    return;
+  }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse">
+    <thead><tr style="font-size:.78rem;color:var(--gray-500);border-bottom:1px solid var(--gray-200)">
+      <th style="text-align:left;padding:.4rem .5rem">姓名</th>
+      <th style="text-align:left;padding:.4rem .5rem">注册时间</th>
+      <th style="text-align:right;padding:.4rem .5rem">工时</th>
+      <th style="text-align:right;padding:.4rem .5rem">状态</th>
+    </tr></thead>
+    <tbody>${data.referred.map(r => {
+      const hrs = (r.total_hours || 0).toFixed(1);
+      const qualified = r.total_hours >= data.min_hours_to_qualify;
+      const badge = qualified
+        ? '<span style="color:#16a34a;font-weight:600">✅ 达标</span>'
+        : hrs > 0
+          ? '<span style="color:var(--orange)">⏳ 待达标</span>'
+          : '<span style="color:var(--gray-400)">未工作</span>';
+      const regDate = r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '—';
+      const name = esc(r.name || [r.first_name, r.last_name].filter(Boolean).join(' ') || '—');
+      return `<tr style="border-bottom:1px solid var(--gray-100);font-size:.85rem">
+        <td style="padding:.5rem">${name}</td>
+        <td style="padding:.5rem;color:var(--gray-500)">${regDate}</td>
+        <td style="padding:.5rem;text-align:right">${hrs}h</td>
+        <td style="padding:.5rem;text-align:right">${badge}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+function copyReferralLink() {
+  const inp = document.getElementById('referralLinkInput');
+  if (!inp.value || inp.value.includes('尚未')) return;
+  navigator.clipboard.writeText(inp.value).then(() => showToast('✅ 链接已复制！', 'success')).catch(() => {
+    inp.select(); document.execCommand('copy'); showToast('✅ 链接已复制！', 'success');
+  });
+}
 
 async function loadProfile() {
   const [me, docs, idStatus] = await Promise.all([wApi('/me'), wApi('/compliance'), wApi('/identity/status')]);

@@ -938,6 +938,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
 )`);
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN dispatch_ready INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN referred_by INTEGER DEFAULT NULL"); } catch {}
+db.exec(`CREATE TABLE IF NOT EXISTS referral_bonus_config (
+  id INTEGER PRIMARY KEY CHECK (id=1),
+  bonus_per_referral REAL DEFAULT 50,
+  min_hours_to_qualify REAL DEFAULT 8,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM referral_bonus_config WHERE id=1').get())
+  db.prepare('INSERT INTO referral_bonus_config (id) VALUES (1)').run();
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
@@ -1709,15 +1718,26 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
 
-  // Enrich each worker with interview, compliance, and skill data
+  // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
   const getCompDocs = db.prepare(`SELECT doc_type, status FROM worker_compliance_docs WHERE worker_account_id=?`);
   const getSkills = db.prepare(`SELECT skill_name, rating FROM worker_skills WHERE worker_account_id=?`);
+  const getReferralCount = db.prepare(`SELECT COUNT(*) as cnt FROM worker_accounts WHERE referred_by=?`);
+  const refConfig = db.prepare('SELECT bonus_per_referral, min_hours_to_qualify FROM referral_bonus_config WHERE id=1').get()
+    || { bonus_per_referral: 50, min_hours_to_qualify: 8 };
+  const getQualifiedReferrals = db.prepare(`
+    SELECT COUNT(*) as cnt FROM worker_accounts w
+    LEFT JOIN employees e ON w.employee_id=e.id
+    WHERE w.referred_by=?
+      AND (SELECT COALESCE(SUM(t.total_hours),0) FROM time_entries t WHERE t.employee_id=e.id AND t.status='closed') >= ?
+  `);
 
   const enriched = workers.map(w => {
     const interview = getInterview.get(w.id);
     const docs = getCompDocs.all(w.id);
     const skills = getSkills.all(w.id);
+    const refCount = getReferralCount.get(w.id);
+    const qualCount = getQualifiedReferrals.get(w.id, refConfig.min_hours_to_qualify);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -1726,7 +1746,10 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       ...w,
       interview_status: interview ? interview.status : null,
       compliance: complianceMap,
-      skills: skills || []
+      skills: skills || [],
+      referral_count: refCount?.cnt || 0,
+      qualified_referrals: qualCount?.cnt || 0,
+      referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral
     };
   });
 
@@ -4256,6 +4279,50 @@ app.get('/api/admin/punch-photo/:filename', requireAdmin, (req, res) => {
   res.sendFile(fp);
 });
 
+// ─── Referral endpoints ───────────────────────────────────────────
+app.get('/api/worker/referrals', requireWorker, (req, res) => {
+  const me = db.prepare('SELECT worker_code FROM worker_accounts WHERE id=?').get(req.workerId);
+  const config = db.prepare('SELECT bonus_per_referral, min_hours_to_qualify FROM referral_bonus_config WHERE id=1').get()
+    || { bonus_per_referral: 50, min_hours_to_qualify: 8 };
+
+  // All workers referred by me
+  const referred = db.prepare(`
+    SELECT w.id, w.first_name, w.last_name, w.name, w.created_at,
+           COALESCE(SUM(t.total_hours), 0) AS total_hours
+    FROM worker_accounts w
+    LEFT JOIN employees e ON w.employee_id = e.id
+    LEFT JOIN time_entries t ON t.employee_id = e.id AND t.status = 'closed'
+    WHERE w.referred_by = ?
+    GROUP BY w.id
+    ORDER BY w.created_at DESC
+  `).all(req.workerId);
+
+  const qualified = referred.filter(r => r.total_hours >= config.min_hours_to_qualify);
+  const pendingBonus = referred.filter(r => r.total_hours > 0 && r.total_hours < config.min_hours_to_qualify);
+
+  res.json({
+    worker_code: me?.worker_code || null,
+    referred,
+    qualified_count: qualified.length,
+    pending_count: pendingBonus.length,
+    bonus_per_referral: config.bonus_per_referral,
+    min_hours_to_qualify: config.min_hours_to_qualify,
+    total_earned: qualified.length * config.bonus_per_referral,
+    total_pending: pendingBonus.length * config.bonus_per_referral
+  });
+});
+
+// Admin: get/update referral bonus config
+app.get('/api/admin/referral-config', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM referral_bonus_config WHERE id=1').get());
+});
+app.put('/api/admin/referral-config', requireAdmin, requireRole('admin'), (req, res) => {
+  const { bonus_per_referral, min_hours_to_qualify } = req.body;
+  db.prepare('UPDATE referral_bonus_config SET bonus_per_referral=?, min_hours_to_qualify=?, updated_at=CURRENT_TIMESTAMP WHERE id=1')
+    .run(bonus_per_referral, min_hours_to_qualify);
+  res.json({ success: true });
+});
+
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
@@ -5102,7 +5169,7 @@ app.get('/api/register/check', (req, res) => {
 
 app.post('/api/register/worker', async (req, res) => {
   try {
-  const { first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, password, city, state } = req.body;
+  const { first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, password, city, state, ref_code } = req.body;
   const nameParts = [first_name, middle_name, last_name].filter(Boolean);
   if (!first_name || !last_name || !phone || !email || !password)
     return res.status(400).json({ error: '请填写名字、姓氏、手机号、邮箱和密码 / First name, last name, phone, email, and password are required' });
@@ -5151,9 +5218,15 @@ app.post('/api/register/worker', async (req, res) => {
   const canEmail = !!(_sgKey || emailTransporter);
   const needsVerification = canSMS || canEmail;
 
-  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active, source)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, 'online');
+  // Resolve referrer by worker_code
+  let referredBy = null;
+  if (ref_code) {
+    const referrer = db.prepare('SELECT id FROM worker_accounts WHERE worker_code=? AND active=1').get(ref_code);
+    if (referrer) referredBy = referrer.id;
+  }
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active, source, referred_by)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, 'online', referredBy);
   const accountId = r.lastInsertRowid;
 
   if (!needsVerification) {
