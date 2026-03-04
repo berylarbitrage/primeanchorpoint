@@ -594,10 +594,15 @@ tr:last-child td{border-bottom:none}
       </div>
       <!-- Punch confirm modal -->
       <div id="punchConfirmModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;align-items:center;justify-content:center">
-        <div style="background:#fff;border-radius:16px;padding:1.75rem;width:90%;max-width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+        <div style="background:#fff;border-radius:16px;padding:1.75rem;width:92%;max-width:360px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2)">
           <div style="font-size:1.05rem;font-weight:700;color:var(--blue);margin-bottom:.35rem">确认打卡 / Confirm Punch</div>
           <div style="font-size:.9rem;color:var(--gray-500);margin-bottom:.5rem" id="punchConfirmTypeLabel"></div>
-          <div style="font-size:1.6rem;font-weight:800;color:var(--blue);letter-spacing:.05em;margin-bottom:1.25rem" id="punchConfirmClock"></div>
+          <div style="font-size:1.6rem;font-weight:800;color:var(--blue);letter-spacing:.05em;margin-bottom:.75rem" id="punchConfirmClock"></div>
+          <!-- Mini location map -->
+          <div id="punchConfirmMapWrap" style="display:none;margin-bottom:.75rem;border-radius:10px;overflow:hidden;border:1px solid var(--gray-200)">
+            <div id="punchConfirmMap" style="height:200px;width:100%"></div>
+            <div id="punchConfirmMapLabel" style="font-size:.75rem;color:var(--gray-500);padding:.3rem .5rem;background:#f8fafc;text-align:left"></div>
+          </div>
           <div style="display:flex;gap:.6rem">
             <button onclick="closePunchConfirm()" style="flex:1;padding:.65rem;border:1px solid var(--gray-200);border-radius:8px;background:var(--gray-100);font-size:.9rem;font-weight:600;cursor:pointer">取消</button>
             <button id="btnExecutePunch" onclick="executePunch()" style="flex:2;padding:.65rem;border:none;border-radius:8px;background:var(--green);color:#fff;font-size:.9rem;font-weight:700;cursor:pointer">✅ 确认打卡</button>
@@ -2060,6 +2065,87 @@ async function loadPunchStatus() {
 }
 
 let _pendingPunchPhoto = null;
+let _confirmMap = null;
+let _confirmMapUserMarker = null;
+let _confirmMapFenceCircle = null;
+let _confirmMapFenceMarker = null;
+
+function showPunchConfirmMap() {
+  const wrap = document.getElementById('punchConfirmMapWrap');
+  const label = document.getElementById('punchConfirmMapLabel');
+  if (!_gpsCoords) { wrap.style.display = 'none'; return; }
+
+  wrap.style.display = '';
+
+  // Get selected job's geofence info
+  let fenceLat = null, fenceLng = null, fenceRadius = 200, fenceName = '';
+  if (_punchStatus && _pendingPunchType === 'in') {
+    const sel = document.getElementById('jobSelector');
+    const jobId = sel ? parseInt(sel.value) : null;
+    const jobs = _punchStatus.active_jobs || [];
+    const job = jobs.find(j => j.job_id === jobId) || jobs[0];
+    if (job && job.site_lat && job.site_lng) {
+      fenceLat = job.site_lat;
+      fenceLng = job.site_lng;
+      fenceRadius = job.radius_meters || 200;
+      fenceName = job.site_name || job.title || '';
+    }
+  }
+
+  const userLat = _gpsCoords.latitude;
+  const userLng = _gpsCoords.longitude;
+
+  // Init map once; destroy and recreate to avoid stale container
+  if (_confirmMap) { _confirmMap.remove(); _confirmMap = null; _confirmMapUserMarker = null; _confirmMapFenceCircle = null; _confirmMapFenceMarker = null; }
+
+  _confirmMap = L.map('punchConfirmMap', { zoomControl: true, scrollWheelZoom: false, attributionControl: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_confirmMap);
+
+  // User position – blue pulsing icon
+  const userIcon = L.divIcon({
+    html: '<div style="width:14px;height:14px;background:#3b82f6;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 3px rgba(59,130,246,.35)"></div>',
+    iconSize: [14, 14], iconAnchor: [7, 7], className: ''
+  });
+  _confirmMapUserMarker = L.marker([userLat, userLng], { icon: userIcon }).addTo(_confirmMap);
+  _confirmMapUserMarker.bindPopup('📍 您的位置').openPopup();
+
+  if (fenceLat && fenceLng) {
+    // Geofence circle
+    _confirmMapFenceCircle = L.circle([fenceLat, fenceLng], {
+      radius: fenceRadius, color: '#10b981', fillColor: '#10b981', fillOpacity: 0.12, weight: 2
+    }).addTo(_confirmMap);
+
+    // Site center marker
+    const siteIcon = L.divIcon({
+      html: '<div style="width:10px;height:10px;background:#10b981;border:2px solid #fff;border-radius:50%"></div>',
+      iconSize: [10, 10], iconAnchor: [5, 5], className: ''
+    });
+    _confirmMapFenceMarker = L.marker([fenceLat, fenceLng], { icon: siteIcon }).addTo(_confirmMap);
+    if (fenceName) _confirmMapFenceMarker.bindPopup('🏭 ' + fenceName);
+
+    // Fit both user and geofence in view
+    const bounds = L.latLngBounds([[userLat, userLng], [fenceLat, fenceLng]]);
+    _confirmMap.fitBounds(bounds.pad(0.4));
+
+    // Status label: distance from fence center
+    const R = 6371000;
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(fenceLat - userLat), dLon = toRad(fenceLng - userLng);
+    const a = Math.sin(dLat/2)**2 + Math.cos(toRad(userLat)) * Math.cos(toRad(fenceLat)) * Math.sin(dLon/2)**2;
+    const dist = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m';
+    const inside = dist <= fenceRadius;
+    label.innerHTML = inside
+      ? `<span style="color:#10b981;font-weight:600">✅ 在围栏范围内</span>，距 ${fenceName || '工作地点'} ${distStr}`
+      : `<span style="color:#ef4444;font-weight:600">⚠ 不在围栏范围内</span>，距 ${fenceName || '工作地点'} ${distStr}（允许 ${fenceRadius}m）`;
+  } else {
+    _confirmMap.setView([userLat, userLng], 16);
+    label.textContent = '📍 当前位置（工作地点未配置围栏）';
+  }
+
+  // Ensure map renders correctly after display
+  setTimeout(() => { if (_confirmMap) _confirmMap.invalidateSize(); }, 80);
+}
 
 function startPunchFlow(type) {
   _pendingPunchType = type;
@@ -2075,11 +2161,13 @@ function startPunchFlow(type) {
   tick();
   _confirmClockTimer = setInterval(tick, 1000);
   document.getElementById('punchConfirmModal').style.display = 'flex';
+  showPunchConfirmMap();
 }
 function closePunchConfirm() {
   if (_confirmClockTimer) { clearInterval(_confirmClockTimer); _confirmClockTimer = null; }
   document.getElementById('punchConfirmModal').style.display = 'none';
   _pendingPunchType = null;
+  if (_confirmMap) { _confirmMap.remove(); _confirmMap = null; }
 }
 function executePunch() {
   const type = _pendingPunchType;
