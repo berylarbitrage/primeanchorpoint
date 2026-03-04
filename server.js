@@ -4410,9 +4410,9 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
         SELECT a.work_lat, a.work_lng, a.work_radius, a.work_address
         FROM assignments a
         JOIN worker_accounts w ON a.inquiry_id = w.linked_inquiry_id
-        WHERE w.id = ? AND a.status IN ('assigned','working') AND a.work_lat IS NOT NULL
+        WHERE w.id = ? AND a.job_id = ? AND a.status IN ('assigned','working') AND a.work_lat IS NOT NULL
         ORDER BY a.assigned_at DESC LIMIT 1
-      `).get(req.workerId);
+      `).get(req.workerId, activeJob.job_id);
       if (assignSite) {
         const dist2 = haversineDistance(latitude, longitude, assignSite.work_lat, assignSite.work_lng);
         if (dist2 <= (assignSite.work_radius || 200)) {
@@ -4430,8 +4430,16 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   if (!geoVerified) return res.status(400).json({ error: '该工作暂未配置工作地点，无法验证位置，请联系HR。/ Work site not configured for this job, please contact HR.', no_site: true });
 
-  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0)")
-    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id);
+  if (!photo_data) return res.status(400).json({ error: '上班打卡需要上传照片 / Photo is required for clock-in.', photo_required: true });
+
+  const doClockIn = db.transaction(() => {
+    const existingOpen = db.prepare("SELECT id FROM time_entries WHERE employee_id=? AND status='open' LIMIT 1").get(req.workerEmployeeId);
+    if (existingOpen) return null;
+    return db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
+      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null);
+  });
+  const r = doClockIn();
+  if (!r) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
   res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
     site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
 });

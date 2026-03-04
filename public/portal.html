@@ -1870,6 +1870,14 @@ async function doPunch(type, photo) {
   if (type === 'in') {
     const sel = document.getElementById('jobSelector');
     body.job_id = sel ? parseInt(sel.value) || null : null;
+    if (photo) {
+      body.photo_data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(photo);
+      });
+    }
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { enablePunchBtn(true); cancelPunchPhoto(); await customAlert('打卡失败，请重新登录后重试。\nFailed to clock in, please re-login.', '打卡失败', '❌'); return; }
