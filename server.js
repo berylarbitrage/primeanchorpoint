@@ -658,6 +658,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS shift_confirmations (
   responded_at DATETIME DEFAULT NULL,
   UNIQUE(assignment_id, date)
 )`);
+try { db.exec(`ALTER TABLE shift_confirmations ADD COLUMN shift_start TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE shift_confirmations ADD COLUMN shift_end TEXT DEFAULT ''`); } catch {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1178,48 +1180,95 @@ setTimeout(() => runBackup('启动备份'), 2000);
 // Periodic backup
 setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
 
-// ─── Daily shift confirmation notifications ───────────────────────
-async function sendDailyShiftConfirmations() {
-  const today = new Date().toISOString().slice(0, 10);
+// ─── Weekly shift confirmation generation ─────────────────────────
+// Runs daily at 7 AM: creates shift_confirmation records for all
+// remaining days of the current week based on each assignment's
+// work_schedule JSON. Skips terminated / resigned / cancelled.
+const _WEEK_DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
+
+async function generateWeeklyShiftConfirmations() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const todayStr = now.toISOString().slice(0, 10);
+
+  // Build Mon–Sun dates for the current week, keeping only >= today
+  const dow = now.getDay(); // 0=Sun
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+  const weekDates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const ds = d.toISOString().slice(0, 10);
+    if (ds >= todayStr) weekDates.push({ date: ds, dayKey: _WEEK_DAY_KEYS[d.getDay()] });
+  }
+  if (!weekDates.length) return;
+
+  // Active assignments only (not terminated / resigned / cancelled)
   const assignments = db.prepare(`
-    SELECT a.id, a.inquiry_id, j.title,
-           w.phone, w.first_name, w.name as wname
+    SELECT a.id, a.work_schedule,
+           j.title,
+           w.id as worker_id, w.phone, w.first_name, w.name as wname
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
     LEFT JOIN inquiries i ON a.inquiry_id = i.id
     LEFT JOIN worker_accounts w ON w.linked_inquiry_id = i.id
-    WHERE a.status != 'cancelled'
-      AND a.worker_response = 'accepted'
-      AND w.phone IS NOT NULL AND w.phone != ''
+    WHERE a.status NOT IN ('terminated','resigned','cancelled')
+      AND w.id IS NOT NULL
   `).all();
 
-  let sent = 0;
+  // Track workers with newly created shifts (for one-time weekly SMS)
+  const newByWorker = {};
   for (const a of assignments) {
-    db.prepare('INSERT OR IGNORE INTO shift_confirmations (assignment_id, date, status) VALUES (?,?,?)').run(a.id, today, 'pending');
-    const sc = db.prepare('SELECT id, notified_at FROM shift_confirmations WHERE assignment_id=? AND date=?').get(a.id, today);
-    if (sc && !sc.notified_at) {
-      const name = a.first_name || a.wname || '';
-      const jobTitle = a.title || '班次';
-      await sendSMS(a.phone, `[Prime Anchorpoint] 您好${name ? ' ' + name : ''}，今天（${today}）${jobTitle}的班次是否确认出勤？请登录 Portal 确认。`).catch(() => {});
-      db.prepare('UPDATE shift_confirmations SET notified_at=CURRENT_TIMESTAMP WHERE id=?').run(sc.id);
-      sent++;
+    let sched = {};
+    try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+    const workStart = sched.workStart || null;
+    const workEnd = sched.workEnd || null;
+    const untilFurther = !!sched.untilFurther;
+    const days = sched.days || {};
+
+    for (const { date, dayKey } of weekDates) {
+      if (workStart && date < workStart) continue;
+      if (!untilFurther && workEnd && date > workEnd) continue;
+      const dayInfo = days[dayKey];
+      if (!dayInfo || dayInfo.rest) continue;
+
+      const r = db.prepare(
+        `INSERT OR IGNORE INTO shift_confirmations (assignment_id, date, status, shift_start, shift_end) VALUES (?,?,?,?,?)`
+      ).run(a.id, date, 'pending', dayInfo.start || '', dayInfo.end || '');
+      if (r.changes > 0) {
+        if (!newByWorker[a.worker_id]) {
+          newByWorker[a.worker_id] = { phone: a.phone, name: a.first_name || a.wname || '', count: 0 };
+        }
+        newByWorker[a.worker_id].count++;
+      }
     }
   }
-  console.log(`[ShiftConfirm] ${today}: sent ${sent} notifications`);
+
+  // Send one summary SMS per worker who has new shifts
+  let smsCount = 0;
+  for (const info of Object.values(newByWorker)) {
+    if (!info.phone) continue;
+    const greeting = info.name ? ` ${info.name}` : '';
+    await sendSMS(info.phone,
+      `[Prime Anchorpoint] 您好${greeting}，本周有 ${info.count} 个班次待确认，请登录 Portal 查看并确认出勤。`
+    ).catch(() => {});
+    smsCount++;
+  }
+  console.log(`[WeeklyShifts] ${todayStr}: ${Object.keys(newByWorker).length} workers with new shifts, ${smsCount} SMS sent`);
 }
 
-function scheduleDailyShiftConfirmations() {
+function scheduleWeeklyShiftGeneration() {
   const now = new Date();
   const next7am = new Date(now);
   next7am.setHours(7, 0, 0, 0);
   if (next7am <= now) next7am.setDate(next7am.getDate() + 1);
-  const delay = next7am - now;
   setTimeout(() => {
-    sendDailyShiftConfirmations();
-    setInterval(sendDailyShiftConfirmations, 24 * 60 * 60 * 1000);
-  }, delay);
+    generateWeeklyShiftConfirmations();
+    setInterval(generateWeeklyShiftConfirmations, 24 * 60 * 60 * 1000);
+  }, next7am - now);
 }
-scheduleDailyShiftConfirmations();
+scheduleWeeklyShiftGeneration();
 
 // ─── Middleware ───
 app.use(express.json());
@@ -4615,17 +4664,24 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
 app.get('/api/worker/shift-confirmations', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!wa || !wa.linked_inquiry_id) return res.json([]);
+  // Return all shifts for the current week (today → Sunday)
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() + (7 - today.getDay()) % 7);
+  const sundayStr = sunday.toISOString().slice(0, 10);
   const confirmations = db.prepare(`
     SELECT sc.id, sc.date, sc.status, sc.notified_at, sc.responded_at,
+           sc.shift_start, sc.shift_end,
            a.id as assignment_id, j.title, j.company_name,
-           j.work_start, j.work_end, a.work_address, a.pay_rate, a.pay_type
+           a.work_address, a.pay_rate, a.pay_type
     FROM shift_confirmations sc
     JOIN assignments a ON sc.assignment_id = a.id
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ?
-    ORDER BY sc.date DESC, sc.id DESC
-    LIMIT 30
-  `).all(wa.linked_inquiry_id);
+      AND sc.date >= ? AND sc.date <= ?
+    ORDER BY sc.date ASC, sc.id ASC
+  `).all(wa.linked_inquiry_id, todayStr, sundayStr);
   res.json(confirmations);
 });
 
