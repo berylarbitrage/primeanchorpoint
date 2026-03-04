@@ -879,9 +879,26 @@ tr:last-child td{border-bottom:none}
         <!-- Referral link card -->
         <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:1rem;margin-bottom:1.25rem">
           <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.4rem">您的专属邀请链接 / Your referral link</div>
-          <div style="display:flex;gap:.5rem;align-items:center">
+          <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:1rem">
             <input id="referralLinkInput" readonly style="flex:1;padding:.5rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.8rem;background:#fff;color:var(--gray-700)">
             <button onclick="copyReferralLink()" style="background:var(--sky);color:#fff;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap">复制 / Copy</button>
+          </div>
+
+          <!-- Share buttons -->
+          <div style="margin-bottom:1rem">
+            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem">分享给朋友 / Share with friends</div>
+            <div style="display:flex;flex-wrap:wrap;gap:.45rem">
+              <button id="refNativeShareBtn" onclick="shareReferral('native')" style="display:none;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#0F2B5B;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer">📤 分享</button>
+              <button onclick="shareReferral('sms')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#22c55e;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer">💬 短信 SMS</button>
+              <button onclick="shareReferral('whatsapp')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#25D366;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.557 4.126 1.527 5.858L0 24l6.335-1.501A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.885 0-3.64-.52-5.144-1.422l-.366-.217-3.762.891.948-3.668-.239-.378A9.96 9.96 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg> WhatsApp</button>
+              <button onclick="shareReferral('facebook')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#1877F2;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Facebook</button>
+            </div>
+          </div>
+
+          <!-- QR Code -->
+          <div style="text-align:center">
+            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem">扫码注册 / Scan to Register</div>
+            <div id="referralQR" style="display:inline-block;background:#fff;padding:10px;border:1px solid var(--gray-200);border-radius:10px;min-width:120px;min-height:120px"></div>
           </div>
         </div>
 
@@ -2000,7 +2017,15 @@ async function loadReferrals() {
   // Referral link
   const linkInput = document.getElementById('referralLinkInput');
   const base = window.location.origin + '/register';
-  linkInput.value = data.worker_code ? `${base}?ref=${data.worker_code}` : '（账号尚未激活，无法生成链接）';
+  const refUrl = data.worker_code ? `${base}?ref=${data.worker_code}` : '';
+  linkInput.value = refUrl || '（账号尚未激活，无法生成链接）';
+
+  // Show native share button if supported
+  const nativeBtn = document.getElementById('refNativeShareBtn');
+  if (nativeBtn && navigator.share) nativeBtn.style.display = 'inline-flex';
+
+  // Generate QR code
+  if (refUrl) _generateReferralQR(refUrl);
 
   // Summary cards
   document.getElementById('refCountEl').textContent = (data.referred || []).length;
@@ -2044,6 +2069,42 @@ async function loadReferrals() {
     }).join('')}</tbody>
   </table>`;
 }
+function _generateReferralQR(url) {
+  const qrDiv = document.getElementById('referralQR');
+  if (!qrDiv) return;
+  qrDiv.innerHTML = '';
+  const render = () => {
+    const container = document.createElement('div');
+    qrDiv.appendChild(container);
+    try {
+      new QRCode(container, { text: url, width: 160, height: 160, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+    } catch(e) {
+      qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+    }
+  };
+  if (typeof QRCode !== 'undefined') { render(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+  s.onload = render;
+  s.onerror = () => {
+    qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+  };
+  document.head.appendChild(s);
+}
+
+function shareReferral(platform) {
+  const link = document.getElementById('referralLinkInput').value;
+  if (!link || link.includes('尚未')) { showToast('账号未激活，暂无邀请链接', 'error'); return; }
+  const text = `我在Prime Anchorpoint找到工作了！扫码或点击链接注册，一起来工作吧 👇\n${link}`;
+  if (platform === 'native') {
+    navigator.share({ title: 'Prime Anchorpoint 招工', text, url: link }).catch(() => {});
+    return;
+  }
+  if (platform === 'sms') { window.open(`sms:?&body=${encodeURIComponent(text)}`); return; }
+  if (platform === 'whatsapp') { window.open(`https://wa.me/?text=${encodeURIComponent(text)}`); return; }
+  if (platform === 'facebook') { window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`); return; }
+}
+
 function copyReferralLink() {
   const inp = document.getElementById('referralLinkInput');
   if (!inp.value || inp.value.includes('尚未')) return;

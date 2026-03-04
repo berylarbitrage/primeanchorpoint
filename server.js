@@ -4079,8 +4079,19 @@ app.post('/api/worker/login', (req, res) => {
   const { login, username, password } = req.body;
   const identifier = (login || username || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
-  // Try matching by email, phone, or username
-  const w = db.prepare('SELECT * FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(identifier, identifier, identifier);
+  // Normalize phone: strip all non-digits, also try +1 prefix variants
+  const digits = identifier.replace(/\D/g, '');
+  const phoneVariants = digits.length >= 10
+    ? [digits, digits.slice(-10), `+1${digits.slice(-10)}`, `1${digits.slice(-10)}`]
+    : [];
+  // Try matching by email, phone (all format variants), or username
+  let w = db.prepare('SELECT * FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(identifier, identifier, identifier);
+  if (!w && phoneVariants.length) {
+    for (const v of phoneVariants) {
+      w = db.prepare('SELECT * FROM worker_accounts WHERE phone=? OR username=?').get(v, v);
+      if (w) break;
+    }
+  }
   if (!w || !verifyPassword(password, w.salt, w.password_hash))
     return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
   if (!w.active)
@@ -5343,13 +5354,21 @@ app.post('/api/customer/login', (req, res) => {
   const { login, email, password } = req.body;
   const identifier = (login || email || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
-  // Try matching by email or phone
-  const cAny = db.prepare('SELECT * FROM customer_accounts WHERE email=? OR phone=?').get(identifier, identifier);
+  // Normalize phone variants for flexible matching
+  const digits = identifier.replace(/\D/g, '');
+  const phoneVariants = digits.length >= 10
+    ? [digits, digits.slice(-10), `+1${digits.slice(-10)}`, `1${digits.slice(-10)}`]
+    : [];
+  const findCustomer = (id) => db.prepare('SELECT * FROM customer_accounts WHERE email=? OR phone=?').get(id, id);
+  let cAny = findCustomer(identifier);
+  if (!cAny && phoneVariants.length) {
+    for (const v of phoneVariants) { cAny = findCustomer(v); if (cAny) break; }
+  }
   if (cAny && cAny.approval_status === 'pending')
     return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
   if (cAny && cAny.approval_status === 'rejected')
     return res.status(403).json({ error: '您的企业注册已被拒绝，请联系管理员 / Your registration was rejected. Please contact admin' });
-  const c = db.prepare('SELECT * FROM customer_accounts WHERE (email=? OR phone=?) AND active=1').get(identifier, identifier);
+  const c = (cAny && cAny.active) ? db.prepare('SELECT * FROM customer_accounts WHERE id=?').get(cAny.id) : null;
   if (!c || !verifyPassword(password, c.salt, c.password_hash))
     return res.status(401).json({ error: '邮箱/电话或密码错误 / Invalid email/phone or password' });
   const token = crypto.randomBytes(32).toString('hex');
