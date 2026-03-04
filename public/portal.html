@@ -740,12 +740,17 @@ function showToast(msg, type='success') {
 }
 
 async function wApi(path, opts={}) {
-  const r = await fetch('/api/worker' + path, {
-    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
-    ...opts
-  });
-  if (r.status === 401) { workerLogout(); return null; }
-  return r.json();
+  try {
+    const r = await fetch('/api/worker' + path, {
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN },
+      ...opts
+    });
+    if (r.status === 401) { workerLogout(); return null; }
+    return r.json();
+  } catch (e) {
+    showToast('❌ 网络错误，请检查连接后重试', 'error');
+    return null;
+  }
 }
 
 async function workerLogin() {
@@ -1328,7 +1333,7 @@ async function doPunch() {
     body.job_id = sel ? parseInt(sel.value) || null : null;
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
-  if (!r) { btn.disabled = false; enablePunchBtn(true); return; }
+  if (!r) { btn.disabled = false; enablePunchBtn(true); showToast('❌ 打卡失败，请重新登录后重试', 'error'); return; }
   if (r.error) {
     showToast('❌ ' + r.error, 'error');
     btn.disabled = false;
