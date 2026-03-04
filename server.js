@@ -4326,6 +4326,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
         matchedSiteId = activeJob.js_id;
       } else {
         console.log(`[Geo] Worker ${req.workerEmployeeId} is ${Math.round(dist)}m from site "${activeJob.site_name}" (max ${activeJob.radius_meters}m)`);
+        return res.status(400).json({ error: `您不在打卡范围内，距工作地点约 ${Math.round(dist)} 米（允许范围 ${activeJob.radius_meters} 米）。/ You are ${Math.round(dist)}m from the work site (max ${activeJob.radius_meters}m).` });
       }
     }
     if (!geoVerified) {
@@ -4341,7 +4342,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
         if (dist2 <= (assignSite.work_radius || 200)) {
           geoVerified = 1;
         } else {
-          geoWarning = true;
+          return res.status(400).json({ error: `您不在打卡范围内，距工作地点约 ${Math.round(dist2)} 米（允许范围 ${assignSite.work_radius || 200} 米）。/ You are ${Math.round(dist2)}m from the work location (max ${assignSite.work_radius || 200}m).` });
         }
       }
     }
