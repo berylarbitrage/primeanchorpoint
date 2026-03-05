@@ -4987,6 +4987,7 @@ app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
   const tasks = db.prepare(`
     SELECT a.id, a.status, a.notes, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
            a.start_date, a.work_schedule, a.work_address, a.assigned_at, a.worker_response,
+           a.task_requirements,
            j.title, j.location, j.pay, j.company_name, j.employment_type,
            j.work_days, j.work_start, j.work_end, j.description
     FROM assignments a
@@ -5014,10 +5015,10 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
 });
 
 // ─── Work calendar endpoint ───────────────────────────────────────
-// Returns shift_confirmations + active assignments for a given month
+// Returns shift_confirmations + active assignments + punch records for a given month
 app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
-  if (!wa || !wa.linked_inquiry_id) return res.json({ confirmations: [], assignments: [] });
+  if (!wa || !wa.linked_inquiry_id) return res.json({ confirmations: [], assignments: [], punchDates: [] });
   const y = parseInt(req.query.year) || new Date().getFullYear();
   const m = parseInt(req.query.month) || new Date().getMonth() + 1;
   const fromStr = `${y}-${String(m).padStart(2,'0')}-01`;
@@ -5037,7 +5038,13 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')
   `).all(wa.linked_inquiry_id);
-  res.json({ confirmations, assignments });
+  // Include actual punch records so weekend work (outside recurring schedule) is visible
+  const punchDates = req.workerEmployeeId ? db.prepare(`
+    SELECT DISTINCT date(clock_in) AS date
+    FROM time_entries
+    WHERE employee_id = ? AND date(clock_in) >= ? AND date(clock_in) <= ?
+  `).all(req.workerEmployeeId, fromStr, toStr).map(r => r.date) : [];
+  res.json({ confirmations, assignments, punchDates });
 });
 
 // ─── Shift confirmation endpoints ────────────────────────────────
@@ -5087,6 +5094,38 @@ app.post('/api/worker/shift-confirmations/:id/respond', requireWorker, (req, res
   `).get(req.params.id, wa.linked_inquiry_id);
   if (!sc) return res.status(404).json({ error: '未找到' });
   db.prepare('UPDATE shift_confirmations SET status=?, responded_at=CURRENT_TIMESTAMP WHERE id=?').run(response, sc.id);
+  res.json({ success: true });
+});
+
+// Pre-confirm a scheduled (排班中) shift that has no confirmation record yet
+app.post('/api/worker/shift-confirmations/preconfirm', requireWorker, (req, res) => {
+  const { assignment_id, date, response } = req.body;
+  if (!['confirmed', 'declined'].includes(response))
+    return res.status(400).json({ error: 'Invalid response' });
+  if (!assignment_id || !date)
+    return res.status(400).json({ error: 'Missing assignment_id or date' });
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!wa || !wa.linked_inquiry_id) return res.status(403).json({ error: '账号未关联' });
+  // Verify the assignment belongs to this worker
+  const a = db.prepare(`
+    SELECT a.id, a.work_schedule FROM assignments a
+    WHERE a.id=? AND a.inquiry_id=? AND a.status NOT IN ('terminated','resigned','cancelled')
+  `).get(assignment_id, wa.linked_inquiry_id);
+  if (!a) return res.status(404).json({ error: '未找到排班' });
+  // Parse work_schedule to get shift times for this day
+  let sched = {};
+  try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+  const _DOW = ['sun','mon','tue','wed','thu','fri','sat'];
+  const dow = _DOW[new Date(date + 'T00:00:00').getDay()];
+  const dayInfo = (sched.days || {})[dow] || {};
+  const shiftStart = dayInfo.start || '';
+  const shiftEnd = dayInfo.end || '';
+  // Insert or update the confirmation record
+  db.prepare(`
+    INSERT INTO shift_confirmations (assignment_id, date, status, shift_start, shift_end, responded_at)
+    VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(assignment_id, date) DO UPDATE SET status=excluded.status, responded_at=CURRENT_TIMESTAMP
+  `).run(a.id, date, response, shiftStart, shiftEnd);
   res.json({ success: true });
 });
 

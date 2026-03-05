@@ -528,6 +528,7 @@ tr:last-child td{border-bottom:none}
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;display:inline-block"></span>已接受</span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span>待确认</span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span>已拒绝</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#a78bfa;display:inline-block"></span>已打卡</span>
           </div>
         </div>
       </div>
@@ -1379,6 +1380,96 @@ async function loadInterview() {
   await Promise.all([loadTasks(), loadWorkCalendar()]);
 }
 
+// ── Rotating task description helper ──────────────────────────────
+// Returns a deterministic variant description for a given task, rotating
+// across different phrasings so each assignment looks distinct (1099 design).
+const _TASK_DESC_VARIANTS = [
+  [
+    'Assist with general office operations and administrative support as needed.',
+    'Support office coordination tasks including filing, scheduling, and correspondence.',
+    'Provide on-site administrative assistance for daily office workflow.',
+    'Handle various clerical and organizational tasks in a dynamic office environment.',
+  ],
+  [
+    'Assist with warehouse operations including receiving, sorting, and inventory counts.',
+    'Support distribution center tasks such as order picking and package handling.',
+    'Perform general warehouse duties including stocking and product verification.',
+    'Provide hands-on support for logistics and fulfillment operations.',
+  ],
+  [
+    'Support retail floor operations including product merchandising and customer assistance.',
+    'Assist store team with inventory restocking and display maintenance.',
+    'Provide customer-facing support and floor assistance as directed.',
+    'Help with retail operations including checkout support and floor coverage.',
+  ],
+  [
+    'Provide general operations support across multiple functional areas as assigned.',
+    'Assist team with project-based operational tasks and daily workflow needs.',
+    'Support day-to-day operations with flexible task assignments based on business needs.',
+    'Deliver on-site operational assistance for various departments as requested.',
+  ],
+];
+
+function getRotatingTaskDesc(id, title) {
+  // Pick variant pool based on title keywords, fallback to last pool
+  const t = (title || '').toLowerCase();
+  let pool;
+  if (t.includes('office') || t.includes('admin') || t.includes('clerk')) pool = _TASK_DESC_VARIANTS[0];
+  else if (t.includes('warehouse') || t.includes('fulfillment') || t.includes('distribution') || t.includes('logistics')) pool = _TASK_DESC_VARIANTS[1];
+  else if (t.includes('retail') || t.includes('store') || t.includes('sales')) pool = _TASK_DESC_VARIANTS[2];
+  else pool = _TASK_DESC_VARIANTS[3];
+  // Deterministic rotation using id so it's consistent per task but varies across tasks
+  const idx = (typeof id === 'number' ? id : parseInt(id) || 0) % pool.length;
+  return pool[idx];
+}
+
+// Returns today's day-of-year (0-indexed) for deterministic daily rotation
+function _dayOfYear() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  return Math.floor((now - start) / 86400000);
+}
+
+// Render a single task requirement block (Simple / Detailed / Checklist)
+function _renderOneTaskReq(req) {
+  const TYPE_META = {
+    simple:    { label:'Simple',    bg:'#d1fae5', color:'#065f46', border:'#6ee7b7' },
+    detailed:  { label:'Detailed',  bg:'#dbeafe', color:'#1d4ed8', border:'#93c5fd' },
+    checklist: { label:'Checklist', bg:'#fef9c3', color:'#92400e', border:'#fcd34d' },
+  };
+  const m = TYPE_META[req.type] || TYPE_META.simple;
+  let body = '';
+  if (req.type === 'simple') {
+    body = req.description ? `<div style="font-size:.83rem;color:#374151;line-height:1.5;white-space:pre-wrap">${esc(req.description)}</div>` : '';
+  } else if (req.type === 'detailed') {
+    body = (req.description ? `<div style="font-size:.83rem;color:#374151;line-height:1.5;white-space:pre-wrap">${esc(req.description)}</div>` : '')
+         + (req.notes ? `<div style="font-size:.79rem;color:#6b7280;margin-top:.3rem;font-style:italic">${esc(req.notes)}</div>` : '');
+  } else if (req.type === 'checklist') {
+    const steps = Array.isArray(req.steps) ? req.steps.filter(Boolean) : [];
+    body = steps.length
+      ? `<ol style="margin:.3rem 0 0 1.1rem;padding:0;font-size:.83rem;color:#374151;line-height:1.6">${steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol>`
+      : '';
+  }
+  return `<div style="border:1px solid ${m.border};border-radius:8px;padding:.6rem .75rem;background:${m.bg};margin-bottom:.1rem">
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:${body?'.4rem':'0'}">
+      <span style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:${m.color};background:#fff;border:1px solid ${m.border};border-radius:20px;padding:1px 7px;white-space:nowrap">${m.label}</span>
+      ${req.name ? `<span style="font-size:.87rem;font-weight:700;color:#1e293b">${esc(req.name)}</span>` : ''}
+    </div>
+    ${body}
+  </div>`;
+}
+
+// Pick one task requirement randomly, fallback to generic desc
+function renderDailyTaskReq(t) {
+  let reqs = [];
+  try { reqs = JSON.parse(t.task_requirements || '[]'); } catch {}
+  if (!Array.isArray(reqs) || !reqs.length) {
+    return `<div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.15rem;line-height:1.45">${esc(getRotatingTaskDesc(t.id, t.title))}</div>`;
+  }
+  const idx = Math.floor(Math.random() * reqs.length);
+  return _renderOneTaskReq(reqs[idx]);
+}
+
 async function loadTasks() {
   const el = document.getElementById('myTasksList');
   el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">加载中…</p>';
@@ -1458,7 +1549,7 @@ async function loadTasks() {
             </div>
             ${statusBadge}
           </div>
-          ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ ${esc(timeStr)}</div>` : ''}
+          ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ Estimated: ${esc(timeStr)}</div>` : ''}
           ${c.work_address ? `<div style="font-size:.83rem;color:#4b5563">📍 ${esc(c.work_address)}</div>` : ''}
           ${actionBtns}
         </div>`;
@@ -1511,11 +1602,13 @@ async function loadTasks() {
         <div style="display:flex;align-items:center;gap:.5rem;background:#eff6ff;border-radius:8px;padding:.5rem .75rem;margin-bottom:.55rem">
           <span style="font-size:1.1rem">⏱</span>
           <div>
+            <div style="font-size:.72rem;color:#3b82f6;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Estimated Time</div>
             <div style="font-weight:700;font-size:.92rem;color:#1d4ed8">${esc(timeStr)}</div>
-            ${estHours ? `<div style="font-size:.78rem;color:#3b82f6">Estimated ${esc(estHours)}</div>` : ''}
+            ${estHours ? `<div style="font-size:.78rem;color:#3b82f6">Approx. ${esc(estHours)}</div>` : ''}
           </div>
         </div>` : ''}
         <div style="font-size:.83rem;color:var(--gray-600);display:grid;gap:.22rem">
+          ${renderDailyTaskReq(t)}
           ${t.start_date ? `<div>📅 <span style="color:var(--gray-400)">开始日期：</span>${fmtDate(t.start_date)}</div>` : ''}
           ${(t.work_address||t.location) ? `<div>📍 <span style="color:var(--gray-400)">地点：</span>${esc(t.work_address||t.location)}</div>` : ''}
           ${t.pay_rate ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay_rate)}${t.pay_type==='hourly'?' /hr':''}</div>` : (t.pay ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay)}</div>` : '')}
@@ -1544,6 +1637,16 @@ async function respondShiftConfirm(id, response) {
   }
 }
 
+async function confirmScheduledShift(assignmentId, date, response) {
+  const r = await wApi('/shift-confirmations/preconfirm', { method:'POST', body: JSON.stringify({ assignment_id: assignmentId, date, response }) });
+  if (r && r.success) {
+    showToast(response === 'confirmed' ? '✅ 已接受' : '已拒绝');
+    closeCalDayModal();
+    loadTasks();
+    loadWorkCalendar();
+  }
+}
+
 // ── Work Calendar ─────────────────────────────────────────────────
 const _CAL_DOW_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
 const _CAL_DAY_LABELS = ['日','一','二','三','四','五','六'];
@@ -1554,7 +1657,7 @@ let _calData = null;
 async function loadWorkCalendar() {
   const card = document.getElementById('workCalendarCard');
   _calData = await wApi(`/work-calendar?year=${_calYear}&month=${_calMonth}`);
-  if (!_calData || (!_calData.confirmations.length && !_calData.assignments.length)) {
+  if (!_calData || (!_calData.confirmations.length && !_calData.assignments.length && !(_calData.punchDates||[]).length)) {
     card.style.display = 'none';
     return;
   }
@@ -1579,6 +1682,9 @@ function renderCalendar() {
     if (!confMap[c.date]) confMap[c.date] = [];
     confMap[c.date].push(c);
   });
+
+  // Actual punch dates (includes weekend work outside recurring schedule)
+  const punchSet = new Set(_calData.punchDates || []);
 
   // Project work days from assignments' recurring schedule
   const projectedDays = new Set();
@@ -1617,7 +1723,8 @@ function renderCalendar() {
     const dateStr = `${_calYear}-${String(_calMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const isToday = dateStr === todayStr;
     const confs = confMap[dateStr] || [];
-    const hasWork = confs.length > 0;
+    const isPunched = punchSet.has(dateStr) && !confs.length;
+    const hasWork = confs.length > 0 || isPunched;
 
     // Status dots — only for actual confirmations
     let dotsHtml = '';
@@ -1625,10 +1732,12 @@ function renderCalendar() {
       dotsHtml = confs.slice(0, 3).map(c =>
         `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor[c.status]||'#94a3b8'};margin:0 1px"></span>`
       ).join('');
+    } else if (isPunched) {
+      dotsHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#a78bfa;margin:0 1px"></span>`;
     }
 
-    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : 'transparent');
-    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : '1px solid transparent';
+    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : isPunched ? '#f5f3ff' : 'transparent');
+    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : isPunched ? '1px solid #ddd6fe' : '1px solid transparent';
     const numColor = isToday ? '#fff' : hasWork ? '#1e293b' : '#cbd5e1';
     const numWeight = (isToday || hasWork) ? '700' : '400';
 
@@ -1662,7 +1771,7 @@ function calDayClick(dateStr) {
       if (workStart && dateStr < workStart) return;
       if (!untilFurther && workEnd && dateStr > workEnd) return;
       const dayInfo = days[dow];
-      if (dayInfo && !dayInfo.rest) projItems.push({ title: a.title, start: dayInfo.start, end: dayInfo.end });
+      if (dayInfo && !dayInfo.rest) projItems.push({ assignmentId: a.id, title: a.title, start: dayInfo.start, end: dayInfo.end });
     });
   }
 
@@ -1700,6 +1809,7 @@ function calDayClick(dateStr) {
       ${actionBtns}
     </div>`;
   }).join('');
+
 
   document.getElementById('calDayModalBody').innerHTML = html;
   document.getElementById('calDayModal').style.display = 'flex';
@@ -2064,7 +2174,15 @@ function enablePunchBtn(ready) {
   workingBtns.style.display = 'none';
   if (btnBreakEnd) btnBreakEnd.style.display = 'none';
 
-  if (s.no_employee || !ready) return;
+  if (s.no_employee) return;
+
+  if (s.clocked_in && s.on_break) {
+    // On break: Resume Job does NOT require GPS — always show it
+    if (btnBreakEnd) btnBreakEnd.style.display = '';
+    return;
+  }
+
+  if (!ready) return;
 
   if (!s.clocked_in) {
     // Not clocked in: show Check In button (only if has active job)
@@ -2072,9 +2190,6 @@ function enablePunchBtn(ready) {
       btnIn.style.display = '';
       btnIn.disabled = false;
     }
-  } else if (s.on_break) {
-    // On break: show Resume Job button only
-    if (btnBreakEnd) btnBreakEnd.style.display = '';
   } else {
     // Working: show Pause + Clock Out buttons
     workingBtns.style.display = 'flex';
