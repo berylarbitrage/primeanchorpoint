@@ -172,8 +172,12 @@ tr:hover td{background:var(--sky-light)}
 .hours-item{background:var(--white);border-radius:var(--radius);padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,.04);text-align:center}
 .hours-item h4{font-size:1.6rem;font-weight:700;color:var(--sky)}.hours-item p{font-size:.72rem;color:var(--gray-400);margin-top:2px}
 .emp-meta{font-size:.75rem;color:var(--gray-400);margin-top:2px}
-.emp-table td{padding:.75rem 1rem;vertical-align:middle}
-.emp-table th{padding:.6rem 1rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-400);background:var(--gray-50);border-bottom:1px solid var(--gray-200)}
+.emp-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.emp-table{min-width:860px;width:100%}
+.emp-table td{padding:1rem 1.2rem;vertical-align:middle;white-space:nowrap}
+.emp-table td.emp-td-name{white-space:normal;min-width:180px}
+.emp-table td.emp-td-job{white-space:normal;min-width:160px}
+.emp-table th{padding:.75rem 1.2rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-400);background:var(--gray-50);border-bottom:1px solid var(--gray-200);white-space:nowrap}
 .emp-table tbody tr{border-bottom:1px solid var(--gray-100);transition:background .12s}
 .emp-table tbody tr:last-child{border-bottom:none}
 .emp-table tbody tr:hover{background:#f8fafc}
@@ -736,18 +740,20 @@ tr:hover td{background:var(--sky-light)}
     <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
   <div class="card" style="padding:0;overflow:hidden">
+    <div class="emp-table-wrap">
     <table class="emp-table">
       <thead><tr>
-        <th style="width:90px">员工号</th>
-        <th>姓名 / 联系方式</th>
-        <th>职位 / 公司</th>
-        <th style="width:80px">薪资</th>
-        <th style="width:70px">状态</th>
-        <th style="width:90px">入职日期</th>
-        <th style="width:56px">操作</th>
+        <th style="min-width:120px">员工号</th>
+        <th style="min-width:200px">姓名 / 联系方式</th>
+        <th style="min-width:180px">职位 / 公司</th>
+        <th style="min-width:90px">薪资</th>
+        <th style="min-width:80px">状态</th>
+        <th style="min-width:110px">入职日期</th>
+        <th style="min-width:70px">操作</th>
       </tr></thead>
       <tbody id="empTable"></tbody>
     </table>
+    </div>
   </div>
   <!-- Employee action dropdown menu (shared) -->
   <div id="empActionMenu" style="display:none;position:fixed;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.13);z-index:9999;min-width:180px;padding:4px 0">
@@ -6707,11 +6713,11 @@ function renderEmployees(list) {
       <div style="font-weight:700;font-size:.88rem">${esc(e.employee_id||'—')}</div>
       ${workerCodeHtml}
     </td>
-    <td style="cursor:pointer" onclick='viewEmployee(${e.id})'>
+    <td class="emp-td-name" style="cursor:pointer" onclick='viewEmployee(${e.id})'>
       <div class="emp-name">${esc(e.first_name)} ${esc(e.last_name)}</div>
       <div class="emp-contact">${contactHtml||'<span style="color:var(--gray-300)">无联系方式</span>'}</div>
     </td>
-    <td>
+    <td class="emp-td-job">
       <div>${jobNames.length ? jobNames.map(n=>'<span class="emp-job-tag">'+esc(n)+'</span>').join('') : '<span style="color:var(--gray-300);font-size:.82rem">未分配</span>'}</div>
       ${companyNames.length ? '<div class="emp-company">'+companyNames.map(c=>esc(c)).join(' · ')+'</div>' : ''}
     </td>
