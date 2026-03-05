@@ -519,6 +519,7 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN employment_type TEXT DEFAULT ''`); } 
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_days TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_start TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN work_end TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN work_schedule TEXT DEFAULT '{}'`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule_days TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule_start TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN schedule_end TEXT DEFAULT ''`); } catch(e) {}
@@ -529,6 +530,7 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN close_note TEXT DEFAULT ''`); } catch
 try { db.exec(`ALTER TABLE jobs ADD COLUMN headcount INTEGER DEFAULT 1`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN pay_period TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN required_skills TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_availability TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_phone TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE interviews ADD COLUMN confirm_email TEXT DEFAULT ''`); } catch(e) {}
@@ -547,6 +549,7 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN applicant_message TEXT DE
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN admin_note TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_datetime TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_location_text TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_times_json TEXT DEFAULT ''`); } catch(e) {}
 // Backfill job_status from active flag for existing rows
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
@@ -626,12 +629,15 @@ try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'z
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
 
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
 try { db.exec(`ALTER TABLE assignments ADD COLUMN work_schedule TEXT DEFAULT '{}'`); } catch(e) {}
+try { db.exec(`ALTER TABLE assignments ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_address TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_lat REAL DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_lng REAL DEFAULT NULL"); } catch(e) {}
@@ -639,6 +645,16 @@ try { db.exec("ALTER TABLE assignments ADD COLUMN work_radius INTEGER DEFAULT 20
 try { db.exec("ALTER TABLE assignments ADD COLUMN worker_response TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN task_requirements TEXT DEFAULT '[]'"); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
+
+db.exec(`CREATE TABLE IF NOT EXISTS assignment_status_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  assignment_id INTEGER NOT NULL REFERENCES assignments(id),
+  old_status TEXT,
+  new_status TEXT NOT NULL,
+  changed_by TEXT DEFAULT '',
+  changed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`ALTER TABLE assignment_status_history ADD COLUMN reason TEXT DEFAULT ''`); } catch {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS shift_confirmations (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -649,6 +665,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS shift_confirmations (
   responded_at DATETIME DEFAULT NULL,
   UNIQUE(assignment_id, date)
 )`);
+try { db.exec(`ALTER TABLE shift_confirmations ADD COLUMN shift_start TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE shift_confirmations ADD COLUMN shift_end TEXT DEFAULT ''`); } catch {}
+try { db.exec(`ALTER TABLE shift_confirmations ADD COLUMN reminded_at DATETIME DEFAULT NULL`); } catch {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS employee_jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -772,6 +791,9 @@ db.exec(`
 `);
 // Migrate: add assigned_partner_ids to admin_users (for manager role)
 try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN city TEXT DEFAULT ''"); } catch {}
 // Migrate: add lang/positions to employee_doc_requests
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
@@ -832,6 +854,63 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_account_history (
   old_value TEXT,
   new_value TEXT,
   note TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// ─── Employee registration invites ───
+db.exec(`CREATE TABLE IF NOT EXISTS employee_registration_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  token TEXT UNIQUE NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS admin_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'manager',
+  notes TEXT DEFAULT '',
+  assigned_partner_ids TEXT DEFAULT '',
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  used_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`ALTER TABLE admin_invites ADD COLUMN created_by INTEGER DEFAULT NULL`); } catch(e) {}
+
+// Manager self-registration invite links
+db.exec(`CREATE TABLE IF NOT EXISTS manager_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'manager',
+  note TEXT DEFAULT '',
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  created_by INTEGER DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Temp verification codes for manager registration
+db.exec(`CREATE TABLE IF NOT EXISTS manager_reg_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL,
+  contact TEXT NOT NULL,
+  contact_type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Temp email verification codes for admin invite registration
+db.exec(`CREATE TABLE IF NOT EXISTS admin_reg_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL,
+  contact TEXT NOT NULL,
+  contact_type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
@@ -987,6 +1066,67 @@ db.exec(`CREATE TABLE IF NOT EXISTS referral_bonus_config (
 )`);
 if (!db.prepare('SELECT id FROM referral_bonus_config WHERE id=1').get())
   db.prepare('INSERT INTO referral_bonus_config (id) VALUES (1)').run();
+
+// Skill options (configurable required skills list)
+db.exec(`CREATE TABLE IF NOT EXISTS skill_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_zh TEXT NOT NULL,
+  name_en TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+// Seed default skills if table is empty
+if (!db.prepare('SELECT id FROM skill_options LIMIT 1').get()) {
+  const seeds = [
+    ['仓库操作','Warehouse Operation'],['叉车操作','Forklift'],['驾照',"Driver's License"],
+    ['搬运','Heavy Lifting'],['分拣','Sorting'],['包装','Packing'],['收货','Receiving'],
+    ['发货','Shipping'],['盘点','Inventory'],['清洁','Cleaning'],['机器操作','Machine Operation'],
+    ['质量检查','Quality Inspection'],['组装','Assembly'],['基本英语','Basic English'],
+    ['普通话','Mandarin'],['体力劳动','Physical Labor']
+  ];
+  const ins = db.prepare('INSERT INTO skill_options (name_zh, name_en, sort_order) VALUES (?,?,?)');
+  seeds.forEach(([zh, en], i) => ins.run(zh, en, i));
+}
+// Job title options (used as a fixed list in the job creation modal)
+db.exec(`CREATE TABLE IF NOT EXISTS job_title_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_en TEXT NOT NULL,
+  name_zh TEXT DEFAULT '',
+  name_es TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM job_title_options LIMIT 1').get()) {
+  const jSeeds = [
+    'General Laborer','Warehouse Associate','Warehouse Worker','Production Associate',
+    'Material Handler','Order Picker','Order Packer','Fulfillment Associate',
+    'Loading / Unloading Associate','Order Fulfillment Associate','Inventory Associate',
+    'Logistics Assistant','General Labor','Temporary Worker','Contract Worker'
+  ];
+  const jIns = db.prepare('INSERT INTO job_title_options (name_en, sort_order) VALUES (?,?)');
+  jSeeds.forEach((n, i) => jIns.run(n, i));
+}
+
+// Display suffix options (rotate daily in worker portal)
+db.exec(`CREATE TABLE IF NOT EXISTS display_suffix_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_en TEXT NOT NULL,
+  name_zh TEXT DEFAULT '',
+  name_es TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM display_suffix_options LIMIT 1').get()) {
+  const sSeeds = [
+    'Contract Assignment','Client Assignment','Work Assignment','Temporary Engagement',
+    'Contract Placement','Project Assignment','Client Site Assignment','On-Site Assignment',
+    'Third-Party Assignment','Client Placement','Short-Term Assignment',
+    'Seasonal Assignment','Temporary Project'
+  ];
+  const sIns = db.prepare('INSERT INTO display_suffix_options (name_en, sort_order) VALUES (?,?)');
+  sSeeds.forEach((n, i) => sIns.run(n, i));
+}
+
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 
@@ -1045,6 +1185,10 @@ try { db.exec("ALTER TABLE time_entries ADD COLUMN site_id INTEGER DEFAULT NULL"
 try { db.exec("ALTER TABLE time_entries ADD COLUMN geo_verified INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN punch_photo TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN job_id INTEGER DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN needs_review INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN review_reason TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN site_timezone TEXT DEFAULT NULL"); } catch {}
 
 // Worker payments ledger
 db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
@@ -1148,48 +1292,176 @@ setTimeout(() => runBackup('启动备份'), 2000);
 // Periodic backup
 setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
 
-// ─── Daily shift confirmation notifications ───────────────────────
-async function sendDailyShiftConfirmations() {
-  const today = new Date().toISOString().slice(0, 10);
+// ─── Weekly shift confirmation generation ─────────────────────────
+// Runs daily at 7 AM: creates shift_confirmation records for all
+// remaining days of the current week based on each assignment's
+// work_schedule JSON. Skips terminated / resigned / cancelled.
+const _WEEK_DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
+
+async function generateWeeklyShiftConfirmations() {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const todayStr = now.toISOString().slice(0, 10);
+
+  // Build Mon–Sun dates for the current week, keeping only >= today
+  const dow = now.getDay(); // 0=Sun
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
+  const weekDates = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    const ds = d.toISOString().slice(0, 10);
+    if (ds >= todayStr) weekDates.push({ date: ds, dayKey: _WEEK_DAY_KEYS[d.getDay()] });
+  }
+  if (!weekDates.length) return;
+
+  // Active assignments only (not terminated / resigned / cancelled)
   const assignments = db.prepare(`
-    SELECT a.id, a.inquiry_id, j.title,
-           w.phone, w.first_name, w.name as wname
+    SELECT a.id, a.work_schedule,
+           j.title,
+           w.id as worker_id, w.phone, w.first_name, w.name as wname
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
     LEFT JOIN inquiries i ON a.inquiry_id = i.id
     LEFT JOIN worker_accounts w ON w.linked_inquiry_id = i.id
-    WHERE a.status != 'cancelled'
-      AND a.worker_response = 'accepted'
-      AND w.phone IS NOT NULL AND w.phone != ''
+    WHERE a.status NOT IN ('terminated','resigned','cancelled')
+      AND w.id IS NOT NULL
   `).all();
 
-  let sent = 0;
+  // Track workers with newly created shifts (for one-time weekly SMS)
+  const newByWorker = {};
   for (const a of assignments) {
-    db.prepare('INSERT OR IGNORE INTO shift_confirmations (assignment_id, date, status) VALUES (?,?,?)').run(a.id, today, 'pending');
-    const sc = db.prepare('SELECT id, notified_at FROM shift_confirmations WHERE assignment_id=? AND date=?').get(a.id, today);
-    if (sc && !sc.notified_at) {
-      const name = a.first_name || a.wname || '';
-      const jobTitle = a.title || '班次';
-      await sendSMS(a.phone, `[Prime Anchorpoint] 您好${name ? ' ' + name : ''}，今天（${today}）${jobTitle}的班次是否确认出勤？请登录 Portal 确认。`).catch(() => {});
-      db.prepare('UPDATE shift_confirmations SET notified_at=CURRENT_TIMESTAMP WHERE id=?').run(sc.id);
-      sent++;
+    let sched = {};
+    try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+    const workStart = sched.workStart || null;
+    const workEnd = sched.workEnd || null;
+    const untilFurther = !!sched.untilFurther;
+    const days = sched.days || {};
+
+    for (const { date, dayKey } of weekDates) {
+      if (workStart && date < workStart) continue;
+      if (!untilFurther && workEnd && date > workEnd) continue;
+      const dayInfo = days[dayKey];
+      if (!dayInfo || dayInfo.rest) continue;
+
+      const r = db.prepare(
+        `INSERT OR IGNORE INTO shift_confirmations (assignment_id, date, status, shift_start, shift_end) VALUES (?,?,?,?,?)`
+      ).run(a.id, date, 'pending', dayInfo.start || '', dayInfo.end || '');
+      if (r.changes > 0) {
+        if (!newByWorker[a.worker_id]) {
+          newByWorker[a.worker_id] = { phone: a.phone, name: a.first_name || a.wname || '', count: 0 };
+        }
+        newByWorker[a.worker_id].count++;
+      }
     }
   }
-  console.log(`[ShiftConfirm] ${today}: sent ${sent} notifications`);
+
+  // Send one summary SMS per worker who has new shifts
+  let smsCount = 0;
+  for (const info of Object.values(newByWorker)) {
+    if (!info.phone) continue;
+    const greeting = info.name ? ` ${info.name}` : '';
+    await sendSMS(info.phone,
+      `[Prime Anchorpoint] 您好${greeting}，本周有 ${info.count} 个班次待确认，请登录 Portal 查看并确认出勤。`
+    ).catch(() => {});
+    smsCount++;
+  }
+  console.log(`[WeeklyShifts] ${todayStr}: ${Object.keys(newByWorker).length} workers with new shifts, ${smsCount} SMS sent`);
+
+  // On Saturday or Sunday, also pre-generate next week's shift confirmations
+  // so workers can see upcoming shifts in the portal (no extra SMS)
+  if (dow === 6 || dow === 0) {
+    const nextMonday = new Date(monday);
+    nextMonday.setDate(monday.getDate() + 7);
+    const nextWeekDates = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(nextMonday);
+      d.setDate(nextMonday.getDate() + i);
+      nextWeekDates.push({ date: d.toISOString().slice(0, 10), dayKey: _WEEK_DAY_KEYS[d.getDay()] });
+    }
+    for (const a of assignments) {
+      let sched = {};
+      try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+      const workStart = sched.workStart || null;
+      const workEnd = sched.workEnd || null;
+      const untilFurther = !!sched.untilFurther;
+      const days = sched.days || {};
+      for (const { date, dayKey } of nextWeekDates) {
+        if (workStart && date < workStart) continue;
+        if (!untilFurther && workEnd && date > workEnd) continue;
+        const dayInfo = days[dayKey];
+        if (!dayInfo || dayInfo.rest) continue;
+        db.prepare(
+          `INSERT OR IGNORE INTO shift_confirmations (assignment_id, date, status, shift_start, shift_end) VALUES (?,?,?,?,?)`
+        ).run(a.id, date, 'pending', dayInfo.start || '', dayInfo.end || '');
+      }
+    }
+    console.log(`[WeeklyShifts] ${todayStr}: pre-generated next week shifts (Sat/Sun)`);
+  }
 }
 
-function scheduleDailyShiftConfirmations() {
+function scheduleWeeklyShiftGeneration() {
   const now = new Date();
   const next7am = new Date(now);
   next7am.setHours(7, 0, 0, 0);
   if (next7am <= now) next7am.setDate(next7am.getDate() + 1);
-  const delay = next7am - now;
   setTimeout(() => {
-    sendDailyShiftConfirmations();
-    setInterval(sendDailyShiftConfirmations, 24 * 60 * 60 * 1000);
-  }, delay);
+    generateWeeklyShiftConfirmations();
+    setInterval(generateWeeklyShiftConfirmations, 24 * 60 * 60 * 1000);
+  }, next7am - now);
 }
-scheduleDailyShiftConfirmations();
+scheduleWeeklyShiftGeneration();
+
+// ─── 24-hour advance shift reminders ──────────────────────────────
+// Runs daily at 9 AM: sends SMS to workers with pending shifts tomorrow
+async function send24hShiftReminders() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+  const pending = db.prepare(`
+    SELECT sc.id, sc.shift_start, sc.shift_end,
+           j.title,
+           w.phone, w.first_name, w.name as wname
+    FROM shift_confirmations sc
+    JOIN assignments a ON sc.assignment_id = a.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN worker_accounts w ON w.linked_inquiry_id = i.id
+    WHERE sc.date = ?
+      AND sc.status = 'pending'
+      AND sc.reminded_at IS NULL
+      AND w.phone IS NOT NULL AND w.phone != ''
+  `).all(tomorrowStr);
+
+  let sent = 0;
+  for (const row of pending) {
+    const name = row.first_name || row.wname || '';
+    const job = row.title || '班次';
+    const time = (row.shift_start && row.shift_end)
+      ? `（${row.shift_start}–${row.shift_end}）`
+      : '';
+    await sendSMS(row.phone,
+      `[Prime Anchorpoint] 提醒：您明天${time}有 ${job} 的班次，请登录 Portal 确认是否出勤。`
+    ).catch(() => {});
+    db.prepare(`UPDATE shift_confirmations SET reminded_at=CURRENT_TIMESTAMP WHERE id=?`).run(row.id);
+    sent++;
+  }
+  console.log(`[24hReminder] ${tomorrowStr}: sent ${sent} reminders`);
+}
+
+function schedule24hReminders() {
+  const now = new Date();
+  const next9am = new Date(now);
+  next9am.setHours(9, 0, 0, 0);
+  if (next9am <= now) next9am.setDate(next9am.getDate() + 1);
+  setTimeout(() => {
+    send24hShiftReminders();
+    setInterval(send24hShiftReminders, 24 * 60 * 60 * 1000);
+  }, next9am - now);
+}
+schedule24hReminders();
 
 // ─── Middleware ───
 app.use(express.json({ limit: '15mb' }));
@@ -1385,6 +1657,28 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Lookup IANA timezone from lat/lng using free public API (non-blocking, fallback to America/Chicago)
+async function lookupTimezone(lat, lng) {
+  try {
+    const https = require('https');
+    return await new Promise((resolve) => {
+      const url = `https://api.geotimezone.com/public/timezone?latitude=${lat}&longitude=${lng}`;
+      https.get(url, (resp) => {
+        let data = '';
+        resp.on('data', d => data += d);
+        resp.on('end', () => {
+          try {
+            const j = JSON.parse(data);
+            resolve(j.iana_timezone || j.timezone || 'America/Chicago');
+          } catch { resolve('America/Chicago'); }
+        });
+      }).on('error', () => resolve('America/Chicago'));
+      setTimeout(() => resolve('America/Chicago'), 3000);
+    });
+  } catch { return 'America/Chicago'; }
+}
+
+
 // ─── Hours calculation (daily OT > 8h) ───
 function calcHours(clockIn, clockOut, breakMin) {
   if (!clockOut) return { total: 0, regular: 0, overtime: 0 };
@@ -1493,10 +1787,22 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(defaultPass, salt);
     db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)').run(defaultUser, hash, salt, 'admin', 'Administrator');
-    console.log(`[Auth] Seeded default admin user: ${defaultUser}`);
+    console.log(`[Auth] Seeded default admin user: ${defaultUser} / ${defaultPass}`);
   }
   // Ensure the first user (original seeded admin) has admin role
   try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
+  // Force-reset admin password if RESET_ADMIN_PASS env var is set
+  if (process.env.RESET_ADMIN_PASS) {
+    const targetUser = process.env.ADMIN_USER || 'admin';
+    const newPass = process.env.RESET_ADMIN_PASS;
+    const user = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(targetUser);
+    if (user) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = hashPassword(newPass, salt);
+      db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
+      console.log(`[Auth] Reset admin password for user: ${targetUser}`);
+    }
+  }
 }
 
 // DB-backed session store (survives server restarts, tokens expire in 24h)
@@ -1537,7 +1843,8 @@ function requireAdmin(req, res, next) {
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
-  req.assignedPartnerIds = session.assigned_partner_ids || '';
+  const _u = db.prepare('SELECT assigned_partner_ids FROM admin_users WHERE id=?').get(session.userId);
+  req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
   next();
 }
 
@@ -1751,6 +2058,98 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
   res.json(user);
 });
 
+// ─── Manager Portal Endpoints ───
+// GET /api/manager/me — returns current manager info + assigned partner names
+app.get('/api/manager/me', requireAdmin, requireRole('manager', 'admin', 'staff'), (req, res) => {
+  const user = db.prepare('SELECT id, username, role, display_name, assigned_partner_ids FROM admin_users WHERE id=?').get(req.userId);
+  if (!user) return res.status(404).json({ error: 'Not found' });
+  const pids = (user.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  const partners = pids.length
+    ? db.prepare(`SELECT id, name FROM partners WHERE id IN (${pids.map(() => '?').join(',')})`).all(...pids)
+    : [];
+  res.json({ ...user, partners });
+});
+
+// GET /api/manager/my-assignments — assignments for manager's assigned partner companies
+app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  let q = `
+    SELECT a.id, a.status, a.start_date, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
+           a.work_address, a.notes, a.assigned_at, a.work_schedule,
+           i.name  AS worker_name,
+           i.phone AS worker_phone,
+           i.email AS worker_email,
+           j.title AS job_title,
+           j.location AS job_location,
+           j.partner_id,
+           p.name  AS company_name
+    FROM assignments a
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN partners p ON j.partner_id = p.id
+    WHERE 1=1`;
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    q += ` AND j.partner_id IN (${pids.map(() => '?').join(',')})`;
+    params.push(...pids);
+  }
+  q += ' ORDER BY a.assigned_at DESC';
+  res.json(db.prepare(q).all(...params));
+});
+
+// GET /api/manager/interviews — interview requests for workers at this manager's partner companies
+app.get('/api/manager/interviews', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  let workerFilter = '';
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    workerFilter = `AND i.worker_account_id IN (
+      SELECT DISTINCT wa.id FROM worker_accounts wa
+      JOIN employees e ON wa.employee_id = e.id
+      WHERE e.id IN (
+        SELECT DISTINCT t.employee_id FROM time_entries t
+        JOIN jobs j ON t.job_id = j.id
+        WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+      )
+    )`;
+    params.push(...pids);
+  }
+  const rows = db.prepare(`
+    SELECT i.id, i.status, i.admin_notes, i.created_at,
+      s.slot_datetime, s.duration_min, s.location,
+      w.id AS worker_id, w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.work_status, w.identity_status
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+    WHERE 1=1 ${workerFilter}
+    ORDER BY s.slot_datetime DESC
+  `).all(...params);
+  res.json(rows);
+});
+
+// GET /api/manager/workers — employees visible to this manager with contact info
+app.get('/api/manager/workers', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  let q = `
+    SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id as emp_code,
+           e.email, e.phone, e.position, e.status
+    FROM employees e`;
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    q += ` WHERE e.id IN (
+      SELECT DISTINCT t.employee_id FROM time_entries t
+      JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+    )`;
+    params.push(...pids);
+  }
+  q += ' ORDER BY e.last_name, e.first_name';
+  res.json(db.prepare(q).all(...params));
+});
+
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
   res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
@@ -1792,6 +2191,438 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
   if (parseInt(req.params.id) === req.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
   db.prepare('DELETE FROM admin_users WHERE id = ?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Admin Invite Links ───────────────────────────────────────────
+function inviteUrlPath(role) {
+  if (role === 'staff') return '/staff';
+  if (role === 'manager') return '/manager';
+  return '/admin-invite';
+}
+
+app.get('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host  = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}${inviteUrlPath(r.role)}?token=${r.token}` })));
+});
+
+app.post('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const { role, hours, notes, assigned_partner_ids } = req.body;
+    if (!['staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
+    const token = crypto.randomBytes(28).toString('hex');
+    const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+    db.prepare('INSERT INTO admin_invites (token, role, notes, assigned_partner_ids, expires_at, created_by) VALUES (?,?,?,?,?,?)')
+      .run(token, role, notes || '', assigned_partner_ids || '', expiresAt, req.userId);
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const host  = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    res.json({ success: true, url: `${proto}://${host}${inviteUrlPath(role)}?token=${token}` });
+  } catch(e) {
+    console.error('invite-links POST error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM admin_invites WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Public: verify admin invite token
+app.get('/api/admin-invite/verify', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Missing token' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(404).json({ error: '邀请链接已失效或已被使用' });
+  res.json({ role: inv.role, notes: inv.notes, assigned_partner_ids: inv.assigned_partner_ids });
+});
+
+// Public: register admin account via invite token
+app.post('/api/admin-invite/send-code', async (req, res) => {
+  const { token, phone } = req.body;
+  if (!token || !phone) return res.status(400).json({ error: '缺少参数' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  const sent = await sendVerifyCode(phone, 'sms');
+  res.json({ success: true, skipped: !sent });
+});
+
+app.post('/api/admin-invite/send-email-code', async (req, res) => {
+  const { token, email } = req.body;
+  if (!token || !email) return res.status(400).json({ error: '缺少参数' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchorpoint',
+    `您的邮箱验证码是 ${code}，15分钟内有效。\nYour email verification code is ${code}, valid for 15 minutes.`,
+    verificationCodeHtml(code));
+  if (sent) {
+    db.prepare('DELETE FROM admin_reg_codes WHERE token=? AND contact=?').run(token, email);
+    db.prepare('INSERT INTO admin_reg_codes (token, contact, contact_type, code, expires_at) VALUES (?,?,?,?,?)').run(token, email, 'email', code, expiresAt);
+  }
+  res.json({ success: true, skipped: !sent });
+});
+
+app.post('/api/admin-invite/register', async (req, res) => {
+  const { token, username, display_name, first_name, middle_name, last_name, password, phone, email, city, state, zip, sms_code, email_code } = req.body;
+  if (!token || !username || !password) return res.status(400).json({ error: '缺少必填字段' });
+  if (password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+  if (!phone) return res.status(400).json({ error: '请填写手机号' });
+  if (!email) return res.status(400).json({ error: '请填写邮箱' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  // Verify SMS code
+  if (twilioClient && TWILIO_VERIFY_SID && sms_code) {
+    const ok = await checkVerifyCode(phone, sms_code);
+    if (!ok) return res.status(400).json({ error: '手机验证码错误或已过期，请重试' });
+  } else if (twilioClient && TWILIO_VERIFY_SID && !sms_code) {
+    return res.status(400).json({ error: '请输入手机验证码' });
+  }
+  // Verify email code (stored in DB via sendEmail)
+  const emailVc = db.prepare("SELECT * FROM admin_reg_codes WHERE token=? AND contact=? AND contact_type='email' AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1").get(token, email);
+  if (emailVc) {
+    if (!email_code) return res.status(400).json({ error: '请输入邮箱验证码' });
+    if (emailVc.code !== String(email_code)) return res.status(400).json({ error: '邮箱验证码错误或已过期，请重试' });
+  }
+  const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(username);
+  if (existing) return res.status(400).json({ error: '用户名已存在，请换一个' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const fullName = [first_name, middle_name, last_name].filter(Boolean).join(' ') || display_name || username;
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active, phone, email, city) VALUES (?,?,?,?,?,?,1,?,?,?)')
+    .run(username, hash, salt, inv.role, fullName, inv.assigned_partner_ids || '', phone || '', email || '', city || '');
+  db.prepare('UPDATE admin_invites SET used=1, used_at=CURRENT_TIMESTAMP WHERE id=?').run(inv.id);
+  db.prepare('DELETE FROM admin_reg_codes WHERE token=?').run(token);
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
+  const sessionToken = createSession(user);
+  res.json({ success: true, token: sessionToken, role: user.role, username: user.username, display_name: user.display_name });
+});
+
+// Serve admin invite registration page (shared handler for /admin-invite, /staff, /manager)
+function serveAdminInvitePage(req, res) {
+  res.send(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>账户注册 — Prime Anchorpoint</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
+.card{background:#fff;border-radius:16px;padding:2.5rem 2rem;width:100%;max-width:420px;box-shadow:0 4px 24px rgba(0,0,0,.1)}
+.logo-wrap{text-align:center;margin-bottom:1.25rem}
+.logo-wrap img{width:72px;height:72px;object-fit:contain}
+h1{text-align:center;font-size:1.3rem;font-weight:700;color:#0F2B5B;margin-bottom:.25rem}
+.sub{text-align:center;font-size:.85rem;color:#64748b;margin-bottom:1.5rem;line-height:1.5}
+label{display:block;font-size:.8rem;font-weight:600;color:#475569;margin-bottom:.3rem;margin-top:.85rem}
+input{width:100%;padding:.65rem .85rem;border:1.5px solid #e2e8f0;border-radius:9px;font-size:.95rem;outline:none;transition:border .15s;font-family:inherit}
+input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
+.phone-row{display:flex;gap:.5rem;align-items:flex-end}
+.phone-row input{flex:1}
+.field-row{display:flex;gap:.5rem}
+.field-row input{flex:1;margin-top:0}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:2.4rem}
+.pw-eye{position:absolute;right:.7rem;top:50%;transform:translateY(-50%);cursor:pointer;color:#94a3b8;font-size:1.05rem;user-select:none;line-height:1}
+.send-btn{white-space:nowrap;padding:.65rem 1rem;background:#f0f9ff;color:#0369a1;border:1.5px solid #bae6fd;border-radius:9px;font-size:.82rem;font-weight:700;cursor:pointer;transition:background .15s;flex-shrink:0}
+.send-btn:hover:not(:disabled){background:#e0f2fe}
+.send-btn:disabled{opacity:.5;cursor:default}
+.btn{width:100%;padding:.8rem;background:#1d4ed8;color:#fff;border:none;border-radius:9px;font-size:.97rem;font-weight:700;cursor:pointer;margin-top:1.4rem;transition:background .15s}
+.btn:hover:not(:disabled){background:#1e40af}
+.btn:disabled{opacity:.5;cursor:default}
+.err{color:#dc2626;font-size:.82rem;margin-top:.6rem;padding:.4rem .6rem;background:#fef2f2;border-radius:6px;display:none}
+.role-badge{display:inline-block;padding:.2rem .7rem;border-radius:99px;font-size:.78rem;font-weight:700;background:#dbeafe;color:#1d4ed8}
+.ok{color:#16a34a;font-size:1rem;font-weight:700;margin-top:.5rem;text-align:center}
+.hint{font-size:.76rem;color:#94a3b8;margin-top:.25rem}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo-wrap"><img src="/logo.svg" alt="Prime Anchorpoint" onerror="this.style.display='none'"></div>
+  <h1>账户注册</h1>
+  <div class="sub" id="sub">加载中…</div>
+  <div id="form" style="display:none">
+    <label>用户名 <span style="color:#94a3b8;font-weight:400">(登录用)</span></label>
+    <input id="username" placeholder="设置登录用户名" autocomplete="username">
+    <label>姓名 / Full Name</label>
+    <div class="field-row">
+      <input id="first_name" placeholder="First" autocomplete="given-name">
+      <input id="middle_name" placeholder="Middle" autocomplete="additional-name">
+      <input id="last_name" placeholder="Last" autocomplete="family-name">
+    </div>
+    <label>手机号 / Phone <span style="color:#dc2626">*</span></label>
+    <div class="phone-row">
+      <input id="phone" type="tel" placeholder="10位美国手机号" autocomplete="tel" oninput="resetCode()">
+      <button class="send-btn" id="sendCodeBtn" onclick="sendCode()">发送验证码</button>
+    </div>
+    <div id="codeWrap" style="display:none">
+      <label>验证码 / Code</label>
+      <input id="sms_code" type="text" inputmode="numeric" maxlength="6" placeholder="6位验证码">
+      <div class="hint">验证码已发送至您的手机，15分钟内有效</div>
+    </div>
+    <label>邮箱 / Email <span style="color:#dc2626">*</span></label>
+    <div class="phone-row">
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email" oninput="resetEmailCode()">
+      <button class="send-btn" id="sendEmailCodeBtn" onclick="sendEmailCode()">发送验证码</button>
+    </div>
+    <div id="emailCodeWrap" style="display:none">
+      <label>邮箱验证码 / Email Code</label>
+      <input id="email_code" type="text" inputmode="numeric" maxlength="6" placeholder="6位验证码">
+      <div class="hint">验证码已发送至您的邮箱，15分钟内有效</div>
+    </div>
+    <label>所在城市 / City</label>
+    <div class="field-row">
+      <input id="city" placeholder="City" style="flex:2" autocomplete="address-level2">
+      <input id="state" placeholder="State" maxlength="2" style="flex:1;text-transform:uppercase" autocomplete="address-level1">
+      <input id="zip" placeholder="Zipcode" maxlength="10" inputmode="numeric" style="flex:1" autocomplete="postal-code">
+    </div>
+    <label>密码</label>
+    <div class="pw-wrap">
+      <input id="password" type="password" placeholder="至少 6 位" autocomplete="new-password">
+      <span class="pw-eye" onclick="togglePw('password',this)">👁</span>
+    </div>
+    <label>确认密码</label>
+    <div class="pw-wrap">
+      <input id="password2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+      <span class="pw-eye" onclick="togglePw('password2',this)">👁</span>
+    </div>
+    <div id="err" class="err"></div>
+    <button class="btn" id="btn" onclick="doRegister()">创建账户</button>
+  </div>
+  <div id="done" style="display:none">
+    <div class="ok">✅ 注册成功！</div>
+    <div style="font-size:.85rem;color:#475569;margin-top:.5rem;text-align:center">账户已创建，正在跳转…</div>
+  </div>
+  <div id="expired" style="display:none">
+    <div style="color:#dc2626;font-weight:700;margin-top:.5rem;text-align:center">❌ 链接已失效</div>
+    <div style="font-size:.83rem;color:#64748b;margin-top:.4rem;text-align:center">此邀请链接已过期或已被使用，请联系管理员重新发送。</div>
+  </div>
+</div>
+<script>
+const token = new URLSearchParams(location.search).get('token') || '';
+const ROLE_LABEL = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理' };
+let codeSent = false, codeSkipped = false;
+let emailCodeSent = false, emailCodeSkipped = false;
+async function init() {
+  if (!token) { showExpired(); return; }
+  try {
+    const r = await fetch('/api/admin-invite/verify?token=' + encodeURIComponent(token));
+    const d = await r.json();
+    if (!r.ok) { showExpired(); return; }
+    document.getElementById('sub').innerHTML = \`您被邀请注册为 <span class="role-badge">\${ROLE_LABEL[d.role]||d.role}</span>\${d.notes ? \` — \${d.notes}\` : ''}\`;
+    document.getElementById('form').style.display = '';
+  } catch { showExpired(); }
+}
+function showExpired() {
+  document.getElementById('sub').style.display='none';
+  document.getElementById('expired').style.display='';
+}
+function showErr(msg) {
+  const el = document.getElementById('err');
+  el.textContent = msg; el.style.display = msg ? 'block' : 'none';
+}
+function resetCode() { codeSent = false; codeSkipped = false; document.getElementById('codeWrap').style.display='none'; }
+function resetEmailCode() { emailCodeSent = false; emailCodeSkipped = false; document.getElementById('emailCodeWrap').style.display='none'; }
+async function sendCode() {
+  const phone = document.getElementById('phone').value.trim().replace(/\D/g,'');
+  if (phone.length < 10) { showErr('请填写有效的10位手机号'); return; }
+  const btn = document.getElementById('sendCodeBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  showErr('');
+  try {
+    const r = await fetch('/api/admin-invite/send-code', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, phone }) });
+    const d = await r.json();
+    if (!r.ok) { showErr(d.error || '发送失败'); btn.disabled=false; btn.textContent='发送验证码'; return; }
+    codeSent = true; codeSkipped = d.skipped || false;
+    if (!codeSkipped) {
+      document.getElementById('codeWrap').style.display = '';
+      btn.textContent = '重新发送'; btn.disabled = false;
+    } else {
+      btn.textContent = '已跳过';
+    }
+  } catch { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='发送验证码'; }
+}
+async function sendEmailCode() {
+  const email = document.getElementById('email').value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
+  const btn = document.getElementById('sendEmailCodeBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  showErr('');
+  try {
+    const r = await fetch('/api/admin-invite/send-email-code', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, email }) });
+    const d = await r.json();
+    if (!r.ok) { showErr(d.error || '发送失败'); btn.disabled=false; btn.textContent='发送验证码'; return; }
+    emailCodeSent = true; emailCodeSkipped = d.skipped || false;
+    if (!emailCodeSkipped) {
+      document.getElementById('emailCodeWrap').style.display = '';
+      btn.textContent = '重新发送'; btn.disabled = false;
+    } else {
+      btn.textContent = '已跳过';
+    }
+  } catch { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='发送验证码'; }
+}
+function togglePw(id, el) {
+  const inp = document.getElementById(id);
+  if (inp.type === 'password') { inp.type = 'text'; el.style.opacity = '1'; }
+  else { inp.type = 'password'; el.style.opacity = '.5'; }
+}
+async function doRegister() {
+  const btn = document.getElementById('btn');
+  showErr('');
+  const username = document.getElementById('username').value.trim();
+  const first_name = document.getElementById('first_name').value.trim();
+  const middle_name = document.getElementById('middle_name').value.trim();
+  const last_name = document.getElementById('last_name').value.trim();
+  const display_name = [first_name, middle_name, last_name].filter(Boolean).join(' ');
+  const phone = document.getElementById('phone').value.trim().replace(/\D/g,'');
+  const email = document.getElementById('email').value.trim();
+  const city = document.getElementById('city').value.trim();
+  const state = document.getElementById('state').value.trim();
+  const zip = document.getElementById('zip').value.trim();
+  const sms_code = document.getElementById('sms_code').value.trim();
+  const email_code = document.getElementById('email_code').value.trim();
+  const password = document.getElementById('password').value;
+  const password2 = document.getElementById('password2').value;
+  if (!username) { showErr('请填写用户名'); return; }
+  if (!first_name || !last_name) { showErr('请填写名字（First Name 和 Last Name）'); return; }
+  if (!phone || phone.length < 10) { showErr('请填写有效的手机号'); return; }
+  if (!codeSent && !codeSkipped) { showErr('请先发送手机验证码并填写验证码'); return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
+  if (!emailCodeSent && !emailCodeSkipped) { showErr('请先发送邮箱验证码并填写验证码'); return; }
+  if (password.length < 6) { showErr('密码至少 6 位'); return; }
+  if (password !== password2) { showErr('两次密码不一致'); return; }
+  btn.disabled = true; btn.textContent = '注册中…';
+  try {
+    const r = await fetch('/api/admin-invite/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, username, display_name, first_name, middle_name, last_name, phone, email, city, state, zip, sms_code, email_code, password }) });
+    const d = await r.json();
+    if (!r.ok) { showErr(d.error || '注册失败'); btn.disabled=false; btn.textContent='创建账户'; return; }
+    localStorage.setItem('adminToken', d.token);
+    document.getElementById('form').style.display = 'none';
+    document.getElementById('done').style.display = '';
+    // Store token in the key each portal reads
+    if (d.role === 'manager') {
+      localStorage.setItem('mgr_token', d.token);
+    } else if (d.role === 'staff') {
+      document.cookie = 'pa_token=' + d.token + ';path=/;max-age=86400;SameSite=Strict';
+    } else {
+      localStorage.setItem('adminToken', d.token);
+    }
+    const dest = { admin: '/admin', staff: '/staff', manager: '/manager' }[d.role] || '/admin';
+    setTimeout(() => { location.href = dest; }, 1500);
+  } catch(e) { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='创建账户'; }
+}
+init();
+</script>
+</body>
+</html>`);
+}
+
+app.get('/admin-invite', serveAdminInvitePage);
+// /staff and /manager: serve invite page if token present, otherwise portal
+app.get('/staff', (req, res) => {
+  if (req.query.token) return serveAdminInvitePage(req, res);
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(require('path').join(__dirname, 'public', 'staff.html'));
+});
+app.get('/manager', (req, res) => {
+  if (req.query.token) return serveAdminInvitePage(req, res);
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(require('path').join(__dirname, 'public', 'manager.html'));
+});
+
+// ─── Manager Invite Links ───
+// Admin: list active invites
+app.get('/api/admin/manager-invites', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare("SELECT * FROM manager_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC").all();
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}/manager-register?token=${r.token}` })));
+});
+
+// Admin: create invite link
+app.post('/api/admin/manager-invites', requireAdmin, requireRole('admin'), (req, res) => {
+  const { note, role, expires_hours } = req.body;
+  const r = ['admin', 'staff', 'manager'].includes(role) ? role : 'manager';
+  const hours = Math.min(Math.max(parseInt(expires_hours) || 72, 1), 720);
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + hours * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  db.prepare('INSERT INTO manager_invites (token, role, note, expires_at, created_by) VALUES (?,?,?,?,?)')
+    .run(token, r, note || '', expiresAt, req.userId);
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json({ success: true, token, url: `${proto}://${host}/manager-register?token=${token}` });
+});
+
+// Admin: revoke invite
+app.delete('/api/admin/manager-invites/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM manager_invites WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ── Public: validate invite token ──
+app.get('/api/public/manager-invite/:token', (req, res) => {
+  const inv = db.prepare("SELECT id, role, note FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(req.params.token);
+  if (!inv) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  res.json({ valid: true, role: inv.role, note: inv.note });
+});
+
+// ── Public: send verification code for manager registration ──
+app.post('/api/public/manager-register/send-code', async (req, res) => {
+  const { token, contact, contact_type } = req.body; // contact_type: 'phone' or 'email'
+  if (!token || !contact || !contact_type) return res.status(400).json({ error: 'Missing fields' });
+  const inv = db.prepare("SELECT * FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
+  if (!inv) return res.status(400).json({ error: 'Invalid or expired invite link' });
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  // Clean old codes for same token+contact
+  db.prepare('DELETE FROM manager_reg_codes WHERE token=? AND contact=?').run(token, contact);
+  db.prepare('INSERT INTO manager_reg_codes (token, contact, contact_type, code, expires_at) VALUES (?,?,?,?,?)')
+    .run(token, contact, contact_type, code, expiresAt);
+
+  if (contact_type === 'phone') {
+    await sendSMS(contact, `您的 Prime Anchorpoint 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
+  } else {
+    await sendEmail(contact, '验证码 / Verification Code — Prime Anchorpoint',
+      `您的验证码是 ${code}，10分钟内有效。\nYour verification code is ${code}.`,
+      verificationCodeHtml(code));
+  }
+  res.json({ success: true });
+});
+
+// ── Public: complete manager registration ──
+app.post('/api/public/manager-register/complete', async (req, res) => {
+  const { token, username, display_name, password, contact, contact_type, code } = req.body;
+  if (!token || !username || !password || !contact || !contact_type || !code)
+    return res.status(400).json({ error: 'Missing required fields' });
+  if (password.length < 6) return res.status(400).json({ error: '密码至少6位 / Password must be at least 6 characters' });
+
+  // Validate invite
+  const inv = db.prepare("SELECT * FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
+  if (!inv) return res.status(400).json({ error: 'Invalid or expired invite link' });
+
+  // Validate verification code
+  const vc = db.prepare("SELECT * FROM manager_reg_codes WHERE token=? AND contact=? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1").get(token, contact);
+  if (!vc || vc.code !== String(code)) return res.status(400).json({ error: '验证码错误或已过期 / Invalid or expired code' });
+
+  // Check username not taken
+  const existing = db.prepare('SELECT id FROM admin_users WHERE username=? AND active=1').get(username);
+  if (existing) return res.status(400).json({ error: '用户名已被占用 / Username already taken' });
+
+  // Create account (active=1, since they verified contact)
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, active) VALUES (?,?,?,?,?,1)')
+    .run(username, hash, salt, inv.role, display_name || username);
+
+  // Mark invite used + clean up code
+  db.prepare('UPDATE manager_invites SET used=1 WHERE id=?').run(inv.id);
+  db.prepare('DELETE FROM manager_reg_codes WHERE token=?').run(token);
+
+  const newUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
+  const sessionToken = createSession(newUser);
+  res.json({ success: true, token: sessionToken, role: newUser.role, username: newUser.username, display_name: newUser.display_name });
 });
 
 // ─── Worker Accounts (admin manages) ───
@@ -1903,6 +2734,23 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       req.params.id
     );
   res.json({ success: true });
+});
+
+app.get('/api/admin/worker-accounts/:id/assignments', requireAdmin, (req, res) => {
+  const w = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w || !w.linked_inquiry_id) return res.json([]);
+  const rows = db.prepare(`
+    SELECT a.id, a.status, a.start_date, a.assigned_at, a.pay_rate, a.pay_type, a.contract_type,
+           a.category, a.worker_response,
+           j.title AS job_title, j.location AS job_location,
+           i.name AS company_name
+    FROM assignments a
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    WHERE a.inquiry_id = ?
+    ORDER BY a.assigned_at DESC
+  `).all(w.linked_inquiry_id);
+  res.json(rows);
 });
 
 app.get('/api/admin/worker-accounts/:id/history', requireAdmin, (req, res) => {
@@ -2587,9 +3435,12 @@ app.get('/api/admin/job-applications', requireAdmin, blockManager, (req, res) =>
 });
 
 app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (req, res) => {
-  const { status, notes, admin_note, interview_datetime, interview_location_text, notify } = req.body;
-  db.prepare('UPDATE job_applications SET status=?, notes=?, admin_note=?, interview_datetime=?, interview_location_text=? WHERE id=?')
-    .run(status, notes||'', admin_note||'', interview_datetime||'', interview_location_text||'', req.params.id);
+  const { status, notes, admin_note, interview_datetime, interview_location_text, interview_times, notify } = req.body;
+  // interview_times: array of datetime strings (multi-slot support)
+  const timesJson = Array.isArray(interview_times) && interview_times.length ? JSON.stringify(interview_times) : '';
+  const primaryDatetime = (Array.isArray(interview_times) && interview_times[0]) ? interview_times[0] : (interview_datetime || '');
+  db.prepare('UPDATE job_applications SET status=?, notes=?, admin_note=?, interview_datetime=?, interview_location_text=?, interview_times_json=? WHERE id=?')
+    .run(status, notes||'', admin_note||'', primaryDatetime, interview_location_text||'', timesJson, req.params.id);
   let emailSent = false, smsSent = false;
   if (notify && status === 'interview_scheduled') {
     try {
@@ -2604,14 +3455,17 @@ app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (re
       `).get(req.params.id);
       if (app2) {
         const workerName = app2.first_name ? `${app2.first_name} ${app2.last_name||''}`.trim() : app2.username || '';
-        const dtStr = interview_datetime ? new Date(interview_datetime).toLocaleString('zh-CN', { timeZone: 'America/New_York', year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit' }) : '';
+        const times = Array.isArray(interview_times) && interview_times.length ? interview_times : (interview_datetime ? [interview_datetime] : []);
+        const fmtDt = dt => new Date(dt).toLocaleString('zh-CN', { timeZone: 'America/New_York', year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit' });
+        const dtLines = times.map((t, i) => (times.length > 1 ? `时间选项${i+1}：` : '时间：') + fmtDt(t)).join('\n');
+        const dtHtmlRows = times.map((t, i) => `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📅 ${times.length > 1 ? `时间${i+1}` : '时间'}</td><td style="padding:.4rem 0">${fmtDt(t)}</td></tr>`).join('');
         const locStr = interview_location_text || '';
         const noteStr = admin_note || '';
         const subject = 'Prime Anchorpoint — 面试通知 / Interview Scheduled';
-        const textMsg = `您好 ${workerName}，\n\n您申请的职位「${app2.job_title}」已安排面试：\n${dtStr ? '时间：' + dtStr + '\n' : ''}${locStr ? '地点：' + locStr + '\n' : ''}${noteStr ? '备注：' + noteStr + '\n' : ''}\n请登录工人门户查看详情。`;
+        const textMsg = `您好 ${workerName}，\n\n您申请的职位「${app2.job_title}」已安排面试：\n${dtLines ? dtLines + '\n' : ''}${locStr ? '地点：' + locStr + '\n' : ''}${noteStr ? '备注：' + noteStr + '\n' : ''}\n请登录工人门户查看详情。`;
         const htmlMsg = `<p>您好 ${workerName}，</p><p>您申请的职位 <strong>${app2.job_title}</strong> 已安排面试：</p>
           <table style="border-collapse:collapse;margin:1rem 0;font-size:15px">
-            ${dtStr ? `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📅 时间</td><td style="padding:.4rem 0">${dtStr}</td></tr>` : ''}
+            ${dtHtmlRows}
             ${locStr ? `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📍 地点</td><td style="padding:.4rem 0">${locStr}</td></tr>` : ''}
             ${noteStr ? `<tr><td style="padding:.4rem .9rem .4rem 0;font-weight:700;white-space:nowrap">📝 备注</td><td style="padding:.4rem 0">${noteStr}</td></tr>` : ''}
           </table>
@@ -2703,16 +3557,16 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   const jobStatus = d.job_status || 'open';
   const stmt = db.prepare(`INSERT INTO jobs
-    (partner_id, title, type, location, pay, pay_period, lang, lang_name, description, urgent,
+    (partner_id, title, type, category, location, pay, pay_period, lang, lang_name, description, urgent,
      work_auth, benefits, schedule, company_id, company_name, employment_type,
-     work_days, work_start, work_end, schedule_days, schedule_start, schedule_end,
+     work_days, work_start, work_end, work_schedule, schedule_days, schedule_start, schedule_end,
      job_status, active, close_reason, close_note, headcount)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
-    d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
+    d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
     d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
     d.company_id||null, d.company_name||'', d.employment_type||'',
-    d.work_days||'', d.work_start||'', d.work_end||'',
+    d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
     d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
     jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1
   );
@@ -2724,17 +3578,17 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
   const d = req.body;
   const old = db.prepare('SELECT * FROM jobs WHERE id=?').get(req.params.id);
   const jobStatus = d.job_status || 'open';
-  db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, location=?, pay=?, pay_period=?, lang=?, lang_name=?,
+  db.prepare(`UPDATE jobs SET partner_id=?, title=?, type=?, category=?, location=?, pay=?, pay_period=?, lang=?, lang_name=?,
     description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
-    company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?,
+    company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?, work_schedule=?,
     schedule_days=?, schedule_start=?, schedule_end=?,
     job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
     .run(
-      d.partner_id||null, d.title, d.type||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
+      d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
       d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
       d.work_auth||'', d.benefits||'', d.schedule||'',
       d.company_id||null, d.company_name||'', d.employment_type||'',
-      d.work_days||'', d.work_start||'', d.work_end||'',
+      d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
       d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
       jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
       req.params.id
@@ -2750,6 +3604,12 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
 
 app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
   const old = db.prepare('SELECT title, company_name FROM jobs WHERE id=?').get(req.params.id);
+  if (!old) return res.status(404).json({ error: '职位不存在 / Job not found' });
+  // Block deletion if the job has any assignments (workers assigned to it)
+  const assignmentCount = db.prepare('SELECT COUNT(*) as cnt FROM assignments WHERE job_id=?').get(req.params.id);
+  if (assignmentCount && assignmentCount.cnt > 0) {
+    return res.status(409).json({ error: `该职位已有 ${assignmentCount.cnt} 名工人被分配，无法删除。请先取消所有派工记录。 / Cannot delete: ${assignmentCount.cnt} worker(s) are assigned to this job. Remove all assignments first.` });
+  }
   db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
   logJobAudit.run(req.params.id, 'deleted', JSON.stringify(old || {}), req.userName);
   res.json({ success: true });
@@ -3073,22 +3933,46 @@ app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
 });
 
 app.post('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
-  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements } = req.body;
+  const { inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements, category } = req.body;
   if (!inquiry_id || !job_id) return res.status(400).json({ error: 'inquiry_id and job_id required' });
   const r = db.prepare(`INSERT INTO assignments
-    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    (inquiry_id, job_id, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements, category)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(inquiry_id, job_id, notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}',
-         work_address || '', work_lat || null, work_lng || null, work_radius || 200, task_requirements || '[]');
+         work_address || '', work_lat || null, work_lng || null, work_radius || 200, task_requirements || '[]', category || '');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('update', 'assignments'), (req, res) => {
-  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements } = req.body;
-  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=?, work_schedule=?, work_address=?, work_lat=?, work_lng=?, work_radius=?, task_requirements=? WHERE id=?`)
+  const { status, notes, pay_rate, pay_type, contract_type, benefits, start_date, work_schedule, work_address, work_lat, work_lng, work_radius, task_requirements, category } = req.body;
+  const old = db.prepare('SELECT status FROM assignments WHERE id=?').get(req.params.id);
+  db.prepare(`UPDATE assignments SET status=?, notes=?, pay_rate=?, pay_type=?, contract_type=?, benefits=?, start_date=?, work_schedule=?, work_address=?, work_lat=?, work_lng=?, work_radius=?, task_requirements=?, category=? WHERE id=?`)
     .run(status || 'assigned', notes || '', pay_rate || '', pay_type || 'hourly', contract_type || 'W2', benefits || '', start_date || '', work_schedule || '{}',
-         work_address || '', work_lat || null, work_lng || null, work_radius || 200, task_requirements || '[]', req.params.id);
+         work_address || '', work_lat || null, work_lng || null, work_radius || 200, task_requirements || '[]', category || '', req.params.id);
+  if (old && status && old.status !== status) {
+    db.prepare('INSERT INTO assignment_status_history (assignment_id, old_status, new_status, changed_by) VALUES (?,?,?,?)')
+      .run(req.params.id, old.status, status, req.admin?.username || req.admin?.display_name || 'admin');
+  }
   res.json({ success: true });
+});
+
+// PATCH status only — lightweight inline update
+app.patch('/api/admin/assignments/:id/status', requireAdmin, blockManager, (req, res) => {
+  const { status, reason } = req.body;
+  if (!status) return res.status(400).json({ error: 'status required' });
+  const old = db.prepare('SELECT status FROM assignments WHERE id=?').get(req.params.id);
+  if (!old) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE assignments SET status=? WHERE id=?').run(status, req.params.id);
+  if (old.status !== status) {
+    db.prepare('INSERT INTO assignment_status_history (assignment_id, old_status, new_status, changed_by, reason) VALUES (?,?,?,?,?)')
+      .run(req.params.id, old.status, status, req.admin?.username || req.admin?.display_name || 'admin', reason || '');
+  }
+  res.json({ success: true });
+});
+
+// GET history for an assignment
+app.get('/api/admin/assignments/:id/history', requireAdmin, blockManager, (req, res) => {
+  res.json(db.prepare('SELECT * FROM assignment_status_history WHERE assignment_id=? ORDER BY changed_at DESC').all(req.params.id));
 });
 
 app.delete('/api/admin/assignments/:id', requireAdmin, blockManager, staffGuard('delete', 'assignments'), (req, res) => {
@@ -3191,6 +4075,80 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
 
 app.get('/api/admin/employees/:id/doc-requests', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id));
+});
+
+// ─── Employee Registration Invites ───
+
+// Admin: send registration invite link to employee (via SMS/email)
+app.post('/api/admin/employees/:id/send-registration-link', requireAdmin, async (req, res) => {
+  try {
+    const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+
+    // Invalidate old pending invites
+    db.prepare("DELETE FROM employee_registration_invites WHERE employee_id=? AND used=0").run(emp.id);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+    db.prepare('INSERT INTO employee_registration_invites (employee_id, token, expires_at) VALUES (?,?,?)')
+      .run(emp.id, token, expiresAt);
+
+    const host = req.get('host');
+    const proto = req.protocol;
+    const inviteUrl = `${proto}://${host}/register?invite=${token}`;
+
+    const name = `${emp.first_name||''} ${emp.last_name||''}`.trim();
+    let smsSent = false, emailSent = false;
+    const errs = [];
+
+    // SMS
+    const phone = (req.body.phone || emp.phone || '').replace(/\D/g,'').slice(-10);
+    if (phone) {
+      smsSent = await sendSMS('+1'+phone,
+        `[Prime Anchorpoint] 您好 ${name}，请点击以下链接完成账户注册（7天内有效）:\n${inviteUrl}\nHi ${name}, click to register your account (valid 7 days).`
+      );
+      if (!smsSent) errs.push('SMS failed');
+    }
+
+    // Email
+    const email = req.body.email || emp.email || '';
+    if (email) {
+      const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+        <h2 style="color:#0F2B5B">Prime Anchor Point — 账户注册邀请</h2>
+        <p>您好 <strong>${name}</strong>，</p>
+        <p>请点击下方按钮完成您的账户注册，验证手机号和邮箱。链接 <strong>7天内有效</strong>。</p>
+        <p><a href="${inviteUrl}" style="display:inline-block;padding:12px 28px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">注册账户 / Register Account</a></p>
+        <p style="color:#64748b;font-size:.85rem">或复制此链接：<br>${inviteUrl}</p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:1.5rem 0">
+        <p style="color:#94a3b8;font-size:.75rem">Prime Anchor Point Staffing &mdash; 如非本人请忽略此邮件</p>
+      </div>`;
+      emailSent = await sendEmail(email, 'Prime Anchor Point — 账户注册邀请 / Registration Invite', null, html);
+      if (!emailSent) errs.push('Email failed');
+    }
+
+    res.json({ success: true, invite_url: inviteUrl, sms_sent: smsSent, email_sent: emailSent, warnings: errs });
+  } catch (e) {
+    console.error('[Send Reg Link]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Public: validate invite token (used by register.html)
+app.get('/api/register/invite-info', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Missing token' });
+  const inv = db.prepare("SELECT * FROM employee_registration_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
+  if (!inv) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  const emp = db.prepare('SELECT id, first_name, last_name, email, phone FROM employees WHERE id=?').get(inv.employee_id);
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+  res.json({
+    valid: true,
+    first_name: emp.first_name || '',
+    last_name: emp.last_name || '',
+    email: emp.email || '',
+    phone: emp.phone ? emp.phone.replace(/\D/g,'').slice(-10) : '',
+    employee_id: emp.id
+  });
 });
 
 app.delete('/api/admin/employee-doc-requests/:id', requireAdmin, (req, res) => {
@@ -3450,8 +4408,17 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
     GROUP BY COALESCE(s.job_id, s.company_name)
     ORDER BY MAX(s.period_end) DESC
   `).all(req.params.id);
+  const currentJobs = db.prepare(`
+    SELECT ej.id, ej.job_id, ej.job_title, ej.company_name, ej.status, ej.start_date, ej.end_date,
+           ej.emp_hourly_rate, j.location
+    FROM employee_jobs ej
+    LEFT JOIN jobs j ON ej.job_id = j.id
+    WHERE ej.employee_id = ?
+    ORDER BY CASE ej.status WHEN 'active' THEN 0 ELSE 1 END, ej.start_date DESC, ej.assigned_at DESC
+    LIMIT 10
+  `).all(req.params.id);
   const ssn_full = emp.ssn_encrypted && emp.ssn_iv ? decryptSSN(emp.ssn_encrypted, emp.ssn_iv) : null;
-  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory });
+  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory, current_jobs: currentJobs });
 });
 
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
@@ -3481,16 +4448,19 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   if (d.pin) { pin_salt = crypto.randomBytes(16).toString('hex'); pin_hash = hashPin(d.pin, pin_salt); }
   try {
     const r = db.prepare(`INSERT INTO employees
-      (employee_id,first_name,last_name,email,phone,address,street2,city,state,zip,dob,
+      (employee_id,first_name,middle_name,last_name,email,phone,extra_phones,extra_emails,address,street2,city,state,zip,dob,
        emergency_name,emergency_phone,emergency_relation,hire_date,position,department,
-       pay_rate,pay_type,status,pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,notes)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      empId,d.first_name,d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
+       pay_rate,pay_type,status,pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,notes,social_media)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      empId,d.first_name,d.middle_name||'',d.last_name,d.email||'',d.phone||'',
+      JSON.stringify(d.extra_phones||[]),JSON.stringify(d.extra_emails||[]),
+      d.address||'',d.street2||'',
       d.city||'',d.state||'',d.zip||'',d.dob||'',
       d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
       d.hire_date||'',d.position||'',d.department||'',
       parseFloat(d.pay_rate)||0,d.pay_type||'hourly',d.status||'active',
-      pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'');
+      pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
+      JSON.stringify(d.social_media||{}));
     const newId = r.lastInsertRowid;
     if (d.force) {
       if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), newId);
@@ -3531,12 +4501,12 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     pin_hash = hashPin(d.pin, pin_salt);
   }
   db.prepare(`UPDATE employees SET
-    employee_id=?,first_name=?,last_name=?,email=?,phone=?,address=?,street2=?,city=?,state=?,zip=?,dob=?,
+    employee_id=?,first_name=?,middle_name=?,last_name=?,email=?,phone=?,address=?,street2=?,city=?,state=?,zip=?,dob=?,
     emergency_name=?,emergency_phone=?,emergency_relation=?,hire_date=?,position=?,department=?,
     pay_rate=?,pay_type=?,status=?,pin_hash=?,pin_salt=?,ssn_encrypted=?,ssn_iv=?,ssn_last4=?,notes=?,
-    extra_phones=?,extra_emails=?
+    extra_phones=?,extra_emails=?,social_media=?
     WHERE id=?`).run(
-    d.employee_id||emp.employee_id,d.first_name,d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
+    d.employee_id||emp.employee_id,d.first_name,d.middle_name||emp.middle_name||'',d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
     d.city||'',d.state||'',d.zip||'',d.dob||'',
     d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
     d.hire_date||'',d.position||'',d.department||'',
@@ -3544,6 +4514,7 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
     JSON.stringify(d.extra_phones || JSON.parse(emp.extra_phones || '[]')),
     JSON.stringify(d.extra_emails || JSON.parse(emp.extra_emails || '[]')),
+    JSON.stringify(d.social_media || JSON.parse(emp.social_media || '{}')),
     req.params.id);
   if (d.force) {
     if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), req.params.id);
@@ -4042,34 +5013,155 @@ app.get('/api/timeclock/status/:empCode', (req, res) => {
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - (weekAgo.getDay() || 7) + 1);
   const weekEntries = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND clock_in>=? AND status='closed'").all(emp.id, weekAgo.toISOString());
   const weekHours = weekEntries.reduce((s,e) => s + (e.total_hours||0), 0);
+  // Fetch configured work sites for this employee (via active assignments)
+  const sites = db.prepare(`
+    SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    JOIN job_sites js ON j.site_id = js.id
+    JOIN inquiries i ON a.inquiry_id = i.id
+    JOIN employees e ON (e.employee_id = i.worker_code OR i.id = (
+      SELECT linked_inquiry_id FROM worker_accounts WHERE linked_inquiry_id IS NOT NULL
+      AND id IN (SELECT id FROM worker_accounts WHERE 1=0)
+    ))
+    WHERE e.id = ? AND a.status IN ('assigned','working') AND js.latitude IS NOT NULL
+    LIMIT 10
+  `).all(emp.id);
+  // Also check employee_jobs table
+  const sites2 = db.prepare(`
+    SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+    FROM employee_jobs ej
+    JOIN jobs j ON ej.job_id = j.id
+    JOIN job_sites js ON j.site_id = js.id
+    WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL
+    LIMIT 10
+  `).all(emp.id);
+  const allSites = [...sites, ...sites2].filter((s,i,arr) => arr.findIndex(x=>x.id===s.id)===i);
   res.json({
     employee: { id: emp.id, name: `${emp.first_name} ${emp.last_name}`, employee_id: emp.employee_id, position: emp.position||'' },
     clocked_in: !!open,
+    on_break: open ? !!(open.on_break) : false,
     open_entry: open || null,
     today_hours: Math.round(todayHours*100)/100,
     week_hours: Math.round(weekHours*100)/100,
-    clock_in_time: open ? open.clock_in : null
+    clock_in_time: open ? open.clock_in : null,
+    work_sites: allSites
   });
 });
 
 app.post('/api/timeclock/punch', (req, res) => {
-  const { employee_id, pin } = req.body;
+  const { employee_id, pin, punch_type, latitude, longitude } = req.body;
   if (!employee_id || !pin) return res.status(400).json({ error: '请输入员工编号和 PIN' });
+  const ptype = punch_type || 'toggle'; // legacy: no punch_type = auto toggle
   const emp = db.prepare("SELECT * FROM employees WHERE employee_id=? AND status='active'").get(employee_id.toUpperCase());
   if (!emp) return res.status(401).json({ error: '未找到员工或员工已离职' });
   if (!emp.pin_hash) return res.status(401).json({ error: 'PIN 未设置，请联系管理员' });
   if (!verifyPin(pin, emp.pin_salt, emp.pin_hash)) return res.status(401).json({ error: 'PIN 错误' });
-  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
+
   const now = new Date().toISOString();
-  if (open) {
-    const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
-    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
-      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
-  } else {
-    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status) VALUES(?,?,'open')").run(emp.id, now);
-    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
+
+  // ── Geofencing: only block if worker has configured sites AND is outside ALL of them ──
+  if (latitude && longitude) {
+    const empSites = db.prepare(`
+      SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+      FROM employee_jobs ej
+      JOIN jobs j ON ej.job_id = j.id
+      JOIN job_sites js ON j.site_id = js.id
+      WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL
+    `).all(emp.id);
+    if (empSites.length > 0) {
+      let insideAny = false;
+      let closestDist = Infinity, closestSite = null;
+      for (const site of empSites) {
+        const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
+        if (dist <= site.radius_meters) { insideAny = true; break; }
+        if (dist < closestDist) { closestDist = dist; closestSite = site; }
+      }
+      if (!insideAny && closestSite) {
+        const distStr = closestDist >= 1000 ? (closestDist/1000).toFixed(1)+' km' : Math.round(closestDist)+' m';
+        return res.status(400).json({ error: `距离工作地点太远，无法打卡（距"${closestSite.name}"约 ${distStr}，允许范围 ${closestSite.radius_meters}m）`, geo_blocked: true });
+      }
+    }
   }
+
+  let warning = null; // warning message (not blocking)
+
+  // ── Legacy toggle (no punch_type) ──
+  if (ptype === 'toggle') {
+    if (open) {
+      const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
+      db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
+        .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+      return res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
+    } else {
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break) VALUES(?,?,'open','[]',0)").run(emp.id, now);
+      return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+    }
+  }
+
+  // ── Clock In ──
+  if (ptype === 'in') {
+    if (open) {
+      warning = `提示：您已有上班记录（${new Date(open.clock_in).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}），请确认是否漏打下班卡`;
+      return res.json({ action: 'in', already_open: true, clock_in: open.clock_in, warning, entry_id: open.id });
+    }
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type) VALUES(?,?,'open','[]',0,'in')").run(emp.id, now);
+    return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+  }
+
+  // ── Clock Out ──
+  if (ptype === 'out') {
+    if (!open) {
+      warning = '提示：未找到对应上班记录，可能漏打上班卡，已记录下班时间';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,total_hours,break_records,on_break,punch_type) VALUES(?,?,?,'closed',0,'[]',0,'out_only')").run(emp.id, now, now);
+      return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning, entry_id: r.lastInsertRowid });
+    }
+    if (open.on_break) warning = '提示：您处于暂停中，已自动结束暂停并打下班卡';
+    const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out' WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+    return res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime, warning });
+  }
+
+  // ── Break Start (Pause) ──
+  if (ptype === 'break_start') {
+    if (!open) {
+      warning = '提示：未找到上班记录，可能漏打上班卡';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type) VALUES(?,?,'open',?,1,'in')").run(emp.id, now, JSON.stringify([{start:now,end:null}]));
+      return res.json({ action: 'break_start', warning, entry_id: r.lastInsertRowid });
+    }
+    const breaks = JSON.parse(open.break_records||'[]');
+    if (open.on_break) {
+      warning = '提示：您已在暂停中，已重新记录暂停开始时间';
+      const lastOpen = breaks.findIndex(b=>!b.end);
+      if (lastOpen>=0) breaks[lastOpen].start = now;
+    } else {
+      breaks.push({start:now,end:null});
+    }
+    db.prepare('UPDATE time_entries SET break_records=?,on_break=1,break_start=? WHERE id=?').run(JSON.stringify(breaks), now, open.id);
+    return res.json({ action: 'break_start', entry_id: open.id, warning });
+  }
+
+  // ── Break End (Resume) ──
+  if (ptype === 'break_end') {
+    if (!open) {
+      warning = '提示：未找到上班记录，可能漏打上班卡，此操作已忽略';
+      return res.json({ action: 'break_end', no_entry: true, warning });
+    }
+    if (!open.on_break) {
+      warning = '提示：您当前不在暂停中，此操作已记录';
+    }
+    const breaks = JSON.parse(open.break_records||'[]');
+    const lastIdx = breaks.findIndex(b=>!b.end);
+    if (lastIdx>=0) breaks[lastIdx].end = now;
+    const totalBreakMs = breaks.reduce((sum,b)=>{if(b.start&&b.end)sum+=new Date(b.end)-new Date(b.start);return sum;},0);
+    const breakMins = Math.round(totalBreakMs/60000);
+    db.prepare('UPDATE time_entries SET break_records=?,on_break=0,break_minutes=? WHERE id=?').run(JSON.stringify(breaks),breakMins,open.id);
+    return res.json({ action: 'break_end', break_minutes: breakMins, warning });
+  }
+
+  return res.status(400).json({ error: '无效的打卡类型' });
 });
 
 // Serve timeclock page
@@ -4302,8 +5394,11 @@ app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
 app.get('/api/worker/timeclock', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json([]);
   const entries = db.prepare(`
-    SELECT t.*, j.title AS job_title, j.company_name AS job_company
-    FROM time_entries t LEFT JOIN jobs j ON t.job_id = j.id
+    SELECT t.*, j.title AS job_title, j.company_name AS job_company,
+           COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    FROM time_entries t
+    LEFT JOIN jobs j ON t.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
     WHERE t.employee_id = ? ORDER BY t.clock_in DESC LIMIT 200
   `).all(req.workerEmployeeId);
   res.json(entries);
@@ -4322,19 +5417,80 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   // ── Break start ──────────────────────────────────────────────────
   if (punch_type === 'break_start') {
-    if (!open) return res.status(400).json({ error: '尚未上班打卡，无法开始休息。' });
-    if (open.on_break) return res.status(400).json({ error: '您已在休息中，请先打卡休息结束。' });
+    let bsWarning = null;
+    if (!open) bsWarning = '提示：未找到上班打卡记录，可能漏打了上班卡';
+    else if (open.on_break) bsWarning = '提示：您已在休息中，已重新记录暂停开始时间';
+    if (!open) {
+      // No open entry — create one with a flag
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'open',?,1,'in',1,'漏打上班卡，由break_start触发')").run(req.workerEmployeeId, now, JSON.stringify([{start:now,end:null}]));
+      return res.json({ action: 'break_start', warning: bsWarning, entry_id: r2.lastInsertRowid });
+    }
+
+    // GPS + geo-fence verification (same rules as clock-in)
+    let bsGeoVerified = 0;
+    if (latitude && longitude && open.job_id) {
+      const bsJob = db.prepare(`
+        SELECT js.id AS js_id, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters, js.name AS site_name
+        FROM jobs j LEFT JOIN job_sites js ON j.site_id = js.id
+        WHERE j.id = ?
+      `).get(open.job_id);
+      if (bsJob && bsJob.js_id) {
+        const dist = haversineDistance(latitude, longitude, bsJob.site_lat, bsJob.site_lng);
+        if (dist <= bsJob.radius_meters) {
+          bsGeoVerified = 1;
+        } else {
+          const distKm = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : Math.round(dist) + ' m';
+          return res.status(400).json({ error: `您的位置不在工作地点范围内（距"${bsJob.site_name}"约 ${distKm}，允许范围 ${bsJob.radius_meters}m）。\n请到达工作地点后再暂停打卡。`, geo_blocked: true });
+        }
+      }
+      if (!bsGeoVerified) {
+        const assignSite2 = db.prepare(`
+          SELECT a.work_lat, a.work_lng, a.work_radius
+          FROM assignments a JOIN worker_accounts w ON a.inquiry_id = w.linked_inquiry_id
+          WHERE w.id = ? AND a.job_id = ? AND a.status IN ('assigned','working') AND a.work_lat IS NOT NULL
+          ORDER BY a.assigned_at DESC LIMIT 1
+        `).get(req.workerId, open.job_id);
+        if (assignSite2) {
+          const dist2 = haversineDistance(latitude, longitude, assignSite2.work_lat, assignSite2.work_lng);
+          if (dist2 <= (assignSite2.work_radius || 200)) {
+            bsGeoVerified = 1;
+          } else {
+            const distKm2 = dist2 >= 1000 ? (dist2 / 1000).toFixed(1) + ' km' : Math.round(dist2) + ' m';
+            return res.status(400).json({ error: `您的位置不在工作地点范围内（距指定地址约 ${distKm2}）。\n请到达工作地点后再暂停打卡。`, geo_blocked: true });
+          }
+        }
+      }
+      if (!bsGeoVerified) return res.status(400).json({ error: '该工作暂未配置工作地点，无法验证位置，请联系HR。', no_site: true });
+    } else if (!latitude || !longitude) {
+      return res.status(400).json({ error: '暂停打卡需要开启位置权限，请允许浏览器获取您的位置后重试。', need_gps: true });
+    }
+
+    if (!photo_data) return res.status(400).json({ error: '暂停打卡需要上传照片 / Photo is required for pausing.', photo_required: true });
+
+    // Save pause photo to disk
+    let pausePhotoFilename = null;
+    try {
+      const base64Data = photo_data.replace(/^data:image\/\w+;base64,/, '');
+      const ext = (photo_data.match(/^data:image\/(\w+);base64,/) || [])[1] || 'jpg';
+      pausePhotoFilename = `pause-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      fs.writeFileSync(path.join(punchPhotosDir, pausePhotoFilename), Buffer.from(base64Data, 'base64'));
+    } catch (e) { /* photo save failure is non-fatal */ }
+
     const breaks = JSON.parse(open.break_records || '[]');
-    breaks.push({ start: now, end: null });
+    breaks.push({ start: now, end: null, latitude: latitude || null, longitude: longitude || null, geo_verified: bsGeoVerified, photo_path: pausePhotoFilename });
     db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?')
       .run(JSON.stringify(breaks), open.id);
-    return res.json({ action: 'break_start', break_index: breaks.length - 1 });
+    return res.json({ action: 'break_start', break_index: breaks.length - 1, entry_id: open.id, geo_verified: bsGeoVerified });
   }
 
   // ── Break end ────────────────────────────────────────────────────
   if (punch_type === 'break_end') {
-    if (!open) return res.status(400).json({ error: '尚未上班打卡。' });
-    if (!open.on_break) return res.status(400).json({ error: '当前不在休息中。' });
+    let beWarning = null;
+    if (!open) beWarning = '提示：未找到上班打卡记录';
+    else if (!open.on_break) beWarning = '提示：您当前不在休息中';
+    if (!open) {
+      return res.json({ action: 'break_end', break_minutes: 0, warning: beWarning });
+    }
     const breaks = JSON.parse(open.break_records || '[]');
     const lastIdx = breaks.findIndex(b => !b.end);
     if (lastIdx >= 0) breaks[lastIdx].end = now;
@@ -4345,13 +5501,19 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     const breakMins = Math.round(totalBreakMs / 60000);
     db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?')
       .run(JSON.stringify(breaks), breakMins, open.id);
-    return res.json({ action: 'break_end', break_minutes: breakMins });
+    return res.json({ action: 'break_end', break_minutes: breakMins, warning: beWarning });
   }
 
   // ── Clock out ────────────────────────────────────────────────────
   if (punch_type === 'out') {
-    if (!open) return res.status(400).json({ error: '尚未上班打卡，无法下班打卡。' });
-    if (open.on_break) return res.status(400).json({ error: '请先打卡休息结束，再下班打卡。' });
+    let outWarning = null;
+    if (!open) outWarning = '提示：未找到上班打卡记录，可能漏打了上班卡';
+    else if (open.on_break) outWarning = '提示：您处于休息中，已自动结束休息并下班打卡';
+    if (!open) {
+      // Record a standalone clock-out for manager review
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(req.workerEmployeeId, now, now);
+      return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning: outWarning, entry_id: r2.lastInsertRowid });
+    }
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out',punch_photo=COALESCE(?,punch_photo) WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, photo_data || null, open.id);
@@ -4359,7 +5521,14 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   }
 
   // ── Clock in ─────────────────────────────────────────────────────
-  if (open) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  let clockInWarning = null;
+  if (open) {
+    // Auto-close the dangling open entry, flag it for manager review
+    const missedDate = open.clock_in ? open.clock_in.slice(0,10) : '?';
+    db.prepare("UPDATE time_entries SET status='closed',clock_out=?,needs_review=1,review_reason=? WHERE id=?")
+      .run(now, `漏打下班卡（${missedDate}），由新上班打卡自动关闭`, open.id);
+    clockInWarning = `提示：${missedDate} 忘记打下班卡，该记录已标记给管理员审核`;
+  }
   if (!latitude || !longitude) return res.status(400).json({ error: '打卡需要开启位置权限，请允许浏览器获取您的位置后重试。/ Location permission required to clock in.', need_gps: true });
   if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
   let activeJob = db.prepare(`
@@ -4434,16 +5603,17 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   if (!photo_data) return res.status(400).json({ error: '上班打卡需要上传照片 / Photo is required for clock-in.', photo_required: true });
 
-  const doClockIn = db.transaction(() => {
-    const existingOpen = db.prepare("SELECT id FROM time_entries WHERE employee_id=? AND status='open' LIMIT 1").get(req.workerEmployeeId);
-    if (existingOpen) return null;
-    return db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
-      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null);
-  });
-  const r = doClockIn();
-  if (!r) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  // Get site timezone for this job
+  const siteTzRow = matchedSiteId
+    ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(matchedSiteId)
+    : (activeJob.js_id ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(activeJob.js_id) : null);
+  const siteTimezone = siteTzRow?.timezone || 'America/Chicago';
+
+  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo,site_timezone) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?,?)")
+    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null, siteTimezone);
   res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
-    site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
+    site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title,
+    site_timezone: siteTimezone, warning: clockInWarning });
 });
 
 // Upload punch photo for a time entry (must belong to this worker)
@@ -4472,6 +5642,7 @@ app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
   const tasks = db.prepare(`
     SELECT a.id, a.status, a.notes, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
            a.start_date, a.work_schedule, a.work_address, a.assigned_at, a.worker_response,
+           a.task_requirements,
            j.title, j.location, j.pay, j.company_name, j.employment_type,
            j.work_days, j.work_start, j.work_end, j.description
     FROM assignments a
@@ -4498,21 +5669,75 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
   res.json({ success: true });
 });
 
+// ─── Work calendar endpoint ───────────────────────────────────────
+// Returns shift_confirmations + active assignments + punch records for a given month
+app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!wa || !wa.linked_inquiry_id) return res.json({ confirmations: [], assignments: [], punchDates: [] });
+  const y = parseInt(req.query.year) || new Date().getFullYear();
+  const m = parseInt(req.query.month) || new Date().getMonth() + 1;
+  const fromStr = `${y}-${String(m).padStart(2,'0')}-01`;
+  const lastDay = new Date(y, m, 0).getDate();
+  const toStr = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  const confirmations = db.prepare(`
+    SELECT sc.id, sc.date, sc.status, sc.shift_start, sc.shift_end,
+           j.title, j.location AS job_location, j.description AS job_description,
+           j.pay AS job_pay, j.company_name,
+           a.work_address, a.pay_rate, a.pay_type
+    FROM shift_confirmations sc
+    JOIN assignments a ON sc.assignment_id = a.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    WHERE a.inquiry_id = ? AND sc.date >= ? AND sc.date <= ?
+    ORDER BY sc.date ASC
+  `).all(wa.linked_inquiry_id, fromStr, toStr);
+  const assignments = db.prepare(`
+    SELECT a.id, a.work_schedule, a.start_date, j.title, j.location AS job_location,
+           j.description AS job_description, j.pay AS job_pay, j.company_name,
+           a.work_address, a.pay_rate, a.pay_type
+    FROM assignments a
+    LEFT JOIN jobs j ON a.job_id = j.id
+    WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')
+  `).all(wa.linked_inquiry_id);
+  // Include actual punch records so weekend work (outside recurring schedule) is visible
+  const punchDates = req.workerEmployeeId ? db.prepare(`
+    SELECT DISTINCT date(clock_in) AS date
+    FROM time_entries
+    WHERE employee_id = ? AND date(clock_in) >= ? AND date(clock_in) <= ?
+  `).all(req.workerEmployeeId, fromStr, toStr).map(r => r.date) : [];
+  res.json({ confirmations, assignments, punchDates });
+});
+
 // ─── Shift confirmation endpoints ────────────────────────────────
 app.get('/api/worker/shift-confirmations', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!wa || !wa.linked_inquiry_id) return res.json([]);
+  // Return full current week (Mon → Sun); on Sat/Sun also include next week
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayDow = today.getDay(); // 0=Sun, 6=Sat
+  // Monday of current week
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - (todayDow === 0 ? 6 : todayDow - 1));
+  const mondayStr = monday.toISOString().slice(0, 10);
+  // Sunday of current week, extended by 7 days on Sat/Sun to include next week
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  if (todayDow === 6 || todayDow === 0) {
+    sunday.setDate(sunday.getDate() + 7);
+  }
+  const sundayStr = sunday.toISOString().slice(0, 10);
   const confirmations = db.prepare(`
     SELECT sc.id, sc.date, sc.status, sc.notified_at, sc.responded_at,
+           sc.shift_start, sc.shift_end,
            a.id as assignment_id, j.title, j.company_name,
-           j.work_start, j.work_end, a.work_address, a.pay_rate, a.pay_type
+           a.work_address, a.pay_rate, a.pay_type
     FROM shift_confirmations sc
     JOIN assignments a ON sc.assignment_id = a.id
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ?
-    ORDER BY sc.date DESC, sc.id DESC
-    LIMIT 30
-  `).all(wa.linked_inquiry_id);
+      AND sc.date >= ? AND sc.date <= ?
+    ORDER BY sc.date ASC, sc.id ASC
+  `).all(wa.linked_inquiry_id, mondayStr, sundayStr);
   res.json(confirmations);
 });
 
@@ -4529,6 +5754,38 @@ app.post('/api/worker/shift-confirmations/:id/respond', requireWorker, (req, res
   `).get(req.params.id, wa.linked_inquiry_id);
   if (!sc) return res.status(404).json({ error: '未找到' });
   db.prepare('UPDATE shift_confirmations SET status=?, responded_at=CURRENT_TIMESTAMP WHERE id=?').run(response, sc.id);
+  res.json({ success: true });
+});
+
+// Pre-confirm a scheduled (排班中) shift that has no confirmation record yet
+app.post('/api/worker/shift-confirmations/preconfirm', requireWorker, (req, res) => {
+  const { assignment_id, date, response } = req.body;
+  if (!['confirmed', 'declined'].includes(response))
+    return res.status(400).json({ error: 'Invalid response' });
+  if (!assignment_id || !date)
+    return res.status(400).json({ error: 'Missing assignment_id or date' });
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!wa || !wa.linked_inquiry_id) return res.status(403).json({ error: '账号未关联' });
+  // Verify the assignment belongs to this worker
+  const a = db.prepare(`
+    SELECT a.id, a.work_schedule FROM assignments a
+    WHERE a.id=? AND a.inquiry_id=? AND a.status NOT IN ('terminated','resigned','cancelled')
+  `).get(assignment_id, wa.linked_inquiry_id);
+  if (!a) return res.status(404).json({ error: '未找到排班' });
+  // Parse work_schedule to get shift times for this day
+  let sched = {};
+  try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+  const _DOW = ['sun','mon','tue','wed','thu','fri','sat'];
+  const dow = _DOW[new Date(date + 'T00:00:00').getDay()];
+  const dayInfo = (sched.days || {})[dow] || {};
+  const shiftStart = dayInfo.start || '';
+  const shiftEnd = dayInfo.end || '';
+  // Insert or update the confirmation record
+  db.prepare(`
+    INSERT INTO shift_confirmations (assignment_id, date, status, shift_start, shift_end, responded_at)
+    VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(assignment_id, date) DO UPDATE SET status=excluded.status, responded_at=CURRENT_TIMESTAMP
+  `).run(a.id, date, response, shiftStart, shiftEnd);
   res.json({ success: true });
 });
 
@@ -4576,6 +5833,82 @@ app.put('/api/admin/referral-config', requireAdmin, requireRole('admin'), (req, 
   res.json({ success: true });
 });
 
+// Admin: skill options CRUD
+app.get('/api/admin/skill-options', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM skill_options ORDER BY sort_order, id').all());
+});
+app.post('/api/admin/skill-options', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_zh, name_en } = req.body;
+  if (!name_zh || !name_zh.trim()) return res.status(400).json({ error: '技能名称不能为空' });
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM skill_options').get().m;
+  const r = db.prepare('INSERT INTO skill_options (name_zh, name_en, sort_order) VALUES (?,?,?)').run(name_zh.trim(), (name_en||'').trim(), maxOrder+1);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/skill-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_zh, name_en, sort_order } = req.body;
+  if (!name_zh || !name_zh.trim()) return res.status(400).json({ error: '技能名称不能为空' });
+  db.prepare('UPDATE skill_options SET name_zh=?, name_en=?, sort_order=? WHERE id=?')
+    .run(name_zh.trim(), (name_en||'').trim(), sort_order ?? 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/skill-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM skill_options WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Admin: job title options CRUD
+app.get('/api/admin/job-title-options', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM job_title_options ORDER BY sort_order, id').all());
+});
+app.post('/api/admin/job-title-options', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '职位名称不能为空' });
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM job_title_options').get().m;
+  const r = db.prepare('INSERT INTO job_title_options (name_en, name_zh, name_es, sort_order) VALUES (?,?,?,?)')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), maxOrder+1);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/job-title-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es, sort_order } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '职位名称不能为空' });
+  db.prepare('UPDATE job_title_options SET name_en=?, name_zh=?, name_es=?, sort_order=? WHERE id=?')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), sort_order ?? 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/job-title-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM job_title_options WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Admin: display suffix options CRUD
+app.get('/api/admin/display-suffix-options', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM display_suffix_options ORDER BY sort_order, id').all());
+});
+app.post('/api/admin/display-suffix-options', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '后缀词不能为空' });
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM display_suffix_options').get().m;
+  const r = db.prepare('INSERT INTO display_suffix_options (name_en, name_zh, name_es, sort_order) VALUES (?,?,?,?)')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), maxOrder+1);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/display-suffix-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es, sort_order } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '后缀词不能为空' });
+  db.prepare('UPDATE display_suffix_options SET name_en=?, name_zh=?, name_es=?, sort_order=? WHERE id=?')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), sort_order ?? 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/display-suffix-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM display_suffix_options WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Worker: get display suffixes (for daily rotation in portal)
+app.get('/api/worker/display-suffixes', requireWorker, (req, res) => {
+  res.json(db.prepare('SELECT id, name_en, name_zh, name_es FROM display_suffix_options ORDER BY sort_order, id').all());
+});
+
 // Admin: list ALL referral records across all workers
 app.get('/api/admin/all-referrals', requireAdmin, (req, res) => {
   const config = db.prepare('SELECT bonus_per_referral, min_hours_to_qualify FROM referral_bonus_config WHERE id=1').get()
@@ -4609,7 +5942,9 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   const wEmail = (wa?.email || '').toLowerCase();
 
   const open = req.workerEmployeeId
-    ? db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId)
+    ? db.prepare(`SELECT t.*, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+       FROM time_entries t LEFT JOIN jobs j ON t.job_id=j.id LEFT JOIN job_sites js ON j.site_id=js.id
+       WHERE t.employee_id=? AND t.status='open' ORDER BY t.clock_in DESC LIMIT 1`).get(req.workerEmployeeId)
     : null;
 
   let activeJobs = [];
@@ -4658,6 +5993,17 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     ? (db.prepare(`SELECT COUNT(*) AS cnt FROM assignments WHERE inquiry_id=? AND status != 'cancelled' AND (worker_response IS NULL OR worker_response = '')`).get(linkedInqId)?.cnt || 0)
     : 0;
 
+  // Detect if open entry is from a previous calendar day (worker forgot to clock out)
+  let missed_checkout = false;
+  let missed_date = null;
+  if (open) {
+    const nowLocal = new Date();
+    const todayStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth()+1).padStart(2,'0')}-${String(nowLocal.getDate()).padStart(2,'0')}`;
+    const entryLocal = new Date(open.clock_in);
+    const entryStr = `${entryLocal.getFullYear()}-${String(entryLocal.getMonth()+1).padStart(2,'0')}-${String(entryLocal.getDate()).padStart(2,'0')}`;
+    if (entryStr < todayStr) { missed_checkout = true; missed_date = entryStr; }
+  }
+
   res.json({
     clocked_in: !!open,
     on_break: !!(open?.on_break),
@@ -4666,7 +6012,9 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     has_active_job: activeJobs.length > 0,
     pending_tasks_count: pendingTasksCount,
     active_jobs: activeJobs,
-    active_job: activeJobs[0] || null
+    active_job: activeJobs[0] || null,
+    missed_checkout,
+    missed_date
   });
 });
 
@@ -4674,7 +6022,7 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
   const apps = db.prepare(`
     SELECT a.id, a.status, a.notes, a.admin_note, a.applicant_message,
            a.interview_availability, a.expected_pay, a.work_auth_confirmed, a.created_at,
-           a.interview_datetime, a.interview_location_text,
+           a.interview_datetime, a.interview_location_text, a.interview_times_json,
            j.id as job_id, j.title, j.location, j.pay, j.company_name,
            j.employment_type, j.description, j.work_days, j.work_start, j.work_end, j.benefits
     FROM job_applications a LEFT JOIN jobs j ON a.job_id=j.id
@@ -5323,18 +6671,22 @@ app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all());
 });
 
-app.post('/api/admin/job-sites', requireAdmin, blockManager, (req, res) => {
-  const { name, address, latitude, longitude, radius_meters, partner_id } = req.body;
+app.post('/api/admin/job-sites', requireAdmin, blockManager, async (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, partner_id, timezone } = req.body;
   if (!name || !latitude || !longitude) return res.status(400).json({ error: 'Name, latitude, longitude required' });
-  const r = db.prepare('INSERT INTO job_sites (name, address, latitude, longitude, radius_meters, partner_id) VALUES (?,?,?,?,?,?)')
-    .run(name, address || '', latitude, longitude, radius_meters || 200, partner_id || null);
-  res.json({ success: true, id: r.lastInsertRowid });
+  const tz = timezone || await lookupTimezone(latitude, longitude);
+  const r = db.prepare('INSERT INTO job_sites (name, address, latitude, longitude, radius_meters, partner_id, timezone) VALUES (?,?,?,?,?,?,?)')
+    .run(name, address || '', latitude, longitude, radius_meters || 200, partner_id || null, tz);
+  res.json({ success: true, id: r.lastInsertRowid, timezone: tz });
 });
 
-app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
-  const { name, address, latitude, longitude, radius_meters, active } = req.body;
-  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active) WHERE id=?')
-    .run(name, address, latitude, longitude, radius_meters, active, req.params.id);
+app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, async (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, active, timezone } = req.body;
+  // If lat/lng changed and no explicit timezone, re-detect
+  let tz = timezone || null;
+  if (!tz && latitude && longitude) tz = await lookupTimezone(latitude, longitude);
+  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active), timezone=COALESCE(?,timezone) WHERE id=?')
+    .run(name, address, latitude, longitude, radius_meters, active, tz, req.params.id);
   res.json({ success: true });
 });
 
@@ -5487,7 +6839,7 @@ app.get('/api/register/check', (req, res) => {
 
 app.post('/api/register/worker', async (req, res) => {
   try {
-  const { first_name, middle_name, last_name, phone: phoneRaw, email, dob, work_status, position_interests, password, city, state, ref_code } = req.body;
+  const { first_name, middle_name, last_name, phone: phoneRaw, email, dob, work_status, position_interests, password, city, state, ref_code, invite_token } = req.body;
   const phone = phoneRaw ? phoneRaw.replace(/\D/g, '').slice(-10) : ''; // store last 10 digits only
   const nameParts = [first_name, middle_name, last_name].filter(Boolean);
   if (!first_name || !last_name || !phone || !email || !password)
@@ -5543,10 +6895,23 @@ app.post('/api/register/worker', async (req, res) => {
     const referrer = db.prepare('SELECT id FROM worker_accounts WHERE worker_code=? AND active=1').get(ref_code);
     if (referrer) referredBy = referrer.id;
   }
-  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active, source, referred_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, 'online', referredBy);
+  // Validate invite token if provided
+  let inviteEmployeeId = null;
+  if (invite_token) {
+    const inv = db.prepare("SELECT * FROM employee_registration_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(invite_token);
+    if (inv) inviteEmployeeId = inv.employee_id;
+  }
+
+  const registrationSource = inviteEmployeeId ? 'invite' : 'online';
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active, source, referred_by, employee_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, registrationSource, referredBy, inviteEmployeeId);
   const accountId = r.lastInsertRowid;
+
+  // Mark invite as used
+  if (invite_token && inviteEmployeeId) {
+    db.prepare('UPDATE employee_registration_invites SET used=1 WHERE token=?').run(invite_token);
+  }
 
   if (!needsVerification) {
     // No verification channels configured — activate immediately and auto-login
@@ -5831,6 +7196,9 @@ app.get('/customer', (req, res) => {
 });
 app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+app.get('/manager-register', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'manager-register.html'));
 });
 
 // ─── Legal pages ───
@@ -6404,6 +7772,103 @@ setInterval(() => {
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) { console.error('[WAL] checkpoint error:', e.message); }
 }, 5 * 60 * 1000);
 
+// ── Manager QR Punch Page ────────────────────────────────────────────────────
+app.get('/mgr-punch', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'mgr-punch.html'));
+});
+
+// GET /api/admin/manager-punch-status/:empCode — current punch state for a given employee
+app.get('/api/admin/manager-punch-status/:empCode', requireAdmin, (req, res) => {
+  const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE employee_id=? AND status='active'").get(req.params.empCode);
+  if (!emp) return res.status(404).json({ error: '找不到该员工 / Employee not found' });
+  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
+  const activeJobs = db.prepare(`
+    SELECT ej.job_id, j.title, j.company_name, j.location
+    FROM employee_jobs ej JOIN jobs j ON ej.job_id = j.id
+    WHERE ej.employee_id = ? AND ej.status = 'active'
+  `).all(emp.id);
+  res.json({
+    employee: { id: emp.id, name: emp.first_name + ' ' + emp.last_name, emp_code: emp.employee_id },
+    clocked_in: !!open,
+    on_break: !!(open?.on_break),
+    open_entry: open || null,
+    active_jobs: activeJobs
+  });
+});
+
+// POST /api/admin/manager-punch — manager clocks in/out employee by emp_code (no GPS required)
+app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
+  const { emp_code, punch_type, job_id, punch_time } = req.body;
+  if (!emp_code) return res.status(400).json({ error: 'emp_code required' });
+  if (!punch_type || !['in','break_start','break_end','out'].includes(punch_type))
+    return res.status(400).json({ error: '请选择打卡类型' });
+  const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE employee_id=? AND status='active'").get(emp_code);
+  if (!emp) return res.status(404).json({ error: '找不到该员工 / Employee not found' });
+  // Allow manager to specify a custom punch time (must be a valid ISO string within last 24h)
+  let now = new Date().toISOString();
+  if (punch_time) {
+    const pt = new Date(punch_time);
+    const diff = Date.now() - pt.getTime();
+    if (!isNaN(pt.getTime()) && diff >= 0 && diff <= 86400000) now = pt.toISOString();
+  }
+  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
+
+  if (punch_type === 'break_start') {
+    if (!open) {
+      // Create a flagged open entry
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,job_id,punch_type,break_records,on_break,geo_verified,needs_review,review_reason) VALUES(?,?,'open',?,'in',?,1,0,1,'漏打上班卡，由manager break_start触发')").run(emp.id, now, job_id||null, JSON.stringify([{start:now,end:null}]));
+      return res.json({ action: 'break_start', warning: '未找到上班记录，已创建并标记审核' });
+    }
+    const breaks = JSON.parse(open.break_records || '[]');
+    breaks.push({ start: now, end: null });
+    db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?').run(JSON.stringify(breaks), open.id);
+    return res.json({ action: 'break_start' });
+  }
+  if (punch_type === 'break_end') {
+    if (!open) return res.json({ action: 'break_end', warning: '未找到上班打卡记录' });
+    if (!open.on_break) {
+      return res.json({ action: 'break_end', warning: '该员工当前不在休息中', break_minutes: 0 });
+    }
+    const breaks = JSON.parse(open.break_records || '[]');
+    const lastIdx = breaks.findIndex(b => !b.end);
+    if (lastIdx >= 0) breaks[lastIdx].end = now;
+    const breakMins = Math.round(breaks.reduce((s,b) => b.start&&b.end ? s+(new Date(b.end)-new Date(b.start)):s, 0) / 60000);
+    db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
+    return res.json({ action: 'break_end', break_minutes: breakMins });
+  }
+  if (punch_type === 'out') {
+    if (!open) {
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,job_id,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,?,'closed',?,0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(emp.id, now, now, job_id||null);
+      return res.json({ action: 'out', total_hours: 0, warning: '未找到上班记录，已记录下班并标记审核' });
+    }
+    if (open.on_break) {
+      // Auto-close break then clock out
+      const breaks = JSON.parse(open.break_records || '[]');
+      const lastIdx = breaks.findIndex(b => !b.end);
+      if (lastIdx >= 0) breaks[lastIdx].end = now;
+      const breakMins = Math.round(breaks.reduce((s,b)=>b.start&&b.end?s+(new Date(b.end)-new Date(b.start)):s,0)/60000);
+      db.prepare('UPDATE time_entries SET break_records=?,on_break=0,break_minutes=? WHERE id=?').run(JSON.stringify(breaks),breakMins,open.id);
+      open.break_minutes = breakMins; open.on_break = 0;
+    }
+    const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out' WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+    return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now });
+  }
+  // Clock in — auto-close dangling open entry
+  let ciWarning = null;
+  if (open) {
+    const missedDate = open.clock_in ? open.clock_in.slice(0,10) : '?';
+    db.prepare("UPDATE time_entries SET status='closed',clock_out=?,needs_review=1,review_reason=? WHERE id=?")
+      .run(now, `漏打下班卡(${missedDate})，manager重新上班打卡时自动关闭`, open.id);
+    ciWarning = `${missedDate} 未打下班卡，旧记录已标记审核`;
+  }
+  if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作' });
+  const result = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,job_id,punch_type,break_records,on_break,geo_verified) VALUES(?,?,'open',?,'in','[]',0,0)")
+    .run(emp.id, now, job_id);
+  return res.json({ action: 'in', clock_in: now, entry_id: result.lastInsertRowid, warning: ciWarning });
+});
+
 // Graceful shutdown: checkpoint WAL and close database
 function gracefulShutdown(signal) {
   console.log(`[Shutdown] ${signal} received, checkpointing WAL...`);
@@ -6421,6 +7886,5 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
-  console.log(`[Address Validation] GOOGLE_MAPS_API_KEY: ${process.env.GOOGLE_MAPS_API_KEY ? 'SET (' + process.env.GOOGLE_MAPS_API_KEY.substring(0, 8) + '...)' : 'NOT SET — address validation will be skipped'}`);
 
 });
