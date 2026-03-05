@@ -1369,6 +1369,53 @@ function getRotatingTaskDesc(id, title) {
   return pool[idx];
 }
 
+// Returns today's day-of-year (0-indexed) for deterministic daily rotation
+function _dayOfYear() {
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  return Math.floor((now - start) / 86400000);
+}
+
+// Render a single task requirement block (Simple / Detailed / Checklist)
+function _renderOneTaskReq(req) {
+  const TYPE_META = {
+    simple:    { label:'Simple',    bg:'#d1fae5', color:'#065f46', border:'#6ee7b7' },
+    detailed:  { label:'Detailed',  bg:'#dbeafe', color:'#1d4ed8', border:'#93c5fd' },
+    checklist: { label:'Checklist', bg:'#fef9c3', color:'#92400e', border:'#fcd34d' },
+  };
+  const m = TYPE_META[req.type] || TYPE_META.simple;
+  let body = '';
+  if (req.type === 'simple') {
+    body = req.description ? `<div style="font-size:.83rem;color:#374151;line-height:1.5;white-space:pre-wrap">${esc(req.description)}</div>` : '';
+  } else if (req.type === 'detailed') {
+    body = (req.description ? `<div style="font-size:.83rem;color:#374151;line-height:1.5;white-space:pre-wrap">${esc(req.description)}</div>` : '')
+         + (req.notes ? `<div style="font-size:.79rem;color:#6b7280;margin-top:.3rem;font-style:italic">${esc(req.notes)}</div>` : '');
+  } else if (req.type === 'checklist') {
+    const steps = Array.isArray(req.steps) ? req.steps.filter(Boolean) : [];
+    body = steps.length
+      ? `<ol style="margin:.3rem 0 0 1.1rem;padding:0;font-size:.83rem;color:#374151;line-height:1.6">${steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol>`
+      : '';
+  }
+  return `<div style="border:1px solid ${m.border};border-radius:8px;padding:.6rem .75rem;background:${m.bg};margin-bottom:.1rem">
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:${body?'.4rem':'0'}">
+      <span style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:${m.color};background:#fff;border:1px solid ${m.border};border-radius:20px;padding:1px 7px;white-space:nowrap">${m.label}</span>
+      ${req.name ? `<span style="font-size:.87rem;font-weight:700;color:#1e293b">${esc(req.name)}</span>` : ''}
+    </div>
+    ${body}
+  </div>`;
+}
+
+// Pick one task requirement per day (rotates daily), fallback to generic desc
+function renderDailyTaskReq(t) {
+  let reqs = [];
+  try { reqs = JSON.parse(t.task_requirements || '[]'); } catch {}
+  if (!Array.isArray(reqs) || !reqs.length) {
+    return `<div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.15rem;line-height:1.45">${esc(getRotatingTaskDesc(t.id, t.title))}</div>`;
+  }
+  const idx = _dayOfYear() % reqs.length;
+  return _renderOneTaskReq(reqs[idx]);
+}
+
 async function loadTasks() {
   const el = document.getElementById('myTasksList');
   el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">加载中…</p>';
@@ -1507,7 +1554,7 @@ async function loadTasks() {
           </div>
         </div>` : ''}
         <div style="font-size:.83rem;color:var(--gray-600);display:grid;gap:.22rem">
-          <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.15rem;line-height:1.45">${esc(getRotatingTaskDesc(t.id, t.title))}</div>
+          ${renderDailyTaskReq(t)}
           ${t.start_date ? `<div>📅 <span style="color:var(--gray-400)">开始日期：</span>${fmtDate(t.start_date)}</div>` : ''}
           ${(t.work_address||t.location) ? `<div>📍 <span style="color:var(--gray-400)">地点：</span>${esc(t.work_address||t.location)}</div>` : ''}
           ${t.pay_rate ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay_rate)}${t.pay_type==='hourly'?' /hr':''}</div>` : (t.pay ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay)}</div>` : '')}
