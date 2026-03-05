@@ -1422,6 +1422,23 @@ function _dayOfYear() {
   return Math.floor((now - start) / 86400000);
 }
 
+// Daily-rotating display suffix (loaded once per session)
+let _displaySuffixes = null;
+let _todaySuffix = '';
+async function _ensureSuffixes() {
+  if (_displaySuffixes !== null) return;
+  const data = await wApi('/display-suffixes');
+  _displaySuffixes = Array.isArray(data) ? data : [];
+  if (_displaySuffixes.length) {
+    const idx = _dayOfYear() % _displaySuffixes.length;
+    _todaySuffix = _displaySuffixes[idx].name_en || '';
+  }
+}
+function _withSuffix(title) {
+  if (!_todaySuffix || !title) return title || '—';
+  return title + ' — ' + _todaySuffix;
+}
+
 // Render a single task requirement block (Simple / Detailed / Checklist)
 function _renderOneTaskReq(req) {
   const TYPE_META = {
@@ -1466,6 +1483,8 @@ async function loadTasks() {
   const el = document.getElementById('myTasksList');
   el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">加载中…</p>';
 
+  await _ensureSuffixes();
+
   // Load tasks and show pending ones in top confirmation card
   const tasks = await wApi('/my-tasks');
   const confCard = document.getElementById('shiftConfirmCard');
@@ -1488,7 +1507,7 @@ async function loadTasks() {
         <div style="border:2px solid #f59e0b;border-radius:10px;padding:.85rem;margin-bottom:.55rem;background:#fff">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.3rem">
             <div>
-              <div style="font-weight:700;font-size:.92rem;color:#92400e">${esc(t.title||'—')}</div>
+              <div style="font-weight:700;font-size:.92rem;color:#92400e">${esc(_withSuffix(t.title||'—'))}</div>
               ${t.company_name ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">Client: ${esc(t.company_name)}</div>` : ''}
             </div>
             <span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">待确认</span>
@@ -1540,7 +1559,7 @@ async function loadTasks() {
       <div style="border:1px solid var(--gray-200);border-radius:12px;padding:1rem;margin-bottom:.85rem;background:#fafafa">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.55rem">
           <div>
-            <div style="font-weight:700;font-size:1rem;color:var(--gray-800)">${esc(t.title||'—')}</div>
+            <div style="font-weight:700;font-size:1rem;color:var(--gray-800)">${esc(_withSuffix(t.title))}</div>
             ${t.company_name ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">Client: ${esc(t.company_name)}</div>` : ''}
           </div>
           ${statusBadge}

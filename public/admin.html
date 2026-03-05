@@ -1373,10 +1373,13 @@ tr:hover td{background:var(--sky-light)}
 <!-- Skill Options Settings 必备技能设置 -->
 <div id="tab-skill-settings" style="display:none">
   <div class="top"><h1>🛠️ 必备技能设置</h1></div>
-  <div style="max-width:640px;margin:1.5rem auto">
+  <div style="max-width:680px;margin:1.5rem auto;display:grid;gap:1.5rem">
+
+    <!-- 1. Required Skills -->
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
+      <h3 style="margin:0 0 .4rem;font-size:1rem;color:#1e293b">必备技能选项</h3>
       <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
-        在此管理「必备技能」选项列表，修改后会自动应用到职位发布等所有使用该列表的地方。
+        管理「必备技能」选项列表，修改后自动应用到职位发布等所有使用该列表的地方。
       </p>
       <div style="display:flex;gap:.6rem;margin-bottom:1.25rem;flex-wrap:wrap">
         <input id="newSkillZh" placeholder="技能名称（中文）*" style="flex:1;min-width:130px;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem">
@@ -1385,6 +1388,45 @@ tr:hover td{background:var(--sky-light)}
       </div>
       <div id="skillOptionsList"></div>
     </div>
+
+    <!-- 2. Job Title List (派工管理 title dropdown) -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
+      <h3 style="margin:0 0 .4rem;font-size:1rem;color:#1e293b">💼 派工职位名称列表 Job Title List</h3>
+      <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
+        管理「派工管理」新建职位时的名称下拉列表。支持中文、英文、西班牙语，也可批量上传 CSV（每行一个词）。
+      </p>
+      <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+        <input id="newJTEn" placeholder="English *" style="flex:2;min-width:140px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newJTZh" placeholder="中文" style="flex:1;min-width:100px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newJTEs" placeholder="Español" style="flex:1;min-width:100px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <button class="btn" onclick="addJobTitleOption()" style="white-space:nowrap">＋ 添加</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem;padding:.6rem .75rem;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1">
+        <span style="font-size:.82rem;color:#64748b">批量 CSV 上传（每行一个英文名称）：</span>
+        <input type="file" id="jtCsvFile" accept=".csv,.txt" style="font-size:.8rem;flex:1" onchange="importJobTitleCsv()">
+      </div>
+      <div id="jobTitleOptionsList"></div>
+    </div>
+
+    <!-- 3. Display Suffix Words (rotate daily in worker portal) -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
+      <h3 style="margin:0 0 .4rem;font-size:1rem;color:#1e293b">🔄 工人端显示后缀词 Display Suffix Words</h3>
+      <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
+        工人 Portal 显示派工职位名称时，会在名称后追加「<strong>— {后缀词}</strong>」，每天自动换词。支持中文、英文、西班牙语，也可批量上传 CSV。
+      </p>
+      <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+        <input id="newSFEn" placeholder="English *" style="flex:2;min-width:140px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newSFZh" placeholder="中文" style="flex:1;min-width:100px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newSFEs" placeholder="Español" style="flex:1;min-width:100px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <button class="btn" onclick="addDisplaySuffixOption()" style="white-space:nowrap">＋ 添加</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem;padding:.6rem .75rem;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1">
+        <span style="font-size:.82rem;color:#64748b">批量 CSV 上传（每行一个英文词）：</span>
+        <input type="file" id="sfCsvFile" accept=".csv,.txt" style="font-size:.8rem;flex:1" onchange="importDisplaySuffixCsv()">
+      </div>
+      <div id="displaySuffixOptionsList"></div>
+    </div>
+
   </div>
 </div>
 
@@ -2015,7 +2057,12 @@ tr:hover td{background:var(--sky-light)}
     <input id="jPartnerSearch" autocomplete="off" placeholder="搜索公司名称…" oninput="filterPartnerSearch()">
     <div class="assign-dropdown" id="jPartnerDrop"></div>
   </div>
-  <div class="field"><label>职位名称 *</label><input id="jTitle" placeholder="例：仓库分拣员"></div>
+  <div class="field">
+    <label>职位名称 *</label>
+    <select id="jTitle" style="width:100%;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem;background:#fff">
+      <option value="">-- 请选择职位名称 --</option>
+    </select>
+  </div>
 
   <div class="field"><label>工种类别 Job Category</label>
     <select id="jCategory">
@@ -4147,7 +4194,8 @@ async function openJobModal(job) {
     document.getElementById('jPartnerId').value = '';
     document.getElementById('jPartnerSearch').value = '';
   }
-  document.getElementById('jTitle').value = job ? job.title : '';
+  // Populate job title dropdown from managed list
+  await _populateJobTitleSelect(job ? job.title : '');
   document.getElementById('jCategory').value = job ? (job.category || '') : '';
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jPay').value = job ? job.pay : '';
@@ -4290,7 +4338,7 @@ function randomFillJob() {
       desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía.' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
-  document.getElementById('jTitle').value          = r.title;
+  await _populateJobTitleSelect(r.title);
   document.getElementById('jType').value           = r.type;
   const _rloc = parseAddressString(r.location||'');
   document.getElementById('jStreet').value         = _rloc.street;
@@ -6529,20 +6577,22 @@ function addPartnerContact(c) {
   const fname = c?.first_name || (c?.name && !c.last_name ? c.name : '');
   const lname = c?.last_name || '';
   div.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
-      <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
-      <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
-      <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.15rem">
-      <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
-      <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.5rem;margin-top:.15rem">
-      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
-      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WeChat 微信</label><input class="pc-wechat" value="${esc(c?.wechat||'')}" placeholder="微信号" style="font-size:.82rem;padding:6px 8px"></div>
-      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">Telegram</label><input class="pc-telegram" value="${esc(c?.telegram||'')}" placeholder="@username" style="font-size:.82rem;padding:6px 8px"></div>
-      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">其他通讯</label><input class="pc-other_comm" value="${esc(c?.other_comm||'')}" placeholder="Line / Zalo..." style="font-size:.82rem;padding:6px 8px"></div>
+    <div style="flex:1;min-width:0">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
+        <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
+        <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
+        <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
+        <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
+        <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
+        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
+        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WeChat 微信</label><input class="pc-wechat" value="${esc(c?.wechat||'')}" placeholder="微信号" style="font-size:.82rem;padding:6px 8px"></div>
+        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">Telegram</label><input class="pc-telegram" value="${esc(c?.telegram||'')}" placeholder="@username" style="font-size:.82rem;padding:6px 8px"></div>
+        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">其他通讯</label><input class="pc-other_comm" value="${esc(c?.other_comm||'')}" placeholder="Line / Zalo..." style="font-size:.82rem;padding:6px 8px"></div>
+      </div>
     </div>
     <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
   document.getElementById('pContactsList').appendChild(div);
@@ -11522,10 +11572,32 @@ function filterReferralTable() {
 
 // ─── Skill Options Settings ───
 let _skillOptions = [];
+let _jobTitleOptions = [];
+let _displaySuffixOptions = [];
+
+async function _populateJobTitleSelect(currentVal) {
+  if (!_jobTitleOptions.length) {
+    _jobTitleOptions = await api('/admin/job-title-options') || [];
+  }
+  const sel = document.getElementById('jTitle');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">-- 请选择职位名称 --</option>'
+    + _jobTitleOptions.map(o => `<option value="${esc(o.name_en)}">${esc(o.name_en)}</option>`).join('');
+  if (currentVal) sel.value = currentVal;
+}
 
 async function loadSkillSettings() {
-  _skillOptions = await api('/admin/skill-options') || [];
+  const [skills, titles, suffixes] = await Promise.all([
+    api('/admin/skill-options'),
+    api('/admin/job-title-options'),
+    api('/admin/display-suffix-options'),
+  ]);
+  _skillOptions = skills || [];
+  _jobTitleOptions = titles || [];
+  _displaySuffixOptions = suffixes || [];
   renderSkillOptions();
+  renderJobTitleOptions();
+  renderDisplaySuffixOptions();
 }
 
 function renderSkillOptions() {
@@ -11584,6 +11656,148 @@ async function addSkillOption() {
     await loadSkillSettings();
     showToast('✅ 已添加');
   }
+}
+
+// ─── Job Title Options ───
+function renderJobTitleOptions() {
+  const el = document.getElementById('jobTitleOptionsList');
+  if (!el) return;
+  if (!_jobTitleOptions.length) {
+    el.innerHTML = '<p style="color:#94a3b8;font-size:.875rem;text-align:center;padding:1rem 0">暂无职位名称</p>';
+    return;
+  }
+  el.innerHTML = _jobTitleOptions.map((o, i) => `
+    <div style="display:flex;gap:.4rem;align-items:center;padding:.4rem 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">
+      <span style="color:#94a3b8;font-size:.75rem;width:1.6rem;text-align:right;flex-shrink:0">${i+1}</span>
+      <input value="${esc(o.name_en)}" data-id="${o.id}" data-field="name_en" onchange="_jtOptChange(this)"
+        placeholder="English *" style="flex:2;min-width:120px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <input value="${esc(o.name_zh)}" data-id="${o.id}" data-field="name_zh" onchange="_jtOptChange(this)"
+        placeholder="中文" style="flex:1;min-width:90px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <input value="${esc(o.name_es)}" data-id="${o.id}" data-field="name_es" onchange="_jtOptChange(this)"
+        placeholder="Español" style="flex:1;min-width:90px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <button onclick="_jtOptSave(${o.id})" style="padding:.32rem .6rem;border:1px solid #86efac;background:#f0fdf4;color:#15803d;border-radius:6px;cursor:pointer;font-size:.8rem;white-space:nowrap">保存</button>
+      <button onclick="_jtOptDelete(${o.id})" style="padding:.32rem .55rem;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:6px;cursor:pointer;font-size:.8rem">✕</button>
+    </div>`).join('');
+}
+function _jtOptChange(input) {
+  const o = _jobTitleOptions.find(x => x.id === parseInt(input.dataset.id));
+  if (o) o[input.dataset.field] = input.value;
+}
+async function _jtOptSave(id) {
+  const o = _jobTitleOptions.find(x => x.id === id);
+  if (!o) return;
+  const res = await api(`/admin/job-title-options/${id}`, { method:'PUT', body: JSON.stringify({ name_en: o.name_en, name_zh: o.name_zh, name_es: o.name_es, sort_order: o.sort_order }) });
+  if (res && res.success) showToast('✅ 已保存');
+  else alert('保存失败');
+}
+async function _jtOptDelete(id) {
+  if (!confirm('确认删除此职位名称？')) return;
+  const res = await api(`/admin/job-title-options/${id}`, { method:'DELETE' });
+  if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
+}
+async function addJobTitleOption() {
+  const en = document.getElementById('newJTEn').value.trim();
+  const zh = document.getElementById('newJTZh').value.trim();
+  const es = document.getElementById('newJTEs').value.trim();
+  if (!en) return alert('请输入英文职位名称 (English)');
+  const res = await api('/admin/job-title-options', { method:'POST', body: JSON.stringify({ name_en: en, name_zh: zh, name_es: es }) });
+  if (res && res.success) {
+    document.getElementById('newJTEn').value = '';
+    document.getElementById('newJTZh').value = '';
+    document.getElementById('newJTEs').value = '';
+    _jobTitleOptions = [];  // force refresh
+    await loadSkillSettings();
+    showToast('✅ 已添加');
+  }
+}
+async function importJobTitleCsv() {
+  const file = document.getElementById('jtCsvFile').files[0];
+  if (!file) return;
+  const text = await file.text();
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  let added = 0;
+  for (const line of lines) {
+    const parts = line.split(',');
+    const en = parts[0] ? parts[0].trim() : '';
+    if (!en) continue;
+    const res = await api('/admin/job-title-options', { method:'POST', body: JSON.stringify({ name_en: en, name_zh: parts[1]?parts[1].trim():'', name_es: parts[2]?parts[2].trim():'' }) });
+    if (res && res.success) added++;
+  }
+  document.getElementById('jtCsvFile').value = '';
+  _jobTitleOptions = [];
+  await loadSkillSettings();
+  showToast(`✅ 已导入 ${added} 条`);
+}
+
+// ─── Display Suffix Options ───
+function renderDisplaySuffixOptions() {
+  const el = document.getElementById('displaySuffixOptionsList');
+  if (!el) return;
+  if (!_displaySuffixOptions.length) {
+    el.innerHTML = '<p style="color:#94a3b8;font-size:.875rem;text-align:center;padding:1rem 0">暂无后缀词</p>';
+    return;
+  }
+  el.innerHTML = _displaySuffixOptions.map((o, i) => `
+    <div style="display:flex;gap:.4rem;align-items:center;padding:.4rem 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap">
+      <span style="color:#94a3b8;font-size:.75rem;width:1.6rem;text-align:right;flex-shrink:0">${i+1}</span>
+      <input value="${esc(o.name_en)}" data-id="${o.id}" data-field="name_en" onchange="_sfOptChange(this)"
+        placeholder="English *" style="flex:2;min-width:120px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <input value="${esc(o.name_zh)}" data-id="${o.id}" data-field="name_zh" onchange="_sfOptChange(this)"
+        placeholder="中文" style="flex:1;min-width:90px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <input value="${esc(o.name_es)}" data-id="${o.id}" data-field="name_es" onchange="_sfOptChange(this)"
+        placeholder="Español" style="flex:1;min-width:90px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <button onclick="_sfOptSave(${o.id})" style="padding:.32rem .6rem;border:1px solid #86efac;background:#f0fdf4;color:#15803d;border-radius:6px;cursor:pointer;font-size:.8rem;white-space:nowrap">保存</button>
+      <button onclick="_sfOptDelete(${o.id})" style="padding:.32rem .55rem;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:6px;cursor:pointer;font-size:.8rem">✕</button>
+    </div>`).join('');
+}
+function _sfOptChange(input) {
+  const o = _displaySuffixOptions.find(x => x.id === parseInt(input.dataset.id));
+  if (o) o[input.dataset.field] = input.value;
+}
+async function _sfOptSave(id) {
+  const o = _displaySuffixOptions.find(x => x.id === id);
+  if (!o) return;
+  const res = await api(`/admin/display-suffix-options/${id}`, { method:'PUT', body: JSON.stringify({ name_en: o.name_en, name_zh: o.name_zh, name_es: o.name_es, sort_order: o.sort_order }) });
+  if (res && res.success) showToast('✅ 已保存');
+  else alert('保存失败');
+}
+async function _sfOptDelete(id) {
+  if (!confirm('确认删除此后缀词？')) return;
+  const res = await api(`/admin/display-suffix-options/${id}`, { method:'DELETE' });
+  if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
+}
+async function addDisplaySuffixOption() {
+  const en = document.getElementById('newSFEn').value.trim();
+  const zh = document.getElementById('newSFZh').value.trim();
+  const es = document.getElementById('newSFEs').value.trim();
+  if (!en) return alert('请输入英文后缀词 (English)');
+  const res = await api('/admin/display-suffix-options', { method:'POST', body: JSON.stringify({ name_en: en, name_zh: zh, name_es: es }) });
+  if (res && res.success) {
+    document.getElementById('newSFEn').value = '';
+    document.getElementById('newSFZh').value = '';
+    document.getElementById('newSFEs').value = '';
+    _displaySuffixOptions = [];
+    await loadSkillSettings();
+    showToast('✅ 已添加');
+  }
+}
+async function importDisplaySuffixCsv() {
+  const file = document.getElementById('sfCsvFile').files[0];
+  if (!file) return;
+  const text = await file.text();
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  let added = 0;
+  for (const line of lines) {
+    const parts = line.split(',');
+    const en = parts[0] ? parts[0].trim() : '';
+    if (!en) continue;
+    const res = await api('/admin/display-suffix-options', { method:'POST', body: JSON.stringify({ name_en: en, name_zh: parts[1]?parts[1].trim():'', name_es: parts[2]?parts[2].trim():'' }) });
+    if (res && res.success) added++;
+  }
+  document.getElementById('sfCsvFile').value = '';
+  _displaySuffixOptions = [];
+  await loadSkillSettings();
+  showToast(`✅ 已导入 ${added} 条`);
 }
 
 </script>
