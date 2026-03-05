@@ -2170,26 +2170,59 @@ app.post('/api/admin-invite/send-code', async (req, res) => {
   res.json({ success: true, skipped: !sent });
 });
 
+app.post('/api/admin-invite/send-email-code', async (req, res) => {
+  const { token, email } = req.body;
+  if (!token || !email) return res.status(400).json({ error: '缺少参数' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  let sent = false;
+  if (twilioClient && TWILIO_VERIFY_SID) {
+    try {
+      const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
+        .verifications.create({ to: email, channel: 'email' });
+      sent = true;
+      console.log(`[Verify] Sent email to ${email}, status: ${v.status}`);
+    } catch(e) { console.error('[Verify-ERR] Email:', e.message); }
+  } else {
+    console.log(`[Verify-SKIP] Twilio not configured. Email: ${email}`);
+  }
+  res.json({ success: true, skipped: !sent });
+});
+
 app.post('/api/admin-invite/register', async (req, res) => {
-  const { token, username, display_name, password, phone, city, sms_code } = req.body;
+  const { token, username, display_name, first_name, middle_name, last_name, password, phone, email, city, state, zip, sms_code, email_code } = req.body;
   if (!token || !username || !password) return res.status(400).json({ error: '缺少必填字段' });
   if (password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
   if (!phone) return res.status(400).json({ error: '请填写手机号' });
+  if (!email) return res.status(400).json({ error: '请填写邮箱' });
   const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
   if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
-  // Verify SMS code if Twilio is configured
+  // Verify SMS code
   if (twilioClient && TWILIO_VERIFY_SID && sms_code) {
     const ok = await checkVerifyCode(phone, sms_code);
-    if (!ok) return res.status(400).json({ error: '验证码错误或已过期，请重试' });
+    if (!ok) return res.status(400).json({ error: '手机验证码错误或已过期，请重试' });
   } else if (twilioClient && TWILIO_VERIFY_SID && !sms_code) {
-    return res.status(400).json({ error: '请输入短信验证码' });
+    return res.status(400).json({ error: '请输入手机验证码' });
+  }
+  // Verify email code
+  if (twilioClient && TWILIO_VERIFY_SID && email_code) {
+    let emailOk = false;
+    try {
+      const check = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
+        .verificationChecks.create({ to: email, code: email_code });
+      emailOk = check.status === 'approved';
+    } catch(e) { console.error('[Verify-ERR] Email check:', e.message); }
+    if (!emailOk) return res.status(400).json({ error: '邮箱验证码错误或已过期，请重试' });
+  } else if (twilioClient && TWILIO_VERIFY_SID && !email_code) {
+    return res.status(400).json({ error: '请输入邮箱验证码' });
   }
   const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(username);
   if (existing) return res.status(400).json({ error: '用户名已存在，请换一个' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active, phone, city) VALUES (?,?,?,?,?,?,1,?,?)')
-    .run(username, hash, salt, inv.role, display_name || username, inv.assigned_partner_ids || '', phone || '', city || '');
+  const fullName = [first_name, middle_name, last_name].filter(Boolean).join(' ') || display_name || username;
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active, phone, email, city) VALUES (?,?,?,?,?,?,1,?,?,?)')
+    .run(username, hash, salt, inv.role, fullName, inv.assigned_partner_ids || '', phone || '', email || '', city || '');
   db.prepare('UPDATE admin_invites SET used=1, used_at=CURRENT_TIMESTAMP WHERE id=?').run(inv.id);
   const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
   const sessionToken = createSession(user);
@@ -2257,7 +2290,15 @@ input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
       <div class="hint">验证码已发送至您的手机，15分钟内有效</div>
     </div>
     <label>邮箱 / Email <span style="color:#dc2626">*</span></label>
-    <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
+    <div class="phone-row">
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email" oninput="resetEmailCode()">
+      <button class="send-btn" id="sendEmailCodeBtn" onclick="sendEmailCode()">发送验证码</button>
+    </div>
+    <div id="emailCodeWrap" style="display:none">
+      <label>邮箱验证码 / Email Code</label>
+      <input id="email_code" type="text" inputmode="numeric" maxlength="6" placeholder="6位验证码">
+      <div class="hint">验证码已发送至您的邮箱，15分钟内有效</div>
+    </div>
     <label>所在城市 / City</label>
     <div class="field-row">
       <input id="city" placeholder="City" style="flex:2" autocomplete="address-level2">
@@ -2290,6 +2331,7 @@ input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
 const token = new URLSearchParams(location.search).get('token') || '';
 const ROLE_LABEL = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理' };
 let codeSent = false, codeSkipped = false;
+let emailCodeSent = false, emailCodeSkipped = false;
 async function init() {
   if (!token) { showExpired(); return; }
   try {
@@ -2309,6 +2351,7 @@ function showErr(msg) {
   el.textContent = msg; el.style.display = msg ? 'block' : 'none';
 }
 function resetCode() { codeSent = false; codeSkipped = false; document.getElementById('codeWrap').style.display='none'; }
+function resetEmailCode() { emailCodeSent = false; emailCodeSkipped = false; document.getElementById('emailCodeWrap').style.display='none'; }
 async function sendCode() {
   const phone = document.getElementById('phone').value.trim().replace(/\D/g,'');
   if (phone.length < 10) { showErr('请填写有效的10位手机号'); return; }
@@ -2322,6 +2365,25 @@ async function sendCode() {
     codeSent = true; codeSkipped = d.skipped || false;
     if (!codeSkipped) {
       document.getElementById('codeWrap').style.display = '';
+      btn.textContent = '重新发送'; btn.disabled = false;
+    } else {
+      btn.textContent = '已跳过';
+    }
+  } catch { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='发送验证码'; }
+}
+async function sendEmailCode() {
+  const email = document.getElementById('email').value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
+  const btn = document.getElementById('sendEmailCodeBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  showErr('');
+  try {
+    const r = await fetch('/api/admin-invite/send-email-code', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, email }) });
+    const d = await r.json();
+    if (!r.ok) { showErr(d.error || '发送失败'); btn.disabled=false; btn.textContent='发送验证码'; return; }
+    emailCodeSent = true; emailCodeSkipped = d.skipped || false;
+    if (!emailCodeSkipped) {
+      document.getElementById('emailCodeWrap').style.display = '';
       btn.textContent = '重新发送'; btn.disabled = false;
     } else {
       btn.textContent = '已跳过';
@@ -2347,18 +2409,20 @@ async function doRegister() {
   const state = document.getElementById('state').value.trim();
   const zip = document.getElementById('zip').value.trim();
   const sms_code = document.getElementById('sms_code').value.trim();
+  const email_code = document.getElementById('email_code').value.trim();
   const password = document.getElementById('password').value;
   const password2 = document.getElementById('password2').value;
   if (!username) { showErr('请填写用户名'); return; }
   if (!first_name || !last_name) { showErr('请填写名字（First Name 和 Last Name）'); return; }
   if (!phone || phone.length < 10) { showErr('请填写有效的手机号'); return; }
-  if (!codeSent && !codeSkipped) { showErr('请先发送并验证手机验证码'); return; }
+  if (!codeSent && !codeSkipped) { showErr('请先发送手机验证码并填写验证码'); return; }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
+  if (!emailCodeSent && !emailCodeSkipped) { showErr('请先发送邮箱验证码并填写验证码'); return; }
   if (password.length < 6) { showErr('密码至少 6 位'); return; }
   if (password !== password2) { showErr('两次密码不一致'); return; }
   btn.disabled = true; btn.textContent = '注册中…';
   try {
-    const r = await fetch('/api/admin-invite/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, username, display_name, first_name, middle_name, last_name, phone, email, city, state, zip, sms_code, password }) });
+    const r = await fetch('/api/admin-invite/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, username, display_name, first_name, middle_name, last_name, phone, email, city, state, zip, sms_code, email_code, password }) });
     const d = await r.json();
     if (!r.ok) { showErr(d.error || '注册失败'); btn.disabled=false; btn.textContent='创建账户'; return; }
     localStorage.setItem('adminToken', d.token);
