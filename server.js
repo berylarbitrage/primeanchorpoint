@@ -5231,7 +5231,26 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   }
 
   // ── Clock in ─────────────────────────────────────────────────────
-  if (open) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  if (open) {
+    // Allow clocking in on a new day even if previous day's clock-out was missed
+    const { force_new_day } = req.body;
+    const nowLocal2 = new Date();
+    const todayStr2 = `${nowLocal2.getFullYear()}-${String(nowLocal2.getMonth()+1).padStart(2,'0')}-${String(nowLocal2.getDate()).padStart(2,'0')}`;
+    const entryLocal2 = new Date(open.clock_in);
+    const entryStr2 = `${entryLocal2.getFullYear()}-${String(entryLocal2.getMonth()+1).padStart(2,'0')}-${String(entryLocal2.getDate()).padStart(2,'0')}`;
+    if (entryStr2 < todayStr2 && force_new_day) {
+      // Auto-close the forgotten entry at end of that day with a note
+      const autoClose = new Date(open.clock_in);
+      autoClose.setHours(23, 59, 0, 0);
+      const autoCloseISO = autoClose.toISOString();
+      const hrs2 = calcHours(open.clock_in, autoCloseISO, open.break_minutes || 0);
+      const prevNote = open.notes ? open.notes + ' | ' : '';
+      db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',notes=? WHERE id=?")
+        .run(autoCloseISO, hrs2.total, hrs2.regular, hrs2.overtime, prevNote + '⚠ 未打下班卡，系统自动关闭', open.id);
+    } else {
+      return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+    }
+  }
   if (!latitude || !longitude) return res.status(400).json({ error: '打卡需要开启位置权限，请允许浏览器获取您的位置后重试。/ Location permission required to clock in.', need_gps: true });
   if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
   let activeJob = db.prepare(`
@@ -5693,6 +5712,17 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     ? (db.prepare(`SELECT COUNT(*) AS cnt FROM assignments WHERE inquiry_id=? AND status != 'cancelled' AND (worker_response IS NULL OR worker_response = '')`).get(linkedInqId)?.cnt || 0)
     : 0;
 
+  // Detect if open entry is from a previous calendar day (worker forgot to clock out)
+  let missed_checkout = false;
+  let missed_date = null;
+  if (open) {
+    const nowLocal = new Date();
+    const todayStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth()+1).padStart(2,'0')}-${String(nowLocal.getDate()).padStart(2,'0')}`;
+    const entryLocal = new Date(open.clock_in);
+    const entryStr = `${entryLocal.getFullYear()}-${String(entryLocal.getMonth()+1).padStart(2,'0')}-${String(entryLocal.getDate()).padStart(2,'0')}`;
+    if (entryStr < todayStr) { missed_checkout = true; missed_date = entryStr; }
+  }
+
   res.json({
     clocked_in: !!open,
     on_break: !!(open?.on_break),
@@ -5701,7 +5731,9 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     has_active_job: activeJobs.length > 0,
     pending_tasks_count: pendingTasksCount,
     active_jobs: activeJobs,
-    active_job: activeJobs[0] || null
+    active_job: activeJobs[0] || null,
+    missed_checkout,
+    missed_date
   });
 });
 
