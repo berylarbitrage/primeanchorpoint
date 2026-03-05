@@ -2472,13 +2472,15 @@ async function doRegister() {
     localStorage.setItem('adminToken', d.token);
     document.getElementById('form').style.display = 'none';
     document.getElementById('done').style.display = '';
-    // Store token in the key that each portal reads from localStorage
+    // Store token in the key each portal reads
     if (d.role === 'manager') {
       localStorage.setItem('mgr_token', d.token);
+    } else if (d.role === 'staff') {
+      document.cookie = 'pa_token=' + d.token + ';path=/;max-age=86400;SameSite=Strict';
     } else {
       localStorage.setItem('adminToken', d.token);
     }
-    const dest = d.role === 'manager' ? '/manager' : '/admin';
+    const dest = { admin: '/admin', staff: '/staff', manager: '/manager' }[d.role] || '/admin';
     setTimeout(() => { location.href = dest; }, 1500);
   } catch(e) { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='创建账户'; }
 }
