@@ -2407,13 +2407,11 @@ tr:hover td{background:var(--sky-light)}
     <option value="no_show">未出勤</option>
     <option value="cancelled">已取消</option>
   </select></div>
-  <div class="field-row">
-    <div class="field"><label>开始日期</label><input type="date" id="aStartDate"></div>
-    <div class="field"><label>合同类型</label><select id="aContractType">
-      <option value="W2">W2（雇员）</option>
-      <option value="1099">1099（独立承包商）</option>
-    </select></div>
-  </div>
+  <input type="hidden" id="aStartDate">
+  <div class="field"><label>合同类型</label><select id="aContractType">
+    <option value="W2">W2（雇员）</option>
+    <option value="1099">1099（独立承包商）</option>
+  </select></div>
   <div class="field-row">
     <div class="field"><label>薪资方式</label><select id="aPayType">
       <option value="hourly">时薪（$/hr）</option>
@@ -5325,8 +5323,21 @@ function buildWeeklySchedule() {
       <span style="color:#a5b4fc;font-weight:700">→</span>
       <input type="text" id="end-${d.key}" placeholder="17:00" maxlength="5"
         style="${_TINP};width:100%" onblur="fmtShiftTime(this)">
-      <button type="button" onclick="copyDayTime('${d.key}')" title="Copy to all working days"
-        style="font-size:.72rem;padding:.2rem .4rem;border-radius:5px;border:1px solid #a5b4fc;background:#e0e7ff;color:#4338ca;cursor:pointer;white-space:nowrap">Copy</button>
+      <div style="position:relative;display:inline-block">
+        <button type="button" onclick="openCopyPicker('${d.key}',this)" title="Copy to selected days"
+          style="font-size:.72rem;padding:.2rem .4rem;border-radius:5px;border:1px solid #a5b4fc;background:#e0e7ff;color:#4338ca;cursor:pointer;white-space:nowrap">Copy ▾</button>
+        <div id="copyPicker-${d.key}" style="display:none;position:absolute;right:0;top:110%;background:#fff;border:1px solid #c7d2fe;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);padding:.6rem .75rem;z-index:200;min-width:130px">
+          <div style="font-size:.72rem;font-weight:700;color:#4338ca;margin-bottom:.4rem;white-space:nowrap">复制到 / Copy to:</div>
+          ${WEEK_DAYS.filter(x=>x.key!=='${d.key}').map(x=>`
+            <label style="display:flex;align-items:center;gap:.35rem;font-size:.78rem;cursor:pointer;padding:.15rem 0">
+              <input type="checkbox" class="copy-target-${d.key}" value="${x.key}" checked> ${x.label}
+            </label>`).join('')}
+          <div style="display:flex;gap:.35rem;margin-top:.5rem">
+            <button type="button" onclick="applyCopyDay('${d.key}')" style="flex:1;font-size:.72rem;padding:.25rem .4rem;background:#4338ca;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600">Apply</button>
+            <button type="button" onclick="document.getElementById('copyPicker-${d.key}').style.display='none'" style="font-size:.72rem;padding:.25rem .4rem;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;cursor:pointer">✕</button>
+          </div>
+        </div>
+      </div>
     `;
     wrap.appendChild(row);
   });
@@ -5344,15 +5355,25 @@ function toggleDayRest(key) {
   e.style.background = isRest ? '#f3f4f6' : '#fff';
 }
 
-function copyDayTime(key) {
+function openCopyPicker(key, btn) {
+  // Close all other pickers first
+  document.querySelectorAll('[id^="copyPicker-"]').forEach(p => { if (p.id !== `copyPicker-${key}`) p.style.display = 'none'; });
+  const picker = document.getElementById(`copyPicker-${key}`);
+  picker.style.display = picker.style.display === 'none' ? '' : 'none';
+}
+
+function applyCopyDay(key) {
   const start = document.getElementById(`start-${key}`).value;
   const end   = document.getElementById(`end-${key}`).value;
-  WEEK_DAYS.forEach(d => {
-    if (d.key === key) return;
-    if (document.getElementById(`rest-${d.key}`).checked) return;
-    document.getElementById(`start-${d.key}`).value = start;
-    document.getElementById(`end-${d.key}`).value   = end;
+  document.querySelectorAll(`.copy-target-${key}:checked`).forEach(cb => {
+    const t = cb.value;
+    document.getElementById(`start-${t}`).value = start;
+    document.getElementById(`end-${t}`).value   = end;
+    // Uncheck rest if it was checked
+    const restCb = document.getElementById(`rest-${t}`);
+    if (restCb && restCb.checked) { restCb.checked = false; toggleDayRest(t); }
   });
+  document.getElementById(`copyPicker-${key}`).style.display = 'none';
 }
 
 function toggleUntilFurther(cb) {
@@ -5700,6 +5721,10 @@ function closeAssignDropdowns() {
 document.addEventListener('click', e => {
   if (!e.target.closest('#assignModal')) closeAssignDropdowns();
   if (!e.target.closest('#jPartnerDrop') && !e.target.closest('#jPartnerSearch')) document.getElementById('jPartnerDrop').classList.remove('open');
+  // Close copy day pickers if clicking outside
+  if (!e.target.closest('[id^="copyPicker-"]') && !e.target.closest('button[onclick^="openCopyPicker"]')) {
+    document.querySelectorAll('[id^="copyPicker-"]').forEach(p => p.style.display = 'none');
+  }
 });
 
 function closeAssignModal() { destroyAssignWorkMap(); guardClose('assignModal', closeAssignDropdowns); }
@@ -5907,7 +5932,7 @@ async function saveAssignment() {
     status: document.getElementById('aStatus').value,
     category: document.getElementById('aCategory').value,
     notes: document.getElementById('aNotes').value,
-    start_date: document.getElementById('aStartDate').value,
+    start_date: document.getElementById('aWorkStart').value || document.getElementById('aStartDate').value,
     contract_type: document.getElementById('aContractType').value,
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
@@ -5929,11 +5954,10 @@ async function saveAssignment() {
   // Required: pay_rate, start_date, work location
   let hasErr = false;
   if (!document.getElementById('aPayRate').value.trim()) { document.getElementById('aPayRate').style.borderColor='#dc2626'; hasErr = true; }
-  if (!document.getElementById('aStartDate').value)      { document.getElementById('aStartDate').style.borderColor='#dc2626'; hasErr = true; }
   if (!data.work_address) { document.getElementById('aWorkAddrErr').style.display=''; hasErr = true; }
   if (!data.work_lat)     { document.getElementById('aWorkLatErr').style.display=''; hasErr = true; }
   if (!data.work_lng)     { document.getElementById('aWorkLngErr').style.display=''; hasErr = true; }
-  if (hasErr) { showToast('⚠ 请填写所有必填项（薪资、开始日期、工作地点坐标）', 'error'); return; }
+  if (hasErr) { showToast('⚠ 请填写所有必填项（薪资、工作地点坐标）', 'error'); return; }
   // Dispatch-ready guard
   const ws = await api(`/admin/inquiries/${data.inquiry_id}/worker-status`).catch(()=>null);
   if (ws && !ws.dispatch_ready) {
