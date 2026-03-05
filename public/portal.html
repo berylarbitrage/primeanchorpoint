@@ -984,6 +984,14 @@ tr:last-child td{border-bottom:none}
         <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">由HR发起 · 驾照 + 自拍 + SSN核验 · 通过Persona平台</p>
         <div id="profileIdentity"><p style="color:var(--gray-400);font-size:.88rem">加载中...</p></div>
       </div>
+      <!-- Manager Punch QR Code -->
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:.3rem">📲 打卡二维码</h2>
+        <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">让 Manager 扫描此二维码为您打卡</p>
+        <div id="profilePunchQRWrap" style="text-align:center">
+          <div id="profilePunchQR" style="display:inline-block;background:#fff;padding:10px;border:1px solid var(--gray-200);border-radius:10px;min-width:160px;min-height:160px"></div>
+        </div>
+      </div>
       <!-- Uploaded documents -->
       <div class="card">
         <h2 style="margin-bottom:1rem">📂 我的文件</h2>
@@ -2548,6 +2556,31 @@ async function loadProfile() {
     <div style="margin-top:.6rem;font-size:.85rem;color:var(--gray-500)">账号：<strong>${esc(a.username)}</strong></div>`;
   }
   document.getElementById('profileBasic').innerHTML = basicHtml;
+
+  // ── Punch QR Code ──
+  const qrWrap = document.getElementById('profilePunchQR');
+  if (qrWrap && e && e.employee_id) {
+    const qrUrl = location.origin + '/mgr-punch?emp=' + encodeURIComponent(e.employee_id);
+    const renderPunchQR = () => {
+      qrWrap.innerHTML = '';
+      try {
+        new QRCode(qrWrap, { text: qrUrl, width: 160, height: 160, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      } catch(err) {
+        qrWrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrUrl)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+      }
+    };
+    if (typeof QRCode !== 'undefined') {
+      renderPunchQR();
+    } else {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+      s.onload = renderPunchQR;
+      s.onerror = () => { qrWrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrUrl)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`; };
+      document.head.appendChild(s);
+    }
+  } else if (qrWrap) {
+    qrWrap.innerHTML = '<span style="font-size:.82rem;color:var(--gray-400)">员工档案未绑定，暂无二维码</span>';
+  }
 
   // ── Contact info ──
   const rowStyle = 'display:flex;align-items:center;justify-content:space-between;padding:.65rem 0;border-bottom:1px solid var(--gray-100)';
