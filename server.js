@@ -2247,9 +2247,13 @@ async function doRegister() {
     localStorage.setItem('adminToken', d.token);
     document.getElementById('form').style.display = 'none';
     document.getElementById('done').style.display = '';
-    const roleRedirect = { admin: '/admin', staff: '/staff', manager: '/manager' };
-    const dest = roleRedirect[d.role] || '/admin';
-    document.cookie = 'pa_token=' + d.token + ';path=/;max-age=86400;SameSite=Strict';
+    // Store token in the key that each portal reads
+    if (d.role === 'manager') {
+      localStorage.setItem('mgr_token', d.token);
+    } else {
+      localStorage.setItem('adminToken', d.token);
+    }
+    const dest = d.role === 'manager' ? '/manager' : '/admin';
     setTimeout(() => { location.href = dest; }, 1500);
   } catch(e) { err.textContent = '网络错误，请重试'; btn.disabled=false; btn.textContent='创建账户'; }
 }

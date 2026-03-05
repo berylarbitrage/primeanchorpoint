@@ -219,10 +219,16 @@ async function resendCode() {
 
 function goToAdmin() {
   if (sessionToken) {
-    localStorage.setItem('adminToken', sessionToken);
-    document.cookie = 'pa_token=' + sessionToken + ';path=/;max-age=86400;SameSite=Strict';
+    // Store in the key each portal reads from localStorage
+    if (inviteRole === 'manager') {
+      localStorage.setItem('mgr_token', sessionToken);
+    } else if (inviteRole === 'staff') {
+      localStorage.setItem('adminToken', sessionToken);
+    } else {
+      localStorage.setItem('adminToken', sessionToken);
+    }
   }
-  const dest = { admin: '/admin', staff: '/staff', manager: '/manager' }[inviteRole] || '/manager';
+  const dest = { admin: '/admin', staff: '/admin', manager: '/manager' }[inviteRole] || '/manager';
   location.href = dest;
 }
 
