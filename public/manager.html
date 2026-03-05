@@ -30,11 +30,52 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 /* ── App shell ── */
 #appWrap{display:none;flex-direction:column;min-height:100vh}
-header{background:#fff;border-bottom:1px solid var(--gray-200);padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:var(--shadow)}
-.header-brand{font-weight:800;color:var(--sky);font-size:1.1rem}
-.header-info{font-size:.82rem;color:var(--gray-500)}
-.btn-logout{padding:6px 14px;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;color:var(--gray-600)}
-.btn-logout:hover{background:var(--gray-200)}
+header{background:var(--sky);color:#fff;padding:.75rem 1.5rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(14,165,233,.35)}
+.header-left{display:flex;align-items:center;gap:.65rem}
+.header-left img{width:26px;filter:brightness(0) invert(1)}
+.header-brand{font-weight:800;color:#fff;font-size:1.1rem}
+.header-right{display:flex;align-items:center;gap:.65rem}
+
+/* Profile avatar + dropdown */
+.profile-wrap{position:relative}
+.profile-btn{display:flex;align-items:center;gap:.5rem;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:99px;padding:.3rem .75rem .3rem .35rem;cursor:pointer;transition:.2s;color:#fff;font-size:.85rem;font-weight:600}
+.profile-btn:hover{background:rgba(255,255,255,.25)}
+.avatar{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.9);color:var(--sky-d);font-weight:800;font-size:.8rem;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.profile-name{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profile-caret{font-size:.6rem;opacity:.7}
+.profile-dropdown{display:none;position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--gray-200);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.14);min-width:210px;z-index:200;padding:6px 0;animation:fadeDown .15s ease}
+.profile-dropdown.open{display:block}
+@keyframes fadeDown{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.pd-header{padding:.65rem 1rem .5rem;border-bottom:1px solid var(--gray-100)}
+.pd-name{font-weight:700;font-size:.9rem;color:var(--gray-800)}
+.pd-role{font-size:.75rem;color:var(--gray-400);margin-top:.1rem}
+.pd-item{display:flex;align-items:center;gap:.5rem;padding:.55rem 1rem;font-size:.85rem;color:var(--gray-600);cursor:pointer;transition:background .12s;border:none;background:none;width:100%;text-align:left}
+.pd-item:hover{background:var(--sky-l);color:var(--sky-d)}
+.pd-sep{height:1px;background:var(--gray-100);margin:4px 0}
+.pd-danger{color:var(--red)}.pd-danger:hover{background:#fef2f2;color:#dc2626}
+
+/* QR scanner tab */
+.qr-wrap{max-width:480px;margin:2rem auto;text-align:center}
+.qr-video-box{position:relative;width:100%;max-width:380px;margin:0 auto 1rem;border-radius:16px;overflow:hidden;background:#000;aspect-ratio:1}
+#qrVideo{width:100%;height:100%;object-fit:cover;display:block}
+.qr-overlay{position:absolute;inset:0;pointer-events:none}
+.qr-frame{position:absolute;inset:15%;border:3px solid rgba(14,165,233,.85);border-radius:12px;box-shadow:0 0 0 9999px rgba(0,0,0,.38)}
+.qr-status{font-size:.88rem;color:var(--gray-500);margin:.5rem 0}
+.scan-result-card{background:#fff;border-radius:14px;box-shadow:var(--shadow);padding:1.25rem 1.4rem;margin:0 auto 1rem;max-width:380px;text-align:left}
+.scan-emp-name{font-weight:700;font-size:1.05rem;color:var(--gray-800);margin-bottom:.25rem}
+.scan-emp-code{font-size:.78rem;color:var(--gray-400)}
+.scan-status-badge{margin-top:.6rem;margin-bottom:.9rem}
+.punch-grid-sm{display:grid;grid-template-columns:1fr 1fr;gap:.55rem}
+.punch-btn-sm{padding:14px 8px;border:none;border-radius:10px;font-size:.88rem;font-weight:700;cursor:pointer;transition:.2s;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:.25rem}
+.punch-btn-sm:disabled{opacity:.38;cursor:not-allowed}
+.pb-in{background:#dcfce7;color:#166534}.pb-in:hover:not(:disabled){background:#bbf7d0}
+.pb-out{background:#fee2e2;color:#991b1b}.pb-out:hover:not(:disabled){background:#fecaca}
+.pb-pause{background:#fef9c3;color:#92400e}.pb-pause:hover:not(:disabled){background:#fef08a}
+.pb-resume{background:#dbeafe;color:#1e40af}.pb-resume:hover:not(:disabled){background:#bfdbfe}
+.scan-msg{padding:.6rem .9rem;border-radius:8px;font-size:.85rem;font-weight:600;text-align:center;margin-top:.6rem;display:none}
+.scan-msg.show{display:block}
+.scan-msg-ok{background:#dcfce7;color:#166534;border:1px solid #bbf7d0}
+.scan-msg-err{background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
 
 /* ── Tabs ── */
 .tabs{display:flex;gap:0;border-bottom:2px solid var(--gray-200);background:#fff;padding:0 1.5rem;position:sticky;top:57px;z-index:99}
@@ -124,17 +165,34 @@ tr:hover td{background:#fafcff}
 <!-- App -->
 <div id="appWrap">
   <header>
-    <div>
-      <div class="header-brand">⚓ Manager Portal</div>
-      <div class="header-info" id="headerInfo">加载中…</div>
+    <div class="header-left">
+      <img src="/logo.svg" alt="">
+      <div class="header-brand">Manager Portal</div>
     </div>
-    <button class="btn-logout" onclick="doLogout()">退出登录</button>
+    <div class="header-right">
+      <div class="profile-wrap" id="profileWrap">
+        <button class="profile-btn" onclick="toggleProfile(event)">
+          <div class="avatar" id="profileAvatar">M</div>
+          <span class="profile-name" id="profileName">加载中…</span>
+          <span class="profile-caret">▼</span>
+        </button>
+        <div class="profile-dropdown" id="profileDropdown">
+          <div class="pd-header">
+            <div class="pd-name" id="pdName">—</div>
+            <div class="pd-role" id="pdRole">Manager</div>
+          </div>
+          <div class="pd-sep"></div>
+          <button class="pd-item pd-danger" onclick="doLogout()">🚪 退出登录</button>
+        </div>
+      </div>
+    </div>
   </header>
 
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('assignments', this)">📋 派工工作</button>
     <button class="tab-btn" onclick="switchTab('timeclock', this)">⏱ 打卡记录</button>
     <button class="tab-btn" onclick="switchTab('workers', this)">👥 员工名单</button>
+    <button class="tab-btn" onclick="switchTab('qrscan', this)" id="tabQr">📷 扫码打卡</button>
   </div>
 
   <!-- Tab: Assignments -->
@@ -201,6 +259,52 @@ tr:hover td{background:#fafcff}
           oninput="renderWorkers()">
       </div>
       <div id="workerList"><div class="empty-state"><div class="spinner"></div></div></div>
+    </div>
+  </div>
+
+  <!-- Tab: QR Scan Punch -->
+  <div class="tab-pane" id="tab-qrscan">
+    <div class="qr-wrap">
+      <h2 style="font-size:1rem;font-weight:700;color:var(--gray-700);margin-bottom:1rem">📷 扫描员工二维码打卡</h2>
+
+      <!-- Camera view -->
+      <div class="qr-video-box" id="qrVideoBox">
+        <video id="qrVideo" autoplay playsinline muted></video>
+        <div class="qr-overlay"><div class="qr-frame"></div></div>
+      </div>
+      <div class="qr-status" id="qrStatus">点击下方按钮开启摄像头</div>
+      <button onclick="startQrScanner()" id="qrStartBtn"
+        style="padding:.6rem 1.4rem;background:var(--sky);color:#fff;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;margin-bottom:1.25rem">
+        📷 开启摄像头扫码
+      </button>
+
+      <!-- Scan result / punch panel -->
+      <div id="scanResultPanel" style="display:none">
+        <div class="scan-result-card">
+          <div class="scan-emp-name" id="scanEmpName">—</div>
+          <div class="scan-emp-code" id="scanEmpCode"></div>
+          <div class="scan-status-badge" id="scanStatusBadge"></div>
+          <div class="punch-grid-sm">
+            <button class="punch-btn-sm pb-in" id="spBtnIn" onclick="doManagerPunch('in')">
+              <span style="font-size:1.3rem">▶</span>上班打卡
+            </button>
+            <button class="punch-btn-sm pb-out" id="spBtnOut" onclick="doManagerPunch('out')">
+              <span style="font-size:1.3rem">◼</span>下班打卡
+            </button>
+            <button class="punch-btn-sm pb-pause" id="spBtnPause" onclick="doManagerPunch('break_start')">
+              <span style="font-size:1.3rem">⏸</span>暂停
+            </button>
+            <button class="punch-btn-sm pb-resume" id="spBtnResume" onclick="doManagerPunch('break_end')">
+              <span style="font-size:1.3rem">▶▶</span>继续
+            </button>
+          </div>
+          <div class="scan-msg" id="scanMsg"></div>
+        </div>
+        <button onclick="resetQrScan()"
+          style="margin-top:.5rem;padding:.5rem 1.2rem;background:var(--gray-100);border:1.5px solid var(--gray-200);border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;color:var(--gray-600)">
+          🔄 重新扫码
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -306,19 +410,24 @@ async function showApp() {
   const me = await mApi('/manager/me');
   if (!me) return;
   const partnerNames = (me.partners||[]).map(p => p.name).join('、') || '（未指定公司）';
-  document.getElementById('headerInfo').innerHTML =
-    `${esc(me.display_name || me.username)} &nbsp;·&nbsp; 负责公司：<strong>${esc(partnerNames)}</strong>`;
+  const displayName = me.display_name || me.username || 'Manager';
+  const initials = displayName.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase() || 'M';
+  document.getElementById('profileAvatar').textContent = initials;
+  document.getElementById('profileName').textContent = displayName;
+  document.getElementById('pdName').textContent = displayName;
+  document.getElementById('pdRole').textContent = `${(me.role||'manager').toUpperCase()} · ${partnerNames}`;
   // Load data
   await Promise.all([loadAssignments(), loadTimeClock(), loadWorkers()]);
 }
 
-// ── Tab switching ──────────────────────────────────────────────
-function switchTab(name, btn) {
-  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  btn.classList.add('active');
+// ── Profile dropdown ───────────────────────────────────────────
+function toggleProfile(e) {
+  e.stopPropagation();
+  document.getElementById('profileDropdown').classList.toggle('open');
 }
+document.addEventListener('click', () => {
+  document.getElementById('profileDropdown')?.classList.remove('open');
+});
 
 // ── Assignments tab ────────────────────────────────────────────
 async function loadAssignments() {
@@ -482,6 +591,155 @@ function openPunchPhoto(src) {
   overlay.style.display = 'flex';
 }
 
+// ── QR Scanner ────────────────────────────────────────────────
+let _qrStream = null;
+let _qrRafId = null;
+let _scanEmp = null;
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  btn.classList.add('active');
+  if (name !== 'qrscan') stopQrScanner();
+}
+
+async function startQrScanner() {
+  const status = document.getElementById('qrStatus');
+  status.textContent = '正在开启摄像头…';
+  document.getElementById('qrStartBtn').style.display = 'none';
+  try {
+    _qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    const video = document.getElementById('qrVideo');
+    video.srcObject = _qrStream;
+    video.play();
+    status.textContent = '请将员工二维码对准框内…';
+    scanLoop();
+  } catch(e) {
+    status.textContent = '无法访问摄像头：' + e.message;
+    document.getElementById('qrStartBtn').style.display = '';
+  }
+}
+
+function stopQrScanner() {
+  if (_qrRafId) { cancelAnimationFrame(_qrRafId); _qrRafId = null; }
+  if (_qrStream) { _qrStream.getTracks().forEach(t => t.stop()); _qrStream = null; }
+}
+
+function scanLoop() {
+  const video = document.getElementById('qrVideo');
+  if (!video.readyState || video.readyState < 2) { _qrRafId = requestAnimationFrame(scanLoop); return; }
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  try {
+    // Use BarcodeDetector if available (Chrome 83+)
+    if (window._barcodeDetector) {
+      window._barcodeDetector.detect(canvas).then(codes => {
+        if (codes.length) onQrDetected(codes[0].rawValue);
+        else _qrRafId = requestAnimationFrame(scanLoop);
+      }).catch(() => { _qrRafId = requestAnimationFrame(scanLoop); });
+      return;
+    }
+    // Fallback: jsQR
+    if (window.jsQR) {
+      const ctx = canvas.getContext('2d');
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(img.data, img.width, img.height);
+      if (code) { onQrDetected(code.data); return; }
+    }
+  } catch(e) {}
+  _qrRafId = requestAnimationFrame(scanLoop);
+}
+
+// Initialize BarcodeDetector once
+if ('BarcodeDetector' in window) {
+  BarcodeDetector.getSupportedFormats().then(fmts => {
+    if (fmts.includes('qr_code')) window._barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
+  });
+}
+
+async function onQrDetected(raw) {
+  stopQrScanner();
+  document.getElementById('qrStatus').textContent = `已识别：${raw}`;
+  // raw may be just emp_code or a URL containing it
+  let empCode = raw.trim();
+  const m = empCode.match(/emp[_-]?(?:id|code)[=:\/]([A-Z0-9\-]+)/i) || empCode.match(/([A-Z]{2,}-[A-Z]{3,}-[0-9]{6}-[0-9]{6})/i);
+  if (m) empCode = m[1];
+
+  const data = await mApi('/admin/manager-punch-status/' + encodeURIComponent(empCode));
+  if (!data || data.error) {
+    document.getElementById('qrStatus').textContent = '未找到员工：' + empCode;
+    document.getElementById('qrStartBtn').style.display = '';
+    return;
+  }
+  _scanEmp = { ...data.employee, emp_code: data.employee.emp_code || empCode };
+  document.getElementById('scanResultPanel').style.display = '';
+  document.getElementById('scanEmpName').textContent = data.employee.name;
+  document.getElementById('scanEmpCode').textContent = data.employee.emp_code;
+  updateScanStatus(data.clocked_in, data.on_break);
+  document.getElementById('scanMsg').className = 'scan-msg';
+  document.getElementById('scanMsg').textContent = '';
+}
+
+function updateScanStatus(clocked_in, on_break) {
+  let html;
+  if (!clocked_in) html = '<span style="display:inline-flex;align-items:center;gap:.3rem;background:#f3f4f6;color:#6b7280;border-radius:99px;padding:.2rem .7rem;font-size:.78rem;font-weight:700">⚫ 未打卡</span>';
+  else if (on_break) html = '<span style="display:inline-flex;align-items:center;gap:.3rem;background:#fef9c3;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.78rem;font-weight:700">🟡 暂停中</span>';
+  else html = '<span style="display:inline-flex;align-items:center;gap:.3rem;background:#dcfce7;color:#166534;border-radius:99px;padding:.2rem .7rem;font-size:.78rem;font-weight:700">🟢 上班中</span>';
+  document.getElementById('scanStatusBadge').innerHTML = html;
+}
+
+async function doManagerPunch(ptype) {
+  if (!_scanEmp) return;
+  const btns = document.querySelectorAll('.punch-btn-sm');
+  btns.forEach(b => b.disabled = true);
+  const msgEl = document.getElementById('scanMsg');
+  msgEl.className = 'scan-msg'; msgEl.textContent = '';
+
+  const body = { emp_code: _scanEmp.emp_code, punch_type: ptype };
+  // For clock-in, pick first available job (simplified)
+  if (ptype === 'in') {
+    const status = await mApi('/admin/manager-punch-status/' + encodeURIComponent(_scanEmp.emp_code));
+    const jobs = status?.active_jobs || [];
+    if (jobs.length === 1) body.job_id = jobs[0].job_id;
+    else if (jobs.length > 1) {
+      // Pick via simple prompt
+      const names = jobs.map((j,i)=>`${i+1}. ${j.title} (${j.company_name||j.location||''})`).join('\n');
+      const pick = prompt('请选择工作编号（输入序号）:\n' + names);
+      const idx = parseInt(pick) - 1;
+      if (idx >= 0 && idx < jobs.length) body.job_id = jobs[idx].job_id;
+      else { btns.forEach(b=>b.disabled=false); return; }
+    }
+  }
+
+  const res = await fetch(API + '/admin/manager-punch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+    body: JSON.stringify(body)
+  });
+  const r = await res.json();
+  if (!res.ok) {
+    msgEl.className = 'scan-msg scan-msg-err show';
+    msgEl.textContent = r.error || '打卡失败';
+  } else {
+    const labels = { in:'上班打卡成功', out:'下班打卡成功', break_start:'暂停成功', break_end:'继续上班成功' };
+    msgEl.className = 'scan-msg scan-msg-ok show';
+    msgEl.textContent = '✅ ' + (labels[ptype] || '打卡成功');
+    // refresh status
+    const newStatus = await mApi('/admin/manager-punch-status/' + encodeURIComponent(_scanEmp.emp_code));
+    if (newStatus) updateScanStatus(newStatus.clocked_in, newStatus.on_break);
+  }
+  btns.forEach(b => b.disabled = false);
+}
+
+function resetQrScan() {
+  _scanEmp = null;
+  document.getElementById('scanResultPanel').style.display = 'none';
+  document.getElementById('qrStartBtn').style.display = '';
+  document.getElementById('qrStatus').textContent = '点击下方按钮开启摄像头';
+}
+
 // ── Init ───────────────────────────────────────────────────────
 if (TOKEN) {
   showApp().catch(() => {
@@ -493,6 +751,7 @@ if (TOKEN) {
   document.getElementById('loginWrap').style.display = 'flex';
 }
 </script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 
 <!-- Inline Mini-Map Popup -->
 <div id="miniMapPopup" style="display:none;position:fixed;z-index:9999;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.22);padding:0;overflow:hidden;min-width:300px">
