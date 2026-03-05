@@ -5303,14 +5303,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     const entryLocal2 = new Date(open.clock_in);
     const entryStr2 = `${entryLocal2.getFullYear()}-${String(entryLocal2.getMonth()+1).padStart(2,'0')}-${String(entryLocal2.getDate()).padStart(2,'0')}`;
     if (entryStr2 < todayStr2 && force_new_day) {
-      // Auto-close the forgotten entry at end of that day with a note
-      const autoClose = new Date(open.clock_in);
-      autoClose.setHours(23, 59, 0, 0);
-      const autoCloseISO = autoClose.toISOString();
-      const hrs2 = calcHours(open.clock_in, autoCloseISO, open.break_minutes || 0);
-      const prevNote = open.notes ? open.notes + ' | ' : '';
-      db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',notes=? WHERE id=?")
-        .run(autoCloseISO, hrs2.total, hrs2.regular, hrs2.overtime, prevNote + '⚠ 未打下班卡，系统自动关闭', open.id);
+      // Leave previous day's entry unclosed for manager to review — just proceed to create new entry
     } else {
       return res.status(400).json({ error: '您已在班，请先下班打卡。' });
     }
