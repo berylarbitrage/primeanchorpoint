@@ -7163,70 +7163,6 @@ app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
   res.json({ success: true });
 });
 
-// ─── Smarty US Street Address Validation ───
-app.post('/api/validate-address', async (req, res) => {
-  const authId    = process.env.SMARTY_AUTH_ID;
-  const authToken = process.env.SMARTY_AUTH_TOKEN;
-  if (!authId || !authToken) {
-    return res.json({ skipped: true });
-  }
-  const { street, street2, city, state, zip } = req.body || {};
-  if (!street) return res.status(400).json({ error: 'street is required' });
-
-  const params = new URLSearchParams({
-    'auth-id':    authId,
-    'auth-token': authToken,
-    street:       street || '',
-    city:         city   || '',
-    state:        state  || '',
-    zipcode:      zip    || '',
-    candidates:   '1'
-  });
-  if (street2) params.set('street2', street2);
-
-  const url = `https://us-street.api.smarty.com/street-address?${params.toString()}`;
-  try {
-    const https = require('https');
-    const raw = await new Promise((resolve, reject) => {
-      const req2 = https.get(url, r => {
-        let data = '';
-        r.on('data', chunk => data += chunk);
-        r.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid JSON from Smarty')); } });
-      });
-      req2.setTimeout(10000, () => { req2.destroy(new Error('Smarty API request timed out')); });
-      req2.on('error', reject);
-    });
-
-    if (!Array.isArray(raw) || raw.length === 0) {
-      return res.json({ valid: false });
-    }
-
-    const candidate  = raw[0];
-    const analysis   = candidate.analysis   || {};
-    const components = candidate.components || {};
-    const dpv        = analysis.dpv_match_code;
-
-    if (dpv === 'N') {
-      return res.json({ valid: false });
-    }
-
-    return res.json({
-      valid: true,
-      dpv_match_code: dpv,
-      standardized: {
-        street:  candidate.delivery_line_1 || street,
-        street2: candidate.delivery_line_2 || '',
-        city:    components.city_name            || city  || '',
-        state:   components.state_abbreviation   || state || '',
-        zip:     components.zipcode              || (zip  || '').substring(0, 5),
-        zip4:    components.plus4_code           || ''
-      }
-    });
-  } catch (e) {
-    console.error('[Smarty Address Validation] Error:', e.message);
-    return res.status(500).json({ error: 'Address validation service error' });
-  }
-});
 
 // Global error handler — return JSON instead of Express's default HTML error page
 app.use((err, req, res, next) => {
@@ -7326,6 +7262,5 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
-  console.log(`[Address Validation] SMARTY_AUTH_ID: ${process.env.SMARTY_AUTH_ID ? 'SET' : 'NOT SET — address validation will be skipped'}`);
 
 });

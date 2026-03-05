@@ -184,7 +184,6 @@ tr:last-child td{border-bottom:none}
 }
 </style>
 <script src="https://cdn.withpersona.com/dist/persona-v5.5.0.js" defer></script>
-<script src="/address-validator.js" defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
 </head>
@@ -681,22 +680,18 @@ tr:last-child td{border-bottom:none}
               <div class="form-group"><label>中间名首字母 Middle Initial</label><input name="middle_initial" maxlength="2"></div>
               <div class="form-group"><label>曾用姓 Other Last Names</label><input name="other_last_names"></div>
             </div>
-            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required oninput="clearI9AddrStatus()"></div></div>
+            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required></div></div>
             <div class="form-row">
-              <div class="form-group"><label>公寓号 Apt</label><input name="apt" oninput="clearI9AddrStatus()"></div>
-              <div class="form-group"><label>城市 City *</label><input name="city" required oninput="clearI9AddrStatus()"></div>
+              <div class="form-group"><label>公寓号 Apt</label><input name="apt"></div>
+              <div class="form-group"><label>城市 City *</label><input name="city" required></div>
             </div>
             <div class="form-row">
               <div class="form-group"><label>州 State *</label>
-                <select name="state" required onchange="clearI9AddrStatus()"><option value="">选择...</option>
+                <select name="state" required><option value="">选择...</option>
                 <option>AL</option><option>AK</option><option>AZ</option><option>AR</option><option>CA</option><option>CO</option><option>CT</option><option>DE</option><option>FL</option><option>GA</option><option>HI</option><option>ID</option><option>IL</option><option>IN</option><option>IA</option><option>KS</option><option>KY</option><option>LA</option><option>ME</option><option>MD</option><option>MA</option><option>MI</option><option>MN</option><option>MS</option><option>MO</option><option>MT</option><option>NE</option><option>NV</option><option>NH</option><option>NJ</option><option>NM</option><option>NY</option><option>NC</option><option>ND</option><option>OH</option><option>OK</option><option>OR</option><option>PA</option><option>RI</option><option>SC</option><option>SD</option><option>TN</option><option>TX</option><option>UT</option><option>VT</option><option>VA</option><option>WA</option><option>WV</option><option>WI</option><option>WY</option><option>DC</option>
                 </select>
               </div>
-              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required pattern="[0-9]{5}(-[0-9]{4})?" oninput="clearI9AddrStatus()" onblur="autoVerifyI9Addr()"></div>
-            </div>
-            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
-              <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyI9Addr()">🔍 验证地址 Verify</button>
-              <span id="i9AddrStatus" style="font-size:.8rem;font-weight:600"></span>
+              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required pattern="[0-9]{5}(-[0-9]{4})?"></div>
             </div>
             <div class="form-row">
               <div class="form-group"><label>出生日期 DOB *</label><input name="dob" type="date" required></div>
@@ -882,17 +877,13 @@ tr:last-child td{border-bottom:none}
           </div>
           <div class="form-section">
             <h3>地址 / Address</h3>
-            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required oninput="clearW9AddrStatus()"></div></div>
+            <div class="form-row full"><div class="form-group"><label>地址 Address *</label><input name="address" required></div></div>
             <div class="form-row">
-              <div class="form-group"><label>城市 City *</label><input name="city" required oninput="clearW9AddrStatus()"></div>
-              <div class="form-group"><label>州 State *</label><input name="state" required maxlength="2" oninput="clearW9AddrStatus()"></div>
+              <div class="form-group"><label>城市 City *</label><input name="city" required></div>
+              <div class="form-group"><label>州 State *</label><input name="state" required maxlength="2"></div>
             </div>
             <div class="form-row">
-              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required oninput="clearW9AddrStatus()" onblur="autoVerifyW9Addr()"></div>
-            </div>
-            <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
-              <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyW9Addr()">🔍 验证地址 Verify</button>
-              <span id="w9AddrStatus" style="font-size:.8rem;font-weight:600"></span>
+              <div class="form-group"><label>邮编 ZIP *</label><input name="zip" required></div>
             </div>
           </div>
           <div class="form-section">
@@ -3349,95 +3340,6 @@ async function personaCopyLink() {
   }
 }
 
-// ── Portal address verify helpers ──
-function _setPortalAddrStatus(id, verified) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  if (verified === null || verified === undefined) { el.textContent = ''; return; }
-  if (verified) {
-    el.textContent = '✓ 已验证';
-    el.style.color = '#16a34a';
-  } else {
-    el.textContent = '⚠ 未能验证';
-    el.style.color = '#d97706';
-  }
-}
-
-function clearI9AddrStatus() { _setPortalAddrStatus('i9AddrStatus', null); }
-function clearW9AddrStatus() { _setPortalAddrStatus('w9AddrStatus', null); }
-
-async function _doVerifyI9Addr(silent) {
-  const form = document.getElementById('i9Form');
-  if (!form) return;
-  const street = form.address.value.trim();
-  const city   = form.city.value.trim();
-  const zip    = form.zip.value.trim();
-  if (!street && !city && !zip) return;
-  const statusEl = document.getElementById('i9AddrStatus');
-  statusEl.textContent = '验证中…'; statusEl.style.color = '#94a3b8';
-  try {
-    const result = await validateAddress({
-      street, street2: form.apt ? form.apt.value.trim() : '',
-      city, state: form.state.value, zip
-    }, { silent });
-    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
-    if (!result.proceed) { _setPortalAddrStatus('i9AddrStatus', false); return; }
-    if (result.standardized) {
-      const s = result.standardized;
-      form.address.value = s.street;
-      if (form.apt && s.street2) form.apt.value = s.street2;
-      form.city.value  = s.city;
-      form.state.value = s.state;
-      form.zip.value   = s.zip;
-    }
-    _setPortalAddrStatus('i9AddrStatus', result.verified === true);
-  } catch (e) {
-    console.error('[verifyI9Addr]', e);
-    _setPortalAddrStatus('i9AddrStatus', false);
-  }
-}
-
-function verifyI9Addr()     { _doVerifyI9Addr(false); }
-function autoVerifyI9Addr() {
-  const form = document.getElementById('i9Form');
-  if (!form || !form.address.value.trim()) return;
-  _doVerifyI9Addr(true);
-}
-
-async function _doVerifyW9Addr(silent) {
-  const form = document.getElementById('w9Form');
-  if (!form) return;
-  const street = form.address.value.trim();
-  const city   = form.city.value.trim();
-  const zip    = form.zip.value.trim();
-  if (!street && !city && !zip) return;
-  const statusEl = document.getElementById('w9AddrStatus');
-  statusEl.textContent = '验证中…'; statusEl.style.color = '#94a3b8';
-  try {
-    const result = await validateAddress({ street, city, state: form.state.value.trim(), zip }, { silent });
-    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
-    if (!result.proceed) { _setPortalAddrStatus('w9AddrStatus', false); return; }
-    if (result.standardized) {
-      const s = result.standardized;
-      form.address.value = s.street;
-      form.city.value    = s.city;
-      form.state.value   = s.state;
-      form.zip.value     = s.zip;
-    }
-    _setPortalAddrStatus('w9AddrStatus', result.verified === true);
-  } catch (e) {
-    console.error('[verifyW9Addr]', e);
-    _setPortalAddrStatus('w9AddrStatus', false);
-  }
-}
-
-function verifyW9Addr()     { _doVerifyW9Addr(false); }
-function autoVerifyW9Addr() {
-  const form = document.getElementById('w9Form');
-  if (!form || !form.address.value.trim()) return;
-  _doVerifyW9Addr(true);
-}
-
 function toggleI9Fields(val) {
   document.getElementById('i9AlienFields').style.display = (val === 'permanent_resident' || val === 'work_authorized') ? '' : 'none';
 }
@@ -3445,22 +3347,6 @@ function toggleI9Fields(val) {
 async function submitI9(e) {
   e.preventDefault();
   const form = e.target;
-  const addrResult = await validateAddress({
-    street:  form.address.value.trim(),
-    street2: form.apt ? form.apt.value.trim() : '',
-    city:    form.city.value.trim(),
-    state:   form.state.value,
-    zip:     form.zip.value.trim()
-  });
-  if (!addrResult.proceed) return;
-  if (addrResult.standardized) {
-    const s = addrResult.standardized;
-    form.address.value = s.street;
-    if (form.apt && s.street2) form.apt.value = s.street2;
-    form.city.value  = s.city;
-    form.state.value = s.state;
-    form.zip.value   = s.zip;
-  }
   const fd = new FormData(form);
   fd.set('signature_confirm', form.signature_confirm.checked ? '1' : '');
   try {
@@ -3494,20 +3380,6 @@ async function submitDL(e) {
 async function submitW9(e) {
   e.preventDefault();
   const form = e.target;
-  const addrResult = await validateAddress({
-    street: form.address.value.trim(),
-    city:   form.city.value.trim(),
-    state:  form.state.value.trim(),
-    zip:    form.zip.value.trim()
-  });
-  if (!addrResult.proceed) return;
-  if (addrResult.standardized) {
-    const s = addrResult.standardized;
-    form.address.value = s.street;
-    form.city.value    = s.city;
-    form.state.value   = s.state;
-    form.zip.value     = s.zip;
-  }
   const body = {};
   new FormData(form).forEach((v, k) => { body[k] = v; });
   body.signature_confirm = form.signature_confirm.checked ? '1' : '';
