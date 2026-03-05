@@ -5015,10 +5015,10 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
 });
 
 // ─── Work calendar endpoint ───────────────────────────────────────
-// Returns shift_confirmations + active assignments for a given month
+// Returns shift_confirmations + active assignments + punch records for a given month
 app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
-  if (!wa || !wa.linked_inquiry_id) return res.json({ confirmations: [], assignments: [] });
+  if (!wa || !wa.linked_inquiry_id) return res.json({ confirmations: [], assignments: [], punchDates: [] });
   const y = parseInt(req.query.year) || new Date().getFullYear();
   const m = parseInt(req.query.month) || new Date().getMonth() + 1;
   const fromStr = `${y}-${String(m).padStart(2,'0')}-01`;
@@ -5038,7 +5038,13 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')
   `).all(wa.linked_inquiry_id);
-  res.json({ confirmations, assignments });
+  // Include actual punch records so weekend work (outside recurring schedule) is visible
+  const punchDates = req.workerEmployeeId ? db.prepare(`
+    SELECT DISTINCT date(clock_in) AS date
+    FROM time_entries
+    WHERE employee_id = ? AND date(clock_in) >= ? AND date(clock_in) <= ?
+  `).all(req.workerEmployeeId, fromStr, toStr).map(r => r.date) : [];
+  res.json({ confirmations, assignments, punchDates });
 });
 
 // ─── Shift confirmation endpoints ────────────────────────────────
