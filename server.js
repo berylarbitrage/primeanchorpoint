@@ -2419,6 +2419,23 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   res.json({ success: true });
 });
 
+app.get('/api/admin/worker-accounts/:id/assignments', requireAdmin, (req, res) => {
+  const w = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w || !w.linked_inquiry_id) return res.json([]);
+  const rows = db.prepare(`
+    SELECT a.id, a.status, a.start_date, a.assigned_at, a.pay_rate, a.pay_type, a.contract_type,
+           a.category, a.worker_response,
+           j.title AS job_title, j.location AS job_location,
+           i.name AS company_name
+    FROM assignments a
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    WHERE a.inquiry_id = ?
+    ORDER BY a.assigned_at DESC
+  `).all(w.linked_inquiry_id);
+  res.json(rows);
+});
+
 app.get('/api/admin/worker-accounts/:id/history', requireAdmin, (req, res) => {
   const rows = db.prepare('SELECT * FROM worker_account_history WHERE worker_account_id=? ORDER BY created_at DESC LIMIT 100').all(req.params.id);
   res.json(rows);
