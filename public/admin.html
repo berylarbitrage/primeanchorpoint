@@ -2076,6 +2076,17 @@ tr:hover td{background:var(--sky-light)}
     </select>
   </div>
 
+  <div class="field"><label>班次</label>
+    <select id="jShift">
+      <option value="">不限</option>
+      <option value="早班">早班（Morning Shift）</option>
+      <option value="中班">中班（Day Shift）</option>
+      <option value="晚班">晚班（Evening Shift）</option>
+      <option value="夜班">夜班（Night Shift）</option>
+      <option value="弹性">弹性（Flexible）</option>
+    </select>
+  </div>
+
   <div class="field">
     <label>工作日 / 工作时间 <span style="color:var(--red)">*</span></label>
     <table id="jScheduleTable" style="width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.82rem">
@@ -4085,6 +4096,7 @@ async function openJobModal(job) {
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
+  document.getElementById('jShift').value = job ? (job.schedule || '') : '';
   // Parse location into 5 fields
   const _loc = parseAddressString(job ? (job.location||'') : '');
   document.getElementById('jStreet').value  = _loc.street;
@@ -4669,7 +4681,7 @@ async function saveJob() {
     work_schedule: JSON.stringify(_sched),
     benefits,
     required_skills: requiredSkills,
-    schedule: '',
+    schedule: document.getElementById('jShift').value,
     description: getJobDescValue(),
     urgent: document.getElementById('jUrgent').checked,
     headcount: parseInt(document.getElementById('jHeadcount').value) || 1,
