@@ -876,6 +876,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_invites (
   used_at DATETIME DEFAULT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+try { db.exec(`ALTER TABLE admin_invites ADD COLUMN created_by INTEGER DEFAULT NULL`); } catch(e) {}
 
 // Manager self-registration invite links
 db.exec(`CREATE TABLE IF NOT EXISTS manager_invites (
@@ -2133,33 +2134,51 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
 });
 
 // ─── Admin Invite Links ───────────────────────────────────────────
-app.get('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
-  const rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
+function inviteUrlPath(role) {
+  if (role === 'staff') return '/staff';
+  if (role === 'manager') return '/manager';
+  return '/admin-invite';
+}
+
+app.get('/api/admin/invite-links', requireAdmin, requireRole('admin', 'staff', 'manager'), (req, res) => {
+  let rows;
+  if (req.userRole === 'admin') {
+    rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
+  } else {
+    // staff and manager only see invites they created for their own role
+    rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') AND role=? AND created_by=? ORDER BY id DESC`).all(req.userRole, req.userId);
+  }
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const host  = req.headers['x-forwarded-host'] || req.headers.host;
-  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}/admin-invite?token=${r.token}` })));
+  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}${inviteUrlPath(r.role)}?token=${r.token}` })));
 });
 
-app.post('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
+app.post('/api/admin/invite-links', requireAdmin, requireRole('staff', 'manager'), (req, res) => {
   try {
-    const { role, hours, notes, assigned_partner_ids } = req.body;
-    if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    const { hours, notes, assigned_partner_ids } = req.body;
+    // staff can only invite staff; manager can only invite manager
+    const role = req.userRole;
     const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
     const token = crypto.randomBytes(28).toString('hex');
     const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
-    db.prepare('INSERT INTO admin_invites (token, role, notes, assigned_partner_ids, expires_at) VALUES (?,?,?,?,?)')
-      .run(token, role, notes || '', assigned_partner_ids || '', expiresAt);
+    db.prepare('INSERT INTO admin_invites (token, role, notes, assigned_partner_ids, expires_at, created_by) VALUES (?,?,?,?,?,?)')
+      .run(token, role, notes || '', assigned_partner_ids || '', expiresAt, req.userId);
     const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
     const host  = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-    res.json({ success: true, url: `${proto}://${host}/admin-invite?token=${token}` });
+    res.json({ success: true, url: `${proto}://${host}${inviteUrlPath(role)}?token=${token}` });
   } catch(e) {
     console.error('invite-links POST error:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  db.prepare('DELETE FROM admin_invites WHERE id=?').run(req.params.id);
+app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin', 'staff', 'manager'), (req, res) => {
+  if (req.userRole === 'admin') {
+    db.prepare('DELETE FROM admin_invites WHERE id=?').run(req.params.id);
+  } else {
+    // staff/manager can only delete their own invites
+    db.prepare('DELETE FROM admin_invites WHERE id=? AND created_by=?').run(req.params.id, req.userId);
+  }
   res.json({ success: true });
 });
 
@@ -2234,8 +2253,8 @@ app.post('/api/admin-invite/register', async (req, res) => {
   res.json({ success: true, token: sessionToken, role: user.role, username: user.username, display_name: user.display_name });
 });
 
-// Serve admin invite registration page
-app.get('/admin-invite', (req, res) => {
+// Serve admin invite registration page (shared handler for /admin-invite, /staff, /manager)
+function serveAdminInvitePage(req, res) {
   res.send(`<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2440,7 +2459,11 @@ init();
 </script>
 </body>
 </html>`);
-});
+}
+
+app.get('/admin-invite', serveAdminInvitePage);
+app.get('/staff', serveAdminInvitePage);
+app.get('/manager', serveAdminInvitePage);
 
 // ─── Manager Invite Links ───
 // Admin: list active invites
