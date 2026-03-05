@@ -1405,14 +1405,14 @@ function _renderOneTaskReq(req) {
   </div>`;
 }
 
-// Pick one task requirement per day (rotates daily), fallback to generic desc
+// Pick one task requirement randomly, fallback to generic desc
 function renderDailyTaskReq(t) {
   let reqs = [];
   try { reqs = JSON.parse(t.task_requirements || '[]'); } catch {}
   if (!Array.isArray(reqs) || !reqs.length) {
     return `<div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.15rem;line-height:1.45">${esc(getRotatingTaskDesc(t.id, t.title))}</div>`;
   }
-  const idx = _dayOfYear() % reqs.length;
+  const idx = Math.floor(Math.random() * reqs.length);
   return _renderOneTaskReq(reqs[idx]);
 }
 
