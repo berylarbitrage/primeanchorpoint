@@ -2215,6 +2215,11 @@ input{width:100%;padding:.65rem .85rem;border:1.5px solid #e2e8f0;border-radius:
 input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
 .phone-row{display:flex;gap:.5rem;align-items:flex-end}
 .phone-row input{flex:1}
+.field-row{display:flex;gap:.5rem}
+.field-row input{flex:1;margin-top:0}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:2.4rem}
+.pw-eye{position:absolute;right:.7rem;top:50%;transform:translateY(-50%);cursor:pointer;color:#94a3b8;font-size:1.05rem;user-select:none;line-height:1}
 .send-btn{white-space:nowrap;padding:.65rem 1rem;background:#f0f9ff;color:#0369a1;border:1.5px solid #bae6fd;border-radius:9px;font-size:.82rem;font-weight:700;cursor:pointer;transition:background .15s;flex-shrink:0}
 .send-btn:hover:not(:disabled){background:#e0f2fe}
 .send-btn:disabled{opacity:.5;cursor:default}
@@ -2236,7 +2241,11 @@ input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
     <label>用户名 <span style="color:#94a3b8;font-weight:400">(登录用)</span></label>
     <input id="username" placeholder="设置登录用户名" autocomplete="username">
     <label>姓名 / Full Name</label>
-    <input id="display_name" placeholder="您的真实姓名">
+    <div class="field-row">
+      <input id="first_name" placeholder="First" autocomplete="given-name">
+      <input id="middle_name" placeholder="Middle" autocomplete="additional-name">
+      <input id="last_name" placeholder="Last" autocomplete="family-name">
+    </div>
     <label>手机号 / Phone <span style="color:#dc2626">*</span></label>
     <div class="phone-row">
       <input id="phone" type="tel" placeholder="10位美国手机号" autocomplete="tel" oninput="resetCode()">
@@ -2247,12 +2256,24 @@ input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
       <input id="sms_code" type="text" inputmode="numeric" maxlength="6" placeholder="6位验证码">
       <div class="hint">验证码已发送至您的手机，15分钟内有效</div>
     </div>
+    <label>邮箱 / Email <span style="color:#dc2626">*</span></label>
+    <input id="email" type="email" placeholder="you@example.com" autocomplete="email">
     <label>所在城市 / City</label>
-    <input id="city" placeholder="e.g. Chicago">
+    <div class="field-row">
+      <input id="city" placeholder="City" style="flex:2" autocomplete="address-level2">
+      <input id="state" placeholder="State" maxlength="2" style="flex:1;text-transform:uppercase" autocomplete="address-level1">
+      <input id="zip" placeholder="Zipcode" maxlength="10" inputmode="numeric" style="flex:1" autocomplete="postal-code">
+    </div>
     <label>密码</label>
-    <input id="password" type="password" placeholder="至少 6 位" autocomplete="new-password">
+    <div class="pw-wrap">
+      <input id="password" type="password" placeholder="至少 6 位" autocomplete="new-password">
+      <span class="pw-eye" onclick="togglePw('password',this)">👁</span>
+    </div>
     <label>确认密码</label>
-    <input id="password2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+    <div class="pw-wrap">
+      <input id="password2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+      <span class="pw-eye" onclick="togglePw('password2',this)">👁</span>
+    </div>
     <div id="err" class="err"></div>
     <button class="btn" id="btn" onclick="doRegister()">创建账户</button>
   </div>
@@ -2307,24 +2328,37 @@ async function sendCode() {
     }
   } catch { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='发送验证码'; }
 }
+function togglePw(id, el) {
+  const inp = document.getElementById(id);
+  if (inp.type === 'password') { inp.type = 'text'; el.style.opacity = '1'; }
+  else { inp.type = 'password'; el.style.opacity = '.5'; }
+}
 async function doRegister() {
   const btn = document.getElementById('btn');
   showErr('');
   const username = document.getElementById('username').value.trim();
-  const display_name = document.getElementById('display_name').value.trim();
+  const first_name = document.getElementById('first_name').value.trim();
+  const middle_name = document.getElementById('middle_name').value.trim();
+  const last_name = document.getElementById('last_name').value.trim();
+  const display_name = [first_name, middle_name, last_name].filter(Boolean).join(' ');
   const phone = document.getElementById('phone').value.trim().replace(/\D/g,'');
+  const email = document.getElementById('email').value.trim();
   const city = document.getElementById('city').value.trim();
+  const state = document.getElementById('state').value.trim();
+  const zip = document.getElementById('zip').value.trim();
   const sms_code = document.getElementById('sms_code').value.trim();
   const password = document.getElementById('password').value;
   const password2 = document.getElementById('password2').value;
   if (!username) { showErr('请填写用户名'); return; }
+  if (!first_name || !last_name) { showErr('请填写名字（First Name 和 Last Name）'); return; }
   if (!phone || phone.length < 10) { showErr('请填写有效的手机号'); return; }
   if (!codeSent && !codeSkipped) { showErr('请先发送并验证手机验证码'); return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
   if (password.length < 6) { showErr('密码至少 6 位'); return; }
   if (password !== password2) { showErr('两次密码不一致'); return; }
   btn.disabled = true; btn.textContent = '注册中…';
   try {
-    const r = await fetch('/api/admin-invite/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, username, display_name, phone, city, sms_code, password }) });
+    const r = await fetch('/api/admin-invite/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, username, display_name, first_name, middle_name, last_name, phone, email, city, state, zip, sms_code, password }) });
     const d = await r.json();
     if (!r.ok) { showErr(d.error || '注册失败'); btn.disabled=false; btn.textContent='创建账户'; return; }
     localStorage.setItem('adminToken', d.token);
