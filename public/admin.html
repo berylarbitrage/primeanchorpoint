@@ -358,7 +358,7 @@ tr:hover td{background:var(--sky-light)}
     <input type="password" id="passInput" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
     <button class="eye" type="button" onclick="togglePass()" title="显示/隐藏密码">👁</button>
   </div>
-  <button onclick="doLogin()">登录</button>
+  <button id="loginBtn" onclick="doLogin()">登录</button>
   <div class="err" id="loginErr"></div>
 </div>
 </div>
@@ -3323,7 +3323,7 @@ async function doLogin() {
   const errEl = document.getElementById('loginErr');
   errEl.textContent = '';
   if (!username || !password) { errEl.textContent = '请输入用户名和密码'; return; }
-  const btn = document.querySelector('#loginWrap button');
+  const btn = document.getElementById('loginBtn');
   btn.disabled = true;
   btn.textContent = '登录中…';
   try {

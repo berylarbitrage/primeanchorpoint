@@ -589,10 +589,10 @@ tr:last-child td{border-bottom:none}
           </div>
           <!-- Always-visible 4 punch buttons -->
           <div id="punchBtnsWrap" style="width:100%;max-width:340px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-            <button id="btnPunchIn"     onclick="startPunchFlow('in')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#16a34a;color:#fff;opacity:.4" disabled>▶ 上班打卡</button>
-            <button id="btnBreakStart"  onclick="startPunchFlow('break_start')" style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff;opacity:.4" disabled>⏸ 休息开始</button>
-            <button id="btnBreakEnd"    onclick="startPunchFlow('break_end')"   style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;opacity:.4" disabled>▶ 休息结束</button>
-            <button id="btnPunchOut"    onclick="startPunchFlow('out')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#dc2626;color:#fff;opacity:.4" disabled>⏹ 下班打卡</button>
+            <button id="btnPunchIn"     onclick="startPunchFlow('in')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#16a34a;color:#fff;opacity:.4">▶ 上班打卡</button>
+            <button id="btnBreakStart"  onclick="startPunchFlow('break_start')" style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff;opacity:.4">⏸ 休息开始</button>
+            <button id="btnBreakEnd"    onclick="startPunchFlow('break_end')"   style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;opacity:.4">▶ 休息结束</button>
+            <button id="btnPunchOut"    onclick="startPunchFlow('out')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#dc2626;color:#fff;opacity:.4">⏹ 下班打卡</button>
           </div>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
           <!-- Punch confirmation modal overlay -->
@@ -626,7 +626,7 @@ tr:last-child td{border-bottom:none}
       <div class="card" style="padding:0">
         <div style="padding:1rem 1rem .5rem;font-size:1rem;font-weight:700">打卡历史记录</div>
         <div style="overflow-x:auto;padding:0 1rem 1rem">
-          <table style="min-width:780px"><thead><tr><th>日期</th><th>工作</th><th>上班</th><th>休息开始</th><th>休息结束</th><th>下班</th><th>工时</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
+          <table style="min-width:780px"><thead><tr style="white-space:nowrap"><th>日期</th><th>工作</th><th>上班</th><th>休息开始</th><th>休息结束</th><th>下班</th><th>工时</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
           <tbody id="timeclockTable"></tbody></table>
         </div>
       </div>
@@ -2139,9 +2139,8 @@ function enablePunchBtn(ready) {
   const btnOut  = document.getElementById('btnPunchOut');
   if (!btnIn) return;
 
-  // Helper: enable or dim a button
+  // Helper: dim a button visually (no disabled — all buttons remain clickable)
   const setBtn = (btn, enabled) => {
-    btn.disabled = !enabled;
     btn.style.opacity = enabled ? '1' : '.35';
   };
 
@@ -2501,7 +2500,7 @@ async function loadTimeclock() {
       : t.status === 'closed'
         ? '✅ 已完成'
         : '<span style="color:var(--sky)">⏱ 工作中</span>';
-    return `<tr>
+    return `<tr style="white-space:nowrap">
       <td>${ci ? ci.toLocaleDateString() : '—'}</td>
       <td style="font-size:.8rem">${jobLabel}</td>
       <td>${fmt(ci)}</td>
