@@ -172,8 +172,12 @@ tr:hover td{background:var(--sky-light)}
 .hours-item{background:var(--white);border-radius:var(--radius);padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,.04);text-align:center}
 .hours-item h4{font-size:1.6rem;font-weight:700;color:var(--sky)}.hours-item p{font-size:.72rem;color:var(--gray-400);margin-top:2px}
 .emp-meta{font-size:.75rem;color:var(--gray-400);margin-top:2px}
-.emp-table td{padding:.75rem 1rem;vertical-align:middle}
-.emp-table th{padding:.6rem 1rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-400);background:var(--gray-50);border-bottom:1px solid var(--gray-200)}
+.emp-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.emp-table{min-width:860px;width:100%}
+.emp-table td{padding:1rem 1.2rem;vertical-align:middle;white-space:nowrap}
+.emp-table td.emp-td-name{white-space:normal;min-width:180px}
+.emp-table td.emp-td-job{white-space:normal;min-width:160px}
+.emp-table th{padding:.75rem 1.2rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-400);background:var(--gray-50);border-bottom:1px solid var(--gray-200);white-space:nowrap}
 .emp-table tbody tr{border-bottom:1px solid var(--gray-100);transition:background .12s}
 .emp-table tbody tr:last-child{border-bottom:none}
 .emp-table tbody tr:hover{background:#f8fafc}
@@ -736,18 +740,20 @@ tr:hover td{background:var(--sky-light)}
     <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
   <div class="card" style="padding:0;overflow:hidden">
+    <div class="emp-table-wrap">
     <table class="emp-table">
       <thead><tr>
-        <th style="width:90px">员工号</th>
-        <th>姓名 / 联系方式</th>
-        <th>职位 / 公司</th>
-        <th style="width:80px">薪资</th>
-        <th style="width:70px">状态</th>
-        <th style="width:90px">入职日期</th>
-        <th style="width:56px">操作</th>
+        <th style="min-width:120px">员工号</th>
+        <th style="min-width:200px">姓名 / 联系方式</th>
+        <th style="min-width:180px">职位 / 公司</th>
+        <th style="min-width:90px">薪资</th>
+        <th style="min-width:80px">状态</th>
+        <th style="min-width:110px">入职日期</th>
+        <th style="min-width:70px">操作</th>
       </tr></thead>
       <tbody id="empTable"></tbody>
     </table>
+    </div>
   </div>
   <!-- Employee action dropdown menu (shared) -->
   <div id="empActionMenu" style="display:none;position:fixed;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.13);z-index:9999;min-width:180px;padding:4px 0">
@@ -1177,39 +1183,30 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" style="background:#f0fff4;color:#2f9e44;border:1px solid #b2f2bb" onclick="openEmailCodeTestModal()">✉️ 测试邮箱</button>
       <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
       <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
-      <button class="btn" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="openInviteModal()">🔗 生成邀请链接</button>
+      <button class="btn" style="background:#fefce8;color:#92400e;border:1px solid #fde68a" onclick="toggleInvitePanel()">🔗 生成邀请链接</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
     </div>
   </div>
 
-  <!-- Manager Invite Links panel -->
-  <div id="inviteLinksPanel" style="display:none;margin-bottom:1rem">
-    <div class="card" style="border:1.5px solid #fde68a;background:#fffbeb">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
-        <h3 style="font-size:.95rem;color:#92400e">🔗 Manager 邀请链接</h3>
-        <button onclick="document.getElementById('inviteLinksPanel').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:1rem;color:var(--gray-400)">✕</button>
-      </div>
-      <div id="inviteLinksList" style="font-size:.85rem;margin-bottom:.75rem"></div>
-      <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap">
-        <div>
-          <div style="font-size:.72rem;color:var(--gray-600);margin-bottom:.2rem">角色</div>
-          <select id="newInviteRole" style="padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-            <option value="manager">Manager</option>
-            <option value="staff">Staff</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <div>
-          <div style="font-size:.72rem;color:var(--gray-600);margin-bottom:.2rem">有效期（小时）</div>
-          <input type="number" id="newInviteHours" value="72" min="1" max="720" style="width:80px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        </div>
-        <div style="flex:1;min-width:120px">
-          <div style="font-size:.72rem;color:var(--gray-600);margin-bottom:.2rem">备注（可选）</div>
-          <input type="text" id="newInviteNote" placeholder="例：张经理注册用" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        </div>
-        <button class="btn btn-green" style="white-space:nowrap;padding:.45rem 1rem" onclick="createInviteLink()">+ 生成</button>
-      </div>
+  <!-- Admin Invite Panel -->
+  <div id="adminInvitePanel" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem;position:relative">
+    <button onclick="toggleInvitePanel()" style="position:absolute;top:.6rem;right:.75rem;background:none;border:none;font-size:1.1rem;cursor:pointer;color:#92400e">×</button>
+    <div style="font-weight:700;color:#78350f;margin-bottom:.5rem">🔗 Manager 邀请链接</div>
+    <div id="inviteLinkList" style="font-size:.82rem;color:#92400e;margin-bottom:.75rem">加载中…</div>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+      <label style="font-size:.8rem;font-weight:600;color:#78350f;white-space:nowrap">角色</label>
+      <select id="inviteRole" style="padding:.3rem .5rem;border:1px solid #fde68a;border-radius:6px;font-size:.82rem;background:#fff">
+        <option value="manager">Manager</option>
+        <option value="staff">Staff</option>
+        <option value="admin">Admin</option>
+      </select>
+      <label style="font-size:.8rem;font-weight:600;color:#78350f;white-space:nowrap">有效期（小时）</label>
+      <input id="inviteHours" type="number" value="24" min="1" max="720" style="width:60px;padding:.3rem .4rem;border:1px solid #fde68a;border-radius:6px;font-size:.82rem;text-align:center">
+      <label style="font-size:.8rem;font-weight:600;color:#78350f;white-space:nowrap">备注（可选）</label>
+      <input id="inviteNotes" placeholder="备注说明" style="flex:1;min-width:100px;padding:.3rem .5rem;border:1px solid #fde68a;border-radius:6px;font-size:.82rem">
+      <button class="btn btn-green" id="btnGenInvite" onclick="genInviteLink()" style="white-space:nowrap">+ 生成</button>
     </div>
+    <div id="inviteGenResult" style="margin-top:.6rem;font-size:.82rem"></div>
   </div>
 
   <!-- Admin/Staff/Manager -->
@@ -6716,11 +6713,11 @@ function renderEmployees(list) {
       <div style="font-weight:700;font-size:.88rem">${esc(e.employee_id||'—')}</div>
       ${workerCodeHtml}
     </td>
-    <td style="cursor:pointer" onclick='viewEmployee(${e.id})'>
+    <td class="emp-td-name" style="cursor:pointer" onclick='viewEmployee(${e.id})'>
       <div class="emp-name">${esc(e.first_name)} ${esc(e.last_name)}</div>
       <div class="emp-contact">${contactHtml||'<span style="color:var(--gray-300)">无联系方式</span>'}</div>
     </td>
-    <td>
+    <td class="emp-td-job">
       <div>${jobNames.length ? jobNames.map(n=>'<span class="emp-job-tag">'+esc(n)+'</span>').join('') : '<span style="color:var(--gray-300);font-size:.82rem">未分配</span>'}</div>
       ${companyNames.length ? '<div class="emp-company">'+companyNames.map(c=>esc(c)).join(' · ')+'</div>' : ''}
     </td>
@@ -9030,6 +9027,60 @@ async function guardClose(modalId, extraFn) {
   document.getElementById(modalId).classList.remove('show');
 }
 function closeModal(id) { guardClose(id); }
+
+// ─── Admin Invite Links ───
+let _invitePanelOpen = false;
+
+function toggleInvitePanel() {
+  _invitePanelOpen = !_invitePanelOpen;
+  document.getElementById('adminInvitePanel').style.display = _invitePanelOpen ? '' : 'none';
+  if (_invitePanelOpen) loadInviteLinks();
+}
+
+async function loadInviteLinks() {
+  const el = document.getElementById('inviteLinkList');
+  try {
+    const rows = await api('/admin/invite-links');
+    if (!rows.length) { el.innerHTML = '<span style="color:#92400e;opacity:.7">暂无有效邀请链接</span>'; return; }
+    const ROLE = { admin:'Admin', staff:'Staff', manager:'Manager' };
+    el.innerHTML = rows.map(r => {
+      const exp = new Date(r.expires_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'numeric',minute:'numeric'});
+      return `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;flex-wrap:wrap">
+        <span style="background:#fff;border:1px solid #fde68a;border-radius:6px;padding:.15rem .5rem;font-weight:700;color:#92400e">${ROLE[r.role]||r.role}</span>
+        <span style="flex:1;word-break:break-all;color:#44403c;cursor:pointer;text-decoration:underline" onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))" title="点击复制">${esc(r.url)}</span>
+        <span style="color:#78350f;font-size:.75rem;white-space:nowrap">有效至 ${exp}</span>
+        ${r.notes?`<span style="color:#a16207;font-size:.75rem">${esc(r.notes)}</span>`:''}
+        <button onclick="deleteInviteLink(${r.id})" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:.9rem;padding:0" title="删除">🗑</button>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = `<span style="color:#dc2626">加载失败: ${esc(e.message)}</span>`; }
+}
+
+async function genInviteLink() {
+  const btn = document.getElementById('btnGenInvite');
+  const resultEl = document.getElementById('inviteGenResult');
+  const role = document.getElementById('inviteRole').value;
+  const hours = document.getElementById('inviteHours').value;
+  const notes = document.getElementById('inviteNotes').value.trim();
+  btn.disabled = true; btn.textContent = '生成中…';
+  resultEl.innerHTML = '';
+  try {
+    const r = await api('/admin/invite-links', 'POST', { role, hours, notes });
+    resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+      <span style="color:#166534;font-weight:700">✓ 链接已生成：</span>
+      <span style="word-break:break-all;color:#44403c;cursor:pointer;text-decoration:underline" onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))">${esc(r.url)}</span>
+      <button onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))" style="padding:.2rem .6rem;border:1px solid #166534;border-radius:6px;background:#f0fdf4;color:#166534;cursor:pointer;font-size:.78rem">复制</button>
+    </div>`;
+    loadInviteLinks();
+  } catch(e) { resultEl.innerHTML = `<span style="color:#dc2626">生成失败：${esc(e.message)}</span>`; }
+  btn.disabled = false; btn.textContent = '+ 生成';
+}
+
+async function deleteInviteLink(id) {
+  if (!await showConfirm('确定删除此邀请链接？')) return;
+  await api(`/admin/invite-links/${id}`, 'DELETE');
+  loadInviteLinks();
+}
 
 // ─── Accounts Management ───
 let _accTab = 'admin';
