@@ -4087,8 +4087,17 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
     GROUP BY COALESCE(s.job_id, s.company_name)
     ORDER BY MAX(s.period_end) DESC
   `).all(req.params.id);
+  const currentJobs = db.prepare(`
+    SELECT ej.id, ej.job_id, ej.job_title, ej.company_name, ej.status, ej.start_date, ej.end_date,
+           ej.emp_hourly_rate, j.location
+    FROM employee_jobs ej
+    LEFT JOIN jobs j ON ej.job_id = j.id
+    WHERE ej.employee_id = ?
+    ORDER BY CASE ej.status WHEN 'active' THEN 0 ELSE 1 END, ej.start_date DESC, ej.assigned_at DESC
+    LIMIT 10
+  `).all(req.params.id);
   const ssn_full = emp.ssn_encrypted && emp.ssn_iv ? decryptSSN(emp.ssn_encrypted, emp.ssn_iv) : null;
-  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory });
+  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory, current_jobs: currentJobs });
 });
 
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {

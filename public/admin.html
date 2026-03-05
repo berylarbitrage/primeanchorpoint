@@ -7745,6 +7745,26 @@ async function viewEmployee(id) {
       ${cols([['姓名',emp.emergency_name],['电话',emp.emergency_phone],['关系',emp.emergency_relation]])}
     </div>`;
 
+  // Current / recent job assignments
+  const jobs = emp.current_jobs || [];
+  if (jobs.length) {
+    const statusLabel = s => s === 'active'
+      ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:700">进行中</span>`
+      : `<span style="background:#f1f5f9;color:#64748b;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:700">已结束</span>`;
+    html += `<div class="form-section"><h4>职位记录</h4>
+      <table><thead><tr><th>职位</th><th>公司</th><th>开始日期</th><th>结束日期</th><th>时薪</th><th>状态</th></tr></thead><tbody>
+      ${jobs.map(j=>`<tr>
+        <td style="font-weight:600">${esc(j.job_title||'—')}</td>
+        <td>${esc(j.company_name||'—')}</td>
+        <td>${j.start_date||'—'}</td>
+        <td>${j.end_date||'—'}</td>
+        <td>${j.emp_hourly_rate>0?'$'+Number(j.emp_hourly_rate).toFixed(2)+'/hr':'—'}</td>
+        <td>${statusLabel(j.status)}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  }
+
   // Time summary (recent)
   const totalHrs = (emp.recent_time||[]).filter(t=>t.status==='closed').reduce((s,t)=>s+(t.total_hours||0),0);
   const otHrs    = (emp.recent_time||[]).filter(t=>t.status==='closed').reduce((s,t)=>s+(t.overtime_hours||0),0);
