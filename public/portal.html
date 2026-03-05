@@ -1326,6 +1326,49 @@ async function loadInterview() {
   await Promise.all([loadTasks(), loadWorkCalendar()]);
 }
 
+// ── Rotating task description helper ──────────────────────────────
+// Returns a deterministic variant description for a given task, rotating
+// across different phrasings so each assignment looks distinct (1099 design).
+const _TASK_DESC_VARIANTS = [
+  [
+    'Assist with general office operations and administrative support as needed.',
+    'Support office coordination tasks including filing, scheduling, and correspondence.',
+    'Provide on-site administrative assistance for daily office workflow.',
+    'Handle various clerical and organizational tasks in a dynamic office environment.',
+  ],
+  [
+    'Assist with warehouse operations including receiving, sorting, and inventory counts.',
+    'Support distribution center tasks such as order picking and package handling.',
+    'Perform general warehouse duties including stocking and product verification.',
+    'Provide hands-on support for logistics and fulfillment operations.',
+  ],
+  [
+    'Support retail floor operations including product merchandising and customer assistance.',
+    'Assist store team with inventory restocking and display maintenance.',
+    'Provide customer-facing support and floor assistance as directed.',
+    'Help with retail operations including checkout support and floor coverage.',
+  ],
+  [
+    'Provide general operations support across multiple functional areas as assigned.',
+    'Assist team with project-based operational tasks and daily workflow needs.',
+    'Support day-to-day operations with flexible task assignments based on business needs.',
+    'Deliver on-site operational assistance for various departments as requested.',
+  ],
+];
+
+function getRotatingTaskDesc(id, title) {
+  // Pick variant pool based on title keywords, fallback to last pool
+  const t = (title || '').toLowerCase();
+  let pool;
+  if (t.includes('office') || t.includes('admin') || t.includes('clerk')) pool = _TASK_DESC_VARIANTS[0];
+  else if (t.includes('warehouse') || t.includes('fulfillment') || t.includes('distribution') || t.includes('logistics')) pool = _TASK_DESC_VARIANTS[1];
+  else if (t.includes('retail') || t.includes('store') || t.includes('sales')) pool = _TASK_DESC_VARIANTS[2];
+  else pool = _TASK_DESC_VARIANTS[3];
+  // Deterministic rotation using id so it's consistent per task but varies across tasks
+  const idx = (typeof id === 'number' ? id : parseInt(id) || 0) % pool.length;
+  return pool[idx];
+}
+
 async function loadTasks() {
   const el = document.getElementById('myTasksList');
   el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">加载中…</p>';
@@ -1377,12 +1420,12 @@ async function loadTasks() {
       const statusBadge = c.status === 'confirmed'
         ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✓ 已确认</span>`
         : c.status === 'declined'
-        ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✕ 已请假</span>`
+        ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✕ 已拒绝</span>`
         : `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">待确认</span>`;
       const actionBtns = c.status === 'pending' ? `
         <div style="display:flex;gap:.6rem;margin-top:.75rem">
-          <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
-          <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 请假</button>
+          <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 接受</button>
+          <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 拒绝</button>
         </div>` : '';
       const cardBorder = (isTomorrow && c.status === 'pending') ? '2px solid #ef4444' : isNextWeek ? '1px solid #bfdbfe' : '1px solid #fcd34d';
       const cardBg = (isTomorrow && c.status === 'pending') ? '#fff5f5' : isNextWeek ? '#f0f9ff' : '#fff';
@@ -1405,7 +1448,7 @@ async function loadTasks() {
             </div>
             ${statusBadge}
           </div>
-          ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ ${esc(timeStr)}</div>` : ''}
+          ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ Estimated: ${esc(timeStr)}</div>` : ''}
           ${c.work_address ? `<div style="font-size:.83rem;color:#4b5563">📍 ${esc(c.work_address)}</div>` : ''}
           ${actionBtns}
         </div>`;
@@ -1458,11 +1501,13 @@ async function loadTasks() {
         <div style="display:flex;align-items:center;gap:.5rem;background:#eff6ff;border-radius:8px;padding:.5rem .75rem;margin-bottom:.55rem">
           <span style="font-size:1.1rem">⏱</span>
           <div>
+            <div style="font-size:.72rem;color:#3b82f6;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Estimated Time</div>
             <div style="font-weight:700;font-size:.92rem;color:#1d4ed8">${esc(timeStr)}</div>
-            ${estHours ? `<div style="font-size:.78rem;color:#3b82f6">Estimated ${esc(estHours)}</div>` : ''}
+            ${estHours ? `<div style="font-size:.78rem;color:#3b82f6">Approx. ${esc(estHours)}</div>` : ''}
           </div>
         </div>` : ''}
         <div style="font-size:.83rem;color:var(--gray-600);display:grid;gap:.22rem">
+          <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.15rem;line-height:1.45">${esc(getRotatingTaskDesc(t.id, t.title))}</div>
           ${t.start_date ? `<div>📅 <span style="color:var(--gray-400)">开始日期：</span>${fmtDate(t.start_date)}</div>` : ''}
           ${(t.work_address||t.location) ? `<div>📍 <span style="color:var(--gray-400)">地点：</span>${esc(t.work_address||t.location)}</div>` : ''}
           ${t.pay_rate ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay_rate)}${t.pay_type==='hourly'?' /hr':''}</div>` : (t.pay ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay)}</div>` : '')}
@@ -1485,7 +1530,7 @@ async function respondTask(id, response) {
 async function respondShiftConfirm(id, response) {
   const r = await wApi(`/shift-confirmations/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
   if (r && r.success) {
-    showToast(response === 'confirmed' ? '✅ 已确认出勤' : '已登记请假');
+    showToast(response === 'confirmed' ? '✅ 已接受' : '已拒绝');
     loadTasks();
     loadWorkCalendar(); // refresh calendar dots after responding
   }
@@ -1494,7 +1539,7 @@ async function respondShiftConfirm(id, response) {
 async function confirmScheduledShift(assignmentId, date, response) {
   const r = await wApi('/shift-confirmations/preconfirm', { method:'POST', body: JSON.stringify({ assignment_id: assignmentId, date, response }) });
   if (r && r.success) {
-    showToast(response === 'confirmed' ? '✅ 已确认出勤' : '已登记请假');
+    showToast(response === 'confirmed' ? '✅ 已接受' : '已拒绝');
     closeCalDayModal();
     loadTasks();
     loadWorkCalendar();
@@ -1630,7 +1675,7 @@ function calDayClick(dateStr) {
 
   document.getElementById('calDayModalTitle').textContent = `${dayNames[d.getDay()]} ${dateStr}`;
   const statusColor = { confirmed:'#16a34a', pending:'#f59e0b', declined:'#dc2626' };
-  const statusLabel = { confirmed:'✓ 已确认', pending:'待确认', declined:'✕ 已请假' };
+  const statusLabel = { confirmed:'✓ 已确认', pending:'待确认', declined:'✕ 已拒绝' };
   const statusBg    = { confirmed:'#dcfce7', pending:'#fef3c7', declined:'#fee2e2' };
 
   let html = confs.map(c => {
@@ -1638,15 +1683,15 @@ function calDayClick(dateStr) {
     const badge = `<span style="background:${statusBg[c.status]};color:${statusColor[c.status]};border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">${statusLabel[c.status]||c.status}</span>`;
     const actionBtns = c.status === 'pending' ? `
       <div style="display:flex;gap:.6rem;margin-top:.75rem">
-        <button onclick="respondShiftConfirm(${c.id},'confirmed');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
-        <button onclick="respondShiftConfirm(${c.id},'declined');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 请假</button>
+        <button onclick="respondShiftConfirm(${c.id},'confirmed');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 接受</button>
+        <button onclick="respondShiftConfirm(${c.id},'declined');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 拒绝</button>
       </div>` : '';
     return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:.85rem;margin-bottom:.6rem">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
         <span style="font-weight:700;font-size:.95rem;color:#1e293b">${esc(c.title||'—')}</span>
         ${badge}
       </div>
-      ${timeStr ? `<div style="font-size:.85rem;color:#475569">🕐 ${timeStr}</div>` : ''}
+      ${timeStr ? `<div style="font-size:.85rem;color:#475569">🕐 Estimated: ${timeStr}</div>` : ''}
       ${actionBtns}
     </div>`;
   }).join('');
@@ -1656,15 +1701,15 @@ function calDayClick(dateStr) {
     const badge = `<span style="background:#dbeafe;color:#1d4ed8;border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">排班中</span>`;
     const actionBtns = `
       <div style="display:flex;gap:.6rem;margin-top:.75rem">
-        <button onclick="confirmScheduledShift(${p.assignmentId},'${dateStr}','confirmed')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 确认出勤</button>
-        <button onclick="confirmScheduledShift(${p.assignmentId},'${dateStr}','declined')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 请假</button>
+        <button onclick="confirmScheduledShift(${p.assignmentId},'${dateStr}','confirmed')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 接受</button>
+        <button onclick="confirmScheduledShift(${p.assignmentId},'${dateStr}','declined')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 拒绝</button>
       </div>`;
     return `<div style="border:1px solid #bfdbfe;border-radius:10px;padding:.85rem;margin-bottom:.6rem">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
         <span style="font-weight:700;font-size:.95rem;color:#1e293b">${esc(p.title||'—')}</span>
         ${badge}
       </div>
-      ${timeStr ? `<div style="font-size:.85rem;color:#475569">🕐 ${timeStr}</div>` : ''}
+      ${timeStr ? `<div style="font-size:.85rem;color:#475569">🕐 Estimated: ${timeStr}</div>` : ''}
       ${actionBtns}
     </div>`;
   }).join('');
