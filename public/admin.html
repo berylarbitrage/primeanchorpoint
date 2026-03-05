@@ -7190,7 +7190,7 @@ async function sendRegLink() {
   if (!phone && !email) { resultEl.innerHTML = '<span style="color:#dc2626">请填写手机号或邮箱</span>'; return; }
   resultEl.innerHTML = '<span style="color:var(--gray-400)">发送中...</span>';
   try {
-    const d = await api(`/admin/employees/${empId}/send-registration-link`, 'POST', { phone, email });
+    const d = await api(`/admin/employees/${empId}/send-registration-link`, { method: 'POST', body: JSON.stringify({ phone, email }) });
     let msg = '<div style="color:#166534;font-weight:600">✓ 链接已生成</div>';
     const sent = [];
     if (d.sms_sent) sent.push('短信');
@@ -9547,9 +9547,9 @@ async function genInviteLink() {
   btn.disabled = true; btn.textContent = '生成中…';
   resultEl.innerHTML = '';
   try {
-    const r = await api('/admin/invite-links', 'POST', { role, hours, notes });
+    const r = await api('/admin/invite-links', { method: 'POST', body: JSON.stringify({ role, hours, notes }) });
     if (!r || !r.url) {
-      resultEl.innerHTML = `<span style="color:#dc2626">生成失败：${esc(r && r.error ? r.error : '服务器未返回链接，请检查后台日志')}</span>`;
+      resultEl.innerHTML = `<span style="color:#dc2626">生成失败：${esc(r && r.error ? r.error : '服务器未返回链接，请重试')}</span>`;
     } else {
       const safeUrl = r.url.replace(/'/g, '%27');
       resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
@@ -9565,7 +9565,7 @@ async function genInviteLink() {
 
 async function deleteInviteLink(id) {
   if (!await showConfirm('确定删除此邀请链接？')) return;
-  await api(`/admin/invite-links/${id}`, 'DELETE');
+  await api(`/admin/invite-links/${id}`, { method: 'DELETE' });
   loadInviteLinks();
 }
 
@@ -9617,7 +9617,7 @@ async function createInviteLink() {
   const role = document.getElementById('newInviteRole').value;
   const expires_hours = parseInt(document.getElementById('newInviteHours').value) || 72;
   const note = document.getElementById('newInviteNote').value.trim();
-  const d = await api('/admin/manager-invites', 'POST', { role, expires_hours, note });
+  const d = await api('/admin/manager-invites', { method: 'POST', body: JSON.stringify({ role, expires_hours, note }) });
   if (d && d.url) {
     navigator.clipboard.writeText(d.url).catch(() => {});
     document.getElementById('newInviteNote').value = '';
@@ -9628,7 +9628,7 @@ async function createInviteLink() {
 
 async function revokeInviteLink(id) {
   if (!confirm('确定撤销此邀请链接？')) return;
-  await api('/admin/manager-invites/' + id, 'DELETE');
+  await api('/admin/manager-invites/' + id, { method: 'DELETE' });
   loadInviteLinks();
 }
 
