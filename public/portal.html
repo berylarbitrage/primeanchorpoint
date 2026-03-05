@@ -2215,7 +2215,7 @@ async function loadPunchStatus() {
   if (s.clocked_in && s.missed_checkout) {
     // Previous day's clock-out was forgotten — still allow clock-in with confirmation
     statusEl.innerHTML = '<span style="color:#f59e0b;font-weight:600">⚠ 昨日未打下班卡</span>';
-    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
     subEl.innerHTML = `<span style="color:#dc2626;font-size:.82rem">${s.missed_date || '昨日'} 忘记打下班卡，打上班卡时需确认。</span>`;
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
@@ -2226,14 +2226,15 @@ async function loadPunchStatus() {
       selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
   } else if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
-    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
     subEl.textContent = 'On break · Click "Resume Job" to continue';
     selectorWrap.style.display = 'none';
   } else if (s.clocked_in && s.open_entry) {
-    const ci = new Date(s.open_entry.clock_in);
+    const tz = s.open_entry.display_timezone || 'America/Chicago';
+    const ci = s.open_entry.clock_in;
     statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● Checked In</span>';
-    timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = 'Check In · ' + ci.toLocaleDateString();
+    timeEl.textContent = new Date(ci).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz});
+    subEl.textContent = 'Check In · ' + new Date(ci).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz});
     selectorWrap.style.display = 'none';
   } else if (!s.has_active_job) {
     statusEl.innerHTML = '<span style="color:var(--orange)">● Not Checked In</span>';
@@ -2379,7 +2380,8 @@ function startPunchFlow(type) {
   if (_confirmClockTimer) clearInterval(_confirmClockTimer);
   const tick = () => {
     const el = document.getElementById('punchConfirmClock');
-    if (el) el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const tz = (_punchStatus?.open_entry?.display_timezone) || (_punchStatus?.active_job?.site_tz) || 'America/Chicago';
+    if (el) el.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:tz});
   };
   tick();
   _confirmClockTimer = setInterval(tick, 1000);
@@ -2529,20 +2531,22 @@ async function loadTimeclock() {
     document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="11" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看 Check In / Out 记录</td></tr>';
     return;
   }
-  const fmt = d => d ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—';
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
-    const ci = t.clock_in ? new Date(t.clock_in) : null;
-    const co = t.clock_out ? new Date(t.clock_out) : null;
+    const tz = t.display_timezone || 'America/Chicago';
+    const fmtTime = d => d ? new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz}) : '—';
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz}) : '—';
+    const ci = t.clock_in || null;
+    const co = t.clock_out || null;
     const mapLink = t.latitude ? `<span onclick="showMiniMap(event,${t.latitude},${t.longitude})" title="${(+t.latitude).toFixed(4)},${(+t.longitude).toFixed(4)}" style="cursor:pointer;font-size:1rem">📍</span>` : '—';
     const jobLabel = t.job_title ? esc(t.job_title) : '<span style="color:var(--gray-300)">—</span>';
     // Parse breaks
     let breaks = [];
     try { breaks = JSON.parse(t.break_records || '[]'); } catch(e) {}
     const breakStartCell = breaks.length
-      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.start ? new Date(b.start).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—'}</span>`).join('')
+      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.start ? fmtTime(b.start) : '—'}</span>`).join('')
       : '—';
     const breakEndCell = breaks.length
-      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.end ? new Date(b.end).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--orange)">休息中</span>'}</span>`).join('')
+      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.end ? fmtTime(b.end) : '<span style="color:var(--orange)">休息中</span>'}</span>`).join('')
       : '—';
     const statusCell = t.on_break
       ? '<span style="color:#7c3aed">☕ 休息中</span>'
@@ -2550,12 +2554,12 @@ async function loadTimeclock() {
         ? '✅ 已完成'
         : '<span style="color:var(--sky)">⏱ 工作中</span>';
     return `<tr style="white-space:nowrap">
-      <td>${ci ? ci.toLocaleDateString() : '—'}</td>
+      <td>${ci ? fmtDate(ci) : '—'}</td>
       <td style="font-size:.8rem">${jobLabel}</td>
-      <td>${fmt(ci)}</td>
+      <td>${fmtTime(ci)}</td>
       <td>${breakStartCell}</td>
       <td>${breakEndCell}</td>
-      <td>${co ? fmt(co) : '<span style="color:var(--orange)">—</span>'}</td>
+      <td>${co ? fmtTime(co) : '<span style="color:var(--orange)">—</span>'}</td>
       <td>${t.total_hours ? t.total_hours.toFixed(2) + 'h' : '—'}</td>
       <td>${t.regular_hours ? t.regular_hours.toFixed(2) + 'h' : '—'}</td>
       <td>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+'h</span>' : '—'}</td>
