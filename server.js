@@ -2127,16 +2127,21 @@ app.get('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res
 });
 
 app.post('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
-  const { role, hours, notes, assigned_partner_ids } = req.body;
-  if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
-  const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
-  const token = crypto.randomBytes(28).toString('hex');
-  const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
-  db.prepare('INSERT INTO admin_invites (token, role, notes, assigned_partner_ids, expires_at) VALUES (?,?,?,?,?)')
-    .run(token, role, notes || '', assigned_partner_ids || '', expiresAt);
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const host  = req.headers['x-forwarded-host'] || req.headers.host;
-  res.json({ success: true, url: `${proto}://${host}/admin-invite?token=${token}` });
+  try {
+    const { role, hours, notes, assigned_partner_ids } = req.body;
+    if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
+    const token = crypto.randomBytes(28).toString('hex');
+    const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+    db.prepare('INSERT INTO admin_invites (token, role, notes, assigned_partner_ids, expires_at) VALUES (?,?,?,?,?)')
+      .run(token, role, notes || '', assigned_partner_ids || '', expiresAt);
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const host  = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    res.json({ success: true, url: `${proto}://${host}/admin-invite?token=${token}` });
+  } catch(e) {
+    console.error('invite-links POST error:', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin'), (req, res) => {

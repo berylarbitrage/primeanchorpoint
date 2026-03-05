@@ -9548,12 +9548,17 @@ async function genInviteLink() {
   resultEl.innerHTML = '';
   try {
     const r = await api('/admin/invite-links', 'POST', { role, hours, notes });
-    resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-      <span style="color:#166534;font-weight:700">✓ 链接已生成：</span>
-      <span style="word-break:break-all;color:#44403c;cursor:pointer;text-decoration:underline" onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))">${esc(r.url)}</span>
-      <button onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))" style="padding:.2rem .6rem;border:1px solid #166534;border-radius:6px;background:#f0fdf4;color:#166534;cursor:pointer;font-size:.78rem">复制</button>
-    </div>`;
-    loadInviteLinks();
+    if (!r || !r.url) {
+      resultEl.innerHTML = `<span style="color:#dc2626">生成失败：${esc(r && r.error ? r.error : '服务器未返回链接，请检查后台日志')}</span>`;
+    } else {
+      const safeUrl = r.url.replace(/'/g, '%27');
+      resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+        <span style="color:#166534;font-weight:700">✓ 链接已生成：</span>
+        <span style="word-break:break-all;color:#44403c;cursor:pointer;text-decoration:underline" onclick="navigator.clipboard.writeText('${safeUrl}').then(()=>showToast('✅ 链接已复制'))">${esc(r.url)}</span>
+        <button onclick="navigator.clipboard.writeText('${safeUrl}').then(()=>showToast('✅ 链接已复制'))" style="padding:.2rem .6rem;border:1px solid #166534;border-radius:6px;background:#f0fdf4;color:#166534;cursor:pointer;font-size:.78rem">复制</button>
+      </div>`;
+      loadInviteLinks();
+    }
   } catch(e) { resultEl.innerHTML = `<span style="color:#dc2626">生成失败：${esc(e.message)}</span>`; }
   btn.disabled = false; btn.textContent = '+ 生成';
 }
