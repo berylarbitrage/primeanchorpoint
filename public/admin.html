@@ -6371,20 +6371,22 @@ function addPartnerContact(c) {
   const fname = c?.first_name || (c?.name && !c.last_name ? c.name : '');
   const lname = c?.last_name || '';
   div.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
-      <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
-      <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
-      <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.15rem">
-      <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
-      <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.5rem;margin-top:.15rem">
-      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
-      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WeChat 微信</label><input class="pc-wechat" value="${esc(c?.wechat||'')}" placeholder="微信号" style="font-size:.82rem;padding:6px 8px"></div>
-      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">Telegram</label><input class="pc-telegram" value="${esc(c?.telegram||'')}" placeholder="@username" style="font-size:.82rem;padding:6px 8px"></div>
-      <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">其他通讯</label><input class="pc-other_comm" value="${esc(c?.other_comm||'')}" placeholder="Line / Zalo..." style="font-size:.82rem;padding:6px 8px"></div>
+    <div style="flex:1;min-width:0">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
+        <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
+        <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
+        <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
+        <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
+        <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
+        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
+        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WeChat 微信</label><input class="pc-wechat" value="${esc(c?.wechat||'')}" placeholder="微信号" style="font-size:.82rem;padding:6px 8px"></div>
+        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">Telegram</label><input class="pc-telegram" value="${esc(c?.telegram||'')}" placeholder="@username" style="font-size:.82rem;padding:6px 8px"></div>
+        <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">其他通讯</label><input class="pc-other_comm" value="${esc(c?.other_comm||'')}" placeholder="Line / Zalo..." style="font-size:.82rem;padding:6px 8px"></div>
+      </div>
     </div>
     <button class="btn-rm" onclick="this.parentElement.remove()" title="删除">✕</button>`;
   document.getElementById('pContactsList').appendChild(div);
