@@ -3297,10 +3297,8 @@ async function doLogin() {
   } catch (e) {
     errEl.textContent = '网络错误，请检查连接后重试';
   } finally {
-    if (!document.getElementById('loginWrap').hidden && document.getElementById('loginWrap').style.display !== 'none') {
-      btn.disabled = false;
-      btn.textContent = '登录';
-    }
+    btn.disabled = false;
+    btn.textContent = '登录';
   }
 }
 
@@ -3483,6 +3481,8 @@ function logout() {
   document.cookie = 'pa_token=;path=/;max-age=0';
   document.getElementById('app').classList.remove('show');
   document.getElementById('loginWrap').style.display = 'flex';
+  document.getElementById('loginBtn').disabled = false;
+  document.getElementById('loginBtn').textContent = '登录';
   document.getElementById('userInput').value = '';
   document.getElementById('passInput').value = '';
   document.getElementById('loginErr').textContent = '';
