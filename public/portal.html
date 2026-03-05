@@ -159,12 +159,22 @@ tr:last-child td{border-bottom:none}
 .lang-sw button{background:rgba(255,255,255,.15);color:#fff;border:none;padding:.2rem .45rem;border-radius:4px;font-size:.72rem;font-weight:700;cursor:pointer;opacity:.65;line-height:1.4;transition:.15s}
 .lang-sw button:hover{opacity:.9}
 .lang-sw button.active{background:rgba(255,255,255,.9);color:var(--blue);opacity:1}
+/* Job filter bar */
+.job-filter-bar{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem}
+.jfbtn{padding:5px 13px;background:#fff;color:var(--gray-500);border:1px solid var(--gray-200);border-radius:20px;font-size:.78rem;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.jfbtn.active{background:var(--sky);color:#fff;border-color:var(--sky)}
+.jfbtn:hover:not(.active){border-color:var(--sky);color:var(--sky)}
+.filter-section-label{font-size:.68rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;width:100%;margin-top:.3rem;margin-bottom:.1rem}
+.filter-section-label:first-child{margin-top:0}
+.filter-toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem}
+.filter-toggle-row button{font-size:.78rem;color:var(--sky);background:none;border:none;cursor:pointer;font-weight:600;padding:0}
 @media(max-width:768px){
   .sidebar{transform:translateX(-100%);transition:transform .25s ease}
   .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,.3)}
   .sidebar-overlay.show{display:block}
   .main-wrap{margin-left:0}
   .mobile-topbar{display:flex}
+  .jfbtn{font-size:.75rem;padding:4px 11px}
 }
 @media(max-width:600px){
   .job-card{flex-direction:column}
@@ -407,9 +417,12 @@ tr:last-child td{border-bottom:none}
 <div id="app">
   <!-- Left sidebar -->
   <div class="sidebar" id="sidebar">
-    <div class="sidebar-top">
-      <h2>Prime Anchorpoint</h2>
-      <div class="sub" id="portalSubtitle">工人门户</div>
+    <div class="sidebar-top" style="display:flex;align-items:center;gap:.75rem">
+      <img src="/logo.svg" alt="Prime Anchorpoint" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;filter:brightness(0) invert(1)">
+      <div>
+        <h2>Prime Anchorpoint</h2>
+        <div class="sub" id="portalSubtitle">工人门户</div>
+      </div>
     </div>
     <nav class="sidebar-nav">
       <a class="active" data-tab="jobs" onclick="showTab('jobs')">职位浏览</a>
@@ -451,15 +464,48 @@ tr:last-child td{border-bottom:none}
 
     <!-- Jobs -->
     <div id="tabJobs">
-      <div class="card" style="display:flex;align-items:center;gap:1rem;padding:.85rem 1.25rem">
-        <input type="text" id="jobSearchInput" placeholder="搜索职位、地点..." oninput="filterJobs()" style="flex:1;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem">
-        <select id="jobTypeFilter" onchange="filterJobs()" style="padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem">
-          <option value="">全部类型</option>
-          <option value="全职">全职</option>
-          <option value="兼职">兼职</option>
-          <option value="临时工">临时工</option>
-          <option value="临时转正">临时转正</option>
-        </select>
+      <div class="card" style="padding:.85rem 1.25rem">
+        <!-- Search -->
+        <input type="text" id="jobSearchInput" placeholder="搜索职位、地点..." oninput="filterJobs()" style="width:100%;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;margin-bottom:.75rem;box-sizing:border-box">
+        <!-- Filter toggle -->
+        <div class="filter-toggle-row">
+          <span style="font-size:.82rem;font-weight:700;color:var(--gray-500)">筛选 Filter</span>
+          <button onclick="togglePortalFilters()">
+            <span id="portalFilterToggleLabel">展开 ▼</span>
+            <span id="portalFilterBadge" style="display:none;margin-left:.35rem;background:var(--sky);color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem;font-weight:700"></span>
+          </button>
+        </div>
+        <div id="portalFilterBody" style="display:none">
+          <div class="job-filter-bar">
+            <span class="filter-section-label">职位类型</span>
+            <button class="jfbtn active" data-pf="type" data-v="" onclick="setPF('type','',this)">全部</button>
+            <button class="jfbtn" data-pf="type" data-v="全职" onclick="setPF('type','全职',this)">全职</button>
+            <button class="jfbtn" data-pf="type" data-v="兼职" onclick="setPF('type','兼职',this)">兼职</button>
+            <button class="jfbtn" data-pf="type" data-v="临时工" onclick="setPF('type','临时工',this)">临时工</button>
+            <button class="jfbtn" data-pf="type" data-v="临时转正" onclick="setPF('type','临时转正',this)">临时转正</button>
+          </div>
+          <div class="job-filter-bar">
+            <span class="filter-section-label">工作身份要求</span>
+            <button class="jfbtn active" data-pf="auth" data-v="" onclick="setPF('auth','',this)">不限</button>
+            <button class="jfbtn" data-pf="auth" data-v="any" onclick="setPF('auth','any',this)">任何身份</button>
+            <button class="jfbtn" data-pf="auth" data-v="gc" onclick="setPF('auth','gc',this)">绿卡/公民</button>
+            <button class="jfbtn" data-pf="auth" data-v="citizen" onclick="setPF('auth','citizen',this)">仅公民</button>
+          </div>
+          <div class="job-filter-bar">
+            <span class="filter-section-label">班次</span>
+            <button class="jfbtn active" data-pf="shift" data-v="" onclick="setPF('shift','',this)">不限</button>
+            <button class="jfbtn" data-pf="shift" data-v="1st" onclick="setPF('shift','1st',this)">早班</button>
+            <button class="jfbtn" data-pf="shift" data-v="2nd" onclick="setPF('shift','2nd',this)">中班</button>
+            <button class="jfbtn" data-pf="shift" data-v="3rd" onclick="setPF('shift','3rd',this)">晚班</button>
+            <button class="jfbtn" data-pf="shift" data-v="night" onclick="setPF('shift','night',this)">夜班</button>
+            <button class="jfbtn" data-pf="shift" data-v="flex" onclick="setPF('shift','flex',this)">弹性</button>
+          </div>
+          <div class="job-filter-bar">
+            <span class="filter-section-label">优先级</span>
+            <button class="jfbtn active" data-pf="urgent" data-v="" onclick="setPF('urgent','',this)">全部</button>
+            <button class="jfbtn" data-pf="urgent" data-v="1" onclick="setPF('urgent','1',this)">🔥 急聘优先</button>
+          </div>
+        </div>
       </div>
       <div id="jobsList"></div>
     </div>
@@ -984,6 +1030,14 @@ tr:last-child td{border-bottom:none}
         <h2 style="margin-bottom:.3rem">🪪 身份验证</h2>
         <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">由HR发起 · 驾照 + 自拍 + SSN核验 · 通过Persona平台</p>
         <div id="profileIdentity"><p style="color:var(--gray-400);font-size:.88rem">加载中...</p></div>
+      </div>
+      <!-- Manager Punch QR Code -->
+      <div class="card" style="margin-bottom:1rem">
+        <h2 style="margin-bottom:.3rem">📲 打卡二维码</h2>
+        <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">让 Manager 扫描此二维码为您打卡</p>
+        <div id="profilePunchQRWrap" style="text-align:center">
+          <div id="profilePunchQR" style="display:inline-block;background:#fff;padding:10px;border:1px solid var(--gray-200);border-radius:10px;min-width:160px;min-height:160px"></div>
+        </div>
       </div>
       <!-- Uploaded documents -->
       <div class="card">
@@ -1876,13 +1930,36 @@ async function loadJobs() {
   renderJobs(jobs);
 }
 
+const _pf = { type: '', auth: '', shift: '', urgent: '' };
+function setPF(dim, val, btn) {
+  _pf[dim] = val;
+  document.querySelectorAll(`[data-pf="${dim}"]`).forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updatePortalFilterBadge();
+  filterJobs();
+}
+function togglePortalFilters() {
+  const body = document.getElementById('portalFilterBody');
+  const open = body.style.display === 'none';
+  body.style.display = open ? '' : 'none';
+  document.getElementById('portalFilterToggleLabel').textContent = open ? '收起 ▲' : '展开 ▼';
+}
+function updatePortalFilterBadge() {
+  const count = Object.values(_pf).filter(v => v !== '').length;
+  const badge = document.getElementById('portalFilterBadge');
+  badge.style.display = count ? '' : 'none';
+  badge.textContent = count;
+}
 function filterJobs() {
   const q = document.getElementById('jobSearchInput').value.toLowerCase();
-  const type = document.getElementById('jobTypeFilter').value;
-  renderJobs(_allJobs.filter(j =>
-    (!q || j.title.toLowerCase().includes(q)) &&
-    (!type || (j.type||'').includes(type))
-  ));
+  renderJobs(_allJobs.filter(j => {
+    if (q && !j.title.toLowerCase().includes(q) && !(j.location||'').toLowerCase().includes(q)) return false;
+    if (_pf.type && !(j.type||'').includes(_pf.type)) return false;
+    if (_pf.auth) { if (_pf.auth === 'any') { if (j.work_auth && j.work_auth !== 'any') return false; } else if (j.work_auth !== _pf.auth) return false; }
+    if (_pf.shift && !(j.schedule||'').toLowerCase().includes(_pf.shift) && !(j.work_days||'').toLowerCase().includes(_pf.shift)) return false;
+    if (_pf.urgent && String(j.urgent) !== _pf.urgent) return false;
+    return true;
+  }));
 }
 
 function renderJobs(jobs) {
@@ -2224,7 +2301,7 @@ function showPunchConfirmMap() {
   if (_confirmMap) { _confirmMap.remove(); _confirmMap = null; _confirmMapUserMarker = null; _confirmMapFenceCircle = null; _confirmMapFenceMarker = null; }
 
   _confirmMap = L.map('punchConfirmMap', { zoomControl: true, scrollWheelZoom: false, attributionControl: false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(_confirmMap);
+  L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 20, subdomains: ['0', '1', '2', '3'] }).addTo(_confirmMap);
 
   // User position – blue pulsing icon
   const userIcon = L.divIcon({
@@ -2652,6 +2729,31 @@ async function loadProfile() {
     <div style="margin-top:.6rem;font-size:.85rem;color:var(--gray-500)">账号：<strong>${esc(a.username)}</strong></div>`;
   }
   document.getElementById('profileBasic').innerHTML = basicHtml;
+
+  // ── Punch QR Code ──
+  const qrWrap = document.getElementById('profilePunchQR');
+  if (qrWrap && e && e.employee_id) {
+    const qrUrl = location.origin + '/mgr-punch?emp=' + encodeURIComponent(e.employee_id);
+    const renderPunchQR = () => {
+      qrWrap.innerHTML = '';
+      try {
+        new QRCode(qrWrap, { text: qrUrl, width: 160, height: 160, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      } catch(err) {
+        qrWrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrUrl)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+      }
+    };
+    if (typeof QRCode !== 'undefined') {
+      renderPunchQR();
+    } else {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+      s.onload = renderPunchQR;
+      s.onerror = () => { qrWrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrUrl)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`; };
+      document.head.appendChild(s);
+    }
+  } else if (qrWrap) {
+    qrWrap.innerHTML = '<span style="font-size:.82rem;color:var(--gray-400)">员工档案未绑定，暂无二维码</span>';
+  }
 
   // ── Contact info ──
   const rowStyle = 'display:flex;align-items:center;justify-content:space-between;padding:.65rem 0;border-bottom:1px solid var(--gray-100)';
@@ -3725,7 +3827,7 @@ else document.getElementById('loginWrap').style.display = '';
 
     if (!_mmMap) {
       _mmMap = L.map('miniMapContainer', { zoomControl: true, scrollWheelZoom: false });
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }).addTo(_mmMap);
+      L.tileLayer('https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { attribution: '© Google Maps', maxZoom: 20, subdomains: ['0', '1', '2', '3'] }).addTo(_mmMap);
       _mmMarker = L.marker([lat, lng]).addTo(_mmMap);
       _mmMap.setView([lat, lng], 16);
     } else {
