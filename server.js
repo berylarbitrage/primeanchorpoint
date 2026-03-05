@@ -4979,6 +4979,7 @@ app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
   const tasks = db.prepare(`
     SELECT a.id, a.status, a.notes, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
            a.start_date, a.work_schedule, a.work_address, a.assigned_at, a.worker_response,
+           a.task_requirements,
            j.title, j.location, j.pay, j.company_name, j.employment_type,
            j.work_days, j.work_start, j.work_end, j.description
     FROM assignments a
