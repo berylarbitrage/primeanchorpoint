@@ -9549,7 +9549,8 @@ async function genInviteLink() {
   try {
     const r = await api('/admin/invite-links', 'POST', { role, hours, notes });
     if (!r || !r.url) {
-      resultEl.innerHTML = `<span style="color:#dc2626">生成失败：${esc(r && r.error ? r.error : '服务器未返回链接，请检查后台日志')}</span>`;
+      console.error('[invite-links] unexpected response:', JSON.stringify(r));
+      resultEl.innerHTML = `<span style="color:#dc2626">生成失败：${esc(r && r.error ? r.error : '服务器未返回链接 (响应: ' + JSON.stringify(r) + ')')}</span>`;
     } else {
       const safeUrl = r.url.replace(/'/g, '%27');
       resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
