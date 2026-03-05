@@ -62,6 +62,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .sidebar-nav a:hover,.sidebar-nav a.active{color:#fff;background:rgba(255,255,255,.08);border-left-color:var(--sky)}
 .sidebar-bottom{padding:1rem 1.5rem;border-top:1px solid rgba(255,255,255,.1)}
 .sidebar-bottom .worker-name{font-size:.8rem;color:rgba(255,255,255,.65);margin-bottom:.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.login-lang-btn{padding:.25rem .65rem;border:1.5px solid var(--gray-200);background:#fff;color:var(--gray-500);border-radius:99px;font-size:.75rem;font-weight:600;cursor:pointer;transition:.15s}
+.login-lang-btn:hover{border-color:var(--sky);color:var(--sky)}
+.login-lang-btn.active{border-color:var(--sky);background:var(--sky);color:#fff}
 .lang-sw{display:flex;gap:.3rem;margin-bottom:.65rem}
 .lang-sw button{padding:.2rem .5rem;border:1px solid rgba(255,255,255,.25);background:none;color:rgba(255,255,255,.6);border-radius:4px;font-size:.75rem;cursor:pointer}
 .lang-sw button.active,.lang-sw button:hover{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.5)}
@@ -194,18 +197,24 @@ tr:last-child td{border-bottom:none}
 <!-- Login -->
 <div class="login-wrap" id="loginWrap">
   <div class="login-box">
+    <!-- Language switcher -->
+    <div style="display:flex;justify-content:center;gap:.4rem;margin-bottom:1.1rem">
+      <button class="login-lang-btn" id="lbZh" onclick="setPortalLang('zh')">中文</button>
+      <button class="login-lang-btn" id="lbEn" onclick="setPortalLang('en')">English</button>
+      <button class="login-lang-btn" id="lbEs" onclick="setPortalLang('es')">Español</button>
+    </div>
     <img src="/logo.svg" alt="Prime Anchorpoint">
-    <h1>工人门户</h1>
-    <p>Worker Self-Service Portal</p>
-    <input type="text" id="wLogin" placeholder="邮箱或手机号 / Email or Phone" autocomplete="username">
+    <h1 id="loginTitle">工人门户</h1>
+    <p id="loginSubtitle">Worker Self-Service Portal</p>
+    <input type="text" id="wLogin" data-i18n-placeholder="loginPlaceholderUser" placeholder="邮箱或手机号 / Email or Phone" autocomplete="username">
     <div class="pw-wrap">
-      <input type="password" id="wPassword" placeholder="密码 / Password" autocomplete="current-password">
+      <input type="password" id="wPassword" data-i18n-placeholder="loginPlaceholderPw" placeholder="密码 / Password" autocomplete="current-password">
       <button type="button" class="pw-eye" onclick="togglePw('wPassword',this)" tabindex="-1" aria-label="显示/隐藏密码"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
     </div>
-    <button class="btn-login" onclick="workerLogin()">登录 / Login</button>
+    <button class="btn-login" id="loginBtn" onclick="workerLogin()">登录 / Login</button>
     <div class="login-extra">
-      <a href="javascript:void(0)" onclick="showForgotPassword()">忘记密码？</a>
-      <a href="/register?type=worker">注册 / Register</a>
+      <a href="javascript:void(0)" id="loginForgotLink" onclick="showForgotPassword()">忘记密码？</a>
+      <a href="/register?type=worker" id="loginRegisterLink">注册 / Register</a>
     </div>
   </div>
 </div>
@@ -1104,14 +1113,35 @@ tr:last-child td{border-bottom:none}
 // ── Portal i18n ──────────────────────────────────────────────────
 const PORTAL_I18N = {
   zh: {
+    loginTitle: '工人门户',
+    loginSubtitle: 'Worker Self-Service Portal',
+    loginPlaceholderUser: '邮箱或手机号',
+    loginPlaceholderPw: '密码',
+    loginBtn: '登录',
+    loginForgot: '忘记密码？',
+    loginRegister: '注册账号',
     subtitle: '工人门户', logout: '退出',
     tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'📋 待办事项', referral:'🎁 推荐奖励', profile:'我的信息' }
   },
   en: {
+    loginTitle: 'Worker Portal',
+    loginSubtitle: 'Worker Self-Service Portal',
+    loginPlaceholderUser: 'Email or Phone',
+    loginPlaceholderPw: 'Password',
+    loginBtn: 'Login',
+    loginForgot: 'Forgot password?',
+    loginRegister: 'Register',
     subtitle: 'Worker Portal', logout: 'Logout',
     tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', compliance:'Compliance', todos:'📋 To-Do', referral:'🎁 Referrals', profile:'Profile' }
   },
   es: {
+    loginTitle: 'Portal del Trabajador',
+    loginSubtitle: 'Portal de Autoservicio',
+    loginPlaceholderUser: 'Correo o Teléfono',
+    loginPlaceholderPw: 'Contraseña',
+    loginBtn: 'Iniciar sesión',
+    loginForgot: '¿Olvidó su contraseña?',
+    loginRegister: 'Registrarse',
     subtitle: 'Portal del Trabajador', logout: 'Salir',
     tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', compliance:'Documentos', todos:'📋 Tareas', referral:'🎁 Referidos', profile:'Perfil' }
   }
@@ -1125,12 +1155,28 @@ function setPortalLang(lang) {
 function applyPortalLang() {
   const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
   const el = id => document.getElementById(id);
+  // Login page
+  if (el('loginTitle'))    el('loginTitle').textContent    = L.loginTitle;
+  if (el('loginSubtitle')) el('loginSubtitle').textContent = L.loginSubtitle;
+  if (el('loginBtn'))      el('loginBtn').textContent      = L.loginBtn;
+  if (el('loginForgotLink'))   el('loginForgotLink').textContent   = L.loginForgot;
+  if (el('loginRegisterLink')) el('loginRegisterLink').textContent = L.loginRegister;
+  const uInput = el('wLogin'), pInput = el('wPassword');
+  if (uInput) uInput.placeholder = L.loginPlaceholderUser;
+  if (pInput) pInput.placeholder = L.loginPlaceholderPw;
+  // Login lang buttons
+  ['zh','en','es'].forEach(l => {
+    const b = el('lb' + l.charAt(0).toUpperCase() + l.slice(1));
+    if (b) b.classList.toggle('active', l === _portalLang);
+  });
+  // App shell
   if (el('portalSubtitle')) el('portalSubtitle').textContent = L.subtitle;
   if (el('logoutBtn'))      el('logoutBtn').textContent      = L.logout;
   document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(btn => {
     const label = L.tabs[btn.dataset.tab];
     if (label) btn.textContent = label;
   });
+  // Sidebar lang buttons
   ['zh','en','es'].forEach(l => {
     const btn = el('pl' + l.charAt(0).toUpperCase() + l.slice(1));
     if (btn) btn.classList.toggle('active', l === _portalLang);
@@ -2215,7 +2261,7 @@ async function loadPunchStatus() {
   if (s.clocked_in && s.missed_checkout) {
     // Previous day's clock-out was forgotten — still allow clock-in with confirmation
     statusEl.innerHTML = '<span style="color:#f59e0b;font-weight:600">⚠ 昨日未打下班卡</span>';
-    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
     subEl.innerHTML = `<span style="color:#dc2626;font-size:.82rem">${s.missed_date || '昨日'} 忘记打下班卡，打上班卡时需确认。</span>`;
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
@@ -2226,14 +2272,15 @@ async function loadPunchStatus() {
       selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
   } else if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
-    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
     subEl.textContent = 'On break · Click "Resume Job" to continue';
     selectorWrap.style.display = 'none';
   } else if (s.clocked_in && s.open_entry) {
-    const ci = new Date(s.open_entry.clock_in);
+    const tz = s.open_entry.display_timezone || 'America/Chicago';
+    const ci = s.open_entry.clock_in;
     statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● Checked In</span>';
-    timeEl.textContent = ci.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = 'Check In · ' + ci.toLocaleDateString();
+    timeEl.textContent = new Date(ci).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz});
+    subEl.textContent = 'Check In · ' + new Date(ci).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz});
     selectorWrap.style.display = 'none';
   } else if (!s.has_active_job) {
     statusEl.innerHTML = '<span style="color:var(--orange)">● Not Checked In</span>';
@@ -2379,7 +2426,8 @@ function startPunchFlow(type) {
   if (_confirmClockTimer) clearInterval(_confirmClockTimer);
   const tick = () => {
     const el = document.getElementById('punchConfirmClock');
-    if (el) el.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    const tz = (_punchStatus?.open_entry?.display_timezone) || (_punchStatus?.active_job?.site_tz) || 'America/Chicago';
+    if (el) el.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:tz});
   };
   tick();
   _confirmClockTimer = setInterval(tick, 1000);
@@ -2529,20 +2577,22 @@ async function loadTimeclock() {
     document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="11" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看 Check In / Out 记录</td></tr>';
     return;
   }
-  const fmt = d => d ? d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—';
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
-    const ci = t.clock_in ? new Date(t.clock_in) : null;
-    const co = t.clock_out ? new Date(t.clock_out) : null;
+    const tz = t.display_timezone || 'America/Chicago';
+    const fmtTime = d => d ? new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz}) : '—';
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz}) : '—';
+    const ci = t.clock_in || null;
+    const co = t.clock_out || null;
     const mapLink = t.latitude ? `<span onclick="showMiniMap(event,${t.latitude},${t.longitude})" title="${(+t.latitude).toFixed(4)},${(+t.longitude).toFixed(4)}" style="cursor:pointer;font-size:1rem">📍</span>` : '—';
     const jobLabel = t.job_title ? esc(t.job_title) : '<span style="color:var(--gray-300)">—</span>';
     // Parse breaks
     let breaks = [];
     try { breaks = JSON.parse(t.break_records || '[]'); } catch(e) {}
     const breakStartCell = breaks.length
-      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.start ? new Date(b.start).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '—'}</span>`).join('')
+      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.start ? fmtTime(b.start) : '—'}</span>`).join('')
       : '—';
     const breakEndCell = breaks.length
-      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.end ? new Date(b.end).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '<span style="color:var(--orange)">休息中</span>'}</span>`).join('')
+      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.end ? fmtTime(b.end) : '<span style="color:var(--orange)">休息中</span>'}</span>`).join('')
       : '—';
     const statusCell = t.on_break
       ? '<span style="color:#7c3aed">☕ 休息中</span>'
@@ -2550,12 +2600,12 @@ async function loadTimeclock() {
         ? '✅ 已完成'
         : '<span style="color:var(--sky)">⏱ 工作中</span>';
     return `<tr style="white-space:nowrap">
-      <td>${ci ? ci.toLocaleDateString() : '—'}</td>
+      <td>${ci ? fmtDate(ci) : '—'}</td>
       <td style="font-size:.8rem">${jobLabel}</td>
-      <td>${fmt(ci)}</td>
+      <td>${fmtTime(ci)}</td>
       <td>${breakStartCell}</td>
       <td>${breakEndCell}</td>
-      <td>${co ? fmt(co) : '<span style="color:var(--orange)">—</span>'}</td>
+      <td>${co ? fmtTime(co) : '<span style="color:var(--orange)">—</span>'}</td>
       <td>${t.total_hours ? t.total_hours.toFixed(2) + 'h' : '—'}</td>
       <td>${t.regular_hours ? t.regular_hours.toFixed(2) + 'h' : '—'}</td>
       <td>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+'h</span>' : '—'}</td>
