@@ -2070,6 +2070,38 @@ app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
   res.json(db.prepare(q).all(...params));
 });
 
+// GET /api/manager/interviews — interview requests for workers at this manager's partner companies
+app.get('/api/manager/interviews', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  let workerFilter = '';
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    workerFilter = `AND i.worker_account_id IN (
+      SELECT DISTINCT wa.id FROM worker_accounts wa
+      JOIN employees e ON wa.employee_id = e.id
+      WHERE e.id IN (
+        SELECT DISTINCT t.employee_id FROM time_entries t
+        JOIN jobs j ON t.job_id = j.id
+        WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+      )
+    )`;
+    params.push(...pids);
+  }
+  const rows = db.prepare(`
+    SELECT i.id, i.status, i.admin_notes, i.created_at,
+      s.slot_datetime, s.duration_min, s.location,
+      w.id AS worker_id, w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.work_status, w.identity_status
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+    WHERE 1=1 ${workerFilter}
+    ORDER BY s.slot_datetime DESC
+  `).all(...params);
+  res.json(rows);
+});
+
 // GET /api/manager/workers — employees visible to this manager with contact info
 app.get('/api/manager/workers', requireAdmin, (req, res) => {
   const pids = managerPartnerIds(req);
