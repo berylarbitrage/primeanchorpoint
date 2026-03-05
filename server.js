@@ -2172,30 +2172,17 @@ function inviteUrlPath(role) {
   return '/admin-invite';
 }
 
-app.get('/api/admin/invite-links', requireAdmin, requireRole('admin', 'staff', 'manager'), (req, res) => {
-  let rows;
-  if (req.userRole === 'admin') {
-    rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
-  } else {
-    // staff and manager only see invites they created for their own role
-    rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') AND role=? AND created_by=? ORDER BY id DESC`).all(req.userRole, req.userId);
-  }
+app.get('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const host  = req.headers['x-forwarded-host'] || req.headers.host;
   res.json(rows.map(r => ({ ...r, url: `${proto}://${host}${inviteUrlPath(r.role)}?token=${r.token}` })));
 });
 
-app.post('/api/admin/invite-links', requireAdmin, requireRole('admin', 'staff', 'manager'), (req, res) => {
+app.post('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
   try {
-    const { hours, notes, assigned_partner_ids } = req.body;
-    // admin chooses any role; staff can only invite staff; manager can only invite manager
-    let role;
-    if (req.userRole === 'admin') {
-      role = req.body.role;
-      if (!['staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
-    } else {
-      role = req.userRole;
-    }
+    const { role, hours, notes, assigned_partner_ids } = req.body;
+    if (!['staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
     const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
     const token = crypto.randomBytes(28).toString('hex');
     const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
@@ -2210,13 +2197,8 @@ app.post('/api/admin/invite-links', requireAdmin, requireRole('admin', 'staff', 
   }
 });
 
-app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin', 'staff', 'manager'), (req, res) => {
-  if (req.userRole === 'admin') {
-    db.prepare('DELETE FROM admin_invites WHERE id=?').run(req.params.id);
-  } else {
-    // staff/manager can only delete their own invites
-    db.prepare('DELETE FROM admin_invites WHERE id=? AND created_by=?').run(req.params.id, req.userId);
-  }
+app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM admin_invites WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
