@@ -1474,6 +1474,7 @@ async function loadTasks() {
     confCard.style.display = '';
     const _DAY_NAMES = ['周日','周一','周二','周三','周四','周五','周六'];
     const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+    const calcHours = (s, e) => { if (!s || !e) return ''; const [sh,sm]=s.split(':').map(Number),[eh,em]=e.split(':').map(Number); let mins=(eh*60+em)-(sh*60+sm); if(mins<0)mins+=1440; const h=Math.floor(mins/60),m=mins%60; return m?`${h}h ${m}m`:`${h}h`; };
     const todayStr = new Date().toISOString().slice(0,10);
     const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1);
     const tomorrowStr = tomorrowDate.toISOString().slice(0,10);
@@ -1532,17 +1533,25 @@ async function loadTasks() {
           <div style="flex:1;height:1px;background:#e5e7eb"></div>
         </div>`;
       }
+      const pay = c.pay_rate || c.job_pay || '';
+      const payType = c.pay_type === 'salary' ? '/月' : (c.pay_rate ? '/hr' : '');
+      const desc = c.job_description || '';
+      const hours = calcHours(c.shift_start, c.shift_end);
+      const isPending = !c.status || c.status === 'pending';
       return header + `
-        <div style="border:${cardBorder};border-radius:10px;padding:.85rem;margin-bottom:.55rem;background:${cardBg}">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.3rem">
+        <div style="border:${cardBorder};border-radius:10px;padding:.9rem;margin-bottom:.55rem;background:${cardBg}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.4rem">
             <div>
               <span style="font-weight:700;font-size:.92rem;color:${isNextWeek ? '#1d4ed8' : '#92400e'}">${dayLabel}</span>
-              <div style="font-size:.82rem;color:var(--gray-700);margin-top:.15rem">${esc(c.title||'—')}${c.company_name?` · <span style="color:var(--gray-500)">${esc(c.company_name)}</span>`:''}</div>
+              <div style="font-size:.87rem;font-weight:600;color:#1e293b;margin-top:.15rem">${esc(c.title||'—')}${c.company_name?` <span style="font-weight:400;color:var(--gray-500)">· ${esc(c.company_name)}</span>`:''}</div>
             </div>
             ${statusBadge}
           </div>
-          ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ Estimated: ${esc(timeStr)}</div>` : ''}
-          ${c.work_address ? `<div style="font-size:.83rem;color:#4b5563">📍 ${esc(c.work_address)}</div>` : ''}
+          ${timeStr ? `<div style="font-size:.84rem;color:#374151;margin-bottom:.25rem">⏰ <strong>${esc(timeStr)}</strong>${hours ? ` <span style="color:#94a3b8;font-size:.78rem">（约 ${hours}）</span>` : ''}</div>` : ''}
+          ${pay ? `<div style="font-size:.83rem;color:#374151;margin-bottom:.25rem">💰 薪资：<strong>${esc(pay)}${payType}</strong></div>` : ''}
+          ${c.work_address ? `<div style="font-size:.82rem;color:#475569;margin-bottom:.25rem">📍 ${esc(c.work_address)}</div>` : ''}
+          ${desc && isPending ? `<div style="font-size:.8rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.35rem .5rem;margin-bottom:.3rem;line-height:1.45">📋 ${esc(desc.length>100?desc.slice(0,100)+'…':desc)}</div>` : ''}
+          ${isPending ? `<div style="font-size:.79rem;color:#92400e;font-weight:600;margin-bottom:.2rem">请确认您是否接受此班次安排：</div>` : ''}
           ${actionBtns}
         </div>`;
     }).join('');
@@ -1786,18 +1795,31 @@ function calDayClick(dateStr) {
     const timeStr = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)} – ${fmt12(c.shift_end)}` : '';
     const hours = calcHours(c.shift_start, c.shift_end);
     const badge = `<span style="background:${statusBg[c.status]};color:${statusColor[c.status]};border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">${statusLabel[c.status]||c.status}</span>`;
-    // Always show both buttons so user can re-select
+    const pay = c.pay_rate || c.job_pay || '';
+    const payType = c.pay_type === 'salary' ? '/月' : (c.pay_rate ? '/hr' : '');
+    const location = c.work_address || c.job_location || '';
+    const desc = c.job_description || '';
+    const company = c.company_name || '';
+    // Action buttons — only show if status is pending
+    const isPending = !c.status || c.status === 'pending';
     const actionBtns = `
       <div style="display:flex;gap:.6rem;margin-top:.75rem">
-        <button onclick="respondShiftConfirm(${c.id},'confirmed');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:${c.status==='confirmed'?'#16a34a':'#fff'};color:${c.status==='confirmed'?'#fff':'#16a34a'};border:1.5px solid #16a34a;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✓ 接受</button>
-        <button onclick="respondShiftConfirm(${c.id},'declined');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:${c.status==='declined'?'#dc2626':'#fff'};color:${c.status==='declined'?'#fff':'#dc2626'};border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✕ 拒绝</button>
+        <button onclick="respondShiftConfirm(${c.id},'confirmed');closeCalDayModal()" style="flex:1;padding:.55rem .4rem;background:${c.status==='confirmed'?'#16a34a':'#fff'};color:${c.status==='confirmed'?'#fff':'#16a34a'};border:1.5px solid #16a34a;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">✓ 接受</button>
+        <button onclick="respondShiftConfirm(${c.id},'declined');closeCalDayModal()" style="flex:1;padding:.55rem .4rem;background:${c.status==='declined'?'#dc2626':'#fff'};color:${c.status==='declined'?'#fff':'#dc2626'};border:1.5px solid #dc2626;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">✕ 拒绝</button>
       </div>`;
-    return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:.85rem;margin-bottom:.6rem">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
-        <span style="font-weight:700;font-size:.95rem;color:#1e293b">${esc(c.title||'—')}</span>
+    return `<div style="border:1.5px solid ${c.status==='pending'||!c.status?'#f59e0b':'#e5e7eb'};border-radius:10px;padding:.9rem;margin-bottom:.6rem;background:${c.status==='pending'||!c.status?'#fffbeb':'#fff'}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem">
+        <div>
+          <div style="font-weight:700;font-size:1rem;color:#1e293b">${esc(c.title||'—')}</div>
+          ${company ? `<div style="font-size:.8rem;color:#64748b;margin-top:.1rem">${esc(company)}</div>` : ''}
+        </div>
         ${badge}
       </div>
-      ${timeStr ? `<div style="font-size:.85rem;color:#475569;margin-bottom:.2rem">🕐 ${timeStr}${hours?` <span style="color:#94a3b8;font-size:.8rem">(约 ${hours})</span>`:''}</div>` : ''}
+      ${timeStr ? `<div style="font-size:.86rem;color:#374151;margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem">⏰ <span><strong>${timeStr}</strong>${hours?` <span style="color:#94a3b8;font-size:.8rem">（约 ${hours}）</span>`:''}</span></div>` : ''}
+      ${pay ? `<div style="font-size:.84rem;color:#374151;margin-bottom:.35rem">💰 薪资：<strong>${esc(pay)}${payType}</strong></div>` : ''}
+      ${location ? `<div style="font-size:.82rem;color:#475569;margin-bottom:.35rem">📍 ${esc(location)}</div>` : ''}
+      ${desc ? `<div style="font-size:.82rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.4rem .55rem;margin-bottom:.35rem;line-height:1.5">📋 ${esc(desc.length>120?desc.slice(0,120)+'…':desc)}</div>` : ''}
+      ${isPending ? `<div style="font-size:.8rem;color:#92400e;font-weight:600;margin-bottom:.2rem">请确认您是否接受此班次安排：</div>` : ''}
       ${actionBtns}
     </div>`;
   }).join('');

@@ -3731,79 +3731,216 @@ function showJobAppDetail(id) {
 async function scheduleInterview(id) {
   const a = _allJobApps.find(x => x.id === id);
   const name = a ? (a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : a.username||'') : '';
-  // Load interview locations from system settings
   const locs = await api('/admin/interview-locations').catch(() => []) || [];
-  // Parse existing times if rescheduling
   let existingTimes = [];
   if (a?.interview_times_json) { try { existingTimes = JSON.parse(a.interview_times_json); } catch(e) {} }
   if (!existingTimes.length && a?.interview_datetime) existingTimes = [a.interview_datetime.slice(0,16)];
   if (!existingTimes.length) existingTimes = [''];
 
-  const locsSelectHtml = locs.length ? `
-    <div style="margin-bottom:.5rem">
-      <label style="font-size:.78rem;color:var(--gray-500);font-weight:600;display:block;margin-bottom:.3rem">从系统面试地址列表导入：</label>
-      <select id="_ivLocSelect" style="width:100%;padding:.5rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.85rem;box-sizing:border-box" onchange="if(this.value){document.getElementById('_ivLocText').value=this.options[this.selectedIndex].dataset.addr||this.value;this.value=''}">
-        <option value="">— 选择系统预设地点 —</option>
-        ${locs.map(l => `<option value="${esc(l.name)}" data-addr="${esc([l.name,l.address].filter(Boolean).join(' · '))}">${esc(l.name)}${l.address ? ' · '+esc(l.address) : ''}</option>`).join('')}
-      </select>
-    </div>` : '';
-
-  const jobLocVal = a?.job_location ? esc(a.job_location) : '';
-
-  const renderTimeSlots = (times) => times.map((t, i) => `
-    <div class="_ivTimeRow" style="display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem">
-      <input type="datetime-local" class="_ivTimeInput" style="flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(t)}">
-      ${i > 0 ? `<button type="button" onclick="this.closest('._ivTimeRow').remove()" style="flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1">×</button>` : '<div style="width:28px"></div>'}
-    </div>`).join('');
-
   const result = await new Promise(resolve => {
+    window._ivResolve = resolve;
+
+    // Build modal using DOM API to avoid all HTML-escaping issues
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center';
-    overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(480px,95vw);max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-        <div style="font-weight:700;font-size:1.05rem">📅 安排面试</div>
-        <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)">✕</button>
-      </div>
-      ${name ? `<div style="font-size:.88rem;color:var(--gray-500);margin-bottom:1rem;padding:.6rem .8rem;background:#f8fafc;border-radius:8px">申请人：<strong>${esc(name)}</strong>${a.job_title ? `　职位：<strong>${esc(a.job_title)}</strong>` : ''}</div>` : ''}
-      <div style="display:grid;gap:1rem">
-        <div>
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
-            <label style="font-size:.83rem;font-weight:600;color:var(--gray-600)">面试时间 * <span style="font-weight:400;color:var(--gray-400);font-size:.78rem">（可添加多个时间选项）</span></label>
-          </div>
-          <div id="_ivTimeSlots">${renderTimeSlots(existingTimes)}</div>
-          <button type="button" onclick="_ivAddTimeSlot()" style="font-size:.82rem;padding:.35rem .8rem;border:1.5px dashed #93c5fd;border-radius:7px;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-weight:600">+ 添加时间选项</button>
-        </div>
-        <div>
-          <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试地点</label>
-          ${locsSelectHtml}
-          ${jobLocVal ? `<button type="button" onclick="document.getElementById('_ivLocText').value=${JSON.stringify(a.job_location || '').replace(/</g,'\\x3c')}" style="font-size:.8rem;padding:.3rem .75rem;border:1.5px solid #6ee7b7;border-radius:7px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;margin-bottom:.5rem">📌 从本职位导入地点</button>` : ''}
-          <input type="text" id="_ivLocText" placeholder="地址 / 详细信息（可选，也可手动填写）" style="width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box" value="${esc(a?.interview_location_text||'')}">
-        </div>
-        <div>
-          <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">备注 / 说明</label>
-          <textarea id="_ivNote" placeholder="面试须知、联系人等（可选）" style="width:100%;min-height:70px;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;resize:vertical;box-sizing:border-box">${esc(a?.admin_note||'')}</textarea>
-        </div>
-        <label style="display:flex;align-items:center;gap:.5rem;font-size:.88rem;cursor:pointer;user-select:none">
-          <input type="checkbox" id="_ivNotify" checked style="width:16px;height:16px">
-          <span>发送通知给求职者（短信 + 邮件）</span>
-        </label>
-      </div>
-      <div style="display:flex;gap:.75rem;margin-top:1.25rem;justify-content:flex-end">
-        <button onclick="this.closest('[style*=fixed]').remove();window._ivResolve(null)" style="padding:.6rem 1.1rem;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;cursor:pointer;font-size:.9rem">取消</button>
-        <button onclick="
-          const times=[...document.querySelectorAll('#_ivTimeSlots ._ivTimeInput')].map(i=>i.value).filter(Boolean);
-          if(!times.length){document.querySelector('#_ivTimeSlots ._ivTimeInput').style.borderColor='#ef4444';return;}
-          const loc=document.getElementById('_ivLocText').value.trim();
-          const note=document.getElementById('_ivNote').value.trim();
-          const notify=document.getElementById('_ivNotify').checked;
-          this.closest('[style*=fixed]').remove();
-          window._ivResolve({times,loc,note,notify});
-        " style="padding:.6rem 1.4rem;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;font-size:.9rem">确认安排</button>
-      </div>
-    </div>`;
+
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:14px;padding:1.5rem;width:min(480px,95vw);max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)';
+
+    // Header
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem';
+    header.innerHTML = '<div style="font-weight:700;font-size:1.05rem">📅 安排面试</div>';
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.style.cssText = 'background:none;border:none;font-size:1.3rem;cursor:pointer;color:#9ca3af';
+    closeBtn.onclick = () => { overlay.remove(); resolve(null); };
+    header.appendChild(closeBtn);
+    box.appendChild(header);
+
+    // Applicant info
+    if (name) {
+      const info = document.createElement('div');
+      info.style.cssText = 'font-size:.88rem;color:#6b7280;margin-bottom:1rem;padding:.6rem .8rem;background:#f8fafc;border-radius:8px';
+      info.textContent = '申请人：';
+      const strong1 = document.createElement('strong');
+      strong1.textContent = name;
+      info.appendChild(strong1);
+      if (a.job_title) {
+        info.append('　职位：');
+        const strong2 = document.createElement('strong');
+        strong2.textContent = a.job_title;
+        info.appendChild(strong2);
+      }
+      box.appendChild(info);
+    }
+
+    // Grid
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;gap:1rem';
+
+    // — Time slots section —
+    const timeSection = document.createElement('div');
+    const timeLabelRow = document.createElement('div');
+    timeLabelRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem';
+    const timeLabel = document.createElement('label');
+    timeLabel.style.cssText = 'font-size:.83rem;font-weight:600;color:#4b5563';
+    timeLabel.innerHTML = '面试时间 * <span style="font-weight:400;color:#9ca3af;font-size:.78rem">（可添加多个时间选项）</span>';
+    timeLabelRow.appendChild(timeLabel);
+    timeSection.appendChild(timeLabelRow);
+
+    const slotsDiv = document.createElement('div');
+    slotsDiv.id = '_ivTimeSlots';
+
+    function addTimeRow(val, removable) {
+      const row = document.createElement('div');
+      row.className = '_ivTimeRow';
+      row.style.cssText = 'display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem';
+      const input = document.createElement('input');
+      input.type = 'datetime-local';
+      input.className = '_ivTimeInput';
+      input.style.cssText = 'flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box';
+      if (val) input.value = val;
+      row.appendChild(input);
+      if (removable) {
+        const rb = document.createElement('button');
+        rb.type = 'button';
+        rb.textContent = '×';
+        rb.style.cssText = 'flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1';
+        rb.onclick = () => row.remove();
+        row.appendChild(rb);
+      } else {
+        const ph = document.createElement('div');
+        ph.style.width = '28px';
+        row.appendChild(ph);
+      }
+      slotsDiv.appendChild(row);
+    }
+
+    existingTimes.forEach((t, i) => addTimeRow(t, i > 0));
+    // Expose for _ivAddTimeSlot global
+    window._ivAddTimeSlotFn = () => addTimeRow('', true);
+
+    timeSection.appendChild(slotsDiv);
+    const addBtn = document.createElement('button');
+    addBtn.type = 'button';
+    addBtn.textContent = '+ 添加时间选项';
+    addBtn.style.cssText = 'font-size:.82rem;padding:.35rem .8rem;border:1.5px dashed #93c5fd;border-radius:7px;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-weight:600';
+    addBtn.onclick = () => window._ivAddTimeSlotFn();
+    timeSection.appendChild(addBtn);
+    grid.appendChild(timeSection);
+
+    // — Location section —
+    const locSection = document.createElement('div');
+    const locLabel = document.createElement('label');
+    locLabel.style.cssText = 'font-size:.83rem;font-weight:600;color:#4b5563;display:block;margin-bottom:.35rem';
+    locLabel.textContent = '面试地点';
+    locSection.appendChild(locLabel);
+
+    if (locs.length) {
+      const presetLabel = document.createElement('label');
+      presetLabel.style.cssText = 'font-size:.78rem;color:#6b7280;font-weight:600;display:block;margin-bottom:.3rem';
+      presetLabel.textContent = '从系统面试地址列表导入：';
+      locSection.appendChild(presetLabel);
+      const sel = document.createElement('select');
+      sel.id = '_ivLocSelect';
+      sel.style.cssText = 'width:100%;padding:.5rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.85rem;box-sizing:border-box;margin-bottom:.5rem';
+      const defOpt = document.createElement('option');
+      defOpt.value = '';
+      defOpt.textContent = '— 选择系统预设地点 —';
+      sel.appendChild(defOpt);
+      locs.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.name;
+        opt.dataset.addr = [l.name, l.address].filter(Boolean).join(' · ');
+        opt.textContent = l.name + (l.address ? ' · ' + l.address : '');
+        sel.appendChild(opt);
+      });
+      sel.onchange = function() {
+        if (this.value) {
+          document.getElementById('_ivLocText').value = this.options[this.selectedIndex].dataset.addr || this.value;
+          this.value = '';
+        }
+      };
+      locSection.appendChild(sel);
+    }
+
+    if (a?.job_location) {
+      const importBtn = document.createElement('button');
+      importBtn.type = 'button';
+      importBtn.textContent = '📌 从本职位导入地点';
+      importBtn.style.cssText = 'font-size:.8rem;padding:.3rem .75rem;border:1.5px solid #6ee7b7;border-radius:7px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;margin-bottom:.5rem;display:block';
+      importBtn.onclick = () => { document.getElementById('_ivLocText').value = a.job_location; };
+      locSection.appendChild(importBtn);
+    }
+
+    const locInput = document.createElement('input');
+    locInput.type = 'text';
+    locInput.id = '_ivLocText';
+    locInput.placeholder = '地址 / 详细信息（可选，也可手动填写）';
+    locInput.style.cssText = 'width:100%;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box';
+    locInput.value = a?.interview_location_text || '';
+    locSection.appendChild(locInput);
+    grid.appendChild(locSection);
+
+    // — Note section —
+    const noteSection = document.createElement('div');
+    const noteLabel = document.createElement('label');
+    noteLabel.style.cssText = 'font-size:.83rem;font-weight:600;color:#4b5563;display:block;margin-bottom:.35rem';
+    noteLabel.textContent = '备注 / 说明';
+    noteSection.appendChild(noteLabel);
+    const noteArea = document.createElement('textarea');
+    noteArea.id = '_ivNote';
+    noteArea.placeholder = '面试须知、联系人等（可选）';
+    noteArea.style.cssText = 'width:100%;min-height:70px;padding:.6rem .8rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;resize:vertical;box-sizing:border-box';
+    noteArea.value = a?.admin_note || '';
+    noteSection.appendChild(noteArea);
+    grid.appendChild(noteSection);
+
+    // — Notify checkbox —
+    const notifyLabel = document.createElement('label');
+    notifyLabel.style.cssText = 'display:flex;align-items:center;gap:.5rem;font-size:.88rem;cursor:pointer;user-select:none';
+    const notifyChk = document.createElement('input');
+    notifyChk.type = 'checkbox';
+    notifyChk.id = '_ivNotify';
+    notifyChk.checked = true;
+    notifyChk.style.cssText = 'width:16px;height:16px';
+    notifyLabel.appendChild(notifyChk);
+    notifyLabel.append('发送通知给求职者（短信 + 邮件）');
+    grid.appendChild(notifyLabel);
+
+    box.appendChild(grid);
+
+    // — Action buttons —
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:.75rem;margin-top:1.25rem;justify-content:flex-end';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '取消';
+    cancelBtn.style.cssText = 'padding:.6rem 1.1rem;border:1px solid #d1d5db;border-radius:8px;background:#f9fafb;cursor:pointer;font-size:.9rem';
+    cancelBtn.onclick = () => { overlay.remove(); resolve(null); };
+    actions.appendChild(cancelBtn);
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.textContent = '确认安排';
+    confirmBtn.style.cssText = 'padding:.6rem 1.4rem;border:none;border-radius:8px;background:#2563eb;color:#fff;font-weight:700;cursor:pointer;font-size:.9rem';
+    confirmBtn.onclick = () => {
+      const times = [...document.querySelectorAll('#_ivTimeSlots ._ivTimeInput')].map(i => i.value).filter(Boolean);
+      if (!times.length) { document.querySelector('#_ivTimeSlots ._ivTimeInput').style.borderColor = '#ef4444'; return; }
+      const loc = document.getElementById('_ivLocText').value.trim();
+      const note = document.getElementById('_ivNote').value.trim();
+      const notify = document.getElementById('_ivNotify').checked;
+      overlay.remove();
+      resolve({ times, loc, note, notify });
+    };
+    actions.appendChild(confirmBtn);
+    box.appendChild(actions);
+
+    overlay.appendChild(box);
+    overlay.onclick = e => { if (e.target === overlay) { overlay.remove(); resolve(null); } };
     document.body.appendChild(overlay);
-    window._ivResolve = resolve;
   });
+
   if (!result) return;
   const r = await api(`/admin/job-applications/${id}`, { method:'PUT', body: JSON.stringify({
     status: 'interview_scheduled',
@@ -11231,23 +11368,6 @@ async function addSkillOption() {
   });
 })();
 
-function _ivAddTimeSlot() {
-  const row = document.createElement('div');
-  row.className = '_ivTimeRow';
-  row.style.cssText = 'display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem';
-  const input = document.createElement('input');
-  input.type = 'datetime-local';
-  input.className = '_ivTimeInput';
-  input.style.cssText = 'flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box';
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.onclick = () => row.remove();
-  btn.style.cssText = 'flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1';
-  btn.textContent = '×';
-  row.appendChild(input);
-  row.appendChild(btn);
-  document.getElementById('_ivTimeSlots').appendChild(row);
-}
 </script>
 </body>
 </html>
