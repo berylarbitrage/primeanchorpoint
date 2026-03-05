@@ -498,8 +498,22 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
+  <!-- Manager Panel (manager only) -->
+  <div class="nav-group open" id="sec-manager" data-role="manager">
+    <div class="nav-group-header" onclick="toggleNav('sec-manager')">
+      👔 管理面板<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('mgr-workers')" data-tab="mgr-workers" data-role="manager">👷 我的员工</a>
+      <a onclick="showTab('mgr-assignments')" data-tab="mgr-assignments" data-role="manager">💼 我的派工</a>
+      <a onclick="showTab('mgr-interviews')" data-tab="mgr-interviews" data-role="manager">🗓️ 面试情况</a>
+      <a onclick="showTab('time')" data-tab="time" data-role="manager">⏱ 员工打卡</a>
+      <a href="/mgr-punch" target="_blank" data-role="manager">📷 扫码打卡</a>
+    </div>
+  </div>
+
   <!-- 工时薪资 -->
-  <div class="nav-group open" id="sec-time">
+  <div class="nav-group open" id="sec-time" data-role="admin,staff">
     <div class="nav-group-header" onclick="toggleNav('sec-time')">
       ⏱ 工时薪资<span class="chev">▾</span>
     </div>
@@ -541,6 +555,65 @@ tr:hover td{background:var(--sky-light)}
     <div class="stat-card"><h3 id="statPartners">0</h3><p>合作公司</p></div>
   </div>
   <div class="card"><h3 style="margin-bottom:1rem;color:var(--blue)">最近提交的问卷</h3><div id="recentInq"></div></div>
+</div>
+
+<!-- ─── Manager Tabs ─── -->
+<div id="tab-mgr-workers" style="display:none">
+  <div class="top">
+    <h1>👷 我的员工</h1>
+    <div class="top-actions">
+      <input type="text" id="mgrWorkerSearch" placeholder="搜索姓名/电话/邮箱…" oninput="filterMgrWorkers()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem;outline:none">
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>姓名</th>
+        <th>电话</th>
+        <th>邮箱</th>
+        <th>职位</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr></thead>
+      <tbody id="mgrWorkersBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="tab-mgr-assignments" style="display:none">
+  <div class="top"><h1>💼 我的派工</h1></div>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>员工</th>
+        <th>职位</th>
+        <th>公司</th>
+        <th>工作地址</th>
+        <th>开始日期</th>
+        <th>薪资</th>
+        <th>状态</th>
+      </tr></thead>
+      <tbody id="mgrAssignmentsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="tab-mgr-interviews" style="display:none">
+  <div class="top"><h1>🗓️ 面试情况</h1></div>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>员工</th>
+        <th>联系方式</th>
+        <th>面试时间</th>
+        <th>地点</th>
+        <th>面试状态</th>
+        <th>身份验证</th>
+        <th>备注</th>
+      </tr></thead>
+      <tbody id="mgrInterviewsBody"></tbody>
+    </table>
+  </div>
 </div>
 
 <!-- Inquiries -->
@@ -3313,7 +3386,7 @@ function finishLogin(r) {
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').classList.add('show');
   applyRoleUI();
-  if (USER_ROLE === 'manager') { showTab('time'); }
+  if (USER_ROLE === 'manager') { showTab('mgr-workers'); }
   else { loadDashboard(); }
 }
 
@@ -3584,7 +3657,8 @@ const _TAB_TO_SEC = {
   employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time',
-  approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system'
+  approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system',
+  'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager'
 };
 
 function toggleNav(secId) {
@@ -3625,6 +3699,9 @@ function showTab(t) {
   if (t === 'integrations') loadIntegrations();
   if (t === 'skill-settings')   loadSkillSettings();
   if (t === 'referrals')   loadAllReferrals();
+  if (t === 'mgr-workers')     loadMgrWorkers();
+  if (t === 'mgr-assignments') loadMgrAssignments();
+  if (t === 'mgr-interviews')  loadMgrInterviews();
 }
 
 // ─── Dashboard ───
@@ -11878,6 +11955,103 @@ async function importDisplaySuffixCsv() {
     }
   });
 })();
+
+// ─── Manager Panel ───────────────────────────────────────────────
+let _mgrWorkers = [];
+
+async function loadMgrWorkers() {
+  const tbody = document.getElementById('mgrWorkersBody');
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  try {
+    _mgrWorkers = await api('/manager/workers');
+    renderMgrWorkers(_mgrWorkers);
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--red)">加载失败</td></tr>';
+  }
+}
+
+function filterMgrWorkers() {
+  const q = document.getElementById('mgrWorkerSearch').value.trim().toLowerCase();
+  const filtered = q ? _mgrWorkers.filter(w =>
+    (w.first_name + ' ' + w.last_name).toLowerCase().includes(q) ||
+    (w.phone || '').toLowerCase().includes(q) ||
+    (w.email || '').toLowerCase().includes(q)
+  ) : _mgrWorkers;
+  renderMgrWorkers(filtered);
+}
+
+function renderMgrWorkers(workers) {
+  const tbody = document.getElementById('mgrWorkersBody');
+  if (!workers.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">暂无员工</td></tr>';
+    return;
+  }
+  tbody.innerHTML = workers.map(w => {
+    const name = [w.first_name, w.last_name].filter(Boolean).join(' ') || '—';
+    const empCode = w.emp_code || '';
+    const status = w.status === 'active' ? '<span class="badge badge-cooperated">在职</span>' : `<span class="badge">${esc(w.status||'—')}</span>`;
+    return `<tr>
+      <td><div style="font-weight:600;color:var(--blue)">${esc(name)}</div><div style="font-size:.75rem;color:var(--gray-400)">${esc(empCode)}</div></td>
+      <td>${w.phone ? `<a href="tel:${esc(w.phone)}" style="color:var(--sky)">${esc(w.phone)}</a>` : '—'}</td>
+      <td>${w.email ? `<a href="mailto:${esc(w.email)}" style="color:var(--sky)">${esc(w.email)}</a>` : '—'}</td>
+      <td>${esc(w.position||'—')}</td>
+      <td>${status}</td>
+      <td><a href="/mgr-punch?emp=${esc(empCode)}" target="_blank" class="btn btn-sm btn-outline" title="扫码打卡">📷 打卡</a></td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadMgrAssignments() {
+  const tbody = document.getElementById('mgrAssignmentsBody');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  try {
+    const rows = await api('/manager/my-assignments');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无派工记录</td></tr>';
+      return;
+    }
+    const statusBadge = s => s === 'assigned' ? '<span class="badge badge-cooperated">已派工</span>' : s === 'completed' ? '<span class="badge badge-filled">完成</span>' : `<span class="badge">${esc(s||'—')}</span>`;
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td><div style="font-weight:600">${esc(r.worker_name||'—')}</div>${r.worker_phone?`<div style="font-size:.75rem;color:var(--sky)"><a href="tel:${esc(r.worker_phone)}">${esc(r.worker_phone)}</a></div>`:''}</td>
+      <td>${esc(r.job_title||'—')}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="font-size:.8rem">${esc(r.work_address||r.job_location||'—')}</td>
+      <td style="font-size:.8rem">${r.start_date ? r.start_date.slice(0,10) : '—'}</td>
+      <td>${r.pay_rate ? `$${r.pay_rate}/${r.pay_type||'hr'}` : '—'}</td>
+      <td>${statusBadge(r.status)}</td>
+    </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--red)">加载失败</td></tr>';
+  }
+}
+
+async function loadMgrInterviews() {
+  const tbody = document.getElementById('mgrInterviewsBody');
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  try {
+    const rows = await api('/manager/interviews');
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无面试记录</td></tr>';
+      return;
+    }
+    const interviewStatus = { scheduled:'<span class="badge badge-filled">已预约</span>', completed:'<span class="badge badge-cooperated">已完成</span>', cancelled:'<span class="badge badge-rejected">已取消</span>', no_show:'<span class="badge badge-urgent">未出席</span>' };
+    const idStatus = { approved:'<span class="badge badge-cooperated">已通过</span>', pending:'<span class="badge badge-employment">审核中</span>', declined:'<span class="badge badge-rejected">未通过</span>' };
+    tbody.innerHTML = rows.map(r => {
+      const dt = r.slot_datetime ? new Date(r.slot_datetime).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+      return `<tr>
+        <td><div style="font-weight:600">${esc(r.worker_name||'—')}</div></td>
+        <td><div>${r.worker_phone?`<a href="tel:${esc(r.worker_phone)}" style="color:var(--sky)">${esc(r.worker_phone)}</a>`:'—'}</div><div style="font-size:.78rem">${r.worker_email?`<a href="mailto:${esc(r.worker_email)}" style="color:var(--sky)">${esc(r.worker_email)}</a>`:'—'}</div></td>
+        <td style="font-size:.82rem">${esc(dt)}</td>
+        <td style="font-size:.8rem">${esc(r.location||'—')}</td>
+        <td>${interviewStatus[r.status] || `<span class="badge">${esc(r.status||'—')}</span>`}</td>
+        <td>${idStatus[r.identity_status] || '<span style="color:var(--gray-400);font-size:.8rem">未发起</span>'}</td>
+        <td style="font-size:.8rem;color:var(--gray-600)">${esc(r.admin_notes||'—')}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--red)">加载失败</td></tr>';
+  }
+}
 
 </script>
 </body>

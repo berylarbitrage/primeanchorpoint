@@ -2070,6 +2070,38 @@ app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
   res.json(db.prepare(q).all(...params));
 });
 
+// GET /api/manager/interviews — interview requests for workers at this manager's partner companies
+app.get('/api/manager/interviews', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  let workerFilter = '';
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    workerFilter = `AND i.worker_account_id IN (
+      SELECT DISTINCT wa.id FROM worker_accounts wa
+      JOIN employees e ON wa.employee_id = e.id
+      WHERE e.id IN (
+        SELECT DISTINCT t.employee_id FROM time_entries t
+        JOIN jobs j ON t.job_id = j.id
+        WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+      )
+    )`;
+    params.push(...pids);
+  }
+  const rows = db.prepare(`
+    SELECT i.id, i.status, i.admin_notes, i.created_at,
+      s.slot_datetime, s.duration_min, s.location,
+      w.id AS worker_id, w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.work_status, w.identity_status
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+    WHERE 1=1 ${workerFilter}
+    ORDER BY s.slot_datetime DESC
+  `).all(...params);
+  res.json(rows);
+});
+
 // GET /api/manager/workers — employees visible to this manager with contact info
 app.get('/api/manager/workers', requireAdmin, (req, res) => {
   const pids = managerPartnerIds(req);
@@ -2140,24 +2172,17 @@ function inviteUrlPath(role) {
   return '/admin-invite';
 }
 
-app.get('/api/admin/invite-links', requireAdmin, requireRole('admin', 'staff', 'manager'), (req, res) => {
-  let rows;
-  if (req.userRole === 'admin') {
-    rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
-  } else {
-    // staff and manager only see invites they created for their own role
-    rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') AND role=? AND created_by=? ORDER BY id DESC`).all(req.userRole, req.userId);
-  }
+app.get('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const host  = req.headers['x-forwarded-host'] || req.headers.host;
   res.json(rows.map(r => ({ ...r, url: `${proto}://${host}${inviteUrlPath(r.role)}?token=${r.token}` })));
 });
 
-app.post('/api/admin/invite-links', requireAdmin, requireRole('staff', 'manager'), (req, res) => {
+app.post('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
   try {
-    const { hours, notes, assigned_partner_ids } = req.body;
-    // staff can only invite staff; manager can only invite manager
-    const role = req.userRole;
+    const { role, hours, notes, assigned_partner_ids } = req.body;
+    if (!['staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
     const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
     const token = crypto.randomBytes(28).toString('hex');
     const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
@@ -2172,13 +2197,8 @@ app.post('/api/admin/invite-links', requireAdmin, requireRole('staff', 'manager'
   }
 });
 
-app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin', 'staff', 'manager'), (req, res) => {
-  if (req.userRole === 'admin') {
-    db.prepare('DELETE FROM admin_invites WHERE id=?').run(req.params.id);
-  } else {
-    // staff/manager can only delete their own invites
-    db.prepare('DELETE FROM admin_invites WHERE id=? AND created_by=?').run(req.params.id, req.userId);
-  }
+app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM admin_invites WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
