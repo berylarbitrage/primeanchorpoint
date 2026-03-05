@@ -483,6 +483,7 @@ tr:last-child td{border-bottom:none}
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span>待确认</span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span>已请假</span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:2px;background:#bfdbfe;display:inline-block;border:1px solid #93c5fd"></span>排班中</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#a78bfa;display:inline-block"></span>已打卡</span>
           </div>
         </div>
       </div>
@@ -1603,7 +1604,7 @@ let _calData = null;
 async function loadWorkCalendar() {
   const card = document.getElementById('workCalendarCard');
   _calData = await wApi(`/work-calendar?year=${_calYear}&month=${_calMonth}`);
-  if (!_calData || (!_calData.confirmations.length && !_calData.assignments.length)) {
+  if (!_calData || (!_calData.confirmations.length && !_calData.assignments.length && !(_calData.punchDates||[]).length)) {
     card.style.display = 'none';
     return;
   }
@@ -1628,6 +1629,9 @@ function renderCalendar() {
     if (!confMap[c.date]) confMap[c.date] = [];
     confMap[c.date].push(c);
   });
+
+  // Actual punch dates (includes weekend work outside recurring schedule)
+  const punchSet = new Set(_calData.punchDates || []);
 
   // Project work days from assignments' recurring schedule
   const projectedDays = new Set();
@@ -1667,7 +1671,8 @@ function renderCalendar() {
     const isToday = dateStr === todayStr;
     const confs = confMap[dateStr] || [];
     const isProjected = projectedDays.has(dateStr);
-    const hasWork = confs.length > 0 || isProjected;
+    const isPunched = punchSet.has(dateStr) && !confs.length && !isProjected;
+    const hasWork = confs.length > 0 || isProjected || isPunched;
 
     // Status dots
     let dotsHtml = '';
@@ -1677,10 +1682,12 @@ function renderCalendar() {
       ).join('');
     } else if (isProjected) {
       dotsHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:2px;background:#bfdbfe;border:1px solid #93c5fd;margin:0 1px"></span>`;
+    } else if (isPunched) {
+      dotsHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#a78bfa;margin:0 1px"></span>`;
     }
 
-    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : isProjected ? '#eff6ff' : 'transparent');
-    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : isProjected ? '1px solid #bfdbfe' : '1px solid transparent';
+    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : isProjected ? '#eff6ff' : isPunched ? '#f5f3ff' : 'transparent');
+    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : isProjected ? '1px solid #bfdbfe' : isPunched ? '1px solid #ddd6fe' : '1px solid transparent';
     const numColor = isToday ? '#fff' : hasWork ? '#1e293b' : '#cbd5e1';
     const numWeight = (isToday || hasWork) ? '700' : '400';
 
