@@ -860,6 +860,18 @@ db.exec(`CREATE TABLE IF NOT EXISTS employee_registration_invites (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS admin_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'manager',
+  notes TEXT DEFAULT '',
+  assigned_partner_ids TEXT DEFAULT '',
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  used_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Backfill: assign worker_code + linked_inquiry_id to existing verified workers
 // (runs once on startup; activateWorkerAccount is idempotent — skips if code already set)
 setTimeout(() => {
@@ -2027,6 +2039,156 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
   if (parseInt(req.params.id) === req.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
   db.prepare('DELETE FROM admin_users WHERE id = ?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Admin Invite Links ───────────────────────────────────────────
+app.get('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host  = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}/admin-invite?token=${r.token}` })));
+});
+
+app.post('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
+  const { role, hours, notes, assigned_partner_ids } = req.body;
+  if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
+  const token = crypto.randomBytes(28).toString('hex');
+  const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+  db.prepare('INSERT INTO admin_invites (token, role, notes, assigned_partner_ids, expires_at) VALUES (?,?,?,?,?)')
+    .run(token, role, notes || '', assigned_partner_ids || '', expiresAt);
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host  = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json({ success: true, url: `${proto}://${host}/admin-invite?token=${token}` });
+});
+
+app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM admin_invites WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Public: verify admin invite token
+app.get('/api/admin-invite/verify', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Missing token' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(404).json({ error: '邀请链接已失效或已被使用' });
+  res.json({ role: inv.role, notes: inv.notes, assigned_partner_ids: inv.assigned_partner_ids });
+});
+
+// Public: register admin account via invite token
+app.post('/api/admin-invite/register', async (req, res) => {
+  const { token, username, display_name, password } = req.body;
+  if (!token || !username || !password) return res.status(400).json({ error: '缺少必填字段' });
+  if (password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(username);
+  if (existing) return res.status(400).json({ error: '用户名已存在，请换一个' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active) VALUES (?,?,?,?,?,?,1)')
+    .run(username, hash, salt, inv.role, display_name || username, inv.assigned_partner_ids || '');
+  db.prepare('UPDATE admin_invites SET used=1, used_at=CURRENT_TIMESTAMP WHERE id=?').run(inv.id);
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
+  const sessionToken = createSession(user);
+  res.json({ success: true, token: sessionToken, role: user.role, username: user.username, display_name: user.display_name });
+});
+
+// Serve admin invite registration page
+app.get('/admin-invite', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>账户注册 — Prime Anchorpoint</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
+.card{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:420px;box-shadow:0 4px 24px rgba(0,0,0,.1)}
+h1{font-size:1.3rem;font-weight:700;color:#1e293b;margin-bottom:.25rem}
+.sub{font-size:.85rem;color:#64748b;margin-bottom:1.5rem}
+label{display:block;font-size:.8rem;font-weight:600;color:#475569;margin-bottom:.25rem;margin-top:.85rem}
+input{width:100%;padding:.6rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:.95rem;outline:none;transition:border .15s}
+input:focus{border-color:#3b82f6}
+.btn{width:100%;padding:.75rem;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:.97rem;font-weight:700;cursor:pointer;margin-top:1.25rem}
+.btn:hover{background:#1e40af}
+.btn:disabled{opacity:.5;cursor:default}
+.err{color:#dc2626;font-size:.82rem;margin-top:.4rem}
+.role-badge{display:inline-block;padding:.25rem .75rem;border-radius:99px;font-size:.78rem;font-weight:700;margin-bottom:.5rem}
+.logo{font-weight:800;font-size:1.1rem;color:#1d4ed8;margin-bottom:1.25rem}
+.ok{color:#16a34a;font-size:.88rem;margin-top:.5rem}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">🏢 Prime Anchorpoint</div>
+  <h1 id="title">账户注册</h1>
+  <div class="sub" id="sub">加载中…</div>
+  <div id="form" style="display:none">
+    <label>用户名 <span style="color:#94a3b8;font-weight:400">(登录用)</span></label>
+    <input id="username" placeholder="设置登录用户名" autocomplete="username">
+    <label>显示名称 <span style="color:#94a3b8;font-weight:400">(可选)</span></label>
+    <input id="display_name" placeholder="您的姓名或称谓">
+    <label>密码</label>
+    <input id="password" type="password" placeholder="至少 6 位" autocomplete="new-password">
+    <label>确认密码</label>
+    <input id="password2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+    <div id="err" class="err"></div>
+    <button class="btn" id="btn" onclick="doRegister()">创建账户</button>
+  </div>
+  <div id="done" style="display:none">
+    <div class="ok" style="font-size:1rem;font-weight:700;margin-top:.5rem">✅ 注册成功！</div>
+    <div style="font-size:.85rem;color:#475569;margin-top:.5rem">账户已创建，正在跳转…</div>
+  </div>
+  <div id="expired" style="display:none">
+    <div style="color:#dc2626;font-weight:700;margin-top:.5rem">❌ 链接已失效</div>
+    <div style="font-size:.83rem;color:#64748b;margin-top:.4rem">此邀请链接已过期或已被使用，请联系管理员重新发送。</div>
+  </div>
+</div>
+<script>
+const token = new URLSearchParams(location.search).get('token') || '';
+const ROLE_LABEL = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理' };
+async function init() {
+  if (!token) { showExpired(); return; }
+  try {
+    const r = await fetch('/api/admin-invite/verify?token=' + encodeURIComponent(token));
+    const d = await r.json();
+    if (!r.ok) { showExpired(); return; }
+    document.getElementById('sub').innerHTML = \`您被邀请注册为 <span class="role-badge" style="background:#dbeafe;color:#1d4ed8">\${ROLE_LABEL[d.role]||d.role}</span>\${d.notes ? \` — \${d.notes}\` : ''}\`;
+    document.getElementById('form').style.display = '';
+  } catch { showExpired(); }
+}
+function showExpired() {
+  document.getElementById('sub').style.display='none';
+  document.getElementById('expired').style.display='';
+}
+async function doRegister() {
+  const btn = document.getElementById('btn');
+  const err = document.getElementById('err');
+  const username = document.getElementById('username').value.trim();
+  const display_name = document.getElementById('display_name').value.trim();
+  const password = document.getElementById('password').value;
+  const password2 = document.getElementById('password2').value;
+  err.textContent = '';
+  if (!username) { err.textContent = '请填写用户名'; return; }
+  if (password.length < 6) { err.textContent = '密码至少 6 位'; return; }
+  if (password !== password2) { err.textContent = '两次密码不一致'; return; }
+  btn.disabled = true; btn.textContent = '注册中…';
+  try {
+    const r = await fetch('/api/admin-invite/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, username, display_name, password }) });
+    const d = await r.json();
+    if (!r.ok) { err.textContent = d.error || '注册失败'; btn.disabled=false; btn.textContent='创建账户'; return; }
+    // Save token and redirect
+    localStorage.setItem('adminToken', d.token);
+    document.getElementById('form').style.display = 'none';
+    document.getElementById('done').style.display = '';
+    setTimeout(() => { location.href = '/admin'; }, 1500);
+  } catch(e) { err.textContent = '网络错误，请重试'; btn.disabled=false; btn.textContent='创建账户'; }
+}
+init();
+</script>
+</body>
+</html>`);
 });
 
 // ─── Worker Accounts (admin manages) ───
