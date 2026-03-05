@@ -2165,8 +2165,7 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  // New accounts start inactive (active=0); user must self-verify to activate
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)')
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
     .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', email || '', phone || '');
   res.json({ success: true, id: result.lastInsertRowid });
 });
