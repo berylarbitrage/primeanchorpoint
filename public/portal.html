@@ -2009,7 +2009,15 @@ function enablePunchBtn(ready) {
   workingBtns.style.display = 'none';
   if (btnBreakEnd) btnBreakEnd.style.display = 'none';
 
-  if (s.no_employee || !ready) return;
+  if (s.no_employee) return;
+
+  if (s.clocked_in && s.on_break) {
+    // On break: Resume Job does NOT require GPS — always show it
+    if (btnBreakEnd) btnBreakEnd.style.display = '';
+    return;
+  }
+
+  if (!ready) return;
 
   if (!s.clocked_in) {
     // Not clocked in: show Check In button (only if has active job)
@@ -2017,9 +2025,6 @@ function enablePunchBtn(ready) {
       btnIn.style.display = '';
       btnIn.disabled = false;
     }
-  } else if (s.on_break) {
-    // On break: show Resume Job button only
-    if (btnBreakEnd) btnBreakEnd.style.display = '';
   } else {
     // Working: show Pause + Clock Out buttons
     workingBtns.style.display = 'flex';
