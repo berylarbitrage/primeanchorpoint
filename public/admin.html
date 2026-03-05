@@ -1611,6 +1611,15 @@ tr:hover td{background:var(--sky-light)}
 
   <div style="margin-bottom:1rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <label style="font-size:.8rem;font-weight:600;color:var(--gray-600)">💼 派工历史 Assignment History</label>
+    </div>
+    <div id="wdAssignments" style="max-height:200px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;background:var(--gray-50);font-size:.76rem;color:var(--gray-600)">
+      <span style="color:var(--gray-300)">加载中…</span>
+    </div>
+  </div>
+
+  <div style="margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
       <label style="font-size:.8rem;font-weight:600;color:var(--gray-600)">📋 变更历史 Change History</label>
     </div>
     <div id="wdHistory" style="max-height:180px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;background:var(--gray-50);font-size:.76rem;color:var(--gray-600)">
@@ -9736,6 +9745,32 @@ async function openWorkerDetailModal(id) {
   renderWdTasks();
   modal.classList.add('show');
   loadWorkerHistory(id);
+  loadWorkerAssignments(id);
+}
+
+async function loadWorkerAssignments(id) {
+  const el = document.getElementById('wdAssignments');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--gray-300)">加载中…</span>';
+  try {
+    const rows = await api(`/admin/worker-accounts/${id}/assignments`);
+    if (!rows.length) { el.innerHTML = '<span style="color:var(--gray-400)">暂无派工记录</span>'; return; }
+    const statusLabel = { active:'🟢 在职', terminated:'🔴 已结束', cancelled:'⚫ 已取消', pending:'🟡 待确认', suspended:'🔸 暂停' };
+    el.innerHTML = rows.map(a => {
+      const badge = statusLabel[a.status] || a.status || '—';
+      const job = a.job_title || '未知职位';
+      const company = a.company_name || '';
+      const pay = a.pay_rate ? `${a.pay_rate}/${a.pay_type==='salary'?'月':'hr'}` : '';
+      const date = a.start_date || (a.assigned_at||'').slice(0,10);
+      return `<div style="display:flex;gap:.5rem;align-items:flex-start;padding:.4rem .2rem;border-bottom:1px solid var(--gray-100)">
+        <span style="flex:1;font-weight:600">${job}</span>
+        <span style="color:var(--gray-500);font-size:.73rem">${company}</span>
+        <span style="font-size:.73rem">${pay}</span>
+        <span style="font-size:.72rem;white-space:nowrap">${date}</span>
+        <span style="font-size:.72rem;white-space:nowrap">${badge}</span>
+      </div>`;
+    }).join('');
+  } catch { el.innerHTML = '<span style="color:red">加载失败</span>'; }
 }
 
 function renderWdTasks() {

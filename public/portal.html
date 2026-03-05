@@ -467,15 +467,7 @@ tr:last-child td{border-bottom:none}
       <div class="card" style="padding:.85rem 1.25rem">
         <!-- Search -->
         <input type="text" id="jobSearchInput" placeholder="搜索职位、地点..." oninput="filterJobs()" style="width:100%;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;margin-bottom:.75rem;box-sizing:border-box">
-        <!-- Filter toggle -->
-        <div class="filter-toggle-row">
-          <span style="font-size:.82rem;font-weight:700;color:var(--gray-500)">筛选 Filter</span>
-          <button onclick="togglePortalFilters()">
-            <span id="portalFilterToggleLabel">展开 ▼</span>
-            <span id="portalFilterBadge" style="display:none;margin-left:.35rem;background:var(--sky);color:#fff;border-radius:10px;padding:1px 7px;font-size:.7rem;font-weight:700"></span>
-          </button>
-        </div>
-        <div id="portalFilterBody" style="display:none">
+        <div id="portalFilterBody">
           <div class="job-filter-bar">
             <span class="filter-section-label">职位类型</span>
             <button class="jfbtn active" data-pf="type" data-v="" onclick="setPF('type','',this)">全部</button>
@@ -1924,20 +1916,7 @@ function setPF(dim, val, btn) {
   _pf[dim] = val;
   document.querySelectorAll(`[data-pf="${dim}"]`).forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  updatePortalFilterBadge();
   filterJobs();
-}
-function togglePortalFilters() {
-  const body = document.getElementById('portalFilterBody');
-  const open = body.style.display === 'none';
-  body.style.display = open ? '' : 'none';
-  document.getElementById('portalFilterToggleLabel').textContent = open ? '收起 ▲' : '展开 ▼';
-}
-function updatePortalFilterBadge() {
-  const count = Object.values(_pf).filter(v => v !== '').length;
-  const badge = document.getElementById('portalFilterBadge');
-  badge.style.display = count ? '' : 'none';
-  badge.textContent = count;
 }
 function filterJobs() {
   const q = document.getElementById('jobSearchInput').value.toLowerCase();
