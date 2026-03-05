@@ -405,6 +405,7 @@ tr:hover td{background:var(--sky-light)}
   <a onclick="showTab('jobsites')" data-role="admin,staff">📍 工作地点</a>
   <div style="border-top:1px solid rgba(255,255,255,.1);margin:.75rem 1.5rem .25rem" data-role="admin"></div>
   <a onclick="showTab('approvals')" data-role="admin">📋 待审批</a>
+  <a onclick="showTab('internal-staff')" data-role="admin">👤 内部人员</a>
   <a onclick="showTab('accounts')" data-role="admin">🔐 账户管理</a>
   <a onclick="showTab('referrals')" data-role="admin,staff">🎁 推荐奖励</a>
   <a onclick="showTab('integrations')" data-role="admin">🔗 集成设置</a>
@@ -1040,6 +1041,57 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Internal Staff Management Tab -->
+<div id="tab-internal-staff" style="display:none">
+  <div class="top">
+    <h1>👤 内部人员管理</h1>
+    <div class="top-actions">
+      <button class="btn btn-green" onclick="openAccountModal()">+ 新增人员</button>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="stats-row" style="margin-bottom:1rem">
+    <div class="stat-card"><h3 id="isStatTotal">0</h3><p>内部人员总数</p></div>
+    <div class="stat-card"><h3 id="isStatAdmin">0</h3><p>管理员 Admin</p></div>
+    <div class="stat-card"><h3 id="isStatManager">0</h3><p>经理 Manager</p></div>
+    <div class="stat-card"><h3 id="isStatStaff">0</h3><p>员工 Staff</p></div>
+  </div>
+
+  <!-- Search / filter -->
+  <div class="search-bar" style="margin-bottom:1rem">
+    <input type="text" id="isSearch" placeholder="搜索用户名、显示名、邮箱、电话…" oninput="filterInternalStaff()" style="flex:1;min-width:200px">
+    <select id="isRoleFilter" onchange="filterInternalStaff()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
+      <option value="">全部角色</option>
+      <option value="admin">Admin — 管理员</option>
+      <option value="manager">Manager — 经理</option>
+      <option value="staff">Staff — 员工</option>
+    </select>
+    <select id="isStatusFilter" onchange="filterInternalStaff()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
+      <option value="">全部状态</option>
+      <option value="active">已激活</option>
+      <option value="inactive">待激活</option>
+    </select>
+  </div>
+
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>用户名</th>
+        <th>显示名称</th>
+        <th>角色</th>
+        <th>邮箱</th>
+        <th>电话</th>
+        <th>指定公司 (Manager)</th>
+        <th>状态</th>
+        <th>创建时间</th>
+        <th>操作</th>
+      </tr></thead>
+      <tbody id="internalStaffTable"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- Accounts Tab -->
 <div id="tab-accounts" style="display:none">
   <div class="top"><h1>账户管理</h1></div>
@@ -1283,6 +1335,10 @@ tr:hover td{background:var(--sky-light)}
   <div class="field"><label>用户名 *</label><input id="accUsername" placeholder="登录用户名"></div>
   <div class="field"><label>密码 <span id="accPassHint" style="font-size:.8rem;color:var(--gray-400)"></span></label><input type="password" id="accPassword" placeholder="登录密码"></div>
   <div class="field"><label>显示名称</label><input id="accDisplayName" placeholder="可选"></div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+    <div class="field"><label>邮箱</label><input id="accEmail" type="email" placeholder="工作邮箱（可选）"></div>
+    <div class="field"><label>电话</label><input id="accPhone" type="tel" placeholder="联系电话（可选）"></div>
+  </div>
   <div class="field"><label>角色 *</label>
     <select id="accRole" onchange="onAccRoleChange()">
       <option value="admin">Admin — 管理员（完全权限）</option>
@@ -3042,7 +3098,8 @@ function showTab(t) {
   if (t === 'ts-history')  loadTsHistory();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
-  if (t === 'accounts')   loadAccounts();
+  if (t === 'accounts')        loadAccounts();
+  if (t === 'internal-staff') loadInternalStaff();
   if (t === 'approvals')  loadApprovals();
   if (t === 'interviews') { loadInterviews(); initBatchDays(); }
   if (t === 'compliance') loadComplianceDocs();
@@ -8011,6 +8068,8 @@ async function openAccountModal(data) {
   document.getElementById('accUsername').value = data ? data.username : '';
   document.getElementById('accPassword').value = '';
   document.getElementById('accDisplayName').value = data ? (data.display_name||'') : '';
+  document.getElementById('accEmail').value = data ? (data.email||'') : '';
+  document.getElementById('accPhone').value = data ? (data.phone||'') : '';
   document.getElementById('accRole').value = data ? (data.role||'staff') : 'staff';
   document.getElementById('accountModalTitle').textContent = data ? '编辑内部账户' : '新建内部账户';
   document.getElementById('accPassHint').textContent = data ? '(留空则不修改；修改密码将重置激活状态)' : '*';
@@ -8044,6 +8103,8 @@ async function saveAccount() {
     username: document.getElementById('accUsername').value,
     password: document.getElementById('accPassword').value,
     display_name: document.getElementById('accDisplayName').value,
+    email: document.getElementById('accEmail').value,
+    phone: document.getElementById('accPhone').value,
     role: document.getElementById('accRole').value,
     assigned_partner_ids: selectedPartners
   };
@@ -8059,6 +8120,7 @@ async function saveAccount() {
   clearModalState('accountModal');
   closeModal('accountModal');
   loadAccounts();
+  if (document.getElementById('tab-internal-staff').style.display !== 'none') loadInternalStaff();
   showToast('✅ 账户已保存');
 }
 
@@ -8067,8 +8129,59 @@ async function deleteAccount(id, name) {
     const r = await api(`/admin/accounts/${id}`, { method:'DELETE' });
     if (r && r.error) return showToast('❌ 删除失败：' + r.error);
     loadAccounts();
+    if (document.getElementById('tab-internal-staff').style.display !== 'none') loadInternalStaff();
     showToast('✅ 账户已删除');
   });
+}
+
+// ── Internal Staff Management ──
+let _internalStaffRows = [];
+
+async function loadInternalStaff() {
+  const rows = await api('/admin/accounts');
+  if (!Array.isArray(rows)) return;
+  _internalStaffRows = rows;
+  const partners = _allPartners.length ? _allPartners : await api('/admin/partners').catch(()=>[]);
+  _allPartners = partners;
+  // Update stats
+  document.getElementById('isStatTotal').textContent = rows.length;
+  document.getElementById('isStatAdmin').textContent = rows.filter(r=>r.role==='admin').length;
+  document.getElementById('isStatManager').textContent = rows.filter(r=>r.role==='manager').length;
+  document.getElementById('isStatStaff').textContent = rows.filter(r=>r.role==='staff').length;
+  renderInternalStaffTable(rows, partners);
+}
+
+function filterInternalStaff() {
+  const q = (document.getElementById('isSearch').value||'').toLowerCase();
+  const role = document.getElementById('isRoleFilter').value;
+  const status = document.getElementById('isStatusFilter').value;
+  const filtered = _internalStaffRows.filter(a => {
+    const matchQ = !q || (a.username||'').toLowerCase().includes(q) || (a.display_name||'').toLowerCase().includes(q) || (a.email||'').toLowerCase().includes(q) || (a.phone||'').includes(q);
+    const matchRole = !role || a.role === role;
+    const matchStatus = !status || (status==='active' ? a.active : !a.active);
+    return matchQ && matchRole && matchStatus;
+  });
+  renderInternalStaffTable(filtered, _allPartners);
+}
+
+function renderInternalStaffTable(rows, partners) {
+  const roleBadge = r => r==='admin'?'badge-blue':r==='manager'?'badge-yellow':'';
+  const roleLabel = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理' };
+  const partnerName = ids => (ids||'').split(',').filter(Boolean).map(id=>{const p=partners.find(p=>p.id==id);return p?p.name:'#'+id;}).join(', ') || '—';
+  document.getElementById('internalStaffTable').innerHTML = rows.length ? rows.map(a => `<tr>
+    <td><strong>${esc(a.username)}</strong></td>
+    <td>${esc(a.display_name||'')}</td>
+    <td><span class="badge ${roleBadge(a.role)}">${roleLabel[a.role]||a.role}</span></td>
+    <td style="font-size:.82rem">${a.email ? `<a href="mailto:${esc(a.email)}" style="color:var(--sky)">${esc(a.email)}</a>` : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.82rem">${a.phone ? `<a href="tel:${esc(a.phone)}" style="color:var(--sky)">${esc(a.phone)}</a>` : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.8rem;color:var(--gray-500)">${a.role==='manager'?esc(partnerName(a.assigned_partner_ids)):'—'}</td>
+    <td>${a.active?'<span style="color:var(--green);font-weight:600">✅ 已激活</span>':'<span style="color:var(--gray-400)">⏳ 待激活</span>'}</td>
+    <td style="font-size:.8rem;color:var(--gray-500)">${(a.created_at||'').slice(0,10)}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-sm" onclick="editAccount(${a.id})">编辑</button>
+      ${a.id!==1?`<button class="btn btn-sm btn-red" onclick="deleteAccount(${a.id},'${esc(a.display_name||a.username)}')">删除</button>`:''}
+    </td>
+  </tr>`).join('') : '<tr><td colspan="9" class="empty">暂无内部人员</td></tr>';
 }
 
 // ── Worker accounts ──

@@ -570,6 +570,8 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
   try { db.exec(`ALTER TABLE admin_users ADD COLUMN ${col}`); } catch {}
 });
+try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
 
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
@@ -1751,11 +1753,11 @@ app.get('/api/admin/me', requireAdmin, (req, res) => {
 
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, display_name, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, email, phone } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
@@ -1765,13 +1767,13 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
   // New accounts start inactive (active=0); user must self-verify to activate
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active) VALUES (?, ?, ?, ?, ?, ?, 0)')
-    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '');
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)')
+    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', email || '', phone || '');
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, email, phone } = req.body;
   if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -1781,8 +1783,8 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
     db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
   // active field is intentionally excluded — only the user themselves can activate via self-verification
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), req.params.id);
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, email=?, phone=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), req.params.id);
   res.json({ success: true });
 });
 
