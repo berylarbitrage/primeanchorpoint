@@ -172,8 +172,12 @@ tr:hover td{background:var(--sky-light)}
 .hours-item{background:var(--white);border-radius:var(--radius);padding:1rem;box-shadow:0 2px 8px rgba(0,0,0,.04);text-align:center}
 .hours-item h4{font-size:1.6rem;font-weight:700;color:var(--sky)}.hours-item p{font-size:.72rem;color:var(--gray-400);margin-top:2px}
 .emp-meta{font-size:.75rem;color:var(--gray-400);margin-top:2px}
-.emp-table td{padding:.75rem 1rem;vertical-align:middle}
-.emp-table th{padding:.6rem 1rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-400);background:var(--gray-50);border-bottom:1px solid var(--gray-200)}
+.emp-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.emp-table{min-width:860px;width:100%}
+.emp-table td{padding:1rem 1.2rem;vertical-align:middle;white-space:nowrap}
+.emp-table td.emp-td-name{white-space:normal;min-width:180px}
+.emp-table td.emp-td-job{white-space:normal;min-width:160px}
+.emp-table th{padding:.75rem 1.2rem;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--gray-400);background:var(--gray-50);border-bottom:1px solid var(--gray-200);white-space:nowrap}
 .emp-table tbody tr{border-bottom:1px solid var(--gray-100);transition:background .12s}
 .emp-table tbody tr:last-child{border-bottom:none}
 .emp-table tbody tr:hover{background:#f8fafc}
@@ -356,6 +360,47 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <button onclick="doLogin()">登录</button>
   <div class="err" id="loginErr"></div>
+</div>
+</div>
+
+<!-- Job Share Modal -->
+<div class="modal-bg" id="jobShareModal">
+<div class="modal" style="max-width:480px">
+  <h2>🔗 分享职位</h2>
+  <p id="jobShareTitle" style="font-size:.9rem;font-weight:600;color:var(--gray-700);margin-bottom:1rem"></p>
+  <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:1.25rem">
+    <input id="jobShareLink" readonly style="flex:1;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.82rem;font-family:monospace;background:var(--gray-50);color:var(--gray-700)">
+    <button id="jobShareCopyBtn" onclick="copyJobShareLink()" style="padding:.55rem 1rem;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:.83rem;font-weight:600;cursor:pointer;white-space:nowrap">复制链接</button>
+  </div>
+  <div style="font-size:.78rem;color:var(--gray-400);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">分享到</div>
+  <div style="display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1.25rem">
+    <button onclick="shareJobPlatform('wa')" style="display:flex;align-items:center;gap:.4rem;padding:.45rem .9rem;background:#25D366;color:#fff;border:none;border-radius:20px;font-size:.82rem;font-weight:700;cursor:pointer">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+      WhatsApp
+    </button>
+    <button onclick="shareJobPlatform('fb')" style="display:flex;align-items:center;gap:.4rem;padding:.45rem .9rem;background:#1877F2;color:#fff;border:none;border-radius:20px;font-size:.82rem;font-weight:700;cursor:pointer">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+      Facebook
+    </button>
+    <button onclick="shareJobPlatform('tw')" style="display:flex;align-items:center;gap:.4rem;padding:.45rem .9rem;background:#000;color:#fff;border:none;border-radius:20px;font-size:.82rem;font-weight:700;cursor:pointer">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.737-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      X (Twitter)
+    </button>
+    <button onclick="shareJobPlatform('line')" style="display:flex;align-items:center;gap:.4rem;padding:.45rem .9rem;background:#06C755;color:#fff;border:none;border-radius:20px;font-size:.82rem;font-weight:700;cursor:pointer">LINE</button>
+    <button onclick="shareJobPlatform('tg')" style="display:flex;align-items:center;gap:.4rem;padding:.45rem .9rem;background:#26A5E4;color:#fff;border:none;border-radius:20px;font-size:.82rem;font-weight:700;cursor:pointer">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+      Telegram
+    </button>
+    <button onclick="shareJobPlatform('wechat')" style="display:flex;align-items:center;gap:.4rem;padding:.45rem .9rem;background:#07C160;color:#fff;border:none;border-radius:20px;font-size:.82rem;font-weight:700;cursor:pointer">
+      微信
+    </button>
+  </div>
+  <div id="jobShareWechatTip" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:.65rem .85rem;font-size:.82rem;color:#166534;margin-bottom:1rem">
+    链接已复制，请打开微信 → 发现 → 扫一扫 或直接粘贴链接分享给好友。
+  </div>
+  <div class="modal-actions">
+    <button class="btn" onclick="document.getElementById('jobShareModal').classList.remove('show')">关闭</button>
+  </div>
 </div>
 </div>
 
@@ -736,18 +781,20 @@ tr:hover td{background:var(--sky-light)}
     <select id="empDeptFilter" onchange="filterEmployees()"><option value="">全部公司</option></select>
   </div>
   <div class="card" style="padding:0;overflow:hidden">
+    <div class="emp-table-wrap">
     <table class="emp-table">
       <thead><tr>
-        <th style="width:90px">员工号</th>
-        <th>姓名 / 联系方式</th>
-        <th>职位 / 公司</th>
-        <th style="width:80px">薪资</th>
-        <th style="width:70px">状态</th>
-        <th style="width:90px">入职日期</th>
-        <th style="width:56px">操作</th>
+        <th style="min-width:120px">员工号</th>
+        <th style="min-width:200px">姓名 / 联系方式</th>
+        <th style="min-width:180px">职位 / 公司</th>
+        <th style="min-width:90px">薪资</th>
+        <th style="min-width:80px">状态</th>
+        <th style="min-width:110px">入职日期</th>
+        <th style="min-width:70px">操作</th>
       </tr></thead>
       <tbody id="empTable"></tbody>
     </table>
+    </div>
   </div>
   <!-- Employee action dropdown menu (shared) -->
   <div id="empActionMenu" style="display:none;position:fixed;background:#fff;border:1px solid var(--gray-200);border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.13);z-index:9999;min-width:180px;padding:4px 0">
@@ -1177,39 +1224,30 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" style="background:#f0fff4;color:#2f9e44;border:1px solid #b2f2bb" onclick="openEmailCodeTestModal()">✉️ 测试邮箱</button>
       <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
       <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
-      <button class="btn" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a" onclick="openInviteModal()">🔗 生成邀请链接</button>
+      <button class="btn" style="background:#fefce8;color:#92400e;border:1px solid #fde68a" onclick="toggleInvitePanel()">🔗 生成邀请链接</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
     </div>
   </div>
 
-  <!-- Manager Invite Links panel -->
-  <div id="inviteLinksPanel" style="display:none;margin-bottom:1rem">
-    <div class="card" style="border:1.5px solid #fde68a;background:#fffbeb">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
-        <h3 style="font-size:.95rem;color:#92400e">🔗 Manager 邀请链接</h3>
-        <button onclick="document.getElementById('inviteLinksPanel').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:1rem;color:var(--gray-400)">✕</button>
-      </div>
-      <div id="inviteLinksList" style="font-size:.85rem;margin-bottom:.75rem"></div>
-      <div style="display:flex;gap:.5rem;align-items:flex-end;flex-wrap:wrap">
-        <div>
-          <div style="font-size:.72rem;color:var(--gray-600);margin-bottom:.2rem">角色</div>
-          <select id="newInviteRole" style="padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-            <option value="manager">Manager</option>
-            <option value="staff">Staff</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <div>
-          <div style="font-size:.72rem;color:var(--gray-600);margin-bottom:.2rem">有效期（小时）</div>
-          <input type="number" id="newInviteHours" value="72" min="1" max="720" style="width:80px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        </div>
-        <div style="flex:1;min-width:120px">
-          <div style="font-size:.72rem;color:var(--gray-600);margin-bottom:.2rem">备注（可选）</div>
-          <input type="text" id="newInviteNote" placeholder="例：张经理注册用" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        </div>
-        <button class="btn btn-green" style="white-space:nowrap;padding:.45rem 1rem" onclick="createInviteLink()">+ 生成</button>
-      </div>
+  <!-- Admin Invite Panel -->
+  <div id="adminInvitePanel" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem;position:relative">
+    <button onclick="toggleInvitePanel()" style="position:absolute;top:.6rem;right:.75rem;background:none;border:none;font-size:1.1rem;cursor:pointer;color:#92400e">×</button>
+    <div style="font-weight:700;color:#78350f;margin-bottom:.5rem">🔗 Manager 邀请链接</div>
+    <div id="inviteLinkList" style="font-size:.82rem;color:#92400e;margin-bottom:.75rem">加载中…</div>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+      <label style="font-size:.8rem;font-weight:600;color:#78350f;white-space:nowrap">角色</label>
+      <select id="inviteRole" style="padding:.3rem .5rem;border:1px solid #fde68a;border-radius:6px;font-size:.82rem;background:#fff">
+        <option value="manager">Manager</option>
+        <option value="staff">Staff</option>
+        <option value="admin">Admin</option>
+      </select>
+      <label style="font-size:.8rem;font-weight:600;color:#78350f;white-space:nowrap">有效期（小时）</label>
+      <input id="inviteHours" type="number" value="24" min="1" max="720" style="width:60px;padding:.3rem .4rem;border:1px solid #fde68a;border-radius:6px;font-size:.82rem;text-align:center">
+      <label style="font-size:.8rem;font-weight:600;color:#78350f;white-space:nowrap">备注（可选）</label>
+      <input id="inviteNotes" placeholder="备注说明" style="flex:1;min-width:100px;padding:.3rem .5rem;border:1px solid #fde68a;border-radius:6px;font-size:.82rem">
+      <button class="btn btn-green" id="btnGenInvite" onclick="genInviteLink()" style="white-space:nowrap">+ 生成</button>
     </div>
+    <div id="inviteGenResult" style="margin-top:.6rem;font-size:.82rem"></div>
   </div>
 
   <!-- Admin/Staff/Manager -->
@@ -2126,6 +2164,17 @@ tr:hover td{background:var(--sky-light)}
     </select>
   </div>
 
+  <div class="field"><label>班次</label>
+    <select id="jShift">
+      <option value="">不限</option>
+      <option value="早班">早班（Morning Shift）</option>
+      <option value="中班">中班（Day Shift）</option>
+      <option value="晚班">晚班（Evening Shift）</option>
+      <option value="夜班">夜班（Night Shift）</option>
+      <option value="弹性">弹性（Flexible）</option>
+    </select>
+  </div>
+
   <div class="field">
     <label>工作日 / 工作时间 <span style="color:var(--red)">*</span></label>
     <table id="jScheduleTable" style="width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.82rem">
@@ -2722,23 +2771,40 @@ tr:hover td{background:var(--sky-light)}
   <input type="hidden" id="empId">
   <div class="form-section">
     <h4>基本信息</h4>
-    <div class="field-row">
+    <div class="field-row3">
       <div class="field"><label>名 (First Name) *</label><input id="eFirst" placeholder="例：John"></div>
+      <div class="field"><label>中间名 (Middle Name)</label><input id="eMiddle" placeholder="可选"></div>
       <div class="field"><label>姓 (Last Name) *</label><input id="eLast" placeholder="例：Smith"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>员工编号</label><input id="eEmpId" placeholder="留空自动生成 EMP001..."></div>
       <div class="field"><label>出生日期 *</label><input id="eDob" type="date"></div>
     </div>
-    <div class="field-row">
-      <div class="field"><label>电话</label><input id="ePhone" placeholder="(555) 000-0000"></div>
-      <div class="field"><label>邮箱</label><input id="eEmail" type="email" placeholder="email@example.com"></div>
+    <div class="field">
+      <label>电话 * <button type="button" onclick="addEmpPhone()" style="margin-left:.5rem;padding:.1rem .5rem;font-size:.72rem;background:var(--sky-light);color:var(--blue);border:1px solid var(--sky);border-radius:4px;cursor:pointer">+ 添加</button></label>
+      <input id="ePhone" placeholder="(555) 000-0000" style="margin-bottom:.35rem">
+      <div id="extraPhonesContainer"></div>
     </div>
-    <div class="field"><label>街道地址 Street Address</label><input id="eAddr" placeholder="e.g. 123 Main St" oninput="clearEmpAddrStatus()"></div>
+    <div class="field">
+      <label>邮箱 <button type="button" onclick="addEmpEmail()" style="margin-left:.5rem;padding:.1rem .5rem;font-size:.72rem;background:var(--sky-light);color:var(--blue);border:1px solid var(--sky);border-radius:4px;cursor:pointer">+ 添加</button></label>
+      <input id="eEmail" type="email" placeholder="email@example.com" style="margin-bottom:.35rem">
+      <div id="extraEmailsContainer"></div>
+    </div>
+    <div class="form-section" style="margin:0;padding:.75rem 0 0;border:0">
+      <h4 style="margin-bottom:.5rem">社交媒体</h4>
+      <div class="field-row">
+        <div class="field"><label>WhatsApp</label><input id="eSocialWhatsapp" placeholder="手机号或用户名"></div>
+        <div class="field"><label>微信 WeChat</label><input id="eSocialWechat" placeholder="微信号"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Facebook</label><input id="eSocialFacebook" placeholder="用户名或链接"></div>
+        <div class="field"><label>Instagram</label><input id="eSocialInstagram" placeholder="@用户名"></div>
+      </div>
+    </div>
+    <div class="field"><label>街道地址 Street Address *</label><input id="eAddr" placeholder="e.g. 123 Main St" oninput="clearEmpAddrStatus()"></div>
     <div class="field"><label>单元 / 楼层 Unit / Suite <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="eStreet2" placeholder="e.g. Apt 2B, Suite 100" oninput="clearEmpAddrStatus()"></div>
     <div class="field-row3">
-      <div class="field"><label>城市 City</label><input id="eCity" placeholder="Chicago" oninput="clearEmpAddrStatus()"></div>
-      <div class="field"><label>州 State</label>
+      <div class="field"><label>城市 City *</label><input id="eCity" placeholder="Chicago" oninput="clearEmpAddrStatus()"></div>
+      <div class="field"><label>州 State *</label>
         <select id="eState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%" onchange="clearEmpAddrStatus()">
           <option value="">-- 州 --</option>
         </select>
@@ -4085,6 +4151,7 @@ function renderJobsFiltered() {
         </button>
         <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
         <button class="btn btn-sm btn-outline" onclick="showJobHistory(${j.id},'${esc(j.title)}')">历史</button>
+        <button class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="openJobShareModal(${j.id},'${esc(j.title).replace(/'/g,"&#39;")}')">🔗 分享</button>
       </td>
     </tr>`;
   }).join('') : `<tr><td colspan="8" class="empty">${isHistory ? '暂无历史职位' : '暂无在招职位，点击 "+ 新增职位" 添加'}</td></tr>`;
@@ -4136,6 +4203,7 @@ async function openJobModal(job) {
   document.getElementById('jLang').value = job ? job.lang : 'en';
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
+  document.getElementById('jShift').value = job ? (job.schedule || '') : '';
   // Parse location into 5 fields
   const _loc = parseAddressString(job ? (job.location||'') : '');
   document.getElementById('jStreet').value  = _loc.street;
@@ -4720,7 +4788,7 @@ async function saveJob() {
     work_schedule: JSON.stringify(_sched),
     benefits,
     required_skills: requiredSkills,
-    schedule: '',
+    schedule: document.getElementById('jShift').value,
     description: getJobDescValue(),
     urgent: document.getElementById('jUrgent').checked,
     headcount: parseInt(document.getElementById('jHeadcount').value) || 1,
@@ -4759,9 +4827,147 @@ async function saveJob() {
 }
 
 async function deleteJob(id) {
-  if (!await showConfirm('确定删除此职位？', { danger: true })) return;
-  await api(`/admin/jobs/${id}`, { method: 'DELETE' });
+  // Step 1: Find the job title for display
+  const job = (allJobs || []).find(j => j.id === id);
+  const jobTitle = job ? `${job.title}${job.company_name ? ' (' + job.company_name + ')' : ''}` : `#${id}`;
+
+  // Step 2: First confirmation — explain the restriction
+  const step1 = await showConfirm(
+    `⚠️ 删除职位：${jobTitle}\n\n` +
+    `请注意：\n` +
+    `• 职位删除后不可恢复\n` +
+    `• 只有录入错误才允许删除\n` +
+    `• 已分配工人的职位无法删除\n\n` +
+    `是否确认继续？`,
+    { confirmLabel: '继续', cancelLabel: '取消', danger: true }
+  );
+  if (!step1) return;
+
+  // Step 3: Second confirmation — require selecting/typing reason
+  const reason = await showDeleteJobReasonDialog(jobTitle);
+  if (!reason) return;
+
+  // Step 4: Final confirmation
+  const step3 = await showConfirm(
+    `最终确认：即将永久删除职位\n"${jobTitle}"\n\n删除原因：${reason}\n\n此操作不可撤销，确定删除吗？`,
+    { confirmLabel: '确认删除', cancelLabel: '取消', danger: true }
+  );
+  if (!step3) return;
+
+  const result = await api(`/admin/jobs/${id}`, { method: 'DELETE' });
+  if (result && result.error) {
+    await showConfirm(`❌ 无法删除\n\n${result.error}`, { confirmLabel: '知道了', cancelLabel: null, danger: false });
+    return;
+  }
+  showToast('✅ 职位已删除');
   loadJobs();
+}
+
+function showDeleteJobReasonDialog(jobTitle) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000;font-family:\'DM Sans\',sans-serif';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:460px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem';
+    box.innerHTML = `
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem">
+        <div style="width:40px;height:40px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div>
+          <div style="font-weight:700;color:#B91C1C;font-size:1rem">请说明删除原因</div>
+          <div style="font-size:.82rem;color:#6B7280;margin-top:.15rem">只有录入错误才允许删除职位</div>
+        </div>
+      </div>
+      <div style="background:#FFF5F5;border:1px solid #FECACA;border-radius:8px;padding:.9rem 1rem;margin-bottom:1.1rem;font-size:.84rem;color:#7F1D1D;line-height:1.6">
+        <strong>注意：</strong>删除职位是不可逆操作。请选择或填写删除原因，管理员将对此次操作负责。
+      </div>
+      <div style="margin-bottom:.75rem">
+        <label style="font-size:.85rem;font-weight:600;color:#374151;display:block;margin-bottom:.4rem">删除原因 <span style="color:#DC2626">*</span></label>
+        <select id="_djr_select" style="width:100%;border:1.5px solid #E5E7EB;border-radius:6px;padding:.5rem .7rem;font-size:.9rem;outline:none;margin-bottom:.6rem;font-family:inherit">
+          <option value="">— 请选择原因 —</option>
+          <option value="录入错误：职位信息填写有误">录入错误：职位信息填写有误</option>
+          <option value="录入错误：重复创建了职位">录入错误：重复创建了职位</option>
+          <option value="录入错误：职位属于其他系统">录入错误：职位属于其他系统</option>
+          <option value="other">其他原因（请在下方说明）</option>
+        </select>
+        <input id="_djr_other" type="text" placeholder="请详细说明删除原因（至少5个字）..." maxlength="200"
+          style="width:100%;box-sizing:border-box;border:1.5px solid #E5E7EB;border-radius:6px;padding:.5rem .7rem;font-size:.9rem;outline:none;display:none;font-family:inherit">
+      </div>
+      <div style="display:flex;gap:.6rem;justify-content:flex-end">
+        <button id="_djr_cancel" style="padding:8px 18px;border:1px solid #e2e5ea;border-radius:8px;background:transparent;color:#5F6B7A;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">取消</button>
+        <button id="_djr_confirm" disabled style="padding:8px 18px;border:none;border-radius:8px;background:#DC2626;color:#fff;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit;opacity:.5">确认原因</button>
+      </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const sel = box.querySelector('#_djr_select');
+    const other = box.querySelector('#_djr_other');
+    const confirmBtn = box.querySelector('#_djr_confirm');
+    function updateState() {
+      const selVal = sel.value;
+      other.style.display = selVal === 'other' ? 'block' : 'none';
+      const hasReason = (selVal && selVal !== 'other') || (selVal === 'other' && other.value.trim().length >= 5);
+      confirmBtn.disabled = !hasReason;
+      confirmBtn.style.opacity = hasReason ? '1' : '.5';
+    }
+    sel.oninput = updateState;
+    other.oninput = updateState;
+    const cleanup = r => { document.body.removeChild(overlay); resolve(r); };
+    confirmBtn.onclick = () => {
+      if (confirmBtn.disabled) return;
+      const reason = sel.value === 'other' ? other.value.trim() : sel.value;
+      cleanup(reason);
+    };
+    box.querySelector('#_djr_cancel').onclick = () => cleanup(null);
+    overlay.onclick = e => { if (e.target === overlay) cleanup(null); };
+  });
+}
+
+function openJobShareModal(jobId, title) {
+  const link = window.location.origin + '/?job=' + jobId;
+  document.getElementById('jobShareTitle').textContent = title;
+  document.getElementById('jobShareLink').value = link;
+  document.getElementById('jobShareCopyBtn').textContent = '复制链接';
+  document.getElementById('jobShareWechatTip').style.display = 'none';
+  document.getElementById('jobShareModal').classList.add('show');
+}
+function copyJobShareLink() {
+  const link = document.getElementById('jobShareLink').value;
+  const btn = document.getElementById('jobShareCopyBtn');
+  navigator.clipboard.writeText(link).then(() => {
+    btn.textContent = '✓ 已复制';
+    setTimeout(() => { btn.textContent = '复制链接'; }, 2000);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = link;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    btn.textContent = '✓ 已复制';
+    setTimeout(() => { btn.textContent = '复制链接'; }, 2000);
+  });
+}
+function shareJobPlatform(platform) {
+  const link = document.getElementById('jobShareLink').value;
+  const title = document.getElementById('jobShareTitle').textContent;
+  const url = encodeURIComponent(link);
+  const text = encodeURIComponent('正在招聘：' + title + ' — Prime Anchorpoint');
+  const platforms = {
+    wa:     'https://wa.me/?text=' + text + '%20' + url,
+    fb:     'https://www.facebook.com/sharer/sharer.php?u=' + url,
+    tw:     'https://twitter.com/intent/tweet?text=' + text + '&url=' + url,
+    line:   'https://social-plugins.line.me/lineit/share?url=' + url,
+    tg:     'https://t.me/share/url?url=' + url + '&text=' + text,
+    wechat: null
+  };
+  if (platform === 'wechat') {
+    copyJobShareLink();
+    document.getElementById('jobShareWechatTip').style.display = '';
+    return;
+  }
+  if (platforms[platform]) window.open(platforms[platform], '_blank', 'noopener,noreferrer,width=600,height=500');
 }
 
 function openCloseJobModal(job) {
@@ -6906,11 +7112,11 @@ function renderEmployees(list) {
       <div style="font-weight:700;font-size:.88rem">${esc(e.employee_id||'—')}</div>
       ${workerCodeHtml}
     </td>
-    <td style="cursor:pointer" onclick='viewEmployee(${e.id})'>
+    <td class="emp-td-name" style="cursor:pointer" onclick='viewEmployee(${e.id})'>
       <div class="emp-name">${esc(e.first_name)} ${esc(e.last_name)}</div>
       <div class="emp-contact">${contactHtml||'<span style="color:var(--gray-300)">无联系方式</span>'}</div>
     </td>
-    <td>
+    <td class="emp-td-job">
       <div>${jobNames.length ? jobNames.map(n=>'<span class="emp-job-tag">'+esc(n)+'</span>').join('') : '<span style="color:var(--gray-300);font-size:.82rem">未分配</span>'}</div>
       ${companyNames.length ? '<div class="emp-company">'+companyNames.map(c=>esc(c)).join(' · ')+'</div>' : ''}
     </td>
@@ -6997,8 +7203,8 @@ function openEmpModal(id) {
   if (id) {
     const e = allEmployees.find(x=>x.id===id) || {};
     document.getElementById('eFirst').value    = e.first_name||'';
+    document.getElementById('eMiddle').value   = e.middle_name||'';
     document.getElementById('eLast').value     = e.last_name||'';
-    document.getElementById('eEmpId').value    = e.employee_id||'';
     document.getElementById('eDob').value      = e.dob||'';
     document.getElementById('ePhone').value    = e.phone||'';
     document.getElementById('eEmail').value    = e.email||'';
@@ -7017,13 +7223,27 @@ function openEmpModal(id) {
     document.getElementById('eNotes').value    = e.notes||'';
     document.getElementById('eSSN').value      = '';
     document.getElementById('ePin').value      = '';
+    // Extra phones/emails
+    let ep=[]; try{ep=JSON.parse(e.extra_phones||'[]');}catch{}
+    let ee=[]; try{ee=JSON.parse(e.extra_emails||'[]');}catch{}
+    _populateExtraContacts('extraPhonesContainer', ep, 'tel', '(555) 000-0000');
+    _populateExtraContacts('extraEmailsContainer', ee, 'email', 'email@example.com');
+    // Social media
+    let sm={}; try{sm=JSON.parse(e.social_media||'{}');}catch{}
+    document.getElementById('eSocialWhatsapp').value  = sm.whatsapp||'';
+    document.getElementById('eSocialWechat').value    = sm.wechat||'';
+    document.getElementById('eSocialFacebook').value  = sm.facebook||'';
+    document.getElementById('eSocialInstagram').value = sm.instagram||'';
   } else {
-    ['eFirst','eLast','eEmpId','eDob','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
-     'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    ['eFirst','eMiddle','eLast','eDob','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
+     'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin',
+     'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
     document.getElementById('addJobRecordBtn').style.display = 'none';
     document.getElementById('editEmpJobList').innerHTML = '<span style="color:var(--gray-400);font-size:.8rem">（新增员工后可在此添加就业记录）</span>';
+    document.getElementById('extraPhonesContainer').innerHTML = '';
+    document.getElementById('extraEmailsContainer').innerHTML = '';
   }
   clearEmpAddrStatus();
   document.getElementById('empModal').classList.add('show');
@@ -7464,15 +7684,47 @@ function _execDupMerge() {
   }, 100);
 }
 
+function _makeExtraContactRow(type, placeholder, value) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;gap:.35rem;margin-bottom:.35rem';
+  const inp = document.createElement('input');
+  inp.type = type; inp.placeholder = placeholder; inp.value = value || '';
+  inp.style.flex = '1';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = '−';
+  btn.style.cssText = 'padding:.35rem .65rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;font-weight:700;font-size:.88rem;flex-shrink:0';
+  btn.onclick = () => wrap.remove();
+  wrap.appendChild(inp); wrap.appendChild(btn);
+  return wrap;
+}
+function _populateExtraContacts(containerId, values, type, placeholder) {
+  const c = document.getElementById(containerId);
+  c.innerHTML = '';
+  (values||[]).forEach(v => { if(v) c.appendChild(_makeExtraContactRow(type, placeholder, v)); });
+}
+function _collectExtraContacts(containerId) {
+  return [...document.getElementById(containerId).querySelectorAll('input')].map(i=>i.value.trim()).filter(Boolean);
+}
+function addEmpPhone() {
+  document.getElementById('extraPhonesContainer').appendChild(_makeExtraContactRow('tel','(555) 000-0000',''));
+}
+function addEmpEmail() {
+  document.getElementById('extraEmailsContainer').appendChild(_makeExtraContactRow('email','email@example.com',''));
+}
+
 async function saveEmployee() {
   const id = document.getElementById('empId').value;
+  const extraPhones = _collectExtraContacts('extraPhonesContainer');
+  const extraEmails = _collectExtraContacts('extraEmailsContainer');
   const data = {
-    employee_id: document.getElementById('eEmpId').value.trim(),
     first_name: document.getElementById('eFirst').value.trim(),
+    middle_name: document.getElementById('eMiddle').value.trim(),
     last_name:  document.getElementById('eLast').value.trim(),
     dob: document.getElementById('eDob').value,
     phone: document.getElementById('ePhone').value.trim(),
     email: document.getElementById('eEmail').value.trim(),
+    extra_phones: extraPhones,
+    extra_emails: extraEmails,
     address: document.getElementById('eAddr').value.trim(),
     street2: document.getElementById('eStreet2').value.trim(),
     city: document.getElementById('eCity').value.trim(),
@@ -7486,8 +7738,16 @@ async function saveEmployee() {
     notes: document.getElementById('eNotes').value.trim(),
     ssn: document.getElementById('eSSN').value.trim() || (id ? '__KEEP__' : ''),
     pin: document.getElementById('ePin').value || (id ? '__KEEP__' : ''),
+    social_media: {
+      whatsapp:  document.getElementById('eSocialWhatsapp').value.trim(),
+      wechat:    document.getElementById('eSocialWechat').value.trim(),
+      facebook:  document.getElementById('eSocialFacebook').value.trim(),
+      instagram: document.getElementById('eSocialInstagram').value.trim(),
+    },
   };
   if (!data.first_name || !data.last_name) return alert('请填写员工姓名');
+  if (!data.phone) return alert('请填写电话（必填）');
+  if (!data.address || !data.city || !data.state) return alert('请填写街道地址、城市和州（必填）');
   if (!id && !data.dob) return alert('请填写出生日期（用于工时确认页身份验证）');
   const zipErr = validateZip(data.zip);
   if (zipErr) return alert(zipErr);
@@ -7626,6 +7886,26 @@ async function viewEmployee(id) {
       <h4>紧急联系人</h4>
       ${cols([['姓名',emp.emergency_name],['电话',emp.emergency_phone],['关系',emp.emergency_relation]])}
     </div>`;
+
+  // Current / recent job assignments
+  const jobs = emp.current_jobs || [];
+  if (jobs.length) {
+    const statusLabel = s => s === 'active'
+      ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:700">进行中</span>`
+      : `<span style="background:#f1f5f9;color:#64748b;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:700">已结束</span>`;
+    html += `<div class="form-section"><h4>职位记录</h4>
+      <table><thead><tr><th>职位</th><th>公司</th><th>开始日期</th><th>结束日期</th><th>时薪</th><th>状态</th></tr></thead><tbody>
+      ${jobs.map(j=>`<tr>
+        <td style="font-weight:600">${esc(j.job_title||'—')}</td>
+        <td>${esc(j.company_name||'—')}</td>
+        <td>${j.start_date||'—'}</td>
+        <td>${j.end_date||'—'}</td>
+        <td>${j.emp_hourly_rate>0?'$'+Number(j.emp_hourly_rate).toFixed(2)+'/hr':'—'}</td>
+        <td>${statusLabel(j.status)}</td>
+      </tr>`).join('')}
+      </tbody></table>
+    </div>`;
+  }
 
   // Time summary (recent)
   const totalHrs = (emp.recent_time||[]).filter(t=>t.status==='closed').reduce((s,t)=>s+(t.total_hours||0),0);
@@ -9220,6 +9500,60 @@ async function guardClose(modalId, extraFn) {
   document.getElementById(modalId).classList.remove('show');
 }
 function closeModal(id) { guardClose(id); }
+
+// ─── Admin Invite Links ───
+let _invitePanelOpen = false;
+
+function toggleInvitePanel() {
+  _invitePanelOpen = !_invitePanelOpen;
+  document.getElementById('adminInvitePanel').style.display = _invitePanelOpen ? '' : 'none';
+  if (_invitePanelOpen) loadInviteLinks();
+}
+
+async function loadInviteLinks() {
+  const el = document.getElementById('inviteLinkList');
+  try {
+    const rows = await api('/admin/invite-links');
+    if (!rows.length) { el.innerHTML = '<span style="color:#92400e;opacity:.7">暂无有效邀请链接</span>'; return; }
+    const ROLE = { admin:'Admin', staff:'Staff', manager:'Manager' };
+    el.innerHTML = rows.map(r => {
+      const exp = new Date(r.expires_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'numeric',minute:'numeric'});
+      return `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;flex-wrap:wrap">
+        <span style="background:#fff;border:1px solid #fde68a;border-radius:6px;padding:.15rem .5rem;font-weight:700;color:#92400e">${ROLE[r.role]||r.role}</span>
+        <span style="flex:1;word-break:break-all;color:#44403c;cursor:pointer;text-decoration:underline" onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))" title="点击复制">${esc(r.url)}</span>
+        <span style="color:#78350f;font-size:.75rem;white-space:nowrap">有效至 ${exp}</span>
+        ${r.notes?`<span style="color:#a16207;font-size:.75rem">${esc(r.notes)}</span>`:''}
+        <button onclick="deleteInviteLink(${r.id})" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:.9rem;padding:0" title="删除">🗑</button>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = `<span style="color:#dc2626">加载失败: ${esc(e.message)}</span>`; }
+}
+
+async function genInviteLink() {
+  const btn = document.getElementById('btnGenInvite');
+  const resultEl = document.getElementById('inviteGenResult');
+  const role = document.getElementById('inviteRole').value;
+  const hours = document.getElementById('inviteHours').value;
+  const notes = document.getElementById('inviteNotes').value.trim();
+  btn.disabled = true; btn.textContent = '生成中…';
+  resultEl.innerHTML = '';
+  try {
+    const r = await api('/admin/invite-links', 'POST', { role, hours, notes });
+    resultEl.innerHTML = `<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+      <span style="color:#166534;font-weight:700">✓ 链接已生成：</span>
+      <span style="word-break:break-all;color:#44403c;cursor:pointer;text-decoration:underline" onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))">${esc(r.url)}</span>
+      <button onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))" style="padding:.2rem .6rem;border:1px solid #166534;border-radius:6px;background:#f0fdf4;color:#166534;cursor:pointer;font-size:.78rem">复制</button>
+    </div>`;
+    loadInviteLinks();
+  } catch(e) { resultEl.innerHTML = `<span style="color:#dc2626">生成失败：${esc(e.message)}</span>`; }
+  btn.disabled = false; btn.textContent = '+ 生成';
+}
+
+async function deleteInviteLink(id) {
+  if (!await showConfirm('确定删除此邀请链接？')) return;
+  await api(`/admin/invite-links/${id}`, 'DELETE');
+  loadInviteLinks();
+}
 
 // ─── Accounts Management ───
 let _accTab = 'admin';

@@ -454,7 +454,10 @@ tr:last-child td{border-bottom:none}
       <button class="hamburger" onclick="toggleSidebar()" aria-label="菜单">
         <span></span><span></span><span></span>
       </button>
-      <span id="mobilPageTitle" style="font-weight:700;font-size:.9rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">职位浏览</span>
+      <span id="mobilPageTitle" style="font-weight:700;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">职位浏览</span>
+      <a href="/" style="flex:1;display:flex;justify-content:center;align-items:center">
+        <img src="/logo.svg" alt="logo" style="height:28px;width:auto;filter:brightness(0) invert(1)">
+      </a>
       <div class="mobile-topbar-right">
         <span id="workerNameDisplayMobile" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px"></span>
         <button onclick="workerLogout()" style="background:rgba(255,255,255,.15);color:#fff;border:none;padding:.3rem .7rem;border-radius:6px;cursor:pointer;font-size:.8rem">退出</button>
@@ -524,10 +527,10 @@ tr:last-child td{border-bottom:none}
           </div>
         </div>
       </div>
-      <!-- Weekly shift confirmations -->
+      <!-- Pending task confirmations -->
       <div id="shiftConfirmCard" style="display:none;margin-bottom:1rem">
         <div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
-          <h2 style="color:#92400e;margin-bottom:.75rem">📅 本周任务确认</h2>
+          <h2 style="color:#92400e;margin-bottom:.75rem">🔔 待确认任务</h2>
           <div id="shiftConfirmList"></div>
         </div>
       </div>
@@ -1482,100 +1485,46 @@ async function loadTasks() {
 
   await _ensureSuffixes();
 
-  // Load this week's shift confirmations
-  const confirmations = await wApi('/shift-confirmations');
+  // Load tasks and show pending ones in top confirmation card
+  const tasks = await wApi('/my-tasks');
   const confCard = document.getElementById('shiftConfirmCard');
   const confList = document.getElementById('shiftConfirmList');
-  if (confirmations && confirmations.length) {
+  const pendingTasks = (tasks || []).filter(t => !t.worker_response);
+  if (pendingTasks.length) {
     confCard.style.display = '';
-    const _DAY_NAMES = ['周日','周一','周二','周三','周四','周五','周六'];
-    const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
-    const calcHours = (s, e) => { if (!s || !e) return ''; const [sh,sm]=s.split(':').map(Number),[eh,em]=e.split(':').map(Number); let mins=(eh*60+em)-(sh*60+sm); if(mins<0)mins+=1440; const h=Math.floor(mins/60),m=mins%60; return m?`${h}h ${m}m`:`${h}h`; };
-    const todayStr = new Date().toISOString().slice(0,10);
-    const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-    const tomorrowStr = tomorrowDate.toISOString().slice(0,10);
-
-    // Urgent banner: pending shifts tomorrow
-    const urgentShifts = confirmations.filter(c => c.date === tomorrowStr && c.status === 'pending');
-    const urgentBanner = urgentShifts.length ? `
+    const _fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
+    const urgentBanner = `
       <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;display:flex;align-items:flex-start;gap:.65rem">
         <span style="font-size:1.3rem;line-height:1">🔔</span>
         <div>
-          <div style="font-weight:700;font-size:.95rem;color:#dc2626;margin-bottom:.2rem">明天有 ${urgentShifts.length} 个任务待确认</div>
-          <div style="font-size:.83rem;color:#7f1d1d">
-            ${urgentShifts.map(c => {
-              const t = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)}–${fmt12(c.shift_end)}` : '';
-              return `${esc(c.title||'—')}${t?' ('+t+')':''}`;
-            }).join('、')}
-          </div>
-          <div style="font-size:.8rem;color:#b91c1c;margin-top:.3rem">请在下方确认是否出勤</div>
+          <div style="font-weight:700;font-size:.95rem;color:#dc2626;margin-bottom:.2rem">有 ${pendingTasks.length} 个任务待确认</div>
+          <div style="font-size:.8rem;color:#b91c1c;margin-top:.3rem">请确认是否接受以下任务安排</div>
         </div>
-      </div>` : '';
-
-    // Determine current week's Sunday for next-week separator
-    const _nowDate = new Date(); _nowDate.setHours(0,0,0,0);
-    const _curDow = _nowDate.getDay();
-    const _curSunday = new Date(_nowDate);
-    _curSunday.setDate(_nowDate.getDate() + (7 - _curDow) % 7);
-    const curSundayStr = _curSunday.toISOString().slice(0,10);
-    let shownNextWeekHeader = false;
-
-    confList.innerHTML = urgentBanner + confirmations.map(c => {
-      const d = new Date(c.date + 'T00:00:00');
-      const isToday = c.date === todayStr;
-      const isTomorrow = c.date === tomorrowStr;
-      const isNextWeek = c.date > curSundayStr;
-      const dayLabel = `${_DAY_NAMES[d.getDay()]} ${c.date.slice(5).replace('-','/')}${isToday ? ' <span style="background:#f59e0b;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">今天</span>' : isTomorrow ? ' <span style="background:#ef4444;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">明天</span>' : ''}`;
-      const timeStr = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)} – ${fmt12(c.shift_end)}` : '';
-      const statusBadge = c.status === 'confirmed'
-        ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✓ 已接受</span>`
-        : c.status === 'declined'
-        ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✕ 已拒绝</span>`
-        : `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">待确认</span>`;
-      const actionBtns = `
-        <div style="display:flex;gap:.6rem;margin-top:.75rem">
-          <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.5rem .4rem;background:${c.status==='confirmed'?'#16a34a':'#fff'};color:${c.status==='confirmed'?'#fff':'#16a34a'};border:1.5px solid #16a34a;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✓ 接受</button>
-          <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.5rem .4rem;background:${c.status==='declined'?'#dc2626':'#fff'};color:${c.status==='declined'?'#fff':'#dc2626'};border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✕ 拒绝</button>
-        </div>`;
-      const cardBorder = (isTomorrow && c.status === 'pending') ? '2px solid #ef4444' : isNextWeek ? '1px solid #bfdbfe' : '1px solid #fcd34d';
-      const cardBg = (isTomorrow && c.status === 'pending') ? '#fff5f5' : isNextWeek ? '#f0f9ff' : '#fff';
-      // Insert next-week section header before first next-week card
-      let header = '';
-      if (isNextWeek && !shownNextWeekHeader) {
-        shownNextWeekHeader = true;
-        header = `<div style="display:flex;align-items:center;gap:.5rem;margin:.9rem 0 .5rem">
-          <div style="flex:1;height:1px;background:#e5e7eb"></div>
-          <span style="font-size:.8rem;font-weight:700;color:#3b82f6;white-space:nowrap">下周任务（等待确认）</span>
-          <div style="flex:1;height:1px;background:#e5e7eb"></div>
-        </div>`;
-      }
-      const pay = c.pay_rate || c.job_pay || '';
-      const payType = c.pay_type === 'salary' ? '/月' : (c.pay_rate ? '/hr' : '');
-      const desc = c.job_description || '';
-      const hours = calcHours(c.shift_start, c.shift_end);
-      const isPending = !c.status || c.status === 'pending';
-      return header + `
-        <div style="border:${cardBorder};border-radius:10px;padding:.9rem;margin-bottom:.55rem;background:${cardBg}">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.4rem">
+      </div>`;
+    confList.innerHTML = urgentBanner + pendingTasks.map(t => {
+      const timeStr = (t.work_start && t.work_end) ? `${_fmt12(t.work_start)} – ${_fmt12(t.work_end)}` : '';
+      return `
+        <div style="border:2px solid #f59e0b;border-radius:10px;padding:.85rem;margin-bottom:.55rem;background:#fff">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.3rem">
             <div>
-              <span style="font-weight:700;font-size:.92rem;color:${isNextWeek ? '#1d4ed8' : '#92400e'}">${dayLabel}</span>
-              <div style="font-size:.87rem;font-weight:600;color:#1e293b;margin-top:.15rem">${esc(_withSuffix(c.title))}${c.company_name?` <span style="font-weight:400;color:var(--gray-500)">· Client: ${esc(c.company_name)}</span>`:''}</div>
+              <div style="font-weight:700;font-size:.92rem;color:#92400e">${esc(_withSuffix(t.title||'—'))}</div>
+              ${t.company_name ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">Client: ${esc(t.company_name)}</div>` : ''}
             </div>
-            ${statusBadge}
+            <span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">待确认</span>
           </div>
-          ${timeStr ? `<div style="font-size:.84rem;color:#374151;margin-bottom:.25rem">⏰ <strong>${esc(timeStr)}</strong>${hours ? ` <span style="color:#94a3b8;font-size:.78rem">（约 ${hours}）</span>` : ''}</div>` : ''}
-          ${pay ? `<div style="font-size:.83rem;color:#374151;margin-bottom:.25rem">💰 薪资：<strong>${esc(pay)}${payType}</strong></div>` : ''}
-          ${c.work_address ? `<div style="font-size:.82rem;color:#475569;margin-bottom:.25rem">📍 ${esc(c.work_address)}</div>` : ''}
-          ${desc && isPending ? `<div style="font-size:.8rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.35rem .5rem;margin-bottom:.3rem;line-height:1.45">📋 ${esc(desc.length>100?desc.slice(0,100)+'…':desc)}</div>` : ''}
-          ${isPending ? `<div style="font-size:.79rem;color:#92400e;font-weight:600;margin-bottom:.2rem">请确认您是否接受此任务安排：</div>` : ''}
-          ${actionBtns}
+          ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ ${esc(timeStr)}</div>` : ''}
+          ${(t.work_address||t.location) ? `<div style="font-size:.83rem;color:#4b5563">📍 ${esc(t.work_address||t.location)}</div>` : ''}
+          ${t.start_date ? `<div style="font-size:.83rem;color:#4b5563">📅 开始日期：${fmtDate(t.start_date)}</div>` : ''}
+          <div style="display:flex;gap:.6rem;margin-top:.75rem">
+            <button onclick="respondTask(${t.id},'accepted')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✓ 接受</button>
+            <button onclick="respondTask(${t.id},'rejected')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✕ 拒绝</button>
+          </div>
         </div>`;
     }).join('');
   } else {
     confCard.style.display = 'none';
   }
 
-  const tasks = await wApi('/my-tasks');
   if (!tasks || !tasks.length) {
     el.innerHTML = '<p style="color:var(--gray-500);font-size:.9rem;padding:.5rem 0">暂无任务安排，请联系 HR。</p>';
     return;
@@ -1640,7 +1589,7 @@ async function loadTasks() {
 async function respondTask(id, response) {
   const r = await wApi(`/my-tasks/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
   if (r && r.success) {
-    showToast(response === 'accepted' ? '✅ 已接受任务' : '已拒绝任务');
+    showToast(response === 'accepted' ? '✅ 已接受任务' : '✅ 已拒绝任务');
     loadTasks();
   }
 }
