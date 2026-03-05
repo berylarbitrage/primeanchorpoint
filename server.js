@@ -4965,6 +4965,38 @@ app.post('/api/worker/shift-confirmations/:id/respond', requireWorker, (req, res
   res.json({ success: true });
 });
 
+// Pre-confirm a scheduled (排班中) shift that has no confirmation record yet
+app.post('/api/worker/shift-confirmations/preconfirm', requireWorker, (req, res) => {
+  const { assignment_id, date, response } = req.body;
+  if (!['confirmed', 'declined'].includes(response))
+    return res.status(400).json({ error: 'Invalid response' });
+  if (!assignment_id || !date)
+    return res.status(400).json({ error: 'Missing assignment_id or date' });
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!wa || !wa.linked_inquiry_id) return res.status(403).json({ error: '账号未关联' });
+  // Verify the assignment belongs to this worker
+  const a = db.prepare(`
+    SELECT a.id, a.work_schedule FROM assignments a
+    WHERE a.id=? AND a.inquiry_id=? AND a.status NOT IN ('terminated','resigned','cancelled')
+  `).get(assignment_id, wa.linked_inquiry_id);
+  if (!a) return res.status(404).json({ error: '未找到排班' });
+  // Parse work_schedule to get shift times for this day
+  let sched = {};
+  try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+  const _DOW = ['sun','mon','tue','wed','thu','fri','sat'];
+  const dow = _DOW[new Date(date + 'T00:00:00').getDay()];
+  const dayInfo = (sched.days || {})[dow] || {};
+  const shiftStart = dayInfo.start || '';
+  const shiftEnd = dayInfo.end || '';
+  // Insert or update the confirmation record
+  db.prepare(`
+    INSERT INTO shift_confirmations (assignment_id, date, status, shift_start, shift_end, responded_at)
+    VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(assignment_id, date) DO UPDATE SET status=excluded.status, responded_at=CURRENT_TIMESTAMP
+  `).run(a.id, date, response, shiftStart, shiftEnd);
+  res.json({ success: true });
+});
+
 // ─── Referral endpoints ───────────────────────────────────────────
 app.get('/api/worker/referrals', requireWorker, (req, res) => {
   const me = db.prepare('SELECT worker_code FROM worker_accounts WHERE id=?').get(req.workerId);
