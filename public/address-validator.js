@@ -1,6 +1,6 @@
 // address-validator.js
-// Client-side helper for Google Address Validation (US addresses).
-// Calls the server-side proxy at /api/validate-address (API key is server-side only).
+// Client-side helper for Smarty US Street Address Validation.
+// Calls the server-side proxy at /api/validate-address (credentials are server-side only).
 
 /**
  * Validate structured address fields.
@@ -23,8 +23,8 @@ async function validateAddress({ street, street2, city, state, zip }, { silent =
     const data = await res.json();
     return await _handleResult(data, { street, city, state, zip }, { silent });
   } catch (e) {
-    if (e.name === 'AbortError') console.warn('[Google Address Validation] Request timed out');
-    else console.warn('[Google Address Validation] Error:', e);
+    if (e.name === 'AbortError') console.warn('[Smarty Address Validation] Request timed out');
+    else console.warn('[Smarty Address Validation] Error:', e);
     return { proceed: true };
   } finally {
     clearTimeout(timer);
@@ -61,8 +61,8 @@ async function validateAddressSingleField(address, { silent = false } = {}) {
     }
     return result;
   } catch (e) {
-    if (e.name === 'AbortError') console.warn('[Google Address Validation] Request timed out');
-    else console.warn('[Google Address Validation] Error:', e);
+    if (e.name === 'AbortError') console.warn('[Smarty Address Validation] Request timed out');
+    else console.warn('[Smarty Address Validation] Error:', e);
     return { proceed: true };
   } finally {
     clearTimeout(timer);
@@ -137,7 +137,7 @@ async function _handleResult(data, original, { silent = false } = {}) {
     const useStd = await _showAddrDialog({
       title: '✅ 地址已验证 / Address Verified',
       body:
-        'Google 建议以下标准化地址 / Google suggests:<br><br>' +
+        'Smarty 建议以下标准化地址 / Smarty suggests:<br><br>' +
         '<div style="background:#F0F9FF;border:1px solid #BAE6FD;border-radius:8px;padding:.6rem .9rem;font-weight:600;color:#0F2B5B;line-height:1.7">' +
           stdParts.join('<br>') +
         '</div>' +

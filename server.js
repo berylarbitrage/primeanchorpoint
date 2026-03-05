@@ -7163,84 +7163,67 @@ app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
   res.json({ success: true });
 });
 
-// ─── Google Address Validation ───
+// ─── Smarty US Street Address Validation ───
 app.post('/api/validate-address', async (req, res) => {
-  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) {
+  const authId    = process.env.SMARTY_AUTH_ID;
+  const authToken = process.env.SMARTY_AUTH_TOKEN;
+  if (!authId || !authToken) {
     return res.json({ skipped: true });
   }
   const { street, street2, city, state, zip } = req.body || {};
   if (!street) return res.status(400).json({ error: 'street is required' });
 
-  const addressLines = [street];
-  if (street2) addressLines.push(street2);
+  const params = new URLSearchParams({
+    'auth-id':    authId,
+    'auth-token': authToken,
+    street:       street || '',
+    city:         city   || '',
+    state:        state  || '',
+    zipcode:      zip    || '',
+    candidates:   '1'
+  });
+  if (street2) params.set('street2', street2);
 
-  const payload = {
-    address: {
-      regionCode: 'US',
-      addressLines,
-      ...(city  && { locality: city }),
-      ...(state && { administrativeArea: state }),
-      ...(zip   && { postalCode: zip })
-    }
-  };
-
-  const url = `https://addressvalidation.googleapis.com/v1:validateAddress?key=${apiKey}`;
+  const url = `https://us-street.api.smarty.com/street-address?${params.toString()}`;
   try {
     const https = require('https');
     const raw = await new Promise((resolve, reject) => {
-      const body = JSON.stringify(payload);
-      const opts = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
-      };
-      const req2 = https.request(url, opts, r => {
+      const req2 = https.get(url, r => {
         let data = '';
         r.on('data', chunk => data += chunk);
-        r.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid JSON from Google')); } });
+        r.on('end', () => { try { resolve(JSON.parse(data)); } catch { reject(new Error('Invalid JSON from Smarty')); } });
       });
-      req2.setTimeout(10000, () => { req2.destroy(new Error('Google API request timed out')); });
+      req2.setTimeout(10000, () => { req2.destroy(new Error('Smarty API request timed out')); });
       req2.on('error', reject);
-      req2.write(body);
-      req2.end();
     });
 
-    if (raw.error) {
-      console.error('[Google Address Validation] API error:', raw.error.message);
-      return res.status(500).json({ error: 'Address validation service error' });
-    }
-
-    const result = raw.result || {};
-    const verdict = result.verdict || {};
-    const postalAddress = result.address?.postalAddress || {};
-    const uspsData = result.uspsData || {};
-
-    const dpv = uspsData.dpvConfirmation;
-    const granularity = verdict.validationGranularity;
-    const undeliverable = dpv === 'N' || granularity === 'OTHER' || granularity === 'ROUTE';
-
-    if (undeliverable) {
+    if (!Array.isArray(raw) || raw.length === 0) {
       return res.json({ valid: false });
     }
 
-    const addrLines = postalAddress.addressLines || [];
-    const fullZip = postalAddress.postalCode || zip || '';
-    const zipParts = fullZip.replace('-', '').match(/^(\d{5})(\d{4})?$/);
+    const candidate  = raw[0];
+    const analysis   = candidate.analysis   || {};
+    const components = candidate.components || {};
+    const dpv        = analysis.dpv_match_code;
+
+    if (dpv === 'N') {
+      return res.json({ valid: false });
+    }
 
     return res.json({
       valid: true,
       dpv_match_code: dpv,
       standardized: {
-        street:  addrLines[0] || street,
-        street2: addrLines[1] || '',
-        city:    postalAddress.locality || city || '',
-        state:   postalAddress.administrativeArea || state || '',
-        zip:     zipParts ? zipParts[1] : fullZip.substring(0, 5),
-        zip4:    zipParts ? (zipParts[2] || '') : ''
+        street:  candidate.delivery_line_1 || street,
+        street2: candidate.delivery_line_2 || '',
+        city:    components.city_name            || city  || '',
+        state:   components.state_abbreviation   || state || '',
+        zip:     components.zipcode              || (zip  || '').substring(0, 5),
+        zip4:    components.plus4_code           || ''
       }
     });
   } catch (e) {
-    console.error('[Google Address Validation] Error:', e.message);
+    console.error('[Smarty Address Validation] Error:', e.message);
     return res.status(500).json({ error: 'Address validation service error' });
   }
 });
@@ -7343,6 +7326,6 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
-  console.log(`[Address Validation] GOOGLE_MAPS_API_KEY: ${process.env.GOOGLE_MAPS_API_KEY ? 'SET (' + process.env.GOOGLE_MAPS_API_KEY.substring(0, 8) + '...)' : 'NOT SET — address validation will be skipped'}`);
+  console.log(`[Address Validation] SMARTY_AUTH_ID: ${process.env.SMARTY_AUTH_ID ? 'SET' : 'NOT SET — address validation will be skipped'}`);
 
 });
