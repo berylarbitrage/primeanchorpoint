@@ -541,8 +541,7 @@ tr:last-child td{border-bottom:none}
     <div id="tabApplications" style="display:none">
       <div class="card">
         <h2>我的申请记录</h2>
-        <table><thead><tr><th>职位</th><th>地点</th><th>申请状态</th><th>申请时间</th></tr></thead>
-        <tbody id="applicationsTable"></tbody></table>
+        <div id="applicationsTable"></div>
       </div>
     </div>
 
@@ -2066,12 +2065,18 @@ async function loadApplications() {
   _myApps = apps;
   const statusLabel = { pending:'待审核', interview_scheduled:'已安排面试', approved:'已通过', rejected:'未通过', assigned:'已派工' };
   const statusColor = { pending:'color:var(--orange)', interview_scheduled:'color:#2563eb', approved:'color:var(--green)', rejected:'color:var(--red)', assigned:'color:var(--sky)' };
-  document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map((a,i)=>`<tr onclick="openAppDetail(${i})" style="cursor:pointer" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''">
-    <td><strong>${esc(a.title||'—')}</strong><br><small style="color:var(--gray-400)">Client: ${esc(a.company_name||'')}</small></td>
-    <td style="font-size:.85rem;color:var(--gray-400)">录取后公布</td>
-    <td><span style="font-weight:600;${statusColor[a.status]||''}">${statusLabel[a.status]||a.status}</span></td>
-    <td style="font-size:.82rem;color:var(--gray-400)">${(a.created_at||'').slice(0,10)}</td>
-  </tr>`).join('') : '<tr><td colspan="4" class="empty">暂无申请记录</td></tr>';
+  document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map((a,i)=>`
+    <div onclick="openAppDetail(${i})" style="cursor:pointer;border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.6rem;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:.75rem;transition:background .15s" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background='#fff'">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:.95rem;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.title||'—')}</div>
+        ${a.company_name ? `<div style="font-size:.8rem;color:var(--gray-400);margin-top:.1rem">Client: ${esc(a.company_name)}</div>` : ''}
+        <div style="font-size:.78rem;color:var(--gray-400);margin-top:.2rem">${(a.created_at||'').slice(0,10)}</div>
+      </div>
+      <div style="flex-shrink:0;text-align:right">
+        <span style="font-weight:700;font-size:.85rem;${statusColor[a.status]||''}">${statusLabel[a.status]||a.status}</span>
+        <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">›</div>
+      </div>
+    </div>`).join('') : '<div class="empty" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无申请记录</div>';
 }
 
 function openAppDetail(idx) {
