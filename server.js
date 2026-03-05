@@ -1056,6 +1056,46 @@ if (!db.prepare('SELECT id FROM skill_options LIMIT 1').get()) {
   const ins = db.prepare('INSERT INTO skill_options (name_zh, name_en, sort_order) VALUES (?,?,?)');
   seeds.forEach(([zh, en], i) => ins.run(zh, en, i));
 }
+// Job title options (used as a fixed list in the job creation modal)
+db.exec(`CREATE TABLE IF NOT EXISTS job_title_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_en TEXT NOT NULL,
+  name_zh TEXT DEFAULT '',
+  name_es TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM job_title_options LIMIT 1').get()) {
+  const jSeeds = [
+    'General Laborer','Warehouse Associate','Warehouse Worker','Production Associate',
+    'Material Handler','Order Picker','Order Packer','Fulfillment Associate',
+    'Loading / Unloading Associate','Order Fulfillment Associate','Inventory Associate',
+    'Logistics Assistant','General Labor','Temporary Worker','Contract Worker'
+  ];
+  const jIns = db.prepare('INSERT INTO job_title_options (name_en, sort_order) VALUES (?,?)');
+  jSeeds.forEach((n, i) => jIns.run(n, i));
+}
+
+// Display suffix options (rotate daily in worker portal)
+db.exec(`CREATE TABLE IF NOT EXISTS display_suffix_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_en TEXT NOT NULL,
+  name_zh TEXT DEFAULT '',
+  name_es TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM display_suffix_options LIMIT 1').get()) {
+  const sSeeds = [
+    'Contract Assignment','Client Assignment','Work Assignment','Temporary Engagement',
+    'Contract Placement','Project Assignment','Client Site Assignment','On-Site Assignment',
+    'Third-Party Assignment','Client Placement','Short-Term Assignment',
+    'Seasonal Assignment','Temporary Project'
+  ];
+  const sIns = db.prepare('INSERT INTO display_suffix_options (name_en, sort_order) VALUES (?,?)');
+  sSeeds.forEach((n, i) => sIns.run(n, i));
+}
+
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 
@@ -5216,6 +5256,59 @@ app.put('/api/admin/skill-options/:id', requireAdmin, requireRole('admin'), (req
 app.delete('/api/admin/skill-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM skill_options WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// Admin: job title options CRUD
+app.get('/api/admin/job-title-options', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM job_title_options ORDER BY sort_order, id').all());
+});
+app.post('/api/admin/job-title-options', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '职位名称不能为空' });
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM job_title_options').get().m;
+  const r = db.prepare('INSERT INTO job_title_options (name_en, name_zh, name_es, sort_order) VALUES (?,?,?,?)')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), maxOrder+1);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/job-title-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es, sort_order } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '职位名称不能为空' });
+  db.prepare('UPDATE job_title_options SET name_en=?, name_zh=?, name_es=?, sort_order=? WHERE id=?')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), sort_order ?? 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/job-title-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM job_title_options WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Admin: display suffix options CRUD
+app.get('/api/admin/display-suffix-options', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM display_suffix_options ORDER BY sort_order, id').all());
+});
+app.post('/api/admin/display-suffix-options', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '后缀词不能为空' });
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM display_suffix_options').get().m;
+  const r = db.prepare('INSERT INTO display_suffix_options (name_en, name_zh, name_es, sort_order) VALUES (?,?,?,?)')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), maxOrder+1);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/display-suffix-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es, sort_order } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '后缀词不能为空' });
+  db.prepare('UPDATE display_suffix_options SET name_en=?, name_zh=?, name_es=?, sort_order=? WHERE id=?')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), sort_order ?? 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/display-suffix-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM display_suffix_options WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Worker: get display suffixes (for daily rotation in portal)
+app.get('/api/worker/display-suffixes', requireWorker, (req, res) => {
+  res.json(db.prepare('SELECT id, name_en, name_zh, name_es FROM display_suffix_options ORDER BY sort_order, id').all());
 });
 
 // Admin: list ALL referral records across all workers
