@@ -789,6 +789,9 @@ db.exec(`
 `);
 // Migrate: add assigned_partner_ids to admin_users (for manager role)
 try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN city TEXT DEFAULT ''"); } catch {}
 // Migrate: add lang/positions to employee_doc_requests
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
@@ -873,6 +876,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_invites (
   used_at DATETIME DEFAULT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+try { db.exec(`ALTER TABLE admin_invites ADD COLUMN created_by INTEGER DEFAULT NULL`); } catch(e) {}
 
 // Manager self-registration invite links
 db.exec(`CREATE TABLE IF NOT EXISTS manager_invites (
@@ -888,6 +892,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS manager_invites (
 
 // Temp verification codes for manager registration
 db.exec(`CREATE TABLE IF NOT EXISTS manager_reg_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL,
+  contact TEXT NOT NULL,
+  contact_type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Temp email verification codes for admin invite registration
+db.exec(`CREATE TABLE IF NOT EXISTS admin_reg_codes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token TEXT NOT NULL,
   contact TEXT NOT NULL,
@@ -1744,10 +1759,22 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(defaultPass, salt);
     db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)').run(defaultUser, hash, salt, 'admin', 'Administrator');
-    console.log(`[Auth] Seeded default admin user: ${defaultUser}`);
+    console.log(`[Auth] Seeded default admin user: ${defaultUser} / ${defaultPass}`);
   }
   // Ensure the first user (original seeded admin) has admin role
   try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
+  // Force-reset admin password if RESET_ADMIN_PASS env var is set
+  if (process.env.RESET_ADMIN_PASS) {
+    const targetUser = process.env.ADMIN_USER || 'admin';
+    const newPass = process.env.RESET_ADMIN_PASS;
+    const user = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(targetUser);
+    if (user) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = hashPassword(newPass, salt);
+      db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
+      console.log(`[Auth] Reset admin password for user: ${targetUser}`);
+    }
+  }
 }
 
 // DB-backed session store (survives server restarts, tokens expire in 24h)
@@ -2043,6 +2070,38 @@ app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
   res.json(db.prepare(q).all(...params));
 });
 
+// GET /api/manager/interviews — interview requests for workers at this manager's partner companies
+app.get('/api/manager/interviews', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  let workerFilter = '';
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    workerFilter = `AND i.worker_account_id IN (
+      SELECT DISTINCT wa.id FROM worker_accounts wa
+      JOIN employees e ON wa.employee_id = e.id
+      WHERE e.id IN (
+        SELECT DISTINCT t.employee_id FROM time_entries t
+        JOIN jobs j ON t.job_id = j.id
+        WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+      )
+    )`;
+    params.push(...pids);
+  }
+  const rows = db.prepare(`
+    SELECT i.id, i.status, i.admin_notes, i.created_at,
+      s.slot_datetime, s.duration_min, s.location,
+      w.id AS worker_id, w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.work_status, w.identity_status
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+    WHERE 1=1 ${workerFilter}
+    ORDER BY s.slot_datetime DESC
+  `).all(...params);
+  res.json(rows);
+});
+
 // GET /api/manager/workers — employees visible to this manager with contact info
 app.get('/api/manager/workers', requireAdmin, (req, res) => {
   const pids = managerPartnerIds(req);
@@ -2107,24 +2166,35 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
 });
 
 // ─── Admin Invite Links ───────────────────────────────────────────
+function inviteUrlPath(role) {
+  if (role === 'staff') return '/staff';
+  if (role === 'manager') return '/manager';
+  return '/admin-invite';
+}
+
 app.get('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
   const rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const host  = req.headers['x-forwarded-host'] || req.headers.host;
-  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}/admin-invite?token=${r.token}` })));
+  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}${inviteUrlPath(r.role)}?token=${r.token}` })));
 });
 
 app.post('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
-  const { role, hours, notes, assigned_partner_ids } = req.body;
-  if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
-  const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
-  const token = crypto.randomBytes(28).toString('hex');
-  const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
-  db.prepare('INSERT INTO admin_invites (token, role, notes, assigned_partner_ids, expires_at) VALUES (?,?,?,?,?)')
-    .run(token, role, notes || '', assigned_partner_ids || '', expiresAt);
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const host  = req.headers['x-forwarded-host'] || req.headers.host;
-  res.json({ success: true, url: `${proto}://${host}/admin-invite?token=${token}` });
+  try {
+    const { role, hours, notes, assigned_partner_ids } = req.body;
+    if (!['staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
+    const token = crypto.randomBytes(28).toString('hex');
+    const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+    db.prepare('INSERT INTO admin_invites (token, role, notes, assigned_partner_ids, expires_at, created_by) VALUES (?,?,?,?,?,?)')
+      .run(token, role, notes || '', assigned_partner_ids || '', expiresAt, req.userId);
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const host  = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    res.json({ success: true, url: `${proto}://${host}${inviteUrlPath(role)}?token=${token}` });
+  } catch(e) {
+    console.error('invite-links POST error:', e);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin'), (req, res) => {
@@ -2142,26 +2212,69 @@ app.get('/api/admin-invite/verify', (req, res) => {
 });
 
 // Public: register admin account via invite token
-app.post('/api/admin-invite/register', async (req, res) => {
-  const { token, username, display_name, password } = req.body;
-  if (!token || !username || !password) return res.status(400).json({ error: '缺少必填字段' });
-  if (password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+app.post('/api/admin-invite/send-code', async (req, res) => {
+  const { token, phone } = req.body;
+  if (!token || !phone) return res.status(400).json({ error: '缺少参数' });
   const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
   if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  const sent = await sendVerifyCode(phone, 'sms');
+  res.json({ success: true, skipped: !sent });
+});
+
+app.post('/api/admin-invite/send-email-code', async (req, res) => {
+  const { token, email } = req.body;
+  if (!token || !email) return res.status(400).json({ error: '缺少参数' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchorpoint',
+    `您的邮箱验证码是 ${code}，15分钟内有效。\nYour email verification code is ${code}, valid for 15 minutes.`,
+    verificationCodeHtml(code));
+  if (sent) {
+    db.prepare('DELETE FROM admin_reg_codes WHERE token=? AND contact=?').run(token, email);
+    db.prepare('INSERT INTO admin_reg_codes (token, contact, contact_type, code, expires_at) VALUES (?,?,?,?,?)').run(token, email, 'email', code, expiresAt);
+  }
+  res.json({ success: true, skipped: !sent });
+});
+
+app.post('/api/admin-invite/register', async (req, res) => {
+  const { token, username, display_name, first_name, middle_name, last_name, password, phone, email, city, state, zip, sms_code, email_code } = req.body;
+  if (!token || !username || !password) return res.status(400).json({ error: '缺少必填字段' });
+  if (password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+  if (!phone) return res.status(400).json({ error: '请填写手机号' });
+  if (!email) return res.status(400).json({ error: '请填写邮箱' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  // Verify SMS code
+  if (twilioClient && TWILIO_VERIFY_SID && sms_code) {
+    const ok = await checkVerifyCode(phone, sms_code);
+    if (!ok) return res.status(400).json({ error: '手机验证码错误或已过期，请重试' });
+  } else if (twilioClient && TWILIO_VERIFY_SID && !sms_code) {
+    return res.status(400).json({ error: '请输入手机验证码' });
+  }
+  // Verify email code (stored in DB via sendEmail)
+  const emailVc = db.prepare("SELECT * FROM admin_reg_codes WHERE token=? AND contact=? AND contact_type='email' AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1").get(token, email);
+  if (emailVc) {
+    if (!email_code) return res.status(400).json({ error: '请输入邮箱验证码' });
+    if (emailVc.code !== String(email_code)) return res.status(400).json({ error: '邮箱验证码错误或已过期，请重试' });
+  }
   const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(username);
   if (existing) return res.status(400).json({ error: '用户名已存在，请换一个' });
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active) VALUES (?,?,?,?,?,?,1)')
-    .run(username, hash, salt, inv.role, display_name || username, inv.assigned_partner_ids || '');
+  const fullName = [first_name, middle_name, last_name].filter(Boolean).join(' ') || display_name || username;
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active, phone, email, city) VALUES (?,?,?,?,?,?,1,?,?,?)')
+    .run(username, hash, salt, inv.role, fullName, inv.assigned_partner_ids || '', phone || '', email || '', city || '');
   db.prepare('UPDATE admin_invites SET used=1, used_at=CURRENT_TIMESTAMP WHERE id=?').run(inv.id);
+  db.prepare('DELETE FROM admin_reg_codes WHERE token=?').run(token);
   const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
   const sessionToken = createSession(user);
   res.json({ success: true, token: sessionToken, role: user.role, username: user.username, display_name: user.display_name });
 });
 
-// Serve admin invite registration page
-app.get('/admin-invite', (req, res) => {
+// Serve admin invite registration page (shared handler for /admin-invite, /staff, /manager)
+function serveAdminInvitePage(req, res) {
   res.send(`<!DOCTYPE html>
 <html lang="zh-CN">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2169,57 +2282,107 @@ app.get('/admin-invite', (req, res) => {
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
-.card{background:#fff;border-radius:16px;padding:2rem;width:100%;max-width:420px;box-shadow:0 4px 24px rgba(0,0,0,.1)}
-h1{font-size:1.3rem;font-weight:700;color:#1e293b;margin-bottom:.25rem}
-.sub{font-size:.85rem;color:#64748b;margin-bottom:1.5rem}
-label{display:block;font-size:.8rem;font-weight:600;color:#475569;margin-bottom:.25rem;margin-top:.85rem}
-input{width:100%;padding:.6rem .75rem;border:1px solid #cbd5e1;border-radius:8px;font-size:.95rem;outline:none;transition:border .15s}
-input:focus{border-color:#3b82f6}
-.btn{width:100%;padding:.75rem;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:.97rem;font-weight:700;cursor:pointer;margin-top:1.25rem}
-.btn:hover{background:#1e40af}
+.card{background:#fff;border-radius:16px;padding:2.5rem 2rem;width:100%;max-width:420px;box-shadow:0 4px 24px rgba(0,0,0,.1)}
+.logo-wrap{text-align:center;margin-bottom:1.25rem}
+.logo-wrap img{width:72px;height:72px;object-fit:contain}
+h1{text-align:center;font-size:1.3rem;font-weight:700;color:#0F2B5B;margin-bottom:.25rem}
+.sub{text-align:center;font-size:.85rem;color:#64748b;margin-bottom:1.5rem;line-height:1.5}
+label{display:block;font-size:.8rem;font-weight:600;color:#475569;margin-bottom:.3rem;margin-top:.85rem}
+input{width:100%;padding:.65rem .85rem;border:1.5px solid #e2e8f0;border-radius:9px;font-size:.95rem;outline:none;transition:border .15s;font-family:inherit}
+input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
+.phone-row{display:flex;gap:.5rem;align-items:flex-end}
+.phone-row input{flex:1}
+.field-row{display:flex;gap:.5rem}
+.field-row input{flex:1;margin-top:0}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:2.4rem}
+.pw-eye{position:absolute;right:.7rem;top:50%;transform:translateY(-50%);cursor:pointer;color:#94a3b8;font-size:1.05rem;user-select:none;line-height:1}
+.send-btn{white-space:nowrap;padding:.65rem 1rem;background:#f0f9ff;color:#0369a1;border:1.5px solid #bae6fd;border-radius:9px;font-size:.82rem;font-weight:700;cursor:pointer;transition:background .15s;flex-shrink:0}
+.send-btn:hover:not(:disabled){background:#e0f2fe}
+.send-btn:disabled{opacity:.5;cursor:default}
+.btn{width:100%;padding:.8rem;background:#1d4ed8;color:#fff;border:none;border-radius:9px;font-size:.97rem;font-weight:700;cursor:pointer;margin-top:1.4rem;transition:background .15s}
+.btn:hover:not(:disabled){background:#1e40af}
 .btn:disabled{opacity:.5;cursor:default}
-.err{color:#dc2626;font-size:.82rem;margin-top:.4rem}
-.role-badge{display:inline-block;padding:.25rem .75rem;border-radius:99px;font-size:.78rem;font-weight:700;margin-bottom:.5rem}
-.logo{font-weight:800;font-size:1.1rem;color:#1d4ed8;margin-bottom:1.25rem}
-.ok{color:#16a34a;font-size:.88rem;margin-top:.5rem}
+.err{color:#dc2626;font-size:.82rem;margin-top:.6rem;padding:.4rem .6rem;background:#fef2f2;border-radius:6px;display:none}
+.role-badge{display:inline-block;padding:.2rem .7rem;border-radius:99px;font-size:.78rem;font-weight:700;background:#dbeafe;color:#1d4ed8}
+.ok{color:#16a34a;font-size:1rem;font-weight:700;margin-top:.5rem;text-align:center}
+.hint{font-size:.76rem;color:#94a3b8;margin-top:.25rem}
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="logo">🏢 Prime Anchorpoint</div>
-  <h1 id="title">账户注册</h1>
+  <div class="logo-wrap"><img src="/logo.svg" alt="Prime Anchorpoint" onerror="this.style.display='none'"></div>
+  <h1>账户注册</h1>
   <div class="sub" id="sub">加载中…</div>
   <div id="form" style="display:none">
     <label>用户名 <span style="color:#94a3b8;font-weight:400">(登录用)</span></label>
     <input id="username" placeholder="设置登录用户名" autocomplete="username">
-    <label>显示名称 <span style="color:#94a3b8;font-weight:400">(可选)</span></label>
-    <input id="display_name" placeholder="您的姓名或称谓">
+    <label>姓名 / Full Name</label>
+    <div class="field-row">
+      <input id="first_name" placeholder="First" autocomplete="given-name">
+      <input id="middle_name" placeholder="Middle" autocomplete="additional-name">
+      <input id="last_name" placeholder="Last" autocomplete="family-name">
+    </div>
+    <label>手机号 / Phone <span style="color:#dc2626">*</span></label>
+    <div class="phone-row">
+      <input id="phone" type="tel" placeholder="10位美国手机号" autocomplete="tel" oninput="resetCode()">
+      <button class="send-btn" id="sendCodeBtn" onclick="sendCode()">发送验证码</button>
+    </div>
+    <div id="codeWrap" style="display:none">
+      <label>验证码 / Code</label>
+      <input id="sms_code" type="text" inputmode="numeric" maxlength="6" placeholder="6位验证码">
+      <div class="hint">验证码已发送至您的手机，15分钟内有效</div>
+    </div>
+    <label>邮箱 / Email <span style="color:#dc2626">*</span></label>
+    <div class="phone-row">
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email" oninput="resetEmailCode()">
+      <button class="send-btn" id="sendEmailCodeBtn" onclick="sendEmailCode()">发送验证码</button>
+    </div>
+    <div id="emailCodeWrap" style="display:none">
+      <label>邮箱验证码 / Email Code</label>
+      <input id="email_code" type="text" inputmode="numeric" maxlength="6" placeholder="6位验证码">
+      <div class="hint">验证码已发送至您的邮箱，15分钟内有效</div>
+    </div>
+    <label>所在城市 / City</label>
+    <div class="field-row">
+      <input id="city" placeholder="City" style="flex:2" autocomplete="address-level2">
+      <input id="state" placeholder="State" maxlength="2" style="flex:1;text-transform:uppercase" autocomplete="address-level1">
+      <input id="zip" placeholder="Zipcode" maxlength="10" inputmode="numeric" style="flex:1" autocomplete="postal-code">
+    </div>
     <label>密码</label>
-    <input id="password" type="password" placeholder="至少 6 位" autocomplete="new-password">
+    <div class="pw-wrap">
+      <input id="password" type="password" placeholder="至少 6 位" autocomplete="new-password">
+      <span class="pw-eye" onclick="togglePw('password',this)">👁</span>
+    </div>
     <label>确认密码</label>
-    <input id="password2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+    <div class="pw-wrap">
+      <input id="password2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+      <span class="pw-eye" onclick="togglePw('password2',this)">👁</span>
+    </div>
     <div id="err" class="err"></div>
     <button class="btn" id="btn" onclick="doRegister()">创建账户</button>
   </div>
   <div id="done" style="display:none">
-    <div class="ok" style="font-size:1rem;font-weight:700;margin-top:.5rem">✅ 注册成功！</div>
-    <div style="font-size:.85rem;color:#475569;margin-top:.5rem">账户已创建，正在跳转…</div>
+    <div class="ok">✅ 注册成功！</div>
+    <div style="font-size:.85rem;color:#475569;margin-top:.5rem;text-align:center">账户已创建，正在跳转…</div>
   </div>
   <div id="expired" style="display:none">
-    <div style="color:#dc2626;font-weight:700;margin-top:.5rem">❌ 链接已失效</div>
-    <div style="font-size:.83rem;color:#64748b;margin-top:.4rem">此邀请链接已过期或已被使用，请联系管理员重新发送。</div>
+    <div style="color:#dc2626;font-weight:700;margin-top:.5rem;text-align:center">❌ 链接已失效</div>
+    <div style="font-size:.83rem;color:#64748b;margin-top:.4rem;text-align:center">此邀请链接已过期或已被使用，请联系管理员重新发送。</div>
   </div>
 </div>
 <script>
 const token = new URLSearchParams(location.search).get('token') || '';
 const ROLE_LABEL = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理' };
+let codeSent = false, codeSkipped = false;
+let emailCodeSent = false, emailCodeSkipped = false;
 async function init() {
   if (!token) { showExpired(); return; }
   try {
     const r = await fetch('/api/admin-invite/verify?token=' + encodeURIComponent(token));
     const d = await r.json();
     if (!r.ok) { showExpired(); return; }
-    document.getElementById('sub').innerHTML = \`您被邀请注册为 <span class="role-badge" style="background:#dbeafe;color:#1d4ed8">\${ROLE_LABEL[d.role]||d.role}</span>\${d.notes ? \` — \${d.notes}\` : ''}\`;
+    document.getElementById('sub').innerHTML = \`您被邀请注册为 <span class="role-badge">\${ROLE_LABEL[d.role]||d.role}</span>\${d.notes ? \` — \${d.notes}\` : ''}\`;
     document.getElementById('form').style.display = '';
   } catch { showExpired(); }
 }
@@ -2227,27 +2390,89 @@ function showExpired() {
   document.getElementById('sub').style.display='none';
   document.getElementById('expired').style.display='';
 }
+function showErr(msg) {
+  const el = document.getElementById('err');
+  el.textContent = msg; el.style.display = msg ? 'block' : 'none';
+}
+function resetCode() { codeSent = false; codeSkipped = false; document.getElementById('codeWrap').style.display='none'; }
+function resetEmailCode() { emailCodeSent = false; emailCodeSkipped = false; document.getElementById('emailCodeWrap').style.display='none'; }
+async function sendCode() {
+  const phone = document.getElementById('phone').value.trim().replace(/\D/g,'');
+  if (phone.length < 10) { showErr('请填写有效的10位手机号'); return; }
+  const btn = document.getElementById('sendCodeBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  showErr('');
+  try {
+    const r = await fetch('/api/admin-invite/send-code', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, phone }) });
+    const d = await r.json();
+    if (!r.ok) { showErr(d.error || '发送失败'); btn.disabled=false; btn.textContent='发送验证码'; return; }
+    codeSent = true; codeSkipped = d.skipped || false;
+    if (!codeSkipped) {
+      document.getElementById('codeWrap').style.display = '';
+      btn.textContent = '重新发送'; btn.disabled = false;
+    } else {
+      btn.textContent = '已跳过';
+    }
+  } catch { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='发送验证码'; }
+}
+async function sendEmailCode() {
+  const email = document.getElementById('email').value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
+  const btn = document.getElementById('sendEmailCodeBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  showErr('');
+  try {
+    const r = await fetch('/api/admin-invite/send-email-code', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, email }) });
+    const d = await r.json();
+    if (!r.ok) { showErr(d.error || '发送失败'); btn.disabled=false; btn.textContent='发送验证码'; return; }
+    emailCodeSent = true; emailCodeSkipped = d.skipped || false;
+    if (!emailCodeSkipped) {
+      document.getElementById('emailCodeWrap').style.display = '';
+      btn.textContent = '重新发送'; btn.disabled = false;
+    } else {
+      btn.textContent = '已跳过';
+    }
+  } catch { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='发送验证码'; }
+}
+function togglePw(id, el) {
+  const inp = document.getElementById(id);
+  if (inp.type === 'password') { inp.type = 'text'; el.style.opacity = '1'; }
+  else { inp.type = 'password'; el.style.opacity = '.5'; }
+}
 async function doRegister() {
   const btn = document.getElementById('btn');
-  const err = document.getElementById('err');
+  showErr('');
   const username = document.getElementById('username').value.trim();
-  const display_name = document.getElementById('display_name').value.trim();
+  const first_name = document.getElementById('first_name').value.trim();
+  const middle_name = document.getElementById('middle_name').value.trim();
+  const last_name = document.getElementById('last_name').value.trim();
+  const display_name = [first_name, middle_name, last_name].filter(Boolean).join(' ');
+  const phone = document.getElementById('phone').value.trim().replace(/\D/g,'');
+  const email = document.getElementById('email').value.trim();
+  const city = document.getElementById('city').value.trim();
+  const state = document.getElementById('state').value.trim();
+  const zip = document.getElementById('zip').value.trim();
+  const sms_code = document.getElementById('sms_code').value.trim();
+  const email_code = document.getElementById('email_code').value.trim();
   const password = document.getElementById('password').value;
   const password2 = document.getElementById('password2').value;
-  err.textContent = '';
-  if (!username) { err.textContent = '请填写用户名'; return; }
-  if (password.length < 6) { err.textContent = '密码至少 6 位'; return; }
-  if (password !== password2) { err.textContent = '两次密码不一致'; return; }
+  if (!username) { showErr('请填写用户名'); return; }
+  if (!first_name || !last_name) { showErr('请填写名字（First Name 和 Last Name）'); return; }
+  if (!phone || phone.length < 10) { showErr('请填写有效的手机号'); return; }
+  if (!codeSent && !codeSkipped) { showErr('请先发送手机验证码并填写验证码'); return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
+  if (!emailCodeSent && !emailCodeSkipped) { showErr('请先发送邮箱验证码并填写验证码'); return; }
+  if (password.length < 6) { showErr('密码至少 6 位'); return; }
+  if (password !== password2) { showErr('两次密码不一致'); return; }
   btn.disabled = true; btn.textContent = '注册中…';
   try {
-    const r = await fetch('/api/admin-invite/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, username, display_name, password }) });
+    const r = await fetch('/api/admin-invite/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, username, display_name, first_name, middle_name, last_name, phone, email, city, state, zip, sms_code, email_code, password }) });
     const d = await r.json();
-    if (!r.ok) { err.textContent = d.error || '注册失败'; btn.disabled=false; btn.textContent='创建账户'; return; }
-    // Save token and redirect
+    if (!r.ok) { showErr(d.error || '注册失败'); btn.disabled=false; btn.textContent='创建账户'; return; }
     localStorage.setItem('adminToken', d.token);
     document.getElementById('form').style.display = 'none';
     document.getElementById('done').style.display = '';
-    // Store token in the key that each portal reads
+    // Store token in the key that each portal reads from localStorage
     if (d.role === 'manager') {
       localStorage.setItem('mgr_token', d.token);
     } else {
@@ -2255,12 +2480,25 @@ async function doRegister() {
     }
     const dest = d.role === 'manager' ? '/manager' : '/admin';
     setTimeout(() => { location.href = dest; }, 1500);
-  } catch(e) { err.textContent = '网络错误，请重试'; btn.disabled=false; btn.textContent='创建账户'; }
+  } catch(e) { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='创建账户'; }
 }
 init();
 </script>
 </body>
 </html>`);
+}
+
+app.get('/admin-invite', serveAdminInvitePage);
+// /staff and /manager: serve invite page if token present, otherwise portal
+app.get('/staff', (req, res) => {
+  if (req.query.token) return serveAdminInvitePage(req, res);
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(require('path').join(__dirname, 'public', 'staff.html'));
+});
+app.get('/manager', (req, res) => {
+  if (req.query.token) return serveAdminInvitePage(req, res);
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(require('path').join(__dirname, 'public', 'manager.html'));
 });
 
 // ─── Manager Invite Links ───
@@ -4911,14 +5149,6 @@ app.get('/admin', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
-app.get('/staff', (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  res.sendFile(path.join(__dirname, 'public', 'staff.html'));
-});
-app.get('/manager', (req, res) => {
-  res.setHeader('Cache-Control', 'no-store');
-  res.sendFile(path.join(__dirname, 'public', 'manager.html'));
-});
 
 // ─── Worker Portal API ───
 app.post('/api/worker/login', (req, res) => {
@@ -5242,7 +5472,19 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   }
 
   // ── Clock in ─────────────────────────────────────────────────────
-  if (open) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  if (open) {
+    // Allow clocking in on a new day even if previous day's clock-out was missed
+    const { force_new_day } = req.body;
+    const nowLocal2 = new Date();
+    const todayStr2 = `${nowLocal2.getFullYear()}-${String(nowLocal2.getMonth()+1).padStart(2,'0')}-${String(nowLocal2.getDate()).padStart(2,'0')}`;
+    const entryLocal2 = new Date(open.clock_in);
+    const entryStr2 = `${entryLocal2.getFullYear()}-${String(entryLocal2.getMonth()+1).padStart(2,'0')}-${String(entryLocal2.getDate()).padStart(2,'0')}`;
+    if (entryStr2 < todayStr2 && force_new_day) {
+      // Leave previous day's entry unclosed for manager to review — just proceed to create new entry
+    } else {
+      return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+    }
+  }
   if (!latitude || !longitude) return res.status(400).json({ error: '打卡需要开启位置权限，请允许浏览器获取您的位置后重试。/ Location permission required to clock in.', need_gps: true });
   if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
   let activeJob = db.prepare(`
@@ -5704,6 +5946,17 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     ? (db.prepare(`SELECT COUNT(*) AS cnt FROM assignments WHERE inquiry_id=? AND status != 'cancelled' AND (worker_response IS NULL OR worker_response = '')`).get(linkedInqId)?.cnt || 0)
     : 0;
 
+  // Detect if open entry is from a previous calendar day (worker forgot to clock out)
+  let missed_checkout = false;
+  let missed_date = null;
+  if (open) {
+    const nowLocal = new Date();
+    const todayStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth()+1).padStart(2,'0')}-${String(nowLocal.getDate()).padStart(2,'0')}`;
+    const entryLocal = new Date(open.clock_in);
+    const entryStr = `${entryLocal.getFullYear()}-${String(entryLocal.getMonth()+1).padStart(2,'0')}-${String(entryLocal.getDate()).padStart(2,'0')}`;
+    if (entryStr < todayStr) { missed_checkout = true; missed_date = entryStr; }
+  }
+
   res.json({
     clocked_in: !!open,
     on_break: !!(open?.on_break),
@@ -5712,7 +5965,9 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     has_active_job: activeJobs.length > 0,
     pending_tasks_count: pendingTasksCount,
     active_jobs: activeJobs,
-    active_job: activeJobs[0] || null
+    active_job: activeJobs[0] || null,
+    missed_checkout,
+    missed_date
   });
 });
 
@@ -7552,6 +7807,5 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
-  console.log(`[Address Validation] GOOGLE_MAPS_API_KEY: ${process.env.GOOGLE_MAPS_API_KEY ? 'SET (' + process.env.GOOGLE_MAPS_API_KEY.substring(0, 8) + '...)' : 'NOT SET — address validation will be skipped'}`);
 
 });

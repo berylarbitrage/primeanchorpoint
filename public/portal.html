@@ -184,9 +184,9 @@ tr:last-child td{border-bottom:none}
 }
 </style>
 <script src="https://cdn.withpersona.com/dist/persona-v5.5.0.js" defer></script>
-<script src="/address-validator.js"></script>
+<script src="/address-validator.js" defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -589,10 +589,10 @@ tr:last-child td{border-bottom:none}
           </div>
           <!-- Always-visible 4 punch buttons -->
           <div id="punchBtnsWrap" style="width:100%;max-width:340px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-            <button id="btnPunchIn"     onclick="startPunchFlow('in')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#16a34a;color:#fff;opacity:.4" disabled>▶ 上班打卡</button>
-            <button id="btnBreakStart"  onclick="startPunchFlow('break_start')" style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff;opacity:.4" disabled>⏸ 休息开始</button>
-            <button id="btnBreakEnd"    onclick="startPunchFlow('break_end')"   style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;opacity:.4" disabled>▶ 休息结束</button>
-            <button id="btnPunchOut"    onclick="startPunchFlow('out')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#dc2626;color:#fff;opacity:.4" disabled>⏹ 下班打卡</button>
+            <button id="btnPunchIn"     onclick="startPunchFlow('in')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#16a34a;color:#fff;opacity:.4">▶ 上班打卡</button>
+            <button id="btnBreakStart"  onclick="startPunchFlow('break_start')" style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff;opacity:.4">⏸ 休息开始</button>
+            <button id="btnBreakEnd"    onclick="startPunchFlow('break_end')"   style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;opacity:.4">▶ 休息结束</button>
+            <button id="btnPunchOut"    onclick="startPunchFlow('out')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#dc2626;color:#fff;opacity:.4">⏹ 下班打卡</button>
           </div>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
           <!-- Punch confirmation modal overlay -->
@@ -626,7 +626,7 @@ tr:last-child td{border-bottom:none}
       <div class="card" style="padding:0">
         <div style="padding:1rem 1rem .5rem;font-size:1rem;font-weight:700">打卡历史记录</div>
         <div style="overflow-x:auto;padding:0 1rem 1rem">
-          <table style="min-width:780px"><thead><tr><th>日期</th><th>工作</th><th>上班</th><th>休息开始</th><th>休息结束</th><th>下班</th><th>工时</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
+          <table style="min-width:780px"><thead><tr style="white-space:nowrap"><th>日期</th><th>工作</th><th>上班</th><th>休息开始</th><th>休息结束</th><th>下班</th><th>工时</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
           <tbody id="timeclockTable"></tbody></table>
         </div>
       </div>
@@ -635,10 +635,22 @@ tr:last-child td{border-bottom:none}
         <div style="background:#fff;border-radius:16px;padding:1.75rem;width:92%;max-width:360px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2)">
           <div style="font-size:1.05rem;font-weight:700;color:var(--blue);margin-bottom:.35rem">确认打卡 / Confirm Punch</div>
           <div style="font-size:.9rem;color:var(--gray-500);margin-bottom:.5rem" id="punchConfirmTypeLabel"></div>
-          <div style="font-size:1.6rem;font-weight:800;color:var(--blue);letter-spacing:.05em;margin-bottom:.75rem" id="punchConfirmClock"></div>
+          <div style="font-size:1.6rem;font-weight:800;color:var(--blue);letter-spacing:.05em;margin-bottom:.5rem" id="punchConfirmClock"></div>
+          <!-- Address confirmation (shown for clock-in) -->
+          <div id="punchConfirmAddrWrap" style="display:none;margin-bottom:.6rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.5rem .7rem;text-align:left">
+            <div style="font-size:.72rem;font-weight:700;color:#0369a1;margin-bottom:.15rem;text-transform:uppercase;letter-spacing:.4px">📍 确认工作地址 / Confirm Work Address</div>
+            <div id="punchConfirmJobTitle" style="font-size:.88rem;font-weight:700;color:#0F2B5B"></div>
+            <div id="punchConfirmJobAddr" style="font-size:.82rem;color:#475569;margin-top:.1rem"></div>
+          </div>
+          <!-- Missed clock-out warning -->
+          <div id="punchConfirmMissedWrap" style="display:none;margin-bottom:.6rem;background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:.5rem .7rem;text-align:left">
+            <div style="font-size:.78rem;font-weight:700;color:#c2410c;margin-bottom:.15rem">⚠ 昨日未打下班卡 / Missed Clock-Out</div>
+            <div id="punchConfirmMissedMsg" style="font-size:.8rem;color:#9a3412"></div>
+            <div style="font-size:.75rem;color:#b45309;margin-top:.15rem">昨日记录将保持未关闭，Manager 会跟进处理。Yesterday's entry will remain open for manager review.</div>
+          </div>
           <!-- Mini location map -->
           <div id="punchConfirmMapWrap" style="display:none;margin-bottom:.75rem;border-radius:10px;overflow:hidden;border:1px solid var(--gray-200)">
-            <div id="punchConfirmMap" style="height:200px;width:100%"></div>
+            <div id="punchConfirmMap" style="height:180px;width:100%"></div>
             <div id="punchConfirmMapLabel" style="font-size:.75rem;color:var(--gray-500);padding:.3rem .5rem;background:#f8fafc;text-align:left"></div>
           </div>
           <div style="display:flex;gap:.6rem">
@@ -2139,9 +2151,8 @@ function enablePunchBtn(ready) {
   const btnOut  = document.getElementById('btnPunchOut');
   if (!btnIn) return;
 
-  // Helper: enable or dim a button
+  // Helper: dim a button visually (no disabled — all buttons remain clickable)
   const setBtn = (btn, enabled) => {
-    btn.disabled = !enabled;
     btn.style.opacity = enabled ? '1' : '.35';
   };
 
@@ -2167,8 +2178,8 @@ function enablePunchBtn(ready) {
     return;
   }
 
-  if (!s.clocked_in) {
-    // Not clocked in
+  if (!s.clocked_in || s.missed_checkout) {
+    // Not clocked in (or previous day's entry wasn't closed — allow new clock-in)
     setBtn(btnIn,  s.has_active_job);
     setBtn(btnBS,  false);
     setBtn(btnBE,  false);
@@ -2201,7 +2212,19 @@ async function loadPunchStatus() {
     return;
   }
 
-  if (s.clocked_in && s.on_break) {
+  if (s.clocked_in && s.missed_checkout) {
+    // Previous day's clock-out was forgotten — still allow clock-in with confirmation
+    statusEl.innerHTML = '<span style="color:#f59e0b;font-weight:600">⚠ 昨日未打下班卡</span>';
+    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    subEl.innerHTML = `<span style="color:#dc2626;font-size:.82rem">${s.missed_date || '昨日'} 忘记打下班卡，打上班卡时需确认。</span>`;
+    const jobs = s.active_jobs || [];
+    selector.innerHTML = jobs.map(j =>
+      `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+    ).join('');
+    selectorWrap.style.display = jobs.length > 1 ? '' : 'none';
+    if (jobs.length === 1)
+      selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
+  } else if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     subEl.textContent = 'On break · Click "Resume Job" to continue';
@@ -2330,6 +2353,29 @@ function startPunchFlow(type) {
   const colors  = { in: 'var(--green)', break_start: '#f97316', break_end: '#7c3aed', out: 'var(--red)' };
   document.getElementById('punchConfirmTypeLabel').textContent = labels[type] || type;
   document.getElementById('btnExecutePunch').style.background = colors[type] || 'var(--green)';
+
+  // Show job address for clock-in
+  const addrWrap = document.getElementById('punchConfirmAddrWrap');
+  if (type === 'in' && _punchStatus) {
+    const sel = document.getElementById('jobSelector');
+    const jobId = sel ? parseInt(sel.value) : null;
+    const jobs = _punchStatus.active_jobs || [];
+    const job = jobs.find(j => j.job_id === jobId) || jobs[0];
+    if (job) {
+      document.getElementById('punchConfirmJobTitle').textContent = job.title + (job.company_name ? ' · ' + job.company_name : '');
+      document.getElementById('punchConfirmJobAddr').textContent = job.location || job.site_name || '地址未配置';
+      addrWrap.style.display = '';
+    } else { addrWrap.style.display = 'none'; }
+  } else { addrWrap.style.display = 'none'; }
+
+  // Show missed clock-out warning
+  const missedWrap = document.getElementById('punchConfirmMissedWrap');
+  if (type === 'in' && _punchStatus && _punchStatus.missed_checkout) {
+    document.getElementById('punchConfirmMissedMsg').textContent =
+      `${_punchStatus.missed_date || '上次'} 未打下班卡，系统将自动关闭该记录。`;
+    missedWrap.style.display = '';
+  } else { missedWrap.style.display = 'none'; }
+
   if (_confirmClockTimer) clearInterval(_confirmClockTimer);
   const tick = () => {
     const el = document.getElementById('punchConfirmClock');
@@ -2398,6 +2444,8 @@ async function doPunch(type, photo) {
   if (type === 'in') {
     const sel = document.getElementById('jobSelector');
     body.job_id = sel ? parseInt(sel.value) || null : null;
+    // If previous day's clock-out was missed, auto-close it on the server
+    if (_punchStatus && _punchStatus.missed_checkout) body.force_new_day = true;
   }
   if ((type === 'in' || type === 'break_start') && photo) {
     body.photo_data = await new Promise((resolve, reject) => {
@@ -2501,7 +2549,7 @@ async function loadTimeclock() {
       : t.status === 'closed'
         ? '✅ 已完成'
         : '<span style="color:var(--sky)">⏱ 工作中</span>';
-    return `<tr>
+    return `<tr style="white-space:nowrap">
       <td>${ci ? ci.toLocaleDateString() : '—'}</td>
       <td style="font-size:.8rem">${jobLabel}</td>
       <td>${fmt(ci)}</td>
@@ -3476,7 +3524,7 @@ async function submitI9(e) {
   const form = e.target;
   const addrResult = await validateAddress({
     street:  form.address.value.trim(),
-    street2: form.apt ? form.apt.value.trim() : '',
+    street2: '',
     city:    form.city.value.trim(),
     state:   form.state.value,
     zip:     form.zip.value.trim()
@@ -3485,7 +3533,6 @@ async function submitI9(e) {
   if (addrResult.standardized) {
     const s = addrResult.standardized;
     form.address.value = s.street;
-    if (form.apt && s.street2) form.apt.value = s.street2;
     form.city.value  = s.city;
     form.state.value = s.state;
     form.zip.value   = s.zip;
@@ -3524,18 +3571,19 @@ async function submitW9(e) {
   e.preventDefault();
   const form = e.target;
   const addrResult = await validateAddress({
-    street: form.address.value.trim(),
-    city:   form.city.value.trim(),
-    state:  form.state.value.trim(),
-    zip:    form.zip.value.trim()
+    street:  form.address.value.trim(),
+    street2: '',
+    city:    form.city.value.trim(),
+    state:   form.state.value.trim(),
+    zip:     form.zip.value.trim()
   });
   if (!addrResult.proceed) return;
   if (addrResult.standardized) {
     const s = addrResult.standardized;
     form.address.value = s.street;
-    form.city.value    = s.city;
-    form.state.value   = s.state;
-    form.zip.value     = s.zip;
+    form.city.value  = s.city;
+    form.state.value = s.state;
+    form.zip.value   = s.zip;
   }
   const body = {};
   new FormData(form).forEach((v, k) => { body[k] = v; });
