@@ -2185,11 +2185,17 @@ app.get('/api/admin/invite-links', requireAdmin, requireRole('admin', 'staff', '
   res.json(rows.map(r => ({ ...r, url: `${proto}://${host}${inviteUrlPath(r.role)}?token=${r.token}` })));
 });
 
-app.post('/api/admin/invite-links', requireAdmin, requireRole('staff', 'manager'), (req, res) => {
+app.post('/api/admin/invite-links', requireAdmin, requireRole('admin', 'staff', 'manager'), (req, res) => {
   try {
     const { hours, notes, assigned_partner_ids } = req.body;
-    // staff can only invite staff; manager can only invite manager
-    const role = req.userRole;
+    // admin chooses any role; staff can only invite staff; manager can only invite manager
+    let role;
+    if (req.userRole === 'admin') {
+      role = req.body.role;
+      if (!['staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    } else {
+      role = req.userRole;
+    }
     const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
     const token = crypto.randomBytes(28).toString('hex');
     const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
