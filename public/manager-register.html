@@ -281,9 +281,17 @@ async function resendCode() {
 
 function goToAdmin() {
   if (sessionToken) {
-    localStorage.setItem('adminToken', sessionToken);
+    // Store in the key each portal reads from localStorage
+    if (inviteRole === 'manager') {
+      localStorage.setItem('mgr_token', sessionToken);
+    } else if (inviteRole === 'staff') {
+      localStorage.setItem('adminToken', sessionToken);
+    } else {
+      localStorage.setItem('adminToken', sessionToken);
+    }
   }
-  location.href = '/admin';
+  const dest = { admin: '/admin', staff: '/admin', manager: '/manager' }[inviteRole] || '/manager';
+  location.href = dest;
 }
 
 init();
