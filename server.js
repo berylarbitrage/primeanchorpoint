@@ -2247,7 +2247,10 @@ async function doRegister() {
     localStorage.setItem('adminToken', d.token);
     document.getElementById('form').style.display = 'none';
     document.getElementById('done').style.display = '';
-    setTimeout(() => { location.href = '/admin'; }, 1500);
+    const roleRedirect = { admin: '/admin', staff: '/staff', manager: '/manager' };
+    const dest = roleRedirect[d.role] || '/admin';
+    document.cookie = 'pa_token=' + d.token + ';path=/;max-age=86400;SameSite=Strict';
+    setTimeout(() => { location.href = dest; }, 1500);
   } catch(e) { err.textContent = '网络错误，请重试'; btn.disabled=false; btn.textContent='创建账户'; }
 }
 init();

@@ -220,8 +220,10 @@ async function resendCode() {
 function goToAdmin() {
   if (sessionToken) {
     localStorage.setItem('adminToken', sessionToken);
+    document.cookie = 'pa_token=' + sessionToken + ';path=/;max-age=86400;SameSite=Strict';
   }
-  location.href = '/admin';
+  const dest = { admin: '/admin', staff: '/staff', manager: '/manager' }[inviteRole] || '/manager';
+  location.href = dest;
 }
 
 init();
