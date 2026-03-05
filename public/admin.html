@@ -3292,7 +3292,7 @@ async function doLogin() {
       document.getElementById('activateErr').textContent = '';
       document.getElementById('activationModal').classList.add('show');
     } else {
-      errEl.textContent = r.message || r.error || '用户名或密码错误';
+      errEl.textContent = '用户名或密码错误';
     }
   } catch (e) {
     errEl.textContent = '网络错误，请检查连接后重试';

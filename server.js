@@ -1704,10 +1704,22 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(defaultPass, salt);
     db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)').run(defaultUser, hash, salt, 'admin', 'Administrator');
-    console.log(`[Auth] Seeded default admin user: ${defaultUser}`);
+    console.log(`[Auth] Seeded default admin user: ${defaultUser} / ${defaultPass}`);
   }
   // Ensure the first user (original seeded admin) has admin role
   try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
+  // Force-reset admin password if RESET_ADMIN_PASS env var is set
+  if (process.env.RESET_ADMIN_PASS) {
+    const targetUser = process.env.ADMIN_USER || 'admin';
+    const newPass = process.env.RESET_ADMIN_PASS;
+    const user = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(targetUser);
+    if (user) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = hashPassword(newPass, salt);
+      db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
+      console.log(`[Auth] Reset admin password for user: ${targetUser}`);
+    }
+  }
 }
 
 // DB-backed session store (survives server restarts, tokens expire in 24h)
