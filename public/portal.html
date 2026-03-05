@@ -484,7 +484,7 @@ tr:last-child td{border-bottom:none}
             <button class="jfbtn" data-pf="auth" data-v="citizen" onclick="setPF('auth','citizen',this)">仅公民</button>
           </div>
           <div class="job-filter-bar">
-            <span class="filter-section-label">班次</span>
+            <span class="filter-section-label">任务</span>
             <button class="jfbtn active" data-pf="shift" data-v="" onclick="setPF('shift','',this)">不限</button>
             <button class="jfbtn" data-pf="shift" data-v="1st" onclick="setPF('shift','1st',this)">早班</button>
             <button class="jfbtn" data-pf="shift" data-v="2nd" onclick="setPF('shift','2nd',this)">中班</button>
@@ -527,7 +527,7 @@ tr:last-child td{border-bottom:none}
       <!-- Weekly shift confirmations -->
       <div id="shiftConfirmCard" style="display:none;margin-bottom:1rem">
         <div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
-          <h2 style="color:#92400e;margin-bottom:.75rem">📅 本周班次确认</h2>
+          <h2 style="color:#92400e;margin-bottom:.75rem">📅 本周任务确认</h2>
           <div id="shiftConfirmList"></div>
         </div>
       </div>
@@ -1483,7 +1483,7 @@ async function loadTasks() {
       <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;display:flex;align-items:flex-start;gap:.65rem">
         <span style="font-size:1.3rem;line-height:1">🔔</span>
         <div>
-          <div style="font-weight:700;font-size:.95rem;color:#dc2626;margin-bottom:.2rem">明天有 ${urgentShifts.length} 个班次待确认</div>
+          <div style="font-weight:700;font-size:.95rem;color:#dc2626;margin-bottom:.2rem">明天有 ${urgentShifts.length} 个任务待确认</div>
           <div style="font-size:.83rem;color:#7f1d1d">
             ${urgentShifts.map(c => {
               const t = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)}–${fmt12(c.shift_end)}` : '';
@@ -1527,7 +1527,7 @@ async function loadTasks() {
         shownNextWeekHeader = true;
         header = `<div style="display:flex;align-items:center;gap:.5rem;margin:.9rem 0 .5rem">
           <div style="flex:1;height:1px;background:#e5e7eb"></div>
-          <span style="font-size:.8rem;font-weight:700;color:#3b82f6;white-space:nowrap">下周班次（等待确认）</span>
+          <span style="font-size:.8rem;font-weight:700;color:#3b82f6;white-space:nowrap">下周任务（等待确认）</span>
           <div style="flex:1;height:1px;background:#e5e7eb"></div>
         </div>`;
       }
@@ -1541,7 +1541,7 @@ async function loadTasks() {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.4rem">
             <div>
               <span style="font-weight:700;font-size:.92rem;color:${isNextWeek ? '#1d4ed8' : '#92400e'}">${dayLabel}</span>
-              <div style="font-size:.87rem;font-weight:600;color:#1e293b;margin-top:.15rem">${esc(c.title||'—')}${c.company_name?` <span style="font-weight:400;color:var(--gray-500)">· ${esc(c.company_name)}</span>`:''}</div>
+              <div style="font-size:.87rem;font-weight:600;color:#1e293b;margin-top:.15rem">${esc(c.title||'—')}${c.company_name?` <span style="font-weight:400;color:var(--gray-500)">· Client: ${esc(c.company_name)}</span>`:''}</div>
             </div>
             ${statusBadge}
           </div>
@@ -1549,7 +1549,7 @@ async function loadTasks() {
           ${pay ? `<div style="font-size:.83rem;color:#374151;margin-bottom:.25rem">💰 薪资：<strong>${esc(pay)}${payType}</strong></div>` : ''}
           ${c.work_address ? `<div style="font-size:.82rem;color:#475569;margin-bottom:.25rem">📍 ${esc(c.work_address)}</div>` : ''}
           ${desc && isPending ? `<div style="font-size:.8rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.35rem .5rem;margin-bottom:.3rem;line-height:1.45">📋 ${esc(desc.length>100?desc.slice(0,100)+'…':desc)}</div>` : ''}
-          ${isPending ? `<div style="font-size:.79rem;color:#92400e;font-weight:600;margin-bottom:.2rem">请确认您是否接受此班次安排：</div>` : ''}
+          ${isPending ? `<div style="font-size:.79rem;color:#92400e;font-weight:600;margin-bottom:.2rem">请确认您是否接受此任务安排：</div>` : ''}
           ${actionBtns}
         </div>`;
     }).join('');
@@ -1593,7 +1593,7 @@ async function loadTasks() {
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.55rem">
           <div>
             <div style="font-weight:700;font-size:1rem;color:var(--gray-800)">${esc(t.title||'—')}</div>
-            ${t.company_name ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">${esc(t.company_name)}</div>` : ''}
+            ${t.company_name ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">Client: ${esc(t.company_name)}</div>` : ''}
           </div>
           ${statusBadge}
         </div>
@@ -1817,7 +1817,7 @@ function calDayClick(dateStr) {
       ${pay ? `<div style="font-size:.84rem;color:#374151;margin-bottom:.35rem">💰 薪资：<strong>${esc(pay)}${payType}</strong></div>` : ''}
       ${location ? `<div style="font-size:.82rem;color:#475569;margin-bottom:.35rem">📍 ${esc(location)}</div>` : ''}
       ${desc ? `<div style="font-size:.82rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.4rem .55rem;margin-bottom:.35rem;line-height:1.5">📋 ${esc(desc.length>120?desc.slice(0,120)+'…':desc)}</div>` : ''}
-      ${isPending ? `<div style="font-size:.8rem;color:#92400e;font-weight:600;margin-bottom:.2rem">请确认您是否接受此班次安排：</div>` : ''}
+      ${isPending ? `<div style="font-size:.8rem;color:#92400e;font-weight:600;margin-bottom:.2rem">请确认您是否接受此任务安排：</div>` : ''}
       ${actionBtns}
     </div>`;
   }).join('');
@@ -2067,7 +2067,7 @@ async function loadApplications() {
   const statusLabel = { pending:'待审核', interview_scheduled:'已安排面试', approved:'已通过', rejected:'未通过', assigned:'已派工' };
   const statusColor = { pending:'color:var(--orange)', interview_scheduled:'color:#2563eb', approved:'color:var(--green)', rejected:'color:var(--red)', assigned:'color:var(--sky)' };
   document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map((a,i)=>`<tr onclick="openAppDetail(${i})" style="cursor:pointer" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background=''">
-    <td><strong>${esc(a.title||'—')}</strong><br><small style="color:var(--gray-400)">${esc(a.company_name||'')}</small></td>
+    <td><strong>${esc(a.title||'—')}</strong><br><small style="color:var(--gray-400)">Client: ${esc(a.company_name||'')}</small></td>
     <td style="font-size:.85rem;color:var(--gray-400)">录取后公布</td>
     <td><span style="font-weight:600;${statusColor[a.status]||''}">${statusLabel[a.status]||a.status}</span></td>
     <td style="font-size:.82rem;color:var(--gray-400)">${(a.created_at||'').slice(0,10)}</td>
@@ -2088,7 +2088,7 @@ function openAppDetail(idx) {
     <div style="display:grid;gap:.9rem">
       <div style="background:#f8fafc;border-radius:8px;padding:.9rem;display:grid;gap:.4rem;font-size:.88rem">
         <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">职位信息</div>
-        ${a.company_name ? `<div><span style="color:var(--gray-400)">公司：</span>${esc(a.company_name)}</div>` : ''}
+        ${a.company_name ? `<div><span style="color:var(--gray-400)">Client: </span>${esc(a.company_name)}</div>` : ''}
         ${a.pay ? `<div><span style="color:var(--gray-400)">薪资：</span>${esc(a.pay)}</div>` : ''}
         ${a.employment_type ? `<div><span style="color:var(--gray-400)">类型：</span>${esc(a.employment_type)}</div>` : ''}
         ${workDays ? `<div><span style="color:var(--gray-400)">工作日：</span>${workDays}</div>` : ''}
@@ -2259,7 +2259,7 @@ async function loadPunchStatus() {
     subEl.textContent = '请选择工作后打卡';
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
-      `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+      `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · Client: ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
     selectorWrap.style.display = jobs.length > 1 ? '' : 'none';
     if (jobs.length === 1)
@@ -2487,7 +2487,7 @@ async function loadMyJobs() {
     <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid var(--gray-100)">
       <div>
         <div style="font-weight:700;font-size:.95rem">${esc(j.title)}</div>
-        ${j.company_name ? `<div style="font-size:.8rem;color:var(--gray-400)">${esc(j.company_name)}</div>` : ''}
+        ${j.company_name ? `<div style="font-size:.8rem;color:var(--gray-400)">Client: ${esc(j.company_name)}</div>` : ''}
         <div style="font-size:.8rem;color:var(--gray-500);margin-top:.2rem">
           ${j.location ? `📍 ${esc(j.location)}` : ''}
           ${j.site_name ? ` · 🏭 ${esc(j.site_name)}` : ''}
