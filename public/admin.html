@@ -340,7 +340,6 @@ tr:hover td{background:var(--sky-light)}
 .wa-skill-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-size:.7rem;background:#f0f5ff;color:var(--blue);margin:1px 0;white-space:nowrap}
 .wa-skill-pill .stars{color:#f59e0b;font-size:.65rem}
 </style>
-<script src="/address-validator.js" defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
 </head>
@@ -1144,11 +1143,7 @@ tr:hover td{background:var(--sky-light)}
           </div>
           <div>
             <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">完整地址 *</label>
-            <input type="text" id="locAddress" placeholder="如：123 Main St, Suite 200, Chicago, IL 60601" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem" oninput="clearAddrStatus('locAddrStatus')" onblur="autoVerifySingleAddr('locAddress','locAddrStatus')">
-            <div style="display:flex;align-items:center;gap:.5rem;margin-top:.3rem">
-              <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('locAddress','locAddrStatus')">🔍 验证地址 Verify</button>
-              <span id="locAddrStatus" style="font-size:.8rem;font-weight:600"></span>
-            </div>
+            <input type="text" id="locAddress" placeholder="如：123 Main St, Suite 200, Chicago, IL 60601" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
@@ -1180,11 +1175,7 @@ tr:hover td{background:var(--sky-light)}
   <h2 id="ivLocModalTitle">添加面试地点</h2>
   <input type="hidden" id="ivLocId">
   <div class="field"><label>地点名称 *</label><input id="ivLocName" placeholder="例：芝加哥主办公室、Zoom 线上面试"></div>
-  <div class="field"><label>地址</label><input id="ivLocAddress" placeholder="123 Main St, Chicago, IL 60601" oninput="clearAddrStatus('ivLocAddrStatus')" onblur="autoVerifySingleAddr('ivLocAddress','ivLocAddrStatus')"></div>
-  <div style="display:flex;align-items:center;gap:.5rem;margin-top:-.25rem;margin-bottom:.5rem">
-    <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('ivLocAddress','ivLocAddrStatus')">🔍 验证地址 Verify</button>
-    <span id="ivLocAddrStatus" style="font-size:.8rem;font-weight:600"></span>
-  </div>
+  <div class="field"><label>地址</label><input id="ivLocAddress" placeholder="123 Main St, Chicago, IL 60601"></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
     <div class="field"><label>联系人姓名</label><input id="ivLocContactName" placeholder="张经理"></div>
     <div class="field"><label>联系人手机</label><input id="ivLocContactPhone" placeholder="(312) 555-0100"></div>
@@ -1446,11 +1437,7 @@ tr:hover td{background:var(--sky-light)}
     <div id="siteJobPickerWrap" style="display:none;margin-bottom:.5rem;border:1px solid var(--gray-200);border-radius:8px;max-height:180px;overflow-y:auto">
       <div id="siteJobPickerList"></div>
     </div>
-    <input id="siteAddress" placeholder="123 Main St, City, ST" oninput="clearAddrStatus('siteAddrStatus')" onblur="autoVerifySingleAddr('siteAddress','siteAddrStatus')">
-  </div>
-  <div style="display:flex;align-items:center;gap:.5rem;margin-top:-.25rem;margin-bottom:.5rem">
-    <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('siteAddress','siteAddrStatus')">🔍 验证地址 Verify</button>
-    <span id="siteAddrStatus" style="font-size:.8rem;font-weight:600"></span>
+    <input id="siteAddress" placeholder="123 Main St, City, ST">
   </div>
   <div class="field-row" style="display:flex;gap:1rem">
     <div class="field" style="flex:1"><label>纬度 Latitude *</label><input id="siteLat" type="number" step="any" placeholder="40.7128" oninput="updateSiteMap()"></div>
@@ -2102,20 +2089,16 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="form-section" style="margin:0;padding:0;border:0">
     <h4 style="margin-bottom:.5rem">工作地点 Work Location</h4>
-    <div class="field"><label>街道地址 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="jStreet" placeholder="e.g. 123 Main St" oninput="document.getElementById('jAddrStatus').textContent=''"></div>
+    <div class="field"><label>街道地址 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="jStreet" placeholder="e.g. 123 Main St"></div>
     <div class="field"><label>单元 / 楼层 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="jStreet2" placeholder="e.g. Suite 200"></div>
     <div class="field-row3">
-      <div class="field"><label>城市 City *</label><input id="jCity" placeholder="Chicago" oninput="document.getElementById('jAddrStatus').textContent=''"></div>
+      <div class="field"><label>城市 City *</label><input id="jCity" placeholder="Chicago"></div>
       <div class="field"><label>州 State *</label>
         <select id="jState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
           <option value="">-- 州 --</option>
         </select>
       </div>
-      <div class="field"><label>邮编 ZIP</label><input id="jZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');document.getElementById('jAddrStatus').textContent=''"></div>
-    </div>
-    <div style="display:flex;align-items:center;gap:.75rem;margin-top:.35rem">
-      <button type="button" class="btn btn-sm btn-outline" onclick="verifyJobAddr()">🔍 验证地址 Verify</button>
-      <span id="jAddrStatus" style="font-size:.8rem"></span>
+      <div class="field"><label>邮编 ZIP</label><input id="jZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'')"></div>
     </div>
   </div>
 
@@ -2800,20 +2783,16 @@ tr:hover td{background:var(--sky-light)}
         <div class="field"><label>Instagram</label><input id="eSocialInstagram" placeholder="@用户名"></div>
       </div>
     </div>
-    <div class="field"><label>街道地址 Street Address *</label><input id="eAddr" placeholder="e.g. 123 Main St" oninput="clearEmpAddrStatus()"></div>
-    <div class="field"><label>单元 / 楼层 Unit / Suite <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="eStreet2" placeholder="e.g. Apt 2B, Suite 100" oninput="clearEmpAddrStatus()"></div>
+    <div class="field"><label>街道地址 Street Address *</label><input id="eAddr" placeholder="e.g. 123 Main St"></div>
+    <div class="field"><label>单元 / 楼层 Unit / Suite <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="eStreet2" placeholder="e.g. Apt 2B, Suite 100"></div>
     <div class="field-row3">
-      <div class="field"><label>城市 City *</label><input id="eCity" placeholder="Chicago" oninput="clearEmpAddrStatus()"></div>
+      <div class="field"><label>城市 City *</label><input id="eCity" placeholder="Chicago"></div>
       <div class="field"><label>州 State *</label>
-        <select id="eState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%" onchange="clearEmpAddrStatus()">
+        <select id="eState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
           <option value="">-- 州 --</option>
         </select>
       </div>
-      <div class="field"><label>邮编 ZIP</label><input id="eZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');clearEmpAddrStatus()" onblur="autoVerifyEmpAddr()"></div>
-    </div>
-    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem">
-      <button type="button" class="btn btn-sm btn-outline" onclick="verifyEmpAddr()">🔍 验证地址 Verify</button>
-      <span id="eAddrStatus" style="font-size:.8rem;font-weight:600"></span>
+      <div class="field"><label>邮编 ZIP</label><input id="eZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'')"></div>
     </div>
   </div>
   <div class="form-section">
@@ -4811,23 +4790,6 @@ async function saveJob() {
   if (!jCity || !jState) return alert('请填写工作地点的城市和州');
   const jZipErr = validateZip(document.getElementById('jZip').value.trim());
   if (jZipErr) return alert(jZipErr);
-  const addrResult = await validateAddress({
-    street: document.getElementById('jStreet').value.trim(),
-    street2: document.getElementById('jStreet2').value.trim(),
-    city: jCity,
-    state: jState,
-    zip: document.getElementById('jZip').value.trim()
-  });
-  if (!addrResult.proceed) return;
-  if (addrResult.standardized) {
-    const s = addrResult.standardized;
-    document.getElementById('jStreet').value = s.street;
-    document.getElementById('jStreet2').value = s.street2;
-    document.getElementById('jCity').value = s.city;
-    fillStateSelect(document.getElementById('jState'), s.state);
-    document.getElementById('jZip').value = s.zip;
-    data.location = buildAddressString(s.street, s.street2, s.city, s.state, s.zip);
-  }
   if (id) await api(`/admin/jobs/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   else await api('/admin/jobs', { method: 'POST', body: JSON.stringify(data) });
   clearModalState('jobModal');
@@ -5692,7 +5654,6 @@ function selectPartnerItem(id, name) {
   document.getElementById('jCity').value    = parsed.city;
   if (parsed.state) document.getElementById('jState').value = parsed.state;
   document.getElementById('jZip').value     = parsed.zip;
-  document.getElementById('jAddrStatus').textContent = '';
 }
 
 // ── Estimate Time (weekly schedule) helpers ───────────────────────
@@ -6664,19 +6625,17 @@ function addPartnerAddr(addr) {
       <span style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.05em">地址</span>
       <button class="btn-rm" onclick="this.closest('.pa-addr-row').remove()" title="删除">✕</button>
     </div>
-    ${inp('pa-street','街道地址 *  e.g. 123 Main St',street,'oninput="clearPartnerAddrStatus(this)"')}
-    ${inp('pa-street2','单元 / 楼层  e.g. Ste 200（选填）',street2,'oninput="clearPartnerAddrStatus(this)"')}
+    ${inp('pa-street','街道地址 *  e.g. 123 Main St',street,'')}
+    ${inp('pa-street2','单元 / 楼层  e.g. Ste 200（选填）',street2,'')}
     <div style="display:grid;grid-template-columns:1fr 72px 100px;gap:.5rem">
-      ${inp('pa-city','城市 *  e.g. Chicago',city,'oninput="clearPartnerAddrStatus(this)"')}
-      <select class="pa-state" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%" onchange="clearPartnerAddrStatus(this)">
+      ${inp('pa-city','城市 *  e.g. Chicago',city,'')}
+      <select class="pa-state" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%">
         <option value="">州 *</option>${stateOptions}
       </select>
-      ${inp('pa-zip','ZIP *',zip,'maxlength="10" oninput="this.value=this.value.replace(/[^\\d-]/g,\'\');clearPartnerAddrStatus(this)" onblur="autoVerifyPartnerAddr(this)"')}
+      ${inp('pa-zip','ZIP *',zip,'maxlength="10" oninput="this.value=this.value.replace(/[^\\d-]/g,\'\')"')}
     </div>
     <div style="display:flex;align-items:center;gap:.5rem;margin-top:.15rem;flex-wrap:wrap">
-      <button type="button" class="btn btn-sm btn-outline" onclick="verifyPartnerAddr(this)">🔍 验证地址 Verify</button>
       <button type="button" class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#c4b5fd" onclick="togglePartnerAddrLocation(this)">📍 修改定位</button>
-      <span class="pa-addr-status" style="font-size:.8rem;font-weight:600"></span>
     </div>
     <div class="pa-loc-section" style="display:${lat&&lng?'':'none'};border-top:1px solid var(--gray-200);padding-top:.5rem;margin-top:.1rem">
       <div style="display:flex;gap:.5rem;align-items:flex-end">
@@ -6930,32 +6889,6 @@ async function deletePartnerFile(fid, pid) {
 
 async function savePartner() {
   if (!validatePartnerAddrs()) return;
-  const addrRows = Array.from(document.querySelectorAll('#pAddrList .pa-addr-row'));
-  for (const row of addrRows) {
-    const streetEl  = row.querySelector('.pa-street');
-    const street2El = row.querySelector('.pa-street2');
-    const cityEl    = row.querySelector('.pa-city');
-    const stateEl   = row.querySelector('.pa-state');
-    const zipEl     = row.querySelector('.pa-zip');
-    if (!streetEl.value.trim() && !cityEl.value.trim()) continue;
-    const addrStatusEl = row.querySelector('.pa-addr-status');
-    if (addrStatusEl && addrStatusEl.textContent === '✓ 已验证') continue;
-    const addrResult = await validateAddress({
-      street:  streetEl.value.trim(),
-      street2: street2El ? street2El.value.trim() : '',
-      city:    cityEl.value.trim(),
-      state:   stateEl.value,
-      zip:     zipEl.value.trim()
-    });
-    if (!addrResult.proceed) return;
-    if (addrResult.standardized) {
-      const s = addrResult.standardized;
-      streetEl.value = s.street;
-      cityEl.value   = s.city;
-      stateEl.value  = s.state;
-      zipEl.value    = s.zip;
-    }
-  }
   const id = document.getElementById('partnerId').value;
   // Collect services
   const selectedSvcs = Array.from(document.querySelectorAll('#pSvcTags .svc-tag.active')).map(t=>t.dataset.v);
@@ -7254,160 +7187,10 @@ function openEmpModal(id) {
     document.getElementById('extraPhonesContainer').innerHTML = '';
     document.getElementById('extraEmailsContainer').innerHTML = '';
   }
-  clearEmpAddrStatus();
   document.getElementById('empModal').classList.add('show');
   captureModalState('empModal');
 }
 function closeEmpModal() { _convertFromWorkerId = null; _pendingWorkerLink = null; guardClose('empModal'); }
-
-// ── Address verify helpers ──
-function _setAddrStatus(el, verified) {
-  if (!el) return;
-  if (verified === null || verified === undefined) { el.textContent = ''; return; }
-  if (verified) {
-    el.textContent = '✓ 已验证';
-    el.style.color = '#16a34a';
-  } else {
-    el.textContent = '⚠ 未能验证';
-    el.style.color = '#d97706';
-  }
-}
-
-function clearEmpAddrStatus() {
-  _setAddrStatus(document.getElementById('eAddrStatus'), null);
-}
-
-async function verifyJobAddr() {
-  const street  = document.getElementById('jStreet').value.trim();
-  const street2 = document.getElementById('jStreet2').value.trim();
-  const city    = document.getElementById('jCity').value.trim();
-  const state   = document.getElementById('jState').value;
-  const zip     = document.getElementById('jZip').value.trim();
-  if (!street && !city && !zip) return;
-  const statusEl = document.getElementById('jAddrStatus');
-  statusEl.textContent = '验证中…';
-  statusEl.style.color = 'var(--gray-400)';
-  try {
-    const result = await validateAddress({ street, street2, city, state, zip });
-    if (result.skipped) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; return; }
-    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
-    if (result.standardized) {
-      const s = result.standardized;
-      document.getElementById('jStreet').value = s.street;
-      document.getElementById('jStreet2').value = s.street2;
-      document.getElementById('jCity').value = s.city;
-      fillStateSelect(document.getElementById('jState'), s.state);
-      document.getElementById('jZip').value = s.zip;
-    }
-    _setAddrStatus(statusEl, result.verified === true);
-  } catch(e) {
-    _setAddrStatus(statusEl, false);
-  }
-}
-
-async function _doVerifyEmpAddr(silent) {
-  const street  = document.getElementById('eAddr').value.trim();
-  const street2 = document.getElementById('eStreet2').value.trim();
-  const city    = document.getElementById('eCity').value.trim();
-  const state   = document.getElementById('eState').value;
-  const zip     = document.getElementById('eZip').value.trim();
-  if (!street && !city && !zip) return;
-  const statusEl = document.getElementById('eAddrStatus');
-  statusEl.textContent = '验证中…';
-  statusEl.style.color = 'var(--gray-400)';
-  try {
-    const result = await validateAddress({ street, street2, city, state, zip }, { silent });
-    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
-    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
-    if (result.standardized) {
-      const s = result.standardized;
-      document.getElementById('eAddr').value  = s.street;
-      document.getElementById('eCity').value  = s.city;
-      document.getElementById('eZip').value   = s.zip;
-      fillStateSelect(document.getElementById('eState'), s.state);
-    }
-    _setAddrStatus(statusEl, result.verified === true);
-  } catch (e) {
-    console.error('[verifyEmpAddr]', e);
-    _setAddrStatus(statusEl, false);
-  }
-}
-
-function verifyEmpAddr()    { _doVerifyEmpAddr(false); }
-function autoVerifyEmpAddr() {
-  if (!document.getElementById('eAddr').value.trim()) return;
-  _doVerifyEmpAddr(true);
-}
-
-function clearPartnerAddrStatus(el) {
-  const row = el.closest('.pa-addr-row');
-  if (row) _setAddrStatus(row.querySelector('.pa-addr-status'), null);
-}
-
-async function _doVerifyPartnerAddr(row, silent) {
-  const streetEl  = row.querySelector('.pa-street');
-  const street2El = row.querySelector('.pa-street2');
-  const cityEl    = row.querySelector('.pa-city');
-  const stateEl   = row.querySelector('.pa-state');
-  const zipEl     = row.querySelector('.pa-zip');
-  const statusEl  = row.querySelector('.pa-addr-status');
-  const street = streetEl.value.trim();
-  const city   = cityEl.value.trim();
-  const zip    = zipEl.value.trim();
-  if (!street && !city && !zip) return;
-  if (statusEl) { statusEl.textContent = '验证中…'; statusEl.style.color = 'var(--gray-400)'; }
-  try {
-    const result = await validateAddress({
-      street, street2: street2El ? street2El.value.trim() : '', city, state: stateEl.value, zip
-    }, { silent });
-    if (result.skipped) { if (!silent && statusEl) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else if (statusEl) statusEl.textContent = ''; return; }
-    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
-    if (result.standardized) {
-      const s = result.standardized;
-      streetEl.value = s.street;
-      cityEl.value   = s.city;
-      stateEl.value  = s.state;
-      zipEl.value    = s.zip;
-    }
-    _setAddrStatus(statusEl, result.verified === true);
-  } catch (e) {
-    console.error('[verifyPartnerAddr]', e);
-    _setAddrStatus(statusEl, false);
-  }
-}
-
-function verifyPartnerAddr(btn) { _doVerifyPartnerAddr(btn.closest('.pa-addr-row'), false); }
-function autoVerifyPartnerAddr(zipInput) {
-  const row = zipInput.closest('.pa-addr-row');
-  if (!row.querySelector('.pa-street').value.trim()) return;
-  _doVerifyPartnerAddr(row, true);
-}
-
-// Single-line address verify (Interview Locations, Job Sites)
-function clearAddrStatus(statusId) {
-  _setAddrStatus(document.getElementById(statusId), null);
-}
-
-async function _doVerifySingleAddr(inputId, statusId, silent) {
-  const input    = document.getElementById(inputId);
-  const statusEl = document.getElementById(statusId);
-  if (!input || !input.value.trim()) return;
-  statusEl.textContent = '验证中…';
-  statusEl.style.color = 'var(--gray-400)';
-  try {
-    const result = await validateAddressSingleField(input.value.trim(), { silent });
-    if (result.skipped) { if (!silent) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else statusEl.textContent = ''; return; }
-    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
-    if (result.standardized) input.value = result.standardized;
-    _setAddrStatus(statusEl, result.verified === true);
-  } catch (e) {
-    console.error('[verifySingleAddr]', e);
-    _setAddrStatus(statusEl, false);
-  }
-}
-
-function verifySingleAddr(inputId, statusId)     { _doVerifySingleAddr(inputId, statusId, false); }
-function autoVerifySingleAddr(inputId, statusId) { _doVerifySingleAddr(inputId, statusId, true);  }
 
 // ── Job records within employee edit modal ──
 async function loadEditEmpJobRecords(empId) {
@@ -7762,21 +7545,6 @@ async function saveEmployee() {
   if (zipErr) return alert(zipErr);
   const ssn = document.getElementById('eSSN').value.replace(/\D/g,'');
   if (ssn && ssn.length !== 9 && ssn.length !== 0) return alert('SSN 须为9位数字');
-  if (data.address || data.city || data.zip) {
-    const addrResult = await validateAddress({ street: data.address, street2: data.street2, city: data.city, state: data.state, zip: data.zip });
-    if (!addrResult.proceed) return;
-    if (addrResult.standardized) {
-      const s = addrResult.standardized;
-      data.address = s.street;
-      data.city    = s.city;
-      data.state   = s.state;
-      data.zip     = s.zip;
-      document.getElementById('eAddr').value  = s.street;
-      document.getElementById('eCity').value  = s.city;
-      document.getElementById('eZip').value   = s.zip;
-      fillStateSelect(document.getElementById('eState'), s.state);
-    }
-  }
   async function doSave(forceData) {
     return id
       ? await api(`/admin/employees/${id}`, { method:'PUT', body: JSON.stringify(forceData) })
@@ -10818,14 +10586,6 @@ async function saveLocation() {
     instructions:  document.getElementById('ivLocInstructions').value.trim()
   };
   if (!data.name) return showToast('❌ 地点名称必填', 'error');
-  if (data.address) {
-    const addrResult = await validateAddressSingleField(data.address);
-    if (!addrResult.proceed) return;
-    if (addrResult.standardized) {
-      data.address = addrResult.standardized;
-      document.getElementById('ivLocAddress').value = addrResult.standardized;
-    }
-  }
   const r = await api(id ? `/admin/interview-locations/${id}` : '/admin/interview-locations', {
     method: id ? 'PUT' : 'POST',
     body: JSON.stringify(data)
@@ -11377,8 +11137,6 @@ function pickJobAddr(jobId) {
   if (!document.getElementById('siteName').value) document.getElementById('siteName').value = j.title || '';
   document.getElementById('siteJobPickerWrap').style.display = 'none';
   document.getElementById('siteJobPickerStatus').textContent = '';
-  clearAddrStatus('siteAddrStatus');
-  autoVerifySingleAddr('siteAddress', 'siteAddrStatus');
 }
 
 function editJobSite(id) {
@@ -11406,14 +11164,6 @@ async function saveJobSite() {
     radius_meters: parseInt(document.getElementById('siteRadius').value) || 200
   };
   if (!data.name || isNaN(data.latitude) || isNaN(data.longitude)) return alert('请填写名称和坐标');
-  if (data.address) {
-    const addrResult = await validateAddressSingleField(data.address);
-    if (!addrResult.proceed) return;
-    if (addrResult.standardized) {
-      data.address = addrResult.standardized;
-      document.getElementById('siteAddress').value = addrResult.standardized;
-    }
-  }
   if (id) {
     await api(`/admin/job-sites/${id}`, { method:'PUT', body: JSON.stringify(data) });
   } else {
