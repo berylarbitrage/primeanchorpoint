@@ -1183,6 +1183,10 @@ try { db.exec("ALTER TABLE time_entries ADD COLUMN site_id INTEGER DEFAULT NULL"
 try { db.exec("ALTER TABLE time_entries ADD COLUMN geo_verified INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN punch_photo TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN job_id INTEGER DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN needs_review INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN review_reason TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN site_timezone TEXT DEFAULT NULL"); } catch {}
 
 // Worker payments ledger
 db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
@@ -1650,6 +1654,28 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+// Lookup IANA timezone from lat/lng using free public API (non-blocking, fallback to America/Chicago)
+async function lookupTimezone(lat, lng) {
+  try {
+    const https = require('https');
+    return await new Promise((resolve) => {
+      const url = `https://api.geotimezone.com/public/timezone?latitude=${lat}&longitude=${lng}`;
+      https.get(url, (resp) => {
+        let data = '';
+        resp.on('data', d => data += d);
+        resp.on('end', () => {
+          try {
+            const j = JSON.parse(data);
+            resolve(j.iana_timezone || j.timezone || 'America/Chicago');
+          } catch { resolve('America/Chicago'); }
+        });
+      }).on('error', () => resolve('America/Chicago'));
+      setTimeout(() => resolve('America/Chicago'), 3000);
+    });
+  } catch { return 'America/Chicago'; }
+}
+
 
 // ─── Hours calculation (daily OT > 8h) ───
 function calcHours(clockIn, clockOut, breakMin) {
@@ -5366,8 +5392,11 @@ app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
 app.get('/api/worker/timeclock', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json([]);
   const entries = db.prepare(`
-    SELECT t.*, j.title AS job_title, j.company_name AS job_company
-    FROM time_entries t LEFT JOIN jobs j ON t.job_id = j.id
+    SELECT t.*, j.title AS job_title, j.company_name AS job_company,
+           COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    FROM time_entries t
+    LEFT JOIN jobs j ON t.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
     WHERE t.employee_id = ? ORDER BY t.clock_in DESC LIMIT 200
   `).all(req.workerEmployeeId);
   res.json(entries);
@@ -5386,8 +5415,14 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   // ── Break start ──────────────────────────────────────────────────
   if (punch_type === 'break_start') {
-    if (!open) return res.status(400).json({ error: '尚未上班打卡，无法开始休息。' });
-    if (open.on_break) return res.status(400).json({ error: '您已在休息中，请先打卡休息结束。' });
+    let bsWarning = null;
+    if (!open) bsWarning = '提示：未找到上班打卡记录，可能漏打了上班卡';
+    else if (open.on_break) bsWarning = '提示：您已在休息中，已重新记录暂停开始时间';
+    if (!open) {
+      // No open entry — create one with a flag
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'open',?,1,'in',1,'漏打上班卡，由break_start触发')").run(req.workerEmployeeId, now, JSON.stringify([{start:now,end:null}]));
+      return res.json({ action: 'break_start', warning: bsWarning, entry_id: r2.lastInsertRowid });
+    }
 
     // GPS + geo-fence verification (same rules as clock-in)
     let bsGeoVerified = 0;
@@ -5448,8 +5483,12 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   // ── Break end ────────────────────────────────────────────────────
   if (punch_type === 'break_end') {
-    if (!open) return res.status(400).json({ error: '尚未上班打卡。' });
-    if (!open.on_break) return res.status(400).json({ error: '当前不在休息中。' });
+    let beWarning = null;
+    if (!open) beWarning = '提示：未找到上班打卡记录';
+    else if (!open.on_break) beWarning = '提示：您当前不在休息中';
+    if (!open) {
+      return res.json({ action: 'break_end', break_minutes: 0, warning: beWarning });
+    }
     const breaks = JSON.parse(open.break_records || '[]');
     const lastIdx = breaks.findIndex(b => !b.end);
     if (lastIdx >= 0) breaks[lastIdx].end = now;
@@ -5460,13 +5499,19 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     const breakMins = Math.round(totalBreakMs / 60000);
     db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?')
       .run(JSON.stringify(breaks), breakMins, open.id);
-    return res.json({ action: 'break_end', break_minutes: breakMins });
+    return res.json({ action: 'break_end', break_minutes: breakMins, warning: beWarning });
   }
 
   // ── Clock out ────────────────────────────────────────────────────
   if (punch_type === 'out') {
-    if (!open) return res.status(400).json({ error: '尚未上班打卡，无法下班打卡。' });
-    if (open.on_break) return res.status(400).json({ error: '请先打卡休息结束，再下班打卡。' });
+    let outWarning = null;
+    if (!open) outWarning = '提示：未找到上班打卡记录，可能漏打了上班卡';
+    else if (open.on_break) outWarning = '提示：您处于休息中，已自动结束休息并下班打卡';
+    if (!open) {
+      // Record a standalone clock-out for manager review
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(req.workerEmployeeId, now, now);
+      return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning: outWarning, entry_id: r2.lastInsertRowid });
+    }
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out',punch_photo=COALESCE(?,punch_photo) WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, photo_data || null, open.id);
@@ -5474,18 +5519,13 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   }
 
   // ── Clock in ─────────────────────────────────────────────────────
+  let clockInWarning = null;
   if (open) {
-    // Allow clocking in on a new day even if previous day's clock-out was missed
-    const { force_new_day } = req.body;
-    const nowLocal2 = new Date();
-    const todayStr2 = `${nowLocal2.getFullYear()}-${String(nowLocal2.getMonth()+1).padStart(2,'0')}-${String(nowLocal2.getDate()).padStart(2,'0')}`;
-    const entryLocal2 = new Date(open.clock_in);
-    const entryStr2 = `${entryLocal2.getFullYear()}-${String(entryLocal2.getMonth()+1).padStart(2,'0')}-${String(entryLocal2.getDate()).padStart(2,'0')}`;
-    if (entryStr2 < todayStr2 && force_new_day) {
-      // Leave previous day's entry unclosed for manager to review — just proceed to create new entry
-    } else {
-      return res.status(400).json({ error: '您已在班，请先下班打卡。' });
-    }
+    // Auto-close the dangling open entry, flag it for manager review
+    const missedDate = open.clock_in ? open.clock_in.slice(0,10) : '?';
+    db.prepare("UPDATE time_entries SET status='closed',clock_out=?,needs_review=1,review_reason=? WHERE id=?")
+      .run(now, `漏打下班卡（${missedDate}），由新上班打卡自动关闭`, open.id);
+    clockInWarning = `提示：${missedDate} 忘记打下班卡，该记录已标记给管理员审核`;
   }
   if (!latitude || !longitude) return res.status(400).json({ error: '打卡需要开启位置权限，请允许浏览器获取您的位置后重试。/ Location permission required to clock in.', need_gps: true });
   if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
@@ -5561,16 +5601,17 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   if (!photo_data) return res.status(400).json({ error: '上班打卡需要上传照片 / Photo is required for clock-in.', photo_required: true });
 
-  const doClockIn = db.transaction(() => {
-    const existingOpen = db.prepare("SELECT id FROM time_entries WHERE employee_id=? AND status='open' LIMIT 1").get(req.workerEmployeeId);
-    if (existingOpen) return null;
-    return db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
-      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null);
-  });
-  const r = doClockIn();
-  if (!r) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  // Get site timezone for this job
+  const siteTzRow = matchedSiteId
+    ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(matchedSiteId)
+    : (activeJob.js_id ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(activeJob.js_id) : null);
+  const siteTimezone = siteTzRow?.timezone || 'America/Chicago';
+
+  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo,site_timezone) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?,?)")
+    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null, siteTimezone);
   res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
-    site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
+    site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title,
+    site_timezone: siteTimezone, warning: clockInWarning });
 });
 
 // Upload punch photo for a time entry (must belong to this worker)
@@ -5899,7 +5940,9 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
   const wEmail = (wa?.email || '').toLowerCase();
 
   const open = req.workerEmployeeId
-    ? db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId)
+    ? db.prepare(`SELECT t.*, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+       FROM time_entries t LEFT JOIN jobs j ON t.job_id=j.id LEFT JOIN job_sites js ON j.site_id=js.id
+       WHERE t.employee_id=? AND t.status='open' ORDER BY t.clock_in DESC LIMIT 1`).get(req.workerEmployeeId)
     : null;
 
   let activeJobs = [];
@@ -6626,18 +6669,22 @@ app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all());
 });
 
-app.post('/api/admin/job-sites', requireAdmin, blockManager, (req, res) => {
-  const { name, address, latitude, longitude, radius_meters, partner_id } = req.body;
+app.post('/api/admin/job-sites', requireAdmin, blockManager, async (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, partner_id, timezone } = req.body;
   if (!name || !latitude || !longitude) return res.status(400).json({ error: 'Name, latitude, longitude required' });
-  const r = db.prepare('INSERT INTO job_sites (name, address, latitude, longitude, radius_meters, partner_id) VALUES (?,?,?,?,?,?)')
-    .run(name, address || '', latitude, longitude, radius_meters || 200, partner_id || null);
-  res.json({ success: true, id: r.lastInsertRowid });
+  const tz = timezone || await lookupTimezone(latitude, longitude);
+  const r = db.prepare('INSERT INTO job_sites (name, address, latitude, longitude, radius_meters, partner_id, timezone) VALUES (?,?,?,?,?,?,?)')
+    .run(name, address || '', latitude, longitude, radius_meters || 200, partner_id || null, tz);
+  res.json({ success: true, id: r.lastInsertRowid, timezone: tz });
 });
 
-app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
-  const { name, address, latitude, longitude, radius_meters, active } = req.body;
-  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active) WHERE id=?')
-    .run(name, address, latitude, longitude, radius_meters, active, req.params.id);
+app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, async (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, active, timezone } = req.body;
+  // If lat/lng changed and no explicit timezone, re-detect
+  let tz = timezone || null;
+  if (!tz && latitude && longitude) tz = await lookupTimezone(latitude, longitude);
+  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active), timezone=COALESCE(?,timezone) WHERE id=?')
+    .run(name, address, latitude, longitude, radius_meters, active, tz, req.params.id);
   res.json({ success: true });
 });
 
