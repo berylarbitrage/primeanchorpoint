@@ -348,7 +348,7 @@ tr:hover td{background:var(--sky-light)}
 <div class="login-box">
   <img src="/logo.svg" alt="Prime Anchorpoint" class="logo">
   <h1>Prime Anchorpoint</h1>
-  <p>管理后台</p>
+  <p id="loginSubtitle">管理后台</p>
   <input type="text" id="userInput" placeholder="用户名" autocomplete="username">
   <div class="pass-wrap">
     <input type="password" id="passInput" placeholder="密码" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
@@ -3125,6 +3125,10 @@ let TOKEN = '';
 let USER_ROLE = '';
 let USER_NAME = '';
 let _currentUserId = 0;
+
+// Determine which role this portal expects based on URL path
+const _PATH_ROLE = { '/admin': 'admin', '/staff': 'staff', '/manager': 'manager' };
+const PAGE_ROLE = _PATH_ROLE[window.location.pathname.replace(/\/$/, '')] || null;
 const API = '/api';
 
 
@@ -3174,8 +3178,15 @@ function applyRoleUI() {
 }
 
 function finishLogin(r) {
+  const role = r.role || 'staff';
+  // Enforce page role restriction
+  if (PAGE_ROLE && role !== PAGE_ROLE) {
+    const label = { admin: 'Admin 管理员', staff: 'Staff 员工', manager: 'Manager 经理' };
+    document.getElementById('loginErr').textContent = `此页面仅限 ${label[PAGE_ROLE] || PAGE_ROLE} 账户登录`;
+    return;
+  }
   TOKEN = r.token;
-  USER_ROLE = r.role || 'staff';
+  USER_ROLE = role;
   USER_NAME = r.username || '';
   _currentUserId = r.user_id || 0;
   document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
@@ -3404,6 +3415,12 @@ function logout() {
   document.getElementById('loginErr').textContent = '';
 }
 
+// Set login page subtitle based on portal role
+(function() {
+  const subtitles = { admin: 'Admin 管理员', staff: 'Staff 员工', manager: 'Manager 经理' };
+  if (PAGE_ROLE) document.getElementById('loginSubtitle').textContent = subtitles[PAGE_ROLE] + ' 登录';
+})();
+
 // Check cookie on load
 (function() {
   const m = document.cookie.match(/pa_token=([^;]+)/);
@@ -3412,7 +3429,14 @@ function logout() {
     fetch(API + '/admin/me', { headers: { 'Authorization': `Bearer ${TOKEN}` } })
       .then(r => { if (r.ok) return r.json(); throw 0; })
       .then(u => {
-        USER_ROLE = u.role || 'staff';
+        const role = u.role || 'staff';
+        // If this portal is role-restricted and the cookie belongs to a different role, clear it
+        if (PAGE_ROLE && role !== PAGE_ROLE) {
+          TOKEN = '';
+          document.cookie = 'pa_token=;path=/;max-age=0';
+          return;
+        }
+        USER_ROLE = role;
         USER_NAME = u.username || '';
         _currentUserId = u.id || 0;
         document.getElementById('loginWrap').style.display = 'none';
