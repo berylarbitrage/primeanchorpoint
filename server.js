@@ -4738,34 +4738,155 @@ app.get('/api/timeclock/status/:empCode', (req, res) => {
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - (weekAgo.getDay() || 7) + 1);
   const weekEntries = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND clock_in>=? AND status='closed'").all(emp.id, weekAgo.toISOString());
   const weekHours = weekEntries.reduce((s,e) => s + (e.total_hours||0), 0);
+  // Fetch configured work sites for this employee (via active assignments)
+  const sites = db.prepare(`
+    SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    JOIN job_sites js ON j.site_id = js.id
+    JOIN inquiries i ON a.inquiry_id = i.id
+    JOIN employees e ON (e.employee_id = i.worker_code OR i.id = (
+      SELECT linked_inquiry_id FROM worker_accounts WHERE linked_inquiry_id IS NOT NULL
+      AND id IN (SELECT id FROM worker_accounts WHERE 1=0)
+    ))
+    WHERE e.id = ? AND a.status IN ('assigned','working') AND js.latitude IS NOT NULL
+    LIMIT 10
+  `).all(emp.id);
+  // Also check employee_jobs table
+  const sites2 = db.prepare(`
+    SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+    FROM employee_jobs ej
+    JOIN jobs j ON ej.job_id = j.id
+    JOIN job_sites js ON j.site_id = js.id
+    WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL
+    LIMIT 10
+  `).all(emp.id);
+  const allSites = [...sites, ...sites2].filter((s,i,arr) => arr.findIndex(x=>x.id===s.id)===i);
   res.json({
     employee: { id: emp.id, name: `${emp.first_name} ${emp.last_name}`, employee_id: emp.employee_id, position: emp.position||'' },
     clocked_in: !!open,
+    on_break: open ? !!(open.on_break) : false,
     open_entry: open || null,
     today_hours: Math.round(todayHours*100)/100,
     week_hours: Math.round(weekHours*100)/100,
-    clock_in_time: open ? open.clock_in : null
+    clock_in_time: open ? open.clock_in : null,
+    work_sites: allSites
   });
 });
 
 app.post('/api/timeclock/punch', (req, res) => {
-  const { employee_id, pin } = req.body;
+  const { employee_id, pin, punch_type, latitude, longitude } = req.body;
   if (!employee_id || !pin) return res.status(400).json({ error: '请输入员工编号和 PIN' });
+  const ptype = punch_type || 'toggle'; // legacy: no punch_type = auto toggle
   const emp = db.prepare("SELECT * FROM employees WHERE employee_id=? AND status='active'").get(employee_id.toUpperCase());
   if (!emp) return res.status(401).json({ error: '未找到员工或员工已离职' });
   if (!emp.pin_hash) return res.status(401).json({ error: 'PIN 未设置，请联系管理员' });
   if (!verifyPin(pin, emp.pin_salt, emp.pin_hash)) return res.status(401).json({ error: 'PIN 错误' });
-  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
+
   const now = new Date().toISOString();
-  if (open) {
-    const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
-    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
-      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
-  } else {
-    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status) VALUES(?,?,'open')").run(emp.id, now);
-    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
+
+  // ── Geofencing: only block if worker has configured sites AND is outside ALL of them ──
+  if (latitude && longitude) {
+    const empSites = db.prepare(`
+      SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+      FROM employee_jobs ej
+      JOIN jobs j ON ej.job_id = j.id
+      JOIN job_sites js ON j.site_id = js.id
+      WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL
+    `).all(emp.id);
+    if (empSites.length > 0) {
+      let insideAny = false;
+      let closestDist = Infinity, closestSite = null;
+      for (const site of empSites) {
+        const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
+        if (dist <= site.radius_meters) { insideAny = true; break; }
+        if (dist < closestDist) { closestDist = dist; closestSite = site; }
+      }
+      if (!insideAny && closestSite) {
+        const distStr = closestDist >= 1000 ? (closestDist/1000).toFixed(1)+' km' : Math.round(closestDist)+' m';
+        return res.status(400).json({ error: `距离工作地点太远，无法打卡（距"${closestSite.name}"约 ${distStr}，允许范围 ${closestSite.radius_meters}m）`, geo_blocked: true });
+      }
+    }
   }
+
+  let warning = null; // warning message (not blocking)
+
+  // ── Legacy toggle (no punch_type) ──
+  if (ptype === 'toggle') {
+    if (open) {
+      const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
+      db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
+        .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+      return res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
+    } else {
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break) VALUES(?,?,'open','[]',0)").run(emp.id, now);
+      return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+    }
+  }
+
+  // ── Clock In ──
+  if (ptype === 'in') {
+    if (open) {
+      warning = `提示：您已有上班记录（${new Date(open.clock_in).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}），请确认是否漏打下班卡`;
+      return res.json({ action: 'in', already_open: true, clock_in: open.clock_in, warning, entry_id: open.id });
+    }
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type) VALUES(?,?,'open','[]',0,'in')").run(emp.id, now);
+    return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+  }
+
+  // ── Clock Out ──
+  if (ptype === 'out') {
+    if (!open) {
+      warning = '提示：未找到对应上班记录，可能漏打上班卡，已记录下班时间';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,total_hours,break_records,on_break,punch_type) VALUES(?,?,?,'closed',0,'[]',0,'out_only')").run(emp.id, now, now);
+      return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning, entry_id: r.lastInsertRowid });
+    }
+    if (open.on_break) warning = '提示：您处于暂停中，已自动结束暂停并打下班卡';
+    const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out' WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+    return res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime, warning });
+  }
+
+  // ── Break Start (Pause) ──
+  if (ptype === 'break_start') {
+    if (!open) {
+      warning = '提示：未找到上班记录，可能漏打上班卡';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type) VALUES(?,?,'open',?,1,'in')").run(emp.id, now, JSON.stringify([{start:now,end:null}]));
+      return res.json({ action: 'break_start', warning, entry_id: r.lastInsertRowid });
+    }
+    const breaks = JSON.parse(open.break_records||'[]');
+    if (open.on_break) {
+      warning = '提示：您已在暂停中，已重新记录暂停开始时间';
+      const lastOpen = breaks.findIndex(b=>!b.end);
+      if (lastOpen>=0) breaks[lastOpen].start = now;
+    } else {
+      breaks.push({start:now,end:null});
+    }
+    db.prepare('UPDATE time_entries SET break_records=?,on_break=1,break_start=? WHERE id=?').run(JSON.stringify(breaks), now, open.id);
+    return res.json({ action: 'break_start', entry_id: open.id, warning });
+  }
+
+  // ── Break End (Resume) ──
+  if (ptype === 'break_end') {
+    if (!open) {
+      warning = '提示：未找到上班记录，可能漏打上班卡，此操作已忽略';
+      return res.json({ action: 'break_end', no_entry: true, warning });
+    }
+    if (!open.on_break) {
+      warning = '提示：您当前不在暂停中，此操作已记录';
+    }
+    const breaks = JSON.parse(open.break_records||'[]');
+    const lastIdx = breaks.findIndex(b=>!b.end);
+    if (lastIdx>=0) breaks[lastIdx].end = now;
+    const totalBreakMs = breaks.reduce((sum,b)=>{if(b.start&&b.end)sum+=new Date(b.end)-new Date(b.start);return sum;},0);
+    const breakMins = Math.round(totalBreakMs/60000);
+    db.prepare('UPDATE time_entries SET break_records=?,on_break=0,break_minutes=? WHERE id=?').run(JSON.stringify(breaks),breakMins,open.id);
+    return res.json({ action: 'break_end', break_minutes: breakMins, warning });
+  }
+
+  return res.status(400).json({ error: '无效的打卡类型' });
 });
 
 // Serve timeclock page
