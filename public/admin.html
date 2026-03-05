@@ -2724,23 +2724,40 @@ tr:hover td{background:var(--sky-light)}
   <input type="hidden" id="empId">
   <div class="form-section">
     <h4>基本信息</h4>
-    <div class="field-row">
+    <div class="field-row3">
       <div class="field"><label>名 (First Name) *</label><input id="eFirst" placeholder="例：John"></div>
+      <div class="field"><label>中间名 (Middle Name)</label><input id="eMiddle" placeholder="可选"></div>
       <div class="field"><label>姓 (Last Name) *</label><input id="eLast" placeholder="例：Smith"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>员工编号</label><input id="eEmpId" placeholder="留空自动生成 EMP001..."></div>
       <div class="field"><label>出生日期 *</label><input id="eDob" type="date"></div>
     </div>
-    <div class="field-row">
-      <div class="field"><label>电话</label><input id="ePhone" placeholder="(555) 000-0000"></div>
-      <div class="field"><label>邮箱</label><input id="eEmail" type="email" placeholder="email@example.com"></div>
+    <div class="field">
+      <label>电话 * <button type="button" onclick="addEmpPhone()" style="margin-left:.5rem;padding:.1rem .5rem;font-size:.72rem;background:var(--sky-light);color:var(--blue);border:1px solid var(--sky);border-radius:4px;cursor:pointer">+ 添加</button></label>
+      <input id="ePhone" placeholder="(555) 000-0000" style="margin-bottom:.35rem">
+      <div id="extraPhonesContainer"></div>
     </div>
-    <div class="field"><label>街道地址 Street Address</label><input id="eAddr" placeholder="e.g. 123 Main St" oninput="clearEmpAddrStatus()"></div>
+    <div class="field">
+      <label>邮箱 <button type="button" onclick="addEmpEmail()" style="margin-left:.5rem;padding:.1rem .5rem;font-size:.72rem;background:var(--sky-light);color:var(--blue);border:1px solid var(--sky);border-radius:4px;cursor:pointer">+ 添加</button></label>
+      <input id="eEmail" type="email" placeholder="email@example.com" style="margin-bottom:.35rem">
+      <div id="extraEmailsContainer"></div>
+    </div>
+    <div class="form-section" style="margin:0;padding:.75rem 0 0;border:0">
+      <h4 style="margin-bottom:.5rem">社交媒体</h4>
+      <div class="field-row">
+        <div class="field"><label>WhatsApp</label><input id="eSocialWhatsapp" placeholder="手机号或用户名"></div>
+        <div class="field"><label>微信 WeChat</label><input id="eSocialWechat" placeholder="微信号"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Facebook</label><input id="eSocialFacebook" placeholder="用户名或链接"></div>
+        <div class="field"><label>Instagram</label><input id="eSocialInstagram" placeholder="@用户名"></div>
+      </div>
+    </div>
+    <div class="field"><label>街道地址 Street Address *</label><input id="eAddr" placeholder="e.g. 123 Main St" oninput="clearEmpAddrStatus()"></div>
     <div class="field"><label>单元 / 楼层 Unit / Suite <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="eStreet2" placeholder="e.g. Apt 2B, Suite 100" oninput="clearEmpAddrStatus()"></div>
     <div class="field-row3">
-      <div class="field"><label>城市 City</label><input id="eCity" placeholder="Chicago" oninput="clearEmpAddrStatus()"></div>
-      <div class="field"><label>州 State</label>
+      <div class="field"><label>城市 City *</label><input id="eCity" placeholder="Chicago" oninput="clearEmpAddrStatus()"></div>
+      <div class="field"><label>州 State *</label>
         <select id="eState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%" onchange="clearEmpAddrStatus()">
           <option value="">-- 州 --</option>
         </select>
@@ -7044,8 +7061,8 @@ function openEmpModal(id) {
   if (id) {
     const e = allEmployees.find(x=>x.id===id) || {};
     document.getElementById('eFirst').value    = e.first_name||'';
+    document.getElementById('eMiddle').value   = e.middle_name||'';
     document.getElementById('eLast').value     = e.last_name||'';
-    document.getElementById('eEmpId').value    = e.employee_id||'';
     document.getElementById('eDob').value      = e.dob||'';
     document.getElementById('ePhone').value    = e.phone||'';
     document.getElementById('eEmail').value    = e.email||'';
@@ -7064,13 +7081,27 @@ function openEmpModal(id) {
     document.getElementById('eNotes').value    = e.notes||'';
     document.getElementById('eSSN').value      = '';
     document.getElementById('ePin').value      = '';
+    // Extra phones/emails
+    let ep=[]; try{ep=JSON.parse(e.extra_phones||'[]');}catch{}
+    let ee=[]; try{ee=JSON.parse(e.extra_emails||'[]');}catch{}
+    _populateExtraContacts('extraPhonesContainer', ep, 'tel', '(555) 000-0000');
+    _populateExtraContacts('extraEmailsContainer', ee, 'email', 'email@example.com');
+    // Social media
+    let sm={}; try{sm=JSON.parse(e.social_media||'{}');}catch{}
+    document.getElementById('eSocialWhatsapp').value  = sm.whatsapp||'';
+    document.getElementById('eSocialWechat').value    = sm.wechat||'';
+    document.getElementById('eSocialFacebook').value  = sm.facebook||'';
+    document.getElementById('eSocialInstagram').value = sm.instagram||'';
   } else {
-    ['eFirst','eLast','eEmpId','eDob','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
-     'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    ['eFirst','eMiddle','eLast','eDob','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
+     'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin',
+     'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
     document.getElementById('addJobRecordBtn').style.display = 'none';
     document.getElementById('editEmpJobList').innerHTML = '<span style="color:var(--gray-400);font-size:.8rem">（新增员工后可在此添加就业记录）</span>';
+    document.getElementById('extraPhonesContainer').innerHTML = '';
+    document.getElementById('extraEmailsContainer').innerHTML = '';
   }
   clearEmpAddrStatus();
   document.getElementById('empModal').classList.add('show');
@@ -7511,15 +7542,47 @@ function _execDupMerge() {
   }, 100);
 }
 
+function _makeExtraContactRow(type, placeholder, value) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;gap:.35rem;margin-bottom:.35rem';
+  const inp = document.createElement('input');
+  inp.type = type; inp.placeholder = placeholder; inp.value = value || '';
+  inp.style.flex = '1';
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = '−';
+  btn.style.cssText = 'padding:.35rem .65rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;font-weight:700;font-size:.88rem;flex-shrink:0';
+  btn.onclick = () => wrap.remove();
+  wrap.appendChild(inp); wrap.appendChild(btn);
+  return wrap;
+}
+function _populateExtraContacts(containerId, values, type, placeholder) {
+  const c = document.getElementById(containerId);
+  c.innerHTML = '';
+  (values||[]).forEach(v => { if(v) c.appendChild(_makeExtraContactRow(type, placeholder, v)); });
+}
+function _collectExtraContacts(containerId) {
+  return [...document.getElementById(containerId).querySelectorAll('input')].map(i=>i.value.trim()).filter(Boolean);
+}
+function addEmpPhone() {
+  document.getElementById('extraPhonesContainer').appendChild(_makeExtraContactRow('tel','(555) 000-0000',''));
+}
+function addEmpEmail() {
+  document.getElementById('extraEmailsContainer').appendChild(_makeExtraContactRow('email','email@example.com',''));
+}
+
 async function saveEmployee() {
   const id = document.getElementById('empId').value;
+  const extraPhones = _collectExtraContacts('extraPhonesContainer');
+  const extraEmails = _collectExtraContacts('extraEmailsContainer');
   const data = {
-    employee_id: document.getElementById('eEmpId').value.trim(),
     first_name: document.getElementById('eFirst').value.trim(),
+    middle_name: document.getElementById('eMiddle').value.trim(),
     last_name:  document.getElementById('eLast').value.trim(),
     dob: document.getElementById('eDob').value,
     phone: document.getElementById('ePhone').value.trim(),
     email: document.getElementById('eEmail').value.trim(),
+    extra_phones: extraPhones,
+    extra_emails: extraEmails,
     address: document.getElementById('eAddr').value.trim(),
     street2: document.getElementById('eStreet2').value.trim(),
     city: document.getElementById('eCity').value.trim(),
@@ -7533,8 +7596,16 @@ async function saveEmployee() {
     notes: document.getElementById('eNotes').value.trim(),
     ssn: document.getElementById('eSSN').value.trim() || (id ? '__KEEP__' : ''),
     pin: document.getElementById('ePin').value || (id ? '__KEEP__' : ''),
+    social_media: {
+      whatsapp:  document.getElementById('eSocialWhatsapp').value.trim(),
+      wechat:    document.getElementById('eSocialWechat').value.trim(),
+      facebook:  document.getElementById('eSocialFacebook').value.trim(),
+      instagram: document.getElementById('eSocialInstagram').value.trim(),
+    },
   };
   if (!data.first_name || !data.last_name) return alert('请填写员工姓名');
+  if (!data.phone) return alert('请填写电话（必填）');
+  if (!data.address || !data.city || !data.state) return alert('请填写街道地址、城市和州（必填）');
   if (!id && !data.dob) return alert('请填写出生日期（用于工时确认页身份验证）');
   const zipErr = validateZip(data.zip);
   if (zipErr) return alert(zipErr);
