@@ -899,6 +899,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS manager_reg_codes (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// Temp email verification codes for admin invite registration
+db.exec(`CREATE TABLE IF NOT EXISTS admin_reg_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL,
+  contact TEXT NOT NULL,
+  contact_type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Backfill: assign worker_code + linked_inquiry_id to existing verified workers
 // (runs once on startup; activateWorkerAccount is idempotent — skips if code already set)
 setTimeout(() => {
@@ -2175,16 +2186,14 @@ app.post('/api/admin-invite/send-email-code', async (req, res) => {
   if (!token || !email) return res.status(400).json({ error: '缺少参数' });
   const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
   if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
-  let sent = false;
-  if (twilioClient && TWILIO_VERIFY_SID) {
-    try {
-      const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
-        .verifications.create({ to: email, channel: 'email' });
-      sent = true;
-      console.log(`[Verify] Sent email to ${email}, status: ${v.status}`);
-    } catch(e) { console.error('[Verify-ERR] Email:', e.message); }
-  } else {
-    console.log(`[Verify-SKIP] Twilio not configured. Email: ${email}`);
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchorpoint',
+    `您的邮箱验证码是 ${code}，15分钟内有效。\nYour email verification code is ${code}, valid for 15 minutes.`,
+    verificationCodeHtml(code));
+  if (sent) {
+    db.prepare('DELETE FROM admin_reg_codes WHERE token=? AND contact=?').run(token, email);
+    db.prepare('INSERT INTO admin_reg_codes (token, contact, contact_type, code, expires_at) VALUES (?,?,?,?,?)').run(token, email, 'email', code, expiresAt);
   }
   res.json({ success: true, skipped: !sent });
 });
@@ -2204,17 +2213,11 @@ app.post('/api/admin-invite/register', async (req, res) => {
   } else if (twilioClient && TWILIO_VERIFY_SID && !sms_code) {
     return res.status(400).json({ error: '请输入手机验证码' });
   }
-  // Verify email code
-  if (twilioClient && TWILIO_VERIFY_SID && email_code) {
-    let emailOk = false;
-    try {
-      const check = await twilioClient.verify.v2.services(TWILIO_VERIFY_SID)
-        .verificationChecks.create({ to: email, code: email_code });
-      emailOk = check.status === 'approved';
-    } catch(e) { console.error('[Verify-ERR] Email check:', e.message); }
-    if (!emailOk) return res.status(400).json({ error: '邮箱验证码错误或已过期，请重试' });
-  } else if (twilioClient && TWILIO_VERIFY_SID && !email_code) {
-    return res.status(400).json({ error: '请输入邮箱验证码' });
+  // Verify email code (stored in DB via sendEmail)
+  const emailVc = db.prepare("SELECT * FROM admin_reg_codes WHERE token=? AND contact=? AND contact_type='email' AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1").get(token, email);
+  if (emailVc) {
+    if (!email_code) return res.status(400).json({ error: '请输入邮箱验证码' });
+    if (emailVc.code !== String(email_code)) return res.status(400).json({ error: '邮箱验证码错误或已过期，请重试' });
   }
   const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(username);
   if (existing) return res.status(400).json({ error: '用户名已存在，请换一个' });
@@ -2224,6 +2227,7 @@ app.post('/api/admin-invite/register', async (req, res) => {
   const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active, phone, email, city) VALUES (?,?,?,?,?,?,1,?,?,?)')
     .run(username, hash, salt, inv.role, fullName, inv.assigned_partner_ids || '', phone || '', email || '', city || '');
   db.prepare('UPDATE admin_invites SET used=1, used_at=CURRENT_TIMESTAMP WHERE id=?').run(inv.id);
+  db.prepare('DELETE FROM admin_reg_codes WHERE token=?').run(token);
   const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
   const sessionToken = createSession(user);
   res.json({ success: true, token: sessionToken, role: user.role, username: user.username, display_name: user.display_name });
