@@ -3771,13 +3771,7 @@ async function scheduleInterview(id) {
             <label style="font-size:.83rem;font-weight:600;color:var(--gray-600)">面试时间 * <span style="font-weight:400;color:var(--gray-400);font-size:.78rem">（可添加多个时间选项）</span></label>
           </div>
           <div id="_ivTimeSlots">${renderTimeSlots(existingTimes)}</div>
-          <button type="button" onclick="
-            const row=document.createElement('div');
-            row.className='_ivTimeRow';
-            row.style.cssText='display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem';
-            row.innerHTML='<input type=\\'datetime-local\\' class=\\'_ivTimeInput\\' style=\\'flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box\\'><button type=\\'button\\' onclick=\\'this.closest(\"._ivTimeRow\").remove()\\' style=\\'flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1\\'>×</button>';
-            document.getElementById('_ivTimeSlots').appendChild(row);
-          " style="font-size:.82rem;padding:.35rem .8rem;border:1.5px dashed #93c5fd;border-radius:7px;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-weight:600">+ 添加时间选项</button>
+          <button type="button" onclick="_ivAddTimeSlot()" style="font-size:.82rem;padding:.35rem .8rem;border:1.5px dashed #93c5fd;border-radius:7px;background:#eff6ff;color:#1d4ed8;cursor:pointer;font-weight:600">+ 添加时间选项</button>
         </div>
         <div>
           <label style="font-size:.83rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.35rem">面试地点</label>
@@ -11236,6 +11230,24 @@ async function addSkillOption() {
     }
   });
 })();
+
+function _ivAddTimeSlot() {
+  const row = document.createElement('div');
+  row.className = '_ivTimeRow';
+  row.style.cssText = 'display:flex;gap:.4rem;align-items:center;margin-bottom:.4rem';
+  const input = document.createElement('input');
+  input.type = 'datetime-local';
+  input.className = '_ivTimeInput';
+  input.style.cssText = 'flex:1;padding:.55rem .7rem;border:1.5px solid #d1d5db;border-radius:8px;font-size:.88rem;box-sizing:border-box';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.onclick = () => row.remove();
+  btn.style.cssText = 'flex-shrink:0;width:28px;height:28px;border:none;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:1rem;cursor:pointer;line-height:1';
+  btn.textContent = '×';
+  row.appendChild(input);
+  row.appendChild(btn);
+  document.getElementById('_ivTimeSlots').appendChild(row);
+}
 </script>
 </body>
 </html>
