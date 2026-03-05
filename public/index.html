@@ -136,7 +136,21 @@
 .filter-chips{display:flex;gap:.35rem;flex-wrap:wrap}
 .job-filter-btn{padding:6px 16px;background:var(--white);color:var(--gray-600);border:1px solid var(--gray-200);border-radius:20px;font-size:.78rem;font-weight:600;cursor:pointer;transition:var(--tr)}
 .job-filter-btn.active,.job-filter-btn:hover{background:var(--sky);color:#fff;border-color:var(--sky)}
-@media(max-width:768px){.filter-label{min-width:70px;font-size:.68rem}.job-filter-btn{padding:5px 12px;font-size:.74rem}}
+.filter-toggle-btn{display:none}
+@media(max-width:768px){
+  .filter-toggle-btn{display:flex;align-items:center;gap:.5rem;width:100%;padding:.65rem 1rem;background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;font-weight:700;color:var(--blue);cursor:pointer;margin-bottom:.75rem;justify-content:space-between}
+  .filter-toggle-btn .filter-badge{background:var(--sky);color:#fff;border-radius:10px;padding:1px 8px;font-size:.72rem;font-weight:700;display:none}
+  .filter-toggle-btn .filter-badge.show{display:inline-block}
+  .filter-toggle-arrow{transition:transform .2s;font-size:.9rem;color:var(--gray-400)}
+  .filter-toggle-btn.open .filter-toggle-arrow{transform:rotate(180deg)}
+  .job-filter-section{padding:.85rem;overflow:hidden}
+  .job-filter-section .filter-body{display:none}
+  .job-filter-section .filter-body.open{display:block}
+  .filter-row{flex-direction:column;align-items:flex-start;gap:.4rem;margin-bottom:.85rem;padding-bottom:.85rem;border-bottom:1px solid var(--gray-200)}
+  .filter-row:last-child{margin-bottom:0;padding-bottom:0;border-bottom:none}
+  .filter-label{min-width:unset;font-size:.7rem}
+  .job-filter-btn{padding:5px 13px;font-size:.76rem}
+}
 .job-list{display:grid;gap:.75rem}
 .job-card{background:var(--white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.25rem 1.5rem;display:flex;justify-content:space-between;align-items:center;transition:var(--tr);cursor:pointer}
 .job-card:hover{border-color:var(--sky);box-shadow:var(--shadow)}
@@ -514,7 +528,12 @@ input.input-err,textarea.input-err{border-color:#e53e3e!important}input.input-er
 <div class="page" id="pg-jobs">
 <div class="pg-header"><div class="pg-header-bg" style="background-image:url('https://images.pexels.com/photos/3184465/pexels-photo-3184465.jpeg?auto=compress&cs=tinysrgb&w=1400')"></div><div class="pg-header-ov"></div><h1 data-i18n="jobsH1">Open Positions</h1><div class="subtitle" data-i18n="jobsSub">Find Your Next Role</div></div>
 <section class="section"><div class="section-inner">
+  <button class="filter-toggle-btn" id="filterToggleBtn" onclick="toggleJobFilters()">
+    <span>🔍 筛选 / Filter <span class="filter-badge" id="filterActiveBadge"></span></span>
+    <span class="filter-toggle-arrow">▼</span>
+  </button>
   <div class="job-filter-section" id="jobFilters">
+  <div class="filter-body" id="filterBody">
     <div class="filter-row">
       <span class="filter-label">Language</span>
       <div class="filter-chips">
@@ -561,7 +580,7 @@ input.input-err,textarea.input-err{border-color:#e53e3e!important}input.input-er
         <button class="job-filter-btn" data-filter="urgent" data-value="1" onclick="setJobFilter('urgent','1',this)">🔥 Urgent Only</button>
       </div>
     </div>
-  </div>
+  </div></div>
   <div class="job-list" id="jobList"></div>
 </div></section></div>
 
@@ -1143,9 +1162,11 @@ async function loadJobs(){try{const r=await fetch(WP_API+'/jobs?lang=all');if(!r
 function jobCityStateZip(loc){if(!loc)return'';const p=loc.split(',').map(s=>s.trim()).filter(Boolean);return p.length<=2?loc:p.slice(-2).join(', ');}
 function renderJobs(j){const l=document.getElementById('jobList');if(!j.length){l.innerHTML='<p style="text-align:center;color:var(--gray-400);padding:2rem">No positions right now.</p>';return}const authLabel=a=>({any:'Any Work Auth',gc:'Green Card / Citizen',citizen:'US Citizen Only'})[a]||'';const applyLabel=(T[currentLang]&&T[currentLang].applyBtn)||'Apply Now';const shareLabel=(T[currentLang]&&T[currentLang].shareLabel)||'Share:';const copyLabel=(T[currentLang]&&T[currentLang].shareCopy)||'Copy Link';l.innerHTML=j.map(jb=>{const safeTitle=(jb.title||'').replace(/'/g,"\\'").replace(/`/g,'\\`');const shareRow=`<div class="job-share-row"><span class="job-share-label">${shareLabel}</span><button class="share-btn share-wa" onclick="event.stopPropagation();shareJob('wa',${jb.id},'${safeTitle}')">WhatsApp</button><button class="share-btn share-fb" onclick="event.stopPropagation();shareJob('fb',${jb.id},'${safeTitle}')">Facebook</button><button class="share-btn share-tw" onclick="event.stopPropagation();shareJob('tw',${jb.id},'${safeTitle}')">&#x1D54F;</button><button class="share-btn share-line" onclick="event.stopPropagation();shareJob('line',${jb.id},'${safeTitle}')">LINE</button><button class="share-btn share-copy" id="copyBtn${jb.id}" onclick="event.stopPropagation();copyJobLink(${jb.id},this)">${copyLabel}</button></div>`;return `<div class="job-card" data-job-id="${jb.id}" onclick="this.querySelector('.job-detail').style.display=this.querySelector('.job-detail').style.display==='block'?'none':'block'"><div><h3>${jb.title}</h3><div class="meta"><span>${jb.type||''}</span><span>${jobCityStateZip(jb.location)}</span>${jb.pay?'<span>'+jb.pay+'</span>':''}${jb.schedule?'<span>🕐 '+jb.schedule+'</span>':''}${jb.work_auth?'<span>🪪 '+authLabel(jb.work_auth)+'</span>':''}</div><div class="job-detail">${jb.benefits?'<p>🎁 '+jb.benefits+'</p>':''}<p>${jb.desc||''}</p><button class="job-apply-btn" onclick="event.stopPropagation();openJobApply(${jb.id},'${safeTitle}')">${applyLabel}</button>${shareRow}</div></div><div class="job-badge${jb.urgent?' urgent':''}">${jb.urgent?'URGENT':jb.lang_name||''}</div></div>`}).join('')}
 let _jobFilters={lang:'all',type:'all',auth:'all',shift:'all',urgent:'all'};
-function setJobFilter(dim,val,btn){_jobFilters[dim]=val;document.querySelectorAll('[data-filter="'+dim+'"]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');applyJobFilters()}
+function setJobFilter(dim,val,btn){_jobFilters[dim]=val;document.querySelectorAll('[data-filter="'+dim+'"]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');applyJobFilters();updateFilterBadge()}
 function applyJobFilters(){let r=allJobs;const f=_jobFilters;if(f.lang!=='all')r=r.filter(j=>j.lang===f.lang);if(f.type!=='all')r=r.filter(j=>(j.type||'').toLowerCase().includes(f.type));if(f.auth!=='all'&&f.auth!=='any')r=r.filter(j=>j.work_auth===f.auth);if(f.auth==='any')r=r.filter(j=>!j.work_auth||j.work_auth==='any'||j.work_auth==='');if(f.shift!=='all')r=r.filter(j=>(j.schedule||'').toLowerCase().includes(f.shift));if(f.urgent!=='all')r=r.filter(j=>String(j.urgent)===f.urgent);renderJobs(r)}
 function filterJobs(lang,btn){setJobFilter('lang',lang,btn)}
+function updateFilterBadge(){const active=Object.values(_jobFilters).filter(v=>v!=='all').length;const badge=document.getElementById('filterActiveBadge');if(badge){badge.textContent=active;badge.classList.toggle('show',active>0)}}
+function toggleJobFilters(){const btn=document.getElementById('filterToggleBtn');const body=document.getElementById('filterBody');if(!btn||!body)return;const open=body.classList.toggle('open');btn.classList.toggle('open',open)}
 
 function shareJob(platform, jobId, title){
   const url=encodeURIComponent(window.location.origin+window.location.pathname+'?job='+jobId);
