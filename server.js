@@ -860,6 +860,29 @@ db.exec(`CREATE TABLE IF NOT EXISTS employee_registration_invites (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// Manager self-registration invite links
+db.exec(`CREATE TABLE IF NOT EXISTS manager_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'manager',
+  note TEXT DEFAULT '',
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  created_by INTEGER DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Temp verification codes for manager registration
+db.exec(`CREATE TABLE IF NOT EXISTS manager_reg_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL,
+  contact TEXT NOT NULL,
+  contact_type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Backfill: assign worker_code + linked_inquiry_id to existing verified workers
 // (runs once on startup; activateWorkerAccount is idempotent — skips if code already set)
 setTimeout(() => {
@@ -2027,6 +2050,100 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
   if (parseInt(req.params.id) === req.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
   db.prepare('DELETE FROM admin_users WHERE id = ?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Manager Invite Links ───
+// Admin: list active invites
+app.get('/api/admin/manager-invites', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare("SELECT * FROM manager_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC").all();
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}/manager-register?token=${r.token}` })));
+});
+
+// Admin: create invite link
+app.post('/api/admin/manager-invites', requireAdmin, requireRole('admin'), (req, res) => {
+  const { note, role, expires_hours } = req.body;
+  const r = ['admin', 'staff', 'manager'].includes(role) ? role : 'manager';
+  const hours = Math.min(Math.max(parseInt(expires_hours) || 72, 1), 720);
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + hours * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  db.prepare('INSERT INTO manager_invites (token, role, note, expires_at, created_by) VALUES (?,?,?,?,?)')
+    .run(token, r, note || '', expiresAt, req.userId);
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json({ success: true, token, url: `${proto}://${host}/manager-register?token=${token}` });
+});
+
+// Admin: revoke invite
+app.delete('/api/admin/manager-invites/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM manager_invites WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ── Public: validate invite token ──
+app.get('/api/public/manager-invite/:token', (req, res) => {
+  const inv = db.prepare("SELECT id, role, note FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(req.params.token);
+  if (!inv) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  res.json({ valid: true, role: inv.role, note: inv.note });
+});
+
+// ── Public: send verification code for manager registration ──
+app.post('/api/public/manager-register/send-code', async (req, res) => {
+  const { token, contact, contact_type } = req.body; // contact_type: 'phone' or 'email'
+  if (!token || !contact || !contact_type) return res.status(400).json({ error: 'Missing fields' });
+  const inv = db.prepare("SELECT * FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
+  if (!inv) return res.status(400).json({ error: 'Invalid or expired invite link' });
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  // Clean old codes for same token+contact
+  db.prepare('DELETE FROM manager_reg_codes WHERE token=? AND contact=?').run(token, contact);
+  db.prepare('INSERT INTO manager_reg_codes (token, contact, contact_type, code, expires_at) VALUES (?,?,?,?,?)')
+    .run(token, contact, contact_type, code, expiresAt);
+
+  if (contact_type === 'phone') {
+    await sendSMS(contact, `您的 Prime Anchorpoint 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
+  } else {
+    await sendEmail(contact, '验证码 / Verification Code — Prime Anchorpoint',
+      `您的验证码是 ${code}，10分钟内有效。\nYour verification code is ${code}.`,
+      verificationCodeHtml(code));
+  }
+  res.json({ success: true });
+});
+
+// ── Public: complete manager registration ──
+app.post('/api/public/manager-register/complete', async (req, res) => {
+  const { token, username, display_name, password, contact, contact_type, code } = req.body;
+  if (!token || !username || !password || !contact || !contact_type || !code)
+    return res.status(400).json({ error: 'Missing required fields' });
+  if (password.length < 6) return res.status(400).json({ error: '密码至少6位 / Password must be at least 6 characters' });
+
+  // Validate invite
+  const inv = db.prepare("SELECT * FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
+  if (!inv) return res.status(400).json({ error: 'Invalid or expired invite link' });
+
+  // Validate verification code
+  const vc = db.prepare("SELECT * FROM manager_reg_codes WHERE token=? AND contact=? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1").get(token, contact);
+  if (!vc || vc.code !== String(code)) return res.status(400).json({ error: '验证码错误或已过期 / Invalid or expired code' });
+
+  // Check username not taken
+  const existing = db.prepare('SELECT id FROM admin_users WHERE username=? AND active=1').get(username);
+  if (existing) return res.status(400).json({ error: '用户名已被占用 / Username already taken' });
+
+  // Create account (active=1, since they verified contact)
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, active) VALUES (?,?,?,?,?,1)')
+    .run(username, hash, salt, inv.role, display_name || username);
+
+  // Mark invite used + clean up code
+  db.prepare('UPDATE manager_invites SET used=1 WHERE id=?').run(inv.id);
+  db.prepare('DELETE FROM manager_reg_codes WHERE token=?').run(token);
+
+  const newUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
+  const sessionToken = createSession(newUser);
+  res.json({ success: true, token: sessionToken, role: newUser.role, username: newUser.username, display_name: newUser.display_name });
 });
 
 // ─── Worker Accounts (admin manages) ───
@@ -6332,6 +6449,9 @@ app.get('/customer', (req, res) => {
 });
 app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
+});
+app.get('/manager-register', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'manager-register.html'));
 });
 
 // ─── Legal pages ───
