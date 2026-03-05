@@ -5042,7 +5042,10 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
   const lastDay = new Date(y, m, 0).getDate();
   const toStr = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
   const confirmations = db.prepare(`
-    SELECT sc.date, sc.status, sc.shift_start, sc.shift_end, j.title
+    SELECT sc.id, sc.date, sc.status, sc.shift_start, sc.shift_end,
+           j.title, j.location AS job_location, j.description AS job_description,
+           j.pay AS job_pay, j.company_name,
+           a.work_address, a.pay_rate, a.pay_type
     FROM shift_confirmations sc
     JOIN assignments a ON sc.assignment_id = a.id
     LEFT JOIN jobs j ON a.job_id = j.id
@@ -5050,7 +5053,9 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
     ORDER BY sc.date ASC
   `).all(wa.linked_inquiry_id, fromStr, toStr);
   const assignments = db.prepare(`
-    SELECT a.id, a.work_schedule, a.start_date, j.title
+    SELECT a.id, a.work_schedule, a.start_date, j.title, j.location AS job_location,
+           j.description AS job_description, j.pay AS job_pay, j.company_name,
+           a.work_address, a.pay_rate, a.pay_type
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')
