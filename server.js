@@ -4785,11 +4785,11 @@ app.get('/admin', (req, res) => {
 });
 app.get('/staff', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+  res.sendFile(path.join(__dirname, 'public', 'staff.html'));
 });
 app.get('/manager', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+  res.sendFile(path.join(__dirname, 'public', 'manager.html'));
 });
 
 // ─── Worker Portal API ───
