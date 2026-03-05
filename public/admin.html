@@ -3498,10 +3498,13 @@ function logout() {
 (function() {
   const m = document.cookie.match(/pa_token=([^;]+)/);
   if (m) {
-    TOKEN = m[1];
-    fetch(API + '/admin/me', { headers: { 'Authorization': `Bearer ${TOKEN}` } })
+    const cookieToken = m[1];
+    TOKEN = cookieToken;
+    fetch(API + '/admin/me', { headers: { 'Authorization': `Bearer ${cookieToken}` } })
       .then(r => { if (r.ok) return r.json(); throw 0; })
       .then(u => {
+        // If a manual login already completed with a different token, don't override it
+        if (TOKEN !== cookieToken) return;
         const role = u.role || 'staff';
         // If this portal is role-restricted and the cookie belongs to a different role, clear it
         if (PAGE_ROLE && role !== PAGE_ROLE) {
@@ -3518,7 +3521,13 @@ function logout() {
         if (USER_ROLE === 'manager') { showTab('time'); }
         else { loadDashboard(); }
       })
-      .catch(() => { TOKEN = ''; document.cookie = 'pa_token=;path=/;max-age=0'; });
+      .catch(() => {
+        // Only clear the token/cookie if no newer login has happened
+        if (TOKEN === cookieToken) {
+          TOKEN = '';
+          document.cookie = 'pa_token=;path=/;max-age=0';
+        }
+      });
   }
 })();
 
