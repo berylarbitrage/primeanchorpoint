@@ -525,10 +525,9 @@ tr:last-child td{border-bottom:none}
           </div>
           <div id="calGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center"></div>
           <div style="display:flex;gap:.65rem;margin-top:.7rem;flex-wrap:wrap;font-size:.73rem;color:#475569">
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;display:inline-block"></span>已确认</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;display:inline-block"></span>已接受</span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span>待确认</span>
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span>已请假</span>
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:2px;background:#bfdbfe;display:inline-block;border:1px solid #93c5fd"></span>排班中</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span>已拒绝</span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#a78bfa;display:inline-block"></span>已打卡</span>
           </div>
         </div>
@@ -1520,15 +1519,15 @@ async function loadTasks() {
       const dayLabel = `${_DAY_NAMES[d.getDay()]} ${c.date.slice(5).replace('-','/')}${isToday ? ' <span style="background:#f59e0b;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">今天</span>' : isTomorrow ? ' <span style="background:#ef4444;color:#fff;border-radius:4px;padding:1px 5px;font-size:.72rem;font-weight:700;margin-left:3px">明天</span>' : ''}`;
       const timeStr = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)} – ${fmt12(c.shift_end)}` : '';
       const statusBadge = c.status === 'confirmed'
-        ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✓ 已确认</span>`
+        ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✓ 已接受</span>`
         : c.status === 'declined'
         ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">✕ 已拒绝</span>`
         : `<span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">待确认</span>`;
-      const actionBtns = c.status === 'pending' ? `
+      const actionBtns = `
         <div style="display:flex;gap:.6rem;margin-top:.75rem">
-          <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 接受</button>
-          <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 拒绝</button>
-        </div>` : '';
+          <button onclick="respondShiftConfirm(${c.id},'confirmed')" style="flex:1;padding:.5rem .4rem;background:${c.status==='confirmed'?'#16a34a':'#fff'};color:${c.status==='confirmed'?'#fff':'#16a34a'};border:1.5px solid #16a34a;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✓ 接受</button>
+          <button onclick="respondShiftConfirm(${c.id},'declined')" style="flex:1;padding:.5rem .4rem;background:${c.status==='declined'?'#dc2626':'#fff'};color:${c.status==='declined'?'#fff':'#dc2626'};border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✕ 拒绝</button>
+        </div>`;
       const cardBorder = (isTomorrow && c.status === 'pending') ? '2px solid #ef4444' : isNextWeek ? '1px solid #bfdbfe' : '1px solid #fcd34d';
       const cardBg = (isTomorrow && c.status === 'pending') ? '#fff5f5' : isNextWeek ? '#f0f9ff' : '#fff';
       // Insert next-week section header before first next-week card
@@ -1632,7 +1631,7 @@ async function respondTask(id, response) {
 async function respondShiftConfirm(id, response) {
   const r = await wApi(`/shift-confirmations/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
   if (r && r.success) {
-    showToast(response === 'confirmed' ? '✅ 已接受' : '已拒绝');
+    showToast(response === 'confirmed' ? '✅ 已接受' : '✕ 已拒绝');
     loadTasks();
     loadWorkCalendar(); // refresh calendar dots after responding
   }
@@ -1724,28 +1723,25 @@ function renderCalendar() {
     const dateStr = `${_calYear}-${String(_calMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const isToday = dateStr === todayStr;
     const confs = confMap[dateStr] || [];
-    const isProjected = projectedDays.has(dateStr);
-    const isPunched = punchSet.has(dateStr) && !confs.length && !isProjected;
-    const hasWork = confs.length > 0 || isProjected || isPunched;
+    const isPunched = punchSet.has(dateStr) && !confs.length;
+    const hasWork = confs.length > 0 || isPunched;
 
-    // Status dots
+    // Status dots — only for actual confirmations
     let dotsHtml = '';
     if (confs.length) {
       dotsHtml = confs.slice(0, 3).map(c =>
         `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${statusColor[c.status]||'#94a3b8'};margin:0 1px"></span>`
       ).join('');
-    } else if (isProjected) {
-      dotsHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:2px;background:#bfdbfe;border:1px solid #93c5fd;margin:0 1px"></span>`;
     } else if (isPunched) {
       dotsHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#a78bfa;margin:0 1px"></span>`;
     }
 
-    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : isProjected ? '#eff6ff' : isPunched ? '#f5f3ff' : 'transparent');
-    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : isProjected ? '1px solid #bfdbfe' : isPunched ? '1px solid #ddd6fe' : '1px solid transparent';
+    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : isPunched ? '#f5f3ff' : 'transparent');
+    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : isPunched ? '1px solid #ddd6fe' : '1px solid transparent';
     const numColor = isToday ? '#fff' : hasWork ? '#1e293b' : '#cbd5e1';
     const numWeight = (isToday || hasWork) ? '700' : '400';
 
-    const clickable = confs.length > 0 || isProjected;
+    const clickable = confs.length > 0;
     html += `<div style="border-radius:8px;padding:.28rem .05rem;background:${bg};border:${border};min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px${clickable ? ';cursor:pointer' : ''}" ${clickable ? `onclick="calDayClick('${dateStr}')"` : ''}>
       <span style="font-size:.8rem;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>
       ${dotsHtml ? `<div style="line-height:1">${dotsHtml}</div>` : ''}
@@ -1783,44 +1779,37 @@ function calDayClick(dateStr) {
 
   document.getElementById('calDayModalTitle').textContent = `${dayNames[d.getDay()]} ${dateStr}`;
   const statusColor = { confirmed:'#16a34a', pending:'#f59e0b', declined:'#dc2626' };
-  const statusLabel = { confirmed:'✓ 已确认', pending:'待确认', declined:'✕ 已拒绝' };
+  const statusLabel = { confirmed:'✓ 已接受', pending:'待确认', declined:'✕ 已拒绝' };
   const statusBg    = { confirmed:'#dcfce7', pending:'#fef3c7', declined:'#fee2e2' };
+
+  const calcHours = (s, e) => {
+    if (!s || !e) return '';
+    const [sh,sm]=s.split(':').map(Number), [eh,em]=e.split(':').map(Number);
+    let mins=(eh*60+em)-(sh*60+sm); if(mins<0)mins+=1440;
+    const h=Math.floor(mins/60),m=mins%60;
+    return m ? `${h}h ${m}m` : `${h}h`;
+  };
 
   let html = confs.map(c => {
     const timeStr = (c.shift_start && c.shift_end) ? `${fmt12(c.shift_start)} – ${fmt12(c.shift_end)}` : '';
+    const hours = calcHours(c.shift_start, c.shift_end);
     const badge = `<span style="background:${statusBg[c.status]};color:${statusColor[c.status]};border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">${statusLabel[c.status]||c.status}</span>`;
-    const actionBtns = c.status === 'pending' ? `
+    // Always show both buttons so user can re-select
+    const actionBtns = `
       <div style="display:flex;gap:.6rem;margin-top:.75rem">
-        <button onclick="respondShiftConfirm(${c.id},'confirmed');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 接受</button>
-        <button onclick="respondShiftConfirm(${c.id},'declined');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 拒绝</button>
-      </div>` : '';
+        <button onclick="respondShiftConfirm(${c.id},'confirmed');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:${c.status==='confirmed'?'#16a34a':'#fff'};color:${c.status==='confirmed'?'#fff':'#16a34a'};border:1.5px solid #16a34a;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✓ 接受</button>
+        <button onclick="respondShiftConfirm(${c.id},'declined');closeCalDayModal()" style="flex:1;padding:.5rem .4rem;background:${c.status==='declined'?'#dc2626':'#fff'};color:${c.status==='declined'?'#fff':'#dc2626'};border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✕ 拒绝</button>
+      </div>`;
     return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:.85rem;margin-bottom:.6rem">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
         <span style="font-weight:700;font-size:.95rem;color:#1e293b">${esc(c.title||'—')}</span>
         ${badge}
       </div>
-      ${timeStr ? `<div style="font-size:.85rem;color:#475569">🕐 Estimated: ${timeStr}</div>` : ''}
+      ${timeStr ? `<div style="font-size:.85rem;color:#475569;margin-bottom:.2rem">🕐 ${timeStr}${hours?` <span style="color:#94a3b8;font-size:.8rem">(约 ${hours})</span>`:''}</div>` : ''}
       ${actionBtns}
     </div>`;
   }).join('');
 
-  html += projItems.map(p => {
-    const timeStr = (p.start && p.end) ? `${fmt12(p.start)} – ${fmt12(p.end)}` : '';
-    const badge = `<span style="background:#dbeafe;color:#1d4ed8;border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">排班中</span>`;
-    const actionBtns = `
-      <div style="display:flex;gap:.6rem;margin-top:.75rem">
-        <button onclick="confirmScheduledShift(${p.assignmentId},'${dateStr}','confirmed')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✅ 接受</button>
-        <button onclick="confirmScheduledShift(${p.assignmentId},'${dateStr}','declined')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">❌ 拒绝</button>
-      </div>`;
-    return `<div style="border:1px solid #bfdbfe;border-radius:10px;padding:.85rem;margin-bottom:.6rem">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
-        <span style="font-weight:700;font-size:.95rem;color:#1e293b">${esc(p.title||'—')}</span>
-        ${badge}
-      </div>
-      ${timeStr ? `<div style="font-size:.85rem;color:#475569">🕐 Estimated: ${timeStr}</div>` : ''}
-      ${actionBtns}
-    </div>`;
-  }).join('');
 
   document.getElementById('calDayModalBody').innerHTML = html;
   document.getElementById('calDayModal').style.display = 'flex';
