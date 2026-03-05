@@ -653,8 +653,7 @@ tr:last-child td{border-bottom:none}
     <div id="tabPayments" style="display:none">
       <div class="card">
         <h2>打款记录</h2>
-        <table><thead><tr><th>日期</th><th>工作</th><th>周期</th><th>金额</th><th>付款方式</th><th>备注</th></tr></thead>
-        <tbody id="paymentsTable"></tbody></table>
+        <div id="paymentsTable"></div>
       </div>
     </div>
 
@@ -2523,22 +2522,32 @@ async function loadPayments() {
   const tbody = document.getElementById('paymentsTable');
   if (!tbody) return;
   if (!payments || !Array.isArray(payments)) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">⚠️ 账号未关联员工档案</td></tr>';
+    tbody.innerHTML = '<p class="empty">⚠️ 账号未关联员工档案</p>';
     return;
   }
   if (!payments.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无打款记录</td></tr>';
+    tbody.innerHTML = '<p class="empty">暂无打款记录</p>';
     return;
   }
   const PAY_METHOD = { cash:'💵 现金', check:'📄 支票', direct_deposit:'🏦 直接存款', zelle:'📱 Zelle', other:'其他' };
-  tbody.innerHTML = payments.map(p => `<tr>
-    <td>${esc(p.payment_date)}</td>
-    <td style="font-size:.82rem">${p.job_title ? esc(p.job_title) : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td style="font-size:.8rem">${p.period_start && p.period_end ? esc(p.period_start)+' ~ '+esc(p.period_end) : (p.period_start ? esc(p.period_start) : '<span style="color:var(--gray-300)">—</span>')}</td>
-    <td style="font-weight:700;color:var(--green)">$${(+p.amount).toFixed(2)}</td>
-    <td style="font-size:.82rem">${PAY_METHOD[p.payment_method] || esc(p.payment_method||'—')}</td>
-    <td style="font-size:.8rem;color:var(--gray-400)">${p.notes ? esc(p.notes) : '—'}</td>
-  </tr>`).join('');
+  tbody.innerHTML = payments.map(p => {
+    const period = p.period_start && p.period_end ? `${esc(p.period_start)} ~ ${esc(p.period_end)}`
+                 : p.period_start ? esc(p.period_start) : '—';
+    const method = PAY_METHOD[p.payment_method] || esc(p.payment_method || '—');
+    return `
+    <div style="border:1px solid var(--gray-200);border-radius:10px;padding:.85rem 1rem;margin-bottom:.65rem;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+        <span style="font-size:.88rem;color:var(--gray-500)">${esc(p.payment_date||'—')}</span>
+        <span style="font-size:1.1rem;font-weight:700;color:var(--green)">$${(+p.amount).toFixed(2)}</span>
+      </div>
+      ${p.job_title ? `<div style="font-weight:600;font-size:.92rem;margin-bottom:.3rem">${esc(p.job_title)}</div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:.35rem .9rem;font-size:.82rem;color:var(--gray-500);margin-top:.2rem">
+        <span>📅 周期：${period}</span>
+        <span>${method}</span>
+      </div>
+      ${p.notes ? `<div style="font-size:.8rem;color:var(--gray-400);margin-top:.4rem;border-top:1px solid var(--gray-100);padding-top:.4rem">${esc(p.notes)}</div>` : ''}
+    </div>`;
+  }).join('');
 }
 
 const WORK_STATUS_LABELS = { citizen:'🇺🇸 美国公民', green_card:'🟢 绿卡', ead:'📄 EAD工卡', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'其他' };
