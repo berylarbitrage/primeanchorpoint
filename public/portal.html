@@ -2444,7 +2444,7 @@ function startPunchFlow(type) {
   const missedWrap = document.getElementById('punchConfirmMissedWrap');
   if (type === 'in' && _punchStatus && _punchStatus.missed_checkout) {
     document.getElementById('punchConfirmMissedMsg').textContent =
-      `${_punchStatus.missed_date || '上次'} 未打下班卡，系统将自动关闭该记录。`;
+      `${_punchStatus.missed_date || '上次'} 未打下班卡，该记录将标记给管理员审核（下班时间留空）。`;
     missedWrap.style.display = '';
   } else { missedWrap.style.display = 'none'; }
 
