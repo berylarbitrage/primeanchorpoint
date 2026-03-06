@@ -6292,9 +6292,11 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
   const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
   const wEmail = (wa?.email || '').toLowerCase();
 
+  const seenJobIds = new Set();
   let jobs = [];
+
   if (req.workerEmployeeId) {
-    jobs = db.prepare(`
+    const ejJobs = db.prepare(`
       SELECT ej.id, ej.job_id, ej.status, ej.start_date, ej.end_date, ej.emp_hourly_rate,
              j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
              j.pay, j.pay_period, j.company_name, j.site_id,
@@ -6307,28 +6309,30 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
       WHERE ej.employee_id = ? AND ej.status = 'active'
       ORDER BY ej.assigned_at DESC
     `).all(linkedInqId, req.workerEmployeeId);
+    for (const j of ejJobs) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
-  // Fallback: check assignments table (same as punch/status)
-  if (!jobs.length) {
-    jobs = db.prepare(`
-      SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
-             j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
-             j.pay, j.pay_period, j.company_name, j.site_id,
-             js.name AS site_name, js.address AS site_address,
-             js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC
-    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  // Always also include assignments — add any job_ids not already covered above
+  const aJobs = db.prepare(`
+    SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
+           j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
+           j.pay, j.pay_period, j.company_name, j.site_id,
+           js.name AS site_name, js.address AS site_address,
+           js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    JOIN inquiries i ON a.inquiry_id = i.id
+    WHERE a.status != 'cancelled'
+      AND (
+        (? IS NOT NULL AND a.inquiry_id = ?)
+        OR (? != '' AND phone10(i.phone) = ?)
+        OR (? != '' AND lower(i.email) = ?)
+      )
+    ORDER BY a.assigned_at DESC
+  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  for (const j of aJobs) {
+    if (!seenJobIds.has(j.job_id)) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
   res.json(jobs);
