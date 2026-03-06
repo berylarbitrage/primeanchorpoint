@@ -5137,6 +5137,22 @@ app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
   res.json({ success: true, ...hrs, break_minutes: breakMins, status });
 });
 
+// PATCH /api/manager/time-entries/:id/correct-time — correct clock_in or clock_out for a punch
+app.patch('/api/manager/time-entries/:id/correct-time', requireAdmin, (req, res) => {
+  const { field, new_time } = req.body;
+  if (!['clock_in', 'clock_out'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const t = new Date(new_time);
+  if (isNaN(t.getTime())) return res.status(400).json({ error: 'Invalid time' });
+  db.prepare(`UPDATE time_entries SET ${field}=? WHERE id=?`).run(t.toISOString(), req.params.id);
+  const entry = db.prepare('SELECT * FROM time_entries WHERE id=?').get(req.params.id);
+  if (entry && entry.clock_in && entry.clock_out) {
+    const hrs = calcHours(entry.clock_in, entry.clock_out, entry.break_minutes || 0);
+    db.prepare('UPDATE time_entries SET total_hours=?,regular_hours=?,overtime_hours=? WHERE id=?')
+      .run(hrs.total, hrs.regular, hrs.overtime, req.params.id);
+  }
+  res.json({ success: true });
+});
+
 app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
   db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?").run(req.params.id);
   res.json({ success: true });
@@ -8188,12 +8204,12 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
     if (!open) {
       // Create a flagged open entry
       const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,job_id,punch_type,break_records,on_break,geo_verified,needs_review,review_reason) VALUES(?,?,'open',?,'in',?,1,0,1,'漏打上班卡，由manager break_start触发')").run(emp.id, now, job_id||null, JSON.stringify([{start:now,end:null}]));
-      return res.json({ action: 'break_start', warning: '未找到上班记录，已创建并标记审核' });
+      return res.json({ action: 'break_start', warning: '未找到上班记录，已创建并标记审核', entry_id: r2.lastInsertRowid, punch_time: now });
     }
     const breaks = JSON.parse(open.break_records || '[]');
     breaks.push({ start: now, end: null });
     db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?').run(JSON.stringify(breaks), open.id);
-    return res.json({ action: 'break_start' });
+    return res.json({ action: 'break_start', entry_id: open.id, punch_time: now });
   }
   if (punch_type === 'break_end') {
     if (!open) return res.json({ action: 'break_end', warning: '未找到上班打卡记录' });
@@ -8205,12 +8221,12 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
     if (lastIdx >= 0) breaks[lastIdx].end = now;
     const breakMins = Math.round(breaks.reduce((s,b) => b.start&&b.end ? s+(new Date(b.end)-new Date(b.start)):s, 0) / 60000);
     db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
-    return res.json({ action: 'break_end', break_minutes: breakMins });
+    return res.json({ action: 'break_end', break_minutes: breakMins, entry_id: open.id, punch_time: now });
   }
   if (punch_type === 'out') {
     if (!open) {
       const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,job_id,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,?,'closed',?,0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(emp.id, now, now, job_id||null);
-      return res.json({ action: 'out', total_hours: 0, warning: '未找到上班记录，已记录下班并标记审核' });
+      return res.json({ action: 'out', total_hours: 0, warning: '未找到上班记录，已记录下班并标记审核', entry_id: r2.lastInsertRowid, clock_out: now });
     }
     if (open.on_break) {
       // Auto-close break then clock out
@@ -8224,7 +8240,7 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out' WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now });
+    return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now, entry_id: open.id });
   }
   // Clock in — auto-close dangling open entry
   let ciWarning = null;
