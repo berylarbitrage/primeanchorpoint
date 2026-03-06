@@ -737,6 +737,23 @@ async function loadTimeClock() {
   if (!rows) return;
   renderTimeClock(rows);
 }
+function hasIncompleteLoop(t) {
+  // clock-out without clock-in
+  if (!t.clock_in && t.clock_out) return true;
+  // clock-in without clock-out
+  if (t.clock_in && !t.clock_out) return true;
+  // check break records
+  let recs = [];
+  try { recs = JSON.parse(t.break_records || '[]'); } catch(e) {}
+  for (const b of recs) {
+    // break start without break end
+    if (b.start && !b.end) return true;
+    // break end without break start
+    if (!b.start && b.end) return true;
+  }
+  return false;
+}
+
 function renderTimeClock(rows) {
   if (!rows.length) {
     document.getElementById('tcTable').innerHTML = '<tr><td colspan="10" class="empty-state" style="padding:2.5rem;text-align:center">暂无打卡记录</td></tr>';
@@ -752,8 +769,11 @@ function renderTimeClock(rows) {
       ? `<img src="${photoUrl}" onclick="openPunchPhoto('${photoUrl.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)">`
       : '—';
     const tz = t.display_timezone;
-    return `<tr>
-      <td><div class="emp-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-code">${esc(t.emp_code||'')}</div></td>
+    const incomplete = hasIncompleteLoop(t);
+    const rowStyle = incomplete ? ' style="background:#fef2f2;outline:1.5px solid #fca5a5;"' : '';
+    const incompleteTag = incomplete ? '<span title="时间记录未完成闭环，请确认" style="display:inline-block;margin-left:4px;color:#dc2626;font-size:.75rem;font-weight:700;vertical-align:middle">⚠ 待确认</span>' : '';
+    return `<tr${rowStyle}>
+      <td><div class="emp-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-code">${esc(t.emp_code||'')}</div>${incompleteTag}</td>
       <td style="white-space:nowrap">${fmtDT(t.clock_in, tz)}</td>
       <td style="white-space:nowrap">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
       <td>${renderBreaks(t)}</td>
