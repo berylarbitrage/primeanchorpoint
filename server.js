@@ -573,6 +573,8 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
   try { db.exec(`ALTER TABLE admin_users ADD COLUMN ${col}`); } catch {}
 });
+// Explicit fallback: ensure created_at exists (older SQLite may reject CURRENT_TIMESTAMP default above)
+try { db.exec("ALTER TABLE admin_users ADD COLUMN created_at TEXT DEFAULT ''"); } catch {};
 
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
