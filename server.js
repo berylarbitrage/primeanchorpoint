@@ -5143,7 +5143,7 @@ app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
 });
 
 app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
-  const { ids, action, regular_hours, overtime_hours } = req.body;
+  const { ids, action, regular_hours, overtime_hours, clock_in_delta_minutes, clock_out_delta_minutes } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: '未选择记录' });
   if (action === 'confirm') {
     const stmt = db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?");
@@ -5153,6 +5153,15 @@ app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
     const ot = Math.max(0, parseFloat(overtime_hours) || 0);
     const stmt = db.prepare("UPDATE time_entries SET regular_hours=?,overtime_hours=?,total_hours=? WHERE id=?");
     db.transaction(() => { for (const id of ids) stmt.run(reg, ot, reg + ot, id); })();
+  } else if (action === 'adjust_time') {
+    const ciDelta = parseInt(clock_in_delta_minutes) || 0;
+    const coDelta = parseInt(clock_out_delta_minutes) || 0;
+    db.transaction(() => {
+      for (const id of ids) {
+        if (ciDelta) db.prepare("UPDATE time_entries SET clock_in=datetime(clock_in,?||' minutes') WHERE id=?").run(String(ciDelta), id);
+        if (coDelta) db.prepare("UPDATE time_entries SET clock_out=datetime(clock_out,?||' minutes') WHERE clock_out IS NOT NULL AND id=?").run(String(coDelta), id);
+      }
+    })();
   }
   res.json({ success: true });
 });
