@@ -8935,9 +8935,7 @@ function renderTimeEntries(list) {
   document.getElementById('timeTable').innerHTML = list.length ? list.map(t=>{
     const photoSrc = t.punch_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`
                    : t.punch_photo ? t.punch_photo : '';
-    const photoCell = photoSrc
-      ? `<img src="${photoSrc}" onclick="openPunchPhoto('${photoSrc.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)" title="点击查看大图">`
-      : '—';
+    const photoCell = punchPhotoThumb(photoSrc);
     return `<tr>
     <td><strong>${esc(t.first_name||'')} ${esc(t.last_name||'')}</strong><br><span class="emp-meta">${esc(t.emp_code||'')}</span></td>
     <td>${fmtDT(t.clock_in)}</td>
@@ -8968,8 +8966,31 @@ function openPunchPhoto(src) {
     overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
     document.body.appendChild(overlay);
   }
-  document.getElementById('punchPhotoFull').src = src;
+  fetchAuthImg(src).then(url => { document.getElementById('punchPhotoFull').src = url; });
   overlay.style.display = 'flex';
+}
+
+// Fetch a protected image using the Bearer token and return a blob URL
+async function fetchAuthImg(src) {
+  try {
+    const resp = await fetch(src, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
+    if (!resp.ok) return src;
+    const blob = await resp.blob();
+    return URL.createObjectURL(blob);
+  } catch { return src; }
+}
+
+// Render a punch photo thumbnail that authenticates via Bearer token
+function punchPhotoThumb(src) {
+  if (!src) return '—';
+  const id = 'pp_' + Math.random().toString(36).slice(2);
+  const style = 'width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)';
+  setTimeout(() => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    fetchAuthImg(src).then(url => { el.src = url; el.onclick = () => openPunchPhoto(src); });
+  }, 0);
+  return `<img id="${id}" src="" style="${style}" title="点击查看大图">`;
 }
 
 async function openTimeModal(entry) {
