@@ -194,10 +194,15 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 
       <div style="display:block;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;font-size:.85rem;color:#92400e;margin-bottom:1rem" id="approvalNotice"></div>
 
-      <div class="field">
-        <label id="lEPartner"></label>
-        <select id="ePartner"></select>
-        <div class="field-hint" id="hEPartner"></div>
+      <div class="field-row">
+        <div class="field">
+          <label id="lEFirstName"></label>
+          <input type="text" id="eFirstName" autocomplete="given-name">
+        </div>
+        <div class="field">
+          <label id="lELastName"></label>
+          <input type="text" id="eLastName" autocomplete="family-name">
+        </div>
       </div>
 
       <div class="field">
@@ -211,15 +216,9 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
         <div class="field-hint" id="hEEin"></div>
       </div>
 
-      <div class="field-row">
-        <div class="field">
-          <label id="lEContact"></label>
-          <input type="text" id="eContact">
-        </div>
-        <div class="field">
-          <label id="lEPhone"></label>
-          <input type="tel" id="ePhone">
-        </div>
+      <div class="field">
+        <label id="lEPhone"></label>
+        <input type="tel" id="ePhone" oninput="formatPhoneInput(this)">
       </div>
 
       <div class="field">
@@ -299,6 +298,42 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
       <div class="success-body" id="successWBody"></div>
     </div>
 
+    <!-- Enterprise: Phone Verification -->
+    <div id="enterpriseVerifyPhone" style="display:none">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <div style="font-size:2rem;margin-bottom:.5rem">📱</div>
+        <h2 id="eVerifyPhoneTitle" style="color:var(--blue);margin:0 0 .5rem"></h2>
+        <p id="eVerifyPhoneDesc" style="color:#666;font-size:.9rem"></p>
+      </div>
+      <div class="field">
+        <label id="lEVPhone"></label>
+        <input type="text" id="evPhoneCode" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem" inputmode="numeric">
+      </div>
+      <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
+        <a href="#" id="eResendPhoneA" onclick="enterpriseResendCode('phone');return false" style="font-size:.82rem;color:var(--sky)"></a>
+      </div>
+      <button class="btn btn-submit" id="btnEVerifyPhone" onclick="enterpriseVerifyStep('phone')"></button>
+      <p id="eVerifyPhoneHint" style="text-align:center;font-size:.82rem;color:#999;margin-top:.75rem"></p>
+    </div>
+
+    <!-- Enterprise: Email Verification -->
+    <div id="enterpriseVerifyEmail" style="display:none">
+      <div style="text-align:center;margin-bottom:1.5rem">
+        <div style="font-size:2rem;margin-bottom:.5rem">✉️</div>
+        <h2 id="eVerifyEmailTitle" style="color:var(--blue);margin:0 0 .5rem"></h2>
+        <p id="eVerifyEmailDesc" style="color:#666;font-size:.9rem"></p>
+      </div>
+      <div class="field">
+        <label id="lEVEmail"></label>
+        <input type="text" id="evEmailCode" maxlength="6" style="text-align:center;font-size:1.2rem;letter-spacing:.3rem" inputmode="numeric">
+      </div>
+      <div style="text-align:right;margin-top:-.5rem;margin-bottom:1rem">
+        <a href="#" id="eResendEmailA" onclick="enterpriseResendCode('email');return false" style="font-size:.82rem;color:var(--sky)"></a>
+      </div>
+      <button class="btn btn-submit" id="btnEVerifyEmail" onclick="enterpriseVerifyStep('email')"></button>
+      <p id="eVerifyEmailHint" style="text-align:center;font-size:.82rem;color:#999;margin-top:.75rem"></p>
+    </div>
+
     <div class="success-screen" id="enterpriseSuccess">
       <div class="success-icon">📨</div>
       <div class="success-title" id="successETitle"></div>
@@ -346,13 +381,12 @@ const L = {
 
     enterpriseH2:     '🏢 企业注册',
     approvalNotice:   '企业账号需要管理员审核通过后方可使用',
-    lPartner:         '关联合作公司 *',
-    hPartner:         '请选择您所在的公司',
+    lEFirstName:      '注册人名 *',
+    lELastName:       '注册人姓 *',
     lCName:           '企业名称 *',
-    lEin:             'EIN（雇主识别号码）',
-    hEin:             '9位数字，格式 XX-XXXXXXX（选填）',
-    lContact:         '联系人 *',
-    lBizPhone:        '联系电话',
+    lEin:             'EIN（雇主识别号码）*',
+    hEin:             '9位数字，格式 XX-XXXXXXX',
+    lBizPhone:        '联系电话 *',
     lBizEmail:        '邮箱 *（用于登录）',
     lPosNeeds:        '工种需求',
     hPosNeeds:        '可多选',
@@ -422,12 +456,14 @@ const L = {
     errStatus:   '请选择身份状态',
     errPwd:      '密码至少6位',
     errPwdMatch: '两次密码不一致',
-    errPartner:  '请选择您所在的合作公司',
+    errEFirstName: '请输入注册人名字',
+    errELastName:  '请输入注册人姓氏',
     errCName:    '请输入企业名称',
-    errContact:  '请输入联系人',
+    errBizPhone: '请输入联系电话',
     errPhoneCode:'请输入手机验证码',
     errEmailCode:'请输入邮箱验证码',
     errNetwork:  '网络错误，请重试',
+    errEin:      '请输入EIN（雇主识别号码）',
     errEinFmt:   'EIN 格式应为 XX-XXXXXXX（9位数字）',
     dupPhone:    '该手机号已注册',
     dupEmail:    '该邮箱已注册',
@@ -456,13 +492,12 @@ const L = {
 
     enterpriseH2:     '🏢 Enterprise Registration',
     approvalNotice:   'Enterprise accounts require admin approval before access',
-    lPartner:         'Select Your Company *',
-    hPartner:         'Select the company you work for',
+    lEFirstName:      'First Name *',
+    lELastName:       'Last Name *',
     lCName:           'Company Name *',
-    lEin:             'EIN (Employer Identification Number)',
-    hEin:             '9 digits, format XX-XXXXXXX (optional)',
-    lContact:         'Contact Name *',
-    lBizPhone:        'Phone',
+    lEin:             'EIN (Employer Identification Number) *',
+    hEin:             '9 digits, format XX-XXXXXXX',
+    lBizPhone:        'Phone *',
     lBizEmail:        'Email * (used for login)',
     lPosNeeds:        'Position Needs',
     hPosNeeds:        'Select all positions you need workers for',
@@ -537,12 +572,14 @@ const L = {
     errStatus:   'Work status is required',
     errPwd:      'Password must be at least 6 characters',
     errPwdMatch: 'Passwords do not match',
-    errPartner:  'Please select your company',
+    errEFirstName: 'First name is required',
+    errELastName:  'Last name is required',
     errCName:    'Company name is required',
-    errContact:  'Contact name is required',
+    errBizPhone: 'Phone is required',
     errPhoneCode:'Please enter phone verification code',
     errEmailCode:'Please enter email verification code',
     errNetwork:  'Network error, please try again',
+    errEin:      'EIN is required',
     errEinFmt:   'EIN must be in XX-XXXXXXX format (9 digits)',
     dupPhone:    'Phone number already registered',
     dupEmail:    'Email already registered',
@@ -571,13 +608,12 @@ const L = {
 
     enterpriseH2:     '🏢 Registro Empresarial',
     approvalNotice:   'Las cuentas empresariales requieren aprobación del administrador',
-    lPartner:         'Seleccione su Empresa *',
-    hPartner:         'Seleccione la empresa para la que trabaja',
+    lEFirstName:      'Nombre del Registrante *',
+    lELastName:       'Apellido del Registrante *',
     lCName:           'Nombre de la Empresa *',
-    lEin:             'EIN (Número de Identificación del Empleador)',
-    hEin:             '9 dígitos, formato XX-XXXXXXX (opcional)',
-    lContact:         'Nombre del Contacto *',
-    lBizPhone:        'Teléfono',
+    lEin:             'EIN (Número de Identificación del Empleador) *',
+    hEin:             '9 dígitos, formato XX-XXXXXXX',
+    lBizPhone:        'Teléfono *',
     lBizEmail:        'Correo Electrónico * (para iniciar sesión)',
     lPosNeeds:        'Necesidades de Personal',
     hPosNeeds:        'Seleccione todos los puestos que necesita',
@@ -644,12 +680,14 @@ const L = {
     errStatus:   'El estado de trabajo es requerido',
     errPwd:      'La contraseña debe tener al menos 6 caracteres',
     errPwdMatch: 'Las contraseñas no coinciden',
-    errPartner:  'Por favor seleccione su empresa',
+    errEFirstName: 'El nombre del registrante es requerido',
+    errELastName:  'El apellido del registrante es requerido',
     errCName:    'El nombre de la empresa es requerido',
-    errContact:  'El nombre del contacto es requerido',
+    errBizPhone: 'El teléfono es requerido',
     errPhoneCode:'Ingrese el código de verificación del teléfono',
     errEmailCode:'Ingrese el código de verificación del correo',
     errNetwork:  'Error de red, intente de nuevo',
+    errEin:      'El EIN es obligatorio',
     errEinFmt:   'EIN debe tener el formato XX-XXXXXXX (9 dígitos)',
     dupPhone:    'Este teléfono ya está registrado',
     dupEmail:    'Este correo ya está registrado',
@@ -778,11 +816,11 @@ function setLang(lang) {
   // Enterprise form
   setText('enterpriseH2', 'enterpriseH2');
   setText('approvalNotice', 'approvalNotice');
-  setText('lEPartner', 'lPartner'); setText('hEPartner', 'hPartner');
+  setText('lEFirstName', 'lEFirstName');
+  setText('lELastName', 'lELastName');
   setText('lEName', 'lCName');      setPh('eName', 'phCName');
   setText('lEEin', 'lEin');         setPh('eEin', 'phEin');
   setText('hEEin', 'hEin');
-  setText('lEContact', 'lContact'); setPh('eContact', 'phContact');
   setText('lEPhone', 'lBizPhone');  setPh('ePhone', 'phBizPhone');
   setText('lEEmail', 'lBizEmail');  setPh('eEmail', 'phBizEmail');
   setText('lEPos', 'lPosNeeds');    setText('hEPos', 'hPosNeeds');
@@ -790,6 +828,20 @@ function setLang(lang) {
   setText('lEPwd', 'lPwd');         setPh('ePassword', 'phPwd');
   setText('lEPwd2', 'lPwd2');       setPh('ePassword2', 'phPwd2');
   setText('btnRegE', 'btnE');
+
+  // Enterprise verification steps
+  setText('eVerifyPhoneTitle', 'verifyPhoneTitle');
+  setText('eVerifyPhoneDesc', 'verifyPhoneDesc');
+  setText('eVerifyEmailTitle', 'verifyEmailTitle');
+  setText('eVerifyEmailDesc', 'verifyEmailDesc');
+  setText('lEVPhone', 'lVPhone');    setPh('evPhoneCode', 'phCode');
+  setText('lEVEmail', 'lVEmail');    setPh('evEmailCode', 'phCode');
+  setText('eResendPhoneA', 'resendPhone');
+  setText('eResendEmailA', 'resendEmail');
+  setText('btnEVerifyPhone', 'btnVerifyPhone');
+  setText('btnEVerifyEmail', 'btnVerifyEmail');
+  setText('eVerifyPhoneHint', 'verifyExpiry');
+  setText('eVerifyEmailHint', 'verifyExpiry');
 
   // Verification steps
   setText('verifyPhoneTitle', 'verifyPhoneTitle');
@@ -811,12 +863,6 @@ function setLang(lang) {
   setText('successETitle', 'successETitle');
   setHtml('successEBody', 'successEBody');
 
-  // Partner dropdown - re-render with new language
-  if (_partnersCache === 'loading') renderPartnerDropdown('loading');
-  else if (_partnersCache === 'empty') renderPartnerDropdown('empty');
-  else if (_partnersCache === 'fail') renderPartnerDropdown('fail');
-  else if (Array.isArray(_partnersCache)) renderPartnerDropdown(_partnersCache);
-
   // Duplicate hints (update text if visible)
   const dpEl = document.getElementById('dupPhone');
   if (dpEl && dpEl.style.display !== 'none') dpEl.textContent = t('dupPhone');
@@ -831,20 +877,6 @@ function setLang(lang) {
   updateLoginLinks();
 }
 
-// Partner loading
-_partnersCache = 'loading';
-fetch('/api/public/partners').then(r => r.json()).then(partners => {
-  if (!partners.length) {
-    _partnersCache = 'empty';
-    renderPartnerDropdown('empty');
-  } else {
-    _partnersCache = partners;
-    renderPartnerDropdown(partners);
-  }
-}).catch(() => {
-  _partnersCache = 'fail';
-  renderPartnerDropdown('fail');
-});
 
 // URL type param
 const urlParams = new URLSearchParams(window.location.search);
@@ -1039,11 +1071,11 @@ async function resendCode(type) {
 
 async function registerEnterprise() {
   hideError();
-  const partner_id   = document.getElementById('ePartner').value;
+  const first_name   = document.getElementById('eFirstName').value.trim();
+  const last_name    = document.getElementById('eLastName').value.trim();
   const company_name = document.getElementById('eName').value.trim();
-  const contact_name = document.getElementById('eContact').value.trim();
-  const email        = document.getElementById('eEmail').value.trim();
   const phone        = document.getElementById('ePhone').value.trim();
+  const email        = document.getElementById('eEmail').value.trim();
   const ein          = document.getElementById('eEin').value.trim();
   const notes        = document.getElementById('eNeeds').value.trim();
   const pwd          = document.getElementById('ePassword').value;
@@ -1051,13 +1083,15 @@ async function registerEnterprise() {
 
   const position_needs = Array.from(document.querySelectorAll('#ePosGrid input:checked')).map(c => c.value);
 
-  if (!partner_id)   return showError(t('errPartner'));
+  if (!first_name)   return showError(t('errEFirstName'));
+  if (!last_name)    return showError(t('errELastName'));
   if (!company_name) return showError(t('errCName'));
-  if (!contact_name) return showError(t('errContact'));
+  if (!ein)          return showError(t('errEin'));
+  if (!/^\d{2}-\d{7}$/.test(ein)) return showError(t('errEinFmt'));
+  if (!phone)        return showError(t('errBizPhone'));
+  if (!/^\d{10,11}$/.test(phone.replace(/[\s\-()]+/g, ''))) return showError(t('errPhoneFmt'));
   if (!email)        return showError(t('errEmail'));
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return showError(t('errEmailFmt'));
-  if (phone && !/^\d{10,11}$/.test(phone.replace(/[\s\-()]+/g, ''))) return showError(t('errPhoneFmt'));
-  if (ein && !/^\d{2}-\d{7}$/.test(ein)) return showError(t('errEinFmt'));
   if (!pwd || pwd.length < 6) return showError(t('errPwd'));
   if (pwd !== pwd2) return showError(t('errPwdMatch'));
 
@@ -1067,19 +1101,81 @@ async function registerEnterprise() {
   });
   const staffing_needs = (posLabels.length ? '工种需求: ' + posLabels.join(', ') + '\n' : '') + notes;
 
+  const btn = document.getElementById('btnRegE');
+  btn.disabled = true;
   try {
     const r = await fetch('/api/register/enterprise', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_name, contact_name, email, phone, ein, staffing_needs, password: pwd, partner_id })
+      body: JSON.stringify({ company_name, contact_first_name: first_name, contact_last_name: last_name, email, phone, ein, staffing_needs, password: pwd })
     });
     const d = await r.json();
+    btn.disabled = false;
     if (!r.ok || d.error) return showError(d.error || 'Registration failed');
+    _pendingAccountId = d.account_id;
     document.getElementById('formEnterprise').style.display = 'none';
     const ts = document.getElementById('typeSelector');
     if (ts) ts.style.display = 'none';
     document.getElementById('loginLinks').style.display = 'none';
-    document.getElementById('enterpriseSuccess').style.display = '';
+    if (d.needs_phone) {
+      document.getElementById('enterpriseVerifyPhone').style.display = 'block';
+    } else if (d.needs_email) {
+      document.getElementById('enterpriseVerifyEmail').style.display = 'block';
+    } else {
+      document.getElementById('enterpriseSuccess').style.display = 'block';
+    }
+  } catch { btn.disabled = false; showError(t('errNetwork')); }
+}
+
+async function enterpriseVerifyStep(type) {
+  hideError();
+  const codeEl = document.getElementById(type === 'phone' ? 'evPhoneCode' : 'evEmailCode');
+  const code = codeEl.value.trim();
+  if (!code) return showError(t(type === 'phone' ? 'errPhoneCode' : 'errEmailCode'));
+  const btn = document.getElementById(type === 'phone' ? 'btnEVerifyPhone' : 'btnEVerifyEmail');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/register/enterprise-verify-step', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: _pendingAccountId, type, code })
+    });
+    const d = await r.json();
+    btn.disabled = false;
+    if (!r.ok || d.error) return showError(d.error || 'Verification failed');
+    if (d.all_done) {
+      document.getElementById('enterpriseVerifyPhone').style.display = 'none';
+      document.getElementById('enterpriseVerifyEmail').style.display = 'none';
+      document.getElementById('enterpriseSuccess').style.display = 'block';
+    } else {
+      document.getElementById('enterpriseVerifyPhone').style.display = 'none';
+      document.getElementById('enterpriseVerifyEmail').style.display = 'none';
+      const nextSteps = d.next_steps || [];
+      if (nextSteps.includes('email')) {
+        document.getElementById('evEmailCode').value = '';
+        document.getElementById('enterpriseVerifyEmail').style.display = 'block';
+      } else if (nextSteps.includes('phone')) {
+        document.getElementById('evPhoneCode').value = '';
+        document.getElementById('enterpriseVerifyPhone').style.display = 'block';
+      }
+    }
+  } catch { btn.disabled = false; showError(t('errNetwork')); }
+}
+
+async function enterpriseResendCode(type) {
+  if (!_pendingAccountId) return;
+  try {
+    const r = await fetch('/api/register/enterprise-resend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account_id: _pendingAccountId, type })
+    });
+    const d = await r.json();
+    const hint = document.getElementById(type === 'phone' ? 'eVerifyPhoneHint' : 'eVerifyEmailHint');
+    if (r.ok) {
+      hint.textContent = t(type === 'phone' ? 'resendOkPhone' : 'resendOkEmail');
+      setTimeout(() => { hint.textContent = t('verifyExpiry'); }, 3000);
+    } else { showError(d.error || 'Failed to resend'); }
   } catch { showError(t('errNetwork')); }
 }
 
