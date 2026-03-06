@@ -2210,6 +2210,23 @@ app.get('/api/manager/workers', requireAdmin, (req, res) => {
   res.json(db.prepare(q).all(...params));
 });
 
+// GET /api/manager/my-jobs — jobs visible to this manager
+app.get('/api/manager/my-jobs', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  const jids = managerJobIds(req);
+  if (req.userRole === 'manager' && !pids.length && !jids.length) return res.json([]);
+  let q = `SELECT DISTINCT j.id, j.title, p.name AS company_name FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id WHERE j.active = 1`;
+  const params = [];
+  if (req.userRole === 'manager') {
+    const conds = [];
+    if (pids.length) { conds.push(`j.partner_id IN (${pids.map(() => '?').join(',')})`); params.push(...pids); }
+    if (jids.length) { conds.push(`j.id IN (${jids.map(() => '?').join(',')})`); params.push(...jids); }
+    if (conds.length) q += ` AND (${conds.join(' OR ')})`;
+  }
+  q += ' ORDER BY j.title';
+  res.json(db.prepare(q).all(...params));
+});
+
 // ─── Manager Self-Punch APIs ───────────────────────────────────────────────────
 
 // GET /api/manager/self-punch-status — current punch state for the logged-in manager

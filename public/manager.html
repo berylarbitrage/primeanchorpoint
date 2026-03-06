@@ -110,53 +110,74 @@ tr:hover td{background:#fafcff}
 .pill-email{background:#f0fdf4;color:var(--green)}
 
 /* ── QR tab ── */
-.qr-layout{display:grid;grid-template-columns:340px 1fr;gap:1.25rem;align-items:start}
-@media(max-width:780px){.qr-layout{grid-template-columns:1fr}}
-.qr-cam-card{background:#fff;border-radius:var(--radius);border:1px solid var(--gray-200);overflow:hidden}
-.qr-cam-header{padding:.7rem 1rem;border-bottom:1px solid var(--gray-100);font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--gray-500)}
-.qr-video-box{position:relative;width:100%;aspect-ratio:1;background:#0f172a}
+.qr-layout{display:grid;grid-template-columns:360px 1fr;gap:1.5rem;align-items:start}
+@media(max-width:820px){.qr-layout{grid-template-columns:1fr}}
+.qr-cam-card{background:#fff;border-radius:16px;border:1px solid var(--gray-200);overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+.qr-cam-header{padding:.9rem 1.15rem;border-bottom:1px solid var(--gray-100);font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);display:flex;align-items:center;gap:.55rem}
+.qr-cam-dot{width:9px;height:9px;border-radius:50%;background:var(--gray-300);flex-shrink:0;transition:background .3s,box-shadow .3s}
+.qr-cam-dot.active{background:var(--green);box-shadow:0 0 0 3px rgba(16,185,129,.2)}
+.qr-video-box{position:relative;width:100%;aspect-ratio:1;background:linear-gradient(145deg,#0d1b2a 0%,#1a3050 100%)}
 #qrVideo{width:100%;height:100%;object-fit:cover;display:block}
 .qr-overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center}
-.qr-frame{width:62%;aspect-ratio:1;border:2.5px solid rgba(2,132,199,.9);border-radius:14px;box-shadow:0 0 0 9999px rgba(0,0,0,.42)}
-.qr-cam-footer{padding:.75rem 1rem;text-align:center}
-.qr-status{font-size:.82rem;color:var(--gray-500);margin-bottom:.6rem}
-.btn-start-scan{padding:.6rem 1.4rem;background:var(--sky);color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:600;cursor:pointer;font-family:inherit}
-.btn-start-scan:hover{background:var(--sky-d)}
+.qr-frame{width:60%;aspect-ratio:1;position:relative;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
+.qr-frame::before,.qr-frame::after,.qr-corner-tr,.qr-corner-bl{content:'';position:absolute;width:22px;height:22px;border-style:solid;border-color:#4ad2e8}
+.qr-frame::before{top:0;left:0;border-width:3px 0 0 3px;border-radius:5px 0 0 0}
+.qr-frame::after{bottom:0;right:0;border-width:0 3px 3px 0;border-radius:0 0 5px 0}
+.qr-corner-tr{top:0;right:0;border-width:3px 3px 0 0;border-radius:0 5px 0 0}
+.qr-corner-bl{bottom:0;left:0;border-width:0 0 3px 3px;border-radius:0 0 0 5px}
+.qr-scan-line{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent 0%,#4ad2e8 30%,#fff 50%,#4ad2e8 70%,transparent 100%);border-radius:1px;opacity:0;transition:opacity .3s}
+.qr-scan-line.scanning{animation:scanLine 1.8s ease-in-out infinite;opacity:1}
+@keyframes scanLine{0%{top:0%}50%{top:95%}100%{top:0%}}
+.qr-cam-footer{padding:1rem 1.15rem;text-align:center;background:var(--gray-50);border-top:1px solid var(--gray-100)}
+.qr-status{font-size:.82rem;color:var(--gray-500);margin-bottom:.7rem;min-height:1.15em;line-height:1.4}
+.btn-start-scan{padding:.75rem 2rem;background:var(--sky);color:#fff;border:none;border-radius:10px;font-size:.92rem;font-weight:700;cursor:pointer;font-family:inherit;transition:all .18s;letter-spacing:.01em;box-shadow:0 2px 8px rgba(2,132,199,.25)}
+.btn-start-scan:hover:not(:disabled){background:var(--sky-d);box-shadow:0 4px 12px rgba(2,132,199,.35)}
+.btn-start-scan:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed;box-shadow:none}
 .qr-right{display:flex;flex-direction:column;gap:1rem}
-.qr-settings{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.1rem 1.25rem}
-.punch-type-row{display:grid;grid-template-columns:repeat(4,1fr);gap:.45rem;margin-bottom:1rem}
-.pt-btn{padding:.6rem .2rem;border:1.5px solid var(--gray-200);border-radius:8px;background:#fff;font-size:.8rem;font-weight:600;cursor:pointer;color:var(--gray-600);transition:.15s;text-align:center;font-family:inherit}
-.pt-btn:hover{border-color:var(--sky);color:var(--sky)}
-.pt-btn.sel-in{border-color:var(--green);background:#f0fdf4;color:#059669}
-.pt-btn.sel-out{border-color:var(--red);background:#fef2f2;color:#dc2626}
-.pt-btn.sel-pause{border-color:var(--orange);background:#fff7ed;color:#c2410c}
-.pt-btn.sel-resume{border-color:var(--sky);background:#f0f9ff;color:var(--sky-d)}
+/* Job required card */
+.qr-job-card{background:#fff;border:2px solid #fbbf24;border-radius:14px;padding:1.1rem 1.25rem;transition:border-color .25s,box-shadow .25s}
+.qr-job-card.selected{border-color:var(--sky);box-shadow:0 2px 12px rgba(2,132,199,.1)}
+.qr-job-badge{display:inline-flex;align-items:center;gap:.3rem;border-radius:99px;padding:.2rem .75rem;font-size:.72rem;font-weight:700;margin-bottom:.65rem;background:#fef3c7;color:#92400e;transition:all .25s}
+.qr-job-card.selected .qr-job-badge{background:#dbeafe;color:#1d4ed8}
+.qr-settings{background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:1.1rem 1.25rem}
+/* Punch type buttons */
+.punch-type-row{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin-bottom:1rem}
+.pt-btn{padding:.75rem .25rem;border:2px solid var(--gray-200);border-radius:10px;background:#fff;font-size:.75rem;font-weight:700;cursor:pointer;color:var(--gray-600);transition:all .15s;text-align:center;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:.3rem;line-height:1}
+.pt-btn .pt-icon{font-size:1.25rem}
+.pt-btn:hover{border-color:var(--sky);color:var(--sky);background:#f0f9ff}
+.pt-btn.sel-in{border-color:var(--green);background:#f0fdf4;color:#059669;box-shadow:0 2px 8px rgba(16,185,129,.15)}
+.pt-btn.sel-out{border-color:var(--red);background:#fef2f2;color:#dc2626;box-shadow:0 2px 8px rgba(239,68,68,.15)}
+.pt-btn.sel-pause{border-color:var(--orange);background:#fff7ed;color:#c2410c;box-shadow:0 2px 8px rgba(249,115,22,.15)}
+.pt-btn.sel-resume{border-color:var(--sky);background:#f0f9ff;color:var(--sky-d);box-shadow:0 2px 8px rgba(2,132,199,.15)}
 .time-row{display:flex;align-items:center;gap:.65rem;flex-wrap:wrap;margin-bottom:.75rem}
 .time-opt{display:flex;align-items:center;gap:.3rem;font-size:.82rem;color:var(--gray-600);cursor:pointer}
 .time-opt input[type=radio]{accent-color:var(--sky)}
 #qrCustomTime{padding:5px 8px;border:1px solid var(--gray-200);border-radius:7px;font-size:.82rem;outline:none;font-family:inherit}
 #qrCustomTime:focus{border-color:var(--sky)}
-.scan-result-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.1rem 1.25rem}
-.scan-emp-name{font-weight:700;font-size:1.05rem;color:var(--gray-800);margin-bottom:.15rem}
-.scan-emp-code{font-size:.75rem;color:var(--gray-400);margin-bottom:.65rem}
+/* Scan result */
+.scan-result-card{background:#fff;border:1px solid var(--gray-200);border-radius:14px;padding:1.1rem 1.25rem}
+.scan-emp-row{display:flex;align-items:center;gap:.85rem;margin-bottom:.75rem}
+.scan-emp-avatar{width:50px;height:50px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:800;color:#fff;flex-shrink:0;letter-spacing:-1px}
+.scan-emp-name{font-weight:700;font-size:1.05rem;color:var(--gray-800);margin-bottom:.1rem}
+.scan-emp-code{font-size:.75rem;color:var(--gray-400)}
 .scan-status-badge{margin-bottom:.85rem}
-.scan-punch-btn{width:100%;padding:.75rem;border:none;border-radius:8px;font-size:.93rem;font-weight:700;cursor:pointer;transition:.15s;margin-bottom:.5rem;font-family:inherit}
+.scan-punch-btn{width:100%;padding:.8rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;transition:all .18s;margin-bottom:.5rem;font-family:inherit}
 .scan-punch-btn:disabled{opacity:.4;cursor:not-allowed}
 .spb-in{background:var(--green);color:#fff}.spb-in:hover:not(:disabled){background:#059669}
 .spb-out{background:var(--red);color:#fff}.spb-out:hover:not(:disabled){background:#dc2626}
 .spb-pause{background:var(--orange);color:#fff}.spb-pause:hover:not(:disabled){background:#ea580c}
 .spb-resume{background:var(--sky);color:#fff}.spb-resume:hover:not(:disabled){background:var(--sky-d)}
-.scan-msg{padding:.5rem .85rem;border-radius:7px;font-size:.83rem;font-weight:600;margin-top:.4rem;display:none}
+.scan-msg{padding:.5rem .85rem;border-radius:8px;font-size:.83rem;font-weight:600;margin-top:.4rem;display:none}
 .scan-msg.show{display:block}
 .scan-msg-ok{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0}
 .scan-msg-warn{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
 .scan-msg-err{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
-.scan-log-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);overflow:hidden}
-.scan-log-header{padding:.65rem 1rem;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between}
-.scan-log-count{font-size:.74rem;font-weight:600;background:var(--sky-l);color:var(--sky-d);border-radius:99px;padding:.1rem .55rem}
+.scan-log-card{background:#fff;border:1px solid var(--gray-200);border-radius:14px;overflow:hidden}
+.scan-log-header{padding:.75rem 1.1rem;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;justify-content:space-between}
+.scan-log-count{font-size:.74rem;font-weight:700;background:var(--sky-l);color:var(--sky-d);border-radius:99px;padding:.15rem .65rem;min-width:1.6rem;text-align:center}
 #scanLogTable{width:100%;border-collapse:collapse;font-size:.82rem}
 #scanLogTable th{padding:.5rem .85rem;text-align:left;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--gray-500);background:var(--gray-50);border-bottom:1px solid var(--gray-200)}
-#scanLogTable td{padding:.6rem .85rem;border-top:1px solid var(--gray-100);vertical-align:middle}
+#scanLogTable td{padding:.65rem .85rem;border-top:1px solid var(--gray-100);vertical-align:middle}
 
 /* ── Misc ── */
 .section-label{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:.5rem}
@@ -308,27 +329,59 @@ tr:hover td{background:#fafcff}
     <!-- QR Scan -->
     <div class="section content wide" id="section-qrscan">
       <div class="qr-layout">
+
+        <!-- Left: Camera -->
         <div class="qr-cam-card">
-          <div class="qr-cam-header">扫描员工二维码</div>
+          <div class="qr-cam-header">
+            <span class="qr-cam-dot" id="qrCamDot"></span>
+            扫描员工二维码
+          </div>
           <div class="qr-video-box">
             <video id="qrVideo" autoplay playsinline muted></video>
-            <div class="qr-overlay"><div class="qr-frame"></div></div>
+            <div class="qr-overlay">
+              <div class="qr-frame">
+                <span class="qr-corner-tr"></span>
+                <span class="qr-corner-bl"></span>
+                <div class="qr-scan-line" id="qrScanLine"></div>
+              </div>
+            </div>
           </div>
           <div class="qr-cam-footer">
-            <div class="qr-status" id="qrStatus">点击下方按钮开启摄像头</div>
-            <button class="btn-start-scan" onclick="startQrScanner()" id="qrStartBtn">📷 开启摄像头扫码</button>
+            <div class="qr-status" id="qrStatus">请先在右侧选择工作，再开启摄像头</div>
+            <button class="btn-start-scan" onclick="startQrScanner()" id="qrStartBtn" disabled>📷 开启摄像头扫码</button>
           </div>
         </div>
 
+        <!-- Right: Settings + Result + Log -->
         <div class="qr-right">
+
+          <!-- 1. Job selector (required before scanning) -->
+          <div class="qr-job-card" id="qrJobCard">
+            <div class="qr-job-badge" id="qrJobBadge">⚠ 请先选择工作</div>
+            <div class="card-title" style="margin-bottom:.6rem">选择工作</div>
+            <select id="qrJobRequiredSelect" class="form-input" onchange="onQrJobSelect()">
+              <option value="">— 加载中… —</option>
+            </select>
+            <div id="qrJobInfo" style="display:none;margin-top:.55rem;font-size:.81rem;color:var(--sky-d);font-weight:600;padding:.4rem .75rem;background:#f0f9ff;border-radius:8px;border:1px solid #bae6fd"></div>
+          </div>
+
+          <!-- 2. Punch settings -->
           <div class="qr-settings">
             <div class="card-title">打卡设置</div>
-            <div class="section-label" style="margin-bottom:.45rem">打卡类型</div>
+            <div class="section-label" style="margin-bottom:.5rem">打卡类型</div>
             <div class="punch-type-row">
-              <button class="pt-btn sel-in" data-pt="in" onclick="selectPunchType('in',this)">▶ 上班</button>
-              <button class="pt-btn" data-pt="out" onclick="selectPunchType('out',this)">◼ 下班</button>
-              <button class="pt-btn" data-pt="break_start" onclick="selectPunchType('break_start',this)">⏸ 暂停</button>
-              <button class="pt-btn" data-pt="break_end" onclick="selectPunchType('break_end',this)">▶▶ 继续</button>
+              <button class="pt-btn sel-in" data-pt="in" onclick="selectPunchType('in',this)">
+                <span class="pt-icon">▶</span><span>上班</span>
+              </button>
+              <button class="pt-btn" data-pt="out" onclick="selectPunchType('out',this)">
+                <span class="pt-icon">◼</span><span>下班</span>
+              </button>
+              <button class="pt-btn" data-pt="break_start" onclick="selectPunchType('break_start',this)">
+                <span class="pt-icon">⏸</span><span>暂停</span>
+              </button>
+              <button class="pt-btn" data-pt="break_end" onclick="selectPunchType('break_end',this)">
+                <span class="pt-icon">▶▶</span><span>继续</span>
+              </button>
             </div>
             <div class="section-label" style="margin-bottom:.4rem">打卡时间</div>
             <div class="time-row">
@@ -337,21 +390,19 @@ tr:hover td{background:#fafcff}
               <input type="datetime-local" id="qrCustomTime" style="display:none" oninput="onCustomTimeInput()">
             </div>
             <div id="qrTimePreview" style="font-size:.8rem;color:var(--sky-d);font-weight:600;margin-top:-.25rem;min-height:1.1rem"></div>
-            <div id="qrJobWrap" style="margin-top:.75rem;display:none">
-              <div class="section-label" style="margin-bottom:.35rem">工作（上班打卡需选择）</div>
-              <select id="qrJobSelect" class="form-input"><option value="">— 扫码后自动选择 —</option></select>
-            </div>
           </div>
 
+          <!-- 3. Scan result (shown after scan) -->
           <div class="scan-result-card" id="scanResultPanel" style="display:none">
             <div class="card-title">扫码结果</div>
-            <div class="scan-emp-name" id="scanEmpName">—</div>
-            <div class="scan-emp-code" id="scanEmpCode"></div>
-            <div class="scan-status-badge" id="scanStatusBadge"></div>
-            <div id="scanJobSelectWrap" style="display:none;margin-bottom:.85rem">
-              <div class="section-label" style="margin-bottom:.35rem">选择工作</div>
-              <select id="scanJobSelect" class="form-input"></select>
+            <div class="scan-emp-row">
+              <div class="scan-emp-avatar" id="scanEmpAvatar">?</div>
+              <div>
+                <div class="scan-emp-name" id="scanEmpName">—</div>
+                <div class="scan-emp-code" id="scanEmpCode"></div>
+              </div>
             </div>
+            <div class="scan-status-badge" id="scanStatusBadge"></div>
             <button class="scan-punch-btn spb-in" id="scanPunchBtn" onclick="doManagerPunch()">确认打卡</button>
             <div class="scan-msg" id="scanMsg"></div>
             <button onclick="resetQrScan()" style="margin-top:.55rem;width:100%;padding:.5rem;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;color:var(--gray-600);font-family:inherit">
@@ -359,6 +410,7 @@ tr:hover td{background:#fafcff}
             </button>
           </div>
 
+          <!-- 4. Scan log -->
           <div class="scan-log-card">
             <div class="scan-log-header">
               <span class="card-title" style="margin:0">本次打卡记录</span>
@@ -371,6 +423,7 @@ tr:hover td{background:#fafcff}
               </tbody>
             </table>
           </div>
+
         </div>
       </div>
     </div>
@@ -470,6 +523,7 @@ function showSection(name, link) {
   link.classList.add('active');
   document.getElementById('mobileSectionTitle').textContent = SECTION_TITLES[name] || '';
   if (name !== 'qrscan') stopQrScanner();
+  if (name === 'qrscan') loadQrJobs();
   if (name === 'selfpunch') { loadSelfPunchStatus(); loadSelfPunchHistory(); }
   closeSidebar();
 }
@@ -654,12 +708,61 @@ function openPunchPhoto(src) {
 // ── QR Scanner ─────────────────────────────────────────────────
 let _qrStream = null, _qrRafId = null, _scanEmp = null;
 let _selectedPunchType = 'in', _scanLog = [];
+let _qrSelectedJob = null; // { id, title }
+
+const _avatarColors = ['#0284c7','#10b981','#f59e0b','#8b5cf6','#ef4444','#0891b2','#7c3aed','#059669','#db2777'];
+function _avatarColor(name) {
+  let h = 0; for (let i = 0; i < (name||'').length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xfffffff;
+  return _avatarColors[h % _avatarColors.length];
+}
+
+async function loadQrJobs() {
+  const sel = document.getElementById('qrJobRequiredSelect');
+  sel.innerHTML = '<option value="">— 加载中… —</option>';
+  try {
+    const jobs = await mApi('/manager/my-jobs');
+    if (!jobs || !jobs.length) {
+      sel.innerHTML = '<option value="">— 暂无可用工作 —</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">— 请选择工作 —</option>' +
+      jobs.map(j => `<option value="${j.id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}</option>`).join('');
+  } catch(e) {
+    sel.innerHTML = '<option value="">— 加载失败，请刷新 —</option>';
+  }
+}
+
+function onQrJobSelect() {
+  const sel = document.getElementById('qrJobRequiredSelect');
+  const jobId = parseInt(sel.value);
+  const card = document.getElementById('qrJobCard');
+  const badge = document.getElementById('qrJobBadge');
+  const info = document.getElementById('qrJobInfo');
+  const startBtn = document.getElementById('qrStartBtn');
+  const statusEl = document.getElementById('qrStatus');
+  if (!jobId) {
+    _qrSelectedJob = null;
+    card.classList.remove('selected');
+    badge.textContent = '⚠ 请先选择工作';
+    info.style.display = 'none';
+    startBtn.disabled = true;
+    statusEl.textContent = '请先在右侧选择工作，再开启摄像头';
+    return;
+  }
+  const label = sel.options[sel.selectedIndex].text;
+  _qrSelectedJob = { id: jobId, title: label };
+  card.classList.add('selected');
+  badge.textContent = '✅ 已选择工作';
+  info.style.display = '';
+  info.textContent = '📌 ' + label;
+  startBtn.disabled = false;
+  statusEl.textContent = '点击下方按钮开启摄像头';
+}
 
 function selectPunchType(pt, btn) {
   _selectedPunchType = pt;
-  document.querySelectorAll('.pt-btn').forEach(b => b.className = 'pt-btn');
+  document.querySelectorAll('.pt-btn').forEach(b => { b.className = 'pt-btn'; });
   btn.classList.add({in:'sel-in',out:'sel-out',break_start:'sel-pause',break_end:'sel-resume'}[pt] || '');
-  document.getElementById('qrJobWrap').style.display = pt === 'in' ? '' : 'none';
   updateScanPunchBtn();
 }
 function onTimeOptChange() {
@@ -692,23 +795,29 @@ function updateScanPunchBtn() {
   btn.className = 'scan-punch-btn ' + ({in:'spb-in',out:'spb-out',break_start:'spb-pause',break_end:'spb-resume'}[_selectedPunchType]||'spb-in');
 }
 async function startQrScanner() {
+  if (!_qrSelectedJob) { showToast('请先选择工作', 'error'); return; }
   const status = document.getElementById('qrStatus');
+  const startBtn = document.getElementById('qrStartBtn');
   status.textContent = '正在开启摄像头…';
-  document.getElementById('qrStartBtn').style.display = 'none';
+  startBtn.style.display = 'none';
   try {
     _qrStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     const video = document.getElementById('qrVideo');
     video.srcObject = _qrStream; video.play();
     status.textContent = '请将员工二维码对准框内…';
+    document.getElementById('qrCamDot').classList.add('active');
+    document.getElementById('qrScanLine').classList.add('scanning');
     scanLoop();
   } catch(e) {
     status.textContent = '无法访问摄像头：' + e.message;
-    document.getElementById('qrStartBtn').style.display = '';
+    startBtn.style.display = '';
   }
 }
 function stopQrScanner() {
   if (_qrRafId) { cancelAnimationFrame(_qrRafId); _qrRafId = null; }
   if (_qrStream) { _qrStream.getTracks().forEach(t => t.stop()); _qrStream = null; }
+  document.getElementById('qrCamDot').classList.remove('active');
+  document.getElementById('qrScanLine').classList.remove('scanning');
 }
 function scanLoop() {
   const video = document.getElementById('qrVideo');
@@ -749,28 +858,38 @@ async function onQrDetected(raw) {
     document.getElementById('qrStartBtn').style.display = '';
     return;
   }
+  // Validate employee belongs to the selected job
+  if (_qrSelectedJob) {
+    const empJobs = data.active_jobs || [];
+    const hasJob = empJobs.some(j => j.job_id === _qrSelectedJob.id);
+    if (!hasJob) {
+      document.getElementById('qrStatus').textContent = '⚠ 此员工不属于所选工作，请重新扫码';
+      showToast('此员工不属于所选工作', 'error');
+      document.getElementById('qrStartBtn').style.display = '';
+      return;
+    }
+  }
   _scanEmp = { ...data.employee, emp_code: data.employee.emp_code || empCode, active_jobs: data.active_jobs || [] };
-  document.getElementById('qrStatus').textContent = '已识别：' + data.employee.name;
-  document.getElementById('scanEmpName').textContent = data.employee.name;
-  document.getElementById('scanEmpCode').textContent = data.employee.emp_code;
+  // Render employee info with avatar
+  const name = data.employee.name || '—';
+  const initials = name.split(' ').map(w => w[0]||'').join('').slice(0,2).toUpperCase() || '?';
+  const avatarEl = document.getElementById('scanEmpAvatar');
+  avatarEl.textContent = initials;
+  avatarEl.style.background = _avatarColor(name);
+  document.getElementById('scanEmpName').textContent = name;
+  document.getElementById('scanEmpCode').textContent = data.employee.emp_code || empCode;
+  document.getElementById('qrStatus').textContent = '✅ 已识别：' + name;
   updateScanStatus(data.clocked_in, data.on_break);
   document.getElementById('scanMsg').className = 'scan-msg';
-  const jobs = data.active_jobs || [];
-  const jobWrap = document.getElementById('scanJobSelectWrap');
-  const jobSel = document.getElementById('scanJobSelect');
-  if (_selectedPunchType === 'in' && jobs.length > 0) {
-    jobSel.innerHTML = jobs.map(j => `<option value="${j.job_id}">${esc(j.title)}${j.company_name?' · '+esc(j.company_name):''}</option>`).join('');
-    jobWrap.style.display = '';
-  } else { jobWrap.style.display = 'none'; }
   updateScanPunchBtn();
   document.getElementById('scanResultPanel').style.display = '';
 }
 function updateScanStatus(clocked_in, on_break) {
   const s = !clocked_in
-    ? '<span style="display:inline-flex;align-items:center;gap:.3rem;background:var(--gray-100);color:var(--gray-500);border-radius:99px;padding:.2rem .75rem;font-size:.78rem;font-weight:700">⚫ 未打卡</span>'
+    ? '<span style="display:inline-flex;align-items:center;gap:.35rem;background:var(--gray-100);color:var(--gray-500);border-radius:99px;padding:.25rem .85rem;font-size:.78rem;font-weight:700">⚫ 未打卡</span>'
     : on_break
-    ? '<span style="display:inline-flex;align-items:center;gap:.3rem;background:#fffbeb;color:#92400e;border-radius:99px;padding:.2rem .75rem;font-size:.78rem;font-weight:700">🟡 暂停中</span>'
-    : '<span style="display:inline-flex;align-items:center;gap:.3rem;background:#f0fdf4;color:#166534;border-radius:99px;padding:.2rem .75rem;font-size:.78rem;font-weight:700">🟢 上班中</span>';
+    ? '<span style="display:inline-flex;align-items:center;gap:.35rem;background:#fffbeb;color:#92400e;border-radius:99px;padding:.25rem .85rem;font-size:.78rem;font-weight:700">🟡 暂停中</span>'
+    : '<span style="display:inline-flex;align-items:center;gap:.35rem;background:#f0fdf4;color:#166534;border-radius:99px;padding:.25rem .85rem;font-size:.78rem;font-weight:700">🟢 上班中</span>';
   document.getElementById('scanStatusBadge').innerHTML = s;
 }
 async function doManagerPunch() {
@@ -783,11 +902,11 @@ async function doManagerPunch() {
   btn.disabled = true;
   const body = { emp_code: _scanEmp.emp_code, punch_type: ptype };
   if (punchTime) body.punch_time = punchTime;
-  if (ptype === 'in') {
-    const jobSel = document.getElementById('scanJobSelect');
+  if (ptype === 'in' && _qrSelectedJob) {
+    body.job_id = _qrSelectedJob.id;
+  } else if (ptype === 'in') {
     const jobs = _scanEmp.active_jobs || [];
-    if (jobSel.style.display !== 'none' && jobSel.value) body.job_id = parseInt(jobSel.value);
-    else if (jobs.length === 1) body.job_id = jobs[0].job_id;
+    if (jobs.length === 1) body.job_id = jobs[0].job_id;
   }
   const res = await fetch(API + '/admin/manager-punch', {
     method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN},
@@ -822,7 +941,7 @@ function addScanLog(empCode, empName, ptype, time, ok, note) {
     const c = cl[r.ptype] || {bg:'#f3f4f6',c:'#6b7280'};
     return `<tr>
       <td><div style="font-weight:600;color:var(--gray-800)">${esc(r.empName)}</div><div style="font-size:.72rem;color:var(--gray-400)">${esc(r.empCode)}</div></td>
-      <td><span style="font-size:.76rem;font-weight:700;padding:.15rem .55rem;border-radius:99px;background:${c.bg};color:${c.c}">${tl[r.ptype]||r.ptype}</span></td>
+      <td><span style="font-size:.76rem;font-weight:700;padding:.2rem .6rem;border-radius:99px;background:${c.bg};color:${c.c}">${tl[r.ptype]||r.ptype}</span></td>
       <td style="font-size:.82rem;color:var(--gray-600);white-space:nowrap">${esc(r.time)}</td>
       <td>${r.ok?'<span style="color:var(--green);font-weight:600">✅ '+esc(r.note)+'</span>':'<span style="color:var(--red);font-weight:600">❌ '+esc(r.note)+'</span>'}</td>
     </tr>`;
@@ -832,7 +951,7 @@ function resetQrScan() {
   _scanEmp = null;
   document.getElementById('scanResultPanel').style.display = 'none';
   document.getElementById('qrStartBtn').style.display = '';
-  document.getElementById('qrStatus').textContent = '点击下方按钮开启摄像头';
+  document.getElementById('qrStatus').textContent = _qrSelectedJob ? '点击下方按钮开启摄像头' : '请先在右侧选择工作，再开启摄像头';
 }
 
 if (TOKEN) {
