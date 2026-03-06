@@ -465,7 +465,6 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="nav-group-items">
       <a onclick="showTab('client-inquiries')" data-tab="client-inquiries" data-role="admin,staff">🏢 客户问卷</a>
-      <a onclick="showTab('worker-inquiries')" data-tab="worker-inquiries" data-role="admin,staff">👤 员工问卷</a>
       <a onclick="showTab('quotes')" data-tab="quotes" data-role="admin,staff">📋 报价请求</a>
       <a onclick="showTab('partners')" data-tab="partners" data-role="admin,staff">合作公司</a>
     </div>
@@ -477,6 +476,7 @@ tr:hover td{background:var(--sky-light)}
       👷 员工管理<span class="chev">▾</span>
     </div>
     <div class="nav-group-items">
+      <a onclick="showTab('worker-inquiries')" data-tab="worker-inquiries" data-role="admin,staff">👤 员工问卷</a>
       <a onclick="showTab('employees')" data-tab="employees" data-role="admin,staff">👥 员工列表</a>
       <a onclick="showTab('bgchecks')" data-tab="bgchecks" data-role="admin,staff">🔍 背景调查</a>
       <a onclick="showTab('compliance')" data-tab="compliance" data-role="admin,staff">📑 合规审核</a>
@@ -3823,8 +3823,8 @@ function logout() {
 
 // ─── Tabs ───
 const _TAB_TO_SEC = {
-  inquiries:'sec-customer', quotes:'sec-customer', partners:'sec-customer',
-  employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
+  inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
+  'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time',
   approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system',
