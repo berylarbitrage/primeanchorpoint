@@ -212,8 +212,16 @@ tr:hover td{background:#fafcff}
 .tc-action-btn{font-size:.72rem;padding:.28rem .55rem;border-radius:5px;border:none;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;text-align:center}
 .tc-btn-confirm{background:#dcfce7;color:#15803d}.tc-btn-confirm:hover{background:#bbf7d0}
 .tc-btn-edit{background:#dbeafe;color:#1d4ed8}.tc-btn-edit:hover{background:#bfdbfe}
-.tc-btn-batch{background:#fef3c7;color:#92400e}.tc-btn-batch:hover{background:#fde68a}
-.tc-batch-cb{display:none;margin-right:4px;cursor:pointer;width:14px;height:14px}
+.tc-batch-cb{cursor:pointer;width:15px;height:15px;accent-color:var(--sky)}
+.tc-cb-cell{width:36px;text-align:center;padding:6px 4px}
+/* emp column compact */
+.emp-row-name{font-weight:600;font-size:.85rem;white-space:nowrap}
+.emp-row-code{font-size:.72rem;color:var(--gray-400);white-space:nowrap}
+.emp-incomplete-tag{display:inline-block;color:#dc2626;font-size:.72rem;font-weight:700;vertical-align:middle;margin-left:3px}
+/* Time adjust buttons */
+.tc-adjust-wrap{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.35rem}
+.tc-adj-btn{padding:.22rem .55rem;border-radius:5px;border:1px solid var(--gray-200);background:var(--gray-50);color:var(--gray-700);font-size:.75rem;cursor:pointer;font-family:inherit;font-weight:600}
+.tc-adj-btn:hover{background:var(--sky-l);border-color:var(--sky);color:var(--sky-d)}
 /* Edit modal */
 #tcEditModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center}
 #tcEditModal.open{display:flex}
@@ -351,10 +359,11 @@ tr:hover td{background:#fafcff}
       <div class="table-wrap">
         <table>
           <thead><tr>
+            <th class="tc-cb-cell"><input type="checkbox" class="tc-batch-cb" id="tcSelectAll" title="全选" onchange="toggleSelectAll(this)"></th>
             <th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th>
             <th>总工时</th><th>正常工时</th><th>加班</th><th>状态</th><th>照片</th><th>备注</th><th>操作</th>
           </tr></thead>
-          <tbody id="tcTable"><tr><td colspan="11" class="empty-state" style="padding:3rem"><div class="spinner"></div></td></tr></tbody>
+          <tbody id="tcTable"><tr><td colspan="12" class="empty-state" style="padding:3rem"><div class="spinner"></div></td></tr></tbody>
         </table>
       </div>
       <div class="tc-summary" id="tcSummary"></div>
@@ -751,7 +760,7 @@ function renderWorkers() {
 
 // ── Time Clock ─────────────────────────────────────────────────
 async function loadTimeClock() {
-  document.getElementById('tcTable').innerHTML = '<tr><td colspan="10" style="text-align:center;padding:2.5rem"><div class="spinner"></div></td></tr>';
+  document.getElementById('tcTable').innerHTML = '<tr><td colspan="12" style="text-align:center;padding:2.5rem"><div class="spinner"></div></td></tr>';
   const emp = document.getElementById('tcEmpFilter').value;
   const from = document.getElementById('tcFrom').value;
   const to = document.getElementById('tcTo').value;
@@ -785,7 +794,7 @@ function hasIncompleteLoop(t) {
 let _tcEntries = {};
 function renderTimeClock(rows) {
   if (!rows.length) {
-    document.getElementById('tcTable').innerHTML = '<tr><td colspan="11" class="empty-state" style="padding:2.5rem;text-align:center">暂无打卡记录</td></tr>';
+    document.getElementById('tcTable').innerHTML = '<tr><td colspan="12" class="empty-state" style="padding:2.5rem;text-align:center">暂无打卡记录</td></tr>';
     document.getElementById('tcSummary').textContent = '';
     return;
   }
@@ -802,9 +811,10 @@ function renderTimeClock(rows) {
     const tz = t.display_timezone;
     const incomplete = hasIncompleteLoop(t);
     const rowStyle = incomplete ? ' style="background:#fef2f2;outline:1.5px solid #fca5a5;"' : '';
-    const incompleteTag = incomplete ? '<span title="时间记录未完成闭环，请确认" style="display:inline-block;margin-left:4px;color:#dc2626;font-size:.75rem;font-weight:700;vertical-align:middle">⚠ 待确认</span>' : '';
+    const incompleteTag = incomplete ? '<span class="emp-incomplete-tag" title="时间记录未完成闭环，请确认">⚠ 待确认</span>' : '';
     return `<tr${rowStyle} data-entry-id="${t.id}">
-      <td><input type="checkbox" class="tc-batch-cb" onchange="toggleBatchRow(${t.id},this)"><div class="emp-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-code">${esc(t.emp_code||'')}</div>${incompleteTag}</td>
+      <td class="tc-cb-cell"><input type="checkbox" class="tc-batch-cb" onchange="toggleBatchRow(${t.id},this)"></td>
+      <td><div class="emp-row-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}${incompleteTag}</div><div class="emp-row-code">${esc(t.emp_code||'')}</div></td>
       <td style="white-space:nowrap">${fmtDT(t.clock_in, tz)}</td>
       <td style="white-space:nowrap">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
       <td>${renderBreaks(t)}</td>
@@ -817,7 +827,6 @@ function renderTimeClock(rows) {
       <td><div class="tc-action-cell">
         <button class="tc-action-btn tc-btn-confirm" onclick="confirmEntry(${t.id},this)">✓ 确认工时</button>
         <button class="tc-action-btn tc-btn-edit" onclick="openEditModal(${t.id})">✎ 修改工时</button>
-        <button class="tc-action-btn tc-btn-batch" onclick="enterBatchMode(${t.id})">☰ 批量修改</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -1339,6 +1348,15 @@ function updateTcHrsPreview() {
   document.getElementById('tcEditHrsPreview').textContent =
     `总 ${total.toFixed(2)}h（正常 ${Math.round(reg * 100) / 100}h，加班 ${ot.toFixed(2)}h）`;
 }
+function adjustTcTime(inputId, deltaMinutes) {
+  const el = document.getElementById(inputId);
+  if (!el || !el.value) return;
+  const d = new Date(el.value); // datetime-local value is parsed as local time
+  d.setMinutes(d.getMinutes() + deltaMinutes);
+  const pad = n => String(n).padStart(2, '0');
+  el.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  updateTcHrsPreview();
+}
 function closeTcEdit() {
   document.getElementById('tcEditModal').classList.remove('open');
   _tcEditEntry = null;
@@ -1377,11 +1395,15 @@ async function confirmEntry(id, btnEl) {
 }
 
 // ── Batch mode ─────────────────────────────────────────────────
-function enterBatchMode(id) {
-  _tcBatchIds.add(id);
-  document.querySelectorAll('#tcTable .tc-batch-cb').forEach(cb => { cb.style.display = 'inline-block'; });
-  const row = document.querySelector(`#tcTable tr[data-entry-id="${id}"]`);
-  if (row) { const cb = row.querySelector('.tc-batch-cb'); if (cb) cb.checked = true; }
+function toggleSelectAll(masterCb) {
+  document.querySelectorAll('#tcTable .tc-batch-cb').forEach(cb => {
+    cb.checked = masterCb.checked;
+    const row = cb.closest('tr');
+    if (row) {
+      const id = parseInt(row.dataset.entryId);
+      if (masterCb.checked) _tcBatchIds.add(id); else _tcBatchIds.delete(id);
+    }
+  });
   _updateBatchPanel();
 }
 function toggleBatchRow(id, cb) {
@@ -1392,11 +1414,17 @@ function _updateBatchPanel() {
   const panel = document.getElementById('tcBatchPanel');
   panel.classList.toggle('active', _tcBatchIds.size > 0);
   document.getElementById('tcBatchCount').textContent = _tcBatchIds.size;
+  // Sync select-all checkbox state
+  const allCbs = document.querySelectorAll('#tcTable .tc-batch-cb');
+  const sa = document.getElementById('tcSelectAll');
+  if (sa && allCbs.length) sa.indeterminate = _tcBatchIds.size > 0 && _tcBatchIds.size < allCbs.length;
+  if (sa) sa.checked = allCbs.length > 0 && _tcBatchIds.size === allCbs.length;
 }
 function cancelBatch() {
   _tcBatchIds.clear();
   document.getElementById('tcBatchPanel').classList.remove('active');
-  document.querySelectorAll('#tcTable .tc-batch-cb').forEach(cb => { cb.style.display = 'none'; cb.checked = false; });
+  document.querySelectorAll('#tcTable .tc-batch-cb').forEach(cb => { cb.checked = false; });
+  const sa = document.getElementById('tcSelectAll'); if (sa) sa.checked = false;
 }
 async function executeBatch(action) {
   if (!_tcBatchIds.size) return;
@@ -1405,6 +1433,12 @@ async function executeBatch(action) {
   if (action === 'set_hours') {
     body.regular_hours = document.getElementById('batchRegular').value || '8';
     body.overtime_hours = document.getElementById('batchOT').value || '0';
+  } else if (action === 'adjust_time') {
+    const ciDelta = parseInt(document.getElementById('batchClockInDelta').value) || 0;
+    const coDelta = parseInt(document.getElementById('batchClockOutDelta').value) || 0;
+    if (!ciDelta && !coDelta) return showToast('请填写上班或下班调整分钟数', 'error');
+    body.clock_in_delta_minutes = ciDelta;
+    body.clock_out_delta_minutes = coDelta;
   }
   const result = await mApi('/manager/time-entries/batch', { method: 'POST', body: JSON.stringify(body) });
   if (!result) return;
@@ -1420,10 +1454,28 @@ async function executeBatch(action) {
     <div class="tc-field">
       <label>上班时间 <span id="tcEditTzLabel" style="color:var(--gray-400);font-weight:400;font-size:.74rem"></span></label>
       <input type="datetime-local" id="tcEditClockIn" oninput="updateTcHrsPreview()">
+      <div class="tc-adjust-wrap">
+        <span style="font-size:.72rem;color:var(--gray-500);align-self:center">调整：</span>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockIn',-30)">-30min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockIn',-15)">-15min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockIn',-5)">-5min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockIn',+5)">+5min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockIn',+15)">+15min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockIn',+30)">+30min</button>
+      </div>
     </div>
     <div class="tc-field">
       <label>下班时间</label>
       <input type="datetime-local" id="tcEditClockOut" oninput="updateTcHrsPreview()">
+      <div class="tc-adjust-wrap">
+        <span style="font-size:.72rem;color:var(--gray-500);align-self:center">调整：</span>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockOut',-30)">-30min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockOut',-15)">-15min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockOut',-5)">-5min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockOut',+5)">+5min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockOut',+15)">+15min</button>
+        <button type="button" class="tc-adj-btn" onclick="adjustTcTime('tcEditClockOut',+30)">+30min</button>
+      </div>
     </div>
     <div class="tc-field">
       <label>休息记录</label>
@@ -1448,10 +1500,18 @@ async function executeBatch(action) {
 <div id="tcBatchPanel">
   <span style="font-size:.88rem;font-weight:700">已选 <span id="tcBatchCount">0</span> 条</span>
   <button class="tc-btn-ba" style="background:#22c55e;color:#fff" onclick="executeBatch('confirm')">✓ 确认所选工时</button>
-  <span style="display:flex;align-items:center;gap:.4rem;font-size:.82rem">
+  <span style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;flex-wrap:wrap">
     设置工时：正常 <input type="number" id="batchRegular" class="batch-hrs-input" min="0" max="24" step="0.5" placeholder="8">
     加班 <input type="number" id="batchOT" class="batch-hrs-input" min="0" max="24" step="0.5" placeholder="0">
     <button class="tc-btn-ba" style="background:#f59e0b;color:#fff" onclick="executeBatch('set_hours')">应用</button>
+  </span>
+  <span style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;flex-wrap:wrap">
+    批量调时：上班
+    <input type="number" id="batchClockInDelta" class="batch-hrs-input" style="width:50px" placeholder="分钟" step="1">
+    min &nbsp;下班
+    <input type="number" id="batchClockOutDelta" class="batch-hrs-input" style="width:50px" placeholder="分钟" step="1">
+    min
+    <button class="tc-btn-ba" style="background:#6366f1;color:#fff" onclick="executeBatch('adjust_time')" title="正数=推迟，负数=提前">调整</button>
   </span>
   <button class="tc-btn-ba" style="background:#475569;color:#fff" onclick="cancelBatch()">× 取消</button>
 </div>
