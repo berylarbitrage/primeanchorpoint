@@ -575,6 +575,8 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT
 });
 // Explicit fallback: ensure created_at exists (older SQLite may reject CURRENT_TIMESTAMP default above)
 try { db.exec("ALTER TABLE admin_users ADD COLUMN created_at TEXT DEFAULT ''"); } catch {};
+try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
 
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
@@ -2154,11 +2156,11 @@ app.get('/api/manager/workers', requireAdmin, (req, res) => {
 
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, display_name, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, email, phone } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
@@ -2167,13 +2169,13 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active) VALUES (?, ?, ?, ?, ?, ?, 1)')
-    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '');
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
+    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', email || '', phone || '');
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, email, phone } = req.body;
   if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -2183,8 +2185,8 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
     db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
   // active field is intentionally excluded — only the user themselves can activate via self-verification
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), req.params.id);
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, email=?, phone=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), req.params.id);
   res.json({ success: true });
 });
 
@@ -5712,8 +5714,18 @@ app.post('/api/worker/punch/:entryId/photo', requireWorker, punchPhotoUpload.sin
   res.json({ success: true });
 });
 
-// Serve punch photos (admin only)
-app.get('/api/admin/punch-photo/:filename', requireAdmin, (req, res) => {
+// Serve punch photos — accepts Bearer header, pa_token cookie, or ?token= query param
+// (img tags can't send Authorization headers, so query-param auth is needed)
+app.get('/api/admin/punch-photo/:filename', (req, res) => {
+  const auth = req.headers.authorization;
+  let session = null;
+  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  if (!session) {
+    const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+    if (cookieMatch) session = getSession(cookieMatch[1]);
+  }
+  if (!session && req.query.token) session = getSession(req.query.token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
   const fp = path.join(punchPhotosDir, path.basename(req.params.filename));
   if (!fs.existsSync(fp)) return res.status(404).send('Not found');
   res.sendFile(fp);
