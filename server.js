@@ -2721,21 +2721,37 @@ app.get('/api/admin/managers/:id/assignments', requireAdmin, requireRole('admin'
 
 // GET /api/admin/managers/:id/workers — employees visible to a specific manager
 app.get('/api/admin/managers/:id/workers', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  const mgr = db.prepare("SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
   if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+
   const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
-  if (!pids.length) return res.json([]);
+  const eids = (mgr.assigned_employee_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  const jids = (mgr.assigned_job_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+
+  const allEmpIds = new Set(eids);
+
+  // Employees who have time_entries under the manager's assigned partners
+  if (pids.length) {
+    db.prepare(`SELECT DISTINCT t.employee_id FROM time_entries t JOIN jobs j ON t.job_id = j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`).all(...pids)
+      .forEach(r => allEmpIds.add(r.employee_id));
+  }
+
+  // Employees assigned to the manager's assigned jobs via employee_jobs
+  if (jids.length) {
+    db.prepare(`SELECT DISTINCT employee_id FROM employee_jobs WHERE job_id IN (${jids.map(() => '?').join(',')})`).all(...jids)
+      .forEach(r => allEmpIds.add(r.employee_id));
+  }
+
+  if (!allEmpIds.size) return res.json([]);
+
+  const ids = [...allEmpIds];
   const rows = db.prepare(`
-    SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id as emp_code,
-           e.email, e.phone, e.position, e.status
-    FROM employees e
-    WHERE e.id IN (
-      SELECT DISTINCT t.employee_id FROM time_entries t
-      JOIN jobs j ON t.job_id = j.id
-      WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
-    )
-    ORDER BY e.last_name, e.first_name
-  `).all(...pids);
+    SELECT id, first_name, last_name, employee_id as emp_code,
+           email, phone, position, status
+    FROM employees
+    WHERE id IN (${ids.map(() => '?').join(',')})
+    ORDER BY last_name, first_name
+  `).all(...ids);
   res.json(rows);
 });
 
