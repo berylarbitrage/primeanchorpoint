@@ -8966,31 +8966,21 @@ function openPunchPhoto(src) {
     overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
     document.body.appendChild(overlay);
   }
-  fetchAuthImg(src).then(url => { document.getElementById('punchPhotoFull').src = url; });
+  document.getElementById('punchPhotoFull').src = punchPhotoUrl(src);
   overlay.style.display = 'flex';
 }
 
-// Fetch a protected image using the Bearer token and return a blob URL
-async function fetchAuthImg(src) {
-  try {
-    const resp = await fetch(src, { headers: { 'Authorization': `Bearer ${TOKEN}` } });
-    if (!resp.ok) return src;
-    const blob = await resp.blob();
-    return URL.createObjectURL(blob);
-  } catch { return src; }
+// Append Bearer token as query param so <img> tags can authenticate
+function punchPhotoUrl(src) {
+  if (!src || !TOKEN) return src;
+  return src + (src.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
 }
 
-// Render a punch photo thumbnail that authenticates via Bearer token
+// Render an authenticated punch photo thumbnail
 function punchPhotoThumb(src) {
   if (!src) return '—';
-  const id = 'pp_' + Math.random().toString(36).slice(2);
-  const style = 'width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)';
-  setTimeout(() => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    fetchAuthImg(src).then(url => { el.src = url; el.onclick = () => openPunchPhoto(src); });
-  }, 0);
-  return `<img id="${id}" src="" style="${style}" title="点击查看大图">`;
+  const url = punchPhotoUrl(src);
+  return `<img src="${url}" onclick="openPunchPhoto('${src.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)" title="点击查看大图">`;
 }
 
 async function openTimeModal(entry) {
