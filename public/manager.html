@@ -206,6 +206,34 @@ tr:hover td{background:#fafcff}
   .mobile-topbar{display:flex}
   .content{margin:.75rem auto;padding:0 .75rem}
 }
+
+/* ── Time entry action buttons ── */
+.tc-action-cell{display:flex;flex-direction:column;gap:.3rem;min-width:82px}
+.tc-action-btn{font-size:.72rem;padding:.28rem .55rem;border-radius:5px;border:none;cursor:pointer;font-family:inherit;font-weight:600;white-space:nowrap;text-align:center}
+.tc-btn-confirm{background:#dcfce7;color:#15803d}.tc-btn-confirm:hover{background:#bbf7d0}
+.tc-btn-edit{background:#dbeafe;color:#1d4ed8}.tc-btn-edit:hover{background:#bfdbfe}
+.tc-btn-batch{background:#fef3c7;color:#92400e}.tc-btn-batch:hover{background:#fde68a}
+.tc-batch-cb{display:none;margin-right:4px;cursor:pointer;width:14px;height:14px}
+/* Edit modal */
+#tcEditModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:center;justify-content:center}
+#tcEditModal.open{display:flex}
+.tc-edit-box{background:#fff;border-radius:14px;padding:1.75rem;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+.tc-edit-box h3{font-size:1.05rem;color:var(--blue);margin-bottom:1.2rem}
+.tc-field{margin-bottom:.9rem}
+.tc-field label{display:block;font-size:.8rem;font-weight:600;color:var(--gray-600);margin-bottom:.3rem}
+.tc-field input[type=datetime-local],.tc-field textarea{width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:7px;font-size:.88rem;font-family:inherit;outline:none}
+.tc-field input[type=datetime-local]:focus,.tc-field textarea:focus{border-color:var(--sky)}
+.tc-break-row{display:flex;align-items:center;gap:.45rem;margin-bottom:.4rem}
+.tc-break-row input{flex:1;min-width:0;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;font-family:inherit;outline:none}
+.tc-break-row input:focus{border-color:var(--sky)}
+.tc-break-row .rm-break{padding:.3rem .55rem;background:#fee2e2;color:#b91c1c;border:none;border-radius:5px;cursor:pointer;font-size:.8rem;font-family:inherit;flex-shrink:0}
+.tc-edit-footer{display:flex;gap:.75rem;justify-content:flex-end;margin-top:1.2rem;padding-top:1rem;border-top:1px solid var(--gray-100)}
+.tc-edit-footer button{padding:.55rem 1.2rem;border-radius:8px;border:none;cursor:pointer;font-size:.88rem;font-weight:600;font-family:inherit}
+/* Batch panel */
+#tcBatchPanel{display:none;position:sticky;bottom:0;background:#1e293b;color:#fff;padding:.8rem 1.5rem;border-radius:12px 12px 0 0;box-shadow:0 -4px 24px rgba(0,0,0,.2);z-index:500;flex-direction:row;align-items:center;gap:.85rem;flex-wrap:wrap}
+#tcBatchPanel.active{display:flex}
+.batch-hrs-input{width:58px;padding:.3rem .5rem;border-radius:5px;border:none;font-size:.85rem;text-align:center}
+.tc-btn-ba{padding:.4rem .9rem;border-radius:6px;border:none;font-size:.82rem;font-weight:600;cursor:pointer;font-family:inherit}
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
@@ -324,9 +352,9 @@ tr:hover td{background:#fafcff}
         <table>
           <thead><tr>
             <th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th>
-            <th>总工时</th><th>正常工时</th><th>加班</th><th>状态</th><th>照片</th><th>备注</th>
+            <th>总工时</th><th>正常工时</th><th>加班</th><th>状态</th><th>照片</th><th>备注</th><th>操作</th>
           </tr></thead>
-          <tbody id="tcTable"><tr><td colspan="10" class="empty-state" style="padding:3rem"><div class="spinner"></div></td></tr></tbody>
+          <tbody id="tcTable"><tr><td colspan="11" class="empty-state" style="padding:3rem"><div class="spinner"></div></td></tr></tbody>
         </table>
       </div>
       <div class="tc-summary" id="tcSummary"></div>
@@ -754,14 +782,17 @@ function hasIncompleteLoop(t) {
   return false;
 }
 
+let _tcEntries = {};
 function renderTimeClock(rows) {
   if (!rows.length) {
-    document.getElementById('tcTable').innerHTML = '<tr><td colspan="10" class="empty-state" style="padding:2.5rem;text-align:center">暂无打卡记录</td></tr>';
+    document.getElementById('tcTable').innerHTML = '<tr><td colspan="11" class="empty-state" style="padding:2.5rem;text-align:center">暂无打卡记录</td></tr>';
     document.getElementById('tcSummary').textContent = '';
     return;
   }
+  _tcEntries = {};
   let totalH = 0, totalOT = 0;
   document.getElementById('tcTable').innerHTML = rows.map(t => {
+    _tcEntries[t.id] = t;
     totalH += t.total_hours || 0; totalOT += t.overtime_hours || 0;
     const photoSrc = t.punch_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}` : t.punch_photo || '';
     const photoUrl = photoSrc && TOKEN ? photoSrc + (photoSrc.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : photoSrc;
@@ -772,8 +803,8 @@ function renderTimeClock(rows) {
     const incomplete = hasIncompleteLoop(t);
     const rowStyle = incomplete ? ' style="background:#fef2f2;outline:1.5px solid #fca5a5;"' : '';
     const incompleteTag = incomplete ? '<span title="时间记录未完成闭环，请确认" style="display:inline-block;margin-left:4px;color:#dc2626;font-size:.75rem;font-weight:700;vertical-align:middle">⚠ 待确认</span>' : '';
-    return `<tr${rowStyle}>
-      <td><div class="emp-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-code">${esc(t.emp_code||'')}</div>${incompleteTag}</td>
+    return `<tr${rowStyle} data-entry-id="${t.id}">
+      <td><input type="checkbox" class="tc-batch-cb" onchange="toggleBatchRow(${t.id},this)"><div class="emp-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-code">${esc(t.emp_code||'')}</div>${incompleteTag}</td>
       <td style="white-space:nowrap">${fmtDT(t.clock_in, tz)}</td>
       <td style="white-space:nowrap">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
       <td>${renderBreaks(t)}</td>
@@ -783,6 +814,11 @@ function renderTimeClock(rows) {
       <td><span class="badge badge-${t.status==='open'?'open':'closed'}">${t.status==='open'?'进行中':'已完成'}</span></td>
       <td style="text-align:center">${photoCell}</td>
       <td style="max-width:160px;white-space:normal;font-size:.78rem;color:var(--gray-500)">${esc(t.notes||'')} ${mgrPunchPins(t)}</td>
+      <td><div class="tc-action-cell">
+        <button class="tc-action-btn tc-btn-confirm" onclick="confirmEntry(${t.id},this)">✓ 确认工时</button>
+        <button class="tc-action-btn tc-btn-edit" onclick="openEditModal(${t.id})">✎ 修改工时</button>
+        <button class="tc-action-btn tc-btn-batch" onclick="enterBatchMode(${t.id})">☰ 批量修改</button>
+      </div></td>
     </tr>`;
   }).join('');
   document.getElementById('tcSummary').innerHTML =
@@ -1211,6 +1247,213 @@ async function loadSelfPunchHistory() {
       <td><span class="badge badge-${r.status==='closed'?'completed':'open'}">${r.status==='closed'?'已完成':'进行中'}</span></td>
     </tr>`).join('');
 }
+
+// ── Time Entry Management ─────────────────────────────────────
+let _tcEditEntry = null;
+let _tcBatchIds = new Set();
+
+function toLocalInput(utcStr, tz) {
+  if (!utcStr) return '';
+  const d = new Date(utcStr);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz || 'America/Chicago',
+    year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', hour12:false
+  }).formatToParts(d);
+  const p = {};
+  parts.forEach(x => p[x.type] = x.value);
+  return `${p.year}-${p.month}-${p.day}T${p.hour === '24' ? '00' : p.hour}:${p.minute}`;
+}
+function fromLocalInput(localStr, tz) {
+  if (!localStr) return null;
+  const d = new Date(localStr + ':00.000Z');
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz || 'America/Chicago',
+    year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false
+  }).formatToParts(d);
+  const p = {};
+  parts.forEach(x => p[x.type] = x.value);
+  const h = p.hour === '24' ? '00' : p.hour;
+  const tzAsUtc = new Date(`${p.year}-${p.month}-${p.day}T${h}:${p.minute}:${p.second}.000Z`);
+  return new Date(d.getTime() - (tzAsUtc.getTime() - d.getTime())).toISOString();
+}
+
+function openEditModal(id) {
+  _tcEditEntry = _tcEntries[id];
+  if (!_tcEditEntry) return;
+  const tz = _tcEditEntry.display_timezone || 'America/Chicago';
+  document.getElementById('tcEditTzLabel').textContent = '(' + tz + ')';
+  document.getElementById('tcEditClockIn').value = toLocalInput(_tcEditEntry.clock_in, tz);
+  document.getElementById('tcEditClockOut').value = toLocalInput(_tcEditEntry.clock_out, tz);
+  document.getElementById('tcEditNotes').value = _tcEditEntry.notes || '';
+  let recs = [];
+  try { recs = JSON.parse(_tcEditEntry.break_records || '[]'); } catch {}
+  const breakDiv = document.getElementById('tcEditBreaks');
+  breakDiv.innerHTML = '';
+  recs.forEach((b, i) => _tcRenderBreakRow(b, i));
+  updateTcHrsPreview();
+  document.getElementById('tcEditModal').classList.add('open');
+}
+function _tcRenderBreakRow(b, i) {
+  const tz = (_tcEditEntry || {}).display_timezone || 'America/Chicago';
+  const div = document.createElement('div');
+  div.className = 'tc-break-row';
+  div.dataset.idx = i;
+  div.innerHTML = `<span style="font-size:.76rem;color:var(--gray-500);flex-shrink:0;width:3rem">休息${i+1}</span>
+    <input type="datetime-local" class="tc-bs" value="${toLocalInput(b.start, tz)}" oninput="updateTcHrsPreview()">
+    <span style="font-size:.8rem;color:var(--gray-400);flex-shrink:0">→</span>
+    <input type="datetime-local" class="tc-be" value="${toLocalInput(b.end, tz)}" oninput="updateTcHrsPreview()">
+    <button class="rm-break" onclick="tcRemoveBreak(this)">✕</button>`;
+  document.getElementById('tcEditBreaks').appendChild(div);
+}
+function tcAddBreak() {
+  const rows = document.querySelectorAll('#tcEditBreaks .tc-break-row');
+  _tcRenderBreakRow({ start:'', end:'' }, rows.length);
+}
+function tcRemoveBreak(btn) {
+  btn.closest('.tc-break-row').remove();
+  document.querySelectorAll('#tcEditBreaks .tc-break-row').forEach((r, i) => {
+    r.dataset.idx = i;
+    r.querySelector('span').textContent = '休息' + (i + 1);
+  });
+  updateTcHrsPreview();
+}
+function updateTcHrsPreview() {
+  const tz = (_tcEditEntry || {}).display_timezone || 'America/Chicago';
+  const ciV = document.getElementById('tcEditClockIn').value;
+  const coV = document.getElementById('tcEditClockOut').value;
+  if (!ciV || !coV) { document.getElementById('tcEditHrsPreview').textContent = '—'; return; }
+  const ci = fromLocalInput(ciV, tz), co = fromLocalInput(coV, tz);
+  let breakMs = 0;
+  document.querySelectorAll('#tcEditBreaks .tc-break-row').forEach(row => {
+    const sv = row.querySelector('.tc-bs').value, ev = row.querySelector('.tc-be').value;
+    if (sv && ev) {
+      const su = fromLocalInput(sv, tz), eu = fromLocalInput(ev, tz);
+      if (su && eu) breakMs += Math.max(0, new Date(eu) - new Date(su));
+    }
+  });
+  const totalMin = Math.max(0, (new Date(co) - new Date(ci)) / 60000 - Math.round(breakMs / 60000));
+  const total = Math.round(totalMin / 60 * 100) / 100;
+  const reg = Math.min(total, 8), ot = Math.max(0, Math.round((total - 8) * 100) / 100);
+  document.getElementById('tcEditHrsPreview').textContent =
+    `总 ${total.toFixed(2)}h（正常 ${Math.round(reg * 100) / 100}h，加班 ${ot.toFixed(2)}h）`;
+}
+function closeTcEdit() {
+  document.getElementById('tcEditModal').classList.remove('open');
+  _tcEditEntry = null;
+}
+async function saveTcEdit() {
+  const tz = _tcEditEntry.display_timezone || 'America/Chicago';
+  const breaks = [];
+  document.querySelectorAll('#tcEditBreaks .tc-break-row').forEach(row => {
+    const sv = row.querySelector('.tc-bs').value, ev = row.querySelector('.tc-be').value;
+    breaks.push({ start: sv ? fromLocalInput(sv, tz) : null, end: ev ? fromLocalInput(ev, tz) : null });
+  });
+  const btn = document.getElementById('tcEditSaveBtn');
+  btn.disabled = true; btn.textContent = '保存中…';
+  const result = await mApi('/manager/time-entries/' + _tcEditEntry.id, {
+    method: 'PUT',
+    body: JSON.stringify({
+      clock_in: fromLocalInput(document.getElementById('tcEditClockIn').value, tz),
+      clock_out: fromLocalInput(document.getElementById('tcEditClockOut').value, tz),
+      break_records: JSON.stringify(breaks),
+      notes: document.getElementById('tcEditNotes').value
+    })
+  });
+  btn.disabled = false; btn.textContent = '保存';
+  if (!result) return;
+  showToast('工时已更新', 'success');
+  closeTcEdit();
+  loadTimeClock();
+}
+async function confirmEntry(id, btnEl) {
+  btnEl.disabled = true;
+  const result = await mApi('/manager/time-entries/' + id + '/confirm', { method: 'POST', body: '{}' });
+  btnEl.disabled = false;
+  if (!result) return;
+  showToast('工时已确认', 'success');
+  loadTimeClock();
+}
+
+// ── Batch mode ─────────────────────────────────────────────────
+function enterBatchMode(id) {
+  _tcBatchIds.add(id);
+  document.querySelectorAll('#tcTable .tc-batch-cb').forEach(cb => { cb.style.display = 'inline-block'; });
+  const row = document.querySelector(`#tcTable tr[data-entry-id="${id}"]`);
+  if (row) { const cb = row.querySelector('.tc-batch-cb'); if (cb) cb.checked = true; }
+  _updateBatchPanel();
+}
+function toggleBatchRow(id, cb) {
+  if (cb.checked) _tcBatchIds.add(id); else _tcBatchIds.delete(id);
+  _updateBatchPanel();
+}
+function _updateBatchPanel() {
+  const panel = document.getElementById('tcBatchPanel');
+  panel.classList.toggle('active', _tcBatchIds.size > 0);
+  document.getElementById('tcBatchCount').textContent = _tcBatchIds.size;
+}
+function cancelBatch() {
+  _tcBatchIds.clear();
+  document.getElementById('tcBatchPanel').classList.remove('active');
+  document.querySelectorAll('#tcTable .tc-batch-cb').forEach(cb => { cb.style.display = 'none'; cb.checked = false; });
+}
+async function executeBatch(action) {
+  if (!_tcBatchIds.size) return;
+  const ids = [..._tcBatchIds];
+  const body = { ids, action };
+  if (action === 'set_hours') {
+    body.regular_hours = document.getElementById('batchRegular').value || '8';
+    body.overtime_hours = document.getElementById('batchOT').value || '0';
+  }
+  const result = await mApi('/manager/time-entries/batch', { method: 'POST', body: JSON.stringify(body) });
+  if (!result) return;
+  showToast(action === 'confirm' ? `已确认 ${ids.length} 条工时` : `已更新 ${ids.length} 条工时`, 'success');
+  cancelBatch();
+  loadTimeClock();
+}
 </script>
+<!-- Time Entry Edit Modal -->
+<div id="tcEditModal">
+  <div class="tc-edit-box">
+    <h3>修改工时</h3>
+    <div class="tc-field">
+      <label>上班时间 <span id="tcEditTzLabel" style="color:var(--gray-400);font-weight:400;font-size:.74rem"></span></label>
+      <input type="datetime-local" id="tcEditClockIn" oninput="updateTcHrsPreview()">
+    </div>
+    <div class="tc-field">
+      <label>下班时间</label>
+      <input type="datetime-local" id="tcEditClockOut" oninput="updateTcHrsPreview()">
+    </div>
+    <div class="tc-field">
+      <label>休息记录</label>
+      <div id="tcEditBreaks"></div>
+      <button type="button" onclick="tcAddBreak()" style="margin-top:.4rem;padding:.3rem .8rem;background:var(--sky-l);color:var(--sky-d);border:none;border-radius:6px;cursor:pointer;font-size:.8rem;font-family:inherit;font-weight:600">+ 添加休息</button>
+    </div>
+    <div class="tc-field">
+      <label>备注</label>
+      <textarea id="tcEditNotes" rows="2" style="width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:7px;font-size:.88rem;font-family:inherit;outline:none;resize:vertical"></textarea>
+    </div>
+    <div style="font-size:.8rem;color:var(--gray-500);background:var(--gray-50);padding:.6rem .9rem;border-radius:7px;margin-bottom:.9rem">
+      预计工时：<strong id="tcEditHrsPreview">—</strong>
+    </div>
+    <div class="tc-edit-footer">
+      <button onclick="closeTcEdit()" style="background:var(--gray-100);color:var(--gray-700)">取消</button>
+      <button onclick="saveTcEdit()" style="background:var(--sky);color:#fff" id="tcEditSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Batch Panel -->
+<div id="tcBatchPanel">
+  <span style="font-size:.88rem;font-weight:700">已选 <span id="tcBatchCount">0</span> 条</span>
+  <button class="tc-btn-ba" style="background:#22c55e;color:#fff" onclick="executeBatch('confirm')">✓ 确认所选工时</button>
+  <span style="display:flex;align-items:center;gap:.4rem;font-size:.82rem">
+    设置工时：正常 <input type="number" id="batchRegular" class="batch-hrs-input" min="0" max="24" step="0.5" placeholder="8">
+    加班 <input type="number" id="batchOT" class="batch-hrs-input" min="0" max="24" step="0.5" placeholder="0">
+    <button class="tc-btn-ba" style="background:#f59e0b;color:#fff" onclick="executeBatch('set_hours')">应用</button>
+  </span>
+  <button class="tc-btn-ba" style="background:#475569;color:#fff" onclick="cancelBatch()">× 取消</button>
+</div>
 </body>
 </html>

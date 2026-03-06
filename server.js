@@ -5111,6 +5111,52 @@ app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard
   res.json({ success: true });
 });
 
+// ── Manager time-entry management (no blockManager restriction) ──
+app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
+  const d = req.body;
+  let breakMins = 0, breakRecords = '[]';
+  if (d.break_records) {
+    try {
+      const recs = JSON.parse(d.break_records);
+      breakMins = Math.round(recs.reduce((sum, b) => {
+        if (b.start && b.end) sum += new Date(b.end) - new Date(b.start);
+        return sum;
+      }, 0) / 60000);
+      breakRecords = JSON.stringify(recs);
+    } catch {}
+  }
+  const hrs = calcHours(d.clock_in, d.clock_out, breakMins);
+  const status = d.clock_out ? 'closed' : 'open';
+  db.prepare(`UPDATE time_entries SET
+    clock_in=?,clock_out=?,break_minutes=?,break_records=?,
+    total_hours=?,regular_hours=?,overtime_hours=?,
+    notes=?,status=?,needs_review=0,review_reason='' WHERE id=?`).run(
+    d.clock_in||null, d.clock_out||null, breakMins, breakRecords,
+    hrs.total, hrs.regular, hrs.overtime,
+    d.notes||'', status, req.params.id);
+  res.json({ success: true, ...hrs, break_minutes: breakMins, status });
+});
+
+app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
+  db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?").run(req.params.id);
+  res.json({ success: true });
+});
+
+app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
+  const { ids, action, regular_hours, overtime_hours } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: '未选择记录' });
+  if (action === 'confirm') {
+    const stmt = db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?");
+    db.transaction(() => { for (const id of ids) stmt.run(id); })();
+  } else if (action === 'set_hours') {
+    const reg = Math.max(0, parseFloat(regular_hours) || 0);
+    const ot = Math.max(0, parseFloat(overtime_hours) || 0);
+    const stmt = db.prepare("UPDATE time_entries SET regular_hours=?,overtime_hours=?,total_hours=? WHERE id=?");
+    db.transaction(() => { for (const id of ids) stmt.run(reg, ot, reg + ot, id); })();
+  }
+  res.json({ success: true });
+});
+
 // List timesheet sheets (admin)
 app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
   const { stage } = req.query; // 'verify' | 'payment' | 'history'
@@ -5809,10 +5855,10 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   if (punch_type === 'out') {
     let outWarning = null;
     if (!open) outWarning = '提示：未找到上班打卡记录，可能漏打了上班卡';
-    else if (open.on_break) outWarning = '提示：您处于休息中，已自动结束休息并下班打卡';
+    else if (open.on_break) outWarning = '提示：您处于休息中，休息记录未关闭，已标记给管理员审核';
     if (!open) {
-      // Record a standalone clock-out for manager review
-      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(req.workerEmployeeId, now, now);
+      // Record a standalone clock-out for manager review, do NOT auto-fill clock_in
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(req.workerEmployeeId, now);
       return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning: outWarning, entry_id: r2.lastInsertRowid });
     }
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
@@ -5824,10 +5870,10 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   // ── Clock in ─────────────────────────────────────────────────────
   let clockInWarning = null;
   if (open) {
-    // Auto-close the dangling open entry, flag it for manager review
+    // Close the dangling open entry and flag for manager review, but do NOT auto-fill clock_out
     const missedDate = open.clock_in ? open.clock_in.slice(0,10) : '?';
-    db.prepare("UPDATE time_entries SET status='closed',clock_out=?,needs_review=1,review_reason=? WHERE id=?")
-      .run(now, `漏打下班卡（${missedDate}），由新上班打卡自动关闭`, open.id);
+    db.prepare("UPDATE time_entries SET status='closed',needs_review=1,review_reason=? WHERE id=?")
+      .run(`漏打下班卡（${missedDate}），由新上班打卡触发`, open.id);
     clockInWarning = `提示：${missedDate} 忘记打下班卡，该记录已标记给管理员审核`;
   }
   if (!latitude || !longitude) return res.status(400).json({ error: '打卡需要开启位置权限，请允许浏览器获取您的位置后重试。/ Location permission required to clock in.', need_gps: true });
