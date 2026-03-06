@@ -8179,8 +8179,8 @@ async function viewEmployee(id) {
     </div>
     ${emp.recent_time&&emp.recent_time.length?`<table><thead><tr><th>上班</th><th>下班</th><th>合计</th><th>加班</th><th>状态</th></tr></thead><tbody>
     ${emp.recent_time.slice(0,10).map(t=>`<tr>
-      <td>${new Date(t.clock_in).toLocaleString()}</td>
-      <td>${t.clock_out?new Date(t.clock_out).toLocaleString():'<span style="color:var(--accent)">上班中</span>'}</td>
+      <td>${fmtDT(t.clock_in, t.display_timezone)}</td>
+      <td>${t.clock_out?fmtDT(t.clock_out, t.display_timezone):'<span style="color:var(--accent)">上班中</span>'}</td>
       <td>${t.total_hours||0}h</td>
       <td>${t.overtime_hours>0?`<span class="ot-text">${t.overtime_hours}h</span>`:'—'}</td>
       <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
@@ -8883,7 +8883,7 @@ function exportEmployeeCSV() {
 // ══════════════════════════════════════════════════════
 let allTimeEntries = [];
 
-function fmtDT(dt) { return dt ? new Date(dt).toLocaleString() : '—'; }
+function fmtDT(dt, tz) { return dt ? new Date(dt).toLocaleString(undefined, tz ? {timeZone: tz} : undefined) : '—'; }
 function fmtD(dt)  { return dt ? new Date(dt).toLocaleDateString() : '—'; }
 function fmtH(h)   { return h != null ? (+h).toFixed(2)+'h' : '—'; }
 
@@ -8938,8 +8938,8 @@ function renderTimeEntries(list) {
     const photoCell = punchPhotoThumb(photoSrc);
     return `<tr>
     <td><strong>${esc(t.first_name||'')} ${esc(t.last_name||'')}</strong><br><span class="emp-meta">${esc(t.emp_code||'')}</span></td>
-    <td>${fmtDT(t.clock_in)}</td>
-    <td>${t.clock_out?fmtDT(t.clock_out):'<span style="color:var(--accent)">进行中</span>'}</td>
+    <td>${fmtDT(t.clock_in, t.display_timezone)}</td>
+    <td>${t.clock_out?fmtDT(t.clock_out, t.display_timezone):'<span style="color:var(--accent)">进行中</span>'}</td>
     <td>${t.break_minutes||0}min</td>
     <td>${fmtH(t.total_hours)}</td>
     <td>${fmtH(t.regular_hours)}</td>
@@ -12402,8 +12402,9 @@ async function loadAdminMgrPunch() {
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无打卡记录</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => {
       const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || '—';
-      const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
-      const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+      const tzOpts = r.display_timezone ? {timeZone: r.display_timezone, month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'} : {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'};
+      const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN', tzOpts) : '—';
+      const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN', tzOpts) : '—';
       const hrs  = r.total_hours != null ? r.total_hours.toFixed(2) + ' h' : '—';
       const statusBadge = r.status === 'open' ? '<span class="badge badge-yellow">进行中</span>' : '<span class="badge badge-cooperated">已完成</span>';
       return `<tr>
