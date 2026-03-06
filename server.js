@@ -2108,15 +2108,18 @@ app.get('/api/manager/me', requireAdmin, requireRole('manager', 'admin', 'staff'
 // GET /api/manager/my-assignments — assignments for manager's assigned partner companies
 app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
   const pids = managerPartnerIds(req);
-  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  const jids = managerJobIds(req);
+  const eids = managerEmployeeIds(req);
+  if (req.userRole === 'manager' && !pids.length && !jids.length && !eids.length) return res.json([]);
+  const isManager = req.userRole === 'manager';
   let q = `
     SELECT a.id, a.status, a.start_date, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
-           a.work_address, a.notes, a.assigned_at, a.work_schedule,
+           ${isManager ? "'' AS work_address" : 'a.work_address'}, a.notes, a.assigned_at, a.work_schedule,
            i.name  AS worker_name,
            i.phone AS worker_phone,
            i.email AS worker_email,
            j.title AS job_title,
-           j.location AS job_location,
+           ${isManager ? "'' AS job_location" : 'j.location AS job_location'},
            j.partner_id,
            p.name  AS company_name
     FROM assignments a
@@ -2125,9 +2128,21 @@ app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
     LEFT JOIN partners p ON j.partner_id = p.id
     WHERE 1=1`;
   const params = [];
-  if (req.userRole === 'manager' && pids.length) {
-    q += ` AND j.partner_id IN (${pids.map(() => '?').join(',')})`;
-    params.push(...pids);
+  if (req.userRole === 'manager') {
+    const conds = [];
+    if (pids.length) {
+      conds.push(`j.partner_id IN (${pids.map(() => '?').join(',')})`);
+      params.push(...pids);
+    }
+    if (jids.length) {
+      conds.push(`a.job_id IN (${jids.map(() => '?').join(',')})`);
+      params.push(...jids);
+    }
+    if (eids.length) {
+      conds.push(`a.inquiry_id IN (SELECT linked_inquiry_id FROM worker_accounts WHERE employee_id IN (${eids.map(() => '?').join(',')}) AND linked_inquiry_id IS NOT NULL)`);
+      params.push(...eids);
+    }
+    if (conds.length) q += ` AND (${conds.join(' OR ')})`;
   }
   q += ' ORDER BY a.assigned_at DESC';
   res.json(db.prepare(q).all(...params));

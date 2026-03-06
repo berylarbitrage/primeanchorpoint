@@ -603,7 +603,6 @@ tr:hover td{background:var(--sky-light)}
         <th>员工</th>
         <th>职位</th>
         <th>公司</th>
-        <th>工作地址</th>
         <th>开始日期</th>
         <th>薪资</th>
         <th>状态</th>
@@ -12571,11 +12570,11 @@ function renderMgrWorkers(workers) {
 
 async function loadMgrAssignments() {
   const tbody = document.getElementById('mgrAssignmentsBody');
-  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
   try {
     const rows = await api('/manager/my-assignments');
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无派工记录</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">暂无派工记录</td></tr>';
       return;
     }
     const statusBadge = s => s === 'assigned' ? '<span class="badge badge-cooperated">已派工</span>' : s === 'completed' ? '<span class="badge badge-filled">完成</span>' : `<span class="badge">${esc(s||'—')}</span>`;
@@ -12583,13 +12582,12 @@ async function loadMgrAssignments() {
       <td><div style="font-weight:600">${esc(r.worker_name||'—')}</div>${r.worker_phone?`<div style="font-size:.75rem;color:var(--sky)"><a href="tel:${esc(r.worker_phone)}">${esc(r.worker_phone)}</a></div>`:''}</td>
       <td>${esc(r.job_title||'—')}</td>
       <td>${esc(r.company_name||'—')}</td>
-      <td style="font-size:.8rem">${esc(r.work_address||r.job_location||'—')}</td>
       <td style="font-size:.8rem">${r.start_date ? r.start_date.slice(0,10) : '—'}</td>
       <td>${r.pay_rate ? `$${r.pay_rate}/${r.pay_type||'hr'}` : '—'}</td>
       <td>${statusBadge(r.status)}</td>
     </tr>`).join('');
   } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--red)">加载失败</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--red)">加载失败</td></tr>';
   }
 }
 
@@ -12786,7 +12784,7 @@ async function loadAdminMgrStaff() {
         <td>${w.email ? `<a href="mailto:${esc(w.email)}" style="color:var(--sky)">${esc(w.email)}</a>` : '—'}</td>
         <td>${esc(w.position||'—')}</td>
         <td>${statusBadge}</td>
-        <td><button class="btn btn-sm btn-green" onclick="openAssignJobModal(${w.id},'${nameEsc}')">+ 派工</button></td>
+        <td>${USER_ROLE !== 'manager' ? `<button class="btn btn-sm btn-green" onclick="openAssignJobModal(${w.id},'${nameEsc}')">+ 派工</button>` : '—'}</td>
       </tr>`;
     }).join('');
   } catch(e) {
