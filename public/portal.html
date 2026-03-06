@@ -2168,13 +2168,16 @@ let _gpsCoords = null;
 let _punchStatus = null;
 let _pendingPunchType = null; // type queued for confirmation modal
 let _confirmClockTimer = null;
+let _gpsWatchId = null;
 
 function initGPS() {
+  if (_gpsWatchId !== null) return; // already watching
   if (!navigator.geolocation) {
     document.getElementById('gpsIndicator').textContent = '🚫 设备不支持GPS，无法打卡';
     enablePunchBtn(false);
     return;
   }
+  // First try: quickly get a cached/low-accuracy fix so buttons enable fast
   navigator.geolocation.getCurrentPosition(
     pos => {
       _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
@@ -2182,11 +2185,24 @@ function initGPS() {
       document.getElementById('gpsIndicator').innerHTML = `📍 已定位（精度 ±${acc}m）`;
       enablePunchBtn(true);
     },
-    err => {
-      document.getElementById('gpsIndicator').innerHTML = '🚫 位置获取失败 — 打卡需要位置权限，请在浏览器设置中允许定位后刷新。';
-      enablePunchBtn(false);
+    () => {},
+    { enableHighAccuracy: false, timeout: 3000, maximumAge: 30000 }
+  );
+  // Then watch for continuous high-accuracy updates
+  _gpsWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      const acc = Math.round(pos.coords.accuracy);
+      document.getElementById('gpsIndicator').innerHTML = `📍 已定位（精度 ±${acc}m）`;
+      enablePunchBtn(true);
     },
-    { enableHighAccuracy: true, timeout: 10000 }
+    err => {
+      if (!_gpsCoords) {
+        document.getElementById('gpsIndicator').innerHTML = '🚫 位置获取失败 — 打卡需要位置权限，请在浏览器设置中允许定位后刷新。';
+        enablePunchBtn(false);
+      }
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
   );
 }
 
@@ -2535,12 +2551,9 @@ async function doPunch(type, photo) {
   _pendingPunchPhoto = null;
   document.getElementById('punchPhotoStep').style.display = 'none';
   document.getElementById('punchBtnsWrap').style.display = 'grid';
-  _gpsCoords = null;
-  document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
   await loadMyJobs();
   await loadPunchStatus();
   loadTimeclock();
-  initGPS();
 }
 
 async function loadMyJobs() {
