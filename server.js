@@ -573,6 +573,8 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
   try { db.exec(`ALTER TABLE admin_users ADD COLUMN ${col}`); } catch {}
 });
+// Explicit fallback: ensure created_at exists (older SQLite may reject CURRENT_TIMESTAMP default above)
+try { db.exec("ALTER TABLE admin_users ADD COLUMN created_at TEXT DEFAULT ''"); } catch {};
 try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
 
@@ -794,6 +796,25 @@ try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFA
 try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE admin_users ADD COLUMN city TEXT DEFAULT ''"); } catch {}
+// Migrate: add assigned_employee_ids to admin_users (direct employee assignment for managers)
+try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_employee_ids TEXT DEFAULT ''"); } catch {}
+// Migrate: add assigned_job_ids to admin_users (job-based assignment for managers)
+try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_job_ids TEXT DEFAULT ''"); } catch {}
+// Manager self-punch time tracking
+db.exec(`CREATE TABLE IF NOT EXISTS manager_time_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  manager_id INTEGER NOT NULL,
+  clock_in DATETIME NOT NULL,
+  clock_out DATETIME,
+  break_minutes INTEGER DEFAULT 0,
+  total_hours REAL DEFAULT 0,
+  status TEXT DEFAULT 'open',
+  notes TEXT DEFAULT '',
+  break_records TEXT DEFAULT '[]',
+  on_break INTEGER DEFAULT 0,
+  break_start DATETIME,
+  FOREIGN KEY (manager_id) REFERENCES admin_users(id)
+)`);
 // Migrate: add lang/positions to employee_doc_requests
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
@@ -1845,8 +1866,10 @@ function requireAdmin(req, res, next) {
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
-  const _u = db.prepare('SELECT assigned_partner_ids FROM admin_users WHERE id=?').get(session.userId);
+  const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=?').get(session.userId);
   req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
+  req.assignedEmployeeIds = (_u && _u.assigned_employee_ids) || '';
+  req.assignedJobIds = (_u && _u.assigned_job_ids) || '';
   next();
 }
 
@@ -1880,6 +1903,14 @@ function blockManager(req, res, next) {
 // Helper: parse manager's assigned partner IDs into array of ints
 function managerPartnerIds(req) {
   return (req.assignedPartnerIds || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+}
+// Helper: parse manager's directly assigned employee IDs into array of ints
+function managerEmployeeIds(req) {
+  return (req.assignedEmployeeIds || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+}
+// Helper: parse manager's assigned job IDs into array of ints
+function managerJobIds(req) {
+  return (req.assignedJobIds || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
 }
 
 // ─── Worker / Customer portal auth ───
@@ -2137,30 +2168,119 @@ app.get('/api/manager/interviews', requireAdmin, (req, res) => {
 // GET /api/manager/workers — employees visible to this manager with contact info
 app.get('/api/manager/workers', requireAdmin, (req, res) => {
   const pids = managerPartnerIds(req);
-  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  const jids = managerJobIds(req);
+  const eids = managerEmployeeIds(req);
+  if (req.userRole === 'manager' && !pids.length && !jids.length && !eids.length) return res.json([]);
   let q = `
     SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id as emp_code,
            e.email, e.phone, e.position, e.status
     FROM employees e`;
   const params = [];
-  if (req.userRole === 'manager' && pids.length) {
-    q += ` WHERE e.id IN (
-      SELECT DISTINCT t.employee_id FROM time_entries t
-      JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
-    )`;
-    params.push(...pids);
+  if (req.userRole === 'manager') {
+    const conds = [];
+    if (pids.length) {
+      conds.push(`e.id IN (SELECT DISTINCT t.employee_id FROM time_entries t JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')}))`);
+      params.push(...pids);
+    }
+    if (jids.length) {
+      // Employees currently assigned to any of the manager's jobs (via employee_jobs)
+      conds.push(`e.id IN (SELECT DISTINCT employee_id FROM employee_jobs WHERE job_id IN (${jids.map(() => '?').join(',')}) AND status='active')`);
+      params.push(...jids);
+    }
+    if (eids.length) {
+      conds.push(`e.id IN (${eids.map(() => '?').join(',')})`);
+      params.push(...eids);
+    }
+    if (conds.length) q += ` WHERE (${conds.join(' OR ')})`;
   }
   q += ' ORDER BY e.last_name, e.first_name';
   res.json(db.prepare(q).all(...params));
 });
 
+// ─── Manager Self-Punch APIs ───────────────────────────────────────────────────
+
+// GET /api/manager/self-punch-status — current punch state for the logged-in manager
+app.get('/api/manager/self-punch-status', requireAdmin, requireRole('manager', 'admin', 'staff'), (req, res) => {
+  const open = db.prepare("SELECT * FROM manager_time_entries WHERE manager_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.userId);
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEntries = db.prepare("SELECT * FROM manager_time_entries WHERE manager_id=? AND DATE(clock_in)=?").all(req.userId, today);
+  res.json({
+    clocked_in: !!open,
+    on_break: !!(open && open.on_break),
+    open_entry: open || null,
+    today_entries: todayEntries
+  });
+});
+
+// POST /api/manager/self-punch — manager clocks in/out for themselves
+app.post('/api/manager/self-punch', requireAdmin, requireRole('manager', 'admin', 'staff'), (req, res) => {
+  const { punch_type } = req.body;
+  if (!punch_type || !['in', 'break_start', 'break_end', 'out'].includes(punch_type))
+    return res.status(400).json({ error: '请选择打卡类型' });
+  const now = new Date().toISOString();
+  const open = db.prepare("SELECT * FROM manager_time_entries WHERE manager_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.userId);
+
+  if (punch_type === 'break_start') {
+    if (!open) return res.status(400).json({ error: '尚未上班打卡' });
+    if (open.on_break) return res.status(400).json({ error: '已在休息中' });
+    const breaks = JSON.parse(open.break_records || '[]');
+    breaks.push({ start: now, end: null });
+    db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=1 WHERE id=?').run(JSON.stringify(breaks), open.id);
+    return res.json({ action: 'break_start' });
+  }
+  if (punch_type === 'break_end') {
+    if (!open) return res.status(400).json({ error: '尚未上班打卡' });
+    if (!open.on_break) return res.status(400).json({ error: '当前未在休息' });
+    const breaks = JSON.parse(open.break_records || '[]');
+    const lastIdx = breaks.findIndex(b => !b.end);
+    if (lastIdx >= 0) breaks[lastIdx].end = now;
+    const breakMins = Math.round(breaks.reduce((s, b) => b.start && b.end ? s + (new Date(b.end) - new Date(b.start)) : s, 0) / 60000);
+    db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
+    return res.json({ action: 'break_end', break_minutes: breakMins });
+  }
+  if (punch_type === 'out') {
+    if (!open) return res.status(400).json({ error: '尚未上班打卡' });
+    if (open.on_break) {
+      // Auto-close break
+      const breaks = JSON.parse(open.break_records || '[]');
+      const lastIdx = breaks.findIndex(b => !b.end);
+      if (lastIdx >= 0) breaks[lastIdx].end = now;
+      const breakMins = Math.round(breaks.reduce((s, b) => b.start && b.end ? s + (new Date(b.end) - new Date(b.start)) : s, 0) / 60000);
+      db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
+      open.break_minutes = breakMins;
+    }
+    const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
+    db.prepare("UPDATE manager_time_entries SET clock_out=?, total_hours=?, status='closed' WHERE id=?").run(now, hrs.total, open.id);
+    return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now });
+  }
+  // punch_type === 'in'
+  if (open) {
+    // Auto-close any dangling open entry
+    const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
+    db.prepare("UPDATE manager_time_entries SET clock_out=?, total_hours=?, status='closed' WHERE id=?").run(now, hrs.total, open.id);
+  }
+  const result = db.prepare("INSERT INTO manager_time_entries (manager_id, clock_in, status, break_records, on_break) VALUES (?, ?, 'open', '[]', 0)").run(req.userId, now);
+  return res.json({ action: 'in', clock_in: now, entry_id: result.lastInsertRowid });
+});
+
+// GET /api/admin/manager-self-punch-history — manager's own punch history (for admin/manager viewing)
+app.get('/api/manager/self-punch-history', requireAdmin, requireRole('manager', 'admin', 'staff'), (req, res) => {
+  const { date_from, date_to } = req.query;
+  let q = 'SELECT * FROM manager_time_entries WHERE manager_id=?';
+  const p = [req.userId];
+  if (date_from) { q += ' AND DATE(clock_in)>=?'; p.push(date_from); }
+  if (date_to)   { q += ' AND DATE(clock_in)<=?'; p.push(date_to); }
+  q += ' ORDER BY clock_in DESC LIMIT 200';
+  res.json(db.prepare(q).all(...p));
+});
+
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, created_at FROM admin_users ORDER BY id').all());
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids, email, phone } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
@@ -2169,13 +2289,13 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
-    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', email || '', phone || '');
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)')
+    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '');
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids, email, phone } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone } = req.body;
   if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -2185,8 +2305,8 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
     db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
   // active field is intentionally excluded — only the user themselves can activate via self-verification
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, email=?, phone=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), req.params.id);
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), req.params.id);
   res.json({ success: true });
 });
 
@@ -2565,14 +2685,17 @@ app.delete('/api/admin/manager-invites/:id', requireAdmin, requireRole('admin'),
 
 // ─── Admin: Manager Management APIs ───────────────────────────────────────────
 
-// GET /api/admin/managers-list — all manager accounts with partner names
+// GET /api/admin/managers-list — all manager accounts with partner, job, and employee names
 app.get('/api/admin/managers-list', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  const managers = db.prepare("SELECT id, username, display_name, active, assigned_partner_ids, phone, email, city, created_at FROM admin_users WHERE role='manager' ORDER BY id").all();
+  const managers = db.prepare("SELECT id, username, display_name, active, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, phone, email, city, created_at FROM admin_users WHERE role='manager' ORDER BY id").all();
   const allPartners = db.prepare('SELECT id, name FROM partners').all();
   const partnerMap = Object.fromEntries(allPartners.map(p => [p.id, p.name]));
+  const allJobs = db.prepare('SELECT id, title, company_name FROM jobs').all();
+  const jobMap = Object.fromEntries(allJobs.map(j => [j.id, j.title + (j.company_name ? ' ('+j.company_name+')' : '')]));
   res.json(managers.map(m => {
     const pids = (m.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
-    return { ...m, partner_names: pids.map(id => partnerMap[id] || `#${id}`).join(', ') || '未指定' };
+    const jids = (m.assigned_job_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+    return { ...m, partner_names: pids.map(id => partnerMap[id] || `#${id}`).join(', ') || '未指定', job_names: jids.map(id => jobMap[id] || `#${id}`).join(', ') || '' };
   }));
 });
 
@@ -2627,10 +2750,12 @@ app.get('/api/admin/managers/:id/punch', requireAdmin, requireRole('admin', 'sta
   const { date_from, date_to } = req.query;
   let q = `SELECT t.id, t.clock_in, t.clock_out, t.total_hours, t.status, t.company_name,
              e.first_name, e.last_name, e.employee_id as emp_code,
-             p.name AS partner_name
+             p.name AS partner_name,
+             COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
            FROM time_entries t
            LEFT JOIN employees e ON t.employee_id = e.id
            LEFT JOIN jobs j ON t.job_id = j.id
+           LEFT JOIN job_sites js ON j.site_id = js.id
            LEFT JOIN partners p ON j.partner_id = p.id
            WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`;
   const params = [...pids];
@@ -2661,14 +2786,20 @@ app.post('/api/public/manager-register/send-code', async (req, res) => {
   db.prepare('INSERT INTO manager_reg_codes (token, contact, contact_type, code, expires_at) VALUES (?,?,?,?,?)')
     .run(token, contact, contact_type, code, expiresAt);
 
+  let delivered = false;
   if (contact_type === 'phone') {
-    await sendSMS(contact, `您的 Prime Anchorpoint 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
+    delivered = await sendSMS(contact, `您的 Prime Anchorpoint 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
   } else {
-    await sendEmail(contact, '验证码 / Verification Code — Prime Anchorpoint',
+    delivered = await sendEmail(contact, '验证码 / Verification Code — Prime Anchorpoint',
       `您的验证码是 ${code}，10分钟内有效。\nYour verification code is ${code}.`,
       verificationCodeHtml(code));
   }
-  res.json({ success: true });
+  // If delivery failed (not configured), remove the code record so verification is skipped
+  if (!delivered) {
+    db.prepare('DELETE FROM manager_reg_codes WHERE token=? AND contact=?').run(token, contact);
+    return res.json({ success: true, skipped: true });
+  }
+  res.json({ success: true, skipped: false });
 });
 
 // ── Public: complete manager registration ──
@@ -2682,9 +2813,9 @@ app.post('/api/public/manager-register/complete', async (req, res) => {
   const inv = db.prepare("SELECT * FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
   if (!inv) return res.status(400).json({ error: 'Invalid or expired invite link' });
 
-  // Validate verification code
+  // Validate verification code (skip if delivery was not possible, i.e. no record exists)
   const vc = db.prepare("SELECT * FROM manager_reg_codes WHERE token=? AND contact=? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1").get(token, contact);
-  if (!vc || vc.code !== String(code)) return res.status(400).json({ error: '验证码错误或已过期 / Invalid or expired code' });
+  if (vc && vc.code !== String(code || '')) return res.status(400).json({ error: '验证码错误或已过期 / Invalid or expired code' });
 
   // Check username not taken
   const existing = db.prepare('SELECT id FROM admin_users WHERE username=? AND active=1').get(username);
@@ -4472,7 +4603,9 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   if (!emp) return res.status(404).json({ error: 'Not found' });
   const docs = db.prepare('SELECT * FROM employee_documents WHERE employee_id=? ORDER BY uploaded_at DESC').all(req.params.id);
   const bgChecks = db.prepare('SELECT * FROM background_checks WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id);
-  const recentTime = db.prepare('SELECT * FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 20').all(req.params.id);
+  const recentTime = db.prepare(`SELECT t.*, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    FROM time_entries t LEFT JOIN jobs j ON t.job_id=j.id LEFT JOIN job_sites js ON j.site_id=js.id
+    WHERE t.employee_id=? ORDER BY t.clock_in DESC LIMIT 20`).all(req.params.id);
   // Job history: distinct jobs from timesheet_sheets with summary
   const jobHistory = db.prepare(`
     SELECT s.job_id, s.company_name, j.title AS job_title,
@@ -4729,19 +4862,36 @@ app.get('/api/admin/documents/:id/file', (req, res, next) => {
 
 app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
   const { employee_id, date_from, date_to, status } = req.query;
-  let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code
-    FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id WHERE 1=1`;
+  let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code,
+    COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
+    LEFT JOIN jobs j2 ON t.job_id=j2.id LEFT JOIN job_sites js ON j2.site_id=js.id WHERE 1=1`;
   const p = [];
   if (employee_id) { q += ' AND t.employee_id=?'; p.push(employee_id); }
   if (date_from)   { q += ' AND DATE(t.clock_in)>=?'; p.push(date_from); }
   if (date_to)     { q += ' AND DATE(t.clock_in)<=?'; p.push(date_to); }
   if (status)      { q += ' AND t.status=?'; p.push(status); }
-  // Manager: only see time entries for their assigned partners
+  // Manager: only see time entries for their assigned partners / jobs / directly assigned employees
   const pids = managerPartnerIds(req);
-  if (req.userRole === 'manager' && pids.length) {
-    q += ` AND (t.job_id IN (SELECT id FROM jobs WHERE partner_id IN (${pids.map(()=>'?').join(',')}))
-           OR t.company_name IN (SELECT name FROM partners WHERE id IN (${pids.map(()=>'?').join(',')})))`;
-    p.push(...pids, ...pids);
+  const jids = managerJobIds(req);
+  const eids = managerEmployeeIds(req);
+  if (req.userRole === 'manager' && (pids.length || jids.length || eids.length)) {
+    const conds = [];
+    if (pids.length) {
+      conds.push(`(t.job_id IN (SELECT id FROM jobs WHERE partner_id IN (${pids.map(()=>'?').join(',')})) OR t.company_name IN (SELECT name FROM partners WHERE id IN (${pids.map(()=>'?').join(',')})))`);
+      p.push(...pids, ...pids);
+    }
+    if (jids.length) {
+      conds.push(`t.job_id IN (${jids.map(()=>'?').join(',')})`);
+      p.push(...jids);
+    }
+    if (eids.length) {
+      conds.push(`t.employee_id IN (${eids.map(()=>'?').join(',')})`);
+      p.push(...eids);
+    }
+    q += ` AND (${conds.join(' OR ')})`;
+  } else if (req.userRole === 'manager') {
+    q += ' AND 1=0'; // no assignments, return nothing
   }
   q += ' ORDER BY t.clock_in DESC LIMIT 1000';
   res.json(db.prepare(q).all(...p));

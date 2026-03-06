@@ -239,6 +239,9 @@ tr:hover td{background:#fafcff}
       <a data-section="qrscan" onclick="showSection('qrscan',this)">
         <span class="nav-icon">📷</span>扫码打卡
       </a>
+      <a data-section="selfpunch" onclick="showSection('selfpunch',this)">
+        <span class="nav-icon">🕐</span>我的打卡
+      </a>
     </nav>
     <div class="sidebar-bottom">
       <div class="mgr-name" id="mgrName">—</div>
@@ -386,6 +389,45 @@ tr:hover td{background:#fafcff}
       </div>
     </div>
 
+    <!-- Self Punch -->
+    <div class="section content" id="section-selfpunch">
+      <div class="card" id="selfPunchCard" style="max-width:400px;margin:0 auto">
+        <div class="card-title">我的打卡 / My Attendance</div>
+        <div id="spStatus" style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem">
+          <div id="spStatusDot" style="width:12px;height:12px;border-radius:50%;background:var(--gray-200);flex-shrink:0"></div>
+          <span id="spStatusText" style="font-size:.95rem;font-weight:600;color:var(--gray-700)">加载中…</span>
+        </div>
+        <div id="spClockInfo" style="background:var(--gray-50);border-radius:8px;padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem;color:var(--gray-600);display:none">
+          上班时间：<strong id="spClockInTime">—</strong>
+        </div>
+        <div id="spMsg" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:.6rem 1rem;color:#dc2626;font-size:.85rem;margin-bottom:.85rem"></div>
+        <div style="display:flex;flex-direction:column;gap:.5rem" id="spBtns">
+          <button id="spBtnIn" onclick="doSelfPunch('in')" style="display:none;width:100%;padding:.85rem;border:none;border-radius:10px;background:var(--green);color:#fff;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit">▶ 上班打卡 &nbsp;Clock In</button>
+          <button id="spBtnBreakS" onclick="doSelfPunch('break_start')" style="display:none;width:100%;padding:.85rem;border:none;border-radius:10px;background:#f59e0b;color:#fff;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit">⏸ 开始休息 &nbsp;Break</button>
+          <button id="spBtnBreakE" onclick="doSelfPunch('break_end')" style="display:none;width:100%;padding:.85rem;border:none;border-radius:10px;background:#3b82f6;color:#fff;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit">▶ 结束休息 &nbsp;Resume</button>
+          <button id="spBtnOut" onclick="doSelfPunch('out')" style="display:none;width:100%;padding:.85rem;border:none;border-radius:10px;background:var(--red);color:#fff;font-size:1rem;font-weight:700;cursor:pointer;font-family:inherit">⏹ 下班打卡 &nbsp;Clock Out</button>
+        </div>
+        <button onclick="loadSelfPunchStatus()" style="margin-top:.75rem;width:100%;padding:.55rem;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;color:var(--gray-600);font-family:inherit">↻ 刷新</button>
+      </div>
+      <!-- Punch history -->
+      <div style="max-width:700px;margin:1rem auto 0">
+        <div class="card">
+          <div class="card-title">本人打卡历史</div>
+          <div class="filter-bar" style="margin-bottom:.75rem">
+            <label>从：</label><input type="date" id="spFrom" onchange="loadSelfPunchHistory()">
+            <label>到：</label><input type="date" id="spTo" onchange="loadSelfPunchHistory()">
+            <button class="btn-refresh" onclick="loadSelfPunchHistory()">刷新</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>上班打卡</th><th>下班打卡</th><th>休息</th><th>总工时</th><th>状态</th></tr></thead>
+              <tbody id="spHistoryTable"><tr><td colspan="5" class="empty-state" style="padding:2rem;text-align:center">暂无记录</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -435,7 +477,7 @@ async function mApi(path, opts={}) {
 }
 
 // ── Sidebar ────────────────────────────────────────────────────
-const SECTION_TITLES = {assignments:'派工工作',timeclock:'打卡记录',workers:'员工名单',qrscan:'扫码打卡'};
+const SECTION_TITLES = {assignments:'派工工作',timeclock:'打卡记录',workers:'员工名单',qrscan:'扫码打卡',selfpunch:'我的打卡'};
 function showSection(name, link) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.remove('active'));
@@ -443,6 +485,7 @@ function showSection(name, link) {
   link.classList.add('active');
   document.getElementById('mobileSectionTitle').textContent = SECTION_TITLES[name] || '';
   if (name !== 'qrscan') stopQrScanner();
+  if (name === 'selfpunch') { loadSelfPunchStatus(); loadSelfPunchHistory(); }
   closeSidebar();
 }
 function openSidebar()  { document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebarOverlay').classList.add('open'); }
@@ -918,6 +961,101 @@ if (TOKEN) {
     if (p && p.style.display !== 'none' && !p.contains(e.target)) p.style.display = 'none';
   });
 })();
+
+// ── Manager Self-Punch ─────────────────────────────────────────
+async function loadSelfPunchStatus() {
+  try {
+    const data = await mApi('/manager/self-punch-status');
+    if (!data) return;
+    const dotEl = document.getElementById('spStatusDot');
+    const txtEl = document.getElementById('spStatusText');
+    const ciEl  = document.getElementById('spClockInfo');
+    const ciTime = document.getElementById('spClockInTime');
+    if (data.on_break) {
+      dotEl.style.background = '#f59e0b';
+      txtEl.textContent = '⏸ 休息中';
+    } else if (data.clocked_in) {
+      dotEl.style.background = 'var(--green)';
+      txtEl.textContent = '✅ 上班中';
+    } else {
+      dotEl.style.background = 'var(--gray-200)';
+      txtEl.textContent = '⬛ 未打卡';
+    }
+    if (data.clocked_in && data.open_entry) {
+      ciEl.style.display = '';
+      ciTime.textContent = fmtDT(data.open_entry.clock_in);
+    } else {
+      ciEl.style.display = 'none';
+    }
+    const btnIn     = document.getElementById('spBtnIn');
+    const btnBreakS = document.getElementById('spBtnBreakS');
+    const btnBreakE = document.getElementById('spBtnBreakE');
+    const btnOut    = document.getElementById('spBtnOut');
+    btnIn.style.display     = !data.clocked_in ? '' : 'none';
+    btnBreakS.style.display = (data.clocked_in && !data.on_break) ? '' : 'none';
+    btnBreakE.style.display = data.on_break ? '' : 'none';
+    btnOut.style.display    = (data.clocked_in && !data.on_break) ? '' : 'none';
+    document.getElementById('spMsg').style.display = 'none';
+  } catch(e) { console.error('loadSelfPunchStatus', e); }
+}
+
+async function doSelfPunch(type) {
+  const msgEl = document.getElementById('spMsg');
+  msgEl.style.display = 'none';
+  ['spBtnIn','spBtnBreakS','spBtnBreakE','spBtnOut'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+  try {
+    const r = await fetch(API + '/manager/self-punch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN },
+      body: JSON.stringify({ punch_type: type })
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      msgEl.textContent = data.error || '打卡失败';
+      msgEl.style.display = '';
+    } else {
+      const labels = { in: '上班打卡成功', out: '下班打卡成功', break_start: '开始休息', break_end: '休息结束' };
+      showToast('✅ ' + (labels[type] || '打卡成功'));
+      await loadSelfPunchStatus();
+      await loadSelfPunchHistory();
+      return;
+    }
+  } catch(e) {
+    msgEl.textContent = '网络错误，请重试';
+    msgEl.style.display = '';
+  }
+  ['spBtnIn','spBtnBreakS','spBtnBreakE','spBtnOut'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = false;
+  });
+}
+
+async function loadSelfPunchHistory() {
+  const from = document.getElementById('spFrom') && document.getElementById('spFrom').value;
+  const to   = document.getElementById('spTo')   && document.getElementById('spTo').value;
+  let qs = '/manager/self-punch-history?';
+  if (from) qs += '&date_from=' + from;
+  if (to)   qs += '&date_to='   + to;
+  const rows = await mApi(qs);
+  const tbody = document.getElementById('spHistoryTable');
+  if (!tbody) return;
+  if (!rows || !rows.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无打卡记录</td></tr>';
+    return;
+  }
+  function fmtBreak(mins) { return (!mins && mins!==0) ? '—' : Math.floor(mins/60)+'h'+((mins%60)?((mins%60)+'m'):''); }
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td style="white-space:nowrap">${fmtDT(r.clock_in)}</td>
+      <td style="white-space:nowrap">${r.clock_out ? fmtDT(r.clock_out) : '<span style="color:#f97316;font-weight:600">进行中</span>'}</td>
+      <td>${r.break_minutes ? fmtBreak(r.break_minutes) : '—'}</td>
+      <td>${r.total_hours ? Number(r.total_hours).toFixed(2)+'h' : '—'}</td>
+      <td><span class="badge badge-${r.status==='closed'?'completed':'open'}">${r.status==='closed'?'已完成':'进行中'}</span></td>
+    </tr>`).join('');
+}
 </script>
 </body>
 </html>
