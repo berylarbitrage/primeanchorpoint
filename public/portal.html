@@ -2283,9 +2283,7 @@ async function loadPunchStatus() {
     selector.innerHTML = jobs.map(j =>
       `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
-    selectorWrap.style.display = jobs.length > 1 ? '' : 'none';
-    if (jobs.length === 1)
-      selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
+    selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
   } else if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
     timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
@@ -2319,9 +2317,7 @@ async function loadPunchStatus() {
     selector.innerHTML = jobs.map(j =>
       `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · Client: ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
-    selectorWrap.style.display = jobs.length > 1 ? '' : 'none';
-    if (jobs.length === 1)
-      selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
+    selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
   }
   const gpsReady = _gpsCoords !== null;
   enablePunchBtn(gpsReady);
