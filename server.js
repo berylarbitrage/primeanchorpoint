@@ -5721,19 +5721,9 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
       return res.status(400).json({ error: '暂停打卡需要开启位置权限，请允许浏览器获取您的位置后重试。', need_gps: true });
     }
 
-    if (!photo_data) return res.status(400).json({ error: '暂停打卡需要上传照片 / Photo is required for pausing.', photo_required: true });
-
-    // Save pause photo to disk
-    let pausePhotoFilename = null;
-    try {
-      const base64Data = photo_data.replace(/^data:image\/\w+;base64,/, '');
-      const ext = (photo_data.match(/^data:image\/(\w+);base64,/) || [])[1] || 'jpg';
-      pausePhotoFilename = `pause-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-      fs.writeFileSync(path.join(punchPhotosDir, pausePhotoFilename), Buffer.from(base64Data, 'base64'));
-    } catch (e) { /* photo save failure is non-fatal */ }
-
+    // Photo is uploaded separately via /api/worker/punch/:entryId/photo (FormData)
     const breaks = JSON.parse(open.break_records || '[]');
-    breaks.push({ start: now, end: null, latitude: latitude || null, longitude: longitude || null, geo_verified: bsGeoVerified, photo_path: pausePhotoFilename });
+    breaks.push({ start: now, end: null, latitude: latitude || null, longitude: longitude || null, geo_verified: bsGeoVerified });
     db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?')
       .run(JSON.stringify(breaks), open.id);
     return res.json({ action: 'break_start', break_index: breaks.length - 1, entry_id: open.id, geo_verified: bsGeoVerified });
@@ -5857,16 +5847,14 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   if (!geoVerified) return res.status(400).json({ error: '该工作暂未配置工作地点，无法验证位置，请联系HR。/ Work site not configured for this job, please contact HR.', no_site: true });
 
-  if (!photo_data) return res.status(400).json({ error: '上班打卡需要上传照片 / Photo is required for clock-in.', photo_required: true });
-
   // Get site timezone for this job
   const siteTzRow = matchedSiteId
     ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(matchedSiteId)
     : (activeJob.js_id ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(activeJob.js_id) : null);
   const siteTimezone = siteTzRow?.timezone || 'America/Chicago';
 
-  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo,site_timezone) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?,?)")
-    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null, siteTimezone);
+  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,site_timezone) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
+    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, siteTimezone);
   res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
     site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title,
     site_timezone: siteTimezone, warning: clockInWarning });
