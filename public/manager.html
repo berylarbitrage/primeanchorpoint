@@ -525,7 +525,7 @@ function doLogout() {
 }
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
-  document.getElementById('app').style.display = '';
+  document.getElementById('app').style.display = 'block';
   const me = await mApi('/manager/me');
   if (!me) return;
   const displayName = me.display_name || me.username || 'Manager';
