@@ -815,8 +815,8 @@ function renderTimeClock(rows) {
     return `<tr${rowStyle} data-entry-id="${t.id}">
       <td class="tc-cb-cell"><input type="checkbox" class="tc-batch-cb" onchange="toggleBatchRow(${t.id},this)"></td>
       <td><div class="emp-row-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}${incompleteTag}</div><div class="emp-row-code">${esc(t.emp_code||'')}</div></td>
-      <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="openEditModal(${t.id})">${fmtDT(t.clock_in, tz)}</td>
-      <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="openEditModal(${t.id})">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
+      <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="inlineEditTime(${t.id},'clock_in',this)">${fmtDT(t.clock_in, tz)}</td>
+      <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="inlineEditTime(${t.id},'clock_out',this)">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
       <td>${renderBreaks(t)}</td>
       <td>${fmtH(t.total_hours)}</td>
       <td>${fmtH(t.regular_hours)}</td>
@@ -1433,6 +1433,73 @@ async function saveTcEdit() {
   showToast('工时已更新', 'success');
   closeTcEdit();
   loadTimeClock();
+}
+function inlineEditTime(entryId, field, tdEl) {
+  const entry = _tcEntries[entryId];
+  if (!entry) return;
+  if (field === 'clock_out' && !entry.clock_out) return; // 进行中，不可编辑
+  const tz = entry.display_timezone || 'America/Chicago';
+  const origIso = field === 'clock_in' ? entry.clock_in : entry.clock_out;
+  const localVal = toLocalInput(origIso, tz);
+  const origHTML = tdEl.innerHTML;
+  tdEl.innerHTML = `<input type="datetime-local" value="${localVal}" style="width:185px;border:1.5px solid var(--sky);border-radius:6px;padding:3px 6px;font-size:.82rem;font-family:inherit;outline:none;background:#fff">`;
+  const inp = tdEl.querySelector('input');
+  inp.focus();
+  let committed = false;
+  function commit() {
+    if (committed) return;
+    committed = true;
+    const newVal = inp.value;
+    if (!newVal || newVal === localVal) { tdEl.innerHTML = origHTML; return; }
+    showInlineConfirm(tdEl, entryId, field, origIso, newVal, tz, origHTML);
+  }
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { inp.blur(); }
+    if (e.key === 'Escape') { committed = true; tdEl.innerHTML = origHTML; }
+  });
+  inp.addEventListener('blur', commit);
+}
+function showInlineConfirm(tdEl, entryId, field, origIso, newLocalVal, tz, origHTML) {
+  const fieldLabel = field === 'clock_in' ? '上班时间' : '下班时间';
+  const newIso = fromLocalInput(newLocalVal, tz);
+  const origDisplay = fmtDT(origIso, tz);
+  const newDisplay = fmtDT(newIso, tz);
+  tdEl.innerHTML = `<span style="background:var(--sky-l);color:var(--sky-d);border-radius:4px;padding:1px 6px;font-size:.82rem;white-space:nowrap">${newDisplay} ✎</span>`;
+  const rect = tdEl.getBoundingClientRect();
+  const dlg = document.createElement('div');
+  dlg.id = 'inlineConfirmDlg';
+  dlg.style.cssText = `position:fixed;z-index:99999;background:#fff;border-radius:10px;box-shadow:0 6px 32px rgba(0,0,0,.22);padding:1rem 1.2rem;min-width:260px;top:${Math.min(rect.bottom + 6, window.innerHeight - 160)}px;left:${Math.min(rect.left, window.innerWidth - 280)}px`;
+  dlg.innerHTML = `
+    <div style="font-size:.88rem;font-weight:700;color:var(--gray-800);margin-bottom:.6rem">确认修改${fieldLabel}？</div>
+    <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.3rem">原始：<span style="color:var(--gray-700)">${origDisplay}</span></div>
+    <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.9rem">修改为：<span style="color:var(--sky-d);font-weight:600">${newDisplay}</span></div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end">
+      <button id="inlineConfirmCancel" style="padding:.35rem .9rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-600);cursor:pointer;font-size:.84rem;font-family:inherit">取消</button>
+      <button id="inlineConfirmOk" style="padding:.35rem .9rem;border:none;border-radius:6px;background:var(--sky);color:#fff;cursor:pointer;font-size:.84rem;font-family:inherit;font-weight:600">确认修改</button>
+    </div>`;
+  document.body.appendChild(dlg);
+  function closeDlg(revert) {
+    dlg.remove();
+    document.removeEventListener('mousedown', outsideClick);
+    if (revert) tdEl.innerHTML = origHTML;
+  }
+  document.getElementById('inlineConfirmCancel').onclick = () => closeDlg(true);
+  document.getElementById('inlineConfirmOk').onclick = async () => {
+    const okBtn = document.getElementById('inlineConfirmOk');
+    okBtn.disabled = true; okBtn.textContent = '保存中…';
+    const result = await mApi('/manager/time-entries/' + entryId + '/correct-time', {
+      method: 'PATCH',
+      body: JSON.stringify({ field, new_time: newIso })
+    });
+    closeDlg(false);
+    if (!result) { tdEl.innerHTML = origHTML; return; }
+    showToast(fieldLabel + '已更新', 'success');
+    loadTimeClock();
+  };
+  function outsideClick(e) {
+    if (!dlg.contains(e.target)) closeDlg(true);
+  }
+  setTimeout(() => document.addEventListener('mousedown', outsideClick), 100);
 }
 async function confirmEntry(id, btnEl) {
   btnEl.disabled = true;
