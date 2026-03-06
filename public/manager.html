@@ -543,7 +543,7 @@ function renderAssignments() {
     const payStr = a.pay_rate ? `${a.pay_rate}${a.pay_type==='hourly'?' /hr':a.pay_type==='salary'?' /月':a.pay_type==='annual'?' /年':''}` : '';
     return `<div class="assign-card">
       <div class="assign-top">
-        <div><div class="assign-job">${esc(a.job_title||'未知职位')}</div><div class="assign-company">${esc(a.company_name||a.job_location||'—')}</div></div>
+        <div><div class="assign-job">${esc(a.job_title||'未知职位')}</div><div class="assign-company">${esc(a.company_name||'—')}</div></div>
         <span class="badge badge-${esc(a.status)}">${statusLabel(a.status)}</span>
       </div>
       <div class="worker-row">

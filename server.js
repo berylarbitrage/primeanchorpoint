@@ -2109,14 +2109,15 @@ app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
   const jids = managerJobIds(req);
   const eids = managerEmployeeIds(req);
   if (req.userRole === 'manager' && !pids.length && !jids.length && !eids.length) return res.json([]);
+  const isManager = req.userRole === 'manager';
   let q = `
     SELECT a.id, a.status, a.start_date, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
-           a.work_address, a.notes, a.assigned_at, a.work_schedule,
+           ${isManager ? "'' AS work_address" : 'a.work_address'}, a.notes, a.assigned_at, a.work_schedule,
            i.name  AS worker_name,
            i.phone AS worker_phone,
            i.email AS worker_email,
            j.title AS job_title,
-           j.location AS job_location,
+           ${isManager ? "'' AS job_location" : 'j.location AS job_location'},
            j.partner_id,
            p.name  AS company_name
     FROM assignments a
