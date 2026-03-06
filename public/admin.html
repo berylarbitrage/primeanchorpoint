@@ -2896,7 +2896,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="form-section"><h4>基本信息</h4>
     <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
     <div class="field-row">
-      <div class="field"><label>行业</label><select id="pIndustry">
+      <div class="field"><label>行业 *</label><select id="pIndustry">
         <option value="">-- 请选择 --</option>
         <option value="物流 Logistics">物流 Logistics</option>
         <option value="制造业 Manufacturing">制造业 Manufacturing</option>
@@ -2916,12 +2916,12 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="form-section"><h4>联系人 (可多个)</h4>
+  <div class="form-section"><h4>联系人 * (至少一个，姓名/电话/邮箱必填)</h4>
     <div class="dyn-list" id="pContactsList"></div>
     <button class="btn-add-sm" onclick="addPartnerContact()">+ 添加联系人</button>
   </div>
 
-  <div class="form-section"><h4>地址 (可多个)</h4>
+  <div class="form-section"><h4>地址 * (至少一个)</h4>
     <div class="dyn-list" id="pAddrList"></div>
     <button class="btn-add-sm" onclick="addPartnerAddr()">+ 添加地址</button>
   </div>
@@ -2935,7 +2935,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="form-section"><h4>合作服务 (多选)</h4>
+  <div class="form-section"><h4>合作服务 * (至少选一项)</h4>
     <div class="svc-tags" id="pSvcTags">
       <span class="svc-tag" data-v="临时工派遣" onclick="this.classList.toggle('active')">临时工派遣</span>
       <span class="svc-tag" data-v="仓库包装" onclick="this.classList.toggle('active')">仓库包装</span>
@@ -6881,13 +6881,13 @@ function addPartnerContact(c) {
   div.innerHTML = `
     <div style="flex:1;min-width:0">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
-        <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
-        <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
+        <div class="field"><label>名 First *</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
+        <div class="field"><label>姓 Last *</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
         <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
-        <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
-        <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+        <div class="field"><label>电话 *</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
+        <div class="field"><label>邮箱 *</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
         <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
@@ -7390,6 +7390,17 @@ async function savePartner() {
     })
   };
   if (!data.name) return alert('请填写公司名称');
+  if (!data.industry) return alert('请选择行业');
+  // Validate first contact: name + phone + email required
+  const firstContact = contacts[0];
+  if (!firstContact || !(`${firstContact.first_name||''} ${firstContact.last_name||''}`.trim())) return alert('请填写联系人姓名（名 + 姓）');
+  if (!firstContact.phone || !firstContact.phone.trim()) return alert('请填写联系人电话');
+  if (!firstContact.email || !firstContact.email.trim()) return alert('请填写联系人邮箱');
+  // Validate at least one address
+  const addrs = getPartnerAddrs();
+  if (!addrs.length || !addrs.some(a => (a.street||a.address||'').trim())) return alert('请至少填写一个公司地址');
+  // Validate at least one service
+  if (!allSvcs.length) return alert('请至少选择一项合作服务');
   if (id) {
     await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
     showToast(`✅ 公司「${data.name}」(#${id}) 信息已更新`);
@@ -9037,7 +9048,14 @@ function exportEmployeeCSV() {
 // ══════════════════════════════════════════════════════
 let allTimeEntries = [];
 
-function fmtDT(dt, tz) { return dt ? new Date(dt).toLocaleString(undefined, tz ? {timeZone: tz} : undefined) : '—'; }
+function fmtDT(dt, tz) {
+  if (!dt) return '—';
+  const d = new Date(dt);
+  if (isNaN(d)) return dt;
+  const useTz = tz || 'UTC';
+  return d.toLocaleString('en-US', { timeZone: useTz, month: 'numeric', day: 'numeric', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit' }) + (tz ? '' : ' UTC');
+}
 function fmtD(dt)  { return dt ? new Date(dt).toLocaleDateString() : '—'; }
 function fmtH(h)   { return h != null ? (+h).toFixed(2)+'h' : '—'; }
 

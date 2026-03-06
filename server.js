@@ -5291,28 +5291,40 @@ app.post('/api/timeclock/punch', (req, res) => {
   const now = new Date().toISOString();
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
 
-  // ── Geofencing: only block if worker has configured sites AND is outside ALL of them ──
-  if (latitude && longitude) {
-    const empSites = db.prepare(`
-      SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
-      FROM employee_jobs ej
-      JOIN jobs j ON ej.job_id = j.id
-      JOIN job_sites js ON j.site_id = js.id
-      WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL
-    `).all(emp.id);
-    if (empSites.length > 0) {
-      let insideAny = false;
-      let closestDist = Infinity, closestSite = null;
-      for (const site of empSites) {
-        const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
-        if (dist <= site.radius_meters) { insideAny = true; break; }
-        if (dist < closestDist) { closestDist = dist; closestSite = site; }
-      }
-      if (!insideAny && closestSite) {
-        const distStr = closestDist >= 1000 ? (closestDist/1000).toFixed(1)+' km' : Math.round(closestDist)+' m';
-        return res.status(400).json({ error: `距离工作地点太远，无法打卡（距"${closestSite.name}"约 ${distStr}，允许范围 ${closestSite.radius_meters}m）`, geo_blocked: true });
-      }
+  // ── Geofencing: required for clock-in; all punch types must verify location ──
+  const empSites = db.prepare(`
+    SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+    FROM employee_jobs ej
+    JOIN jobs j ON ej.job_id = j.id
+    JOIN job_sites js ON j.site_id = js.id
+    WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL AND js.longitude IS NOT NULL
+  `).all(emp.id);
+
+  if (empSites.length > 0) {
+    // Employee has configured job sites — location verification is mandatory
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: '打卡需要开启位置权限，请在浏览器设置中允许定位后再试。\nLocation permission required to clock in.', need_gps: true });
     }
+    let insideAny = false;
+    let closestDist = Infinity, closestSite = null;
+    for (const site of empSites) {
+      const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
+      if (dist <= site.radius_meters) { insideAny = true; break; }
+      if (dist < closestDist) { closestDist = dist; closestSite = site; }
+    }
+    if (!insideAny) {
+      const distStr = closestSite
+        ? (closestDist >= 1000 ? (closestDist/1000).toFixed(1)+' km' : Math.round(closestDist)+' m')
+        : '未知';
+      const siteName = closestSite ? closestSite.name : '';
+      return res.status(400).json({ error: `您的位置不在工作地点范围内（距"${siteName}"约 ${distStr}，允许范围 ${closestSite?.radius_meters||200}m）。\n请到达工作地点后再打卡。`, geo_blocked: true });
+    }
+  } else if (ptype === 'in' || ptype === 'toggle') {
+    // No configured job sites — block clock-in to prevent unverified punches
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: '打卡需要开启位置权限。\nLocation permission required.', need_gps: true });
+    }
+    return res.status(400).json({ error: '该员工暂无已配置工作地点的工作，无法验证位置，请联系HR。\nNo configured job site found, please contact HR.', no_site: true });
   }
 
   let warning = null; // warning message (not blocking)
