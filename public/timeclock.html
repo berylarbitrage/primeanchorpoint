@@ -74,13 +74,6 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
 .warn-box{background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:.6rem .85rem;margin-top:.75rem;font-size:.82rem;color:#7B5800;font-weight:600;text-align:left}
 #liveClock{text-align:center;font-size:.8rem;color:rgba(255,255,255,.45);margin-top:.85rem}
 .screen{display:none}.screen.active{display:block}
-/* Photo step */
-.photo-prompt{font-size:.92rem;color:var(--blue);font-weight:600;margin-bottom:.5rem;text-align:center}
-.photo-sub{font-size:.8rem;color:var(--gray-400);margin-bottom:1rem;text-align:center}
-.photo-preview{display:none;margin-bottom:.85rem;text-align:center}
-.photo-preview img{max-width:100%;max-height:220px;border-radius:10px;border:2px solid var(--green);object-fit:cover}
-.btn-camera{width:100%;padding:14px;border:none;border-radius:10px;background:#dbeafe;color:#1e40af;font-weight:700;font-size:.95rem;cursor:pointer;font-family:inherit;border:1px solid #93c5fd;margin-bottom:.5rem}
-.btn-skip{width:100%;padding:10px;border:1.5px solid var(--gray-200);border-radius:10px;background:transparent;color:var(--gray-600);font-size:.88rem;cursor:pointer;font-family:inherit}
 </style>
 </head>
 <body>
@@ -146,20 +139,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
     <button class="btn-big btn-back" onclick="goBack()">← 返回</button>
   </div>
 
-  <!-- Screen 3: Photo capture -->
-  <div class="card screen" id="screenPhoto">
-    <div id="photoPromptLabel" class="photo-prompt">📷 请拍一张照片确认打卡</div>
-    <div class="photo-sub">完成打卡后请拍照留档 / Take a photo to confirm your punch</div>
-    <div class="photo-preview" id="photoPreview">
-      <img id="photoPreviewImg" alt="打卡照片">
-    </div>
-    <input type="file" id="photoInput" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(this)">
-    <button class="btn-camera" id="btnCamera" onclick="document.getElementById('photoInput').click()">📷 拍照</button>
-    <button class="btn-big btn-lookup" id="btnPhotoConfirm" style="display:none;margin-bottom:.5rem" onclick="confirmPhoto()">✅ 确认完成</button>
-    <button class="btn-skip" onclick="skipPhoto()">跳过 / Skip</button>
-  </div>
-
-  <!-- Screen 4: Result -->
+  <!-- Screen 3: Result -->
   <div class="card screen" id="screenResult">
     <div class="result-card" id="resultCard"></div>
     <button class="btn-big btn-lookup" onclick="goHome()">完成 ✓</button>
@@ -192,9 +172,6 @@ let currentState = { clocked_in: false, on_break: false };
 let pendingPunchType = null;
 let gps = { lat: null, lng: null, status: 'pending' };
 let geoBlocked = false;
-let _pendingResult = null;   // holds { r, ptype } after punch succeeds, before photo
-let _pendingEntryId = null;  // entry_id from punch response
-let _pendingPhoto = null;    // File object for photo upload
 
 // Live clock
 (function tick(){
@@ -379,17 +356,7 @@ async function submitPin() {
 
     const ptype = pendingPunchType;
     closePinModal();
-    // Show photo capture step before result
-    _pendingResult = { r, ptype };
-    _pendingEntryId = r.entry_id || null;
-    _pendingPhoto = null;
-    document.getElementById('photoPreview').style.display = 'none';
-    document.getElementById('photoInput').value = '';
-    document.getElementById('btnPhotoConfirm').style.display = 'none';
-    document.getElementById('btnCamera').textContent = '📷 拍照';
-    const prompts = { in:'📷 上班打卡 — 请拍一张照片', out:'📷 下班打卡 — 请拍一张照片', break_start:'📷 休息开始 — 请拍一张照片', break_end:'📷 休息结束 — 请拍一张照片' };
-    document.getElementById('photoPromptLabel').textContent = prompts[ptype] || '📷 请拍一张照片确认打卡';
-    showScreen('Photo');
+    renderResult(r, ptype);
   } catch (e) {
     document.getElementById('pinErr').textContent = '网络错误，请重试';
     btn.disabled = false; btn.textContent = '确认打卡';
@@ -431,36 +398,9 @@ function renderResult(r, ptype) {
   showScreen('Result');
 }
 
-function onPhotoSelected(input) {
-  if (!input.files || !input.files[0]) return;
-  _pendingPhoto = input.files[0];
-  const url = URL.createObjectURL(_pendingPhoto);
-  document.getElementById('photoPreviewImg').src = url;
-  document.getElementById('photoPreview').style.display = 'block';
-  document.getElementById('btnCamera').textContent = '📷 重新拍照';
-  document.getElementById('btnPhotoConfirm').style.display = '';
-}
-
-function confirmPhoto() {
-  if (_pendingEntryId && _pendingPhoto) {
-    const fd = new FormData();
-    fd.append('photo', _pendingPhoto);
-    fd.append('employee_id', currentEmp.employee.employee_id);
-    fetch(`${API}/timeclock/punch/${_pendingEntryId}/photo`, { method: 'POST', body: fd }).catch(() => {});
-  }
-  const { r, ptype } = _pendingResult;
-  renderResult(r, ptype);
-}
-
-function skipPhoto() {
-  const { r, ptype } = _pendingResult;
-  renderResult(r, ptype);
-}
-
 function goBack() {
   currentEmp = null; geoBlocked = false;
   gps = { lat: null, lng: null, status: 'pending' };
-  _pendingResult = null; _pendingEntryId = null; _pendingPhoto = null;
   document.getElementById('empIdInput').value = '';
   hideMsg('idErr');
   showScreen('Id');

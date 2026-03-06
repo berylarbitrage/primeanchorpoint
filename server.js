@@ -5998,30 +5998,6 @@ app.post('/api/worker/punch/:entryId/photo', requireWorker, punchPhotoUpload.sin
   res.json({ success: true });
 });
 
-// Upload punch photo from timeclock kiosk (PIN-based, no Bearer token)
-// Authenticates by matching employee_id to the entry and checking recency (within 30 min)
-app.post('/api/timeclock/punch/:entryId/photo', punchPhotoUpload.single('photo'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
-  const { employee_id } = req.body;
-  if (!employee_id) { fs.unlink(req.file.path, ()=>{}); return res.status(400).json({ error: 'employee_id required' }); }
-  const emp = db.prepare('SELECT id FROM employees WHERE employee_id=?').get(employee_id);
-  if (!emp) { fs.unlink(req.file.path, ()=>{}); return res.status(403).json({ error: 'Unknown employee' }); }
-  const entry = db.prepare('SELECT id, employee_id, clock_in, clock_out FROM time_entries WHERE id=?').get(req.params.entryId);
-  if (!entry || entry.employee_id !== emp.id) {
-    fs.unlink(req.file.path, ()=>{});
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-  // Only allow photo upload within 30 minutes of punch
-  const punchTime = entry.clock_out || entry.clock_in;
-  const age = Date.now() - new Date(punchTime || Date.now()).getTime();
-  if (age > 30 * 60 * 1000) {
-    fs.unlink(req.file.path, ()=>{});
-    return res.status(403).json({ error: 'Entry too old for photo upload' });
-  }
-  db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
-  res.json({ success: true });
-});
-
 // Serve punch photos — accepts Bearer header, pa_token cookie, or ?token= query param
 // (img tags can't send Authorization headers, so query-param auth is needed)
 app.get('/api/admin/punch-photo/:filename', (req, res) => {
