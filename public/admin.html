@@ -9903,12 +9903,14 @@ async function saveAccount() {
   if (!d.username) return alert('请输入用户名');
   if (!id && !d.password) return alert('请输入密码');
   if (!d.password) delete d.password;
+  let r;
   if (id) {
-    await api(`/admin/accounts/${id}`, { method: 'PUT', body: JSON.stringify(d) });
+    r = await api(`/admin/accounts/${id}`, { method: 'PUT', body: JSON.stringify(d) });
   } else {
     if (!d.password) return alert('请输入密码');
-    await api('/admin/accounts', { method: 'POST', body: JSON.stringify(d) });
+    r = await api('/admin/accounts', { method: 'POST', body: JSON.stringify(d) });
   }
+  if (!r || r.error) { alert('保存失败：' + (r && r.error ? r.error : '请重试')); return; }
   clearModalState('accountModal');
   closeModal('accountModal');
   loadAccounts();
@@ -12180,9 +12182,14 @@ async function loadAdminMgrList() {
   const tbody = document.getElementById('adminMgrListBody');
   tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
   try {
-    _adminManagers = await api('/admin/managers-list');
-    _adminMgrListData = _adminManagers;
-    renderAdminMgrList(_adminManagers);
+    const result = await api('/admin/managers-list');
+    if (!Array.isArray(result)) {
+      tbody.innerHTML = `<tr><td colspan="8" style="color:var(--red)">加载失败: ${esc(result && result.error ? result.error : '请刷新重试')}</td></tr>`;
+      return;
+    }
+    _adminManagers = result;
+    _adminMgrListData = result;
+    renderAdminMgrList(result);
   } catch(e) {
     tbody.innerHTML = `<tr><td colspan="8" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
   }
