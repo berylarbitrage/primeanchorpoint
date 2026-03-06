@@ -594,7 +594,7 @@ tr:last-child td{border-bottom:none}
           <!-- Job selector shown only when clocking in with multiple active jobs -->
           <div id="jobSelectorWrap" style="display:none;margin:.75rem 0;width:100%;max-width:340px">
             <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block">选择打卡工作 / Select job to clock in for</label>
-            <select id="jobSelector" style="width:100%;padding:.55rem .8rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem;background:#fff"></select>
+            <select id="jobSelector" onchange="enablePunchBtn(_gpsCoords !== null)" style="width:100%;padding:.55rem .8rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem;background:#fff"></select>
           </div>
           <!-- Always-visible 4 punch buttons -->
           <div id="punchBtnsWrap" style="width:100%;max-width:340px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
@@ -2248,7 +2248,12 @@ function enablePunchBtn(ready) {
     setBtn(btnOut, false);
   } else {
     // Clocked in and working
-    setBtn(btnIn,  false);
+    // Allow clock-in to a DIFFERENT job (server will auto-close current entry)
+    const sel = document.getElementById('jobSelector');
+    const currentJobId = s.open_entry?.job_id;
+    const selectedJobId = sel ? parseInt(sel.value) : null;
+    const switchingJob = currentJobId && selectedJobId && selectedJobId !== currentJobId;
+    setBtn(btnIn,  switchingJob);
     setBtn(btnBS,  true);
     setBtn(btnBE,  false);
     setBtn(btnOut, true);
@@ -2296,13 +2301,16 @@ async function loadPunchStatus() {
     statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● Checked In</span>';
     timeEl.textContent = new Date(ci).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz});
     subEl.textContent = 'Check In · ' + new Date(ci).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz});
-    // Show selector (disabled) so user can see which job they're clocked in for
     const jobs = s.active_jobs || [];
-    selector.innerHTML = jobs.map(j =>
-      `<option value="${j.job_id}" ${j.job_id === s.open_entry.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
-    ).join('');
-    selector.disabled = true;
-    selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
+    if (jobs.length > 1) {
+      selector.innerHTML = jobs.map(j =>
+        `<option value="${j.job_id}" ${j.job_id === s.open_entry.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+      ).join('');
+      selector.disabled = false;
+      selectorWrap.style.display = '';
+    } else {
+      selectorWrap.style.display = 'none';
+    }
   } else if (!s.has_active_job) {
     statusEl.innerHTML = '<span style="color:var(--orange)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
