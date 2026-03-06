@@ -725,6 +725,7 @@ tr:hover td{background:var(--sky-light)}
         <th>邮箱</th>
         <th>职位</th>
         <th>状态</th>
+        <th>操作</th>
       </tr></thead>
       <tbody id="adminMgrStaffBody"></tbody>
     </table>
@@ -12614,25 +12615,27 @@ async function loadAdminMgrDispatch() {
 async function loadAdminMgrStaff() {
   const tbody = document.getElementById('adminMgrStaffBody');
   const mgrId = document.getElementById('adminMgrStaffSel').value;
-  if (!mgrId) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">请先选择经理</td></tr>'; return; }
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  if (!mgrId) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">请先选择经理</td></tr>'; return; }
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
   try {
     const workers = await api(`/admin/managers/${mgrId}/workers`);
-    if (!workers.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">暂无下属员工</td></tr>'; return; }
+    if (!workers.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无下属员工</td></tr>'; return; }
     tbody.innerHTML = workers.map(w => {
       const name = [w.first_name, w.last_name].filter(Boolean).join(' ') || '—';
+      const nameEsc = esc(name);
       const statusBadge = w.status === 'active' ? '<span class="badge badge-cooperated">在职</span>' : `<span class="badge">${esc(w.status||'—')}</span>`;
       return `<tr>
-        <td><div style="font-weight:600;color:var(--blue)">${esc(name)}</div></td>
+        <td><div style="font-weight:600;color:var(--blue)">${nameEsc}</div></td>
         <td style="font-size:.8rem;color:var(--gray-500)">${esc(w.emp_code||'—')}</td>
         <td>${w.phone ? `<a href="tel:${esc(w.phone)}" style="color:var(--sky)">${esc(w.phone)}</a>` : '—'}</td>
         <td>${w.email ? `<a href="mailto:${esc(w.email)}" style="color:var(--sky)">${esc(w.email)}</a>` : '—'}</td>
         <td>${esc(w.position||'—')}</td>
         <td>${statusBadge}</td>
+        <td><button class="btn btn-sm btn-green" onclick="openAssignJobModal(${w.id},'${nameEsc}')">+ 派工</button></td>
       </tr>`;
     }).join('');
   } catch(e) {
-    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
   }
 }
 
