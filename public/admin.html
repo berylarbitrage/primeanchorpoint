@@ -512,6 +512,19 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
+  <!-- 经理管理 (admin/staff only) -->
+  <div class="nav-group open" id="sec-mgr-admin" data-role="admin,staff">
+    <div class="nav-group-header" onclick="toggleNav('sec-mgr-admin')">
+      👔 经理管理<span class="chev">▾</span>
+    </div>
+    <div class="nav-group-items">
+      <a onclick="showTab('admin-mgr-list')" data-tab="admin-mgr-list" data-role="admin,staff">👤 经理列表</a>
+      <a onclick="showTab('admin-mgr-punch')" data-tab="admin-mgr-punch" data-role="admin,staff">⏱ 经理打卡记录</a>
+      <a onclick="showTab('admin-mgr-dispatch')" data-tab="admin-mgr-dispatch" data-role="admin,staff">💼 经理派工情况</a>
+      <a onclick="showTab('admin-mgr-staff')" data-tab="admin-mgr-staff" data-role="admin,staff">👷 经理下属员工</a>
+    </div>
+  </div>
+
   <!-- 工时薪资 -->
   <div class="nav-group open" id="sec-time" data-role="admin,staff">
     <div class="nav-group-header" onclick="toggleNav('sec-time')">
@@ -612,6 +625,107 @@ tr:hover td{background:var(--sky-light)}
         <th>备注</th>
       </tr></thead>
       <tbody id="mgrInterviewsBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ─── Admin Manager Section Tabs ─── -->
+
+<!-- Tab: 经理列表 -->
+<div id="tab-admin-mgr-list" style="display:none">
+  <div class="top">
+    <h1>👔 经理列表</h1>
+    <div class="top-actions">
+      <input type="text" id="adminMgrSearch" placeholder="搜索用户名/姓名/邮箱…" oninput="filterAdminMgrList()" style="padding:6px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem;outline:none">
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>用户名</th>
+        <th>显示名称</th>
+        <th>邮箱</th>
+        <th>电话</th>
+        <th>负责公司</th>
+        <th>状态</th>
+        <th>注册时间</th>
+        <th>操作</th>
+      </tr></thead>
+      <tbody id="adminMgrListBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Tab: 经理打卡记录 -->
+<div id="tab-admin-mgr-punch" style="display:none">
+  <div class="top"><h1>⏱ 经理打卡记录</h1></div>
+  <div class="search-bar" style="margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+    <select id="adminMgrPunchSel" onchange="loadAdminMgrPunch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      <option value="">— 选择经理 —</option>
+    </select>
+    <input type="date" id="adminMgrPunchFrom" onchange="loadAdminMgrPunch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    <span style="align-self:center;font-size:.85rem;color:var(--gray-500)">至</span>
+    <input type="date" id="adminMgrPunchTo" onchange="loadAdminMgrPunch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table style="font-size:.82rem">
+      <thead><tr>
+        <th>员工姓名</th>
+        <th>员工编码</th>
+        <th>上班时间</th>
+        <th>下班时间</th>
+        <th>工时</th>
+        <th>合作公司</th>
+        <th>状态</th>
+      </tr></thead>
+      <tbody id="adminMgrPunchBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Tab: 经理派工情况 -->
+<div id="tab-admin-mgr-dispatch" style="display:none">
+  <div class="top"><h1>💼 经理派工情况</h1></div>
+  <div class="search-bar" style="margin-bottom:1rem">
+    <select id="adminMgrDispatchSel" onchange="loadAdminMgrDispatch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      <option value="">— 选择经理 —</option>
+    </select>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>员工</th>
+        <th>职位</th>
+        <th>合作公司</th>
+        <th>工作地址</th>
+        <th>开始日期</th>
+        <th>薪资</th>
+        <th>状态</th>
+      </tr></thead>
+      <tbody id="adminMgrDispatchBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Tab: 经理下属员工 -->
+<div id="tab-admin-mgr-staff" style="display:none">
+  <div class="top"><h1>👷 经理下属员工</h1></div>
+  <div class="search-bar" style="margin-bottom:1rem">
+    <select id="adminMgrStaffSel" onchange="loadAdminMgrStaff()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      <option value="">— 选择经理 —</option>
+    </select>
+  </div>
+  <div class="card" style="overflow-x:auto">
+    <table>
+      <thead><tr>
+        <th>姓名</th>
+        <th>员工编码</th>
+        <th>电话</th>
+        <th>邮箱</th>
+        <th>职位</th>
+        <th>状态</th>
+      </tr></thead>
+      <tbody id="adminMgrStaffBody"></tbody>
     </table>
   </div>
 </div>
@@ -3658,7 +3772,8 @@ const _TAB_TO_SEC = {
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time',
   approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system',
-  'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager'
+  'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
+  'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin'
 };
 
 function toggleNav(secId) {
@@ -3702,6 +3817,10 @@ function showTab(t) {
   if (t === 'mgr-workers')     loadMgrWorkers();
   if (t === 'mgr-assignments') loadMgrAssignments();
   if (t === 'mgr-interviews')  loadMgrInterviews();
+  if (t === 'admin-mgr-list')     loadAdminMgrList();
+  if (t === 'admin-mgr-punch')    { populateAdminMgrSelects(); loadAdminMgrPunch(); }
+  if (t === 'admin-mgr-dispatch') { populateAdminMgrSelects(); loadAdminMgrDispatch(); }
+  if (t === 'admin-mgr-staff')    { populateAdminMgrSelects(); loadAdminMgrStaff(); }
 }
 
 // ─── Dashboard ───
@@ -12050,6 +12169,171 @@ async function loadMgrInterviews() {
     }).join('');
   } catch(e) {
     tbody.innerHTML = '<tr><td colspan="7" style="color:var(--red)">加载失败</td></tr>';
+  }
+}
+
+// ─── Admin Manager Section ────────────────────────────────────────────────────
+let _adminManagers = [];
+let _adminMgrListData = [];
+
+async function loadAdminMgrList() {
+  const tbody = document.getElementById('adminMgrListBody');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  try {
+    _adminManagers = await api('/admin/managers-list');
+    _adminMgrListData = _adminManagers;
+    renderAdminMgrList(_adminManagers);
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function filterAdminMgrList() {
+  const q = document.getElementById('adminMgrSearch').value.trim().toLowerCase();
+  const filtered = q ? _adminMgrListData.filter(m =>
+    (m.username||'').toLowerCase().includes(q) ||
+    (m.display_name||'').toLowerCase().includes(q) ||
+    (m.email||'').toLowerCase().includes(q)
+  ) : _adminMgrListData;
+  renderAdminMgrList(filtered);
+}
+
+function renderAdminMgrList(managers) {
+  const tbody = document.getElementById('adminMgrListBody');
+  if (!managers.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--gray-400)">暂无经理账户</td></tr>';
+    return;
+  }
+  tbody.innerHTML = managers.map(m => {
+    const activeLabel = m.active ? '<span class="badge badge-cooperated">启用</span>' : '<span class="badge badge-red">停用</span>';
+    const created = m.created_at ? m.created_at.slice(0,10) : '—';
+    return `<tr>
+      <td><div style="font-weight:600;color:var(--blue)">${esc(m.username)}</div></td>
+      <td>${esc(m.display_name||'—')}</td>
+      <td>${m.email ? `<a href="mailto:${esc(m.email)}" style="color:var(--sky)">${esc(m.email)}</a>` : '—'}</td>
+      <td>${m.phone ? `<a href="tel:${esc(m.phone)}" style="color:var(--sky)">${esc(m.phone)}</a>` : '—'}</td>
+      <td style="font-size:.82rem;color:var(--gray-600)">${esc(m.partner_names)}</td>
+      <td>${activeLabel}</td>
+      <td style="font-size:.8rem;color:var(--gray-500)">${created}</td>
+      <td>
+        <button class="btn btn-sm btn-outline" onclick="viewMgrPunch(${m.id},'${esc(m.display_name||m.username)}')">⏱ 打卡</button>
+        <button class="btn btn-sm btn-outline" onclick="viewMgrDispatch(${m.id},'${esc(m.display_name||m.username)}')">💼 派工</button>
+        <button class="btn btn-sm btn-outline" onclick="viewMgrStaff(${m.id},'${esc(m.display_name||m.username)}')">👷 员工</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function viewMgrPunch(id, name) {
+  showTab('admin-mgr-punch');
+  document.getElementById('adminMgrPunchSel').value = id;
+  loadAdminMgrPunch();
+}
+function viewMgrDispatch(id, name) {
+  showTab('admin-mgr-dispatch');
+  document.getElementById('adminMgrDispatchSel').value = id;
+  loadAdminMgrDispatch();
+}
+function viewMgrStaff(id, name) {
+  showTab('admin-mgr-staff');
+  document.getElementById('adminMgrStaffSel').value = id;
+  loadAdminMgrStaff();
+}
+
+async function populateAdminMgrSelects() {
+  if (!_adminManagers.length) {
+    try { _adminManagers = await api('/admin/managers-list'); } catch(e) { return; }
+  }
+  const opts = _adminManagers.map(m => `<option value="${m.id}">${esc(m.display_name || m.username)} (${esc(m.partner_names)})</option>`).join('');
+  ['adminMgrPunchSel','adminMgrDispatchSel','adminMgrStaffSel'].forEach(id => {
+    const sel = document.getElementById(id);
+    if (sel && sel.options.length <= 1) {
+      sel.innerHTML = '<option value="">— 选择经理 —</option>' + opts;
+    }
+  });
+}
+
+async function loadAdminMgrPunch() {
+  const tbody = document.getElementById('adminMgrPunchBody');
+  const mgrId = document.getElementById('adminMgrPunchSel').value;
+  if (!mgrId) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">请先选择经理</td></tr>'; return; }
+  const from = document.getElementById('adminMgrPunchFrom').value;
+  const to   = document.getElementById('adminMgrPunchTo').value;
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  try {
+    let url = `/admin/managers/${mgrId}/punch`;
+    const params = [];
+    if (from) params.push(`date_from=${from}`);
+    if (to)   params.push(`date_to=${to}`);
+    if (params.length) url += '?' + params.join('&');
+    const rows = await api(url);
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无打卡记录</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r => {
+      const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || '—';
+      const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+      const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+      const hrs  = r.total_hours != null ? r.total_hours.toFixed(2) + ' h' : '—';
+      const statusBadge = r.status === 'open' ? '<span class="badge badge-yellow">进行中</span>' : '<span class="badge badge-cooperated">已完成</span>';
+      return `<tr>
+        <td>${esc(name)}</td>
+        <td style="font-size:.8rem;color:var(--gray-500)">${esc(r.emp_code||'—')}</td>
+        <td>${cin}</td>
+        <td>${cout}</td>
+        <td style="font-weight:600">${hrs}</td>
+        <td>${esc(r.partner_name||r.company_name||'—')}</td>
+        <td>${statusBadge}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function loadAdminMgrDispatch() {
+  const tbody = document.getElementById('adminMgrDispatchBody');
+  const mgrId = document.getElementById('adminMgrDispatchSel').value;
+  if (!mgrId) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">请先选择经理</td></tr>'; return; }
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  try {
+    const rows = await api(`/admin/managers/${mgrId}/assignments`);
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无派工记录</td></tr>'; return; }
+    const statusBadge = s => s === 'assigned' ? '<span class="badge badge-cooperated">已派工</span>' : s === 'completed' ? '<span class="badge badge-filled">完成</span>' : `<span class="badge">${esc(s||'—')}</span>`;
+    tbody.innerHTML = rows.map(r => `<tr>
+      <td><div style="font-weight:600">${esc(r.worker_name||'—')}</div>${r.worker_phone?`<div style="font-size:.75rem;color:var(--sky)"><a href="tel:${esc(r.worker_phone)}">${esc(r.worker_phone)}</a></div>`:''}</td>
+      <td>${esc(r.job_title||'—')}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="font-size:.8rem">${esc(r.work_address||r.job_location||'—')}</td>
+      <td style="font-size:.8rem">${r.start_date ? r.start_date.slice(0,10) : '—'}</td>
+      <td>${r.pay_rate ? `$${r.pay_rate}/${r.pay_type||'hr'}` : '—'}</td>
+      <td>${statusBadge(r.status)}</td>
+    </tr>`).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function loadAdminMgrStaff() {
+  const tbody = document.getElementById('adminMgrStaffBody');
+  const mgrId = document.getElementById('adminMgrStaffSel').value;
+  if (!mgrId) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">请先选择经理</td></tr>'; return; }
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  try {
+    const workers = await api(`/admin/managers/${mgrId}/workers`);
+    if (!workers.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">暂无下属员工</td></tr>'; return; }
+    tbody.innerHTML = workers.map(w => {
+      const name = [w.first_name, w.last_name].filter(Boolean).join(' ') || '—';
+      const statusBadge = w.status === 'active' ? '<span class="badge badge-cooperated">在职</span>' : `<span class="badge">${esc(w.status||'—')}</span>`;
+      return `<tr>
+        <td><div style="font-weight:600;color:var(--blue)">${esc(name)}</div></td>
+        <td style="font-size:.8rem;color:var(--gray-500)">${esc(w.emp_code||'—')}</td>
+        <td>${w.phone ? `<a href="tel:${esc(w.phone)}" style="color:var(--sky)">${esc(w.phone)}</a>` : '—'}</td>
+        <td>${w.email ? `<a href="mailto:${esc(w.email)}" style="color:var(--sky)">${esc(w.email)}</a>` : '—'}</td>
+        <td>${esc(w.position||'—')}</td>
+        <td>${statusBadge}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
   }
 }
 
