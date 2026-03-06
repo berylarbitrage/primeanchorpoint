@@ -2024,6 +2024,7 @@ app.post('/api/admin/login', (req, res) => {
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
   const token = createSession(user);
+  res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Lax' });
   res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
 });
 
@@ -2048,6 +2049,7 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
   if (auth && auth.startsWith('Bearer ')) {
     db.prepare('DELETE FROM admin_sessions WHERE token=?').run(auth.slice(7));
   }
+  res.clearCookie('pa_token');
   res.json({ success: true });
 });
 
