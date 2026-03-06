@@ -2511,14 +2511,6 @@ async function doPunch(type, photo) {
     // If previous day's clock-out was missed, auto-close it on the server
     if (_punchStatus && _punchStatus.missed_checkout) body.force_new_day = true;
   }
-  if ((type === 'in' || type === 'break_start') && photo) {
-    body.photo_data = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = e => resolve(e.target.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(photo);
-    });
-  }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { enablePunchBtn(true); cancelPunchPhoto(); await customAlert('打卡失败，请重新登录后重试。\nFailed to clock in, please re-login.', '打卡失败', '❌'); return; }
   if (r.error) {
@@ -2528,16 +2520,7 @@ async function doPunch(type, photo) {
     await loadPunchStatus();
     return;
   }
-  // Upload photo for clock-in
-  if (photo && r.entry_id) {
-    const fd = new FormData();
-    fd.append('photo', photo);
-    await fetch('/api/worker/punch/' + r.entry_id + '/photo', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
-      body: fd
-    }).catch(() => {});
-  }
+  // Show success immediately — don't wait for photo upload or status refresh
   const toasts = {
     in: () => {
       const geoMsg = r.geo_verified ? (r.site_name ? ` · 📍${r.site_name}` : ' · 位置已验证') : '';
@@ -2551,9 +2534,18 @@ async function doPunch(type, photo) {
   _pendingPunchPhoto = null;
   document.getElementById('punchPhotoStep').style.display = 'none';
   document.getElementById('punchBtnsWrap').style.display = 'grid';
-  await loadMyJobs();
-  await loadPunchStatus();
-  loadTimeclock();
+  // Upload photo in background (fire-and-forget)
+  if (photo && r.entry_id) {
+    const fd = new FormData();
+    fd.append('photo', photo);
+    fetch('/api/worker/punch/' + r.entry_id + '/photo', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
+      body: fd
+    }).catch(() => {});
+  }
+  // Refresh status in parallel
+  Promise.all([loadMyJobs(), loadPunchStatus()]).then(() => loadTimeclock());
 }
 
 async function loadMyJobs() {
