@@ -2774,6 +2774,7 @@ tr:hover td{background:var(--sky-light)}
     </select></div>
     <div class="field"><label>薪资 / 工资</label><input id="aPayRate" placeholder="例：18.50/hr 或 $3,200/月"></div>
   </div>
+  <div class="field"><label>工作地址</label><input id="aWorkAddr" placeholder="例：123 Main St, Chicago, IL"></div>
   <div class="field">
     <label>福利待遇（多选）</label>
     <div id="aBenefitsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
@@ -6390,7 +6391,86 @@ function selectAssignItem(which, id, label) {
   document.getElementById(isInq ? 'aInquiry' : 'aJob').value = label;
   document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = id;
   document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop').classList.remove('open');
-  if (isInq) checkInquiryDispatchStatus(id);
+  if (isInq) {
+    checkInquiryDispatchStatus(id);
+  } else {
+    if (!_editingAssignment) showJobImportPanel(id);
+  }
+}
+
+let _importJobId = null;
+
+function showJobImportPanel(jobId) {
+  const j = _assignJobs.find(x => x.id == jobId);
+  _importJobId = jobId;
+  if (!j) return;
+
+  const items = [];
+  if (j.pay)             items.push({ key:'pay',      label:`薪资/工资：${j.pay}`, checked: true });
+  if (j.employment_type) items.push({ key:'contract',  label:`合同类型：${j.employment_type}`, checked: true });
+  if (j.pay)             items.push({ key:'pay_type',  label:`薪资方式：${/\/hr|hourly/i.test(j.pay)?'按小时':/\/mo|month|salary/i.test(j.pay)?'月薪':'按小时'}`, checked: true });
+  if (j.benefits)        items.push({ key:'benefits',  label:`福利：${j.benefits}`, checked: true });
+  if (j.work_start || j.work_end || j.work_days)
+                         items.push({ key:'schedule',  label:`排班：${j.work_days||'每天'} ${j.work_start||''}${j.work_end?'–'+j.work_end:''}`, checked: true });
+  if (j.location)        items.push({ key:'location',  label:`工作地址：${j.location}`, checked: true });
+
+  if (!items.length) return; // nothing to import
+
+  document.getElementById('aJobImportChecks').innerHTML = items.map(it =>
+    `<label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+      <input type="checkbox" id="jimport-${it.key}" ${it.checked?'checked':''} style="width:15px;height:15px;cursor:pointer">
+      <span style="color:var(--gray-700)">${esc(it.label)}</span>
+    </label>`
+  ).join('');
+  document.getElementById('aJobImportPanel').style.display = '';
+}
+
+function applyJobImport() {
+  const j = _assignJobs.find(x => x.id == _importJobId);
+  if (!j) return;
+
+  const checked = key => {
+    const el = document.getElementById('jimport-' + key);
+    return el && el.checked;
+  };
+
+  if (checked('pay') && j.pay)
+    document.getElementById('aPayRate').value = j.pay;
+
+  if (checked('contract') && j.employment_type) {
+    const typeMap = { 'W2':'W2','Contract':'Contract','1099':'1099','W2+Contract':'W2' };
+    const ct = typeMap[j.employment_type];
+    if (ct) document.getElementById('aContractType').value = ct;
+  }
+
+  if (checked('pay_type') && j.pay) {
+    if (/\/hr|hourly/i.test(j.pay)) document.getElementById('aPayType').value = 'hourly';
+    else if (/\/mo|month|salary/i.test(j.pay)) document.getElementById('aPayType').value = 'salary';
+  }
+
+  if (checked('benefits') && j.benefits) {
+    const vals = j.benefits.split(',').map(v => v.trim()).filter(Boolean);
+    document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
+      if (vals.includes(btn.dataset.val)) btn.classList.add('active');
+    });
+  }
+
+  if (checked('schedule') && (j.work_start || j.work_end || j.work_days)) {
+    const ALL_DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
+    const DAY_MAP = { Mon:'mon',Tue:'tue',Wed:'wed',Thu:'thu',Fri:'fri',Sat:'sat',Sun:'sun' };
+    const workDays = j.work_days ? j.work_days.split(',').map(d => DAY_MAP[d.trim()]).filter(Boolean) : [];
+    const sched = {};
+    ALL_DAYS.forEach(key => {
+      const isOff = workDays.length > 0 && !workDays.includes(key);
+      sched[key] = { start: isOff?'':(j.work_start||''), end: isOff?'':(j.work_end||''), breaks:'', break_times:[], off: isOff };
+    });
+    initSchedTable(JSON.stringify(sched));
+  }
+
+  if (checked('location') && j.location)
+    document.getElementById('aWorkAddr').value = j.location;
+
+  document.getElementById('aJobImportPanel').style.display = 'none';
 }
 
 async function checkInquiryDispatchStatus(inquiryId) {
@@ -6632,6 +6712,7 @@ async function saveAssignment() {
     contract_type: document.getElementById('aContractType').value,
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
+    work_address: document.getElementById('aWorkAddr').value,
     benefits,
     work_schedule: getEstimateTimeJson(),
     task_requirements: getTasksJson(),
