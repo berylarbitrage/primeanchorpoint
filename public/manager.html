@@ -187,6 +187,8 @@ tr:hover td{background:#fafcff}
 .spinner{width:26px;height:26px;border:3px solid var(--gray-200);border-top-color:var(--sky);border-radius:50%;animation:spin .8s linear infinite;margin:auto}
 @keyframes spin{to{transform:rotate(360deg)}}
 .tc-summary{margin-top:.75rem;font-size:.82rem;color:var(--gray-500);text-align:right;padding:0 .25rem}
+.break-detail{font-size:.72rem;color:var(--gray-400);margin-top:.18rem;white-space:nowrap}
+.table-wrap td{vertical-align:top}
 
 /* ── Toast ── */
 #toast-wrap{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;align-items:center;gap:.5rem;pointer-events:none}
@@ -500,14 +502,28 @@ function fmtDate(s) {
   if (!m) return s;
   return `${m[2]}/${m[3]}/${m[1]}`;
 }
-function fmtDT(s) {
+function fmtDT(s, tz) {
   if (!s) return '—';
-  const d = new Date(s.replace(' ', 'T'));
+  const d = new Date(s);
   if (isNaN(d)) return s;
-  const pad = n => n.toString().padStart(2, '0');
-  return `${pad(d.getUTCMonth()+1)}/${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())} UTC`;
+  const opts = { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false };
+  if (tz) opts.timeZone = tz;
+  const parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(d);
+  const p = {};
+  parts.forEach(x => p[x.type] = x.value);
+  return `${p.month}/${p.day} ${p.hour}:${p.minute}`;
 }
 function fmtH(h) { return (!h && h !== 0) ? '—' : Number(h).toFixed(2) + 'h'; }
+function renderBreaks(t) {
+  let recs = [];
+  try { recs = JSON.parse(t.break_records || '[]'); } catch(e) {}
+  const total = `${t.break_minutes || 0}min`;
+  if (!recs.length) return total;
+  const tz = t.display_timezone;
+  return `<div>${total}</div>` + recs.map((b, i) =>
+    `<div class="break-detail">${recs.length > 1 ? '休息' + (i+1) : '休息'}: ${fmtDT(b.start, tz)} → ${b.end ? fmtDT(b.end, tz) : '<span style="color:var(--orange)">进行中</span>'}</div>`
+  ).join('');
+}
 function showToast(msg, type='success') {
   const wrap = document.getElementById('toast-wrap');
   const t = document.createElement('div');
@@ -735,11 +751,12 @@ function renderTimeClock(rows) {
     const photoCell = photoSrc
       ? `<img src="${photoUrl}" onclick="openPunchPhoto('${photoUrl.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)">`
       : '—';
+    const tz = t.display_timezone;
     return `<tr>
       <td><div class="emp-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-code">${esc(t.emp_code||'')}</div></td>
-      <td style="white-space:nowrap">${fmtDT(t.clock_in)}</td>
-      <td style="white-space:nowrap">${t.clock_out?fmtDT(t.clock_out):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
-      <td>${t.break_minutes||0}min</td>
+      <td style="white-space:nowrap">${fmtDT(t.clock_in, tz)}</td>
+      <td style="white-space:nowrap">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
+      <td>${renderBreaks(t)}</td>
       <td>${fmtH(t.total_hours)}</td>
       <td>${fmtH(t.regular_hours)}</td>
       <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
