@@ -5874,7 +5874,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     const breakMins = Math.round(totalBreakMs / 60000);
     db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?')
       .run(JSON.stringify(breaks), breakMins, open.id);
-    return res.json({ action: 'break_end', break_minutes: breakMins, warning: beWarning });
+    return res.json({ action: 'break_end', break_minutes: breakMins, warning: beWarning, entry_id: open.id });
   }
 
   // ── Clock out ────────────────────────────────────────────────────
@@ -5890,7 +5890,7 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out',punch_photo=COALESCE(?,punch_photo),clock_out_latitude=?,clock_out_longitude=? WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, photo_data || null, latitude || null, longitude || null, open.id);
-    return res.json({ action: 'out', punch_type: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
+    return res.json({ action: 'out', punch_type: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime, entry_id: open.id });
   }
 
   // ── Clock in ─────────────────────────────────────────────────────
