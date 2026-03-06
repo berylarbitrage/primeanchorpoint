@@ -2598,37 +2598,35 @@ async function loadTimeclock() {
     // Parse breaks
     let breaks = [];
     try { breaks = JSON.parse(t.break_records || '[]'); } catch(e) {}
-    const BNUMS = ['①','②','③','④','⑤'];
-    const breakStartCell = breaks.length
-      ? breaks.map((b,i) => {
-          const num = breaks.length > 1 ? `<span style="color:var(--gray-400);font-size:.7rem;margin-right:.2rem">${BNUMS[i]||i+1}</span>` : '';
-          return `<div style="white-space:nowrap">${num}${b.start ? fmtTime(b.start) : '—'}</div>`;
-        }).join('')
-      : '—';
-    const breakEndCell = breaks.length
-      ? breaks.map((b,i) => {
-          const num = breaks.length > 1 ? `<span style="color:var(--gray-400);font-size:.7rem;margin-right:.2rem">${BNUMS[i]||i+1}</span>` : '';
-          return `<div style="white-space:nowrap">${num}${b.end ? fmtTime(b.end) : '<span style="color:var(--orange)">休息中</span>'}</div>`;
-        }).join('')
-      : '—';
+    const nBreaks = Math.max(breaks.length, 1);
+    const span = nBreaks > 1 ? ` rowspan="${nBreaks}"` : '';
     const statusCell = t.on_break
       ? '<span style="color:#7c3aed">☕ 休息中</span>'
       : t.status === 'closed'
         ? '✅ 已完成'
         : '<span style="color:var(--sky)">⏱ 工作中</span>';
-    return `<tr style="white-space:nowrap">
-      <td>${ci ? fmtDate(ci) : '—'}</td>
-      <td style="font-size:.8rem">${jobLabel}</td>
-      <td>${fmtTime(ci)}</td>
-      <td>${breakStartCell}</td>
-      <td>${breakEndCell}</td>
-      <td>${co ? fmtTime(co) : '<span style="color:var(--orange)">—</span>'}</td>
-      <td>${t.total_hours ? t.total_hours.toFixed(2) + 'h' : '—'}</td>
-      <td>${t.regular_hours ? t.regular_hours.toFixed(2) + 'h' : '—'}</td>
-      <td>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+'h</span>' : '—'}</td>
-      <td>${statusCell}</td>
-      <td>${mapLink}</td>
+    // First row: shared cells + first break
+    const b0 = breaks[0] || null;
+    const breakCell = b => b
+      ? `<td style="white-space:nowrap">${b.start ? fmtTime(b.start) : '—'}</td><td style="white-space:nowrap">${b.end ? fmtTime(b.end) : '<span style="color:var(--orange)">休息中</span>'}</td>`
+      : `<td>—</td><td>—</td>`;
+    let html = `<tr style="white-space:nowrap">
+      <td${span}>${ci ? fmtDate(ci) : '—'}</td>
+      <td${span} style="font-size:.8rem">${jobLabel}</td>
+      <td${span}>${fmtTime(ci)}</td>
+      ${breakCell(b0)}
+      <td${span}>${co ? fmtTime(co) : '<span style="color:var(--orange)">—</span>'}</td>
+      <td${span}>${t.total_hours ? t.total_hours.toFixed(2) + 'h' : '—'}</td>
+      <td${span}>${t.regular_hours ? t.regular_hours.toFixed(2) + 'h' : '—'}</td>
+      <td${span}>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+'h</span>' : '—'}</td>
+      <td${span}>${statusCell}</td>
+      <td${span}>${mapLink}</td>
     </tr>`;
+    // Additional rows for extra breaks
+    for (let i = 1; i < breaks.length; i++) {
+      html += `<tr style="white-space:nowrap">${breakCell(breaks[i])}</tr>`;
+    }
+    return html;
   }).join('') : '<tr><td colspan="11" class="empty">暂无 Check In / Out 记录</td></tr>';
 }
 
