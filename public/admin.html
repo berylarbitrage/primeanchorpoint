@@ -8946,7 +8946,7 @@ function renderTimeEntries(list) {
     <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
     <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
     <td style="text-align:center">${photoCell}</td>
-    <td>${esc(t.notes||'')}${t.latitude?` <span onclick="showMiniMap(event,${t.latitude},${t.longitude})" title="查看打卡位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">📍</span>`:''}</td>
+    <td>${esc(t.notes||'')} ${punchLocationPins(t)}</td>
     <td>
       ${t.status==='open'?`<button class="btn btn-sm btn-accent" onclick="clockOutEntry(${t.id})">打卡下班</button> `:''}
       <button class="btn btn-sm" onclick='openTimeModal(${JSON.stringify(t).replace(/'/g,"&#39;")})'>编辑</button>
@@ -8974,6 +8974,23 @@ function openPunchPhoto(src) {
 function punchPhotoUrl(src) {
   if (!src || !TOKEN) return src;
   return src + (src.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+}
+
+// Render all GPS pins for a time entry (clock-in, breaks, clock-out)
+function punchLocationPins(t) {
+  const pins = [];
+  if (t.latitude && t.longitude)
+    pins.push(`<span onclick="showMiniMap(event,${t.latitude},${t.longitude},'上班打卡')" title="上班位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🟢</span>`);
+  try {
+    const breaks = JSON.parse(t.break_records || '[]');
+    breaks.forEach((b, i) => {
+      if (b.latitude && b.longitude)
+        pins.push(`<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}')" title="休息${i+1}位置 (${(+b.latitude).toFixed(4)}, ${(+b.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🟡</span>`);
+    });
+  } catch {}
+  if (t.clock_out_latitude && t.clock_out_longitude)
+    pins.push(`<span onclick="showMiniMap(event,${t.clock_out_latitude},${t.clock_out_longitude},'下班打卡')" title="下班位置 (${(+t.clock_out_latitude).toFixed(4)}, ${(+t.clock_out_longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🔴</span>`);
+  return pins.join(' ') || '';
 }
 
 // Render an authenticated punch photo thumbnail
@@ -12162,10 +12179,11 @@ async function importDisplaySuffixCsv() {
 (function() {
   let _mmMap = null, _mmMarker = null;
 
-  window.showMiniMap = function(e, lat, lng) {
+  window.showMiniMap = function(e, lat, lng, label) {
     e.stopPropagation();
     const popup = document.getElementById('miniMapPopup');
-    document.getElementById('miniMapLabel').textContent = `📍 ${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
+    const coordStr = `${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
+    document.getElementById('miniMapLabel').textContent = label ? `📍 ${label} · ${coordStr}` : `📍 ${coordStr}`;
     document.getElementById('miniMapGoogleLink').href = `https://maps.google.com/?q=${lat},${lng}`;
 
     // Position near click
