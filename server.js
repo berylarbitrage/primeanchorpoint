@@ -6201,9 +6201,10 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
        WHERE t.employee_id=? AND t.status='open' ORDER BY t.clock_in DESC LIMIT 1`).get(req.workerEmployeeId)
     : null;
 
+  const seenActiveJobIds = new Set();
   let activeJobs = [];
   if (req.workerEmployeeId) {
-    activeJobs = db.prepare(`
+    const ejJobs = db.prepare(`
       SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
              COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
              j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
@@ -6214,32 +6215,34 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
       LEFT JOIN assignments a ON a.job_id = ej.job_id AND a.inquiry_id = ?
       WHERE ej.employee_id = ? AND ej.status = 'active'
     `).all(linkedInqId, req.workerEmployeeId);
+    for (const j of ejJobs) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
   }
 
-  // Fall back to assignments table: match by linked_inquiry_id, phone, or email
+  // Always also check assignments table — add jobs not already covered by employee_jobs
   // Only include accepted assignments (worker_response = 'accepted')
-  if (!activeJobs.length) {
-    activeJobs = db.prepare(`
-      SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
-             COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
-             j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
-             a.work_schedule
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC
-    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
-    // Also update linked_inquiry_id if we found a match and it wasn't set
-    if (activeJobs.length && !linkedInqId) {
-      try { activateWorkerAccount(req.workerId); } catch {}
-    }
+  const aJobs = db.prepare(`
+    SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
+           COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
+           j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
+           a.work_schedule
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    JOIN inquiries i ON a.inquiry_id = i.id
+    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
+      AND (
+        (? IS NOT NULL AND a.inquiry_id = ?)
+        OR (? != '' AND phone10(i.phone) = ?)
+        OR (? != '' AND lower(i.email) = ?)
+      )
+    ORDER BY a.assigned_at DESC
+  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  for (const j of aJobs) {
+    if (!seenActiveJobIds.has(j.job_id)) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
+  }
+  // Update linked_inquiry_id if we found a match via assignments and it wasn't set
+  if (aJobs.length && !linkedInqId) {
+    try { activateWorkerAccount(req.workerId); } catch {}
   }
 
   // Count pending (unaccepted) tasks
