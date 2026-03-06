@@ -1078,32 +1078,81 @@ async function doManagerPunch() {
   if (!res.ok) {
     msgEl.className = 'scan-msg scan-msg-err show';
     msgEl.textContent = r.error || '打卡失败';
-    addScanLog(_scanEmp.emp_code, document.getElementById('scanEmpName').textContent, ptype, timeDisplay, false, r.error||'失败');
+    addScanLog(_scanEmp.emp_code, document.getElementById('scanEmpName').textContent, ptype, timeDisplay, false, r.error||'失败', null, null);
   } else {
     const warn = r.warning;
     msgEl.className = 'scan-msg ' + (warn?'scan-msg-warn':'scan-msg-ok') + ' show';
     msgEl.textContent = warn ? '⚠ ' + warn : '✅ ' + (typeLabels[ptype]||ptype) + '打卡成功';
-    addScanLog(_scanEmp.emp_code, document.getElementById('scanEmpName').textContent, ptype, timeDisplay, true, warn||'成功');
+    const isoTime = punchTime || (r.clock_in || r.clock_out || r.punch_time || new Date().toISOString());
+    addScanLog(_scanEmp.emp_code, document.getElementById('scanEmpName').textContent, ptype, timeDisplay, true, warn||'成功', r.entry_id||null, isoTime);
     const ns = await mApi('/admin/manager-punch-status/' + encodeURIComponent(_scanEmp.emp_code));
     if (ns) updateScanStatus(ns.clocked_in, ns.on_break);
     setTimeout(() => { resetQrScan(); startQrScanner(); }, 1500);
   }
   btn.disabled = false;
 }
-function addScanLog(empCode, empName, ptype, time, ok, note) {
+function addScanLog(empCode, empName, ptype, time, ok, note, entryId, isoTime) {
+  _scanLog.unshift({ empCode, empName, ptype, time, ok, note, entryId: entryId||null, isoTime: isoTime||null });
+  renderScanLog();
+}
+function renderScanLog() {
   const tl = {in:'上班',out:'下班',break_start:'暂停',break_end:'继续'};
   const cl = {in:{bg:'#dcfce7',c:'#166534'},out:{bg:'#fee2e2',c:'#991b1b'},break_start:{bg:'#fef9c3',c:'#92400e'},break_end:{bg:'#dbeafe',c:'#1e40af'}};
-  _scanLog.unshift({ empCode, empName, ptype, time, ok, note });
   document.getElementById('scanLogCount').textContent = _scanLog.length;
-  document.getElementById('scanLogBody').innerHTML = _scanLog.map(r => {
+  document.getElementById('scanLogBody').innerHTML = _scanLog.map((r, i) => {
     const c = cl[r.ptype] || {bg:'#f3f4f6',c:'#6b7280'};
-    return `<tr>
+    const canEdit = r.entryId && r.isoTime && (r.ptype === 'in' || r.ptype === 'out');
+    const timeTd = canEdit
+      ? `<td ondblclick="editScanTime(${i})" title="双击修改时间" style="font-size:.82rem;color:var(--gray-600);white-space:nowrap;cursor:pointer;user-select:none">${esc(r.time)} <span style="font-size:.65rem;color:var(--gray-400)">✎</span></td>`
+      : `<td style="font-size:.82rem;color:var(--gray-600);white-space:nowrap">${esc(r.time)}</td>`;
+    return `<tr data-idx="${i}">
       <td><div style="font-weight:600;color:var(--gray-800)">${esc(r.empName)}</div><div style="font-size:.72rem;color:var(--gray-400)">${esc(r.empCode)}</div></td>
       <td><span style="font-size:.76rem;font-weight:700;padding:.2rem .6rem;border-radius:99px;background:${c.bg};color:${c.c}">${tl[r.ptype]||r.ptype}</span></td>
-      <td style="font-size:.82rem;color:var(--gray-600);white-space:nowrap">${esc(r.time)}</td>
+      ${timeTd}
       <td>${r.ok?'<span style="color:var(--green);font-weight:600">✅ '+esc(r.note)+'</span>':'<span style="color:var(--red);font-weight:600">❌ '+esc(r.note)+'</span>'}</td>
     </tr>`;
   }).join('');
+}
+function editScanTime(idx) {
+  const row = document.querySelector(`#scanLogBody tr[data-idx="${idx}"]`);
+  if (!row) return;
+  const timeTd = row.cells[2];
+  const r = _scanLog[idx];
+  const d = new Date(r.isoTime);
+  const hh = String(d.getHours()).padStart(2,'0');
+  const mm = String(d.getMinutes()).padStart(2,'0');
+  timeTd.ondblclick = null;
+  timeTd.innerHTML = `<input type="time" value="${hh}:${mm}" style="width:80px;border:1px solid var(--sky);border-radius:6px;padding:2px 5px;font-size:.82rem;font-family:inherit;outline:none">`;
+  const inp = timeTd.querySelector('input');
+  inp.focus(); inp.select();
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { inp.blur(); }
+    if (e.key === 'Escape') { renderScanLog(); }
+  });
+  inp.addEventListener('blur', () => saveScanTime(idx, inp.value));
+}
+async function saveScanTime(idx, newVal) {
+  if (!newVal) { renderScanLog(); return; }
+  const r = _scanLog[idx];
+  const origDate = new Date(r.isoTime);
+  const [hh, mm] = newVal.split(':').map(Number);
+  const newDate = new Date(origDate);
+  newDate.setHours(hh, mm, 0, 0);
+  const newIso = newDate.toISOString();
+  const newDisplay = newDate.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+  _scanLog[idx].time = newDisplay;
+  _scanLog[idx].isoTime = newIso;
+  renderScanLog();
+  if (r.entryId) {
+    const field = r.ptype === 'in' ? 'clock_in' : 'clock_out';
+    try {
+      await fetch(API + `/manager/time-entries/${r.entryId}/correct-time`, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json','Authorization':'Bearer '+TOKEN},
+        body: JSON.stringify({ field, new_time: newIso })
+      });
+    } catch(e) { console.error('修改打卡时间失败', e); }
+  }
 }
 function resetQrScan() {
   _scanEmp = null;
