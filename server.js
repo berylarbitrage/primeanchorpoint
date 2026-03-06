@@ -2627,10 +2627,12 @@ app.get('/api/admin/managers/:id/punch', requireAdmin, requireRole('admin', 'sta
   const { date_from, date_to } = req.query;
   let q = `SELECT t.id, t.clock_in, t.clock_out, t.total_hours, t.status, t.company_name,
              e.first_name, e.last_name, e.employee_id as emp_code,
-             p.name AS partner_name
+             p.name AS partner_name,
+             COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
            FROM time_entries t
            LEFT JOIN employees e ON t.employee_id = e.id
            LEFT JOIN jobs j ON t.job_id = j.id
+           LEFT JOIN job_sites js ON j.site_id = js.id
            LEFT JOIN partners p ON j.partner_id = p.id
            WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`;
   const params = [...pids];
@@ -4478,7 +4480,9 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   if (!emp) return res.status(404).json({ error: 'Not found' });
   const docs = db.prepare('SELECT * FROM employee_documents WHERE employee_id=? ORDER BY uploaded_at DESC').all(req.params.id);
   const bgChecks = db.prepare('SELECT * FROM background_checks WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id);
-  const recentTime = db.prepare('SELECT * FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 20').all(req.params.id);
+  const recentTime = db.prepare(`SELECT t.*, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    FROM time_entries t LEFT JOIN jobs j ON t.job_id=j.id LEFT JOIN job_sites js ON j.site_id=js.id
+    WHERE t.employee_id=? ORDER BY t.clock_in DESC LIMIT 20`).all(req.params.id);
   // Job history: distinct jobs from timesheet_sheets with summary
   const jobHistory = db.prepare(`
     SELECT s.job_id, s.company_name, j.title AS job_title,
@@ -4735,8 +4739,10 @@ app.get('/api/admin/documents/:id/file', (req, res, next) => {
 
 app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
   const { employee_id, date_from, date_to, status } = req.query;
-  let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code
-    FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id WHERE 1=1`;
+  let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code,
+    COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
+    LEFT JOIN jobs j2 ON t.job_id=j2.id LEFT JOIN job_sites js ON j2.site_id=js.id WHERE 1=1`;
   const p = [];
   if (employee_id) { q += ' AND t.employee_id=?'; p.push(employee_id); }
   if (date_from)   { q += ' AND DATE(t.clock_in)>=?'; p.push(date_from); }
