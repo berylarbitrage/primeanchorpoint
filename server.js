@@ -573,6 +573,8 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
   try { db.exec(`ALTER TABLE admin_users ADD COLUMN ${col}`); } catch {}
 });
+try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
 
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
@@ -2022,6 +2024,7 @@ app.post('/api/admin/login', (req, res) => {
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
   const token = createSession(user);
+  res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Lax' });
   res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
 });
 
@@ -2046,6 +2049,7 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
   if (auth && auth.startsWith('Bearer ')) {
     db.prepare('DELETE FROM admin_sessions WHERE token=?').run(auth.slice(7));
   }
+  res.clearCookie('pa_token');
   res.json({ success: true });
 });
 
@@ -2150,11 +2154,11 @@ app.get('/api/manager/workers', requireAdmin, (req, res) => {
 
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, display_name, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, email, phone } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
@@ -2163,14 +2167,13 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  // New accounts start inactive (active=0); user must self-verify to activate
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active) VALUES (?, ?, ?, ?, ?, ?, 0)')
-    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '');
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)')
+    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', email || '', phone || '');
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, email, phone } = req.body;
   if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -2180,8 +2183,8 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
     db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
   // active field is intentionally excluded — only the user themselves can activate via self-verification
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), req.params.id);
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, email=?, phone=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), req.params.id);
   res.json({ success: true });
 });
 
@@ -2556,6 +2559,83 @@ app.post('/api/admin/manager-invites', requireAdmin, requireRole('admin'), (req,
 app.delete('/api/admin/manager-invites/:id', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM manager_invites WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Admin: Manager Management APIs ───────────────────────────────────────────
+
+// GET /api/admin/managers-list — all manager accounts with partner names
+app.get('/api/admin/managers-list', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const managers = db.prepare("SELECT id, username, display_name, active, assigned_partner_ids, phone, email, city, created_at FROM admin_users WHERE role='manager' ORDER BY id").all();
+  const allPartners = db.prepare('SELECT id, name FROM partners').all();
+  const partnerMap = Object.fromEntries(allPartners.map(p => [p.id, p.name]));
+  res.json(managers.map(m => {
+    const pids = (m.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+    return { ...m, partner_names: pids.map(id => partnerMap[id] || `#${id}`).join(', ') || '未指定' };
+  }));
+});
+
+// GET /api/admin/managers/:id/assignments — assignments under a specific manager's partners
+app.get('/api/admin/managers/:id/assignments', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+  const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  if (!pids.length) return res.json([]);
+  const rows = db.prepare(`
+    SELECT a.id, a.status, a.start_date, a.pay_rate, a.pay_type,
+           a.work_address, a.assigned_at,
+           i.name AS worker_name, i.phone AS worker_phone,
+           j.title AS job_title, j.location AS job_location,
+           p.name AS company_name
+    FROM assignments a
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN partners p ON j.partner_id = p.id
+    WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+    ORDER BY a.assigned_at DESC
+  `).all(...pids);
+  res.json(rows);
+});
+
+// GET /api/admin/managers/:id/workers — employees visible to a specific manager
+app.get('/api/admin/managers/:id/workers', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+  const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  if (!pids.length) return res.json([]);
+  const rows = db.prepare(`
+    SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id as emp_code,
+           e.email, e.phone, e.position, e.status
+    FROM employees e
+    WHERE e.id IN (
+      SELECT DISTINCT t.employee_id FROM time_entries t
+      JOIN jobs j ON t.job_id = j.id
+      WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+    )
+    ORDER BY e.last_name, e.first_name
+  `).all(...pids);
+  res.json(rows);
+});
+
+// GET /api/admin/managers/:id/punch — recent punch records for a specific manager's employees
+app.get('/api/admin/managers/:id/punch', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+  const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  if (!pids.length) return res.json([]);
+  const { date_from, date_to } = req.query;
+  let q = `SELECT t.id, t.clock_in, t.clock_out, t.total_hours, t.status, t.company_name,
+             e.first_name, e.last_name, e.employee_id as emp_code,
+             p.name AS partner_name
+           FROM time_entries t
+           LEFT JOIN employees e ON t.employee_id = e.id
+           LEFT JOIN jobs j ON t.job_id = j.id
+           LEFT JOIN partners p ON j.partner_id = p.id
+           WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`;
+  const params = [...pids];
+  if (date_from) { q += ' AND DATE(t.clock_in) >= ?'; params.push(date_from); }
+  if (date_to)   { q += ' AND DATE(t.clock_in) <= ?'; params.push(date_to); }
+  q += ' ORDER BY t.clock_in DESC LIMIT 500';
+  res.json(db.prepare(q).all(...params));
 });
 
 // ── Public: validate invite token ──
