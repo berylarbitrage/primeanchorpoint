@@ -1756,6 +1756,10 @@ tr:hover td{background:var(--sky-light)}
     <label>指定管理的公司（多选，Manager 专用）</label>
     <div id="accPartnerCheckboxes" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem;max-height:140px;overflow:auto;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px"></div>
   </div>
+  <div class="field" id="accEmployeeField" style="display:none">
+    <label>直接指定管理的员工（多选，Manager 专用）</label>
+    <div id="accEmployeeCheckboxes" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.4rem;max-height:140px;overflow:auto;padding:.4rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+  </div>
   <div id="accHint" class="field" style="background:var(--gray-100);border-radius:6px;padding:.6rem .75rem;font-size:.83rem;color:var(--gray-500)">
     新建账户默认未激活，用户首次登录时需自行设置密码完成激活
   </div>
@@ -9943,6 +9947,7 @@ async function loadAccounts() {
 function onAccRoleChange() {
   const isManager = document.getElementById('accRole').value === 'manager';
   document.getElementById('accPartnerField').style.display = isManager ? '' : 'none';
+  document.getElementById('accEmployeeField').style.display = isManager ? '' : 'none';
 }
 
 async function openAccountModal(data) {
@@ -9962,11 +9967,20 @@ async function openAccountModal(data) {
   const partners = _allPartners.length ? _allPartners : await api('/admin/partners').catch(()=>[]);
   _allPartners = partners;
   const assignedIds = (data?.assigned_partner_ids || '').split(',').map(s=>s.trim()).filter(Boolean);
-  document.getElementById('accPartnerCheckboxes').innerHTML = partners.map(p => `
-    <label style="display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border:1px solid var(--gray-200);border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:500;${assignedIds.includes(String(p.id))?'background:var(--sky);color:#fff;border-color:var(--sky)':''}">
-      <input type="checkbox" name="accPartner" value="${p.id}" ${assignedIds.includes(String(p.id))?'checked':''} style="display:none" onchange="this.parentElement.style.cssText=this.checked?'display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:500;background:var(--sky);color:#fff;border-color:var(--sky);border:1px solid var(--sky)':'display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border:1px solid var(--gray-200);border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:500;'">
-      ${esc(p.name)}
-    </label>`).join('');
+  const tagStyle = (sel) => `display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:500;${sel?'background:var(--sky);color:#fff;border:1px solid var(--sky)':'border:1px solid var(--gray-200);'}`;
+  const tagOnChange = "this.parentElement.style.cssText=this.checked?'display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:500;background:var(--sky);color:#fff;border:1px solid var(--sky)':'display:inline-flex;align-items:center;gap:.3rem;padding:4px 10px;border:1px solid var(--gray-200);border-radius:20px;cursor:pointer;font-size:.8rem;font-weight:500;'";
+  document.getElementById('accPartnerCheckboxes').innerHTML = partners.map(p => {
+    const sel = assignedIds.includes(String(p.id));
+    return `<label style="${tagStyle(sel)}"><input type="checkbox" name="accPartner" value="${p.id}" ${sel?'checked':''} style="display:none" onchange="${tagOnChange}">${esc(p.name)}</label>`;
+  }).join('');
+  // Employee checkboxes for manager
+  const employees = allEmployees.length ? allEmployees : await api('/admin/employees').catch(()=>[]);
+  const assignedEmpIds = (data?.assigned_employee_ids || '').split(',').map(s=>s.trim()).filter(Boolean);
+  document.getElementById('accEmployeeCheckboxes').innerHTML = (employees||[]).filter(e=>e.status==='active').map(e => {
+    const sel = assignedEmpIds.includes(String(e.id));
+    const label = esc((e.first_name||'') + ' ' + (e.last_name||'')) + (e.employee_id?' <span style="opacity:.6;font-size:.72rem">('+esc(e.employee_id)+')</span>':'');
+    return `<label style="${tagStyle(sel)}"><input type="checkbox" name="accEmployee" value="${e.id}" ${sel?'checked':''} style="display:none" onchange="${tagOnChange}">${label}</label>`;
+  }).join('') || '<span style="font-size:.8rem;color:var(--gray-400)">暂无员工</span>';
   onAccRoleChange();
   document.getElementById('accountModal').classList.add('show');
   captureModalState('accountModal');
@@ -9981,6 +9995,7 @@ async function editAccount(id) {
 async function saveAccount() {
   const id = document.getElementById('accId').value;
   const selectedPartners = [...document.querySelectorAll('#accPartnerCheckboxes input[name=accPartner]:checked')].map(c=>c.value).join(',');
+  const selectedEmployees = [...document.querySelectorAll('#accEmployeeCheckboxes input[name=accEmployee]:checked')].map(c=>c.value).join(',');
   const d = {
     username: document.getElementById('accUsername').value,
     password: document.getElementById('accPassword').value,
@@ -9988,7 +10003,8 @@ async function saveAccount() {
     email: document.getElementById('accEmail').value,
     phone: document.getElementById('accPhone').value,
     role: document.getElementById('accRole').value,
-    assigned_partner_ids: selectedPartners
+    assigned_partner_ids: selectedPartners,
+    assigned_employee_ids: selectedEmployees
   };
   if (!d.username) return alert('请输入用户名');
   if (!id && !d.password) return alert('请输入密码');
