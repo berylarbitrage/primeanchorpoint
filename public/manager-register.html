@@ -227,13 +227,17 @@ async function submitForm() {
     });
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error || '发送失败'; errEl.className = 'err show'; return; }
+    if (d.skipped) {
+      // SMS/email not configured — complete registration without code verification
+      await completeRegistration('');
+      return;
+    }
     document.getElementById('codeDesc').textContent = `验证码已发送至 ${contact}，请在10分钟内输入。`;
     showStep('stepCode');
   } catch { errEl.textContent = '网络错误，请重试'; errEl.className = 'err show'; }
 }
 
-async function submitCode() {
-  const code = document.getElementById('fCode').value.trim();
+async function completeRegistration(code) {
   const username = document.getElementById('fUsername').value.trim();
   const firstName = document.getElementById('fFirstName').value.trim();
   const middleName = document.getElementById('fMiddleName').value.trim();
@@ -247,9 +251,7 @@ async function submitCode() {
   const zip = document.getElementById('fZip').value.trim();
   const contact = contactType === 'phone' ? phone : email;
   const errEl = document.getElementById('errCode');
-  errEl.className = 'err';
-
-  if (!code) { errEl.textContent = '请输入验证码'; errEl.className = 'err show'; return; }
+  if (errEl) errEl.className = 'err';
 
   try {
     const r = await fetch('/api/public/manager-register/complete', {
@@ -258,11 +260,26 @@ async function submitCode() {
       body: JSON.stringify({ token, username, display_name, first_name: firstName, middle_name: middleName, last_name: lastName, email, phone, city, state, zip, password, contact, contact_type: contactType, code })
     });
     const d = await r.json();
-    if (!r.ok) { errEl.textContent = d.error || '注册失败'; errEl.className = 'err show'; return; }
+    if (!r.ok) {
+      const target = errEl || document.getElementById('errForm');
+      if (target) { target.textContent = d.error || '注册失败'; target.className = 'err show'; }
+      return;
+    }
     sessionToken = d.token;
     showStep('stepDone');
     setTimeout(goToAdmin, 2000);
-  } catch { errEl.textContent = '网络错误，请重试'; errEl.className = 'err show'; }
+  } catch {
+    const target = errEl || document.getElementById('errForm');
+    if (target) { target.textContent = '网络错误，请重试'; target.className = 'err show'; }
+  }
+}
+
+async function submitCode() {
+  const code = document.getElementById('fCode').value.trim();
+  const errEl = document.getElementById('errCode');
+  errEl.className = 'err';
+  if (!code) { errEl.textContent = '请输入验证码'; errEl.className = 'err show'; return; }
+  await completeRegistration(code);
 }
 
 async function resendCode() {
