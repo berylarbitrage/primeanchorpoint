@@ -810,11 +810,24 @@ function renderTimeClock(rows) {
   document.getElementById('tcTable').innerHTML = rows.map(t => {
     _tcEntries[t.id] = t;
     totalH += t.total_hours || 0; totalOT += t.overtime_hours || 0;
-    const photoSrc = t.punch_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}` : t.punch_photo || '';
-    const photoUrl = photoSrc && TOKEN ? photoSrc + (photoSrc.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : photoSrc;
-    const photoCell = photoSrc
-      ? `<img src="${photoUrl}" onclick="openPunchPhoto('${photoUrl.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)">`
-      : '—';
+    function photoThumb(src, label) {
+      if (!src) return '';
+      const url = TOKEN ? src + (src.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : src;
+      return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;margin:1px">
+        <img src="${url}" onclick="openPunchPhoto('${url.replace(/'/g,"\\'")}')" title="${label}" style="width:36px;height:36px;object-fit:cover;border-radius:5px;cursor:pointer;border:1.5px solid var(--gray-200)">
+        <span style="font-size:.62rem;color:var(--gray-400);line-height:1">${label}</span>
+      </div>`;
+    }
+    const photos = [];
+    if (t.clock_in_photo_path) photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.clock_in_photo_path)}`, '上班'));
+    const breakRecs = (() => { try { return JSON.parse(t.break_records||'[]'); } catch{ return []; } })();
+    breakRecs.forEach((b, i) => {
+      if (b.start_photo) photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`));
+      if (b.end_photo)   photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`));
+    });
+    if (t.punch_photo_path) photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`, '下班'));
+    else if (t.punch_photo) photos.push(photoThumb(t.punch_photo, '下班'));
+    const photoCell = photos.length ? `<div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center">${photos.join('')}</div>` : '—';
     const tz = t.display_timezone;
     const incomplete = hasIncompleteLoop(t);
     const rowStyle = incomplete ? ' style="background:#fef2f2;outline:1.5px solid #fca5a5;"' : '';
