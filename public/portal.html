@@ -608,7 +608,7 @@ tr:last-child td{border-bottom:none}
           <div id="punchConfirmOverlay" style="display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
             <div style="background:#fff;border-radius:16px;padding:1.75rem 1.5rem;width:88%;max-width:310px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.18)">
               <div id="punchConfirmIcon" style="font-size:2.2rem;margin-bottom:.4rem"></div>
-              <div id="punchConfirmTypeLabel" style="font-size:1.2rem;font-weight:700;margin-bottom:.3rem"></div>
+              <div style="font-size:1.2rem;font-weight:700;margin-bottom:.3rem"></div>
               <div id="punchConfirmTimeLabel" style="font-size:1.5rem;font-weight:800;color:var(--blue);margin-bottom:.2rem"></div>
               <div id="punchConfirmDateLabel" style="font-size:.82rem;color:var(--gray-400);margin-bottom:1.5rem"></div>
               <div style="display:flex;gap:.75rem">
@@ -2417,13 +2417,18 @@ function startPunchFlow(type) {
   document.getElementById('punchConfirmTypeLabel').textContent = labels[type] || type;
   document.getElementById('btnExecutePunch').style.background = colors[type] || 'var(--green)';
 
-  // Show job address for clock-in
+  // Show job address for all punch types
   const addrWrap = document.getElementById('punchConfirmAddrWrap');
-  if (type === 'in' && _punchStatus) {
-    const sel = document.getElementById('jobSelector');
-    const jobId = sel ? parseInt(sel.value) : null;
+  if (_punchStatus) {
     const jobs = _punchStatus.active_jobs || [];
-    const job = jobs.find(j => j.job_id === jobId) || jobs[0];
+    let job = null;
+    if (type === 'in') {
+      const sel = document.getElementById('jobSelector');
+      const jobId = sel ? parseInt(sel.value) : null;
+      job = jobs.find(j => j.job_id === jobId) || jobs[0];
+    } else if (_punchStatus.open_entry) {
+      job = jobs.find(j => j.job_id === _punchStatus.open_entry.job_id) || jobs[0];
+    }
     if (job) {
       document.getElementById('punchConfirmJobTitle').textContent = job.title + (job.company_name ? ' · ' + job.company_name : '');
       document.getElementById('punchConfirmJobAddr').textContent = job.location || job.site_name || '地址未配置';
@@ -2593,11 +2598,18 @@ async function loadTimeclock() {
     // Parse breaks
     let breaks = [];
     try { breaks = JSON.parse(t.break_records || '[]'); } catch(e) {}
+    const BNUMS = ['①','②','③','④','⑤'];
     const breakStartCell = breaks.length
-      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.start ? fmtTime(b.start) : '—'}</span>`).join('')
+      ? breaks.map((b,i) => {
+          const num = breaks.length > 1 ? `<span style="color:var(--gray-400);font-size:.7rem;margin-right:.2rem">${BNUMS[i]||i+1}</span>` : '';
+          return `<div style="white-space:nowrap">${num}${b.start ? fmtTime(b.start) : '—'}</div>`;
+        }).join('')
       : '—';
     const breakEndCell = breaks.length
-      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.end ? fmtTime(b.end) : '<span style="color:var(--orange)">休息中</span>'}</span>`).join('')
+      ? breaks.map((b,i) => {
+          const num = breaks.length > 1 ? `<span style="color:var(--gray-400);font-size:.7rem;margin-right:.2rem">${BNUMS[i]||i+1}</span>` : '';
+          return `<div style="white-space:nowrap">${num}${b.end ? fmtTime(b.end) : '<span style="color:var(--orange)">休息中</span>'}</div>`;
+        }).join('')
       : '—';
     const statusCell = t.on_break
       ? '<span style="color:#7c3aed">☕ 休息中</span>'
