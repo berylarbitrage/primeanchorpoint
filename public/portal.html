@@ -2283,6 +2283,7 @@ async function loadPunchStatus() {
     selector.innerHTML = jobs.map(j =>
       `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
+    selector.disabled = false;
     selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
   } else if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
@@ -2295,7 +2296,13 @@ async function loadPunchStatus() {
     statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● Checked In</span>';
     timeEl.textContent = new Date(ci).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz});
     subEl.textContent = 'Check In · ' + new Date(ci).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz});
-    selectorWrap.style.display = 'none';
+    // Show selector (disabled) so user can see which job they're clocked in for
+    const jobs = s.active_jobs || [];
+    selector.innerHTML = jobs.map(j =>
+      `<option value="${j.job_id}" ${j.job_id === s.open_entry.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+    ).join('');
+    selector.disabled = true;
+    selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
   } else if (!s.has_active_job) {
     statusEl.innerHTML = '<span style="color:var(--orange)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
@@ -2317,6 +2324,7 @@ async function loadPunchStatus() {
     selector.innerHTML = jobs.map(j =>
       `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · Client: ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
+    selector.disabled = false;
     selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
   }
   const gpsReady = _gpsCoords !== null;
