@@ -2192,12 +2192,16 @@ app.get('/api/manager/workers', requireAdmin, (req, res) => {
   if (req.userRole === 'manager') {
     const conds = [];
     if (pids.length) {
+      // Employees with time entries under partner's jobs
       conds.push(`e.id IN (SELECT DISTINCT t.employee_id FROM time_entries t JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')}))`);
+      params.push(...pids);
+      // Also employees explicitly assigned to jobs under partner companies (even without time entries)
+      conds.push(`e.id IN (SELECT DISTINCT ej.employee_id FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')}))`);
       params.push(...pids);
     }
     if (jids.length) {
-      // Employees currently assigned to any of the manager's jobs (via employee_jobs)
-      conds.push(`e.id IN (SELECT DISTINCT employee_id FROM employee_jobs WHERE job_id IN (${jids.map(() => '?').join(',')}) AND status='active')`);
+      // Employees assigned to any of the manager's jobs (via employee_jobs, no status filter)
+      conds.push(`e.id IN (SELECT DISTINCT employee_id FROM employee_jobs WHERE job_id IN (${jids.map(() => '?').join(',')}))`);
       params.push(...jids);
     }
     if (eids.length) {
@@ -2765,6 +2769,9 @@ app.get('/api/admin/managers/:id/workers', requireAdmin, requireRole('admin', 's
   // Employees who have time_entries under the manager's assigned partners
   if (pids.length) {
     db.prepare(`SELECT DISTINCT t.employee_id FROM time_entries t JOIN jobs j ON t.job_id = j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`).all(...pids)
+      .forEach(r => allEmpIds.add(r.employee_id));
+    // Also employees explicitly assigned to jobs under partner companies (even without time entries)
+    db.prepare(`SELECT DISTINCT ej.employee_id FROM employee_jobs ej JOIN jobs j ON ej.job_id = j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`).all(...pids)
       .forEach(r => allEmpIds.add(r.employee_id));
   }
 
