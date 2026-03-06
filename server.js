@@ -4549,7 +4549,7 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
   }
   sql += ' ORDER BY e.last_name, e.first_name';
   const rows = db.prepare(sql).all(...params);
-  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets)
+  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets) + assignments
   const explicitJobs = db.prepare(`
     SELECT ej.employee_id, ej.job_id, ej.company_name, ej.job_title
     FROM employee_jobs ej WHERE ej.status='active'
@@ -4563,12 +4563,26 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
     )
     ORDER BY s.period_end DESC
   `).all();
+  const assignJobs = db.prepare(`
+    SELECT wa.employee_id, a.job_id, j.title AS job_title, COALESCE(j.company_name,'') AS company_name
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    JOIN worker_accounts wa ON wa.linked_inquiry_id = a.inquiry_id
+    WHERE a.status NOT IN ('cancelled') AND wa.employee_id IS NOT NULL
+  `).all();
   const jobMap = {};
   for (const j of explicitJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     jobMap[j.employee_id].push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
   }
   for (const j of tsJobs) {
+    if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
+    const existing = jobMap[j.employee_id];
+    if (!existing.some(e => e.job_id === j.job_id)) {
+      existing.push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
+    }
+  }
+  for (const j of assignJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     const existing = jobMap[j.employee_id];
     if (!existing.some(e => e.job_id === j.job_id)) {
