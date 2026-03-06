@@ -634,8 +634,9 @@ function renderTimeClock(rows) {
   document.getElementById('tcTable').innerHTML = rows.map(t => {
     totalH += t.total_hours || 0; totalOT += t.overtime_hours || 0;
     const photoSrc = t.punch_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}` : t.punch_photo || '';
+    const photoUrl = photoSrc && TOKEN ? photoSrc + (photoSrc.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : photoSrc;
     const photoCell = photoSrc
-      ? `<img src="${photoSrc}" onclick="openPunchPhoto('${photoSrc.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)">`
+      ? `<img src="${photoUrl}" onclick="openPunchPhoto('${photoUrl.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)">`
       : '—';
     return `<tr>
       <td><div class="emp-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-code">${esc(t.emp_code||'')}</div></td>
@@ -663,7 +664,7 @@ function openPunchPhoto(src) {
     o.addEventListener('click', () => { o.style.display = 'none'; });
     document.body.appendChild(o);
   }
-  document.getElementById('punchPhotoFull').src = src;
+  document.getElementById('punchPhotoFull').src = src; // src already contains ?token=
   o.style.display = 'flex';
 }
 
