@@ -2659,14 +2659,20 @@ app.post('/api/public/manager-register/send-code', async (req, res) => {
   db.prepare('INSERT INTO manager_reg_codes (token, contact, contact_type, code, expires_at) VALUES (?,?,?,?,?)')
     .run(token, contact, contact_type, code, expiresAt);
 
+  let delivered = false;
   if (contact_type === 'phone') {
-    await sendSMS(contact, `您的 Prime Anchorpoint 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
+    delivered = await sendSMS(contact, `您的 Prime Anchorpoint 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
   } else {
-    await sendEmail(contact, '验证码 / Verification Code — Prime Anchorpoint',
+    delivered = await sendEmail(contact, '验证码 / Verification Code — Prime Anchorpoint',
       `您的验证码是 ${code}，10分钟内有效。\nYour verification code is ${code}.`,
       verificationCodeHtml(code));
   }
-  res.json({ success: true });
+  // If delivery failed (not configured), remove the code record so verification is skipped
+  if (!delivered) {
+    db.prepare('DELETE FROM manager_reg_codes WHERE token=? AND contact=?').run(token, contact);
+    return res.json({ success: true, skipped: true });
+  }
+  res.json({ success: true, skipped: false });
 });
 
 // ── Public: complete manager registration ──
@@ -2680,9 +2686,9 @@ app.post('/api/public/manager-register/complete', async (req, res) => {
   const inv = db.prepare("SELECT * FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
   if (!inv) return res.status(400).json({ error: 'Invalid or expired invite link' });
 
-  // Validate verification code
+  // Validate verification code (skip if delivery was not possible, i.e. no record exists)
   const vc = db.prepare("SELECT * FROM manager_reg_codes WHERE token=? AND contact=? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1").get(token, contact);
-  if (!vc || vc.code !== String(code)) return res.status(400).json({ error: '验证码错误或已过期 / Invalid or expired code' });
+  if (vc && vc.code !== String(code || '')) return res.status(400).json({ error: '验证码错误或已过期 / Invalid or expired code' });
 
   // Check username not taken
   const existing = db.prepare('SELECT id FROM admin_users WHERE username=? AND active=1').get(username);

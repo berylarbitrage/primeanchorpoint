@@ -9855,12 +9855,13 @@ function openAccModalForTab() {
 }
 
 function openInviteModal() {
-  document.getElementById('inviteLinksPanel').style.display = '';
-  loadInviteLinks();
+  const panel = document.getElementById('inviteLinksPanel');
+  if (panel) { panel.style.display = ''; loadManagerInviteLinks(); }
 }
 
-async function loadInviteLinks() {
+async function loadManagerInviteLinks() {
   const el = document.getElementById('inviteLinksList');
+  if (!el) return;
   const rows = await api('/admin/manager-invites').catch(() => []);
   if (!Array.isArray(rows) || rows.length === 0) {
     el.innerHTML = '<p style="color:var(--gray-400)">暂无有效邀请链接</p>';
@@ -9885,7 +9886,7 @@ async function createInviteLink() {
   if (d && d.url) {
     navigator.clipboard.writeText(d.url).catch(() => {});
     document.getElementById('newInviteNote').value = '';
-    loadInviteLinks();
+    loadManagerInviteLinks();
     showToast('链接已生成并复制到剪贴板！');
   }
 }
@@ -9893,7 +9894,7 @@ async function createInviteLink() {
 async function revokeInviteLink(id) {
   if (!confirm('确定撤销此邀请链接？')) return;
   await api('/admin/manager-invites/' + id, { method: 'DELETE' });
-  loadInviteLinks();
+  loadManagerInviteLinks();
 }
 
 function copyInviteLink(url) {
