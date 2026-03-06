@@ -522,6 +522,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('admin-mgr-punch')" data-tab="admin-mgr-punch" data-role="admin,staff">⏱ 经理打卡记录</a>
       <a onclick="showTab('admin-mgr-dispatch')" data-tab="admin-mgr-dispatch" data-role="admin,staff">💼 经理派工情况</a>
       <a onclick="showTab('admin-mgr-staff')" data-tab="admin-mgr-staff" data-role="admin,staff">👷 经理下属员工</a>
+      <a onclick="showTab('admin-mgr-assign')" data-tab="admin-mgr-assign" data-role="admin,staff">🔧 经理工作分配</a>
     </div>
   </div>
 
@@ -729,6 +730,42 @@ tr:hover td{background:var(--sky-light)}
       </tr></thead>
       <tbody id="adminMgrStaffBody"></tbody>
     </table>
+  </div>
+</div>
+
+<!-- Tab: 经理工作分配 -->
+<div id="tab-admin-mgr-assign" style="display:none">
+  <div class="top"><h1>🔧 经理工作分配</h1></div>
+  <div class="search-bar" style="margin-bottom:1rem">
+    <select id="adminMgrAssignSel" onchange="loadMgrAssignPanel()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+      <option value="">— 选择经理 —</option>
+    </select>
+  </div>
+  <div id="mgrAssignPanel" style="display:none">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start">
+      <!-- Left: Jobs -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h4 style="margin:0;font-size:.95rem">选择工作</h4>
+          <span style="font-size:.78rem;color:var(--gray-400)">勾选后员工自动出现在右侧</span>
+        </div>
+        <div id="mgrAssignJobsList" style="max-height:520px;overflow-y:auto"></div>
+      </div>
+      <!-- Right: Employees -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h4 style="margin:0;font-size:.95rem">分配员工</h4>
+          <button class="btn btn-sm btn-outline" onclick="toggleAllMgrAssignEmps()" style="font-size:.75rem">全选/取消</button>
+        </div>
+        <div id="mgrAssignEmpList" style="max-height:520px;overflow-y:auto">
+          <p style="color:var(--gray-400);font-size:.85rem;padding:.5rem 0">请先在左侧选择工作</p>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:1rem;display:flex;align-items:center;gap:1rem">
+      <button class="btn btn-green" onclick="saveMgrAssign()">💾 保存分配</button>
+      <span id="mgrAssignSaveMsg" style="font-size:.85rem;color:var(--green)"></span>
+    </div>
   </div>
 </div>
 
@@ -3870,7 +3907,7 @@ const _TAB_TO_SEC = {
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time',
   approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
-  'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin'
+  'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
 };
 
 function toggleNav(secId) {
@@ -3919,6 +3956,7 @@ function showTab(t) {
   if (t === 'admin-mgr-punch')    { populateAdminMgrSelects(); loadAdminMgrPunch(); }
   if (t === 'admin-mgr-dispatch') { populateAdminMgrSelects(); loadAdminMgrDispatch(); }
   if (t === 'admin-mgr-staff')    { populateAdminMgrSelects(); loadAdminMgrStaff(); }
+  if (t === 'admin-mgr-assign')   { populateAdminMgrSelects(); }
 }
 
 // ─── Dashboard ───
@@ -12661,7 +12699,7 @@ async function populateAdminMgrSelects() {
     try { _adminManagers = await api('/admin/managers-list'); } catch(e) { return; }
   }
   const opts = _adminManagers.map(m => `<option value="${m.id}">${esc(m.display_name || m.username)} (${esc(m.partner_names)})</option>`).join('');
-  ['adminMgrPunchSel','adminMgrDispatchSel','adminMgrStaffSel'].forEach(id => {
+  ['adminMgrPunchSel','adminMgrDispatchSel','adminMgrStaffSel','adminMgrAssignSel'].forEach(id => {
     const sel = document.getElementById(id);
     if (sel && sel.options.length <= 1) {
       sel.innerHTML = '<option value="">— 选择经理 —</option>' + opts;
@@ -12753,6 +12791,169 @@ async function loadAdminMgrStaff() {
     }).join('');
   } catch(e) {
     tbody.innerHTML = `<tr><td colspan="7" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+
+// ─── 经理工作分配 ───
+let _mgrAssignJobsData = [];
+let _mgrAssignEmpsData = [];
+let _mgrAssignEmpChecks = {}; // {empId: true/false} — tracks current checkbox states
+
+async function loadMgrAssignPanel() {
+  const mgrId = document.getElementById('adminMgrAssignSel').value;
+  const panel = document.getElementById('mgrAssignPanel');
+  if (!mgrId) { panel.style.display = 'none'; return; }
+
+  document.getElementById('mgrAssignJobsList').innerHTML = '<p style="color:var(--gray-400);font-size:.85rem;padding:.5rem 0">加载中…</p>';
+  document.getElementById('mgrAssignEmpList').innerHTML  = '<p style="color:var(--gray-400);font-size:.85rem;padding:.5rem 0">加载中…</p>';
+  panel.style.display = '';
+
+  try {
+    const [accounts, jobs, emps] = await Promise.all([
+      api('/admin/accounts'),
+      api('/admin/jobs'),
+      api('/admin/employees')
+    ]);
+
+    const mgr = (accounts || []).find(a => a.id === parseInt(mgrId));
+    const currentJobIds  = new Set((mgr?.assigned_job_ids      || '').split(',').map(s => parseInt(s.trim())).filter(Boolean));
+    const currentEmpIds  =         (mgr?.assigned_employee_ids || '').split(',').map(s => parseInt(s.trim())).filter(Boolean);
+
+    _mgrAssignJobsData = (jobs || []).filter(j => j.active);
+    _mgrAssignEmpsData = emps || [];
+
+    // Seed emp check states from current assignment
+    _mgrAssignEmpChecks = {};
+    currentEmpIds.forEach(id => { _mgrAssignEmpChecks[id] = true; });
+
+    _renderMgrAssignJobs(currentJobIds);
+    _renderMgrAssignEmps();
+    document.getElementById('mgrAssignSaveMsg').textContent = '';
+  } catch(e) {
+    document.getElementById('mgrAssignJobsList').innerHTML = `<p style="color:var(--red);font-size:.85rem">加载失败: ${esc(e.message)}</p>`;
+  }
+}
+
+function _renderMgrAssignJobs(selectedJobIds) {
+  const selSet = selectedJobIds instanceof Set ? selectedJobIds : new Set([...selectedJobIds].map(String));
+  const rowStyle = 'display:flex;align-items:center;gap:.6rem;padding:.45rem .25rem;border-bottom:1px solid var(--gray-100);cursor:pointer';
+  const html = _mgrAssignJobsData.map(j => {
+    const sel = selSet.has(String(j.id));
+    return `<label style="${rowStyle}">
+      <input type="checkbox" name="mgrAssignJob" value="${j.id}" ${sel?'checked':''} onchange="onMgrAssignJobChange(this)">
+      <div>
+        <div style="font-size:.88rem;font-weight:600;color:var(--gray-800)">${esc(j.title)}</div>
+        ${j.partner_name ? `<div style="font-size:.74rem;color:var(--gray-400)">${esc(j.partner_name)}</div>` : ''}
+      </div>
+    </label>`;
+  }).join('') || '<p style="color:var(--gray-400);font-size:.85rem">暂无活跃工作</p>';
+  document.getElementById('mgrAssignJobsList').innerHTML = html;
+}
+
+function onMgrAssignJobChange(checkbox) {
+  // Snapshot current emp selection before re-render
+  document.querySelectorAll('input[name=mgrAssignEmp]').forEach(c => {
+    _mgrAssignEmpChecks[parseInt(c.value)] = c.checked;
+  });
+
+  const jobId = parseInt(checkbox.value);
+  const selectedJobIds = new Set(
+    [...document.querySelectorAll('input[name=mgrAssignJob]:checked')].map(c => parseInt(c.value))
+  );
+
+  if (checkbox.checked) {
+    // Auto-check all employees belonging to this newly added job
+    _mgrAssignEmpsData.forEach(e => {
+      if ((e.current_jobs || []).some(j => j.job_id === jobId)) {
+        _mgrAssignEmpChecks[e.id] = true;
+      }
+    });
+  } else {
+    // Uncheck employees whose ONLY selected job was just removed
+    _mgrAssignEmpsData.forEach(e => {
+      if ((e.current_jobs || []).some(j => j.job_id === jobId) &&
+          !(e.current_jobs || []).some(j => selectedJobIds.has(j.job_id))) {
+        delete _mgrAssignEmpChecks[e.id];
+      }
+    });
+  }
+
+  _renderMgrAssignEmps();
+}
+
+function _renderMgrAssignEmps() {
+  const selectedJobIds = new Set(
+    [...document.querySelectorAll('input[name=mgrAssignJob]:checked')].map(c => parseInt(c.value))
+  );
+
+  if (!selectedJobIds.size) {
+    document.getElementById('mgrAssignEmpList').innerHTML = '<p style="color:var(--gray-400);font-size:.85rem;padding:.5rem 0">请先在左侧选择工作</p>';
+    return;
+  }
+
+  const relevant = _mgrAssignEmpsData.filter(e =>
+    (e.current_jobs || []).some(j => selectedJobIds.has(j.job_id))
+  );
+
+  if (!relevant.length) {
+    document.getElementById('mgrAssignEmpList').innerHTML = '<p style="color:var(--gray-400);font-size:.85rem;padding:.5rem 0">所选工作下暂无员工记录</p>';
+    return;
+  }
+
+  const rowStyle = 'display:flex;align-items:center;gap:.6rem;padding:.45rem .25rem;border-bottom:1px solid var(--gray-100);cursor:pointer';
+  const html = relevant.map(e => {
+    const name = [e.first_name, e.last_name].filter(Boolean).join(' ') || '—';
+    const jobsLabel = (e.current_jobs || [])
+      .filter(j => selectedJobIds.has(j.job_id))
+      .map(j => esc(j.job_title || '未知职位')).join(' · ');
+    const sel = !!_mgrAssignEmpChecks[e.id];
+    return `<label style="${rowStyle}">
+      <input type="checkbox" name="mgrAssignEmp" value="${e.id}" ${sel?'checked':''}
+             onchange="_mgrAssignEmpChecks[${e.id}]=this.checked">
+      <div>
+        <div style="font-size:.88rem;font-weight:600;color:var(--blue)">${esc(name)}</div>
+        <div style="font-size:.74rem;color:var(--gray-400)">${jobsLabel}</div>
+      </div>
+    </label>`;
+  }).join('');
+
+  document.getElementById('mgrAssignEmpList').innerHTML = html;
+}
+
+function toggleAllMgrAssignEmps() {
+  const checkboxes = [...document.querySelectorAll('input[name=mgrAssignEmp]')];
+  const anyUnchecked = checkboxes.some(c => !c.checked);
+  checkboxes.forEach(c => {
+    c.checked = anyUnchecked;
+    _mgrAssignEmpChecks[parseInt(c.value)] = anyUnchecked;
+  });
+}
+
+async function saveMgrAssign() {
+  const mgrId = document.getElementById('adminMgrAssignSel').value;
+  if (!mgrId) return;
+  // Snapshot latest emp states before reading
+  document.querySelectorAll('input[name=mgrAssignEmp]').forEach(c => {
+    _mgrAssignEmpChecks[parseInt(c.value)] = c.checked;
+  });
+  const selectedJobs = [...document.querySelectorAll('input[name=mgrAssignJob]:checked')].map(c => c.value).join(',');
+  const selectedEmps = Object.entries(_mgrAssignEmpChecks).filter(([,v])=>v).map(([k])=>k).join(',');
+  const msgEl = document.getElementById('mgrAssignSaveMsg');
+  msgEl.textContent = '保存中…';
+  msgEl.style.color = 'var(--gray-400)';
+  const r = await api(`/admin/accounts/${mgrId}`, { method: 'PUT', body: JSON.stringify({
+    assigned_job_ids: selectedJobs,
+    assigned_employee_ids: selectedEmps
+  })});
+  if (r && !r.error) {
+    msgEl.textContent = '✅ 已保存';
+    msgEl.style.color = 'var(--green)';
+    showToast('✅ 经理工作分配已保存');
+    _adminManagers = []; // invalidate cache so manager list refreshes
+  } else {
+    msgEl.textContent = '❌ 保存失败：' + (r?.error || '请重试');
+    msgEl.style.color = 'var(--red)';
   }
 }
 
