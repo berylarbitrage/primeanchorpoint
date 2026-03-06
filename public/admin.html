@@ -2982,12 +2982,47 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="partnerDetailModal"><div class="modal modal-xl">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
     <h2 id="partnerDetailTitle">公司详情</h2>
-    <div style="display:flex;gap:.5rem">
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="editPartnerFromDetail()">编辑</button>
+      <button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送合同</button>
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
     </div>
   </div>
   <div id="partnerDetail"></div>
+</div></div>
+
+<!-- ════ Partner DocuSign Send Modal ════ -->
+<div class="modal-bg" id="partnerDsModal"><div class="modal" style="max-width:480px">
+  <h2>✍ 发送合同签署邀请</h2>
+  <p id="partnerDsCompanyName" style="font-weight:700;color:var(--sky);margin-bottom:1rem"></p>
+
+  <div id="partnerDsNoFiles" style="display:none;background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:.75rem 1rem;font-size:.87rem;color:#92400E;margin-bottom:1rem">
+    该公司暂无合同 / 协议文件。请先在编辑页上传合同文件，再发送签署。
+  </div>
+
+  <div id="partnerDsFileWrap">
+    <div class="field">
+      <label style="font-size:.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">选择合同文件 *</label>
+      <select id="partnerDsFileSelect" style="width:100%;padding:.65rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;margin-top:.3rem;font-family:inherit">
+        <option value="">— 请选择 —</option>
+      </select>
+    </div>
+    <div id="partnerDsCurrentStatus" style="display:none;font-size:.8rem;margin:.3rem 0 .75rem;padding:.4rem .75rem;border-radius:6px;background:var(--gray-100);color:var(--gray-600)"></div>
+    <div class="field">
+      <label style="font-size:.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">收件方邮箱 *</label>
+      <input id="partnerDsEmail" type="email" placeholder="partner@company.com" style="width:100%;padding:.65rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;margin-top:.3rem;font-family:inherit">
+    </div>
+    <div class="field">
+      <label style="font-size:.78rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px">收件方姓名</label>
+      <input id="partnerDsName" type="text" placeholder="联系人姓名" style="width:100%;padding:.65rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;margin-top:.3rem;font-family:inherit">
+    </div>
+    <div id="partnerDsMsg" style="display:none;padding:.6rem .9rem;border-radius:8px;font-size:.85rem;margin:.5rem 0"></div>
+  </div>
+
+  <div class="modal-actions" style="margin-top:1.25rem">
+    <button class="btn" onclick="closeModal('partnerDsModal')">取消</button>
+    <button class="btn btn-blue" id="partnerDsSendBtn" onclick="doSendPartnerDocuSign()">✍ 发送签署邀请</button>
+  </div>
 </div></div>
 
 <!-- ════ Employee Add/Edit Modal ════ -->
@@ -6760,6 +6795,7 @@ function renderPartners(partners) {
       <td>${p.active?'<span class="badge badge-completed">合作中</span>':'<span class="badge badge-cancelled">已停止</span>'}</td>
       <td>
         <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
+        <button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">✍ 发送合同</button>
         <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>
       </td>
     </tr>`;
@@ -7183,6 +7219,120 @@ async function deletePartnerFile(fid, pid) {
   if (!await showConfirm('确定删除此文件？', { danger: true })) return;
   await api(`/admin/partner-files/${fid}`, {method:'DELETE'});
   loadPartnerFiles(pid);
+}
+
+// ── Partner DocuSign Send Modal ────────────────────────────────
+let _dsPartnerId = null;
+
+async function openPartnerDocuSign(partnerId) {
+  _dsPartnerId = partnerId;
+  const p = allPartners.find(x => x.id === partnerId);
+  document.getElementById('partnerDsCompanyName').textContent = p ? p.name : '';
+
+  // Reset UI
+  const msgEl = document.getElementById('partnerDsMsg');
+  msgEl.style.display = 'none';
+  document.getElementById('partnerDsCurrentStatus').style.display = 'none';
+  document.getElementById('partnerDsSendBtn').disabled = false;
+
+  // Load files
+  const files = await api(`/admin/partners/${partnerId}/files`).catch(() => []);
+  const contractFiles = (files || []).filter(f => f.file_type === 'contract' || f.file_type === 'agreement');
+
+  const noFilesEl = document.getElementById('partnerDsNoFiles');
+  const fileWrapEl = document.getElementById('partnerDsFileWrap');
+  const sendBtn = document.getElementById('partnerDsSendBtn');
+
+  if (!contractFiles.length) {
+    noFilesEl.style.display = '';
+    fileWrapEl.style.display = 'none';
+    sendBtn.disabled = true;
+  } else {
+    noFilesEl.style.display = 'none';
+    fileWrapEl.style.display = '';
+    sendBtn.disabled = false;
+
+    const typeLabels = { contract: '合同', agreement: '协议' };
+    const DS_LABELS = { sent: '已发送', delivered: '已送达', completed: '已完成', declined: '已拒签', voided: '已作废' };
+    const sel = document.getElementById('partnerDsFileSelect');
+    sel.innerHTML = '<option value="">— 请选择合同文件 —</option>' +
+      contractFiles.map(f => {
+        const dsTag = f.ds_status ? ` [${DS_LABELS[f.ds_status] || f.ds_status}]` : '';
+        return `<option value="${f.id}" data-ds="${f.ds_status||''}" data-ds-env="${f.ds_envelope_id||''}">${esc(f.file_name || f.file_label || '文件')} (${typeLabels[f.file_type]||f.file_type})${dsTag}</option>`;
+      }).join('');
+    sel.onchange = () => {
+      const opt = sel.options[sel.selectedIndex];
+      const st = opt ? opt.dataset.ds : '';
+      const env = opt ? opt.dataset.dsEnv : '';
+      const statusEl = document.getElementById('partnerDsCurrentStatus');
+      if (st && env) {
+        const label = DS_LABELS[st] || st;
+        const color = { sent:'#2563EB', delivered:'#0284C7', completed:'#059669', declined:'#DC2626', voided:'#6B7280' }[st] || '#6B7280';
+        statusEl.style.display = '';
+        statusEl.innerHTML = `当前状态：<strong style="color:${color}">✍ ${label}</strong>（Envelope: <code style="font-size:.75rem">${esc(env)}</code>）— 重新发送将创建新信封`;
+      } else {
+        statusEl.style.display = 'none';
+      }
+    };
+    if (contractFiles.length === 1) sel.value = contractFiles[0].id;
+    sel.onchange();
+  }
+
+  // Pre-fill contact info
+  let email = '', name = '';
+  if (p) {
+    try {
+      const contacts = JSON.parse(p.contacts || '[]');
+      const c = contacts.find(c => c.email) || contacts[0];
+      if (c) {
+        email = c.email || '';
+        name = [(c.first_name||''), (c.last_name||'')].filter(Boolean).join(' ') || c.name || '';
+      }
+    } catch {}
+    if (!email) email = p.email || '';
+    if (!name) name = p.contact_person || '';
+  }
+  document.getElementById('partnerDsEmail').value = email;
+  document.getElementById('partnerDsName').value = name;
+
+  document.getElementById('partnerDsModal').classList.add('show');
+}
+
+async function doSendPartnerDocuSign() {
+  const fileId = document.getElementById('partnerDsFileSelect').value;
+  const email  = document.getElementById('partnerDsEmail').value.trim();
+  const name   = document.getElementById('partnerDsName').value.trim();
+  const msgEl  = document.getElementById('partnerDsMsg');
+  const btn    = document.getElementById('partnerDsSendBtn');
+
+  if (!fileId) { msgEl.style.cssText='display:;background:#FEF2F2;border:1px solid #FECACA;color:#DC2626;padding:.6rem .9rem;border-radius:8px'; msgEl.textContent='请选择合同文件'; return; }
+  if (!email)  { msgEl.style.cssText='display:;background:#FEF2F2;border:1px solid #FECACA;color:#DC2626;padding:.6rem .9rem;border-radius:8px'; msgEl.textContent='请填写收件方邮箱'; return; }
+
+  btn.disabled = true;
+  btn.textContent = '发送中…';
+  msgEl.style.display = 'none';
+
+  try {
+    const r = await api(`/admin/partner-files/${fileId}/send-docusign`, {
+      method: 'POST',
+      body: JSON.stringify({ partner_email: email, partner_name: name })
+    });
+    if (r && r.success) {
+      msgEl.style.cssText = 'display:;background:#F0FDF4;border:1px solid #BBF7D0;color:#059669;padding:.6rem .9rem;border-radius:8px';
+      msgEl.textContent = `✅ 签署邀请已发送！双方将收到邮件通知。Envelope ID: ${r.envelopeId}`;
+      btn.textContent = '✅ 已发送';
+      // Refresh partner files if the edit modal is open
+      const pidEl = document.getElementById('partnerId');
+      if (pidEl && pidEl.value == _dsPartnerId) loadPartnerFiles(_dsPartnerId);
+    } else {
+      throw new Error(r?.error || '发送失败');
+    }
+  } catch (e) {
+    msgEl.style.cssText = 'display:;background:#FEF2F2;border:1px solid #FECACA;color:#DC2626;padding:.6rem .9rem;border-radius:8px';
+    msgEl.textContent = '发送失败：' + e.message;
+    btn.disabled = false;
+    btn.textContent = '✍ 发送签署邀请';
+  }
 }
 
 async function savePartner() {
