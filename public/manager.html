@@ -815,8 +815,8 @@ function renderTimeClock(rows) {
     return `<tr${rowStyle} data-entry-id="${t.id}">
       <td class="tc-cb-cell"><input type="checkbox" class="tc-batch-cb" onchange="toggleBatchRow(${t.id},this)"></td>
       <td><div class="emp-row-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}${incompleteTag}</div><div class="emp-row-code">${esc(t.emp_code||'')}</div></td>
-      <td style="white-space:nowrap">${fmtDT(t.clock_in, tz)}</td>
-      <td style="white-space:nowrap">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
+      <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="openEditModal(${t.id})">${fmtDT(t.clock_in, tz)}</td>
+      <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="openEditModal(${t.id})">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
       <td>${renderBreaks(t)}</td>
       <td>${fmtH(t.total_hours)}</td>
       <td>${fmtH(t.regular_hours)}</td>
