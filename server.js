@@ -1210,6 +1210,8 @@ try { db.exec("ALTER TABLE time_entries ADD COLUMN needs_review INTEGER DEFAULT 
 try { db.exec("ALTER TABLE time_entries ADD COLUMN review_reason TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN site_timezone TEXT DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_latitude REAL DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_longitude REAL DEFAULT NULL"); } catch {}
 
 // Worker payments ledger
 db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
@@ -4602,7 +4604,7 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
   }
   sql += ' ORDER BY e.last_name, e.first_name';
   const rows = db.prepare(sql).all(...params);
-  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets)
+  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets) + assignments
   const explicitJobs = db.prepare(`
     SELECT ej.employee_id, ej.job_id, ej.company_name, ej.job_title
     FROM employee_jobs ej WHERE ej.status='active'
@@ -4616,12 +4618,26 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
     )
     ORDER BY s.period_end DESC
   `).all();
+  const assignJobs = db.prepare(`
+    SELECT wa.employee_id, a.job_id, j.title AS job_title, COALESCE(j.company_name,'') AS company_name
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    JOIN worker_accounts wa ON wa.linked_inquiry_id = a.inquiry_id
+    WHERE a.status NOT IN ('cancelled') AND wa.employee_id IS NOT NULL
+  `).all();
   const jobMap = {};
   for (const j of explicitJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     jobMap[j.employee_id].push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
   }
   for (const j of tsJobs) {
+    if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
+    const existing = jobMap[j.employee_id];
+    if (!existing.some(e => e.job_id === j.job_id)) {
+      existing.push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
+    }
+  }
+  for (const j of assignJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     const existing = jobMap[j.employee_id];
     if (!existing.some(e => e.job_id === j.job_id)) {
@@ -5344,28 +5360,40 @@ app.post('/api/timeclock/punch', (req, res) => {
   const now = new Date().toISOString();
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
 
-  // ── Geofencing: only block if worker has configured sites AND is outside ALL of them ──
-  if (latitude && longitude) {
-    const empSites = db.prepare(`
-      SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
-      FROM employee_jobs ej
-      JOIN jobs j ON ej.job_id = j.id
-      JOIN job_sites js ON j.site_id = js.id
-      WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL
-    `).all(emp.id);
-    if (empSites.length > 0) {
-      let insideAny = false;
-      let closestDist = Infinity, closestSite = null;
-      for (const site of empSites) {
-        const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
-        if (dist <= site.radius_meters) { insideAny = true; break; }
-        if (dist < closestDist) { closestDist = dist; closestSite = site; }
-      }
-      if (!insideAny && closestSite) {
-        const distStr = closestDist >= 1000 ? (closestDist/1000).toFixed(1)+' km' : Math.round(closestDist)+' m';
-        return res.status(400).json({ error: `距离工作地点太远，无法打卡（距"${closestSite.name}"约 ${distStr}，允许范围 ${closestSite.radius_meters}m）`, geo_blocked: true });
-      }
+  // ── Geofencing: required for clock-in; all punch types must verify location ──
+  const empSites = db.prepare(`
+    SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+    FROM employee_jobs ej
+    JOIN jobs j ON ej.job_id = j.id
+    JOIN job_sites js ON j.site_id = js.id
+    WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL AND js.longitude IS NOT NULL
+  `).all(emp.id);
+
+  if (empSites.length > 0) {
+    // Employee has configured job sites — location verification is mandatory
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: '打卡需要开启位置权限，请在浏览器设置中允许定位后再试。\nLocation permission required to clock in.', need_gps: true });
     }
+    let insideAny = false;
+    let closestDist = Infinity, closestSite = null;
+    for (const site of empSites) {
+      const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
+      if (dist <= site.radius_meters) { insideAny = true; break; }
+      if (dist < closestDist) { closestDist = dist; closestSite = site; }
+    }
+    if (!insideAny) {
+      const distStr = closestSite
+        ? (closestDist >= 1000 ? (closestDist/1000).toFixed(1)+' km' : Math.round(closestDist)+' m')
+        : '未知';
+      const siteName = closestSite ? closestSite.name : '';
+      return res.status(400).json({ error: `您的位置不在工作地点范围内（距"${siteName}"约 ${distStr}，允许范围 ${closestSite?.radius_meters||200}m）。\n请到达工作地点后再打卡。`, geo_blocked: true });
+    }
+  } else if (ptype === 'in' || ptype === 'toggle') {
+    // No configured job sites — block clock-in to prevent unverified punches
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: '打卡需要开启位置权限。\nLocation permission required.', need_gps: true });
+    }
+    return res.status(400).json({ error: '该员工暂无已配置工作地点的工作，无法验证位置，请联系HR。\nNo configured job site found, please contact HR.', no_site: true });
   }
 
   let warning = null; // warning message (not blocking)
@@ -5788,8 +5816,8 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
       return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning: outWarning, entry_id: r2.lastInsertRowid });
     }
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
-    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out',punch_photo=COALESCE(?,punch_photo) WHERE id=?")
-      .run(now, hrs.total, hrs.regular, hrs.overtime, photo_data || null, open.id);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out',punch_photo=COALESCE(?,punch_photo),clock_out_latitude=?,clock_out_longitude=? WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, photo_data || null, latitude || null, longitude || null, open.id);
     return res.json({ action: 'out', punch_type: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
   }
 
@@ -6228,9 +6256,10 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
        WHERE t.employee_id=? AND t.status='open' ORDER BY t.clock_in DESC LIMIT 1`).get(req.workerEmployeeId)
     : null;
 
+  const seenActiveJobIds = new Set();
   let activeJobs = [];
   if (req.workerEmployeeId) {
-    activeJobs = db.prepare(`
+    const ejJobs = db.prepare(`
       SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
              COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
              j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
@@ -6241,32 +6270,34 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
       LEFT JOIN assignments a ON a.job_id = ej.job_id AND a.inquiry_id = ?
       WHERE ej.employee_id = ? AND ej.status = 'active'
     `).all(linkedInqId, req.workerEmployeeId);
+    for (const j of ejJobs) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
   }
 
-  // Fall back to assignments table: match by linked_inquiry_id, phone, or email
+  // Always also check assignments table — add jobs not already covered by employee_jobs
   // Only include accepted assignments (worker_response = 'accepted')
-  if (!activeJobs.length) {
-    activeJobs = db.prepare(`
-      SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
-             COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
-             j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
-             a.work_schedule
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC
-    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
-    // Also update linked_inquiry_id if we found a match and it wasn't set
-    if (activeJobs.length && !linkedInqId) {
-      try { activateWorkerAccount(req.workerId); } catch {}
-    }
+  const aJobs = db.prepare(`
+    SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
+           COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
+           j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
+           a.work_schedule
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    JOIN inquiries i ON a.inquiry_id = i.id
+    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
+      AND (
+        (? IS NOT NULL AND a.inquiry_id = ?)
+        OR (? != '' AND phone10(i.phone) = ?)
+        OR (? != '' AND lower(i.email) = ?)
+      )
+    ORDER BY a.assigned_at DESC
+  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  for (const j of aJobs) {
+    if (!seenActiveJobIds.has(j.job_id)) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
+  }
+  // Update linked_inquiry_id if we found a match via assignments and it wasn't set
+  if (aJobs.length && !linkedInqId) {
+    try { activateWorkerAccount(req.workerId); } catch {}
   }
 
   // Count pending (unaccepted) tasks
@@ -6319,9 +6350,11 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
   const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
   const wEmail = (wa?.email || '').toLowerCase();
 
+  const seenJobIds = new Set();
   let jobs = [];
+
   if (req.workerEmployeeId) {
-    jobs = db.prepare(`
+    const ejJobs = db.prepare(`
       SELECT ej.id, ej.job_id, ej.status, ej.start_date, ej.end_date, ej.emp_hourly_rate,
              j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
              j.pay, j.pay_period, j.company_name, j.site_id,
@@ -6334,28 +6367,30 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
       WHERE ej.employee_id = ? AND ej.status = 'active'
       ORDER BY ej.assigned_at DESC
     `).all(linkedInqId, req.workerEmployeeId);
+    for (const j of ejJobs) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
-  // Fallback: check assignments table (same as punch/status)
-  if (!jobs.length) {
-    jobs = db.prepare(`
-      SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
-             j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
-             j.pay, j.pay_period, j.company_name, j.site_id,
-             js.name AS site_name, js.address AS site_address,
-             js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC
-    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  // Always also include assignments — add any job_ids not already covered above
+  const aJobs = db.prepare(`
+    SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
+           j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
+           j.pay, j.pay_period, j.company_name, j.site_id,
+           js.name AS site_name, js.address AS site_address,
+           js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    JOIN inquiries i ON a.inquiry_id = i.id
+    WHERE a.status != 'cancelled'
+      AND (
+        (? IS NOT NULL AND a.inquiry_id = ?)
+        OR (? != '' AND phone10(i.phone) = ?)
+        OR (? != '' AND lower(i.email) = ?)
+      )
+    ORDER BY a.assigned_at DESC
+  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  for (const j of aJobs) {
+    if (!seenJobIds.has(j.job_id)) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
   res.json(jobs);

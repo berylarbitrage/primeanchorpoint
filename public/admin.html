@@ -465,7 +465,6 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="nav-group-items">
       <a onclick="showTab('client-inquiries')" data-tab="client-inquiries" data-role="admin,staff">🏢 客户问卷</a>
-      <a onclick="showTab('worker-inquiries')" data-tab="worker-inquiries" data-role="admin,staff">👤 员工问卷</a>
       <a onclick="showTab('quotes')" data-tab="quotes" data-role="admin,staff">📋 报价请求</a>
       <a onclick="showTab('partners')" data-tab="partners" data-role="admin,staff">合作公司</a>
     </div>
@@ -477,6 +476,7 @@ tr:hover td{background:var(--sky-light)}
       👷 员工管理<span class="chev">▾</span>
     </div>
     <div class="nav-group-items">
+      <a onclick="showTab('worker-inquiries')" data-tab="worker-inquiries" data-role="admin,staff">👤 员工问卷</a>
       <a onclick="showTab('employees')" data-tab="employees" data-role="admin,staff">👥 员工列表</a>
       <a onclick="showTab('bgchecks')" data-tab="bgchecks" data-role="admin,staff">🔍 背景调查</a>
       <a onclick="showTab('compliance')" data-tab="compliance" data-role="admin,staff">📑 合规审核</a>
@@ -2810,6 +2810,7 @@ tr:hover td{background:var(--sky-light)}
     </select></div>
     <div class="field"><label>薪资 / 工资</label><input id="aPayRate" placeholder="例：18.50/hr 或 $3,200/月"></div>
   </div>
+  <div class="field"><label>工作地址</label><input id="aWorkAddr" placeholder="例：123 Main St, Chicago, IL"></div>
   <div class="field">
     <label>福利待遇（多选）</label>
     <div id="aBenefitsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
@@ -2933,7 +2934,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="form-section"><h4>基本信息</h4>
     <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
     <div class="field-row">
-      <div class="field"><label>行业</label><select id="pIndustry">
+      <div class="field"><label>行业 *</label><select id="pIndustry">
         <option value="">-- 请选择 --</option>
         <option value="物流 Logistics">物流 Logistics</option>
         <option value="制造业 Manufacturing">制造业 Manufacturing</option>
@@ -2953,12 +2954,12 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="form-section"><h4>联系人 (可多个)</h4>
+  <div class="form-section"><h4>联系人 * (至少一个，姓名/电话/邮箱必填)</h4>
     <div class="dyn-list" id="pContactsList"></div>
     <button class="btn-add-sm" onclick="addPartnerContact()">+ 添加联系人</button>
   </div>
 
-  <div class="form-section"><h4>地址 (可多个)</h4>
+  <div class="form-section"><h4>地址 * (至少一个)</h4>
     <div class="dyn-list" id="pAddrList"></div>
     <button class="btn-add-sm" onclick="addPartnerAddr()">+ 添加地址</button>
   </div>
@@ -2972,7 +2973,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="form-section"><h4>合作服务 (多选)</h4>
+  <div class="form-section"><h4>合作服务 * (至少选一项)</h4>
     <div class="svc-tags" id="pSvcTags">
       <span class="svc-tag" data-v="临时工派遣" onclick="this.classList.toggle('active')">临时工派遣</span>
       <span class="svc-tag" data-v="仓库包装" onclick="this.classList.toggle('active')">仓库包装</span>
@@ -3899,8 +3900,8 @@ function logout() {
 
 // ─── Tabs ───
 const _TAB_TO_SEC = {
-  inquiries:'sec-customer', quotes:'sec-customer', partners:'sec-customer',
-  employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
+  inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
+  'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
   time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time',
   approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system',
@@ -6427,7 +6428,86 @@ function selectAssignItem(which, id, label) {
   document.getElementById(isInq ? 'aInquiry' : 'aJob').value = label;
   document.getElementById(isInq ? 'aInquiryId' : 'aJobId').value = id;
   document.getElementById(isInq ? 'aInquiryDrop' : 'aJobDrop').classList.remove('open');
-  if (isInq) checkInquiryDispatchStatus(id);
+  if (isInq) {
+    checkInquiryDispatchStatus(id);
+  } else {
+    if (!_editingAssignment) showJobImportPanel(id);
+  }
+}
+
+let _importJobId = null;
+
+function showJobImportPanel(jobId) {
+  const j = _assignJobs.find(x => x.id == jobId);
+  _importJobId = jobId;
+  if (!j) return;
+
+  const items = [];
+  if (j.pay)             items.push({ key:'pay',      label:`薪资/工资：${j.pay}`, checked: true });
+  if (j.employment_type) items.push({ key:'contract',  label:`合同类型：${j.employment_type}`, checked: true });
+  if (j.pay)             items.push({ key:'pay_type',  label:`薪资方式：${/\/hr|hourly/i.test(j.pay)?'按小时':/\/mo|month|salary/i.test(j.pay)?'月薪':'按小时'}`, checked: true });
+  if (j.benefits)        items.push({ key:'benefits',  label:`福利：${j.benefits}`, checked: true });
+  if (j.work_start || j.work_end || j.work_days)
+                         items.push({ key:'schedule',  label:`排班：${j.work_days||'每天'} ${j.work_start||''}${j.work_end?'–'+j.work_end:''}`, checked: true });
+  if (j.location)        items.push({ key:'location',  label:`工作地址：${j.location}`, checked: true });
+
+  if (!items.length) return; // nothing to import
+
+  document.getElementById('aJobImportChecks').innerHTML = items.map(it =>
+    `<label style="display:flex;align-items:center;gap:.5rem;cursor:pointer">
+      <input type="checkbox" id="jimport-${it.key}" ${it.checked?'checked':''} style="width:15px;height:15px;cursor:pointer">
+      <span style="color:var(--gray-700)">${esc(it.label)}</span>
+    </label>`
+  ).join('');
+  document.getElementById('aJobImportPanel').style.display = '';
+}
+
+function applyJobImport() {
+  const j = _assignJobs.find(x => x.id == _importJobId);
+  if (!j) return;
+
+  const checked = key => {
+    const el = document.getElementById('jimport-' + key);
+    return el && el.checked;
+  };
+
+  if (checked('pay') && j.pay)
+    document.getElementById('aPayRate').value = j.pay;
+
+  if (checked('contract') && j.employment_type) {
+    const typeMap = { 'W2':'W2','Contract':'Contract','1099':'1099','W2+Contract':'W2' };
+    const ct = typeMap[j.employment_type];
+    if (ct) document.getElementById('aContractType').value = ct;
+  }
+
+  if (checked('pay_type') && j.pay) {
+    if (/\/hr|hourly/i.test(j.pay)) document.getElementById('aPayType').value = 'hourly';
+    else if (/\/mo|month|salary/i.test(j.pay)) document.getElementById('aPayType').value = 'salary';
+  }
+
+  if (checked('benefits') && j.benefits) {
+    const vals = j.benefits.split(',').map(v => v.trim()).filter(Boolean);
+    document.querySelectorAll('#aBenefitsWrap .benefit-btn').forEach(btn => {
+      if (vals.includes(btn.dataset.val)) btn.classList.add('active');
+    });
+  }
+
+  if (checked('schedule') && (j.work_start || j.work_end || j.work_days)) {
+    const ALL_DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
+    const DAY_MAP = { Mon:'mon',Tue:'tue',Wed:'wed',Thu:'thu',Fri:'fri',Sat:'sat',Sun:'sun' };
+    const workDays = j.work_days ? j.work_days.split(',').map(d => DAY_MAP[d.trim()]).filter(Boolean) : [];
+    const sched = {};
+    ALL_DAYS.forEach(key => {
+      const isOff = workDays.length > 0 && !workDays.includes(key);
+      sched[key] = { start: isOff?'':(j.work_start||''), end: isOff?'':(j.work_end||''), breaks:'', break_times:[], off: isOff };
+    });
+    initSchedTable(JSON.stringify(sched));
+  }
+
+  if (checked('location') && j.location)
+    document.getElementById('aWorkAddr').value = j.location;
+
+  document.getElementById('aJobImportPanel').style.display = 'none';
 }
 
 async function checkInquiryDispatchStatus(inquiryId) {
@@ -6669,6 +6749,7 @@ async function saveAssignment() {
     contract_type: document.getElementById('aContractType').value,
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
+    work_address: document.getElementById('aWorkAddr').value,
     benefits,
     work_schedule: getEstimateTimeJson(),
     task_requirements: getTasksJson(),
@@ -6919,13 +7000,13 @@ function addPartnerContact(c) {
   div.innerHTML = `
     <div style="flex:1;min-width:0">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem">
-        <div class="field"><label>名 First</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
-        <div class="field"><label>姓 Last</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
+        <div class="field"><label>名 First *</label><input class="pc-first" value="${esc(fname)}" placeholder="三"></div>
+        <div class="field"><label>姓 Last *</label><input class="pc-last" value="${esc(lname)}" placeholder="张"></div>
         <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
-        <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
-        <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+        <div class="field"><label>电话 *</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
+        <div class="field"><label>邮箱 *</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
         <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
@@ -7428,6 +7509,17 @@ async function savePartner() {
     })
   };
   if (!data.name) return alert('请填写公司名称');
+  if (!data.industry) return alert('请选择行业');
+  // Validate first contact: name + phone + email required
+  const firstContact = contacts[0];
+  if (!firstContact || !(`${firstContact.first_name||''} ${firstContact.last_name||''}`.trim())) return alert('请填写联系人姓名（名 + 姓）');
+  if (!firstContact.phone || !firstContact.phone.trim()) return alert('请填写联系人电话');
+  if (!firstContact.email || !firstContact.email.trim()) return alert('请填写联系人邮箱');
+  // Validate at least one address
+  const addrs = getPartnerAddrs();
+  if (!addrs.length || !addrs.some(a => (a.street||a.address||'').trim())) return alert('请至少填写一个公司地址');
+  // Validate at least one service
+  if (!allSvcs.length) return alert('请至少选择一项合作服务');
   if (id) {
     await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
     showToast(`✅ 公司「${data.name}」(#${id}) 信息已更新`);
@@ -9158,7 +9250,7 @@ function renderTimeEntries(list) {
     <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
     <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
     <td style="text-align:center">${photoCell}</td>
-    <td>${esc(t.notes||'')}${t.latitude?` <span onclick="showMiniMap(event,${t.latitude},${t.longitude})" title="查看打卡位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">📍</span>`:''}</td>
+    <td>${esc(t.notes||'')} ${punchLocationPins(t)}</td>
     <td>
       ${t.status==='open'?`<button class="btn btn-sm btn-accent" onclick="clockOutEntry(${t.id})">打卡下班</button> `:''}
       <button class="btn btn-sm" onclick='openTimeModal(${JSON.stringify(t).replace(/'/g,"&#39;")})'>编辑</button>
@@ -9186,6 +9278,23 @@ function openPunchPhoto(src) {
 function punchPhotoUrl(src) {
   if (!src || !TOKEN) return src;
   return src + (src.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+}
+
+// Render all GPS pins for a time entry (clock-in, breaks, clock-out)
+function punchLocationPins(t) {
+  const pins = [];
+  if (t.latitude && t.longitude)
+    pins.push(`<span onclick="showMiniMap(event,${t.latitude},${t.longitude},'上班打卡')" title="上班位置 (${(+t.latitude).toFixed(4)}, ${(+t.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🟢</span>`);
+  try {
+    const breaks = JSON.parse(t.break_records || '[]');
+    breaks.forEach((b, i) => {
+      if (b.latitude && b.longitude)
+        pins.push(`<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}')" title="休息${i+1}位置 (${(+b.latitude).toFixed(4)}, ${(+b.longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🟡</span>`);
+    });
+  } catch {}
+  if (t.clock_out_latitude && t.clock_out_longitude)
+    pins.push(`<span onclick="showMiniMap(event,${t.clock_out_latitude},${t.clock_out_longitude},'下班打卡')" title="下班位置 (${(+t.clock_out_latitude).toFixed(4)}, ${(+t.clock_out_longitude).toFixed(4)})" style="cursor:pointer;font-size:1rem">🔴</span>`);
+  return pins.join(' ') || '';
 }
 
 // Render an authenticated punch photo thumbnail
@@ -12386,10 +12495,11 @@ async function importDisplaySuffixCsv() {
 (function() {
   let _mmMap = null, _mmMarker = null;
 
-  window.showMiniMap = function(e, lat, lng) {
+  window.showMiniMap = function(e, lat, lng, label) {
     e.stopPropagation();
     const popup = document.getElementById('miniMapPopup');
-    document.getElementById('miniMapLabel').textContent = `📍 ${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
+    const coordStr = `${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
+    document.getElementById('miniMapLabel').textContent = label ? `📍 ${label} · ${coordStr}` : `📍 ${coordStr}`;
     document.getElementById('miniMapGoogleLink').href = `https://maps.google.com/?q=${lat},${lng}`;
 
     // Position near click

@@ -218,10 +218,24 @@ tr:hover td{background:#fafcff}
     <img src="/logo.svg" alt="Prime Anchorpoint">
     <h1>Manager Portal</h1>
     <p>Prime Anchor Point 经理管理平台</p>
-    <div class="login-err" id="loginErr"></div>
-    <input type="text" id="loginUser" placeholder="用户名 Username" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
-    <input type="password" id="loginPass" placeholder="密码 Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
-    <button class="btn-login" id="loginBtn" onclick="doLogin()">登录 / Login</button>
+
+    <!-- Normal login form -->
+    <div id="loginForm">
+      <div class="login-err" id="loginErr"></div>
+      <input type="text" id="loginUser" placeholder="用户名 Username" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+      <input type="password" id="loginPass" placeholder="密码 Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      <button class="btn-login" id="loginBtn" onclick="doLogin()">登录 / Login</button>
+    </div>
+
+    <!-- Activation form (shown when account needs self-verification) -->
+    <div id="activationForm" style="display:none">
+      <div class="login-err" id="activateErr"></div>
+      <p style="font-size:.85rem;color:#555;margin:0 0 12px">首次登录请设置您的密码 / Please set your password</p>
+      <input type="password" id="activateNew" placeholder="新密码 New Password (min 6)" autocomplete="new-password" onkeydown="if(event.key==='Enter')doActivate()">
+      <input type="password" id="activateConfirm" placeholder="确认新密码 Confirm Password" autocomplete="new-password" onkeydown="if(event.key==='Enter')doActivate()">
+      <button class="btn-login" id="activateBtn" onclick="doActivate()">设置密码并登录 / Set Password</button>
+      <button style="margin-top:8px;background:none;border:none;color:#888;cursor:pointer;font-size:.85rem" onclick="showLoginForm()">← 返回登录</button>
+    </div>
   </div>
 </div>
 
@@ -548,6 +562,21 @@ function openSidebar()  { document.getElementById('sidebar').classList.add('open
 function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
 
 // ── Auth ───────────────────────────────────────────────────────
+let _activationUser = '', _activationPass = '';
+
+function showLoginForm() {
+  document.getElementById('loginForm').style.display = '';
+  document.getElementById('activationForm').style.display = 'none';
+}
+function showActivationForm() {
+  document.getElementById('loginForm').style.display = 'none';
+  document.getElementById('activationForm').style.display = '';
+  document.getElementById('activateNew').value = '';
+  document.getElementById('activateConfirm').value = '';
+  document.getElementById('activateErr').textContent = '';
+  document.getElementById('activateNew').focus();
+}
+
 async function doLogin() {
   const user = document.getElementById('loginUser').value.trim();
   const pass = document.getElementById('loginPass').value;
@@ -561,7 +590,10 @@ async function doLogin() {
       body: JSON.stringify({ username: user, password: pass })
     });
     const data = await r.json();
-    if (!r.ok || !data.success) {
+    if (data.needs_activation) {
+      _activationUser = user; _activationPass = pass;
+      showActivationForm();
+    } else if (!r.ok || !data.success) {
       err.textContent = data.error || '用户名或密码错误'; err.style.display = '';
     } else if (!['manager','admin','staff'].includes(data.role)) {
       err.textContent = '该账户无 Manager 权限'; err.style.display = '';
@@ -570,6 +602,32 @@ async function doLogin() {
     }
   } catch(e) { err.textContent = '网络错误，请重试'; err.style.display = ''; }
   btn.disabled = false; btn.textContent = '登录 / Login';
+}
+
+async function doActivate() {
+  const newPass = document.getElementById('activateNew').value;
+  const confirm = document.getElementById('activateConfirm').value;
+  const err = document.getElementById('activateErr');
+  const btn = document.getElementById('activateBtn');
+  if (!newPass) { err.textContent = '请输入新密码'; return; }
+  if (newPass.length < 6) { err.textContent = '密码至少6位'; return; }
+  if (newPass !== confirm) { err.textContent = '两次密码不一致'; return; }
+  btn.disabled = true; btn.textContent = '设置中…';
+  try {
+    const r = await fetch(API + '/auth/activate', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ username: _activationUser, current_password: _activationPass, new_password: newPass })
+    });
+    const data = await r.json();
+    if (!r.ok || !data.success) {
+      err.textContent = data.error || '设置失败，请重试';
+    } else {
+      TOKEN = data.token; localStorage.setItem('mgr_token', TOKEN);
+      showLoginForm();
+      showApp();
+    }
+  } catch(e) { err.textContent = '网络错误，请重试'; }
+  btn.disabled = false; btn.textContent = '设置密码并登录 / Set Password';
 }
 function doLogout() {
   fetch(API + '/admin/logout', { method:'POST', headers:{ Authorization:'Bearer '+TOKEN } }).catch(()=>{});
@@ -581,7 +639,7 @@ function doLogout() {
 }
 async function showApp() {
   document.getElementById('loginWrap').style.display = 'none';
-  document.getElementById('app').style.display = '';
+  document.getElementById('app').style.display = 'block';
   const me = await mApi('/manager/me');
   if (!me) return;
   const displayName = me.display_name || me.username || 'Manager';
@@ -689,8 +747,9 @@ function renderTimeClock(rows) {
   document.getElementById('tcTable').innerHTML = rows.map(t => {
     totalH += t.total_hours || 0; totalOT += t.overtime_hours || 0;
     const photoSrc = t.punch_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}` : t.punch_photo || '';
+    const photoUrl = photoSrc && TOKEN ? photoSrc + (photoSrc.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : photoSrc;
     const photoCell = photoSrc
-      ? `<img src="${photoSrc}" onclick="openPunchPhoto('${photoSrc.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)">`
+      ? `<img src="${photoUrl}" onclick="openPunchPhoto('${photoUrl.replace(/'/g,"\\'")}')" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;border:1.5px solid var(--gray-200)">`
       : '—';
     const tz = t.display_timezone;
     return `<tr>
@@ -703,12 +762,28 @@ function renderTimeClock(rows) {
       <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
       <td><span class="badge badge-${t.status==='open'?'open':'closed'}">${t.status==='open'?'进行中':'已完成'}</span></td>
       <td style="text-align:center">${photoCell}</td>
-      <td style="max-width:160px;white-space:normal;font-size:.78rem;color:var(--gray-500)">${esc(t.notes||'')}${t.latitude?` <span onclick="showMiniMap(event,${t.latitude},${t.longitude})" style="cursor:pointer">📍</span>`:''}</td>
+      <td style="max-width:160px;white-space:normal;font-size:.78rem;color:var(--gray-500)">${esc(t.notes||'')} ${mgrPunchPins(t)}</td>
     </tr>`;
   }).join('');
   document.getElementById('tcSummary').innerHTML =
     `共 <strong>${rows.length}</strong> 条记录 &nbsp;·&nbsp; 总工时 <strong>${totalH.toFixed(2)}h</strong> &nbsp;·&nbsp; 加班 <strong style="color:var(--orange)">${totalOT.toFixed(2)}h</strong>`;
 }
+function mgrPunchPins(t) {
+  const pins = [];
+  if (t.latitude && t.longitude)
+    pins.push(`<span onclick="showMiniMap(event,${t.latitude},${t.longitude},'上班打卡')" title="上班位置" style="cursor:pointer;font-size:1rem">🟢</span>`);
+  try {
+    const breaks = JSON.parse(t.break_records || '[]');
+    breaks.forEach((b, i) => {
+      if (b.latitude && b.longitude)
+        pins.push(`<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}')" title="休息${i+1}位置" style="cursor:pointer;font-size:1rem">🟡</span>`);
+    });
+  } catch {}
+  if (t.clock_out_latitude && t.clock_out_longitude)
+    pins.push(`<span onclick="showMiniMap(event,${t.clock_out_latitude},${t.clock_out_longitude},'下班打卡')" title="下班位置" style="cursor:pointer;font-size:1rem">🔴</span>`);
+  return pins.join(' ');
+}
+
 function openPunchPhoto(src) {
   let o = document.getElementById('punchPhotoOverlay');
   if (!o) {
@@ -719,7 +794,7 @@ function openPunchPhoto(src) {
     o.addEventListener('click', () => { o.style.display = 'none'; });
     document.body.appendChild(o);
   }
-  document.getElementById('punchPhotoFull').src = src;
+  document.getElementById('punchPhotoFull').src = src; // src already contains ?token=
   o.style.display = 'flex';
 }
 
@@ -994,10 +1069,11 @@ if (TOKEN) {
 <script>
 (function() {
   let _mmMap = null, _mmMarker = null;
-  window.showMiniMap = function(e, lat, lng) {
+  window.showMiniMap = function(e, lat, lng, label) {
     e.stopPropagation();
     const popup = document.getElementById('miniMapPopup');
-    document.getElementById('miniMapLabel').textContent = `📍 ${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
+    const coordStr = `${(+lat).toFixed(4)}, ${(+lng).toFixed(4)}`;
+    document.getElementById('miniMapLabel').textContent = label ? `📍 ${label} · ${coordStr}` : `📍 ${coordStr}`;
     document.getElementById('miniMapGoogleLink').href = `https://maps.google.com/?q=${lat},${lng}`;
     const vw = window.innerWidth, vh = window.innerHeight;
     let x = e.clientX + 12, y = e.clientY + 12;
