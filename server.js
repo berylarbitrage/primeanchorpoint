@@ -635,6 +635,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); }
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
 
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
@@ -2108,15 +2109,18 @@ app.get('/api/manager/me', requireAdmin, requireRole('manager', 'admin', 'staff'
 // GET /api/manager/my-assignments — assignments for manager's assigned partner companies
 app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
   const pids = managerPartnerIds(req);
-  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  const jids = managerJobIds(req);
+  const eids = managerEmployeeIds(req);
+  if (req.userRole === 'manager' && !pids.length && !jids.length && !eids.length) return res.json([]);
+  const isManager = req.userRole === 'manager';
   let q = `
     SELECT a.id, a.status, a.start_date, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
-           a.work_address, a.notes, a.assigned_at, a.work_schedule,
+           ${isManager ? "'' AS work_address" : 'a.work_address'}, a.notes, a.assigned_at, a.work_schedule,
            i.name  AS worker_name,
            i.phone AS worker_phone,
            i.email AS worker_email,
            j.title AS job_title,
-           j.location AS job_location,
+           ${isManager ? "'' AS job_location" : 'j.location AS job_location'},
            j.partner_id,
            p.name  AS company_name
     FROM assignments a
@@ -2125,9 +2129,21 @@ app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
     LEFT JOIN partners p ON j.partner_id = p.id
     WHERE 1=1`;
   const params = [];
-  if (req.userRole === 'manager' && pids.length) {
-    q += ` AND j.partner_id IN (${pids.map(() => '?').join(',')})`;
-    params.push(...pids);
+  if (req.userRole === 'manager') {
+    const conds = [];
+    if (pids.length) {
+      conds.push(`j.partner_id IN (${pids.map(() => '?').join(',')})`);
+      params.push(...pids);
+    }
+    if (jids.length) {
+      conds.push(`a.job_id IN (${jids.map(() => '?').join(',')})`);
+      params.push(...jids);
+    }
+    if (eids.length) {
+      conds.push(`a.inquiry_id IN (SELECT linked_inquiry_id FROM worker_accounts WHERE employee_id IN (${eids.map(() => '?').join(',')}) AND linked_inquiry_id IS NOT NULL)`);
+      params.push(...eids);
+    }
+    if (conds.length) q += ` AND (${conds.join(' OR ')})`;
   }
   q += ' ORDER BY a.assigned_at DESC';
   res.json(db.prepare(q).all(...params));
@@ -2179,12 +2195,16 @@ app.get('/api/manager/workers', requireAdmin, (req, res) => {
   if (req.userRole === 'manager') {
     const conds = [];
     if (pids.length) {
+      // Employees with time entries under partner's jobs
       conds.push(`e.id IN (SELECT DISTINCT t.employee_id FROM time_entries t JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')}))`);
+      params.push(...pids);
+      // Also employees explicitly assigned to jobs under partner companies (even without time entries)
+      conds.push(`e.id IN (SELECT DISTINCT ej.employee_id FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')}))`);
       params.push(...pids);
     }
     if (jids.length) {
-      // Employees currently assigned to any of the manager's jobs (via employee_jobs)
-      conds.push(`e.id IN (SELECT DISTINCT employee_id FROM employee_jobs WHERE job_id IN (${jids.map(() => '?').join(',')}) AND status='active')`);
+      // Employees assigned to any of the manager's jobs (via employee_jobs, no status filter)
+      conds.push(`e.id IN (SELECT DISTINCT employee_id FROM employee_jobs WHERE job_id IN (${jids.map(() => '?').join(',')}))`);
       params.push(...jids);
     }
     if (eids.length) {
@@ -2194,6 +2214,23 @@ app.get('/api/manager/workers', requireAdmin, (req, res) => {
     if (conds.length) q += ` WHERE (${conds.join(' OR ')})`;
   }
   q += ' ORDER BY e.last_name, e.first_name';
+  res.json(db.prepare(q).all(...params));
+});
+
+// GET /api/manager/my-jobs — jobs visible to this manager
+app.get('/api/manager/my-jobs', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  const jids = managerJobIds(req);
+  if (req.userRole === 'manager' && !pids.length && !jids.length) return res.json([]);
+  let q = `SELECT DISTINCT j.id, j.title, p.name AS company_name FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id WHERE j.active = 1`;
+  const params = [];
+  if (req.userRole === 'manager') {
+    const conds = [];
+    if (pids.length) { conds.push(`j.partner_id IN (${pids.map(() => '?').join(',')})`); params.push(...pids); }
+    if (jids.length) { conds.push(`j.id IN (${jids.map(() => '?').join(',')})`); params.push(...jids); }
+    if (conds.length) q += ` AND (${conds.join(' OR ')})`;
+  }
+  q += ' ORDER BY j.title';
   res.json(db.prepare(q).all(...params));
 });
 
@@ -2723,21 +2760,40 @@ app.get('/api/admin/managers/:id/assignments', requireAdmin, requireRole('admin'
 
 // GET /api/admin/managers/:id/workers — employees visible to a specific manager
 app.get('/api/admin/managers/:id/workers', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
-  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  const mgr = db.prepare("SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
   if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+
   const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
-  if (!pids.length) return res.json([]);
+  const eids = (mgr.assigned_employee_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  const jids = (mgr.assigned_job_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+
+  const allEmpIds = new Set(eids);
+
+  // Employees who have time_entries under the manager's assigned partners
+  if (pids.length) {
+    db.prepare(`SELECT DISTINCT t.employee_id FROM time_entries t JOIN jobs j ON t.job_id = j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`).all(...pids)
+      .forEach(r => allEmpIds.add(r.employee_id));
+    // Also employees explicitly assigned to jobs under partner companies (even without time entries)
+    db.prepare(`SELECT DISTINCT ej.employee_id FROM employee_jobs ej JOIN jobs j ON ej.job_id = j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`).all(...pids)
+      .forEach(r => allEmpIds.add(r.employee_id));
+  }
+
+  // Employees assigned to the manager's assigned jobs via employee_jobs
+  if (jids.length) {
+    db.prepare(`SELECT DISTINCT employee_id FROM employee_jobs WHERE job_id IN (${jids.map(() => '?').join(',')})`).all(...jids)
+      .forEach(r => allEmpIds.add(r.employee_id));
+  }
+
+  if (!allEmpIds.size) return res.json([]);
+
+  const ids = [...allEmpIds];
   const rows = db.prepare(`
-    SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id as emp_code,
-           e.email, e.phone, e.position, e.status
-    FROM employees e
-    WHERE e.id IN (
-      SELECT DISTINCT t.employee_id FROM time_entries t
-      JOIN jobs j ON t.job_id = j.id
-      WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
-    )
-    ORDER BY e.last_name, e.first_name
-  `).all(...pids);
+    SELECT id, first_name, last_name, employee_id as emp_code,
+           email, phone, position, status
+    FROM employees
+    WHERE id IN (${ids.map(() => '?').join(',')})
+    ORDER BY last_name, first_name
+  `).all(...ids);
   res.json(rows);
 });
 
@@ -4549,7 +4605,7 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
   }
   sql += ' ORDER BY e.last_name, e.first_name';
   const rows = db.prepare(sql).all(...params);
-  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets)
+  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets) + assignments
   const explicitJobs = db.prepare(`
     SELECT ej.employee_id, ej.job_id, ej.company_name, ej.job_title
     FROM employee_jobs ej WHERE ej.status='active'
@@ -4563,12 +4619,26 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
     )
     ORDER BY s.period_end DESC
   `).all();
+  const assignJobs = db.prepare(`
+    SELECT wa.employee_id, a.job_id, j.title AS job_title, COALESCE(j.company_name,'') AS company_name
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    JOIN worker_accounts wa ON wa.linked_inquiry_id = a.inquiry_id
+    WHERE a.status NOT IN ('cancelled') AND wa.employee_id IS NOT NULL
+  `).all();
   const jobMap = {};
   for (const j of explicitJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     jobMap[j.employee_id].push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
   }
   for (const j of tsJobs) {
+    if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
+    const existing = jobMap[j.employee_id];
+    if (!existing.some(e => e.job_id === j.job_id)) {
+      existing.push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
+    }
+  }
+  for (const j of assignJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     const existing = jobMap[j.employee_id];
     if (!existing.some(e => e.job_id === j.job_id)) {
@@ -5039,6 +5109,77 @@ app.put('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('u
 
 app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard('delete', 'time_entries'), (req, res) => {
   db.prepare('DELETE FROM time_entries WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ── Manager time-entry management (no blockManager restriction) ──
+app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
+  const d = req.body;
+  let breakMins = 0, breakRecords = '[]';
+  if (d.break_records) {
+    try {
+      const recs = JSON.parse(d.break_records);
+      breakMins = Math.round(recs.reduce((sum, b) => {
+        if (b.start && b.end) sum += new Date(b.end) - new Date(b.start);
+        return sum;
+      }, 0) / 60000);
+      breakRecords = JSON.stringify(recs);
+    } catch {}
+  }
+  const hrs = calcHours(d.clock_in, d.clock_out, breakMins);
+  const status = d.clock_out ? 'closed' : 'open';
+  db.prepare(`UPDATE time_entries SET
+    clock_in=?,clock_out=?,break_minutes=?,break_records=?,
+    total_hours=?,regular_hours=?,overtime_hours=?,
+    notes=?,status=?,needs_review=0,review_reason='' WHERE id=?`).run(
+    d.clock_in||null, d.clock_out||null, breakMins, breakRecords,
+    hrs.total, hrs.regular, hrs.overtime,
+    d.notes||'', status, req.params.id);
+  res.json({ success: true, ...hrs, break_minutes: breakMins, status });
+});
+
+// PATCH /api/manager/time-entries/:id/correct-time — correct clock_in or clock_out for a punch
+app.patch('/api/manager/time-entries/:id/correct-time', requireAdmin, (req, res) => {
+  const { field, new_time } = req.body;
+  if (!['clock_in', 'clock_out'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const t = new Date(new_time);
+  if (isNaN(t.getTime())) return res.status(400).json({ error: 'Invalid time' });
+  db.prepare(`UPDATE time_entries SET ${field}=? WHERE id=?`).run(t.toISOString(), req.params.id);
+  const entry = db.prepare('SELECT * FROM time_entries WHERE id=?').get(req.params.id);
+  if (entry && entry.clock_in && entry.clock_out) {
+    const hrs = calcHours(entry.clock_in, entry.clock_out, entry.break_minutes || 0);
+    db.prepare('UPDATE time_entries SET total_hours=?,regular_hours=?,overtime_hours=? WHERE id=?')
+      .run(hrs.total, hrs.regular, hrs.overtime, req.params.id);
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
+  db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?").run(req.params.id);
+  res.json({ success: true });
+});
+
+app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
+  const { ids, action, regular_hours, overtime_hours, clock_in_delta_minutes, clock_out_delta_minutes } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: '未选择记录' });
+  if (action === 'confirm') {
+    const stmt = db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?");
+    db.transaction(() => { for (const id of ids) stmt.run(id); })();
+  } else if (action === 'set_hours') {
+    const reg = Math.max(0, parseFloat(regular_hours) || 0);
+    const ot = Math.max(0, parseFloat(overtime_hours) || 0);
+    const stmt = db.prepare("UPDATE time_entries SET regular_hours=?,overtime_hours=?,total_hours=? WHERE id=?");
+    db.transaction(() => { for (const id of ids) stmt.run(reg, ot, reg + ot, id); })();
+  } else if (action === 'adjust_time') {
+    const ciDelta = parseInt(clock_in_delta_minutes) || 0;
+    const coDelta = parseInt(clock_out_delta_minutes) || 0;
+    db.transaction(() => {
+      for (const id of ids) {
+        if (ciDelta) db.prepare("UPDATE time_entries SET clock_in=datetime(clock_in,?||' minutes') WHERE id=?").run(String(ciDelta), id);
+        if (coDelta) db.prepare("UPDATE time_entries SET clock_out=datetime(clock_out,?||' minutes') WHERE clock_out IS NOT NULL AND id=?").run(String(coDelta), id);
+      }
+    })();
+  }
   res.json({ success: true });
 });
 
@@ -5707,19 +5848,9 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
       return res.status(400).json({ error: '暂停打卡需要开启位置权限，请允许浏览器获取您的位置后重试。', need_gps: true });
     }
 
-    if (!photo_data) return res.status(400).json({ error: '暂停打卡需要上传照片 / Photo is required for pausing.', photo_required: true });
-
-    // Save pause photo to disk
-    let pausePhotoFilename = null;
-    try {
-      const base64Data = photo_data.replace(/^data:image\/\w+;base64,/, '');
-      const ext = (photo_data.match(/^data:image\/(\w+);base64,/) || [])[1] || 'jpg';
-      pausePhotoFilename = `pause-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
-      fs.writeFileSync(path.join(punchPhotosDir, pausePhotoFilename), Buffer.from(base64Data, 'base64'));
-    } catch (e) { /* photo save failure is non-fatal */ }
-
+    // Photo is uploaded separately via /api/worker/punch/:entryId/photo (FormData)
     const breaks = JSON.parse(open.break_records || '[]');
-    breaks.push({ start: now, end: null, latitude: latitude || null, longitude: longitude || null, geo_verified: bsGeoVerified, photo_path: pausePhotoFilename });
+    breaks.push({ start: now, end: null, latitude: latitude || null, longitude: longitude || null, geo_verified: bsGeoVerified });
     db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?')
       .run(JSON.stringify(breaks), open.id);
     return res.json({ action: 'break_start', break_index: breaks.length - 1, entry_id: open.id, geo_verified: bsGeoVerified });
@@ -5743,32 +5874,32 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     const breakMins = Math.round(totalBreakMs / 60000);
     db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?')
       .run(JSON.stringify(breaks), breakMins, open.id);
-    return res.json({ action: 'break_end', break_minutes: breakMins, warning: beWarning });
+    return res.json({ action: 'break_end', break_minutes: breakMins, warning: beWarning, entry_id: open.id });
   }
 
   // ── Clock out ────────────────────────────────────────────────────
   if (punch_type === 'out') {
     let outWarning = null;
     if (!open) outWarning = '提示：未找到上班打卡记录，可能漏打了上班卡';
-    else if (open.on_break) outWarning = '提示：您处于休息中，已自动结束休息并下班打卡';
+    else if (open.on_break) outWarning = '提示：您处于休息中，休息记录未关闭，已标记给管理员审核';
     if (!open) {
-      // Record a standalone clock-out for manager review
-      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(req.workerEmployeeId, now, now);
+      // Record a standalone clock-out for manager review, do NOT auto-fill clock_in
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(req.workerEmployeeId, now);
       return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning: outWarning, entry_id: r2.lastInsertRowid });
     }
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out',punch_photo=COALESCE(?,punch_photo),clock_out_latitude=?,clock_out_longitude=? WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, photo_data || null, latitude || null, longitude || null, open.id);
-    return res.json({ action: 'out', punch_type: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
+    return res.json({ action: 'out', punch_type: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime, entry_id: open.id });
   }
 
   // ── Clock in ─────────────────────────────────────────────────────
   let clockInWarning = null;
   if (open) {
-    // Auto-close the dangling open entry, flag it for manager review
+    // Close the dangling open entry and flag for manager review, but do NOT auto-fill clock_out
     const missedDate = open.clock_in ? open.clock_in.slice(0,10) : '?';
-    db.prepare("UPDATE time_entries SET status='closed',clock_out=?,needs_review=1,review_reason=? WHERE id=?")
-      .run(now, `漏打下班卡（${missedDate}），由新上班打卡自动关闭`, open.id);
+    db.prepare("UPDATE time_entries SET status='closed',needs_review=1,review_reason=? WHERE id=?")
+      .run(`漏打下班卡（${missedDate}），由新上班打卡触发`, open.id);
     clockInWarning = `提示：${missedDate} 忘记打下班卡，该记录已标记给管理员审核`;
   }
   if (!latitude || !longitude) return res.status(400).json({ error: '打卡需要开启位置权限，请允许浏览器获取您的位置后重试。/ Location permission required to clock in.', need_gps: true });
@@ -5843,30 +5974,48 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   if (!geoVerified) return res.status(400).json({ error: '该工作暂未配置工作地点，无法验证位置，请联系HR。/ Work site not configured for this job, please contact HR.', no_site: true });
 
-  if (!photo_data) return res.status(400).json({ error: '上班打卡需要上传照片 / Photo is required for clock-in.', photo_required: true });
-
   // Get site timezone for this job
   const siteTzRow = matchedSiteId
     ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(matchedSiteId)
     : (activeJob.js_id ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(activeJob.js_id) : null);
   const siteTimezone = siteTzRow?.timezone || 'America/Chicago';
 
-  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo,site_timezone) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?,?)")
-    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null, siteTimezone);
+  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,site_timezone) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
+    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, siteTimezone);
   res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
     site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title,
     site_timezone: siteTimezone, warning: clockInWarning });
 });
 
 // Upload punch photo for a time entry (must belong to this worker)
+// ?punch_type=in|out|break_start|break_end  (default: out)
 app.post('/api/worker/punch/:entryId/photo', requireWorker, punchPhotoUpload.single('photo'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
-  const entry = db.prepare('SELECT id, employee_id FROM time_entries WHERE id=?').get(req.params.entryId);
+  const entry = db.prepare('SELECT id, employee_id, break_records FROM time_entries WHERE id=?').get(req.params.entryId);
   if (!entry || entry.employee_id !== req.workerEmployeeId) {
     fs.unlink(req.file.path, ()=>{});
     return res.status(403).json({ error: 'Forbidden' });
   }
-  db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  const punchType = req.query.punch_type || 'out';
+  if (punchType === 'in') {
+    db.prepare('UPDATE time_entries SET clock_in_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  } else if (punchType === 'break_start' || punchType === 'break_end') {
+    // Store photo in the most recent matching break record
+    const breaks = JSON.parse(entry.break_records || '[]');
+    if (punchType === 'break_start') {
+      // Find the last break that has no end (most recent break_start)
+      const idx = breaks.map((b,i)=>i).reverse().find(i => !breaks[i].end);
+      if (idx !== undefined) breaks[idx].start_photo = req.file.filename;
+    } else {
+      // Find the last break that has an end
+      const idx = breaks.map((b,i)=>i).reverse().find(i => breaks[i].end);
+      if (idx !== undefined) breaks[idx].end_photo = req.file.filename;
+    }
+    db.prepare('UPDATE time_entries SET break_records=? WHERE id=?').run(JSON.stringify(breaks), entry.id);
+  } else {
+    // 'out' or default
+    db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  }
   res.json({ success: true });
 });
 
@@ -6199,9 +6348,10 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
        WHERE t.employee_id=? AND t.status='open' ORDER BY t.clock_in DESC LIMIT 1`).get(req.workerEmployeeId)
     : null;
 
+  const seenActiveJobIds = new Set();
   let activeJobs = [];
   if (req.workerEmployeeId) {
-    activeJobs = db.prepare(`
+    const ejJobs = db.prepare(`
       SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
              COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
              j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
@@ -6212,32 +6362,34 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
       LEFT JOIN assignments a ON a.job_id = ej.job_id AND a.inquiry_id = ?
       WHERE ej.employee_id = ? AND ej.status = 'active'
     `).all(linkedInqId, req.workerEmployeeId);
+    for (const j of ejJobs) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
   }
 
-  // Fall back to assignments table: match by linked_inquiry_id, phone, or email
+  // Always also check assignments table — add jobs not already covered by employee_jobs
   // Only include accepted assignments (worker_response = 'accepted')
-  if (!activeJobs.length) {
-    activeJobs = db.prepare(`
-      SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
-             COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
-             j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
-             a.work_schedule
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC
-    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
-    // Also update linked_inquiry_id if we found a match and it wasn't set
-    if (activeJobs.length && !linkedInqId) {
-      try { activateWorkerAccount(req.workerId); } catch {}
-    }
+  const aJobs = db.prepare(`
+    SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
+           COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
+           j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
+           a.work_schedule
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    JOIN inquiries i ON a.inquiry_id = i.id
+    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
+      AND (
+        (? IS NOT NULL AND a.inquiry_id = ?)
+        OR (? != '' AND phone10(i.phone) = ?)
+        OR (? != '' AND lower(i.email) = ?)
+      )
+    ORDER BY a.assigned_at DESC
+  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  for (const j of aJobs) {
+    if (!seenActiveJobIds.has(j.job_id)) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
+  }
+  // Update linked_inquiry_id if we found a match via assignments and it wasn't set
+  if (aJobs.length && !linkedInqId) {
+    try { activateWorkerAccount(req.workerId); } catch {}
   }
 
   // Count pending (unaccepted) tasks
@@ -6290,9 +6442,11 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
   const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
   const wEmail = (wa?.email || '').toLowerCase();
 
+  const seenJobIds = new Set();
   let jobs = [];
+
   if (req.workerEmployeeId) {
-    jobs = db.prepare(`
+    const ejJobs = db.prepare(`
       SELECT ej.id, ej.job_id, ej.status, ej.start_date, ej.end_date, ej.emp_hourly_rate,
              j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
              j.pay, j.pay_period, j.company_name, j.site_id,
@@ -6305,28 +6459,30 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
       WHERE ej.employee_id = ? AND ej.status = 'active'
       ORDER BY ej.assigned_at DESC
     `).all(linkedInqId, req.workerEmployeeId);
+    for (const j of ejJobs) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
-  // Fallback: check assignments table (same as punch/status)
-  if (!jobs.length) {
-    jobs = db.prepare(`
-      SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
-             j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
-             j.pay, j.pay_period, j.company_name, j.site_id,
-             js.name AS site_name, js.address AS site_address,
-             js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC
-    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  // Always also include assignments — add any job_ids not already covered above
+  const aJobs = db.prepare(`
+    SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
+           j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
+           j.pay, j.pay_period, j.company_name, j.site_id,
+           js.name AS site_name, js.address AS site_address,
+           js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    JOIN inquiries i ON a.inquiry_id = i.id
+    WHERE a.status != 'cancelled'
+      AND (
+        (? IS NOT NULL AND a.inquiry_id = ?)
+        OR (? != '' AND phone10(i.phone) = ?)
+        OR (? != '' AND lower(i.email) = ?)
+      )
+    ORDER BY a.assigned_at DESC
+  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  for (const j of aJobs) {
+    if (!seenJobIds.has(j.job_id)) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
   res.json(jobs);
@@ -8069,12 +8225,12 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
     if (!open) {
       // Create a flagged open entry
       const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,job_id,punch_type,break_records,on_break,geo_verified,needs_review,review_reason) VALUES(?,?,'open',?,'in',?,1,0,1,'漏打上班卡，由manager break_start触发')").run(emp.id, now, job_id||null, JSON.stringify([{start:now,end:null}]));
-      return res.json({ action: 'break_start', warning: '未找到上班记录，已创建并标记审核' });
+      return res.json({ action: 'break_start', warning: '未找到上班记录，已创建并标记审核', entry_id: r2.lastInsertRowid, punch_time: now });
     }
     const breaks = JSON.parse(open.break_records || '[]');
     breaks.push({ start: now, end: null });
     db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?').run(JSON.stringify(breaks), open.id);
-    return res.json({ action: 'break_start' });
+    return res.json({ action: 'break_start', entry_id: open.id, punch_time: now });
   }
   if (punch_type === 'break_end') {
     if (!open) return res.json({ action: 'break_end', warning: '未找到上班打卡记录' });
@@ -8086,12 +8242,12 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
     if (lastIdx >= 0) breaks[lastIdx].end = now;
     const breakMins = Math.round(breaks.reduce((s,b) => b.start&&b.end ? s+(new Date(b.end)-new Date(b.start)):s, 0) / 60000);
     db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
-    return res.json({ action: 'break_end', break_minutes: breakMins });
+    return res.json({ action: 'break_end', break_minutes: breakMins, entry_id: open.id, punch_time: now });
   }
   if (punch_type === 'out') {
     if (!open) {
       const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,job_id,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,?,'closed',?,0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(emp.id, now, now, job_id||null);
-      return res.json({ action: 'out', total_hours: 0, warning: '未找到上班记录，已记录下班并标记审核' });
+      return res.json({ action: 'out', total_hours: 0, warning: '未找到上班记录，已记录下班并标记审核', entry_id: r2.lastInsertRowid, clock_out: now });
     }
     if (open.on_break) {
       // Auto-close break then clock out
@@ -8105,7 +8261,7 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out' WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now });
+    return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now, entry_id: open.id });
   }
   // Clock in — auto-close dangling open entry
   let ciWarning = null;

@@ -6,8 +6,8 @@
 <title>工人门户 — Prime Anchorpoint</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--sky:#0ea5e9;--blue:#1e3a5f;--green:#10b981;--red:#ef4444;--orange:#f97316;--gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-500:#64748b;--gray-700:#334155;--radius:10px}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color:var(--gray-700);min-height:100vh}
+:root{--sky:#9333ea;--sky-d:#7c3aed;--sky-l:#f3e8ff;--blue:#4c1d95;--green:#10b981;--red:#ef4444;--orange:#f97316;--gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-500:#64748b;--gray-700:#334155;--radius:10px}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#faf5ff;color:var(--gray-700);min-height:100vh}
 /* Login */
 .login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
 .login-box{background:#fff;border-radius:16px;padding:2.5rem;width:100%;max-width:380px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
@@ -17,7 +17,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .login-box input{width:100%;padding:.75rem 1rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.95rem;margin-bottom:.85rem}
 .login-box input:focus{outline:2px solid var(--sky);border-color:transparent}
 .btn-login{width:100%;padding:.85rem;background:var(--sky);color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:600;cursor:pointer}
-.btn-login:hover{background:#0284c7}
+.btn-login:hover{background:#7c3aed}
 .login-extra{display:flex;justify-content:space-between;align-items:center;margin-top:.85rem;font-size:.8rem}
 .login-extra a{color:var(--sky);font-weight:600;text-decoration:none}
 .login-extra a:hover{text-decoration:underline}
@@ -39,7 +39,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .modal-box input:focus{outline:2px solid var(--sky);border-color:transparent}
 .modal-btn{width:100%;padding:.75rem;border:none;border-radius:8px;font-size:.95rem;font-weight:600;cursor:pointer;margin-bottom:.5rem}
 .modal-btn-primary{background:var(--sky);color:#fff}
-.modal-btn-primary:hover{background:#0284c7}
+.modal-btn-primary:hover{background:#7c3aed}
 .modal-btn-secondary{background:var(--gray-100);color:var(--gray-500)}
 .modal-msg{padding:.6rem .8rem;border-radius:6px;font-size:.82rem;margin-bottom:.75rem;display:none}
 .modal-msg.show{display:block}
@@ -48,30 +48,30 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .code-row{display:flex;gap:.5rem;align-items:center}
 .code-row input{flex:1}
 .code-row button{flex-shrink:0;padding:.7rem 1rem;border:none;border-radius:8px;background:var(--sky);color:#fff;font-size:.85rem;font-weight:600;cursor:pointer;white-space:nowrap}
-.code-row button:hover{background:#0284c7}
+.code-row button:hover{background:#7c3aed}
 .code-row button:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
 /* App shell */
 #app{display:none}
 /* Sidebar layout */
-.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:var(--blue);color:#fff;overflow-y:auto;display:flex;flex-direction:column;z-index:200}
-.sidebar-top{padding:1.25rem 1.5rem;border-bottom:1px solid rgba(255,255,255,.1)}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:#fff;color:var(--blue);border-right:1.5px solid #ede9fe;overflow-y:auto;display:flex;flex-direction:column;z-index:200}
+.sidebar-top{padding:1.25rem 1.5rem;border-bottom:1px solid #ede9fe}
 .sidebar-top h2{font-size:.9rem;font-weight:700;color:var(--sky);letter-spacing:.02em}
-.sidebar-top .sub{font-size:.72rem;color:rgba(255,255,255,.45);margin-top:.15rem}
+.sidebar-top .sub{font-size:.72rem;color:#a78bfa;margin-top:.15rem}
 .sidebar-nav{flex:1;padding:.5rem 0}
-.sidebar-nav a{display:block;padding:.6rem 1.5rem;color:rgba(255,255,255,.55);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none;border-left:3px solid transparent}
-.sidebar-nav a:hover,.sidebar-nav a.active{color:#fff;background:rgba(255,255,255,.08);border-left-color:var(--sky)}
-.sidebar-bottom{padding:1rem 1.5rem;border-top:1px solid rgba(255,255,255,.1)}
-.sidebar-bottom .worker-name{font-size:.8rem;color:rgba(255,255,255,.65);margin-bottom:.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-nav a{display:block;padding:.6rem 1.5rem;color:#6d28d9;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none;border-left:3px solid transparent}
+.sidebar-nav a:hover,.sidebar-nav a.active{color:var(--sky);background:#f3e8ff;border-left-color:var(--sky)}
+.sidebar-bottom{padding:1rem 1.5rem;border-top:1px solid #ede9fe}
+.sidebar-bottom .worker-name{font-size:.8rem;color:#6b7280;margin-bottom:.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .login-lang-btn{padding:.25rem .65rem;border:1.5px solid var(--gray-200);background:#fff;color:var(--gray-500);border-radius:99px;font-size:.75rem;font-weight:600;cursor:pointer;transition:.15s}
 .login-lang-btn:hover{border-color:var(--sky);color:var(--sky)}
 .login-lang-btn.active{border-color:var(--sky);background:var(--sky);color:#fff}
 .lang-sw{display:flex;gap:.3rem;margin-bottom:.65rem}
-.lang-sw button{padding:.2rem .5rem;border:1px solid rgba(255,255,255,.25);background:none;color:rgba(255,255,255,.6);border-radius:4px;font-size:.75rem;cursor:pointer}
-.lang-sw button.active,.lang-sw button:hover{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.5)}
-.sidebar-logout{width:100%;background:rgba(255,255,255,.1);color:rgba(255,255,255,.8);border:none;padding:.4rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem;text-align:center}
-.sidebar-logout:hover{background:rgba(255,255,255,.2);color:#fff}
+.lang-sw button{padding:.2rem .5rem;border:1px solid #d8b4fe;background:none;color:#7c3aed;border-radius:4px;font-size:.75rem;cursor:pointer}
+.lang-sw button.active,.lang-sw button:hover{background:#ede9fe;color:#7c3aed;border-color:#a78bfa}
+.sidebar-logout{width:100%;background:#f3e8ff;color:#7c3aed;border:none;padding:.4rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem;text-align:center}
+.sidebar-logout:hover{background:#e9d5ff;color:#6d28d9}
 .main-wrap{margin-left:220px;display:flex;flex-direction:column;min-height:100vh}
-.mobile-topbar{display:none;background:var(--blue);color:#fff;padding:.7rem 1rem;align-items:center;justify-content:space-between;gap:.75rem}
+.mobile-topbar{display:none;background:#4c1d95;color:#fff;padding:.7rem 1rem;align-items:center;justify-content:space-between;gap:.75rem}
 .hamburger{background:none;border:none;cursor:pointer;padding:.2rem;display:flex;flex-direction:column;gap:4px;flex-shrink:0}
 .hamburger span{display:block;width:20px;height:2px;background:#fff;border-radius:2px}
 .mobile-topbar-right{display:flex;align-items:center;gap:.6rem;font-size:.82rem}
@@ -81,7 +81,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .card h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1rem}
 /* Job cards */
 .job-card{background:#fff;border:1px solid var(--gray-200);border-radius:var(--radius);padding:1rem 1.25rem;margin-bottom:.75rem;display:flex;justify-content:space-between;align-items:flex-start;gap:1rem}
-.job-card:hover{border-color:var(--sky);box-shadow:0 2px 8px rgba(14,165,233,.1)}
+.job-card:hover{border-color:var(--sky);box-shadow:0 2px 8px rgba(147,51,234,.1)}
 .job-title{font-weight:700;color:var(--blue);font-size:1rem}
 .job-meta{font-size:.82rem;color:var(--gray-500);margin-top:.25rem}
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600}
@@ -89,11 +89,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .badge-applied{background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0}
 .btn{padding:.5rem 1rem;border:none;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer}
 .btn-sky{background:var(--sky);color:#fff}
-.btn-sky:hover{background:#0284c7}
+.btn-sky:hover{background:#7c3aed}
 .btn-gray{background:var(--gray-100);color:var(--gray-500)}
 .btn-green{background:var(--green);color:#fff}
 .btn-outline{background:#fff;color:var(--sky);border:1.5px solid var(--sky);font-weight:500}
-.btn-outline:hover{background:#f0f9ff}
+.btn-outline:hover{background:#faf5ff}
 /* Timesheet table */
 table{width:100%;border-collapse:collapse;font-size:.85rem}
 th{background:var(--gray-50);padding:.6rem .75rem;text-align:left;font-weight:600;color:var(--gray-500);border-bottom:2px solid var(--gray-200)}
@@ -608,7 +608,7 @@ tr:last-child td{border-bottom:none}
           <div id="punchConfirmOverlay" style="display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
             <div style="background:#fff;border-radius:16px;padding:1.75rem 1.5rem;width:88%;max-width:310px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.18)">
               <div id="punchConfirmIcon" style="font-size:2.2rem;margin-bottom:.4rem"></div>
-              <div id="punchConfirmTypeLabel" style="font-size:1.2rem;font-weight:700;margin-bottom:.3rem"></div>
+              <div style="font-size:1.2rem;font-weight:700;margin-bottom:.3rem"></div>
               <div id="punchConfirmTimeLabel" style="font-size:1.5rem;font-weight:800;color:var(--blue);margin-bottom:.2rem"></div>
               <div id="punchConfirmDateLabel" style="font-size:.82rem;color:var(--gray-400);margin-bottom:1.5rem"></div>
               <div style="display:flex;gap:.75rem">
@@ -2168,13 +2168,16 @@ let _gpsCoords = null;
 let _punchStatus = null;
 let _pendingPunchType = null; // type queued for confirmation modal
 let _confirmClockTimer = null;
+let _gpsWatchId = null;
 
 function initGPS() {
+  if (_gpsWatchId !== null) return; // already watching
   if (!navigator.geolocation) {
     document.getElementById('gpsIndicator').textContent = '🚫 设备不支持GPS，无法打卡';
     enablePunchBtn(false);
     return;
   }
+  // First try: quickly get a cached/low-accuracy fix so buttons enable fast
   navigator.geolocation.getCurrentPosition(
     pos => {
       _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
@@ -2182,11 +2185,24 @@ function initGPS() {
       document.getElementById('gpsIndicator').innerHTML = `📍 已定位（精度 ±${acc}m）`;
       enablePunchBtn(true);
     },
-    err => {
-      document.getElementById('gpsIndicator').innerHTML = '🚫 位置获取失败 — 打卡需要位置权限，请在浏览器设置中允许定位后刷新。';
-      enablePunchBtn(false);
+    () => {},
+    { enableHighAccuracy: false, timeout: 3000, maximumAge: 30000 }
+  );
+  // Then watch for continuous high-accuracy updates
+  _gpsWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      const acc = Math.round(pos.coords.accuracy);
+      document.getElementById('gpsIndicator').innerHTML = `📍 已定位（精度 ±${acc}m）`;
+      enablePunchBtn(true);
     },
-    { enableHighAccuracy: true, timeout: 10000 }
+    err => {
+      if (!_gpsCoords) {
+        document.getElementById('gpsIndicator').innerHTML = '🚫 位置获取失败 — 打卡需要位置权限，请在浏览器设置中允许定位后刷新。';
+        enablePunchBtn(false);
+      }
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
   );
 }
 
@@ -2272,9 +2288,8 @@ async function loadPunchStatus() {
     selector.innerHTML = jobs.map(j =>
       `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
-    selectorWrap.style.display = jobs.length > 1 ? '' : 'none';
-    if (jobs.length === 1)
-      selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
+    selector.disabled = false;
+    selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
   } else if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
     timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
@@ -2289,10 +2304,9 @@ async function loadPunchStatus() {
     const jobs = s.active_jobs || [];
     if (jobs.length > 1) {
       selector.innerHTML = jobs.map(j =>
-        `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+        `<option value="${j.job_id}" ${j.job_id === s.open_entry.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
       ).join('');
-      // Pre-select the currently active job
-      if (s.open_entry.job_id) selector.value = s.open_entry.job_id;
+      selector.disabled = false;
       selectorWrap.style.display = '';
     } else {
       selectorWrap.style.display = 'none';
@@ -2318,9 +2332,8 @@ async function loadPunchStatus() {
     selector.innerHTML = jobs.map(j =>
       `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · Client: ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
-    selectorWrap.style.display = jobs.length > 1 ? '' : 'none';
-    if (jobs.length === 1)
-      selector.innerHTML = `<option value="${jobs[0].job_id}">${esc(jobs[0].title)}</option>`;
+    selector.disabled = false;
+    selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
   }
   const gpsReady = _gpsCoords !== null;
   enablePunchBtn(gpsReady);
@@ -2416,13 +2429,18 @@ function startPunchFlow(type) {
   document.getElementById('punchConfirmTypeLabel').textContent = labels[type] || type;
   document.getElementById('btnExecutePunch').style.background = colors[type] || 'var(--green)';
 
-  // Show job address for clock-in
+  // Show job address for all punch types
   const addrWrap = document.getElementById('punchConfirmAddrWrap');
-  if (type === 'in' && _punchStatus) {
-    const sel = document.getElementById('jobSelector');
-    const jobId = sel ? parseInt(sel.value) : null;
+  if (_punchStatus) {
     const jobs = _punchStatus.active_jobs || [];
-    const job = jobs.find(j => j.job_id === jobId) || jobs[0];
+    let job = null;
+    if (type === 'in') {
+      const sel = document.getElementById('jobSelector');
+      const jobId = sel ? parseInt(sel.value) : null;
+      job = jobs.find(j => j.job_id === jobId) || jobs[0];
+    } else if (_punchStatus.open_entry) {
+      job = jobs.find(j => j.job_id === _punchStatus.open_entry.job_id) || jobs[0];
+    }
     if (job) {
       document.getElementById('punchConfirmJobTitle').textContent = job.title + (job.company_name ? ' · ' + job.company_name : '');
       document.getElementById('punchConfirmJobAddr').textContent = job.location || job.site_name || '地址未配置';
@@ -2434,7 +2452,7 @@ function startPunchFlow(type) {
   const missedWrap = document.getElementById('punchConfirmMissedWrap');
   if (type === 'in' && _punchStatus && _punchStatus.missed_checkout) {
     document.getElementById('punchConfirmMissedMsg').textContent =
-      `${_punchStatus.missed_date || '上次'} 未打下班卡，系统将自动关闭该记录。`;
+      `${_punchStatus.missed_date || '上次'} 未打下班卡，该记录将标记给管理员审核（下班时间留空）。`;
     missedWrap.style.display = '';
   } else { missedWrap.style.display = 'none'; }
 
@@ -2510,14 +2528,6 @@ async function doPunch(type, photo) {
     // If previous day's clock-out was missed, auto-close it on the server
     if (_punchStatus && _punchStatus.missed_checkout) body.force_new_day = true;
   }
-  if ((type === 'in' || type === 'break_start') && photo) {
-    body.photo_data = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = e => resolve(e.target.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(photo);
-    });
-  }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { enablePunchBtn(true); cancelPunchPhoto(); await customAlert('打卡失败，请重新登录后重试。\nFailed to clock in, please re-login.', '打卡失败', '❌'); return; }
   if (r.error) {
@@ -2527,16 +2537,7 @@ async function doPunch(type, photo) {
     await loadPunchStatus();
     return;
   }
-  // Upload photo for clock-in
-  if (photo && r.entry_id) {
-    const fd = new FormData();
-    fd.append('photo', photo);
-    await fetch('/api/worker/punch/' + r.entry_id + '/photo', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
-      body: fd
-    }).catch(() => {});
-  }
+  // Show success immediately — don't wait for photo upload or status refresh
   const toasts = {
     in: () => {
       const geoMsg = r.geo_verified ? (r.site_name ? ` · 📍${r.site_name}` : ' · 位置已验证') : '';
@@ -2550,12 +2551,18 @@ async function doPunch(type, photo) {
   _pendingPunchPhoto = null;
   document.getElementById('punchPhotoStep').style.display = 'none';
   document.getElementById('punchBtnsWrap').style.display = 'grid';
-  _gpsCoords = null;
-  document.getElementById('gpsIndicator').innerHTML = '📍 正在获取位置…';
-  await loadMyJobs();
-  await loadPunchStatus();
-  loadTimeclock();
-  initGPS();
+  // Upload photo in background (fire-and-forget)
+  if (photo && r.entry_id) {
+    const fd = new FormData();
+    fd.append('photo', photo);
+    fetch('/api/worker/punch/' + r.entry_id + '/photo?punch_type=' + encodeURIComponent(type), {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
+      body: fd
+    }).catch(() => {});
+  }
+  // Refresh status in parallel
+  Promise.all([loadMyJobs(), loadPunchStatus()]).then(() => loadTimeclock());
 }
 
 async function loadMyJobs() {
@@ -2603,30 +2610,35 @@ async function loadTimeclock() {
     // Parse breaks
     let breaks = [];
     try { breaks = JSON.parse(t.break_records || '[]'); } catch(e) {}
-    const breakStartCell = breaks.length
-      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.start ? fmtTime(b.start) : '—'}</span>`).join('')
-      : '—';
-    const breakEndCell = breaks.length
-      ? breaks.map((b,i) => `<span style="display:block;white-space:nowrap">${i>0?'<span style="color:var(--gray-300)">·</span> ':''}${b.end ? fmtTime(b.end) : '<span style="color:var(--orange)">休息中</span>'}</span>`).join('')
-      : '—';
+    const nBreaks = Math.max(breaks.length, 1);
+    const span = nBreaks > 1 ? ` rowspan="${nBreaks}"` : '';
     const statusCell = t.on_break
       ? '<span style="color:#7c3aed">☕ 休息中</span>'
       : t.status === 'closed'
         ? '✅ 已完成'
         : '<span style="color:var(--sky)">⏱ 工作中</span>';
-    return `<tr style="white-space:nowrap">
-      <td>${ci ? fmtDate(ci) : '—'}</td>
-      <td style="font-size:.8rem">${jobLabel}</td>
-      <td>${fmtTime(ci)}</td>
-      <td>${breakStartCell}</td>
-      <td>${breakEndCell}</td>
-      <td>${co ? fmtTime(co) : '<span style="color:var(--orange)">—</span>'}</td>
-      <td>${t.total_hours ? t.total_hours.toFixed(2) + 'h' : '—'}</td>
-      <td>${t.regular_hours ? t.regular_hours.toFixed(2) + 'h' : '—'}</td>
-      <td>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+'h</span>' : '—'}</td>
-      <td>${statusCell}</td>
-      <td>${mapLink}</td>
+    // First row: shared cells + first break
+    const b0 = breaks[0] || null;
+    const breakCell = b => b
+      ? `<td style="white-space:nowrap">${b.start ? fmtTime(b.start) : '—'}</td><td style="white-space:nowrap">${b.end ? fmtTime(b.end) : '<span style="color:var(--orange)">休息中</span>'}</td>`
+      : `<td>—</td><td>—</td>`;
+    let html = `<tr style="white-space:nowrap">
+      <td${span}>${ci ? fmtDate(ci) : '—'}</td>
+      <td${span} style="font-size:.8rem">${jobLabel}</td>
+      <td${span}>${fmtTime(ci)}</td>
+      ${breakCell(b0)}
+      <td${span}>${co ? fmtTime(co) : '<span style="color:var(--orange)">—</span>'}</td>
+      <td${span}>${t.total_hours ? t.total_hours.toFixed(2) + 'h' : '—'}</td>
+      <td${span}>${t.regular_hours ? t.regular_hours.toFixed(2) + 'h' : '—'}</td>
+      <td${span}>${t.overtime_hours ? '<span style="color:var(--orange)">'+t.overtime_hours.toFixed(2)+'h</span>' : '—'}</td>
+      <td${span}>${statusCell}</td>
+      <td${span}>${mapLink}</td>
     </tr>`;
+    // Additional rows for extra breaks
+    for (let i = 1; i < breaks.length; i++) {
+      html += `<tr style="white-space:nowrap">${breakCell(breaks[i])}</tr>`;
+    }
+    return html;
   }).join('') : '<tr><td colspan="11" class="empty">暂无 Check In / Out 记录</td></tr>';
 }
 
