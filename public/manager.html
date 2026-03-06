@@ -75,10 +75,10 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:#dbeafe;colo
 
 /* ── Tables ── */
 .table-wrap{overflow-x:auto;border-radius:12px;border:1px solid #bfdbfe;background:#fff;box-shadow:0 2px 12px rgba(2,132,199,.07)}
-table{width:100%;border-collapse:collapse;font-size:.86rem}
+table{width:100%;border-collapse:collapse;font-size:.97rem}
 thead tr{background:#f0f9ff}
-th{padding:.65rem .9rem;text-align:left;font-size:.73rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--sky-d);white-space:nowrap;border-bottom:1px solid #bfdbfe}
-td{padding:.75rem .9rem;border-top:1px solid #e0f2fe;vertical-align:middle}
+th{padding:.85rem 1.1rem;text-align:left;font-size:.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--sky-d);white-space:nowrap;border-bottom:1px solid #bfdbfe}
+td{padding:.9rem 1.1rem;border-top:1px solid #e0f2fe;vertical-align:middle}
 tr:hover td{background:#f0f9ff}
 .emp-name{font-weight:700;color:var(--gray-800)}
 .emp-code{font-size:.74rem;color:var(--gray-400);margin-top:.1rem}
@@ -188,7 +188,7 @@ tr:hover td{background:#f0f9ff}
 .spinner{width:26px;height:26px;border:3px solid var(--gray-200);border-top-color:var(--sky);border-radius:50%;animation:spin .8s linear infinite;margin:auto}
 @keyframes spin{to{transform:rotate(360deg)}}
 .tc-summary{margin-top:.75rem;font-size:.82rem;color:var(--gray-500);text-align:right;padding:0 .25rem}
-.break-detail{font-size:.72rem;color:var(--gray-400);margin-top:.18rem;white-space:nowrap}
+.break-detail{font-size:.8rem;color:var(--gray-400);margin-top:.22rem;white-space:nowrap}
 .table-wrap td{vertical-align:top}
 
 /* ── Toast ── */
@@ -219,8 +219,8 @@ tr:hover td{background:#f0f9ff}
 .tc-batch-cb{cursor:pointer;width:15px;height:15px;accent-color:var(--sky)}
 .tc-cb-cell{width:36px;text-align:center;padding:6px 4px}
 /* emp column compact */
-.emp-row-name{font-weight:600;font-size:.85rem;white-space:nowrap}
-.emp-row-code{font-size:.72rem;color:var(--gray-400);white-space:nowrap}
+.emp-row-name{font-weight:600;font-size:.95rem;white-space:nowrap}
+.emp-row-code{font-size:.8rem;color:var(--gray-400);white-space:nowrap}
 .emp-incomplete-tag{display:inline-block;color:#dc2626;font-size:.72rem;font-weight:700;vertical-align:middle;margin-left:3px}
 /* Time adjust buttons */
 .tc-adjust-wrap{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.35rem}
@@ -562,10 +562,12 @@ function renderBreaks(t) {
   let recs = [];
   try { recs = JSON.parse(t.break_records || '[]'); } catch(e) {}
   const total = `${t.break_minutes || 0}min`;
-  if (!recs.length) return total;
   const tz = t.display_timezone;
-  return `<div>${total}</div>` + recs.map((b, i) =>
-    `<div class="break-detail" style="cursor:pointer" title="双击修改休息时间" ondblclick="inlineEditBreak(${t.id},${i},this)">${recs.length > 1 ? '休息' + (i+1) : '休息'}: ${fmtDT(b.start, tz)} → ${b.end ? fmtDT(b.end, tz) : '<span style="color:var(--orange)">进行中</span>'} <span style="font-size:.6rem;color:var(--gray-400)">✎</span></div>`
+  const addHint = `<span style="font-size:.68rem;color:var(--sky);margin-left:4px;opacity:.75" title="双击添加休息">＋</span>`;
+  const totalDiv = `<div style="cursor:pointer" title="双击添加休息时间" ondblclick="inlineAddBreak(${t.id},this.closest('td'))">${total}${addHint}</div>`;
+  if (!recs.length) return totalDiv;
+  return totalDiv + recs.map((b, i) =>
+    `<div class="break-detail" style="cursor:pointer" title="双击修改休息时间" ondblclick="event.stopPropagation();inlineEditBreak(${t.id},${i},this)">${recs.length > 1 ? '休息' + (i+1) : '休息'}: ${fmtDT(b.start, tz)} → ${b.end ? fmtDT(b.end, tz) : '<span style="color:var(--orange)">进行中</span>'} <span style="font-size:.65rem;color:var(--gray-400)">✎</span></div>`
   ).join('');
 }
 function showToast(msg, type='success') {
@@ -1500,6 +1502,85 @@ function inlineEditBreak(entryId, breakIdx, divEl) {
     if (e.key === 'Escape') { committed = true; divEl.style.cssText = ''; divEl.innerHTML = origHTML; }
   });
 }
+function inlineAddBreak(entryId, tdEl) {
+  if (!tdEl || tdEl.querySelector('.brk-add-form')) return;
+  const entry = _tcEntries[entryId];
+  if (!entry) return;
+  const tz = entry.display_timezone || 'America/Chicago';
+  let recs = [];
+  try { recs = JSON.parse(entry.break_records || '[]'); } catch {}
+  const form = document.createElement('div');
+  form.className = 'brk-add-form';
+  form.style.cssText = 'display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:3px 0;margin-top:3px;border-top:1px dashed var(--sky)';
+  form.innerHTML = `
+    <span style="font-size:.72rem;color:var(--sky-d);flex-shrink:0;font-weight:600">新休息:</span>
+    <input class="brk-s" type="datetime-local" style="width:160px;border:1.5px solid var(--sky);border-radius:5px;padding:3px 6px;font-size:.8rem;font-family:inherit;outline:none">
+    <span style="font-size:.78rem;color:var(--gray-400);flex-shrink:0">→</span>
+    <input class="brk-e" type="datetime-local" style="width:160px;border:1.5px solid var(--sky);border-radius:5px;padding:3px 6px;font-size:.8rem;font-family:inherit;outline:none">
+    <button class="brk-cancel" style="padding:2px 8px;border:1px solid var(--gray-200);border-radius:5px;background:#fff;color:var(--gray-500);cursor:pointer;font-size:.8rem;font-family:inherit">✕</button>`;
+  tdEl.appendChild(form);
+  const startInp = form.querySelector('.brk-s');
+  const endInp = form.querySelector('.brk-e');
+  startInp.focus();
+  let committed = false;
+  form.querySelector('.brk-cancel').addEventListener('mousedown', e => {
+    e.preventDefault(); committed = true; form.remove();
+  });
+  function tryCommit() {
+    setTimeout(() => {
+      if (form.contains(document.activeElement)) return;
+      if (committed) return;
+      committed = true;
+      const newStart = startInp.value;
+      const newEnd = endInp.value;
+      form.remove();
+      if (!newStart) return;
+      const newStartIso = fromLocalInput(newStart, tz);
+      const newEndIso = newEnd ? fromLocalInput(newEnd, tz) : null;
+      showAddBreakConfirm(entryId, entry, [...recs, { start: newStartIso, end: newEndIso }], newStartIso, newEndIso, tz);
+    }, 160);
+  }
+  startInp.addEventListener('blur', tryCommit);
+  endInp.addEventListener('blur', tryCommit);
+  startInp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') endInp.focus();
+    if (e.key === 'Escape') { committed = true; form.remove(); }
+  });
+  endInp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') endInp.blur();
+    if (e.key === 'Escape') { committed = true; form.remove(); }
+  });
+}
+function showAddBreakConfirm(entryId, entry, newRecs, newStartIso, newEndIso, tz) {
+  const newStartDisp = newStartIso ? fmtDT(newStartIso, tz) : '—';
+  const newEndDisp = newEndIso ? fmtDT(newEndIso, tz) : '进行中';
+  const dlg = document.createElement('div');
+  dlg.style.cssText = 'position:fixed;z-index:99999;background:#fff;border-radius:10px;box-shadow:0 6px 32px rgba(0,0,0,.22);padding:1rem 1.2rem;min-width:290px;top:50%;left:50%;transform:translate(-50%,-50%)';
+  dlg.innerHTML = `
+    <div style="font-size:.9rem;font-weight:700;color:var(--gray-800);margin-bottom:.6rem">确认添加休息记录？</div>
+    <div style="font-size:.84rem;color:var(--gray-500);margin-bottom:.9rem">添加：<span style="color:var(--sky-d);font-weight:600">${newStartDisp} → ${newEndDisp}</span></div>
+    <div style="display:flex;gap:.6rem;justify-content:flex-end">
+      <button id="addBrkCancel" style="padding:.35rem .9rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-600);cursor:pointer;font-size:.84rem;font-family:inherit">取消</button>
+      <button id="addBrkOk" style="padding:.35rem .9rem;border:none;border-radius:6px;background:var(--sky);color:#fff;cursor:pointer;font-size:.84rem;font-family:inherit;font-weight:600">确认添加</button>
+    </div>`;
+  document.body.appendChild(dlg);
+  function closeDlg() { dlg.remove(); document.removeEventListener('mousedown', outsideClick); }
+  dlg.querySelector('#addBrkCancel').onclick = () => { closeDlg(); loadTimeClock(); };
+  dlg.querySelector('#addBrkOk').onclick = async () => {
+    const okBtn = dlg.querySelector('#addBrkOk');
+    okBtn.disabled = true; okBtn.textContent = '保存中…';
+    const result = await mApi('/manager/time-entries/' + entryId, {
+      method: 'PUT',
+      body: JSON.stringify({ clock_in: entry.clock_in, clock_out: entry.clock_out, break_records: JSON.stringify(newRecs), notes: entry.notes || '' })
+    });
+    closeDlg();
+    if (!result) return;
+    showToast('休息记录已添加', 'success');
+    loadTimeClock();
+  };
+  function outsideClick(e) { if (!dlg.contains(e.target)) closeDlg(); }
+  setTimeout(() => document.addEventListener('mousedown', outsideClick), 100);
+}
 function showBreakConfirm(divEl, entryId, breakIdx, origBreak, allRecs, newStartLocal, newEndLocal, tz, origHTML) {
   const entry = _tcEntries[entryId];
   if (!entry) return;
@@ -1553,7 +1634,6 @@ function showBreakConfirm(divEl, entryId, breakIdx, origBreak, allRecs, newStart
 function inlineEditTime(entryId, field, tdEl) {
   const entry = _tcEntries[entryId];
   if (!entry) return;
-  if (field === 'clock_out' && !entry.clock_out) return; // 进行中，不可编辑
   const tz = entry.display_timezone || 'America/Chicago';
   const origIso = field === 'clock_in' ? entry.clock_in : entry.clock_out;
   const localVal = toLocalInput(origIso, tz);
@@ -1577,6 +1657,7 @@ function inlineEditTime(entryId, field, tdEl) {
 }
 function showInlineConfirm(tdEl, entryId, field, origIso, newLocalVal, tz, origHTML) {
   const fieldLabel = field === 'clock_in' ? '上班时间' : '下班时间';
+  const actionLabel = origIso ? '修改' : '设置';
   const newIso = fromLocalInput(newLocalVal, tz);
   const origDisplay = fmtDT(origIso, tz);
   const newDisplay = fmtDT(newIso, tz);
@@ -1586,9 +1667,9 @@ function showInlineConfirm(tdEl, entryId, field, origIso, newLocalVal, tz, origH
   dlg.id = 'inlineConfirmDlg';
   dlg.style.cssText = `position:fixed;z-index:99999;background:#fff;border-radius:10px;box-shadow:0 6px 32px rgba(0,0,0,.22);padding:1rem 1.2rem;min-width:260px;top:${Math.min(rect.bottom + 6, window.innerHeight - 160)}px;left:${Math.min(rect.left, window.innerWidth - 280)}px`;
   dlg.innerHTML = `
-    <div style="font-size:.88rem;font-weight:700;color:var(--gray-800);margin-bottom:.6rem">确认修改${fieldLabel}？</div>
+    <div style="font-size:.88rem;font-weight:700;color:var(--gray-800);margin-bottom:.6rem">确认${actionLabel}${fieldLabel}？</div>
     <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.3rem">原始：<span style="color:var(--gray-700)">${origDisplay}</span></div>
-    <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.9rem">修改为：<span style="color:var(--sky-d);font-weight:600">${newDisplay}</span></div>
+    <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.9rem">${actionLabel}为：<span style="color:var(--sky-d);font-weight:600">${newDisplay}</span></div>
     <div style="display:flex;gap:.6rem;justify-content:flex-end">
       <button id="inlineConfirmCancel" style="padding:.35rem .9rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-600);cursor:pointer;font-size:.84rem;font-family:inherit">取消</button>
       <button id="inlineConfirmOk" style="padding:.35rem .9rem;border:none;border-radius:6px;background:var(--sky);color:#fff;cursor:pointer;font-size:.84rem;font-family:inherit;font-weight:600">确认修改</button>
