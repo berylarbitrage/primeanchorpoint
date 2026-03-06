@@ -20,6 +20,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .login-extra{display:flex;justify-content:space-between;align-items:center;margin-top:.85rem;font-size:.8rem}
 .login-extra a{color:var(--sky);font-weight:600;text-decoration:none}
 .login-extra a:hover{text-decoration:underline}
+/* Password toggle */
+.pw-wrap{position:relative;margin-bottom:.85rem}
+.pw-wrap input{width:100%;padding:.75rem 2.5rem .75rem 1rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.95rem;margin-bottom:0}
+.pw-wrap input:focus{outline:2px solid var(--sky);border-color:transparent}
+.pw-eye{position:absolute;right:.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--gray-400);padding:.2rem;display:flex;align-items:center}
+.pw-eye:hover{color:var(--gray-700)}
+.modal-box .pw-wrap input{padding:.7rem 2.5rem .7rem .9rem}
 /* Forgot password modal */
 .modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:999;align-items:center;justify-content:center}
 .modal-overlay.show{display:flex}
@@ -42,13 +49,33 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--gray-50);color
 .code-row button:hover{background:#16325e}
 .code-row button:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
 #app{display:none}
-.header{background:var(--blue);color:#fff;padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between}
-.header h1{font-size:1rem;font-weight:700}
-.header-right{display:flex;align-items:center;gap:1rem;font-size:.85rem}
-.nav{background:#fff;border-bottom:1px solid var(--gray-200);display:flex;gap:0;overflow-x:auto}
-.nav-btn{padding:.75rem 1.25rem;border:none;background:none;font-size:.88rem;font-weight:600;color:var(--gray-500);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
-.nav-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
-.content{max-width:960px;margin:1.5rem auto;padding:0 1rem}
+/* Sidebar layout */
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:var(--blue);color:#fff;overflow-y:auto;display:flex;flex-direction:column;z-index:200}
+.sidebar-top{padding:1.25rem 1.5rem;border-bottom:1px solid rgba(255,255,255,.1)}
+.sidebar-top h2{font-size:.9rem;font-weight:700;color:#fff;letter-spacing:.02em}
+.sidebar-top .sub{font-size:.72rem;color:rgba(255,255,255,.45);margin-top:.15rem}
+.sidebar-nav{flex:1;padding:.5rem 0}
+.sidebar-nav a{display:block;padding:.6rem 1.5rem;color:rgba(255,255,255,.55);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none;border-left:3px solid transparent}
+.sidebar-nav a:hover,.sidebar-nav a.active{color:#fff;background:rgba(255,255,255,.08);border-left-color:rgba(255,255,255,.6)}
+.sidebar-bottom{padding:1rem 1.5rem;border-top:1px solid rgba(255,255,255,.1)}
+.sidebar-bottom .customer-name{font-size:.8rem;color:rgba(255,255,255,.65);margin-bottom:.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-logout{width:100%;background:rgba(255,255,255,.1);color:rgba(255,255,255,.8);border:none;padding:.4rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem;text-align:center}
+.sidebar-logout:hover{background:rgba(255,255,255,.2);color:#fff}
+.main-wrap{margin-left:220px;display:flex;flex-direction:column;min-height:100vh}
+.mobile-topbar{display:none;background:var(--blue);color:#fff;padding:.7rem 1rem;align-items:center;justify-content:space-between;gap:.75rem}
+.hamburger{background:none;border:none;cursor:pointer;padding:.2rem;display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+.hamburger span{display:block;width:20px;height:2px;background:#fff;border-radius:2px}
+.mobile-topbar-right{display:flex;align-items:center;gap:.6rem;font-size:.82rem}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199}
+.content{max-width:960px;margin:1.5rem auto;padding:0 1rem;width:100%}
+@media(max-width:768px){
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease}
+  .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(0,0,0,.3)}
+  .sidebar-overlay.show{display:block}
+  .main-wrap{margin-left:0}
+  .mobile-topbar{display:flex}
+}
+@media(max-width:600px){.field-row{grid-template-columns:1fr}.content{padding:0 .65rem;margin:.85rem auto}}
 .card{background:#fff;border-radius:var(--radius);padding:1.25rem;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:1rem}
 .card h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1rem}
 .field{margin-bottom:.85rem}
@@ -86,7 +113,10 @@ tr:last-child td{border-bottom:none}
     <h1>客户门户</h1>
     <p>Customer Portal — Prime Anchorpoint</p>
     <input type="text" id="cLogin" placeholder="邮箱或电话 / Email or Phone" autocomplete="email">
-    <input type="password" id="cPassword" placeholder="密码 / Password" autocomplete="current-password">
+    <div class="pw-wrap">
+      <input type="password" id="cPassword" placeholder="密码 / Password" autocomplete="current-password">
+      <button type="button" class="pw-eye" onclick="togglePw('cPassword',this)" tabindex="-1" aria-label="显示/隐藏密码"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    </div>
     <button class="btn-login" onclick="customerLogin()">登录 / Login</button>
     <div class="login-extra">
       <a href="javascript:void(0)" onclick="showForgotPassword()">忘记密码？</a>
@@ -115,8 +145,14 @@ tr:last-child td{border-bottom:none}
         <input type="text" id="resetCode" placeholder="验证码 / Code" maxlength="6">
         <button onclick="sendResetCode()" id="resendBtn">重新发送</button>
       </div>
-      <input type="password" id="newPassword" placeholder="新密码（至少6位）/ New password (min 6)">
-      <input type="password" id="newPassword2" placeholder="确认新密码 / Confirm new password">
+      <div class="pw-wrap">
+        <input type="password" id="newPassword" placeholder="新密码（至少6位）/ New password (min 6)">
+        <button type="button" class="pw-eye" onclick="togglePw('newPassword',this)" tabindex="-1" aria-label="显示/隐藏密码"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      </div>
+      <div class="pw-wrap">
+        <input type="password" id="newPassword2" placeholder="确认新密码 / Confirm new password">
+        <button type="button" class="pw-eye" onclick="togglePw('newPassword2',this)" tabindex="-1" aria-label="显示/隐藏密码"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      </div>
       <button class="modal-btn modal-btn-primary" onclick="resetPassword()">重置密码 / Reset Password</button>
     </div>
 
@@ -131,19 +167,38 @@ tr:last-child td{border-bottom:none}
 
 <!-- App -->
 <div id="app">
-  <div class="header">
-    <h1>Prime Anchorpoint — 客户门户</h1>
-    <div class="header-right">
-      <span id="customerNameDisplay"></span>
-      <button onclick="customerLogout()" style="background:rgba(255,255,255,.15);color:#fff;border:none;padding:.35rem .8rem;border-radius:6px;cursor:pointer;font-size:.82rem">退出</button>
+  <!-- Left sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <h2>Prime Anchorpoint</h2>
+      <div class="sub">客户门户</div>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="active" data-tab="post" onclick="showTab('post')">发布用工需求</a>
+      <a data-tab="posts" onclick="showTab('posts')">我的需求记录</a>
+      <a data-tab="workers" onclick="showTab('workers')">派遣工人列表</a>
+      <a data-tab="profile" onclick="showTab('profile')">我的信息</a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="customer-name" id="customerNameDisplay"></div>
+      <button class="sidebar-logout" onclick="customerLogout()">退出</button>
     </div>
   </div>
-  <div class="nav">
-    <button class="nav-btn active" onclick="showTab('post')">发布用工需求</button>
-    <button class="nav-btn" onclick="showTab('posts')">我的需求记录</button>
-    <button class="nav-btn" onclick="showTab('workers')">派遣工人列表</button>
-    <button class="nav-btn" onclick="showTab('profile')">我的信息</button>
-  </div>
+  <!-- Overlay for mobile -->
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+  <!-- Main area -->
+  <div class="main-wrap">
+    <!-- Mobile top bar -->
+    <div class="mobile-topbar">
+      <button class="hamburger" onclick="toggleSidebar()" aria-label="菜单">
+        <span></span><span></span><span></span>
+      </button>
+      <span id="mobilPageTitle" style="font-weight:700;font-size:.9rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">发布用工需求</span>
+      <div class="mobile-topbar-right">
+        <span id="customerNameDisplayMobile" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px"></span>
+        <button onclick="customerLogout()" style="background:rgba(255,255,255,.15);color:#fff;border:none;padding:.3rem .7rem;border-radius:6px;cursor:pointer;font-size:.8rem">退出</button>
+      </div>
+    </div>
   <div class="content">
 
     <!-- Post Job -->
@@ -212,6 +267,7 @@ tr:last-child td{border-bottom:none}
     </div>
 
   </div>
+  </div><!-- /.main-wrap -->
 </div>
 
 <script>
@@ -260,6 +316,16 @@ function customerLogout() {
   localStorage.removeItem('pa_customer_token');
   document.getElementById('loginWrap').style.display = '';
   document.getElementById('app').style.display = 'none';
+}
+
+// ─── Password visibility toggle ───
+function togglePw(id, btn) {
+  const inp = document.getElementById(id);
+  const show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  btn.innerHTML = show
+    ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 }
 
 // ─── Forgot Password ───
@@ -343,13 +409,25 @@ async function showApp() {
   const me = await cApi('/me');
   if (!me) return;
   document.getElementById('customerNameDisplay').textContent = me.company_name;
+  document.getElementById('customerNameDisplayMobile').textContent = me.company_name;
 }
 
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebarOverlay').classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('show');
+}
 function showTab(tab) {
   ['post','posts','workers','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
-  document.querySelectorAll('.nav-btn').forEach((b,i) => b.classList.toggle('active', ['post','posts','workers','profile'][i]===tab));
+  document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  const _cLabels={post:'发布用工需求',posts:'我的需求记录',workers:'派遣工人列表',profile:'我的信息'};
+  const _tEl=document.getElementById('mobilPageTitle');if(_tEl)_tEl.textContent=_cLabels[tab]||'';
+  closeSidebar();
   if (tab === 'posts') loadPosts();
   else if (tab === 'workers') loadWorkers();
   else if (tab === 'profile') loadProfile();
