@@ -2559,6 +2559,83 @@ app.delete('/api/admin/manager-invites/:id', requireAdmin, requireRole('admin'),
   res.json({ success: true });
 });
 
+// ─── Admin: Manager Management APIs ───────────────────────────────────────────
+
+// GET /api/admin/managers-list — all manager accounts with partner names
+app.get('/api/admin/managers-list', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const managers = db.prepare("SELECT id, username, display_name, active, assigned_partner_ids, phone, email, city, created_at FROM admin_users WHERE role='manager' ORDER BY id").all();
+  const allPartners = db.prepare('SELECT id, name FROM partners').all();
+  const partnerMap = Object.fromEntries(allPartners.map(p => [p.id, p.name]));
+  res.json(managers.map(m => {
+    const pids = (m.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+    return { ...m, partner_names: pids.map(id => partnerMap[id] || `#${id}`).join(', ') || '未指定' };
+  }));
+});
+
+// GET /api/admin/managers/:id/assignments — assignments under a specific manager's partners
+app.get('/api/admin/managers/:id/assignments', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+  const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  if (!pids.length) return res.json([]);
+  const rows = db.prepare(`
+    SELECT a.id, a.status, a.start_date, a.pay_rate, a.pay_type,
+           a.work_address, a.assigned_at,
+           i.name AS worker_name, i.phone AS worker_phone,
+           j.title AS job_title, j.location AS job_location,
+           p.name AS company_name
+    FROM assignments a
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN partners p ON j.partner_id = p.id
+    WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+    ORDER BY a.assigned_at DESC
+  `).all(...pids);
+  res.json(rows);
+});
+
+// GET /api/admin/managers/:id/workers — employees visible to a specific manager
+app.get('/api/admin/managers/:id/workers', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+  const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  if (!pids.length) return res.json([]);
+  const rows = db.prepare(`
+    SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id as emp_code,
+           e.email, e.phone, e.position, e.status
+    FROM employees e
+    WHERE e.id IN (
+      SELECT DISTINCT t.employee_id FROM time_entries t
+      JOIN jobs j ON t.job_id = j.id
+      WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+    )
+    ORDER BY e.last_name, e.first_name
+  `).all(...pids);
+  res.json(rows);
+});
+
+// GET /api/admin/managers/:id/punch — recent punch records for a specific manager's employees
+app.get('/api/admin/managers/:id/punch', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+  const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  if (!pids.length) return res.json([]);
+  const { date_from, date_to } = req.query;
+  let q = `SELECT t.id, t.clock_in, t.clock_out, t.total_hours, t.status, t.company_name,
+             e.first_name, e.last_name, e.employee_id as emp_code,
+             p.name AS partner_name
+           FROM time_entries t
+           LEFT JOIN employees e ON t.employee_id = e.id
+           LEFT JOIN jobs j ON t.job_id = j.id
+           LEFT JOIN partners p ON j.partner_id = p.id
+           WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`;
+  const params = [...pids];
+  if (date_from) { q += ' AND DATE(t.clock_in) >= ?'; params.push(date_from); }
+  if (date_to)   { q += ' AND DATE(t.clock_in) <= ?'; params.push(date_to); }
+  q += ' ORDER BY t.clock_in DESC LIMIT 500';
+  res.json(db.prepare(q).all(...params));
+});
+
 // ── Public: validate invite token ──
 app.get('/api/public/manager-invite/:token', (req, res) => {
   const inv = db.prepare("SELECT id, role, note FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(req.params.token);
