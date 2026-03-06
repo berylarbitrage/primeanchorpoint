@@ -2547,7 +2547,7 @@ async function doPunch(type, photo) {
   if (photo && r.entry_id) {
     const fd = new FormData();
     fd.append('photo', photo);
-    fetch('/api/worker/punch/' + r.entry_id + '/photo', {
+    fetch('/api/worker/punch/' + r.entry_id + '/photo?punch_type=' + encodeURIComponent(type), {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN },
       body: fd

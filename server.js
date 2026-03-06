@@ -635,6 +635,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); }
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
 
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
@@ -5987,38 +5988,34 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 });
 
 // Upload punch photo for a time entry (must belong to this worker)
+// ?punch_type=in|out|break_start|break_end  (default: out)
 app.post('/api/worker/punch/:entryId/photo', requireWorker, punchPhotoUpload.single('photo'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
-  const entry = db.prepare('SELECT id, employee_id FROM time_entries WHERE id=?').get(req.params.entryId);
+  const entry = db.prepare('SELECT id, employee_id, break_records FROM time_entries WHERE id=?').get(req.params.entryId);
   if (!entry || entry.employee_id !== req.workerEmployeeId) {
     fs.unlink(req.file.path, ()=>{});
     return res.status(403).json({ error: 'Forbidden' });
   }
-  db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
-  res.json({ success: true });
-});
-
-// Upload punch photo from timeclock kiosk (PIN-based, no Bearer token)
-// Authenticates by matching employee_id to the entry and checking recency (within 30 min)
-app.post('/api/timeclock/punch/:entryId/photo', punchPhotoUpload.single('photo'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
-  const { employee_id } = req.body;
-  if (!employee_id) { fs.unlink(req.file.path, ()=>{}); return res.status(400).json({ error: 'employee_id required' }); }
-  const emp = db.prepare('SELECT id FROM employees WHERE employee_id=?').get(employee_id);
-  if (!emp) { fs.unlink(req.file.path, ()=>{}); return res.status(403).json({ error: 'Unknown employee' }); }
-  const entry = db.prepare('SELECT id, employee_id, clock_in, clock_out FROM time_entries WHERE id=?').get(req.params.entryId);
-  if (!entry || entry.employee_id !== emp.id) {
-    fs.unlink(req.file.path, ()=>{});
-    return res.status(403).json({ error: 'Forbidden' });
+  const punchType = req.query.punch_type || 'out';
+  if (punchType === 'in') {
+    db.prepare('UPDATE time_entries SET clock_in_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  } else if (punchType === 'break_start' || punchType === 'break_end') {
+    // Store photo in the most recent matching break record
+    const breaks = JSON.parse(entry.break_records || '[]');
+    if (punchType === 'break_start') {
+      // Find the last break that has no end (most recent break_start)
+      const idx = breaks.map((b,i)=>i).reverse().find(i => !breaks[i].end);
+      if (idx !== undefined) breaks[idx].start_photo = req.file.filename;
+    } else {
+      // Find the last break that has an end
+      const idx = breaks.map((b,i)=>i).reverse().find(i => breaks[i].end);
+      if (idx !== undefined) breaks[idx].end_photo = req.file.filename;
+    }
+    db.prepare('UPDATE time_entries SET break_records=? WHERE id=?').run(JSON.stringify(breaks), entry.id);
+  } else {
+    // 'out' or default
+    db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
   }
-  // Only allow photo upload within 30 minutes of punch
-  const punchTime = entry.clock_out || entry.clock_in;
-  const age = Date.now() - new Date(punchTime || Date.now()).getTime();
-  if (age > 30 * 60 * 1000) {
-    fs.unlink(req.file.path, ()=>{});
-    return res.status(403).json({ error: 'Entry too old for photo upload' });
-  }
-  db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
   res.json({ success: true });
 });
 
