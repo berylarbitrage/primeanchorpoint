@@ -5706,8 +5706,18 @@ app.post('/api/worker/punch/:entryId/photo', requireWorker, punchPhotoUpload.sin
   res.json({ success: true });
 });
 
-// Serve punch photos (admin only)
-app.get('/api/admin/punch-photo/:filename', requireAdmin, (req, res) => {
+// Serve punch photos — accepts Bearer header, pa_token cookie, or ?token= query param
+// (img tags can't send Authorization headers, so query-param auth is needed)
+app.get('/api/admin/punch-photo/:filename', (req, res) => {
+  const auth = req.headers.authorization;
+  let session = null;
+  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  if (!session) {
+    const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+    if (cookieMatch) session = getSession(cookieMatch[1]);
+  }
+  if (!session && req.query.token) session = getSession(req.query.token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
   const fp = path.join(punchPhotosDir, path.basename(req.params.filename));
   if (!fs.existsSync(fp)) return res.status(404).send('Not found');
   res.sendFile(fp);
