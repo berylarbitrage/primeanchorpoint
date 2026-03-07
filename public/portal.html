@@ -728,6 +728,16 @@ function googleTranslateElementInit(){
           <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span><span data-i18n="punchLegendWorking">工作中</span></span>
         </div>
       </div>
+      <!-- Punch Calendar Day Detail Modal -->
+      <div id="punchDayModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:1rem">
+        <div style="background:#fff;border-radius:16px;width:100%;max-width:420px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem .75rem;border-bottom:1px solid #f1f5f9">
+            <div id="punchDayModalTitle" style="font-weight:700;font-size:1rem;color:#1e293b"></div>
+            <button onclick="closePunchDayModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:#94a3b8;line-height:1;padding:0 .2rem">×</button>
+          </div>
+          <div id="punchDayModalBody" style="padding:1rem 1.25rem"></div>
+        </div>
+      </div>
       <div class="card" style="padding:0">
         <div style="padding:1rem 1rem .5rem;font-size:1rem;font-weight:700" data-i18n="punchHistTitle">打卡历史记录</div>
         <div style="overflow-x:auto;padding:0 1rem 1rem">
@@ -3151,9 +3161,11 @@ async function loadMyJobs() {
   }).join('');
 }
 
-async function loadTimeclock() {
+async function loadTimeclock(year, month) {
   await Promise.all([loadPunchStatus(), loadMyJobs()]);
-  const entries = await wApi('/timeclock');
+  const y = year  || _punchCalYear  || new Date().getFullYear();
+  const m = month || _punchCalMonth || new Date().getMonth() + 1;
+  const entries = await wApi(`/timeclock?year=${y}&month=${m}`);
   if (!entries) return;
   if (!Array.isArray(entries)) {
     document.getElementById('timeclockTable').innerHTML = `<tr><td colspan="11" class="empty">${_t('tcNoEmployeeTable')}</td></tr>`;
@@ -3216,7 +3228,7 @@ function punchCalChangeMonth(delta) {
   _punchCalMonth += delta;
   if (_punchCalMonth > 12) { _punchCalMonth = 1; _punchCalYear++; }
   if (_punchCalMonth < 1)  { _punchCalMonth = 12; _punchCalYear--; }
-  renderPunchCalendar(_punchCalEntries);
+  loadTimeclock(_punchCalYear, _punchCalMonth);
 }
 
 function renderPunchCalendar(entries) {
@@ -3226,7 +3238,7 @@ function renderPunchCalendar(entries) {
   if (!grid) return;
 
   // Build date map from entries
-  const dayMap = {}; // dateStr -> { status, hours }
+  const dayMap = {}; // dateStr -> { hours, closed, entries[] }
   for (const t of _punchCalEntries) {
     if (!t.clock_in) continue;
     const tz = t.display_timezone || 'America/Chicago';
@@ -3235,10 +3247,11 @@ function renderPunchCalendar(entries) {
     const hours = t.total_hours || 0;
     const isClosed = t.status === 'closed';
     if (!existing) {
-      dayMap[dateStr] = { hours, closed: isClosed };
+      dayMap[dateStr] = { hours, closed: isClosed, entries: [t] };
     } else {
       existing.hours += hours;
       if (!isClosed) existing.closed = false;
+      existing.entries.push(t);
     }
   }
 
@@ -3274,8 +3287,9 @@ function renderPunchCalendar(entries) {
     const numColor = isToday ? '#fff' : (hasPunch ? '#1e293b' : '#cbd5e1');
     const numWeight = (isToday || hasPunch) ? '700' : '400';
     const hoursLabel = entry && entry.hours ? `<div style="font-size:.55rem;color:${isClosed?'#16a34a':'#d97706'};line-height:1">${entry.hours.toFixed(1)}h</div>` : '';
+    const clickable = hasPunch;
 
-    html += `<div style="border-radius:8px;padding:.2rem .05rem;background:${bg};border:${border};min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+    html += `<div style="border-radius:8px;padding:.2rem .05rem;background:${bg};border:${border};min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px${clickable?';cursor:pointer':''}" ${clickable?`onclick="openPunchDayModal('${dateStr}')"`:''}${clickable?' title="查看详情 / View details"':''}>
       <span style="font-size:.8rem;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>
       ${dotHtml ? `<div style="line-height:1">${dotHtml}</div>` : ''}
       ${hoursLabel}
@@ -3283,6 +3297,63 @@ function renderPunchCalendar(entries) {
   }
 
   grid.innerHTML = html;
+  // Store dayMap for modal use
+  grid._dayMap = dayMap;
+}
+
+function openPunchDayModal(dateStr) {
+  const grid = document.getElementById('punchCalGrid');
+  const dayMap = grid && grid._dayMap || {};
+  const entry = dayMap[dateStr];
+  if (!entry) return;
+
+  const modal = document.getElementById('punchDayModal');
+  const tz = (entry.entries[0] && entry.entries[0].display_timezone) || 'America/Chicago';
+  const d = new Date(dateStr + 'T12:00:00');
+  const dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
+  const titleDate = _portalLang === 'zh'
+    ? `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 ${dayNames[d.getDay()]}`
+    : d.toLocaleDateString(_portalLang === 'es' ? 'es-MX' : 'en-US', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+  document.getElementById('punchDayModalTitle').textContent = titleDate;
+
+  const fmt12 = ts => {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone: tz });
+  };
+  const statusLabel = s => s === 'closed' ? `<span style="color:#16a34a;font-weight:600">✓ ${_t('tcStatusCompleted')}</span>`
+    : `<span style="color:#f59e0b;font-weight:600">⏳ ${_t('tcStatusWorking')}</span>`;
+
+  let html = '';
+  for (const t of entry.entries) {
+    let breaks = [];
+    try { breaks = JSON.parse(t.break_records || '[]'); } catch(e) {}
+    const breakHtml = breaks.length ? breaks.map(b =>
+      `<div style="font-size:.8rem;color:#64748b;padding:.2rem 0 .2rem .75rem;border-left:2px solid #e2e8f0">
+        ⏸ ${_t('thBreakStart')}: <b>${fmt12(b.start)}</b>　${_t('thBreakEnd')}: <b>${b.end ? fmt12(b.end) : '—'}</b>
+      </div>`).join('') : '';
+    const hoursStr = t.total_hours ? `${(+t.total_hours).toFixed(2)}h` : '—';
+    html += `<div style="border:1px solid #e2e8f0;border-radius:10px;padding:.85rem 1rem;margin-bottom:.65rem">
+      <div style="font-weight:700;font-size:.92rem;color:#1e293b;margin-bottom:.3rem">${esc(t.job_title || t.job_company || '—')}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem .75rem;font-size:.82rem;color:#475569;margin-bottom:.35rem">
+        <span>▶ ${_t('thClockIn')}: <b style="color:#1e293b">${fmt12(t.clock_in)}</b></span>
+        <span>⏹ ${_t('thClockOut')}: <b style="color:#1e293b">${fmt12(t.clock_out)}</b></span>
+        <span>⏱ ${_t('thHours')}: <b style="color:#1e293b">${hoursStr}</b></span>
+        <span>${statusLabel(t.status)}</span>
+      </div>
+      ${breakHtml}
+    </div>`;
+  }
+  if (entry.entries.length > 1) {
+    html += `<div style="text-align:right;font-size:.8rem;font-weight:700;color:#334155;padding:.2rem 0">
+      合计 / Total: ${entry.hours.toFixed(2)}h
+    </div>`;
+  }
+  document.getElementById('punchDayModalBody').innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+function closePunchDayModal() {
+  document.getElementById('punchDayModal').style.display = 'none';
 }
 
 async function loadPayments() {

@@ -5945,14 +5945,20 @@ app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
 
 app.get('/api/worker/timeclock', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json([]);
+  const y = parseInt(req.query.year)  || new Date().getFullYear();
+  const m = parseInt(req.query.month) || new Date().getMonth() + 1;
+  const from = `${y}-${String(m).padStart(2,'0')}-01`;
+  const to   = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
   const entries = db.prepare(`
     SELECT t.*, j.title AS job_title, j.company_name AS job_company,
            COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
     FROM time_entries t
     LEFT JOIN jobs j ON t.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
-    WHERE t.employee_id = ? ORDER BY t.clock_in DESC LIMIT 200
-  `).all(req.workerEmployeeId);
+    WHERE t.employee_id = ?
+      AND (t.clock_in IS NULL OR (date(t.clock_in) >= ? AND date(t.clock_in) <= ?))
+    ORDER BY t.clock_in DESC LIMIT 500
+  `).all(req.workerEmployeeId, from, to);
   res.json(entries);
 });
 
