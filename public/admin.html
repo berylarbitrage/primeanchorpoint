@@ -1104,11 +1104,23 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-outline" onclick="loadTsVerify()">刷新</button>
     </div>
   </div>
-  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:1rem">显示员工已确认/异议的工时单，Staff 核对后点击「上报客户」进入付款阶段。</p>
-  <div class="card">
+
+  <!-- 待审核工时：员工已确认/异议，等待 Staff 核对 -->
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:.75rem">员工已确认/提出异议的工时单，Staff 核对后点击「上报客户」进入付款阶段。</p>
+  <div class="card" style="margin-bottom:2rem">
     <table>
       <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>员工状态</th><th>员工备注</th><th>Staff 备注</th><th>操作</th></tr></thead>
       <tbody id="tsVerifyTable"></tbody>
+    </table>
+  </div>
+
+  <!-- 待员工确认：尚未响应的工时单 -->
+  <h2 style="font-size:.95rem;font-weight:700;color:var(--gray-600);margin-bottom:.5rem">待员工确认</h2>
+  <p style="color:var(--gray-400);font-size:.85rem;margin-bottom:.75rem">尚未收到员工确认/异议的工时单。</p>
+  <div class="card">
+    <table>
+      <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>状态</th></tr></thead>
+      <tbody id="tsPendingConfirmTable"></tbody>
     </table>
   </div>
 </div>
@@ -9805,30 +9817,49 @@ function fmtDt(dt) {
 
 // ─── 工时核对 ───
 async function loadTsVerify() {
-  const rows = await api('/admin/timesheet-sheets?stage=verify');
+  const [rows, pendingRows] = await Promise.all([
+    api('/admin/timesheet-sheets?stage=verify'),
+    api('/admin/timesheet-sheets?stage=pending_confirm'),
+  ]);
+
+  // 待审核工时（员工已确认/异议）
   const tbody = document.getElementById('tsVerifyTable');
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无待核对工时单</td></tr>'; return; }
-  tbody.innerHTML = rows.map(r => {
-    const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
-    const empStatus = r.status === 'confirmed' ? '<span class="badge badge-green">员工已确认</span>'
-                    : r.status === 'disputed'  ? '<span class="badge badge-red">员工有异议</span>'
-                    : '<span class="badge">待员工确认</span>';
-    const noteCell = `<span style="font-size:.78rem;color:var(--gray-400)">${esc(r.employee_note||'—')}</span>`;
-    const staffNoteInput = `<input id="snote-${r.id}" value="${esc(r.staff_note||'')}" placeholder="核对备注" style="width:110px;font-size:.78rem;padding:2px 6px;border-radius:4px;border:1px solid var(--gray-600);background:var(--gray-800);color:inherit">`;
-    const btn = r.status === 'confirmed' || r.status === 'disputed'
-      ? `<button class="btn btn-sm btn-green" onclick="verifySheet(${r.id})">上报客户</button>`
-      : `<span style="font-size:.78rem;color:var(--gray-500)">等待确认</span>`;
-    return `<tr>
-      <td>${name}</td>
-      <td>${esc(r.company_name||'—')}</td>
-      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
-      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
-      <td>${empStatus}</td>
-      <td>${noteCell}</td>
-      <td>${staffNoteInput}</td>
-      <td>${btn}</td>
-    </tr>`;
-  }).join('');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无待审核工时单</td></tr>'; }
+  else {
+    tbody.innerHTML = rows.map(r => {
+      const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+      const empStatus = r.status === 'confirmed' ? '<span class="badge badge-green">员工已确认</span>'
+                      : '<span class="badge badge-red">员工有异议</span>';
+      const noteCell = `<span style="font-size:.78rem;color:var(--gray-400)">${esc(r.employee_note||'—')}</span>`;
+      const staffNoteInput = `<input id="snote-${r.id}" value="${esc(r.staff_note||'')}" placeholder="核对备注" style="width:110px;font-size:.78rem;padding:2px 6px;border-radius:4px;border:1px solid var(--gray-600);background:var(--gray-800);color:inherit">`;
+      return `<tr>
+        <td>${name}</td>
+        <td>${esc(r.company_name||'—')}</td>
+        <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+        <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+        <td>${empStatus}</td>
+        <td>${noteCell}</td>
+        <td>${staffNoteInput}</td>
+        <td><button class="btn btn-sm btn-green" onclick="verifySheet(${r.id})">上报客户</button></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // 待员工确认（尚未响应）
+  const pendingTbody = document.getElementById('tsPendingConfirmTable');
+  if (!pendingRows.length) { pendingTbody.innerHTML = '<tr><td colspan="5" class="empty">暂无待确认工时单</td></tr>'; }
+  else {
+    pendingTbody.innerHTML = pendingRows.map(r => {
+      const name = `${r.last_name||''}${r.first_name||''} <span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${r.emp_code||''}</span>`;
+      return `<tr>
+        <td>${name}</td>
+        <td>${esc(r.company_name||'—')}</td>
+        <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+        <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+        <td><span class="badge">待员工确认</span></td>
+      </tr>`;
+    }).join('');
+  }
 }
 
 async function verifySheet(id) {

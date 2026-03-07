@@ -212,7 +212,7 @@ tr:hover td{background:#f0fdf4}
         <div class="page-title">仪表盘</div>
         <div class="stats-row" id="dashStats">
           <div class="stat-card"><div class="stat-label">在职员工</div><div class="stat-value" id="ds-active">—</div></div>
-          <div class="stat-card" style="border-left-color:var(--orange)"><div class="stat-label">待核对工时</div><div class="stat-value" style="color:var(--orange)" id="ds-verify">—</div></div>
+          <div class="stat-card" style="border-left-color:var(--orange)"><div class="stat-label">待审核工时</div><div class="stat-value" style="color:var(--orange)" id="ds-verify">—</div></div>
           <div class="stat-card" style="border-left-color:var(--blue)"><div class="stat-label">待付款</div><div class="stat-value" style="color:var(--blue)" id="ds-payment">—</div></div>
           <div class="stat-card" style="border-left-color:var(--teal)"><div class="stat-label">待分红</div><div class="stat-value" style="color:var(--teal)" id="ds-dividend">—</div></div>
         </div>
@@ -259,10 +259,21 @@ tr:hover td{background:#f0fdf4}
           <div class="page-title">工时核对</div>
           <button class="btn btn-outline" onclick="loadTsVerify()">刷新</button>
         </div>
-        <div class="table-wrap">
+        <!-- 待审核工时：员工已确认/异议 -->
+        <div style="font-size:.82rem;color:var(--gray-400);margin-bottom:.5rem">员工已确认或提出异议的工时单，核对后点击「上报客户」。</div>
+        <div class="table-wrap" style="margin-bottom:1.5rem">
           <table>
             <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>小时</th><th>员工状态</th><th>员工备注</th><th>核对备注</th><th>操作</th></tr></thead>
             <tbody id="tsVerifyTable"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+        <!-- 待员工确认 -->
+        <div class="page-title" style="font-size:.95rem;margin-bottom:.4rem">待员工确认</div>
+        <div style="font-size:.82rem;color:var(--gray-400);margin-bottom:.5rem">尚未收到员工确认/异议的工时单。</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>小时</th><th>状态</th></tr></thead>
+            <tbody id="tsPendingConfirmTable"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -603,31 +614,52 @@ function renderEmployees(list){
 // ── Timesheet: Verify ──────────────────────────────────────────
 async function loadTsVerify(){
   document.getElementById('tsVerifyTable').innerHTML='<tr><td colspan="8" class="empty">加载中…</td></tr>';
+  document.getElementById('tsPendingConfirmTable').innerHTML='<tr><td colspan="5" class="empty">加载中…</td></tr>';
   try {
-    const rows=await api('/admin/timesheet-sheets?stage=verify');
+    const [rows, pendingRows] = await Promise.all([
+      api('/admin/timesheet-sheets?stage=verify'),
+      api('/admin/timesheet-sheets?stage=pending_confirm'),
+    ]);
+
+    // 待审核工时（员工已确认/异议）
     const tbody=document.getElementById('tsVerifyTable');
-    if(!rows.length){ tbody.innerHTML='<tr><td colspan="8" class="empty">暂无待核对工时单</td></tr>'; return; }
-    tbody.innerHTML=rows.map(r=>{
-      const name=`${esc(r.last_name||'')}${esc(r.first_name||'')} <span style="font-family:monospace;font-size:.7rem;color:var(--green)">${esc(r.emp_code||'')}</span>`;
-      const statusBadge = r.status==='confirmed'?'<span class="badge badge-green">已确认</span>'
-                        : r.status==='disputed'?'<span class="badge badge-red">有异议</span>'
-                        : '<span class="badge badge-gray">待确认</span>';
-      const btn=r.status==='confirmed'||r.status==='disputed'
-        ?`<button class="btn btn-sm btn-green" onclick="verifySheet(${r.id})">上报客户</button>`
-        :'<span style="font-size:.75rem;color:var(--gray-400)">等待确认</span>';
-      return `<tr>
-        <td>${name}</td>
-        <td>${esc(r.company_name||'—')}</td>
-        <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
-        <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
-        <td>${statusBadge}</td>
-        <td style="font-size:.78rem;color:var(--gray-500)">${esc(r.employee_note||'—')}</td>
-        <td><input id="snote-${r.id}" value="${esc(r.staff_note||'')}" placeholder="核对备注" style="width:110px;font-size:.78rem;padding:3px 7px;border-radius:6px;border:1.5px solid var(--gray-200);outline:none"></td>
-        <td>${btn}</td>
-      </tr>`;
-    }).join('');
+    if(!rows.length){ tbody.innerHTML='<tr><td colspan="8" class="empty">暂无待审核工时单</td></tr>'; }
+    else {
+      tbody.innerHTML=rows.map(r=>{
+        const name=`${esc(r.last_name||'')}${esc(r.first_name||'')} <span style="font-family:monospace;font-size:.7rem;color:var(--green)">${esc(r.emp_code||'')}</span>`;
+        const statusBadge = r.status==='confirmed'?'<span class="badge badge-green">已确认</span>'
+                          : '<span class="badge badge-red">有异议</span>';
+        return `<tr>
+          <td>${name}</td>
+          <td>${esc(r.company_name||'—')}</td>
+          <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+          <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+          <td>${statusBadge}</td>
+          <td style="font-size:.78rem;color:var(--gray-500)">${esc(r.employee_note||'—')}</td>
+          <td><input id="snote-${r.id}" value="${esc(r.staff_note||'')}" placeholder="核对备注" style="width:110px;font-size:.78rem;padding:3px 7px;border-radius:6px;border:1.5px solid var(--gray-200);outline:none"></td>
+          <td><button class="btn btn-sm btn-green" onclick="verifySheet(${r.id})">上报客户</button></td>
+        </tr>`;
+      }).join('');
+    }
+
+    // 待员工确认
+    const pendingTbody=document.getElementById('tsPendingConfirmTable');
+    if(!pendingRows.length){ pendingTbody.innerHTML='<tr><td colspan="5" class="empty">暂无待确认工时单</td></tr>'; }
+    else {
+      pendingTbody.innerHTML=pendingRows.map(r=>{
+        const name=`${esc(r.last_name||'')}${esc(r.first_name||'')} <span style="font-family:monospace;font-size:.7rem;color:var(--green)">${esc(r.emp_code||'')}</span>`;
+        return `<tr>
+          <td>${name}</td>
+          <td>${esc(r.company_name||'—')}</td>
+          <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+          <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+          <td><span class="badge badge-gray">待员工确认</span></td>
+        </tr>`;
+      }).join('');
+    }
   } catch(e){
     document.getElementById('tsVerifyTable').innerHTML=`<tr><td colspan="8" class="empty">加载失败</td></tr>`;
+    document.getElementById('tsPendingConfirmTable').innerHTML=`<tr><td colspan="5" class="empty">加载失败</td></tr>`;
   }
 }
 
