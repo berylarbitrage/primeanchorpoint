@@ -3182,7 +3182,7 @@ async function doPunch(type, photo) {
     }).catch(() => {});
   }
   // Refresh status in parallel
-  Promise.all([loadMyJobs(), loadPunchStatus()]).then(() => loadTimeclock());
+  Promise.all([loadMyJobs(), loadPunchStatus()]).then(() => { loadTimeclock(); loadWorkCalendar(); });
 }
 
 async function loadMyJobs() {
