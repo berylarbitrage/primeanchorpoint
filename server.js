@@ -6226,6 +6226,7 @@ app.get('/api/admin/punch-photo/:filename', (req, res) => {
 
 // ─── Worker task (my-tasks) endpoints ────────────────────────────
 app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json([]);
   const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!wa || !wa.linked_inquiry_id) return res.json([]);
   const tasks = db.prepare(`
@@ -6632,6 +6633,7 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
 
 // Worker: get currently dispatched (active) jobs with site info
 app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json([]);
   const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
   const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
