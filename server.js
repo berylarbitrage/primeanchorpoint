@@ -1635,13 +1635,13 @@ function nextEmployeeId(city, hireDate) {
 }
 
 // ─── Auto-generate worker code: PORT-CITY-MMDDYY-000001 ───
-function generateWorkerCode(city, prefix = 'PORT') {
+function generateWorkerCode(state, prefix = 'PORT') {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yy = String(d.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
-  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
+  const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
   const last = db.prepare(`SELECT worker_code FROM worker_accounts WHERE worker_code LIKE ? ORDER BY id DESC LIMIT 1`).get(prefix + '-%');
   let num = 1;
   if (last) {
@@ -1649,7 +1649,7 @@ function generateWorkerCode(city, prefix = 'PORT') {
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `${prefix}-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `${prefix}-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
 // ─── On verification: assign worker_code + ensure linked inquiry exists ───
@@ -1659,7 +1659,7 @@ function activateWorkerAccount(accountId, prefix) {
   // Generate worker_code if not already set
   if (!acc.worker_code) {
     const codePrefix = prefix || 'PORT';
-    const code = generateWorkerCode(acc.city, codePrefix);
+    const code = generateWorkerCode(acc.state, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
   // Ensure a linked inquiry exists — create a new one if not already explicitly linked by admin
