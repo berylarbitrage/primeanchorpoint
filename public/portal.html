@@ -2224,9 +2224,13 @@ function enablePunchBtn(ready) {
     return;
   }
 
-  // On break: only Resume enabled (no GPS needed)
+  // On break: Resume always enabled; Clock In enabled when switching to a different job (GPS needed)
   if (s.clocked_in && s.on_break) {
-    setBtn(btnIn,  false);
+    const sel = document.getElementById('jobSelector');
+    const currentJobId = s.open_entry?.job_id;
+    const selectedJobId = sel ? parseInt(sel.value) : null;
+    const switchingJob = currentJobId && selectedJobId && selectedJobId !== currentJobId;
+    setBtn(btnIn,  switchingJob && ready);
     setBtn(btnBS,  false);
     setBtn(btnBE,  true);
     setBtn(btnOut, false);
@@ -2293,8 +2297,18 @@ async function loadPunchStatus() {
   } else if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
     timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
-    subEl.textContent = 'On break · Click "Resume Job" to continue';
-    selectorWrap.style.display = 'none';
+    const jobs = s.active_jobs || [];
+    if (jobs.length > 1) {
+      subEl.textContent = 'On break · Resume current job or select another job to switch';
+      selector.innerHTML = jobs.map(j =>
+        `<option value="${j.job_id}" ${j.job_id === s.open_entry?.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+      ).join('');
+      selector.disabled = false;
+      selectorWrap.style.display = '';
+    } else {
+      subEl.textContent = 'On break · Click "Resume Job" to continue';
+      selectorWrap.style.display = 'none';
+    }
   } else if (s.clocked_in && s.open_entry) {
     const tz = s.open_entry.display_timezone || 'America/Chicago';
     const ci = s.open_entry.clock_in;
