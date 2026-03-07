@@ -3593,7 +3593,7 @@ async function submitI9(e) {
   const form = e.target;
   const addrResult = await validateAddress({
     street:  form.address.value.trim(),
-    street2: '',
+    street2: form.apt ? form.apt.value.trim() : '',
     city:    form.city.value.trim(),
     state:   form.state.value,
     zip:     form.zip.value.trim()
@@ -3602,6 +3602,7 @@ async function submitI9(e) {
   if (addrResult.standardized) {
     const s = addrResult.standardized;
     form.address.value = s.street;
+    if (form.apt) form.apt.value = s.street2 || '';
     form.city.value  = s.city;
     form.state.value = s.state;
     form.zip.value   = s.zip;
