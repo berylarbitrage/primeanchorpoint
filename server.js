@@ -5956,7 +5956,8 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
     LEFT JOIN jobs j ON t.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
     WHERE t.employee_id = ?
-      AND (t.clock_in IS NULL OR (date(t.clock_in) >= ? AND date(t.clock_in) <= ?))
+      AND t.clock_in IS NOT NULL
+      AND date(t.clock_in) >= ? AND date(t.clock_in) <= ?
     ORDER BY t.clock_in DESC LIMIT 500
   `).all(req.workerEmployeeId, from, to);
   res.json(entries);
