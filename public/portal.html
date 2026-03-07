@@ -2255,7 +2255,13 @@ async function loadPunchStatus() {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
     timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
     subEl.textContent = 'On break · Click "Resume Job" to continue';
-    selectorWrap.style.display = 'none';
+    // Populate selector so job_id is available if user punches any type while on break
+    const jobs = s.active_jobs || [];
+    selector.innerHTML = jobs.map(j =>
+      `<option value="${j.job_id}" ${j.job_id === s.open_entry?.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+    ).join('');
+    selector.disabled = true;
+    selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
   } else if (s.clocked_in && s.open_entry) {
     const tz = s.open_entry.display_timezone || 'America/Chicago';
     const ci = s.open_entry.clock_in;
@@ -2481,11 +2487,14 @@ async function confirmPunchWithPhoto() {
 
 async function doPunch(type, photo) {
   const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null, punch_type: type };
+  const sel = document.getElementById('jobSelector');
   if (type === 'in') {
-    const sel = document.getElementById('jobSelector');
     body.job_id = sel ? parseInt(sel.value) || null : null;
     // If previous day's clock-out was missed, auto-close it on the server
     if (_punchStatus && _punchStatus.missed_checkout) body.force_new_day = true;
+  } else {
+    // For all other punch types: prefer open entry's job, fall back to selector
+    body.job_id = _punchStatus?.open_entry?.job_id || (sel ? parseInt(sel.value) || null : null);
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { enablePunchBtn(true); cancelPunchPhoto(); await customAlert('打卡失败，请重新登录后重试。\nFailed to clock in, please re-login.', '打卡失败', '❌'); return; }
