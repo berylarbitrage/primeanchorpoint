@@ -239,13 +239,27 @@ body{top:0!important}
     }
   }
 
+  // Restore original language via GT instance API, then combo fallback.
+  function _restoreOriginal() {
+    try {
+      var inst = google.translate.TranslateElement.getInstance();
+      if (inst && typeof inst.restore === 'function') { inst.restore(); return true; }
+    } catch(e) {}
+    var combo = document.querySelector('select.goog-te-combo');
+    if (!combo) return false;
+    // Find the first option whose value is empty or equals the source lang
+    var opt = combo.querySelector('option[value=""]') || combo.querySelector('option[value="zh-CN"]');
+    combo.value = opt ? opt.value : '';
+    combo.dispatchEvent(new Event('change'));
+    return true;
+  }
+
   // Drive the goog-te-combo (Google Translate's internal select) directly.
   // Returns true if the combo was found and acted on.
   function _driveCombo(lang) {
     var combo = document.querySelector('select.goog-te-combo');
     if (!combo) return false;
-    // '' = restore original; otherwise set to target language code
-    combo.value = (lang === 'zh-CN') ? '' : lang;
+    combo.value = lang;
     combo.dispatchEvent(new Event('change'));
     return true;
   }
@@ -262,7 +276,15 @@ body{top:0!important}
   window._gtDoTranslate = function(lang) {
     _setCookie(lang);
     _syncSelects(lang);
-    if (_driveCombo(lang)) return; // immediate, no reload
+    if (lang === 'zh-CN') {
+      // Restore to original Chinese — use GT's restore() API first
+      if (_restoreOriginal()) return;
+      // GT not ready yet — retry
+      var n = 0;
+      var t = setInterval(function(){ if (_restoreOriginal() || ++n > 30) clearInterval(t); }, 100);
+      return;
+    }
+    if (_driveCombo(lang)) return;
     // GT widget not ready yet — retry until it appears (up to ~3 s)
     var n = 0;
     var t = setInterval(function(){
@@ -3204,9 +3226,11 @@ async function loadTimeclock(year, month) {
   const y = year  || _punchCalYear  || new Date().getFullYear();
   const m = month || _punchCalMonth || new Date().getMonth() + 1;
   const entries = await wApi(`/timeclock?year=${y}&month=${m}`);
-  if (!entries) return;
-  if (!Array.isArray(entries)) {
-    document.getElementById('timeclockTable').innerHTML = `<tr><td colspan="11" class="empty">${_t('tcNoEmployeeTable')}</td></tr>`;
+  if (!entries || !Array.isArray(entries)) {
+    renderPunchCalendar([]);
+    if (entries && !Array.isArray(entries)) {
+      document.getElementById('timeclockTable').innerHTML = `<tr><td colspan="11" class="empty">${_t('tcNoEmployeeTable')}</td></tr>`;
+    }
     return;
   }
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
