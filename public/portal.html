@@ -1547,7 +1547,6 @@ async function _translateJobs(jobs) {
   if (_portalLang === 'en') return jobs;
   await Promise.all(jobs.map(async j => {
     j._titleT = await _gtranslate(j.title, _portalLang);
-    j._companyT = j.company_name ? await _gtranslate(j.company_name, _portalLang) : '';
   }));
   return jobs;
 }
@@ -1971,7 +1970,6 @@ async function _preTranslateTasks(tasks) {
   if (_portalLang === 'en') return;
   await Promise.all(tasks.map(async t => {
     t._titleT = await _gtranslate(t.title || '', _portalLang);
-    t._companyT = t.company_name ? await _gtranslate(t.company_name, _portalLang) : '';
     // Translate task requirements (description, name, notes, steps)
     let reqs = [];
     try { reqs = JSON.parse(t.task_requirements || '[]'); } catch {}
