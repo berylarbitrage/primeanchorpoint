@@ -118,7 +118,11 @@ tr:hover td{background:#eef6fd !important}
 .qr-cam-header{padding:.9rem 1.15rem;border-bottom:1px solid var(--gray-100);font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);display:flex;align-items:center;gap:.55rem}
 .qr-cam-dot{width:9px;height:9px;border-radius:50%;background:var(--gray-300);flex-shrink:0;transition:background .3s,box-shadow .3s}
 .qr-cam-dot.active{background:var(--green);box-shadow:0 0 0 3px rgba(16,185,129,.2)}
-.qr-video-box{position:relative;width:100%;aspect-ratio:1;background:linear-gradient(145deg,#0d1b2a 0%,#1a3050 100%)}
+.qr-video-box{position:relative;width:100%;aspect-ratio:1;background:linear-gradient(145deg,#eef4fb 0%,#dce8f5 100%);display:flex;align-items:center;justify-content:center}
+.qr-idle-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.6rem;pointer-events:none;transition:opacity .3s}
+.qr-idle-placeholder .cam-icon{font-size:3.5rem;opacity:.35}
+.qr-idle-placeholder .cam-hint{font-size:.78rem;color:var(--gray-400);font-weight:500}
+.qr-video-box.active .qr-idle-placeholder{opacity:0}
 #qrVideo{width:100%;height:100%;object-fit:cover;display:block}
 .qr-overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center}
 .qr-frame{width:60%;aspect-ratio:1;position:relative;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
@@ -397,7 +401,11 @@ tr:hover td{background:#eef6fd !important}
             <span class="qr-cam-dot" id="qrCamDot"></span>
             扫描员工二维码
           </div>
-          <div class="qr-video-box">
+          <div class="qr-video-box" id="qrVideoBox">
+            <div class="qr-idle-placeholder" id="qrIdlePlaceholder">
+              <span class="cam-icon">📷</span>
+              <span class="cam-hint">摄像头未开启</span>
+            </div>
             <video id="qrVideo" autoplay playsinline muted></video>
             <div class="qr-overlay">
               <div class="qr-frame">
@@ -1008,6 +1016,7 @@ async function startQrScanner() {
     status.textContent = '请将员工二维码对准框内…';
     document.getElementById('qrCamDot').classList.add('active');
     document.getElementById('qrScanLine').classList.add('scanning');
+    document.getElementById('qrVideoBox').classList.add('active');
     scanLoop();
   } catch(e) {
     status.textContent = '无法访问摄像头：' + e.message;
@@ -1019,6 +1028,7 @@ function stopQrScanner() {
   if (_qrStream) { _qrStream.getTracks().forEach(t => t.stop()); _qrStream = null; }
   document.getElementById('qrCamDot').classList.remove('active');
   document.getElementById('qrScanLine').classList.remove('scanning');
+  document.getElementById('qrVideoBox').classList.remove('active');
 }
 function scanLoop() {
   const video = document.getElementById('qrVideo');
