@@ -369,9 +369,9 @@ tr:hover td{background:#eef6fd !important}
           <thead><tr>
             <th class="tc-cb-cell"><input type="checkbox" class="tc-batch-cb" id="tcSelectAll" title="全选" onchange="toggleSelectAll(this)"></th>
             <th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th>
-            <th>总工时</th><th>正常工时</th><th>加班</th><th>状态</th><th>照片</th><th>备注</th><th>操作</th>
+            <th>工时</th><th>状态</th><th>照片 / 备注</th><th>操作</th>
           </tr></thead>
-          <tbody id="tcTable"><tr><td colspan="12" class="empty-state" style="padding:3rem"><div class="spinner"></div></td></tr></tbody>
+          <tbody id="tcTable"><tr><td colspan="9" class="empty-state" style="padding:3rem"><div class="spinner"></div></td></tr></tbody>
         </table>
       </div>
       <div class="tc-summary" id="tcSummary"></div>
@@ -777,7 +777,7 @@ function renderWorkers() {
 
 // ── Time Clock ─────────────────────────────────────────────────
 async function loadTimeClock() {
-  document.getElementById('tcTable').innerHTML = '<tr><td colspan="12" style="text-align:center;padding:2.5rem"><div class="spinner"></div></td></tr>';
+  document.getElementById('tcTable').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2.5rem"><div class="spinner"></div></td></tr>';
   const emp = document.getElementById('tcEmpFilter').value;
   const from = document.getElementById('tcFrom').value;
   const to = document.getElementById('tcTo').value;
@@ -811,7 +811,7 @@ function hasIncompleteLoop(t) {
 let _tcEntries = {};
 function renderTimeClock(rows) {
   if (!rows.length) {
-    document.getElementById('tcTable').innerHTML = '<tr><td colspan="12" class="empty-state" style="padding:2.5rem;text-align:center">暂无打卡记录</td></tr>';
+    document.getElementById('tcTable').innerHTML = '<tr><td colspan="9" class="empty-state" style="padding:2.5rem;text-align:center">暂无打卡记录</td></tr>';
     document.getElementById('tcSummary').textContent = '';
     return;
   }
@@ -823,9 +823,9 @@ function renderTimeClock(rows) {
     function photoThumb(src, label) {
       if (!src) return '';
       const url = TOKEN ? src + (src.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : src;
-      return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;margin:1px">
-        <img src="${url}" onclick="openPunchPhoto('${url.replace(/'/g,"\\'")}')" title="${label}" style="width:36px;height:36px;object-fit:cover;border-radius:5px;cursor:pointer;border:1.5px solid var(--gray-200)">
-        <span style="font-size:.62rem;color:var(--gray-400);line-height:1">${label}</span>
+      return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;margin:1px">
+        <img src="${url}" onclick="openPunchPhoto('${url.replace(/'/g,"\\'")}')" title="${label}" style="width:28px;height:28px;object-fit:cover;border-radius:4px;cursor:pointer;border:1.5px solid var(--gray-200)">
+        <span style="font-size:.55rem;color:var(--gray-400);line-height:1">${label}</span>
       </div>`;
     }
     const photos = [];
@@ -842,18 +842,25 @@ function renderTimeClock(rows) {
     const incomplete = hasIncompleteLoop(t);
     const rowStyle = incomplete ? ' style="background:linear-gradient(to right,#f87171 0px,#f87171 4px,#fff5f5 4px,#fff5f5 100%);"' : '';
     const incompleteTag = incomplete ? '<span class="emp-incomplete-tag" title="时间记录未完成闭环，请确认">⚠ 待确认</span>' : '';
+    const pins = mgrPunchPins(t);
+    const otH = (t.overtime_hours||0) > 0;
     return `<tr${rowStyle} data-entry-id="${t.id}">
       <td class="tc-cb-cell"><input type="checkbox" class="tc-batch-cb" onchange="toggleBatchRow(${t.id},this)"></td>
       <td><div class="emp-row-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}${incompleteTag}</div><div class="emp-row-code">${esc(t.emp_code||'')}</div></td>
       <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="inlineEditTime(${t.id},'clock_in',this)">${fmtDT(t.clock_in, tz)}</td>
       <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="inlineEditTime(${t.id},'clock_out',this)">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
       <td>${renderBreaks(t)}</td>
-      <td>${fmtH(t.total_hours)}</td>
-      <td>${fmtH(t.regular_hours)}</td>
-      <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
+      <td style="font-size:.82rem;white-space:nowrap;line-height:1.6">
+        <div>${fmtH(t.total_hours)}</div>
+        <div style="color:var(--gray-400);font-size:.75rem">正 ${fmtH(t.regular_hours)}</div>
+        ${otH?`<div><span class="ot-text" style="font-size:.75rem">加 ${fmtH(t.overtime_hours)}</span></div>`:''}
+      </td>
       <td><span class="badge badge-${t.status==='open'?'open':'closed'}">${t.status==='open'?'进行中':'已完成'}</span></td>
-      <td style="text-align:center">${photoCell}</td>
-      <td style="max-width:160px;white-space:normal;font-size:.78rem;color:var(--gray-500)">${esc(t.notes||'')} ${mgrPunchPins(t)}</td>
+      <td style="text-align:center;max-width:130px">
+        ${photoCell}
+        ${pins?`<div style="margin-top:4px;display:flex;flex-wrap:wrap;justify-content:center;gap:2px">${pins}</div>`:''}
+        ${t.notes?`<div style="font-size:.72rem;color:var(--gray-500);margin-top:3px;white-space:normal;word-break:break-word;text-align:left">${esc(t.notes)}</div>`:''}
+      </td>
       <td><div class="tc-action-cell">
         <button class="tc-action-btn tc-btn-confirm" onclick="confirmEntry(${t.id},this)">✓ 确认工时</button>
         <button class="tc-action-btn tc-btn-edit" onclick="openEditModal(${t.id})">✎ 修改工时</button>
