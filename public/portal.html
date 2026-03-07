@@ -205,7 +205,6 @@ body{top:0!important}
 <script>
 (function(){
   var LANGS=[
-    {code:'zh-CN',label:'🇨🇳 中文(简)'},
     {code:'zh-TW',label:'🇹🇼 中文(繁)'},
     {code:'en',   label:'🇺🇸 English'},
     {code:'es',   label:'🇲🇽 Español'},
@@ -236,11 +235,11 @@ body{top:0!important}
   };
   window._buildGtSelect = function(id){
     var sel=document.getElementById(id); if(!sel)return;
-    var cur=(document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/)||[])[1]||'zh-CN';
+    var cur=(document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/)||[])[1]||'';
     LANGS.forEach(function(l){
       var o=document.createElement('option');
       o.value=l.code; o.textContent=l.label;
-      if(l.code===cur||(!cur&&l.code==='zh-CN')) o.selected=true;
+      if(l.code===cur) o.selected=true;
       sel.appendChild(o);
     });
     sel.addEventListener('change',function(){window._gtDoTranslate(this.value);});
@@ -271,7 +270,7 @@ function googleTranslateElementInit(){
     </div>
     <div class="login-gt-wrap" style="margin-bottom:.9rem">
       <select id="goog-gt-select-login" title="翻译页面 / Translate page">
-        <option value="">🌐 更多语言 / More Languages</option>
+        <option value="">🌐 翻译 / Translate…</option>
       </select>
     </div>
     <img src="/logo.svg" alt="Prime Anchorpoint">
@@ -525,7 +524,7 @@ function googleTranslateElementInit(){
         <div class="gt-select-row">
           <span class="gt-label">🌐</span>
           <select id="goog-gt-select" title="翻译页面 / Translate page" style="flex:1">
-            <option value="">更多语言…</option>
+            <option value="">🌐 翻译…</option>
           </select>
         </div>
       </div>
