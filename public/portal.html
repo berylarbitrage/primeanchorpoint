@@ -2282,10 +2282,30 @@ async function confirmBookSlot() {
   }
 }
 
+// Pay period Chinese names → internal key used in payPeriods map
+const _PAY_PERIOD_ZH = { '时薪':'hourly','日薪':'daily','周薪':'weekly','双周':'biweekly','半月薪':'semimonthly','月薪':'monthly' };
+
+async function _preTranslateJobs(jobs) {
+  const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
+  await Promise.all(jobs.map(async j => {
+    // Title: stored in English — translate to zh/es
+    j._titleT = await _gtranslate(j.title, _portalLang);
+    // Job type: use i18n mapping (全职→Full-time, etc.)
+    j._typeT = (L.types && L.types[j.type]) || j.type || '';
+    // Employment type: W2/Contract are universal; translate anything else
+    j._empT = j.employment_type ? (await _gtranslate(j.employment_type, _portalLang)) : '';
+    // Benefits: stored as Chinese comma list — translate to current lang
+    j._benefitsT = j.benefits ? await _gtranslate(j.benefits, _portalLang) : '';
+    // Pay period: normalize Chinese key then translate label
+    j._payPeriodKey = _PAY_PERIOD_ZH[j.pay_period] || j.pay_period || '';
+  }));
+}
+
 async function loadJobs() {
   const jobs = await wApi('/jobs?lang=' + encodeURIComponent(_portalLang));
   if (!jobs) return;
   _allJobs = jobs;
+  await _preTranslateJobs(jobs);
   renderJobs(jobs);
 }
 
@@ -2309,20 +2329,26 @@ function filterJobs() {
 }
 
 function renderJobs(jobs) {
-  const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
   const authLabel = a => ({any: _t('authLabelAny'), gc: _t('authLabelGC'), citizen: _t('authLabelCitizen')})[a] || '';
   const payPeriods = { hourly: _t('payPeriodHourly'), daily: _t('payPeriodDaily'), weekly: _t('payPeriodWeekly'), biweekly: _t('payPeriodBiweekly'), semimonthly: _t('payPeriodSemimonthly'), monthly: _t('payPeriodMonthly') };
-  document.getElementById('jobsList').innerHTML = jobs.length ? jobs.map(j => `
+  document.getElementById('jobsList').innerHTML = jobs.length ? jobs.map(j => {
+    const title = j._titleT || j.title;
+    const jobType = j._typeT || j.type || '';
+    const empType = j._empT || j.employment_type || '';
+    const benefits = j._benefitsT || j.benefits || '';
+    const ppKey = j._payPeriodKey || j.pay_period || '';
+    const ppLabel = payPeriods[ppKey] || ppKey;
+    return `
     <div class="job-card">
       <div style="flex:1;min-width:0">
-        <div class="job-title">${esc(j.title)} ${j.urgent?`<span class="badge badge-urgent">${_t('jobUrgent')}</span>`:''} ${j.applied?`<span class="badge badge-applied">✓ ${_t('jobApplied')}</span>`:''}</div>
+        <div class="job-title">${esc(title)} ${j.urgent?`<span class="badge badge-urgent">${_t('jobUrgent')}</span>`:''} ${j.applied?`<span class="badge badge-applied">✓ ${_t('jobApplied')}</span>`:''}</div>
         <div class="job-meta">
-          ${j.pay?`${_t('jobPay')} ${esc(j.pay)}${j.pay_period?` <span style="font-size:.78rem;color:var(--gray-400)">(${payPeriods[j.pay_period]||j.pay_period})</span>`:''}` :''}
-          ${j.type?` · ${esc(j.type)}`:''}
-          ${j.employment_type?` · ${esc(j.employment_type)}`:''}
+          ${j.pay?`${_t('jobPay')} ${esc(j.pay)}${ppKey?` <span style="font-size:.78rem;color:var(--gray-400)">(${ppLabel})</span>`:''}` :''}
+          ${jobType?` · ${esc(jobType)}`:''}
+          ${empType?` · ${esc(empType)}`:''}
         </div>
         ${j.work_days||j.work_start?`<div class="job-meta" style="margin-top:.25rem">⏰ ${esc(j.work_days||'')} ${j.work_start?j.work_start+'–'+(j.work_end||'?'):''}</div>`:''}
-        ${j.benefits?`<div class="job-meta" style="margin-top:.25rem">🎁 ${esc(j.benefits)}</div>`:''}
+        ${benefits?`<div class="job-meta" style="margin-top:.25rem">🎁 ${esc(benefits)}</div>`:''}
         ${authLabel(j.work_auth)?`<div class="job-meta" style="margin-top:.2rem">🪪 ${authLabel(j.work_auth)}</div>`:''}
         ${j.description?`<div style="margin-top:.5rem;font-size:.82rem;color:var(--gray-700);line-height:1.5">${esc(j.description).slice(0,160)}${j.description.length>160?'…':''}</div>`:''}
       </div>
@@ -2331,7 +2357,8 @@ function renderJobs(jobs) {
           ? `<button class="btn btn-gray" disabled>${_t('jobAppliedBtn')}</button>`
           : `<button class="btn btn-sky" onclick="applyJob(${j.id})">${_t('jobApplyBtn')}</button>`}
       </div>
-    </div>`).join('') : `<div class="empty">${L.noJobs}</div>`;
+    </div>`;
+  }).join('') : `<div class="empty">${_t('noJobs')}</div>`;
 }
 
 let _currentApplyJob = null;
