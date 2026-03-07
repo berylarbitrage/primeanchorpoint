@@ -6114,7 +6114,7 @@ app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
            j.work_days, j.work_start, j.work_end, j.description
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
-    WHERE a.inquiry_id = ? AND a.status != 'cancelled'
+    WHERE a.inquiry_id = ? AND (a.status != 'cancelled' OR a.worker_response = 'rejected')
     ORDER BY a.assigned_at DESC
   `).all(wa.linked_inquiry_id);
   res.json(tasks);
