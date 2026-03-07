@@ -546,6 +546,7 @@ tr:hover td{background:#eef6fd !important}
 const API = '/api';
 let TOKEN = localStorage.getItem('mgr_token') || '';
 let _assignments = [], _workers = [];
+let _myRole = '';
 
 function esc(s) {
   const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML;
@@ -698,6 +699,7 @@ async function showApp() {
   document.getElementById('app').style.display = 'block';
   const me = await mApi('/manager/me');
   if (!me) return;
+  _myRole = me.role || 'manager';
   const displayName = me.display_name || me.username || 'Manager';
   document.getElementById('mgrName').textContent = displayName + ' · ' + (me.role||'Manager').toUpperCase();
   await Promise.all([loadAssignments(), loadTimeClock(), loadWorkers()]);
@@ -1354,15 +1356,31 @@ async function loadSelfPunchHistory() {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无打卡记录</td></tr>';
     return;
   }
+  const canConfirm = (_myRole === 'admin' || _myRole === 'staff');
+  const thead = tbody.closest('table').querySelector('thead tr');
+  if (thead && canConfirm && !thead.querySelector('th.sp-op-col')) {
+    const th = document.createElement('th'); th.className = 'sp-op-col'; th.textContent = '操作'; thead.appendChild(th);
+  }
   function fmtBreak(mins) { return (!mins && mins!==0) ? '—' : Math.floor(mins/60)+'h'+((mins%60)?((mins%60)+'m'):''); }
-  tbody.innerHTML = rows.map(r => `
-    <tr>
+  tbody.innerHTML = rows.map(r => {
+    const statusBadge = r.status==='open' ? '<span class="badge badge-open">进行中</span>' : r.needs_review ? '<span class="badge badge-review">在审核</span>' : '<span class="badge badge-completed">已完成</span>';
+    const confirmBtn = (canConfirm && r.needs_review) ? `<button onclick="confirmSelfPunch(${r.id})" style="padding:.2rem .65rem;border:none;border-radius:6px;background:var(--green);color:#fff;font-size:.75rem;font-weight:600;cursor:pointer">✓ 确认</button>` : '';
+    return `<tr>
       <td style="white-space:nowrap">${fmtDT(r.clock_in)}</td>
       <td style="white-space:nowrap">${r.clock_out ? fmtDT(r.clock_out) : '<span style="color:#f97316;font-weight:600">进行中</span>'}</td>
       <td>${r.break_minutes ? fmtBreak(r.break_minutes) : '—'}</td>
       <td>${r.total_hours ? Number(r.total_hours).toFixed(2)+'h' : '—'}</td>
-      <td><span class="badge badge-${r.status==='open'?'open':r.needs_review?'review':'completed'}">${r.status==='open'?'进行中':r.needs_review?'在审核':'已完成'}</span></td>
-    </tr>`).join('');
+      <td>${statusBadge}</td>
+      ${canConfirm ? `<td>${confirmBtn}</td>` : ''}
+    </tr>`;
+  }).join('');
+}
+
+async function confirmSelfPunch(id) {
+  try {
+    await mApi('/manager/self-punch/' + id + '/confirm', { method: 'POST', body: '{}' });
+    loadSelfPunchHistory();
+  } catch(e) { showToast('操作失败: ' + (e.message||''), 'error'); }
 }
 
 // ── Time Entry Management ─────────────────────────────────────

@@ -2340,6 +2340,12 @@ app.post('/api/admin/manager-self-punch/:id/confirm', requireAdmin, requireRole(
   res.json({ success: true });
 });
 
+// POST /api/manager/self-punch/:id/confirm — admin/staff confirms from manager portal
+app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  db.prepare('UPDATE manager_time_entries SET needs_review=0 WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
   res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, created_at FROM admin_users ORDER BY id').all());
