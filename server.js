@@ -5209,12 +5209,13 @@ app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
 
 // List timesheet sheets (admin)
 app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
-  const { stage } = req.query; // 'verify' | 'payment' | 'history'
+  const { stage } = req.query; // 'verify' | 'pending_confirm' | 'payment' | 'history'
   let where = '';
-  if (stage === 'verify')   where = `WHERE ts.status IN ('pending','confirmed','disputed')`;
-  if (stage === 'payment')  where = `WHERE ts.status = 'verified'`;
-  if (stage === 'dividend') where = `WHERE ts.status = 'dividend_pending'`;
-  if (stage === 'history')  where = `WHERE ts.status = 'completed'`;
+  if (stage === 'verify')          where = `WHERE ts.status IN ('confirmed','disputed')`;
+  if (stage === 'pending_confirm') where = `WHERE ts.status = 'pending'`;
+  if (stage === 'payment')         where = `WHERE ts.status = 'verified'`;
+  if (stage === 'dividend')        where = `WHERE ts.status = 'dividend_pending'`;
+  if (stage === 'history')         where = `WHERE ts.status = 'completed'`;
   const rows = db.prepare(`
     SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
     FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
