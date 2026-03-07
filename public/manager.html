@@ -828,21 +828,28 @@ function renderTimeClock(rows) {
         <span style="font-size:.55rem;color:var(--gray-400);line-height:1">${label}</span>
       </div>`;
     }
-    const photos = [];
-    if (t.clock_in_photo_path) photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.clock_in_photo_path)}`, '上班'));
     const breakRecs = (() => { try { return JSON.parse(t.break_records||'[]'); } catch{ return []; } })();
+    const clockInPin = (t.latitude && t.longitude) ? `<span onclick="showMiniMap(event,${t.latitude},${t.longitude},'上班打卡')" title="上班位置" style="cursor:pointer;font-size:1rem">🟢</span>` : '';
+    const clockOutPin = (t.clock_out_latitude && t.clock_out_longitude) ? `<span onclick="showMiniMap(event,${t.clock_out_latitude},${t.clock_out_longitude},'下班打卡')" title="下班位置" style="cursor:pointer;font-size:1rem">🔴</span>` : '';
+    const clockInPhoto = t.clock_in_photo_path ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.clock_in_photo_path)}`, '上班') : '';
+    const clockOutPhoto = t.punch_photo_path ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`, '下班') : (t.punch_photo ? photoThumb(t.punch_photo, '下班') : '');
+    const photoRows = [];
+    if (clockInPin || clockOutPin || clockInPhoto || clockOutPhoto) {
+      photoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:1px 0"><div style="display:flex;flex-direction:column;gap:2px;min-width:22px;align-items:center">${clockInPin}${clockOutPin}</div><div style="display:flex;gap:2px">${clockInPhoto}${clockOutPhoto}</div></div>`);
+    }
     breakRecs.forEach((b, i) => {
-      if (b.start_photo) photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`));
-      if (b.end_photo)   photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`));
+      const breakPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}')" title="休息${i+1}位置" style="cursor:pointer;font-size:1rem">🟡</span>` : '';
+      const startPhoto = b.start_photo ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`) : '';
+      const endPhoto = b.end_photo ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`) : '';
+      if (breakPin || startPhoto || endPhoto) {
+        photoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:1px 0"><div style="min-width:22px;text-align:center">${breakPin}</div><div style="display:flex;gap:2px">${startPhoto}${endPhoto}</div></div>`);
+      }
     });
-    if (t.punch_photo_path) photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`, '下班'));
-    else if (t.punch_photo) photos.push(photoThumb(t.punch_photo, '下班'));
-    const photoCell = photos.length ? `<div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center">${photos.join('')}</div>` : '—';
+    const photoCell = photoRows.length ? `<div style="display:flex;flex-direction:column">${photoRows.join('')}</div>` : '—';
     const tz = t.display_timezone;
     const incomplete = hasIncompleteLoop(t);
     const rowStyle = incomplete ? ' style="background:linear-gradient(to right,#f87171 0px,#f87171 4px,#fff5f5 4px,#fff5f5 100%);"' : '';
     const incompleteTag = incomplete ? '<span class="emp-incomplete-tag" title="时间记录未完成闭环，请确认">⚠ 待确认</span>' : '';
-    const pins = mgrPunchPins(t);
     const otH = (t.overtime_hours||0) > 0;
     return `<tr${rowStyle} data-entry-id="${t.id}">
       <td class="tc-cb-cell"><input type="checkbox" class="tc-batch-cb" onchange="toggleBatchRow(${t.id},this)"></td>
@@ -856,10 +863,9 @@ function renderTimeClock(rows) {
         ${otH?`<div><span class="ot-text" style="font-size:.75rem">加 ${fmtH(t.overtime_hours)}</span></div>`:''}
       </td>
       <td><span class="badge badge-${t.status==='open'?'open':'closed'}">${t.status==='open'?'进行中':'已完成'}</span></td>
-      <td style="text-align:center;max-width:130px">
+      <td style="text-align:left;max-width:160px">
         ${photoCell}
-        ${pins?`<div style="margin-top:4px;display:flex;flex-wrap:wrap;justify-content:center;gap:2px">${pins}</div>`:''}
-        ${t.notes?`<div style="font-size:.72rem;color:var(--gray-500);margin-top:3px;white-space:normal;word-break:break-word;text-align:left">${esc(t.notes)}</div>`:''}
+        ${t.notes?`<div style="font-size:.72rem;color:var(--gray-500);margin-top:3px;white-space:normal;word-break:break-word">${esc(t.notes)}</div>`:''}
       </td>
       <td><div class="tc-action-cell">
         <button class="tc-action-btn tc-btn-confirm" onclick="confirmEntry(${t.id},this)">✓ 确认工时</button>
