@@ -3204,9 +3204,11 @@ async function loadTimeclock(year, month) {
   const y = year  || _punchCalYear  || new Date().getFullYear();
   const m = month || _punchCalMonth || new Date().getMonth() + 1;
   const entries = await wApi(`/timeclock?year=${y}&month=${m}`);
-  if (!entries) return;
-  if (!Array.isArray(entries)) {
-    document.getElementById('timeclockTable').innerHTML = `<tr><td colspan="11" class="empty">${_t('tcNoEmployeeTable')}</td></tr>`;
+  if (!entries || !Array.isArray(entries)) {
+    renderPunchCalendar([]);
+    if (entries && !Array.isArray(entries)) {
+      document.getElementById('timeclockTable').innerHTML = `<tr><td colspan="11" class="empty">${_t('tcNoEmployeeTable')}</td></tr>`;
+    }
     return;
   }
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
