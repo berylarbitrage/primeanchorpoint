@@ -58,7 +58,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#faf5ff;color:var(--
 .sidebar-top h2{font-size:.9rem;font-weight:700;color:var(--sky);letter-spacing:.02em}
 .sidebar-top .sub{font-size:.72rem;color:#a78bfa;margin-top:.15rem}
 .sidebar-nav{flex:1;padding:.5rem 0}
-.sidebar-nav a{display:block;padding:.6rem 1.5rem;color:#6d28d9;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none;border-left:3px solid transparent}
+.sidebar-nav a{display:flex;align-items:center;gap:.5rem;padding:.6rem 1.5rem;color:#6d28d9;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none;border-left:3px solid transparent}.nav-icon{font-size:1rem;flex-shrink:0;width:1.2em;text-align:center}
 .sidebar-nav a:hover,.sidebar-nav a.active{color:var(--sky);background:#f3e8ff;border-left-color:var(--sky)}
 .sidebar-bottom{padding:1rem 1.5rem;border-top:1px solid #ede9fe}
 .sidebar-bottom .worker-name{font-size:.8rem;color:#6b7280;margin-bottom:.5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -434,21 +434,21 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
     <nav class="sidebar-nav">
-      <a class="active" data-tab="jobs" onclick="showTab('jobs')">职位浏览</a>
-      <a data-tab="interview" onclick="showTab('interview')">我的任务</a>
-      <a data-tab="applications" onclick="showTab('applications')">我的申请</a>
-      <a data-tab="timeclock" onclick="showTab('timeclock')">打卡记录</a>
-      <a data-tab="payments" onclick="showTab('payments')">打款记录</a>
-      <a data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none">合规文件</a>
-      <a data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none">📋 待办事项</a>
-      <a data-tab="referral" onclick="showTab('referral')">🎁 推荐奖励</a>
-      <a data-tab="profile" onclick="showTab('profile')">我的信息</a>
+      <a class="active" data-tab="jobs" onclick="showTab('jobs')"><span class="nav-icon">💼</span><span class="nav-label">职位浏览</span></a>
+      <a data-tab="interview" onclick="showTab('interview')"><span class="nav-icon">📅</span><span class="nav-label">我的任务</span></a>
+      <a data-tab="applications" onclick="showTab('applications')"><span class="nav-icon">📝</span><span class="nav-label">我的申请</span></a>
+      <a data-tab="timeclock" onclick="showTab('timeclock')"><span class="nav-icon">⏱️</span><span class="nav-label">打卡记录</span></a>
+      <a data-tab="payments" onclick="showTab('payments')"><span class="nav-icon">💰</span><span class="nav-label">打款记录</span></a>
+      <a data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none"><span class="nav-icon">📋</span><span class="nav-label">合规文件</span></a>
+      <a data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none"><span class="nav-icon">✅</span><span class="nav-label">待办事项</span></a>
+      <a data-tab="referral" onclick="showTab('referral')"><span class="nav-icon">🎁</span><span class="nav-label">推荐奖励</span></a>
+      <a data-tab="profile" onclick="showTab('profile')"><span class="nav-icon">👤</span><span class="nav-label">我的信息</span></a>
     </nav>
     <div class="sidebar-bottom">
       <div class="lang-sw">
-        <button onclick="setPortalLang('zh')" id="plZh">中</button>
-        <button onclick="setPortalLang('en')" id="plEn">EN</button>
-        <button onclick="setPortalLang('es')" id="plEs">ES</button>
+        <button onclick="setPortalLang('zh')" id="plZh">🇨🇳 中</button>
+        <button onclick="setPortalLang('en')" id="plEn">🇺🇸 EN</button>
+        <button onclick="setPortalLang('es')" id="plEs">🇲🇽 ES</button>
       </div>
       <div class="worker-name" id="workerNameDisplay"></div>
       <button id="logoutBtn" class="sidebar-logout" onclick="workerLogout()">退出</button>
@@ -1174,7 +1174,11 @@ function applyPortalLang() {
   if (el('logoutBtn'))      el('logoutBtn').textContent      = L.logout;
   document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(btn => {
     const label = L.tabs[btn.dataset.tab];
-    if (label) btn.textContent = label;
+    if (label) {
+      const labelEl = btn.querySelector('.nav-label');
+      if (labelEl) labelEl.textContent = label;
+      else btn.textContent = label;
+    }
   });
   // Sidebar lang buttons
   ['zh','en','es'].forEach(l => {
