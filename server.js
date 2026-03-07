@@ -633,6 +633,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
@@ -942,6 +943,14 @@ setTimeout(() => {
   try {
     const unlinked = db.prepare("SELECT id FROM worker_accounts WHERE active=1 AND worker_code IS NULL").all();
     unlinked.forEach(w => { try { activateWorkerAccount(w.id); } catch {} });
+    // Backfill employees.inquiry_id from existing linked worker_accounts
+    db.prepare(`
+      UPDATE employees SET inquiry_id = (
+        SELECT wa.linked_inquiry_id FROM worker_accounts wa
+        WHERE wa.employee_id = employees.id AND wa.linked_inquiry_id IS NOT NULL
+        ORDER BY wa.id DESC LIMIT 1
+      ) WHERE inquiry_id IS NULL
+    `).run();
   } catch {}
 }, 0);
 // Migrate: richer fields on job_applications
@@ -1662,11 +1671,26 @@ function activateWorkerAccount(accountId, prefix) {
     const code = generateWorkerCode(acc.state, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
-  // Ensure a linked inquiry exists — create a new one if not already explicitly linked by admin
+  // Ensure a linked inquiry exists — prefer employee record's stored inquiry_id (survives account deletion/re-creation)
   if (!acc.linked_inquiry_id) {
-    const wName = (acc.name || '').trim();
-    const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
-    db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(r.lastInsertRowid, accountId);
+    let inquiryId = null;
+    // If linked to an employee (EMEE-xxx), use that employee's persistent inquiry_id
+    if (acc.employee_id) {
+      const emp = db.prepare('SELECT inquiry_id FROM employees WHERE id=?').get(acc.employee_id);
+      if (emp && emp.inquiry_id) {
+        inquiryId = emp.inquiry_id;
+      }
+    }
+    if (!inquiryId) {
+      // Create a new inquiry and store it on the employee record for future re-registrations
+      const wName = (acc.name || '').trim();
+      const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
+      inquiryId = r.lastInsertRowid;
+      if (acc.employee_id) {
+        db.prepare('UPDATE employees SET inquiry_id=? WHERE id=?').run(inquiryId, acc.employee_id);
+      }
+    }
+    db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inquiryId, accountId);
   }
 }
 
