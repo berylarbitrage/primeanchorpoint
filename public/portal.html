@@ -3336,7 +3336,7 @@ function _ccShow(step) {
     document.getElementById('ccStep1Error').style.display = 'none';
     setTimeout(() => document.getElementById('ccOldCode').focus(), 100);
   } else if (step === 2) {
-    document.getElementById('ccStep2Desc').textContent = isPhone ? '验证成功！请输入您的新手机号：' : '验证成功！请输入您的新邮箱地址：';
+    document.getElementById('ccStep2Desc').textContent = isPhone ? '请输入您的新手机号：' : '请输入您的新邮箱地址：';
     document.getElementById('ccNewLabel').textContent = isPhone ? '新手机号 *' : '新邮箱地址 *';
     document.getElementById('ccNewValue').type = isPhone ? 'tel' : 'email';
     document.getElementById('ccNewValue').value = '';
@@ -3353,25 +3353,34 @@ function _ccShow(step) {
 
 async function openContactModal(field) {
   _changeContactField = field;
-  // Show overlay first
   const overlay = document.getElementById('changeContactOverlay');
   overlay.style.display = 'flex';
-  // Send code to OLD contact immediately
   const isPhone = field === 'phone';
   document.getElementById('ccTitle').textContent = isPhone ? '更换手机号' : '更换邮箱';
   document.getElementById('ccStepIndicator').textContent = '正在发送验证码…';
   [1,2,3].forEach(n => document.getElementById('ccStep'+n).style.display = 'none');
-  const r = await wApi('/contact/send-old-code', { method:'POST', body: JSON.stringify({ field }) });
-  if (!r) { overlay.style.display = 'none'; return; }
-  if (r.error) { overlay.style.display = 'none'; showToast('❌ ' + r.error, 'error'); return; }
+  const w = _workerInfo && _workerInfo.account;
+  const hasOld = isPhone ? !!(w && w.phone) : !!(w && w.email);
+  if (!hasOld) {
+    // No old contact on file – skip verification step, go straight to entering new value
+    _ccShow(2);
+    return;
+  }
+  let r;
+  try { r = await wApi('/contact/send-old-code', { method:'POST', body: JSON.stringify({ field }) }); } catch(e) { r = null; }
+  if (!r || r.error) {
+    // API failed – still show the modal so user can proceed; go to step 2 and note the error
+    _ccShow(2);
+    const errEl = document.getElementById('ccStep2Error');
+    if (r && r.error) { errEl.textContent = r.error; errEl.style.display = ''; }
+    return;
+  }
   if (r.no_old) {
-    // No old contact, skip step 1 and go straight to step 2
     _ccShow(2);
   } else {
-    const w = _workerInfo && _workerInfo.account;
     const masked = isPhone
-      ? (w && w.phone ? w.phone.slice(0,3)+'****'+w.phone.slice(-2) : '')
-      : (w && w.email ? w.email.replace(/(.{2}).*(@.*)/, '$1****$2') : '');
+      ? (w.phone.slice(0,3)+'****'+w.phone.slice(-2))
+      : (w.email.replace(/(.{2}).*(@.*)/, '$1****$2'));
     document.getElementById('ccStep1Hint').textContent = masked ? `📱 ${masked}` : '';
     _ccShow(1);
   }
