@@ -1625,14 +1625,14 @@ function verifyPin(pin, salt, hash) {
   } catch { return false; }
 }
 
-// ─── Auto-generate employee ID: STAFF-CITY-MMDDYY-000001 ───
-function nextEmployeeId(city, hireDate) {
+// ─── Auto-generate employee ID: STAFF-ST-MMDDYY-0001 ───
+function nextEmployeeId(state, hireDate) {
   const d = hireDate ? new Date(hireDate) : new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yy = String(d.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
-  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
+  const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
   const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
   if (last) {
@@ -1640,7 +1640,7 @@ function nextEmployeeId(city, hireDate) {
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `STAFF-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `STAFF-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
 // ─── Auto-generate worker code: PORT-CITY-MMDDYY-000001 ───
@@ -4792,7 +4792,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
     }
   }
-  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
+  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.state, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
   if (d.ssn) {
     const digits = d.ssn.replace(/\D/g, '');
