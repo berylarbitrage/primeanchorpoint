@@ -1270,6 +1270,8 @@ async function workerLogin() {
 function workerLogout() {
   WORKER_TOKEN = '';
   localStorage.removeItem('pa_worker_token');
+  // Close any open modals so they don't float over login page
+  document.querySelectorAll('.modal-overlay.show').forEach(m => m.classList.remove('show'));
   document.getElementById('loginWrap').style.display = '';
   document.getElementById('app').style.display = 'none';
 }
@@ -3005,6 +3007,13 @@ async function requestContactChange() {
   if (!r) return;
   if (r.error) { errEl.textContent = r.error; errEl.classList.add('show'); return; }
 
+  // Warn if codes were not actually delivered
+  if (!r.old_sent && !r.new_sent) {
+    errEl.textContent = '验证码发送失败，请联系管理员确认短信/邮件服务是否已配置';
+    errEl.classList.add('show');
+    return;
+  }
+
   // Switch to step 2
   const acc = _workerInfo && _workerInfo.account;
   const oldMasked = field === 'phone'
@@ -3014,8 +3023,12 @@ async function requestContactChange() {
     ? (newVal.slice(0,3) + '****' + newVal.slice(-2))
     : (newVal.replace(/(.{2}).*(@.*)/, '$1****$2'));
 
-  document.getElementById('contactCodeHint').innerHTML =
-    `验证码已发送到：<br>• 旧${field==='phone'?'手机号':'邮箱'} <strong>${oldMasked}</strong><br>• 新${field==='phone'?'手机号':'邮箱'} <strong>${newMasked}</strong>`;
+  let hintHtml = `验证码已发送到：`;
+  if (r.old_sent) hintHtml += `<br>• 旧${field==='phone'?'手机号':'邮箱'} <strong>${oldMasked}</strong>`;
+  if (r.new_sent) hintHtml += `<br>• 新${field==='phone'?'手机号':'邮箱'} <strong>${newMasked}</strong>`;
+  if (!r.old_sent && acc && acc[field]) hintHtml += `<br>• <span style="color:#dc2626">旧${field==='phone'?'手机号':'邮箱'}发送失败</span>`;
+  if (!r.new_sent) hintHtml += `<br>• <span style="color:#dc2626">新${field==='phone'?'手机号':'邮箱'}发送失败</span>`;
+  document.getElementById('contactCodeHint').innerHTML = hintHtml;
   document.getElementById('labelOldCode').textContent = `旧${field==='phone'?'手机号':'邮箱'}收到的验证码 *`;
   document.getElementById('labelNewCode').textContent = `新${field==='phone'?'手机号':'邮箱'}收到的验证码 *`;
   document.getElementById('oldContactCode').value = '';
