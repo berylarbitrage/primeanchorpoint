@@ -918,13 +918,13 @@ function renderTimeClock(rows) {
         <div style="color:var(--gray-400);font-size:.75rem">正 ${fmtH(t.regular_hours)}</div>
         ${otH?`<div><span class="ot-text" style="font-size:.75rem">加 ${fmtH(t.overtime_hours)}</span></div>`:''}
       </td>
-      <td><span class="badge badge-${t.status==='open'?'open':'closed'}">${t.status==='open'?'进行中':'已完成'}</span></td>
+      <td>${t.manager_confirmed && t.needs_review ? '<span class="badge" style="background:#fef3c7;color:#92400e">待审核</span>' : `<span class="badge badge-${t.status==='open'?'open':'closed'}">${t.status==='open'?'进行中':'已完成'}</span>`}</td>
       <td style="text-align:left;max-width:160px">
         ${photoCell}
         ${t.notes?`<div style="font-size:.72rem;color:var(--gray-500);margin-top:3px;white-space:normal;word-break:break-word">${esc(t.notes)}</div>`:''}
       </td>
       <td><div class="tc-action-cell">
-        <button class="tc-action-btn tc-btn-confirm" onclick="confirmEntry(${t.id},this)">✓ 确认工时</button>
+        ${!(t.manager_confirmed && t.needs_review) ? `<button class="tc-action-btn tc-btn-confirm" onclick="confirmEntry(${t.id},this)">✓ 确认工时</button>` : '<span style="font-size:.75rem;color:#92400e;font-weight:600">已提交待审核</span>'}
         <button class="tc-action-btn tc-btn-edit" onclick="openEditModal(${t.id})">✎ 修改工时</button>
       </div></td>
     </tr>`;
@@ -1830,7 +1830,7 @@ async function confirmEntry(id, btnEl) {
   const result = await mApi('/manager/time-entries/' + id + '/confirm', { method: 'POST', body: '{}' });
   btnEl.disabled = false;
   if (!result) return;
-  showToast('工时已确认', 'success');
+  showToast('工时已提交，等待管理员审核', 'success');
   loadTimeClock();
 }
 
@@ -1882,7 +1882,7 @@ async function executeBatch(action) {
   }
   const result = await mApi('/manager/time-entries/batch', { method: 'POST', body: JSON.stringify(body) });
   if (!result) return;
-  showToast(action === 'confirm' ? `已确认 ${ids.length} 条工时` : `已更新 ${ids.length} 条工时`, 'success');
+  showToast(action === 'confirm' ? `已提交 ${ids.length} 条工时待审核` : `已更新 ${ids.length} 条工时`, 'success');
   cancelBatch();
   loadTimeClock();
 }
