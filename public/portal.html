@@ -222,30 +222,68 @@ body{top:0!important}
     {code:'de',   label:'🇩🇪 Deutsch'},
   ];
   window._GT_LANGS = LANGS;
-  window._gtDoTranslate = function(lang){
-    // Always clear existing translation cookie first
-    document.cookie='googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/';
-    document.cookie='googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;domain='+location.hostname+';path=/';
-    // Only set a new cookie when switching to a non-source language
-    if(lang && lang!=='zh-CN'){
-      var d=new Date(); d.setFullYear(d.getFullYear()+1);
-      document.cookie='googtrans=/zh-CN/'+lang+';expires='+d.toUTCString()+';path=/';
-      document.cookie='googtrans=/zh-CN/'+lang+';expires='+d.toUTCString()+';domain='+location.hostname+';path=/';
+  window._gtCurrentLang = 'zh-CN';
+
+  // Write / clear the googtrans persistence cookie
+  function _setCookie(lang) {
+    var exp = 'expires=Thu,01 Jan 1970 00:00:00 GMT';
+    // Clear all domain variants
+    ['','domain='+location.hostname,'domain=.'+location.hostname].forEach(function(d){
+      document.cookie='googtrans=;'+exp+';path=/'+(d?';'+d:'');
+    });
+    if (lang && lang !== 'zh-CN') {
+      var e = new Date(); e.setFullYear(e.getFullYear()+1);
+      ['','domain=.'+location.hostname].forEach(function(d){
+        document.cookie='googtrans=/zh-CN/'+lang+';expires='+e.toUTCString()+';path=/'+(d?';'+d:'');
+      });
     }
-    location.reload();
+  }
+
+  // Drive the goog-te-combo (Google Translate's internal select) directly.
+  // Returns true if the combo was found and acted on.
+  function _driveCombo(lang) {
+    var combo = document.querySelector('select.goog-te-combo');
+    if (!combo) return false;
+    // '' = restore original; otherwise set to target language code
+    combo.value = (lang === 'zh-CN') ? '' : lang;
+    combo.dispatchEvent(new Event('change'));
+    return true;
+  }
+
+  // Sync our custom dropdowns to show the active language
+  function _syncSelects(lang) {
+    window._gtCurrentLang = lang;
+    ['goog-gt-select','goog-gt-select-login'].forEach(function(id){
+      var s = document.getElementById(id);
+      if (s) s.value = lang;
+    });
+  }
+
+  window._gtDoTranslate = function(lang) {
+    _setCookie(lang);
+    _syncSelects(lang);
+    if (_driveCombo(lang)) return; // immediate, no reload
+    // GT widget not ready yet — retry until it appears (up to ~3 s)
+    var n = 0;
+    var t = setInterval(function(){
+      if (_driveCombo(lang) || ++n > 30) clearInterval(t);
+    }, 100);
   };
+
   window._buildGtSelect = function(id){
-    var sel=document.getElementById(id); if(!sel)return;
-    var cur=(document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/)||[])[1]||'zh-CN';
+    var sel = document.getElementById(id); if (!sel) return;
+    // Determine current language from cookie
+    var cur = (document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/)||[])[1] || 'zh-CN';
     LANGS.forEach(function(l){
-      var o=document.createElement('option');
-      o.value=l.code; o.textContent=l.label;
-      if(l.code===cur||(!cur&&l.code==='zh-CN')) o.selected=true;
+      var o = document.createElement('option');
+      o.value = l.code; o.textContent = l.label;
+      if (l.code === cur) o.selected = true;
       sel.appendChild(o);
     });
-    sel.addEventListener('change',function(){window._gtDoTranslate(this.value);});
+    sel.addEventListener('change', function(){ window._gtDoTranslate(this.value); });
   };
-  document.addEventListener('DOMContentLoaded',function(){
+
+  document.addEventListener('DOMContentLoaded', function(){
     window._buildGtSelect('goog-gt-select');
     window._buildGtSelect('goog-gt-select-login');
   });
