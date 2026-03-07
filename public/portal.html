@@ -529,11 +529,11 @@ tr:last-child td{border-bottom:none}
           </div>
           <div id="calGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center"></div>
           <div style="display:flex;gap:.65rem;margin-top:.7rem;flex-wrap:wrap;font-size:.73rem;color:#475569">
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;display:inline-block"></span>已接受</span>
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span>待确认</span>
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span>已拒绝</span>
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#a78bfa;display:inline-block"></span>已打卡</span>
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#93c5fd;display:inline-block"></span>计划班次</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;display:inline-block"></span><span data-i18n="calLegendAccepted">已接受</span></span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span><span data-i18n="calLegendPending">待确认</span></span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span><span data-i18n="calLegendDeclined">已拒绝</span></span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#a78bfa;display:inline-block"></span><span data-i18n="calLegendPunched">已打卡</span></span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#93c5fd;display:inline-block"></span><span data-i18n="calLegendProjected">计划班次</span></span>
           </div>
         </div>
       </div>
@@ -1149,8 +1149,15 @@ const PORTAL_I18N = {
     noJobs: '暂无在招职位',
     calTitle: '📆 我的工作日历',
     calLegend: { accepted:'已接受', pending:'待确认', declined:'已拒绝', punched:'已打卡', projected:'计划班次' },
+    calLegendAccepted:'已接受', calLegendPending:'待确认', calLegendDeclined:'已拒绝', calLegendPunched:'已打卡', calLegendProjected:'计划班次',
     calDow: ['日','一','二','三','四','五','六'],
     taskTitle: '📋 我的任务', pendingTaskTitle: '🔔 待确认任务',
+    taskNone: '暂无任务安排，请联系 HR。',
+    taskPendingCount: '个任务待确认', taskPendingConfirm: '请确认是否接受以下任务安排',
+    taskStatusAccepted: '✓ 已接受', taskStatusRejected: '✕ 已拒绝', taskStatusPending: '待回复', taskStatusPendingBadge: '待确认',
+    taskAccept: '✓ 接受任务', taskReject: '✕ 拒绝任务', taskAcceptShort: '✓ 接受', taskRejectShort: '✕ 拒绝',
+    taskStartDate: '开始日期：', taskLocation: '地点：', taskPay: '薪资：', taskContract: '合同类型：',
+    taskToastAccepted: '✅ 已接受任务', taskToastRejected: '✅ 已拒绝任务',
     appTitle: '我的申请记录',
     punchCalTitle: '📅 打卡日历', punchHistTitle: '打卡历史记录',
     punchLegendComplete: '已完成', punchLegendWorking: '工作中',
@@ -1206,8 +1213,15 @@ const PORTAL_I18N = {
     noJobs: 'No jobs available',
     calTitle: '📆 My Work Calendar',
     calLegend: { accepted:'Accepted', pending:'Pending', declined:'Declined', punched:'Clocked', projected:'Scheduled' },
+    calLegendAccepted:'Accepted', calLegendPending:'Pending', calLegendDeclined:'Declined', calLegendPunched:'Clocked', calLegendProjected:'Scheduled',
     calDow: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
     taskTitle: '📋 My Tasks', pendingTaskTitle: '🔔 Pending Tasks',
+    taskNone: 'No assignments yet. Please contact HR.',
+    taskPendingCount: 'task(s) awaiting confirmation', taskPendingConfirm: 'Please confirm whether you accept the following assignments',
+    taskStatusAccepted: '✓ Accepted', taskStatusRejected: '✕ Declined', taskStatusPending: 'Awaiting', taskStatusPendingBadge: 'Pending',
+    taskAccept: '✓ Accept', taskReject: '✕ Decline', taskAcceptShort: '✓ Accept', taskRejectShort: '✕ Decline',
+    taskStartDate: 'Start Date: ', taskLocation: 'Location: ', taskPay: 'Pay: ', taskContract: 'Contract: ',
+    taskToastAccepted: '✅ Assignment accepted', taskToastRejected: '✅ Assignment declined',
     appTitle: 'My Applications',
     punchCalTitle: '📅 Punch Calendar', punchHistTitle: 'Punch History',
     punchLegendComplete: 'Completed', punchLegendWorking: 'Working',
@@ -1263,8 +1277,15 @@ const PORTAL_I18N = {
     noJobs: 'No hay empleos disponibles',
     calTitle: '📆 Mi Calendario Laboral',
     calLegend: { accepted:'Aceptado', pending:'Pendiente', declined:'Rechazado', punched:'Registrado', projected:'Programado' },
+    calLegendAccepted:'Aceptado', calLegendPending:'Pendiente', calLegendDeclined:'Rechazado', calLegendPunched:'Registrado', calLegendProjected:'Programado',
     calDow: ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'],
     taskTitle: '📋 Mis Tareas', pendingTaskTitle: '🔔 Tareas Pendientes',
+    taskNone: 'Sin asignaciones aún. Contacte a RR.HH.',
+    taskPendingCount: 'tarea(s) pendiente(s) de confirmar', taskPendingConfirm: 'Por favor confirme si acepta las siguientes asignaciones',
+    taskStatusAccepted: '✓ Aceptado', taskStatusRejected: '✕ Rechazado', taskStatusPending: 'Pendiente', taskStatusPendingBadge: 'Pendiente',
+    taskAccept: '✓ Aceptar', taskReject: '✕ Rechazar', taskAcceptShort: '✓ Aceptar', taskRejectShort: '✕ Rechazar',
+    taskStartDate: 'Inicio: ', taskLocation: 'Ubicación: ', taskPay: 'Pago: ', taskContract: 'Contrato: ',
+    taskToastAccepted: '✅ Asignación aceptada', taskToastRejected: '✅ Asignación rechazada',
     appTitle: 'Mis Solicitudes',
     punchCalTitle: '📅 Calendario de Asistencia', punchHistTitle: 'Historial de Asistencia',
     punchLegendComplete: 'Completado', punchLegendWorking: 'Trabajando',
@@ -1313,6 +1334,7 @@ function setPortalLang(lang) {
   else if (_activeTab === 'payments') loadPayments();
   else if (_activeTab === 'todos') loadOnboarding();
   else if (_activeTab === 'referral') loadReferrals();
+  else if (_activeTab === 'interview') loadInterview();
   else loadJobs();
 }
 function applyPortalLang() {
@@ -1732,8 +1754,8 @@ async function loadTasks() {
       <div style="background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:.85rem 1rem;margin-bottom:.85rem;display:flex;align-items:flex-start;gap:.65rem">
         <span style="font-size:1.3rem;line-height:1">🔔</span>
         <div>
-          <div style="font-weight:700;font-size:.95rem;color:#dc2626;margin-bottom:.2rem">有 ${pendingTasks.length} 个任务待确认</div>
-          <div style="font-size:.8rem;color:#b91c1c;margin-top:.3rem">请确认是否接受以下任务安排</div>
+          <div style="font-weight:700;font-size:.95rem;color:#dc2626;margin-bottom:.2rem">${pendingTasks.length} ${_t('taskPendingCount')}</div>
+          <div style="font-size:.8rem;color:#b91c1c;margin-top:.3rem">${_t('taskPendingConfirm')}</div>
         </div>
       </div>`;
     confList.innerHTML = urgentBanner + pendingTasks.map(t => {
@@ -1745,14 +1767,14 @@ async function loadTasks() {
               <div style="font-weight:700;font-size:.92rem;color:#92400e">${esc(_withSuffix(t.title||'—'))}</div>
               ${t.company_name ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">Client: ${esc(t.company_name)}</div>` : ''}
             </div>
-            <span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">待确认</span>
+            <span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">${_t('taskStatusPendingBadge')}</span>
           </div>
           ${timeStr ? `<div style="font-size:.83rem;color:#4b5563">⏱ ${esc(timeStr)}</div>` : ''}
           ${(t.work_address||t.location) ? `<div style="font-size:.83rem;color:#4b5563">📍 ${esc(t.work_address||t.location)}</div>` : ''}
-          ${t.start_date ? `<div style="font-size:.83rem;color:#4b5563">📅 开始日期：${fmtDate(t.start_date)}</div>` : ''}
+          ${t.start_date ? `<div style="font-size:.83rem;color:#4b5563">📅 ${_t('taskStartDate')}${fmtDate(t.start_date)}</div>` : ''}
           <div style="display:flex;gap:.6rem;margin-top:.75rem">
-            <button onclick="respondTask(${t.id},'accepted')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✓ 接受</button>
-            <button onclick="respondTask(${t.id},'rejected')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">✕ 拒绝</button>
+            <button onclick="respondTask(${t.id},'accepted')" style="flex:1;padding:.5rem .4rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">${_t('taskAcceptShort')}</button>
+            <button onclick="respondTask(${t.id},'rejected')" style="flex:1;padding:.5rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer">${_t('taskRejectShort')}</button>
           </div>
         </div>`;
     }).join('');
@@ -1761,7 +1783,7 @@ async function loadTasks() {
   }
 
   if (!tasks || !tasks.length) {
-    el.innerHTML = '<p style="color:var(--gray-500);font-size:.9rem;padding:.5rem 0">暂无任务安排，请联系 HR。</p>';
+    el.innerHTML = `<p style="color:var(--gray-500);font-size:.9rem;padding:.5rem 0">${_t('taskNone')}</p>`;
     return;
   }
   const fmt = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh = parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
@@ -1781,14 +1803,14 @@ async function loadTasks() {
     }
     const timeStr = (estStart && estEnd) ? `${fmt(estStart)} – ${fmt(estEnd)}` : '';
     const statusBadge = resp === 'accepted'
-      ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:600">✓ 已接受</span>`
+      ? `<span style="background:#dcfce7;color:#15803d;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:600">${_t('taskStatusAccepted')}</span>`
       : resp === 'rejected'
-      ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:600">✕ 已拒绝</span>`
-      : `<span style="background:#fef9c3;color:#92400e;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:600">待回复</span>`;
+      ? `<span style="background:#fee2e2;color:#dc2626;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:600">${_t('taskStatusRejected')}</span>`
+      : `<span style="background:#fef9c3;color:#92400e;border-radius:99px;padding:.15rem .65rem;font-size:.75rem;font-weight:600">${_t('taskStatusPending')}</span>`;
     const actionBtns = !resp ? `
       <div style="display:flex;gap:.6rem;margin-top:.9rem">
-        <button onclick="respondTask(${t.id},'accepted')" style="flex:1;padding:.5rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer">✓ 接受任务</button>
-        <button onclick="respondTask(${t.id},'rejected')" style="flex:1;padding:.5rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer">✕ 拒绝任务</button>
+        <button onclick="respondTask(${t.id},'accepted')" style="flex:1;padding:.5rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer">${_t('taskAccept')}</button>
+        <button onclick="respondTask(${t.id},'rejected')" style="flex:1;padding:.5rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer">${_t('taskReject')}</button>
       </div>` : '';
     return `
       <div style="border:1px solid var(--gray-200);border-radius:12px;padding:1rem;margin-bottom:.85rem;background:#fafafa">
@@ -1810,10 +1832,10 @@ async function loadTasks() {
         </div>` : ''}
         <div style="font-size:.83rem;color:var(--gray-600);display:grid;gap:.22rem">
           ${renderDailyTaskReq(t)}
-          ${t.start_date ? `<div>📅 <span style="color:var(--gray-400)">开始日期：</span>${fmtDate(t.start_date)}</div>` : ''}
-          ${(t.work_address||t.location) ? `<div>📍 <span style="color:var(--gray-400)">地点：</span>${esc(t.work_address||t.location)}</div>` : ''}
-          ${t.pay_rate ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay_rate)}${t.pay_type==='hourly'?' /hr':''}</div>` : (t.pay ? `<div>💰 <span style="color:var(--gray-400)">薪资：</span>${esc(t.pay)}</div>` : '')}
-          ${t.contract_type ? `<div>📄 <span style="color:var(--gray-400)">合同类型：</span>${esc(t.contract_type)}</div>` : ''}
+          ${t.start_date ? `<div>📅 <span style="color:var(--gray-400)">${_t('taskStartDate')}</span>${fmtDate(t.start_date)}</div>` : ''}
+          ${(t.work_address||t.location) ? `<div>📍 <span style="color:var(--gray-400)">${_t('taskLocation')}</span>${esc(t.work_address||t.location)}</div>` : ''}
+          ${t.pay_rate ? `<div>💰 <span style="color:var(--gray-400)">${_t('taskPay')}</span>${esc(t.pay_rate)}${t.pay_type==='hourly'?' /hr':''}</div>` : (t.pay ? `<div>💰 <span style="color:var(--gray-400)">${_t('taskPay')}</span>${esc(t.pay)}</div>` : '')}
+          ${t.contract_type ? `<div>📄 <span style="color:var(--gray-400)">${_t('taskContract')}</span>${esc(t.contract_type)}</div>` : ''}
           ${t.notes ? `<div style="margin-top:.3rem;color:var(--gray-500);font-style:italic">${esc(t.notes)}</div>` : ''}
         </div>
         ${actionBtns}
@@ -1824,7 +1846,7 @@ async function loadTasks() {
 async function respondTask(id, response) {
   const r = await wApi(`/my-tasks/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
   if (r && r.success) {
-    showToast(response === 'accepted' ? '✅ 已接受任务' : '✅ 已拒绝任务');
+    showToast(response === 'accepted' ? _t('taskToastAccepted') : _t('taskToastRejected'));
     loadTasks();
   }
 }
@@ -1850,7 +1872,7 @@ async function confirmScheduledShift(assignmentId, date, response) {
 
 // ── Work Calendar ─────────────────────────────────────────────────
 const _CAL_DOW_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
-const _CAL_DAY_LABELS = ['日','一','二','三','四','五','六'];
+function _calDayLabels() { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh).calDow || ['日','一','二','三','四','五','六']; }
 let _calYear = new Date().getFullYear();
 let _calMonth = new Date().getMonth() + 1; // 1–12
 let _calData = null;
@@ -1874,7 +1896,9 @@ function calChangeMonth(delta) {
 }
 
 function renderCalendar() {
-  document.getElementById('calMonthLabel').textContent = `${_calYear}年${_calMonth}月`;
+  document.getElementById('calMonthLabel').textContent = _portalLang === 'zh'
+    ? `${_calYear}年${_calMonth}月`
+    : new Date(_calYear, _calMonth - 1, 1).toLocaleDateString(_portalLang === 'es' ? 'es-MX' : 'en-US', { year:'numeric', month:'long' });
   const grid = document.getElementById('calGrid');
 
   // Build date → confirmations lookup
@@ -1913,7 +1937,7 @@ function renderCalendar() {
   const statusColor = { confirmed: '#16a34a', pending: '#f59e0b', declined: '#dc2626' };
 
   // Header row
-  let html = _CAL_DAY_LABELS.map(l =>
+  let html = _calDayLabels().map(l =>
     `<div style="font-weight:700;font-size:.72rem;color:#94a3b8;padding:.25rem 0">${l}</div>`
   ).join('');
 
@@ -2896,7 +2920,9 @@ function renderPunchCalendar(entries) {
   const firstDow = new Date(y, m - 1, 1).getDay();
   const todayStr = new Date().toLocaleDateString('en-CA');
 
-  const monthLabel = `${y}年${m}月`;
+  const monthLabel = _portalLang === 'zh'
+    ? `${y}年${m}月`
+    : new Date(y, m - 1, 1).toLocaleDateString(_portalLang === 'es' ? 'es-MX' : 'en-US', { year:'numeric', month:'long' });
   document.getElementById('punchCalMonthLabel').textContent = monthLabel;
 
   const dowLabels = L.calDow || ['日','一','二','三','四','五','六'];
