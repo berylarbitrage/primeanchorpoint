@@ -44,8 +44,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
 .gps-fail{background:#FFEAEA;color:var(--red);border:1px solid #FFC8C8}
 .gps-pending{background:var(--sky-light);color:var(--blue);border:1px solid #B8D4F8}
 .gps-na{background:var(--off);color:var(--gray-600);border:1px solid var(--gray-200)}
-.punch-grid{display:flex;flex-direction:column;gap:.65rem;margin-bottom:.65rem}
-.punch-row{display:grid;grid-template-columns:1fr 1fr;gap:.65rem}
+.punch-grid{display:grid;grid-template-columns:1fr 1fr;gap:.65rem;margin-bottom:.65rem}
 .btn-punch{padding:18px 10px;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:.3rem;line-height:1.2}
 .btn-punch .icon{font-size:1.5rem}
 .btn-punch:disabled{opacity:.4;cursor:not-allowed}
@@ -126,18 +125,16 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
     </div>
 
     <div class="punch-grid">
-      <button class="btn-punch btn-in" id="btnIn" onclick="confirmPunch('in')" style="display:none">
+      <button class="btn-punch btn-in" id="btnIn" onclick="confirmPunch('in')">
         <span class="icon">▶</span>上班打卡
       </button>
-      <div class="punch-row" id="inShiftRow" style="display:none">
-        <button class="btn-punch btn-pause" id="btnPause" onclick="confirmPunch('break_start')">
-          <span class="icon">⏸</span>暂停 Pause
-        </button>
-        <button class="btn-punch btn-out" id="btnOut" onclick="confirmPunch('out')">
-          <span class="icon">◼</span>下班打卡
-        </button>
-      </div>
-      <button class="btn-punch btn-resume" id="btnResume" onclick="confirmPunch('break_end')" style="display:none">
+      <button class="btn-punch btn-out" id="btnOut" onclick="confirmPunch('out')">
+        <span class="icon">◼</span>下班打卡
+      </button>
+      <button class="btn-punch btn-pause" id="btnPause" onclick="confirmPunch('break_start')">
+        <span class="icon">⏸</span>暂停 Pause
+      </button>
+      <button class="btn-punch btn-resume" id="btnResume" onclick="confirmPunch('break_end')">
         <span class="icon">▶▶</span>继续 Resume
       </button>
     </div>
@@ -249,15 +246,11 @@ function buildPunchScreen(data) {
   hideMsg('geoBlockMsg');
   document.querySelectorAll('.btn-punch').forEach(b => b.disabled = false);
 
-  // Show/hide buttons based on state
-  document.getElementById('btnIn').style.display       = !data.clocked_in ? 'flex' : 'none';
-  document.getElementById('inShiftRow').style.display  = (data.clocked_in && !data.on_break) ? 'grid' : 'none';
-  document.getElementById('btnResume').style.display   = data.on_break ? 'flex' : 'none';
-
+  // Status — 左: 绿(上班)/橙(暂停)  右: 红(未打卡)/紫(休息结束)  缺状态空着
   let sHtml;
-  if (!data.clocked_in) sHtml = '<span class="dot-red"></span>未打卡';
-  else if (data.on_break) sHtml = '<span class="dot-pause"></span><strong style="color:var(--orange)">暂停中</strong>';
-  else sHtml = '<span class="dot-on"></span><strong style="color:var(--green)">上班中</strong>';
+  if (!data.clocked_in) sHtml = '<span class="dot-ph"></span><span class="dot-red"></span>未打卡';
+  else if (data.on_break) sHtml = '<span class="dot-pause"></span><span class="dot-ph"></span><strong style="color:var(--orange)">暂停中</strong>';
+  else sHtml = '<span class="dot-on"></span><span class="dot-ph"></span><strong style="color:var(--green)">上班中</strong>';
   document.getElementById('statusText').innerHTML = sHtml;
 
   if (data.clocked_in && data.clock_in_time) {
@@ -396,7 +389,7 @@ function renderResult(r, ptype) {
     detail = `暂停记录时间：<strong>${new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</strong>`;
   } else if (ptype === 'break_end') {
     const bm = r.break_minutes || 0;
-    detail = `<span class="dot-on"></span> 继续上班，本次暂停：<strong>${bm} 分钟</strong>`;
+    detail = `<span class="dot-on"></span><span class="dot-purple"></span> 继续上班，本次暂停：<strong>${bm} 分钟</strong>`;
   }
 
   const warnHtml = r.warning ? `<div class="warn-box">⚠ ${esc(r.warning)}</div>` : '';
