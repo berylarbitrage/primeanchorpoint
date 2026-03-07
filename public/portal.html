@@ -191,18 +191,86 @@ tr:last-child td{border-bottom:none}
 <script src="/address-validator.js" defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+<!-- Google Translate -->
+<style>
+.goog-te-banner-frame,.skiptranslate{display:none!important}
+body{top:0!important}
+.gt-wrap{margin-top:.5rem}
+.gt-select-row{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.gt-label{font-size:.72rem;font-weight:700;color:var(--gray-500);white-space:nowrap}
+#goog-gt-select,#goog-gt-select-login{padding:.28rem .5rem;border:1.5px solid #a78bfa;background:#f3e8ff;color:#7c3aed;border-radius:6px;font-size:.75rem;cursor:pointer;max-width:140px;font-weight:600}
+#goog-gt-select:hover,#goog-gt-select-login:hover{background:#ede9fe;border-color:#7c3aed}
+.login-gt-wrap{margin-top:.5rem;display:flex;justify-content:center}
+</style>
+<script>
+(function(){
+  var LANGS=[
+    {code:'zh-CN',label:'🇨🇳 中文(简)'},
+    {code:'zh-TW',label:'🇹🇼 中文(繁)'},
+    {code:'en',   label:'🇺🇸 English'},
+    {code:'es',   label:'🇲🇽 Español'},
+    {code:'ko',   label:'🇰🇷 한국어'},
+    {code:'ja',   label:'🇯🇵 日本語'},
+    {code:'vi',   label:'🇻🇳 Tiếng Việt'},
+    {code:'tl',   label:'🇵🇭 Filipino'},
+    {code:'fr',   label:'🇫🇷 Français'},
+    {code:'pt',   label:'🇧🇷 Português'},
+    {code:'ar',   label:'🇸🇦 العربية'},
+    {code:'ru',   label:'🇷🇺 Русский'},
+    {code:'hi',   label:'🇮🇳 हिन्दी'},
+    {code:'th',   label:'🇹🇭 ภาษาไทย'},
+    {code:'de',   label:'🇩🇪 Deutsch'},
+  ];
+  window._GT_LANGS = LANGS;
+  window._gtDoTranslate = function(lang){
+    var d=new Date(); d.setFullYear(d.getFullYear()+1);
+    document.cookie='googtrans=/zh-CN/'+lang+';expires='+d.toUTCString()+';path=/';
+    document.cookie='googtrans=/zh-CN/'+lang+';expires='+d.toUTCString()+';domain='+location.hostname+';path=/';
+    if(lang==='zh-CN'){
+      document.cookie='googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/';
+      document.cookie='googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;domain='+location.hostname+';path=/';
+    }
+    location.reload();
+  };
+  window._buildGtSelect = function(id){
+    var sel=document.getElementById(id); if(!sel)return;
+    var cur=(document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/)||[])[1]||'zh-CN';
+    LANGS.forEach(function(l){
+      var o=document.createElement('option');
+      o.value=l.code; o.textContent=l.label;
+      if(l.code===cur||(!cur&&l.code==='zh-CN')) o.selected=true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change',function(){window._gtDoTranslate(this.value);});
+  };
+  document.addEventListener('DOMContentLoaded',function(){
+    window._buildGtSelect('goog-gt-select');
+    window._buildGtSelect('goog-gt-select-login');
+  });
+})();
+function googleTranslateElementInit(){
+  new google.translate.TranslateElement({pageLanguage:'zh-CN',autoDisplay:false},'google_translate_element');
+}
+</script>
+<script src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" async></script>
 </head>
 <body>
+<div id="google_translate_element" style="display:none"></div>
 <div id="toast-wrap"></div>
 
 <!-- Login -->
 <div class="login-wrap" id="loginWrap">
   <div class="login-box">
     <!-- Language switcher -->
-    <div style="display:flex;justify-content:center;gap:.4rem;margin-bottom:1.1rem">
+    <div style="display:flex;justify-content:center;gap:.4rem;margin-bottom:.6rem">
       <button class="login-lang-btn" id="lbZh" onclick="setPortalLang('zh')">中文</button>
       <button class="login-lang-btn" id="lbEn" onclick="setPortalLang('en')">English</button>
       <button class="login-lang-btn" id="lbEs" onclick="setPortalLang('es')">Español</button>
+    </div>
+    <div class="login-gt-wrap" style="margin-bottom:.9rem">
+      <select id="goog-gt-select-login" title="翻译页面 / Translate page">
+        <option value="">🌐 更多语言 / More Languages</option>
+      </select>
     </div>
     <img src="/logo.svg" alt="Prime Anchorpoint">
     <h1 id="loginTitle">工人门户</h1>
@@ -450,6 +518,14 @@ tr:last-child td{border-bottom:none}
         <button onclick="setPortalLang('zh')" id="plZh">🇨🇳 中</button>
         <button onclick="setPortalLang('en')" id="plEn">🇺🇸 EN</button>
         <button onclick="setPortalLang('es')" id="plEs">🇲🇽 ES</button>
+      </div>
+      <div class="gt-wrap">
+        <div class="gt-select-row">
+          <span class="gt-label">🌐</span>
+          <select id="goog-gt-select" title="翻译页面 / Translate page" style="flex:1">
+            <option value="">更多语言…</option>
+          </select>
+        </div>
       </div>
       <div class="worker-name" id="workerNameDisplay"></div>
       <button id="logoutBtn" class="sidebar-logout" onclick="workerLogout()">退出</button>
