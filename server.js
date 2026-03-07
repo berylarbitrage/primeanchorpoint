@@ -1324,6 +1324,36 @@ setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
 // work_schedule JSON. Skips terminated / resigned / cancelled.
 const _WEEK_DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
 
+// Normalize work_schedule to a {mon:{rest,start,end}, ...} days map.
+// Handles both formats:
+//   New: { type:"estimate", days:{ mon:{rest,start,end}, sat:{...}, ... } }
+//   Legacy: { Mon:{start,end}, Sat:{start,end}, ... }  (flat PascalCase, no rest field)
+// Falls back to jobSchedJson when the assignment schedule has no usable days.
+function _parseSchedDays(schedJson, jobSchedJson) {
+  function _extract(s) {
+    if (!s || typeof s !== 'object') return {};
+    if (s.days && typeof s.days === 'object') return s.days;
+    // Legacy flat format
+    const out = {};
+    _WEEK_DAY_KEYS.forEach(k => {
+      const v = s[k] || s[k.charAt(0).toUpperCase() + k.slice(1)];
+      if (v && (v.start || v.end)) out[k] = { rest: false, start: v.start || '', end: v.end || '' };
+    });
+    return out;
+  }
+  let days = _extract(schedJson);
+  // If assignment has no usable work days, fall back to job schedule
+  const hasWork = Object.values(days).some(d => !d.rest && (d.start || d.end));
+  if (!hasWork && jobSchedJson) {
+    const jobDays = _extract(jobSchedJson);
+    // Merge: use job days for any day not explicitly set in assignment
+    _WEEK_DAY_KEYS.forEach(k => {
+      if (!days[k] && jobDays[k]) days[k] = jobDays[k];
+    });
+  }
+  return days;
+}
+
 async function generateWeeklyShiftConfirmations() {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -1345,7 +1375,7 @@ async function generateWeeklyShiftConfirmations() {
   // Active assignments only (not terminated / resigned / cancelled)
   const assignments = db.prepare(`
     SELECT a.id, a.work_schedule,
-           j.title,
+           j.title, j.work_schedule AS job_work_schedule,
            w.id as worker_id, w.phone, w.first_name, w.name as wname
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
@@ -1360,10 +1390,12 @@ async function generateWeeklyShiftConfirmations() {
   for (const a of assignments) {
     let sched = {};
     try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+    let jobSched = null;
+    try { jobSched = JSON.parse(a.job_work_schedule || 'null'); } catch {}
     const workStart = sched.workStart || null;
     const workEnd = sched.workEnd || null;
     const untilFurther = !!sched.untilFurther;
-    const days = sched.days || {};
+    const days = _parseSchedDays(sched, jobSched);
 
     for (const { date, dayKey } of weekDates) {
       if (workStart && date < workStart) continue;
@@ -6241,7 +6273,8 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
   const assignments = db.prepare(`
     SELECT a.id, a.work_schedule, a.start_date, j.title, j.location AS job_location,
            j.description AS job_description, j.pay AS job_pay, j.company_name,
-           a.work_address, a.pay_rate, a.pay_type
+           a.work_address, a.pay_rate, a.pay_type,
+           j.work_schedule AS job_work_schedule
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')

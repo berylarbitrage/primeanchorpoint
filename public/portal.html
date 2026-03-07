@@ -223,12 +223,14 @@ body{top:0!important}
   ];
   window._GT_LANGS = LANGS;
   window._gtDoTranslate = function(lang){
-    var d=new Date(); d.setFullYear(d.getFullYear()+1);
-    document.cookie='googtrans=/zh-CN/'+lang+';expires='+d.toUTCString()+';path=/';
-    document.cookie='googtrans=/zh-CN/'+lang+';expires='+d.toUTCString()+';domain='+location.hostname+';path=/';
-    if(lang==='zh-CN'){
-      document.cookie='googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/';
-      document.cookie='googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;domain='+location.hostname+';path=/';
+    // Always clear existing translation cookie first
+    document.cookie='googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/';
+    document.cookie='googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;domain='+location.hostname+';path=/';
+    // Only set a new cookie when switching to a non-source language
+    if(lang && lang!=='zh-CN'){
+      var d=new Date(); d.setFullYear(d.getFullYear()+1);
+      document.cookie='googtrans=/zh-CN/'+lang+';expires='+d.toUTCString()+';path=/';
+      document.cookie='googtrans=/zh-CN/'+lang+';expires='+d.toUTCString()+';domain='+location.hostname+';path=/';
     }
     location.reload();
   };
@@ -2131,6 +2133,32 @@ async function confirmScheduledShift(assignmentId, date, response) {
 
 // ── Work Calendar ─────────────────────────────────────────────────
 const _CAL_DOW_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
+
+// Normalize any work_schedule format into a lowercase-keyed days map.
+// Supports:
+//   New format : { type:"estimate", days:{ mon:{rest,start,end}, sat:{...} } }
+//   Legacy flat: { Mon:{start,end}, Sat:{start,end} }  (no 'rest' field — treat as work day)
+// jobSched is an optional fallback (job's own work_schedule object) used when
+// the assignment schedule has no usable (non-rest) days at all.
+function _parseScheduleDays(sched, jobSched) {
+  function _extract(s) {
+    if (!s || typeof s !== 'object') return {};
+    if (s.days && typeof s.days === 'object') return s.days;
+    const out = {};
+    _CAL_DOW_KEYS.forEach(k => {
+      const v = s[k] || s[k.charAt(0).toUpperCase() + k.slice(1)];
+      if (v && (v.start || v.end)) out[k] = { rest: false, start: v.start || '', end: v.end || '' };
+    });
+    return out;
+  }
+  let days = _extract(sched);
+  const hasWork = Object.values(days).some(d => !d.rest && (d.start || d.end));
+  if (!hasWork && jobSched) {
+    const jobDays = _extract(jobSched);
+    _CAL_DOW_KEYS.forEach(k => { if (!days[k] && jobDays[k]) days[k] = jobDays[k]; });
+  }
+  return days;
+}
 function _calDayLabels() { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh).calDow || ['日','一','二','三','四','五','六']; }
 let _calYear = new Date().getFullYear();
 let _calMonth = new Date().getMonth() + 1; // 1–12
@@ -2176,10 +2204,12 @@ function renderCalendar() {
   (_calData.assignments || []).forEach(a => {
     let sched = {};
     try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+    let jobSched = null;
+    try { jobSched = JSON.parse(a.job_work_schedule || 'null'); } catch {}
     const workStart = sched.workStart || a.start_date || null;
     const workEnd   = sched.workEnd   || null;
     const untilFurther = !!sched.untilFurther;
-    const days = sched.days || {};
+    const days = _parseScheduleDays(sched, jobSched);
     for (let d = 1; d <= daysInMonth; d++) {
       const dateObj = new Date(_calYear, _calMonth - 1, d);
       const dateStr = dateObj.toISOString().slice(0, 10);
@@ -2251,10 +2281,12 @@ function calDayClick(dateStr) {
     (_calData.assignments || []).forEach(a => {
       let sched = {};
       try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+      let jobSched = null;
+      try { jobSched = JSON.parse(a.job_work_schedule || 'null'); } catch {}
       const workStart = sched.workStart || a.start_date || null;
       const workEnd = sched.workEnd || null;
       const untilFurther = !!sched.untilFurther;
-      const days = sched.days || {};
+      const days = _parseScheduleDays(sched, jobSched);
       if (workStart && dateStr < workStart) return;
       if (!untilFurther && workEnd && dateStr > workEnd) return;
       const dayInfo = days[dow];
