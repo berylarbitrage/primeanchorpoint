@@ -1209,6 +1209,7 @@ try { db.exec("ALTER TABLE time_entries ADD COLUMN punch_photo TEXT DEFAULT NULL
 try { db.exec("ALTER TABLE time_entries ADD COLUMN job_id INTEGER DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN needs_review INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN review_reason TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE manager_time_entries ADD COLUMN needs_review INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN site_timezone TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_latitude REAL DEFAULT NULL"); } catch {}
@@ -2287,14 +2288,14 @@ app.post('/api/manager/self-punch', requireAdmin, requireRole('manager', 'admin'
       open.break_minutes = breakMins;
     }
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
-    db.prepare("UPDATE manager_time_entries SET clock_out=?, total_hours=?, status='closed' WHERE id=?").run(now, hrs.total, open.id);
+    db.prepare("UPDATE manager_time_entries SET clock_out=?, total_hours=?, status='closed', needs_review=1 WHERE id=?").run(now, hrs.total, open.id);
     return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now });
   }
   // punch_type === 'in'
   if (open) {
     // Auto-close any dangling open entry
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
-    db.prepare("UPDATE manager_time_entries SET clock_out=?, total_hours=?, status='closed' WHERE id=?").run(now, hrs.total, open.id);
+    db.prepare("UPDATE manager_time_entries SET clock_out=?, total_hours=?, status='closed', needs_review=1 WHERE id=?").run(now, hrs.total, open.id);
   }
   const result = db.prepare("INSERT INTO manager_time_entries (manager_id, clock_in, status, break_records, on_break) VALUES (?, ?, 'open', '[]', 0)").run(req.userId, now);
   return res.json({ action: 'in', clock_in: now, entry_id: result.lastInsertRowid });
@@ -2309,6 +2310,23 @@ app.get('/api/manager/self-punch-history', requireAdmin, requireRole('manager', 
   if (date_to)   { q += ' AND DATE(clock_in)<=?'; p.push(date_to); }
   q += ' ORDER BY clock_in DESC LIMIT 200';
   res.json(db.prepare(q).all(...p));
+});
+
+// GET /api/admin/managers/:id/self-punch — admin views a specific manager's own punch records
+app.get('/api/admin/managers/:id/self-punch', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { date_from, date_to } = req.query;
+  let q = 'SELECT * FROM manager_time_entries WHERE manager_id=?';
+  const p = [req.params.id];
+  if (date_from) { q += ' AND DATE(clock_in)>=?'; p.push(date_from); }
+  if (date_to)   { q += ' AND DATE(clock_in)<=?'; p.push(date_to); }
+  q += ' ORDER BY clock_in DESC LIMIT 200';
+  res.json(db.prepare(q).all(...p));
+});
+
+// POST /api/admin/manager-self-punch/:id/confirm — admin confirms a manager's self-punch record
+app.post('/api/admin/manager-self-punch/:id/confirm', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  db.prepare('UPDATE manager_time_entries SET needs_review=0 WHERE id=?').run(req.params.id);
+  res.json({ success: true });
 });
 
 // ─── Account Management (admin only) ───
