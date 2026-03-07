@@ -197,6 +197,12 @@ tr:last-child td{border-bottom:none}
 <!-- Login -->
 <div class="login-wrap" id="loginWrap">
   <div class="login-box">
+    <!-- Language switcher -->
+    <div style="display:flex;justify-content:center;gap:.4rem;margin-bottom:1.1rem">
+      <button class="login-lang-btn" id="lbZh" onclick="setPortalLang('zh')">中文</button>
+      <button class="login-lang-btn" id="lbEn" onclick="setPortalLang('en')">English</button>
+      <button class="login-lang-btn" id="lbEs" onclick="setPortalLang('es')">Español</button>
+    </div>
     <img src="/logo.svg" alt="Prime Anchorpoint">
     <h1 id="loginTitle">工人门户</h1>
     <p id="loginSubtitle">Worker Self-Service Portal</p>
@@ -439,6 +445,11 @@ tr:last-child td{border-bottom:none}
       <a data-tab="profile" onclick="showTab('profile')"><span class="nav-icon">👤</span><span class="nav-label">我的信息</span></a>
     </nav>
     <div class="sidebar-bottom">
+      <div class="lang-sw">
+        <button onclick="setPortalLang('zh')" id="plZh">🇨🇳 中</button>
+        <button onclick="setPortalLang('en')" id="plEn">🇺🇸 EN</button>
+        <button onclick="setPortalLang('es')" id="plEs">🇲🇽 ES</button>
+      </div>
       <div class="worker-name" id="workerNameDisplay"></div>
       <button id="logoutBtn" class="sidebar-logout" onclick="workerLogout()">退出</button>
     </div>
