@@ -6310,6 +6310,12 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
       AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
       AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
   `).all(req.workerEmployeeId, fromStr, toStr).map(r => r.date) : [];
+  // Debug: log assignment schedules to diagnose missing Sunday
+  assignments.forEach(a => {
+    let ws = {}; try { ws = JSON.parse(a.work_schedule || '{}'); } catch {}
+    const days = ws.days || ws;
+    console.log(`[work-calendar debug] assignment ${a.id}: sun=${JSON.stringify(days.sun || days.Sun)}, sat=${JSON.stringify(days.sat || days.Sat)}, workStart=${ws.workStart||a.start_date}, workEnd=${ws.workEnd}`);
+  });
   res.json({ confirmations, assignments, punchDates });
 });
 
