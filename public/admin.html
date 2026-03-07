@@ -757,6 +757,18 @@ tr:hover td{background:var(--sky-light)}
       <option value="">— 选择经理 —</option>
     </select>
   </div>
+  <!-- Confirm-edit overlay -->
+  <div id="mgrAssignConfirmOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:none;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:14px;padding:2rem 2.2rem;max-width:420px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.22);text-align:center">
+      <div style="font-size:2rem;margin-bottom:.5rem">⚠️</div>
+      <h3 style="margin:0 0 .6rem;font-size:1.05rem">确认修改工作分配？</h3>
+      <p id="mgrAssignConfirmMsg" style="font-size:.88rem;color:#555;margin:0 0 1.4rem;line-height:1.5"></p>
+      <div style="display:flex;gap:.75rem;justify-content:center">
+        <button onclick="mgrAssignConfirmCancel()" style="padding:.55rem 1.4rem;border:1px solid #d1d5db;border-radius:8px;background:#fff;font-size:.9rem;cursor:pointer;color:#374151">取消</button>
+        <button onclick="mgrAssignConfirmProceed()" style="padding:.55rem 1.4rem;border:none;border-radius:8px;background:#f59e0b;color:#fff;font-size:.9rem;font-weight:700;cursor:pointer">确认修改</button>
+      </div>
+    </div>
+  </div>
   <div id="mgrAssignPanel" style="display:none">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;align-items:start">
       <!-- Left: Jobs -->
@@ -12976,6 +12988,22 @@ async function loadAdminMgrStaff() {
 let _mgrAssignJobsData = [];
 let _mgrAssignEmpsData = [];
 let _mgrAssignEmpChecks = {}; // {empId: true/false} — tracks current checkbox states
+let _mgrAssignPendingLoad = null; // stores data pending confirmation
+
+function mgrAssignConfirmCancel() {
+  document.getElementById('mgrAssignConfirmOverlay').style.display = 'none';
+  _mgrAssignPendingLoad = null;
+  document.getElementById('adminMgrAssignSel').value = '';
+}
+
+function mgrAssignConfirmProceed() {
+  document.getElementById('mgrAssignConfirmOverlay').style.display = 'none';
+  if (_mgrAssignPendingLoad) {
+    const { currentJobIds, currentEmpIds, accounts, jobs, emps } = _mgrAssignPendingLoad;
+    _mgrAssignPendingLoad = null;
+    _doRenderMgrAssignPanel(currentJobIds, currentEmpIds, accounts, jobs, emps);
+  }
+}
 
 async function loadMgrAssignPanel() {
   const mgrId = document.getElementById('adminMgrAssignSel').value;
@@ -12997,19 +13025,35 @@ async function loadMgrAssignPanel() {
     const currentJobIds  = new Set((mgr?.assigned_job_ids      || '').split(',').map(s => parseInt(s.trim())).filter(Boolean));
     const currentEmpIds  =         (mgr?.assigned_employee_ids || '').split(',').map(s => parseInt(s.trim())).filter(Boolean);
 
-    _mgrAssignJobsData = (jobs || []).filter(j => j.active);
-    _mgrAssignEmpsData = emps || [];
+    // If manager already has existing assignments, require confirmation before editing
+    if (currentJobIds.size > 0 || currentEmpIds.length > 0) {
+      const mgrName = mgr?.username || mgr?.name || `经理 #${mgrId}`;
+      document.getElementById('mgrAssignConfirmMsg').textContent =
+        `${mgrName} 已有分配记录（${currentJobIds.size} 个工作，${currentEmpIds.length} 名员工）。确认要修改吗？`;
+      _mgrAssignPendingLoad = { currentJobIds, currentEmpIds, accounts, jobs, emps };
+      document.getElementById('mgrAssignConfirmOverlay').style.display = 'flex';
+      document.getElementById('mgrAssignJobsList').innerHTML = '';
+      document.getElementById('mgrAssignEmpList').innerHTML  = '';
+      return;
+    }
 
-    // Seed emp check states from current assignment
-    _mgrAssignEmpChecks = {};
-    currentEmpIds.forEach(id => { _mgrAssignEmpChecks[id] = true; });
-
-    _renderMgrAssignJobs(currentJobIds);
-    _renderMgrAssignEmps();
-    document.getElementById('mgrAssignSaveMsg').textContent = '';
+    _doRenderMgrAssignPanel(currentJobIds, currentEmpIds, accounts, jobs, emps);
   } catch(e) {
     document.getElementById('mgrAssignJobsList').innerHTML = `<p style="color:var(--red);font-size:.85rem">加载失败: ${esc(e.message)}</p>`;
   }
+}
+
+function _doRenderMgrAssignPanel(currentJobIds, currentEmpIds, accounts, jobs, emps) {
+  _mgrAssignJobsData = (jobs || []).filter(j => j.active);
+  _mgrAssignEmpsData = emps || [];
+
+  // Seed emp check states from current assignment
+  _mgrAssignEmpChecks = {};
+  currentEmpIds.forEach(id => { _mgrAssignEmpChecks[id] = true; });
+
+  _renderMgrAssignJobs(currentJobIds);
+  _renderMgrAssignEmps();
+  document.getElementById('mgrAssignSaveMsg').textContent = '';
 }
 
 function _renderMgrAssignJobs(selectedJobIds) {

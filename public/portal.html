@@ -2213,11 +2213,8 @@ function enablePunchBtn(ready) {
   const btnOut  = document.getElementById('btnPunchOut');
   if (!btnIn) return;
 
-  // Helper: dim a button visually (no disabled — all buttons remain clickable)
-  const setBtn = (btn, enabled) => {
-    btn.style.opacity = enabled ? '1' : '.35';
-  };
-
+  // All 4 buttons are always enabled — GPS geofencing on the server is the only restriction.
+  // Dim all only when status is unavailable or GPS not ready.
   const s = _punchStatus;
   if (!s || s.no_employee) {
     [btnIn, btnBS, btnBE, btnOut].forEach(b => setBtn(b, false));
@@ -2450,6 +2447,7 @@ function showPunchConfirmMap() {
 }
 
 function startPunchFlow(type) {
+  const s = _punchStatus;
   _pendingPunchType = type;
   const labels = { in: '▶ 上班打卡 / Clock In', break_start: '⏸ Pause Job', break_end: '▶ Resume Job', out: '⏹ 下班打卡 / Clock Out' };
   const colors  = { in: 'var(--green)', break_start: '#f97316', break_end: '#7c3aed', out: 'var(--red)' };
@@ -2549,11 +2547,14 @@ async function confirmPunchWithPhoto() {
 
 async function doPunch(type, photo) {
   const body = { latitude: _gpsCoords?.latitude || null, longitude: _gpsCoords?.longitude || null, punch_type: type };
+  const sel = document.getElementById('jobSelector');
   if (type === 'in') {
-    const sel = document.getElementById('jobSelector');
     body.job_id = sel ? parseInt(sel.value) || null : null;
     // If previous day's clock-out was missed, auto-close it on the server
     if (_punchStatus && _punchStatus.missed_checkout) body.force_new_day = true;
+  } else {
+    // For all other punch types: prefer open entry's job, fall back to selector
+    body.job_id = _punchStatus?.open_entry?.job_id || (sel ? parseInt(sel.value) || null : null);
   }
   const r = await wApi('/punch', { method: 'POST', body: JSON.stringify(body) });
   if (!r) { enablePunchBtn(true); cancelPunchPhoto(); await customAlert('打卡失败，请重新登录后重试。\nFailed to clock in, please re-login.', '打卡失败', '❌'); return; }

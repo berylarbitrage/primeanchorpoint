@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Manager Portal — Prime Anchor Point</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -212,6 +213,10 @@ tr:hover td{background:#eef6fd !important}
   .main-wrap{margin-left:0}
   .mobile-topbar{display:flex}
   .content{margin:.75rem auto;padding:0 .75rem}
+  /* hide duplicate section title in selfpunch card — topbar already shows it */
+  .sp-card-title{display:none}
+  /* timeclock filter: hide text labels on mobile to save space */
+  .filter-bar label{display:none}
 }
 @media(min-width:769px){
   .main-wrap{margin-left:224px}
@@ -223,7 +228,7 @@ tr:hover td{background:#eef6fd !important}
 .tc-btn-confirm{background:#d1fae5;color:#065f46;box-shadow:0 1px 3px rgba(16,185,129,.15)}.tc-btn-confirm:hover{background:#a7f3d0;color:#064e3b;box-shadow:0 2px 6px rgba(16,185,129,.25)}
 .tc-btn-edit{background:#c3dff7;color:#1a4f8a;box-shadow:0 1px 3px rgba(74,144,217,.15)}.tc-btn-edit:hover{background:#a5cfef;color:#1a4f8a;box-shadow:0 2px 6px rgba(74,144,217,.28)}
 .tc-batch-cb{cursor:pointer;width:15px;height:15px;accent-color:var(--sky)}
-.tc-cb-cell{width:36px;text-align:center;padding:6px 4px}
+.tc-cb-cell{width:40px;text-align:center;padding:6px 4px 6px 10px}
 /* emp column compact */
 .emp-row-name{font-weight:600;font-size:.95rem;white-space:nowrap;display:inline}
 .emp-row-code{font-size:.8rem;color:var(--gray-400);white-space:nowrap;display:inline;margin-left:.35rem}
@@ -377,9 +382,9 @@ tr:hover td{background:#eef6fd !important}
           <thead><tr>
             <th class="tc-cb-cell"><input type="checkbox" class="tc-batch-cb" id="tcSelectAll" title="全选" onchange="toggleSelectAll(this)"></th>
             <th>员工</th><th>上班打卡</th><th>下班打卡</th><th>休息</th>
-            <th>总工时</th><th>正常工时</th><th>加班</th><th>状态</th><th>照片</th><th>备注</th><th>操作</th>
+            <th>工时</th><th>状态</th><th>照片 / 备注</th><th>操作</th>
           </tr></thead>
-          <tbody id="tcTable"><tr><td colspan="12" class="empty-state" style="padding:3rem"><div class="spinner"></div></td></tr></tbody>
+          <tbody id="tcTable"><tr><td colspan="9" class="empty-state" style="padding:3rem"><div class="spinner"></div></td></tr></tbody>
         </table>
       </div>
       <div class="tc-summary" id="tcSummary"></div>
@@ -504,7 +509,7 @@ tr:hover td{background:#eef6fd !important}
     <!-- Self Punch -->
     <div class="section content" id="section-selfpunch">
       <div class="card" id="selfPunchCard" style="max-width:400px;margin:0 auto">
-        <div class="card-title">我的打卡 / My Attendance</div>
+        <div class="card-title sp-card-title">我的打卡 / My Attendance</div>
         <div id="spStatus" style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem">
           <div id="spStatusDot" style="width:12px;height:12px;border-radius:50%;background:var(--gray-200);flex-shrink:0"></div>
           <span id="spStatusText" style="font-size:.95rem;font-weight:600;color:var(--gray-700)">加载中…</span>
@@ -542,10 +547,33 @@ tr:hover td{background:#eef6fd !important}
 
     <!-- Timesheets Under Review -->
     <div class="section content" id="section-tsreview">
+      <!-- Manager-confirmed time entries pending admin review -->
       <div class="card" style="padding:.85rem 1.1rem;margin-bottom:1rem">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem">
-          <span style="font-size:.95rem;font-weight:700;color:var(--blue)">在审核工时单</span>
+          <span style="font-size:.95rem;font-weight:700;color:var(--blue)">已确认待审核工时</span>
           <button class="btn-refresh" onclick="loadTsReview()">↻ 刷新</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>员工</th>
+            <th>上班</th>
+            <th>下班</th>
+            <th>休息</th>
+            <th style="text-align:right">总工时</th>
+            <th>状态</th>
+          </tr></thead>
+          <tbody id="tsConfirmedEntriesTable">
+            <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--gray-400)">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Timesheet sheets under employee review -->
+      <div class="card" style="padding:.85rem 1.1rem;margin-bottom:1rem;margin-top:1.5rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem">
+          <span style="font-size:.95rem;font-weight:700;color:var(--blue)">在审核工时单</span>
         </div>
       </div>
       <div class="table-wrap">
@@ -644,6 +672,7 @@ function showSection(name, link) {
   if (name === 'selfpunch') { loadSelfPunchStatus(); loadSelfPunchHistory(); }
   if (name === 'tsreview') loadTsReview();
   closeSidebar();
+  window.scrollTo(0, 0);
 }
 function openSidebar()  { document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebarOverlay').classList.add('open'); }
 function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
@@ -758,9 +787,15 @@ function renderAssignments() {
     const pe = sched.untilFurther ? '至今后通知' : (sched.workEnd ? fmtDate(sched.workEnd) : '');
     const periodStr = ps ? (pe ? `${ps} → ${pe}` : `${ps} 起`) : '';
     const payStr = a.pay_rate ? `${a.pay_rate}${a.pay_type==='hourly'?' /hr':a.pay_type==='salary'?' /月':a.pay_type==='annual'?' /年':''}` : '';
+    const workerAddrParts = [a.worker_address, a.worker_city, a.worker_state, a.worker_zip].filter(Boolean);
+    const workerAddrStr = workerAddrParts.join(', ');
     return `<div class="assign-card">
       <div class="assign-top">
-        <div><div class="assign-job">${esc(a.job_title||'未知职位')}</div><div class="assign-company">${esc(a.company_name||'—')}</div></div>
+        <div>
+          <div class="assign-job">${esc(a.job_title||'未知职位')}</div>
+          <div class="assign-company">${esc(a.company_name||'—')}</div>
+          ${a.company_address?`<div style="font-size:.78rem;color:var(--gray-500);margin-top:.15rem">📍 ${esc(a.company_address)}</div>`:''}
+        </div>
         <span class="badge badge-${esc(a.status)}">${statusLabel(a.status)}</span>
       </div>
       <div class="worker-row">
@@ -768,6 +803,7 @@ function renderAssignments() {
         ${a.worker_phone?`<a href="tel:${esc(a.worker_phone)}" style="color:var(--sky-d);text-decoration:none;font-size:.83rem">📞 ${esc(a.worker_phone)}</a>`:''}
         ${a.worker_email?`<a href="mailto:${esc(a.worker_email)}" style="color:var(--sky-d);text-decoration:none;font-size:.83rem">✉ ${esc(a.worker_email)}</a>`:''}
       </div>
+      ${workerAddrStr?`<div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem;margin-bottom:.1rem">🏠 ${esc(workerAddrStr)}</div>`:''}
       <div class="assign-meta">
         ${a.start_date?`<span>📅 ${fmtDate(a.start_date)}</span>`:''}
         ${periodStr?`<span>🗓 ${esc(periodStr)}</span>`:''}
@@ -811,7 +847,7 @@ function renderWorkers() {
 
 // ── Time Clock ─────────────────────────────────────────────────
 async function loadTimeClock() {
-  document.getElementById('tcTable').innerHTML = '<tr><td colspan="12" style="text-align:center;padding:2.5rem"><div class="spinner"></div></td></tr>';
+  document.getElementById('tcTable').innerHTML = '<tr><td colspan="9" style="text-align:center;padding:2.5rem"><div class="spinner"></div></td></tr>';
   const emp = document.getElementById('tcEmpFilter').value;
   const from = document.getElementById('tcFrom').value;
   const to = document.getElementById('tcTo').value;
@@ -845,7 +881,7 @@ function hasIncompleteLoop(t) {
 let _tcEntries = {};
 function renderTimeClock(rows) {
   if (!rows.length) {
-    document.getElementById('tcTable').innerHTML = '<tr><td colspan="12" class="empty-state" style="padding:2.5rem;text-align:center">暂无打卡记录</td></tr>';
+    document.getElementById('tcTable').innerHTML = '<tr><td colspan="9" class="empty-state" style="padding:2.5rem;text-align:center">暂无打卡记录</td></tr>';
     document.getElementById('tcSummary').textContent = '';
     return;
   }
@@ -855,39 +891,61 @@ function renderTimeClock(rows) {
     _tcEntries[t.id] = t;
     totalH += t.total_hours || 0; totalOT += t.overtime_hours || 0;
     function photoThumb(src, label) {
-      if (!src) return '';
+      if (!src) {
+        return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;margin:1px">
+          <div style="width:28px;height:28px;border-radius:4px;border:1.5px dashed var(--gray-300);background:var(--gray-50)"></div>
+          <span style="font-size:.55rem;color:var(--gray-300);line-height:1">${label}</span>
+        </div>`;
+      }
       const url = TOKEN ? src + (src.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : src;
-      return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:2px;margin:1px">
-        <img src="${url}" onclick="openPunchPhoto('${url.replace(/'/g,"\\'")}')" title="${label}" style="width:36px;height:36px;object-fit:cover;border-radius:5px;cursor:pointer;border:1.5px solid var(--gray-200)">
-        <span style="font-size:.62rem;color:var(--gray-400);line-height:1">${label}</span>
+      return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;margin:1px">
+        <img src="${url}" onclick="openPunchPhoto('${url.replace(/'/g,"\\'")}')" title="${label}" style="width:28px;height:28px;object-fit:cover;border-radius:4px;cursor:pointer;border:1.5px solid var(--gray-200)">
+        <span style="font-size:.55rem;color:var(--gray-400);line-height:1">${label}</span>
       </div>`;
     }
-    const photos = [];
-    if (t.clock_in_photo_path) photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.clock_in_photo_path)}`, '上班'));
     const breakRecs = (() => { try { return JSON.parse(t.break_records||'[]'); } catch{ return []; } })();
+    const PIN_PH = '<span style="display:inline-block;width:1rem;height:1rem;font-size:1rem;vertical-align:middle"></span>';
+    const clockInPin = (t.latitude && t.longitude) ? `<span onclick="showMiniMap(event,${t.latitude},${t.longitude},'上班打卡')" title="上班位置" style="cursor:pointer;font-size:1rem">🟢</span>` : PIN_PH;
+    const clockOutPin = (t.clock_out_latitude && t.clock_out_longitude) ? `<span onclick="showMiniMap(event,${t.clock_out_latitude},${t.clock_out_longitude},'下班打卡')" title="下班位置" style="cursor:pointer;font-size:1rem">🔴</span>` : PIN_PH;
+    const clockInPhoto = photoThumb(t.clock_in_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.clock_in_photo_path)}` : null, '上班');
+    const clockOutPhoto = t.punch_photo_path ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`, '下班') : (t.punch_photo ? photoThumb(t.punch_photo, '下班') : photoThumb(null, '下班'));
+    const photoRows = [];
+    {
+      const ciLeft = `<div style="display:inline-flex;align-items:center;gap:2px">${clockInPin}${clockInPhoto}</div>`;
+      const coRight = `<div style="display:inline-flex;align-items:center;gap:2px">${clockOutPhoto}${clockOutPin}</div>`;
+      photoRows.push(`<div style="display:flex;justify-content:space-between;align-items:center;gap:4px">${ciLeft}${coRight}</div>`);
+    }
     breakRecs.forEach((b, i) => {
-      if (b.start_photo) photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`));
-      if (b.end_photo)   photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`));
+      const breakStartPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}开')" title="休息${i+1}开始位置" style="cursor:pointer;font-size:1rem">🟠</span>` : PIN_PH;
+      const breakEndPin = (b.end_latitude && b.end_longitude) ? `<span onclick="showMiniMap(event,${b.end_latitude},${b.end_longitude},'休息${i+1}结')" title="休息${i+1}结束位置" style="cursor:pointer;font-size:1rem">🟣</span>` : PIN_PH;
+      const startPhoto = photoThumb(b.start_photo ? `/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}` : null, `休息${i+1}开`);
+      const endPhoto = photoThumb(b.end_photo ? `/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}` : null, `休息${i+1}结`);
+      const bLeft = `<div style="display:inline-flex;align-items:center;gap:2px">${breakStartPin}${startPhoto}</div>`;
+      const bRight = `<div style="display:inline-flex;align-items:center;gap:2px">${endPhoto}${breakEndPin}</div>`;
+      photoRows.push(`<div style="display:flex;justify-content:space-between;align-items:center;gap:4px">${bLeft}${bRight}</div>`);
     });
-    if (t.punch_photo_path) photos.push(photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`, '下班'));
-    else if (t.punch_photo) photos.push(photoThumb(t.punch_photo, '下班'));
-    const photoCell = photos.length ? `<div style="display:flex;flex-wrap:wrap;gap:2px;justify-content:center">${photos.join('')}</div>` : '—';
+    const photoCell = photoRows.length ? `<div style="display:flex;flex-direction:column;gap:1px">${photoRows.join('')}</div>` : '—';
     const tz = t.display_timezone;
     const incomplete = hasIncompleteLoop(t);
     const rowStyle = incomplete ? ' style="background:linear-gradient(to right,#f87171 0px,#f87171 4px,#fff5f5 4px,#fff5f5 100%);"' : '';
     const incompleteTag = incomplete ? '<span class="emp-incomplete-tag" title="时间记录未完成闭环，请确认">⚠ 待确认</span>' : '';
+    const otH = (t.overtime_hours||0) > 0;
     return `<tr${rowStyle} data-entry-id="${t.id}">
       <td class="tc-cb-cell"><input type="checkbox" class="tc-batch-cb" onchange="toggleBatchRow(${t.id},this)"></td>
       <td><div class="emp-row-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}${incompleteTag}</div><div class="emp-row-code">${esc(t.emp_code||'')}</div></td>
       <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="inlineEditTime(${t.id},'clock_in',this)">${fmtDT(t.clock_in, tz)}</td>
       <td style="white-space:nowrap;cursor:pointer" title="双击修改工时" ondblclick="inlineEditTime(${t.id},'clock_out',this)">${t.clock_out?fmtDT(t.clock_out, tz):'<span style="color:var(--orange);font-weight:600">进行中</span>'}</td>
       <td>${renderBreaks(t)}</td>
-      <td>${fmtH(t.total_hours)}</td>
-      <td>${fmtH(t.regular_hours)}</td>
-      <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
+      <td style="font-size:.82rem;white-space:nowrap;line-height:1.6">
+        <div>${fmtH(t.total_hours)}</div>
+        <div style="color:var(--gray-400);font-size:.75rem">正 ${fmtH(t.regular_hours)}</div>
+        ${otH?`<div><span class="ot-text" style="font-size:.75rem">加 ${fmtH(t.overtime_hours)}</span></div>`:''}
+      </td>
       <td>${t.manager_confirmed && t.needs_review ? '<span class="badge" style="background:#fef3c7;color:#92400e">待审核</span>' : `<span class="badge badge-${t.status==='open'?'open':'closed'}">${t.status==='open'?'进行中':'已完成'}</span>`}</td>
-      <td style="text-align:center">${photoCell}</td>
-      <td style="max-width:160px;white-space:normal;font-size:.78rem;color:var(--gray-500)">${esc(t.notes||'')} ${mgrPunchPins(t)}</td>
+      <td style="text-align:left;max-width:160px">
+        ${photoCell}
+        ${t.notes?`<div style="font-size:.72rem;color:var(--gray-500);margin-top:3px;white-space:normal;word-break:break-word">${esc(t.notes)}</div>`:''}
+      </td>
       <td><div class="tc-action-cell">
         ${!(t.manager_confirmed && t.needs_review) ? `<button class="tc-action-btn tc-btn-confirm" onclick="confirmEntry(${t.id},this)">✓ 确认工时</button>` : '<span style="font-size:.75rem;color:#92400e;font-weight:600">已提交待审核</span>'}
         <button class="tc-action-btn tc-btn-edit" onclick="openEditModal(${t.id})">✎ 修改工时</button>
@@ -1432,6 +1490,38 @@ function openEditModal(id) {
   const breakDiv = document.getElementById('tcEditBreaks');
   breakDiv.innerHTML = '';
   recs.forEach((b, i) => _tcRenderBreakRow(b, i));
+  // Populate photo preview
+  const e = _tcEditEntry;
+  function _modalPhotoThumb(path, label) {
+    const url = TOKEN ? path + (path.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : path;
+    return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;margin:1px"><img src="${url}" onclick="openPunchPhoto('${url.replace(/'/g,"\\'")}')" title="${label}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer;border:1.5px solid var(--gray-200)"><span style="font-size:.55rem;color:var(--gray-400);line-height:1">${label}</span></div>`;
+  }
+  const MODAL_PIN_PH = '<span style="display:inline-block;width:.9rem;height:.9rem;font-size:.9rem;vertical-align:middle"></span>';
+  const ciPin = (e.latitude && e.longitude) ? `<span onclick="showMiniMap(event,${e.latitude},${e.longitude},'上班打卡')" title="上班位置" style="cursor:pointer;font-size:.9rem">🟢</span>` : MODAL_PIN_PH;
+  const coPin = (e.clock_out_latitude && e.clock_out_longitude) ? `<span onclick="showMiniMap(event,${e.clock_out_latitude},${e.clock_out_longitude},'下班打卡')" title="下班位置" style="cursor:pointer;font-size:.9rem">🔴</span>` : MODAL_PIN_PH;
+  const ciPhoto = e.clock_in_photo_path ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(e.clock_in_photo_path)}`, '上班') : '';
+  const coPhoto = e.punch_photo_path ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(e.punch_photo_path)}`, '下班') : (e.punch_photo ? _modalPhotoThumb(e.punch_photo, '下班') : '');
+  const modalPhotoRows = [];
+  if (ciPhoto || coPhoto) {
+    modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0">${ciPin}<div style="display:flex;gap:2px">${ciPhoto}${coPhoto}</div>${coPin}</div>`);
+  }
+  recs.forEach((b, i) => {
+    const bStartPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}开')" title="休息${i+1}开始位置" style="cursor:pointer;font-size:.9rem">🟠</span>` : MODAL_PIN_PH;
+    const bEndPin = (b.end_latitude && b.end_longitude) ? `<span onclick="showMiniMap(event,${b.end_latitude},${b.end_longitude},'休息${i+1}结')" title="休息${i+1}结束位置" style="cursor:pointer;font-size:.9rem">🟣</span>` : MODAL_PIN_PH;
+    const sPhoto = b.start_photo ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`) : '';
+    const ePhoto = b.end_photo ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`) : '';
+    if (sPhoto || ePhoto) {
+      modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0">${bStartPin}<div style="display:flex;gap:2px">${sPhoto}${ePhoto}</div>${bEndPin}</div>`);
+    }
+  });
+  const photoDiv = document.getElementById('tcEditPhotos');
+  if (modalPhotoRows.length) {
+    photoDiv.style.display = 'block';
+    photoDiv.innerHTML = `<div style="background:var(--gray-50);border-radius:7px;padding:.5rem .75rem;border:1px solid var(--gray-100)"><div style="font-size:.72rem;color:var(--gray-500);margin-bottom:.4rem;font-weight:600">照片</div><div style="display:flex;flex-direction:column">${modalPhotoRows.join('')}</div></div>`;
+  } else {
+    photoDiv.style.display = 'none';
+    photoDiv.innerHTML = '';
+  }
   updateTcHrsPreview();
   document.getElementById('tcEditModal').classList.add('open');
 }
@@ -1822,6 +1912,27 @@ async function executeBatch(action) {
 
 // ── 在审核工时 ──────────────────────────────────────────────────
 async function loadTsReview() {
+  // Load manager-confirmed time entries
+  const confirmedTbody = document.getElementById('tsConfirmedEntriesTable');
+  confirmedTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--gray-400)">加载中…</td></tr>';
+  const confirmedEntries = await mApi('/admin/time-entries?needs_review=1');
+  if (!confirmedEntries || !confirmedEntries.length) {
+    confirmedTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无已确认待审核工时</td></tr>';
+  } else {
+    confirmedTbody.innerHTML = confirmedEntries.map(t => {
+      const tz = t.display_timezone;
+      return `<tr>
+        <td><div class="emp-row-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-row-code">${esc(t.emp_code||'')}</div></td>
+        <td style="white-space:nowrap">${fmtDT(t.clock_in, tz)}</td>
+        <td style="white-space:nowrap">${t.clock_out ? fmtDT(t.clock_out, tz) : '<span style="color:var(--orange)">进行中</span>'}</td>
+        <td>${renderBreaks(t)}</td>
+        <td style="text-align:right;font-weight:700">${fmtH(t.total_hours)}</td>
+        <td><span class="badge" style="background:#fef3c7;color:#92400e">待审核</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Load timesheet sheets
   const tbody = document.getElementById('tsReviewTable');
   tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--gray-400)">加载中…</td></tr>';
   const rows = await mApi('/admin/timesheet-sheets?stage=verify');
@@ -1854,6 +1965,7 @@ async function loadTsReview() {
 <div id="tcEditModal">
   <div class="tc-edit-box">
     <h3>修改工时</h3>
+    <div id="tcEditPhotos" style="display:none;margin-bottom:.9rem"></div>
     <div class="tc-field">
       <label>上班时间 <span id="tcEditTzLabel" style="color:var(--gray-400);font-weight:400;font-size:.74rem"></span></label>
       <input type="datetime-local" id="tcEditClockIn" oninput="updateTcHrsPreview()">
