@@ -2223,7 +2223,7 @@ let _calData = null;
 
 async function loadWorkCalendar() {
   const card = document.getElementById('workCalendarCard');
-  _calData = await wApi(`/work-calendar?year=${_calYear}&month=${_calMonth}`);
+  _calData = await wApi(`/work-calendar?year=${_calYear}&month=${_calMonth}&tz_offset=${new Date().getTimezoneOffset()}`);
   if (!_calData || (!_calData.confirmations.length && !_calData.assignments.length && !(_calData.punchDates||[]).length)) {
     card.style.display = 'none';
     return;
@@ -2278,7 +2278,7 @@ function renderCalendar() {
     }
   });
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = new Date().toLocaleDateString('en-CA');
   const firstDow = new Date(_calYear, _calMonth - 1, 1).getDay(); // 0=Sun
   const statusColor = { confirmed: '#16a34a', pending: '#f59e0b', declined: '#dc2626' };
 
@@ -4657,7 +4657,7 @@ async function loadInterviewModalSlots() {
   const grouped = {};
   slots.forEach(s => {
     const dt = new Date(s.slot_datetime);
-    const dateKey = dt.toISOString().split('T')[0];
+    const dateKey = dt.toLocaleDateString('en-CA');
     if (!grouped[dateKey]) grouped[dateKey] = { date: dt, slots: [] };
     grouped[dateKey].slots.push(s);
   });

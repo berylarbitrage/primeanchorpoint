@@ -6268,6 +6268,12 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
   const fromStr = `${y}-${String(m).padStart(2,'0')}-01`;
   const lastDay = new Date(y, m, 0).getDate();
   const toStr = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  // tz_offset is browser's getTimezoneOffset() — negate it to get UTC→local offset in minutes
+  const tzOffsetMinutes = parseInt(req.query.tz_offset) || 0;
+  const localOffsetMinutes = -tzOffsetMinutes;
+  const tzSign = localOffsetMinutes >= 0 ? '+' : '-';
+  const tzAbsMins = Math.abs(localOffsetMinutes);
+  const tzModifier = `${tzSign}${tzAbsMins} minutes`;
   const confirmations = db.prepare(`
     SELECT sc.id, sc.date, sc.status, sc.shift_start, sc.shift_end,
            j.title, j.location AS job_location, j.description AS job_description,
@@ -6289,10 +6295,13 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
     WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')
   `).all(wa.linked_inquiry_id);
   // Include actual punch records so weekend work (outside recurring schedule) is visible
+  // Use client's timezone offset so punches appear on the correct local calendar day
   const punchDates = req.workerEmployeeId ? db.prepare(`
-    SELECT DISTINCT date(clock_in) AS date
+    SELECT DISTINCT strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) AS date
     FROM time_entries
-    WHERE employee_id = ? AND date(clock_in) >= ? AND date(clock_in) <= ?
+    WHERE employee_id = ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
   `).all(req.workerEmployeeId, fromStr, toStr).map(r => r.date) : [];
   res.json({ confirmations, assignments, punchDates });
 });
