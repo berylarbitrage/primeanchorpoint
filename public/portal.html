@@ -2415,14 +2415,6 @@ function showPunchConfirmMap() {
 }
 
 function startPunchFlow(type) {
-  // Guard: reject actions that are invalid for the current punch state
-  const s = _punchStatus;
-  if (s) {
-    const isClockedIn = s.clocked_in && !s.missed_checkout;
-    if ((type === 'break_start' || type === 'out') && !isClockedIn) return;
-    if (type === 'break_end' && !(s.clocked_in && s.on_break)) return;
-    if (type === 'in' && isClockedIn && !s.on_break) return;
-  }
   _pendingPunchType = type;
   const labels = { in: '▶ 上班打卡 / Clock In', break_start: '⏸ Pause Job', break_end: '▶ Resume Job', out: '⏹ 下班打卡 / Clock Out' };
   const colors  = { in: 'var(--green)', break_start: '#f97316', break_end: '#7c3aed', out: 'var(--red)' };
