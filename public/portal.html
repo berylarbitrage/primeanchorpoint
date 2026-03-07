@@ -604,7 +604,7 @@ tr:last-child td{border-bottom:none}
             <button id="btnBreakEnd"    onclick="startPunchFlow('break_end')"   style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;opacity:.4" data-i18n="tcBreakEnd">▶ 休息结束</button>
             <button id="btnPunchOut"    onclick="startPunchFlow('out')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#dc2626;color:#fff;opacity:.4" data-i18n="tcPunchOut">⏹ 下班打卡</button>
           </div>
-          <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
+          <div class="gps-indicator" id="gpsIndicator" data-i18n="tcGpsGetting">📍 正在获取位置…</div>
           <!-- Punch confirmation modal overlay -->
           <div id="punchConfirmOverlay" style="display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
             <div style="background:#fff;border-radius:16px;padding:1.75rem 1.5rem;width:88%;max-width:310px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.18)">
@@ -613,22 +613,22 @@ tr:last-child td{border-bottom:none}
               <div id="punchConfirmTimeLabel" style="font-size:1.5rem;font-weight:800;color:var(--blue);margin-bottom:.2rem"></div>
               <div id="punchConfirmDateLabel" style="font-size:.82rem;color:var(--gray-400);margin-bottom:1.5rem"></div>
               <div style="display:flex;gap:.75rem">
-                <button onclick="closePunchConfirm()" style="flex:1;padding:.75rem;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.95rem;font-weight:600;background:#fff;cursor:pointer;color:var(--gray-600)">取消</button>
-                <button id="punchConfirmOkBtn" onclick="executePunch()" style="flex:2;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;color:#fff;cursor:pointer">确认打卡</button>
+                <button onclick="closePunchConfirm()" style="flex:1;padding:.75rem;border:1.5px solid var(--gray-200);border-radius:10px;font-size:.95rem;font-weight:600;background:#fff;cursor:pointer;color:var(--gray-600)" data-i18n="cancel">取消</button>
+                <button id="punchConfirmOkBtn" onclick="executePunch()" style="flex:2;padding:.75rem;border:none;border-radius:10px;font-size:.95rem;font-weight:700;color:#fff;cursor:pointer" data-i18n="tcConfirmPunch">确认打卡</button>
               </div>
             </div>
           </div>
           <!-- Photo capture step (shown only when clocking in) -->
           <div id="punchPhotoStep" style="display:none;width:100%;max-width:340px;margin:1rem auto 0;text-align:center">
-            <div id="punchPhotoPrompt" style="font-size:.88rem;color:var(--gray-600);margin-bottom:.6rem">请拍一张照片确认打卡</div>
+            <div id="punchPhotoPrompt" style="font-size:.88rem;color:var(--gray-600);margin-bottom:.6rem" data-i18n="tcPhotoPrompt">请拍一张照片确认打卡</div>
             <div id="punchPhotoPreview" style="display:none;margin-bottom:.6rem">
               <img id="punchPhotoImg" style="max-width:100%;max-height:200px;border-radius:8px;border:2px solid #86efac;object-fit:cover">
             </div>
             <input type="file" id="punchPhotoInput" accept="image/*" capture="environment" style="display:none" onchange="onPunchPhotoSelected(this)">
-            <button type="button" onclick="document.getElementById('punchPhotoInput').click()" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:8px;padding:.55rem 1.2rem;font-size:.9rem;font-weight:600;cursor:pointer;width:100%">📷 拍照</button>
+            <button type="button" onclick="document.getElementById('punchPhotoInput').click()" style="background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:8px;padding:.55rem 1.2rem;font-size:.9rem;font-weight:600;cursor:pointer;width:100%" data-i18n="tcTakePhoto">📷 拍照</button>
             <div id="punchPhotoConfirmRow" style="display:none;gap:.6rem;margin-top:.6rem;justify-content:center">
-              <button type="button" id="btnPunchConfirm" onclick="confirmPunchWithPhoto()" style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:8px;padding:.6rem;font-size:.9rem;font-weight:700;cursor:pointer">✅ 确认打卡</button>
-              <button type="button" onclick="cancelPunchPhoto()" style="flex:0 0 auto;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .9rem;font-size:.88rem;cursor:pointer">取消</button>
+              <button type="button" id="btnPunchConfirm" onclick="confirmPunchWithPhoto()" style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:8px;padding:.6rem;font-size:.9rem;font-weight:700;cursor:pointer" data-i18n="tcConfirmPunch">✅ 确认打卡</button>
+              <button type="button" onclick="cancelPunchPhoto()" style="flex:0 0 auto;background:var(--gray-100);border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .9rem;font-size:.88rem;cursor:pointer" data-i18n="cancel">取消</button>
             </div>
           </div>
         </div>
@@ -1166,7 +1166,16 @@ const PORTAL_I18N = {
     punchLegendComplete: '已完成', punchLegendWorking: '工作中',
     tcCurrentJobs: '💼 当前工作安排',
     tcPunchIn: '▶ 上班打卡', tcBreakStart: '⏸ 休息开始', tcBreakEnd: '▶ 休息结束', tcPunchOut: '⏹ 下班打卡',
-    tcSelectJob: '选择打卡工作 / Select job to clock in for',
+    tcSelectJob: '选择打卡工作',
+    tcConfirmPunch: '确认打卡', tcPhotoPrompt: '请拍一张照片确认打卡', tcTakePhoto: '📷 拍照', cancel: '取消',
+    tcGpsGetting: '📍 正在获取位置…', tcGpsReady: '已定位（精度 ±{acc}m）', tcGpsFailed: '🚫 位置获取失败 — 请在浏览器设置中允许定位后刷新。',
+    tcJobsOngoing: '进行中', tcJobStart: '开始：', tcNoJobs: '当前没有派遣工作安排，请联系HR。',
+    tcNoEmployee: '⚠ 账号未关联员工档案', tcNoEmployeeHint: '请联系HR关联员工档案后方可打卡',
+    tcNoEmployeeTable: '⚠️ 账号未关联员工档案，请联系HR后方可查看打卡记录',
+    tcMissedCheckout: '⚠ 昨日未打下班卡', tcMissedCheckoutHint: '忘记打下班卡，打上班卡时需确认。',
+    tcSelectFirst: '请选择工作后打卡',
+    tcNoPendingJob: '当前无有效工作安排，请联系HR。',
+    tcPendingTasks: '您有 {count} 个待接受的工作安排，请前往', tcPendingTasksLink: '我的任务', tcPendingTasksSuffix: '接受后方可打卡。',
     thDate: '日期', thJob: '工作', thClockIn: '上班', thBreakStart: '休息开始', thBreakEnd: '休息结束',
     thClockOut: '下班', thHours: '工时', thRegular: '正常', thOvertime: '加班', thStatus: '状态', thLocation: '位置',
     paymentsTitle: '打款记录', paymentsEmpty: '暂无打款记录', paymentsNoEmployee: '⚠️ 账号未关联员工档案', paymentsPeriod: '📅 周期：',
@@ -1234,6 +1243,15 @@ const PORTAL_I18N = {
     tcCurrentJobs: '💼 Current Assignments',
     tcPunchIn: '▶ Clock In', tcBreakStart: '⏸ Break Start', tcBreakEnd: '▶ Break End', tcPunchOut: '⏹ Clock Out',
     tcSelectJob: 'Select job to clock in for',
+    tcConfirmPunch: 'Confirm', tcPhotoPrompt: 'Take a photo to confirm punch', tcTakePhoto: '📷 Take Photo', cancel: 'Cancel',
+    tcGpsGetting: '📍 Getting location…', tcGpsReady: 'Located (±{acc}m)', tcGpsFailed: '🚫 Location unavailable — allow location in browser settings and refresh.',
+    tcJobsOngoing: 'Active', tcJobStart: 'Start: ', tcNoJobs: 'No active assignments. Please contact HR.',
+    tcNoEmployee: '⚠ Account not linked to employee record', tcNoEmployeeHint: 'Please contact HR to link your employee record before clocking in',
+    tcNoEmployeeTable: '⚠️ Account not linked to employee record. Please contact HR to view punch records.',
+    tcMissedCheckout: '⚠ Missed clock-out yesterday', tcMissedCheckoutHint: 'You missed clocking out. This will be flagged for manager review when you clock in.',
+    tcSelectFirst: 'Select a job, then clock in',
+    tcNoPendingJob: 'No active assignments. Please contact HR.',
+    tcPendingTasks: 'You have {count} pending assignment(s). Go to', tcPendingTasksLink: 'My Schedule', tcPendingTasksSuffix: 'to accept before clocking in.',
     thDate: 'Date', thJob: 'Job', thClockIn: 'In', thBreakStart: 'Break Start', thBreakEnd: 'Break End',
     thClockOut: 'Out', thHours: 'Hours', thRegular: 'Regular', thOvertime: 'OT', thStatus: 'Status', thLocation: 'Location',
     paymentsTitle: 'Payment History', paymentsEmpty: 'No payment records', paymentsNoEmployee: '⚠️ Account not linked to employee record', paymentsPeriod: '📅 Period: ',
@@ -1300,7 +1318,16 @@ const PORTAL_I18N = {
     punchLegendComplete: 'Completado', punchLegendWorking: 'Trabajando',
     tcCurrentJobs: '💼 Asignaciones Actuales',
     tcPunchIn: '▶ Entrada', tcBreakStart: '⏸ Inicio Descanso', tcBreakEnd: '▶ Fin Descanso', tcPunchOut: '⏹ Salida',
-    tcSelectJob: 'Seleccione trabajo para registrar',
+    tcSelectJob: 'Seleccione trabajo para marcar',
+    tcConfirmPunch: 'Confirmar', tcPhotoPrompt: 'Tome una foto para confirmar el marcaje', tcTakePhoto: '📷 Tomar Foto', cancel: 'Cancelar',
+    tcGpsGetting: '📍 Obteniendo ubicación…', tcGpsReady: 'Ubicado (±{acc}m)', tcGpsFailed: '🚫 Ubicación no disponible — permita la ubicación en configuración del navegador y recargue.',
+    tcJobsOngoing: 'Activo', tcJobStart: 'Inicio: ', tcNoJobs: 'Sin asignaciones activas. Contacte a RR.HH.',
+    tcNoEmployee: '⚠ Cuenta sin expediente de empleado', tcNoEmployeeHint: 'Contacte a RR.HH. para vincular su expediente antes de marcar',
+    tcNoEmployeeTable: '⚠️ Cuenta sin expediente. Contacte a RR.HH. para ver registros de marcaje.',
+    tcMissedCheckout: '⚠ No marcó salida ayer', tcMissedCheckoutHint: 'Olvidó marcar salida. Se notificará al supervisor al marcar entrada.',
+    tcSelectFirst: 'Seleccione un trabajo y luego marque',
+    tcNoPendingJob: 'Sin asignaciones activas. Contacte a RR.HH.',
+    tcPendingTasks: 'Tiene {count} asignación(es) pendiente(s). Vaya a', tcPendingTasksLink: 'Mi Horario', tcPendingTasksSuffix: 'para aceptar antes de marcar.',
     thDate: 'Fecha', thJob: 'Trabajo', thClockIn: 'Entrada', thBreakStart: 'Inicio Desc.', thBreakEnd: 'Fin Desc.',
     thClockOut: 'Salida', thHours: 'Horas', thRegular: 'Normal', thOvertime: 'Extra', thStatus: 'Estado', thLocation: 'Ubicación',
     paymentsTitle: 'Historial de Pagos', paymentsEmpty: 'Sin registros de pago', paymentsNoEmployee: '⚠️ Cuenta sin expediente de empleado', paymentsPeriod: '📅 Período: ',
@@ -1344,6 +1371,7 @@ function setPortalLang(lang) {
   else if (_activeTab === 'todos') loadOnboarding();
   else if (_activeTab === 'referral') loadReferrals();
   else if (_activeTab === 'interview') loadInterview();
+  else if (_activeTab === 'timeclock') { loadTimeclock(); applyPortalLang(); }
   else loadJobs();
 }
 function applyPortalLang() {
@@ -2398,7 +2426,7 @@ function initGPS() {
     pos => {
       _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       const acc = Math.round(pos.coords.accuracy);
-      document.getElementById('gpsIndicator').innerHTML = `📍 已定位（精度 ±${acc}m）`;
+      document.getElementById('gpsIndicator').innerHTML = `📍 ${_t('tcGpsReady').replace('{acc}', acc)}`;
       enablePunchBtn(true);
     },
     () => {},
@@ -2409,12 +2437,12 @@ function initGPS() {
     pos => {
       _gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       const acc = Math.round(pos.coords.accuracy);
-      document.getElementById('gpsIndicator').innerHTML = `📍 已定位（精度 ±${acc}m）`;
+      document.getElementById('gpsIndicator').innerHTML = `📍 ${_t('tcGpsReady').replace('{acc}', acc)}`;
       enablePunchBtn(true);
     },
     err => {
       if (!_gpsCoords) {
-        document.getElementById('gpsIndicator').innerHTML = '🚫 位置获取失败 — 打卡需要位置权限，请在浏览器设置中允许定位后刷新。';
+        document.getElementById('gpsIndicator').innerHTML = _t('tcGpsFailed');
         enablePunchBtn(false);
       }
     },
@@ -2488,9 +2516,9 @@ async function loadPunchStatus() {
   const selector = document.getElementById('jobSelector');
 
   if (s.no_employee) {
-    statusEl.innerHTML = '<span style="color:var(--red)">⚠ 账号未关联员工档案</span>';
+    statusEl.innerHTML = `<span style="color:var(--red)">${_t('tcNoEmployee')}</span>`;
     timeEl.textContent = '—';
-    subEl.textContent = '请联系HR关联您的员工档案后方可 Check In';
+    subEl.textContent = _t('tcNoEmployeeHint');
     selectorWrap.style.display = 'none';
     enablePunchBtn(false);
     return;
@@ -2498,9 +2526,9 @@ async function loadPunchStatus() {
 
   if (s.clocked_in && s.missed_checkout) {
     // Previous day's clock-out was forgotten — still allow clock-in with confirmation
-    statusEl.innerHTML = '<span style="color:#f59e0b;font-weight:600">⚠ 昨日未打下班卡</span>';
+    statusEl.innerHTML = `<span style="color:#f59e0b;font-weight:600">${_t('tcMissedCheckout')}</span>`;
     timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
-    subEl.innerHTML = `<span style="color:#dc2626;font-size:.82rem">${s.missed_date || '昨日'} 忘记打下班卡，打上班卡时需确认。</span>`;
+    subEl.innerHTML = `<span style="color:#dc2626;font-size:.82rem">${s.missed_date || ''} ${_t('tcMissedCheckoutHint')}</span>`;
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
       `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
@@ -2543,18 +2571,18 @@ async function loadPunchStatus() {
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     selectorWrap.style.display = 'none';
     if (s.pending_tasks_count > 0) {
-      subEl.innerHTML = `您有 <strong>${s.pending_tasks_count}</strong> 个待接受的工作安排，请前往
-        <a href="#" onclick="showTab('interview');return false;" style="color:var(--sky);font-weight:600">我的任务</a>
-        接受后方可打卡。`;
+      subEl.innerHTML = `${_t('tcPendingTasks').replace('{count}', s.pending_tasks_count)}
+        <a href="#" onclick="showTab('interview');return false;" style="color:var(--sky);font-weight:600">${_t('tcPendingTasksLink')}</a>
+        ${_t('tcPendingTasksSuffix')}`;
     } else {
-      subEl.textContent = '当前无有效工作安排，请联系HR。';
+      subEl.textContent = _t('tcNoPendingJob');
     }
     enablePunchBtn(false);
     return;
   } else {
     statusEl.innerHTML = '<span style="color:var(--gray-400)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-    subEl.textContent = '请选择工作后打卡';
+    subEl.textContent = _t('tcSelectFirst');
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
       `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · Client: ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
@@ -2814,7 +2842,7 @@ async function loadMyJobs() {
   const el = document.getElementById('myJobsList');
   if (!el) return;
   if (!jobs || !Array.isArray(jobs) || !jobs.length) {
-    el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">当前没有派遣工作安排，请联系HR。</p>';
+    el.innerHTML = `<p style="color:var(--gray-400);font-size:.88rem">${_t('tcNoJobs')}</p>`;
     return;
   }
   el.innerHTML = jobs.map(j => `
@@ -2826,11 +2854,11 @@ async function loadMyJobs() {
           ${j.location ? `📍 ${esc(j.location)}` : ''}
           ${j.site_name ? ` · 🏭 ${esc(j.site_name)}` : ''}
         </div>
-        ${j.start_date ? `<div style="font-size:.78rem;color:var(--gray-400);margin-top:.15rem">开始：${fmtDate(j.start_date)}</div>` : ''}
+        ${j.start_date ? `<div style="font-size:.78rem;color:var(--gray-400);margin-top:.15rem">${_t('tcJobStart')}${fmtDate(j.start_date)}</div>` : ''}
       </div>
       <div style="text-align:right;flex-shrink:0;margin-left:1rem">
         ${j.emp_hourly_rate ? `<div style="font-weight:700;color:var(--sky)">$${(+j.emp_hourly_rate).toFixed(2)}/hr</div>` : (j.pay ? `<div style="font-size:.85rem;color:var(--sky)">${esc(j.pay)}</div>` : '')}
-        <span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600">进行中</span>
+        <span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600">${_t('tcJobsOngoing')}</span>
       </div>
     </div>`).join('');
 }
@@ -2840,7 +2868,7 @@ async function loadTimeclock() {
   const entries = await wApi('/timeclock');
   if (!entries) return;
   if (!Array.isArray(entries)) {
-    document.getElementById('timeclockTable').innerHTML = '<tr><td colspan="11" class="empty">⚠️ 账号未关联员工档案，请联系HR后方可查看 Check In / Out 记录</td></tr>';
+    document.getElementById('timeclockTable').innerHTML = `<tr><td colspan="11" class="empty">${_t('tcNoEmployeeTable')}</td></tr>`;
     return;
   }
   document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
