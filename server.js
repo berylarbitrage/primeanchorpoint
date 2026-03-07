@@ -5951,6 +5951,12 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
   const m = parseInt(req.query.month) || new Date().getMonth() + 1;
   const from = `${y}-${String(m).padStart(2,'0')}-01`;
   const to   = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
+  // Use client timezone offset so entries appear on the correct local calendar day
+  const tzOffsetMinutes = parseInt(req.query.tz_offset) || 0;
+  const localOffsetMinutes = -tzOffsetMinutes;
+  const tzSign = localOffsetMinutes >= 0 ? '+' : '-';
+  const tzAbsMins = Math.abs(localOffsetMinutes);
+  const tzModifier = `${tzSign}${tzAbsMins} minutes`;
   const entries = db.prepare(`
     SELECT t.*, j.title AS job_title, j.company_name AS job_company,
            COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
@@ -5959,7 +5965,8 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
     LEFT JOIN job_sites js ON j.site_id = js.id
     WHERE t.employee_id = ?
       AND t.clock_in IS NOT NULL
-      AND date(t.clock_in) >= ? AND date(t.clock_in) <= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
     ORDER BY t.clock_in DESC LIMIT 500
   `).all(req.workerEmployeeId, from, to);
   res.json(entries);

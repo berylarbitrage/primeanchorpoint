@@ -3238,7 +3238,7 @@ async function loadTimeclock(year, month) {
   await Promise.all([loadPunchStatus(), loadMyJobs()]);
   const y = year  || _punchCalYear  || new Date().getFullYear();
   const m = month || _punchCalMonth || new Date().getMonth() + 1;
-  const entries = await wApi(`/timeclock?year=${y}&month=${m}`);
+  const entries = await wApi(`/timeclock?year=${y}&month=${m}&tz_offset=${new Date().getTimezoneOffset()}`);
   if (!entries || !Array.isArray(entries)) {
     renderPunchCalendar([]);
     if (entries && !Array.isArray(entries)) {
@@ -3316,8 +3316,7 @@ function renderPunchCalendar(entries) {
   const dayMap = {}; // dateStr -> { hours, closed, entries[] }
   for (const t of _punchCalEntries) {
     if (!t.clock_in) continue;
-    const tz = t.display_timezone || 'America/Chicago';
-    const dateStr = new Date(t.clock_in).toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+    const dateStr = new Date(t.clock_in).toLocaleDateString('en-CA'); // YYYY-MM-DD in browser-local time
     const existing = dayMap[dateStr];
     const hours = t.total_hours || 0;
     const isClosed = t.status === 'closed';
