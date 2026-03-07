@@ -5804,14 +5804,17 @@ app.post('/api/worker/me/verify-change', requireWorker, (req, res) => {
 });
 
 app.get('/api/worker/jobs', requireWorker, (req, res) => {
-  const jobs = db.prepare(`
+  const lang = req.query.lang;
+  const base = `
     SELECT j.id, j.title, j.type, j.location, j.pay, j.pay_period,
            j.work_auth, j.benefits, j.work_days, j.work_start, j.work_end,
-           j.employment_type, j.description, j.urgent,
+           j.employment_type, j.description, j.urgent, j.lang,
            COALESCE(NULLIF(j.company_name,''), p.name, '') AS company_name
     FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id
-    WHERE j.active=1 ORDER BY j.created_at DESC
-  `).all();
+    WHERE j.active=1`;
+  const jobs = (lang && lang !== 'all')
+    ? db.prepare(base + ' AND j.lang=? ORDER BY j.created_at DESC').all(lang)
+    : db.prepare(base + ' ORDER BY j.created_at DESC').all();
   const applied = db.prepare('SELECT job_id FROM job_applications WHERE worker_account_id=?').all(req.workerId).map(r => r.job_id);
   res.json(jobs.map(j => ({ ...j, applied: applied.includes(j.id) })));
 });
