@@ -7916,9 +7916,10 @@ async function _doVerifyEmpAddr(silent) {
     if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
     if (result.standardized) {
       const s = result.standardized;
-      document.getElementById('eAddr').value  = s.street;
-      document.getElementById('eCity').value  = s.city;
-      document.getElementById('eZip').value   = s.zip;
+      document.getElementById('eAddr').value    = s.street;
+      document.getElementById('eStreet2').value = s.street2 || '';
+      document.getElementById('eCity').value    = s.city;
+      document.getElementById('eZip').value     = s.zip;
       fillStateSelect(document.getElementById('eState'), s.state);
     }
     _setAddrStatus(statusEl, result.verified === true);
