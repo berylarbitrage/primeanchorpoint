@@ -2272,13 +2272,19 @@ app.post('/api/manager/self-punch', requireAdmin, requireRole('manager', 'admin'
   }
   if (punch_type === 'break_end') {
     if (!open) return res.status(400).json({ error: '尚未上班打卡' });
-    if (!open.on_break) return res.status(400).json({ error: '当前未在休息' });
     const breaks = JSON.parse(open.break_records || '[]');
     const lastIdx = breaks.findIndex(b => !b.end);
-    if (lastIdx >= 0) breaks[lastIdx].end = now;
-    const breakMins = Math.round(breaks.reduce((s, b) => b.start && b.end ? s + (new Date(b.end) - new Date(b.start)) : s, 0) / 60000);
-    db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
-    return res.json({ action: 'break_end', break_minutes: breakMins });
+    if (lastIdx >= 0) {
+      breaks[lastIdx].end = now;
+      const breakMins = Math.round(breaks.reduce((s, b) => b.start && b.end ? s + (new Date(b.end) - new Date(b.start)) : s, 0) / 60000);
+      db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
+      return res.json({ action: 'break_end', break_minutes: breakMins });
+    } else {
+      // No open break — record flagged entry with null start for review
+      breaks.push({ start: null, end: now, flagged: true });
+      db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=0 WHERE id=?').run(JSON.stringify(breaks), open.id);
+      return res.json({ action: 'break_end', break_minutes: 0, warning: '未找到休息开始记录，休息结束已记录，请核查' });
+    }
   }
   if (punch_type === 'out') {
     if (!open) return res.status(400).json({ error: '尚未上班打卡' });
@@ -5541,12 +5547,20 @@ app.post('/api/timeclock/punch', (req, res) => {
       const r = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,'open',?,0,'break_end_only',1,'漏打上班卡及休息开始，仅有休息结束记录')").run(emp.id, JSON.stringify([{start:null,end:now}]));
       return res.json({ action: 'break_end', break_minutes: 0, warning, entry_id: r.lastInsertRowid });
     }
+    const breaks = JSON.parse(open.break_records||'[]');
+    const lastIdx = breaks.findIndex(b=>!b.end);
+    if (lastIdx>=0) {
+      breaks[lastIdx].end = now;
+    } else {
+      // No open break found — record a flagged entry with null start for admin review
+      warning = '提示：未找到休息开始记录，休息结束已记录，标记管理员审核';
+      breaks.push({start:null, end:now, flagged:true});
+      db.prepare('UPDATE time_entries SET break_records=?,on_break=0,needs_review=1,review_reason=COALESCE(NULLIF(review_reason,\'\'),\'漏打休息开始，仅有休息结束记录\') WHERE id=?').run(JSON.stringify(breaks),open.id);
+      return res.json({ action: 'break_end', break_minutes: 0, warning });
+    }
     if (!open.on_break) {
       warning = '提示：您当前不在暂停中，此操作已记录';
     }
-    const breaks = JSON.parse(open.break_records||'[]');
-    const lastIdx = breaks.findIndex(b=>!b.end);
-    if (lastIdx>=0) breaks[lastIdx].end = now;
     const totalBreakMs = breaks.reduce((sum,b)=>{if(b.start&&b.end)sum+=new Date(b.end)-new Date(b.start);return sum;},0);
     const breakMins = Math.round(totalBreakMs/60000);
     db.prepare('UPDATE time_entries SET break_records=?,on_break=0,break_minutes=? WHERE id=?').run(JSON.stringify(breaks),breakMins,open.id);
@@ -5876,7 +5890,16 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     }
     const breaks = JSON.parse(open.break_records || '[]');
     const lastIdx = breaks.findIndex(b => !b.end);
-    if (lastIdx >= 0) breaks[lastIdx].end = now;
+    if (lastIdx >= 0) {
+      breaks[lastIdx].end = now;
+    } else {
+      // No open break — flag for admin review with null start
+      beWarning = '提示：未找到休息开始记录，休息结束已记录，标记管理员审核';
+      breaks.push({ start: null, end: now, flagged: true });
+      db.prepare("UPDATE time_entries SET break_records=?, on_break=0, needs_review=1, review_reason=COALESCE(NULLIF(review_reason,''),'漏打休息开始，仅有休息结束记录') WHERE id=?")
+        .run(JSON.stringify(breaks), open.id);
+      return res.json({ action: 'break_end', break_minutes: 0, warning: beWarning, entry_id: open.id });
+    }
     const totalBreakMs = breaks.reduce((sum, b) => {
       if (b.start && b.end) sum += new Date(b.end) - new Date(b.start);
       return sum;
