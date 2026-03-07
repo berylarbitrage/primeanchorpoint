@@ -1429,6 +1429,30 @@ const PORTAL_I18N = {
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
 let _activeTab = 'jobs';
 function _t(key) { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh)[key] || key; }
+
+// ── Auto-translate job info via Google Translate (unofficial, no key needed) ──
+const _txCache = {};
+async function _gtranslate(text, lang) {
+  if (!text || !text.trim() || lang === 'en') return text;
+  const tl = lang === 'zh' ? 'zh-CN' : lang;
+  const key = tl + '\x01' + text;
+  if (_txCache[key] !== undefined) return _txCache[key];
+  try {
+    const r = await fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' +
+      encodeURIComponent(tl) + '&dt=t&q=' + encodeURIComponent(text));
+    const d = await r.json();
+    _txCache[key] = (d[0] || []).map(x => x[0]).join('') || text;
+  } catch(e) { _txCache[key] = text; }
+  return _txCache[key];
+}
+async function _translateJobs(jobs) {
+  if (_portalLang === 'en') return jobs;
+  await Promise.all(jobs.map(async j => {
+    j._titleT = await _gtranslate(j.title, _portalLang);
+    j._companyT = j.company_name ? await _gtranslate(j.company_name, _portalLang) : '';
+  }));
+  return jobs;
+}
 function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
@@ -2577,6 +2601,8 @@ async function loadPunchStatus() {
   const s = await wApi('/punch/status');
   if (!s) return;
   _punchStatus = s;
+  // Translate job titles/company names for current language
+  if (s.active_jobs && s.active_jobs.length) await _translateJobs(s.active_jobs);
   const statusEl = document.getElementById('punchStatus');
   const timeEl = document.getElementById('punchTime');
   const subEl = document.getElementById('punchSub');
@@ -2599,7 +2625,7 @@ async function loadPunchStatus() {
     subEl.innerHTML = `<span style="color:#dc2626;font-size:.82rem">${s.missed_date || ''} ${_t('tcMissedCheckoutHint')}</span>`;
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
-      `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+      `<option value="${j.job_id}">${esc(j._titleT||j.title)}${(j._companyT||j.company_name) ? ' · ' + esc(j._companyT||j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
     selector.disabled = false;
     selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
@@ -2653,7 +2679,7 @@ async function loadPunchStatus() {
     subEl.textContent = _t('tcSelectFirst');
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
-      `<option value="${j.job_id}">${esc(j.title)}${j.company_name ? ' · Client: ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+      `<option value="${j.job_id}">${esc(j._titleT||j.title)}${(j._companyT||j.company_name) ? ' · ' + esc(j._companyT||j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
     ).join('');
     selector.disabled = false;
     selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
@@ -2779,7 +2805,7 @@ function startPunchFlow(type) {
       job = jobs.find(j => j.job_id === _punchStatus.open_entry.job_id) || jobs[0];
     }
     if (job) {
-      document.getElementById('punchConfirmJobTitle').textContent = job.title + (job.company_name ? ' · ' + job.company_name : '');
+      document.getElementById('punchConfirmJobTitle').textContent = (job._titleT||job.title) + ((job._companyT||job.company_name) ? ' · ' + (job._companyT||job.company_name) : '');
       document.getElementById('punchConfirmJobAddr').textContent = job.location || job.site_name || '地址未配置';
       addrWrap.style.display = '';
     } else { addrWrap.style.display = 'none'; }
@@ -2913,11 +2939,15 @@ async function loadMyJobs() {
     el.innerHTML = `<p style="color:var(--gray-400);font-size:.88rem">${_t('tcNoJobs')}</p>`;
     return;
   }
-  el.innerHTML = jobs.map(j => `
+  await _translateJobs(jobs);
+  el.innerHTML = jobs.map(j => {
+    const title = j._titleT || j.title;
+    const company = j._companyT || j.company_name;
+    return `
     <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid var(--gray-100)">
       <div>
-        <div style="font-weight:700;font-size:.95rem">${esc(j.title)}</div>
-        ${j.company_name ? `<div style="font-size:.8rem;color:var(--gray-400)">Client: ${esc(j.company_name)}</div>` : ''}
+        <div style="font-weight:700;font-size:.95rem">${esc(title)}</div>
+        ${company ? `<div style="font-size:.8rem;color:var(--gray-400)">Client: ${esc(company)}</div>` : ''}
         <div style="font-size:.8rem;color:var(--gray-500);margin-top:.2rem">
           ${j.location ? `📍 ${esc(j.location)}` : ''}
           ${j.site_name ? ` · 🏭 ${esc(j.site_name)}` : ''}
@@ -2928,7 +2958,8 @@ async function loadMyJobs() {
         ${j.emp_hourly_rate ? `<div style="font-weight:700;color:var(--sky)">$${(+j.emp_hourly_rate).toFixed(2)}/hr</div>` : (j.pay ? `<div style="font-size:.85rem;color:var(--sky)">${esc(j.pay)}</div>` : '')}
         <span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600">${_t('tcJobsOngoing')}</span>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function loadTimeclock() {
