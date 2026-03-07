@@ -2425,10 +2425,10 @@ function showPunchConfirmMap() {
     }
   } else {
     _confirmMap.setView([userLat, userLng], 16);
-    label.textContent = '📍 当前位置（工作地点未配置围栏）';
-    // No geofence configured — allow punch
+    label.innerHTML = `<span style="color:#f97316;font-weight:600">⚠ 该工作未设置工作范围</span><br><span style="font-size:.8rem;color:#92400e">请联系管理员配置工作地点后再打卡</span>`;
+    // No geofence configured — block punch
     const execBtn = document.getElementById('btnExecutePunch');
-    if (execBtn) { execBtn.disabled = false; execBtn.style.opacity = '1'; execBtn.style.cursor = 'pointer'; }
+    if (execBtn) { execBtn.disabled = true; execBtn.style.opacity = '.4'; execBtn.style.cursor = 'not-allowed'; }
   }
 
   // Ensure map renders correctly after display
