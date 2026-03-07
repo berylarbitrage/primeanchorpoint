@@ -1181,6 +1181,9 @@ const PORTAL_I18N = {
     taskAccept: '✓ 接受任务', taskReject: '✕ 拒绝任务', taskAcceptShort: '✓ 接受', taskRejectShort: '✕ 拒绝',
     taskStartDate: '开始日期：', taskLocation: '地点：', taskPay: '薪资：', taskContract: '合同类型：',
     taskToastAccepted: '✅ 已接受任务', taskToastRejected: '✅ 已拒绝任务',
+    taskEstTime: '预计时间', taskApprox: '约', taskHrsDay: '小时/天',
+    taskReqSimple: '简单', taskReqDetailed: '详细', taskReqChecklist: '清单',
+    loading: '加载中…',
     appTitle: '我的申请记录',
     punchCalTitle: '📅 打卡日历', punchHistTitle: '打卡历史记录',
     punchLegendComplete: '已完成', punchLegendWorking: '工作中',
@@ -1273,6 +1276,9 @@ const PORTAL_I18N = {
     taskAccept: '✓ Accept', taskReject: '✕ Decline', taskAcceptShort: '✓ Accept', taskRejectShort: '✕ Decline',
     taskStartDate: 'Start Date: ', taskLocation: 'Location: ', taskPay: 'Pay: ', taskContract: 'Contract: ',
     taskToastAccepted: '✅ Assignment accepted', taskToastRejected: '✅ Assignment declined',
+    taskEstTime: 'Estimated Time', taskApprox: 'Approx.', taskHrsDay: 'hrs/day',
+    taskReqSimple: 'Simple', taskReqDetailed: 'Detailed', taskReqChecklist: 'Checklist',
+    loading: 'Loading…',
     appTitle: 'My Applications',
     punchCalTitle: '📅 Punch Calendar', punchHistTitle: 'Punch History',
     punchLegendComplete: 'Completed', punchLegendWorking: 'Working',
@@ -1365,6 +1371,9 @@ const PORTAL_I18N = {
     taskAccept: '✓ Aceptar', taskReject: '✕ Rechazar', taskAcceptShort: '✓ Aceptar', taskRejectShort: '✕ Rechazar',
     taskStartDate: 'Inicio: ', taskLocation: 'Ubicación: ', taskPay: 'Pago: ', taskContract: 'Contrato: ',
     taskToastAccepted: '✅ Asignación aceptada', taskToastRejected: '✅ Asignación rechazada',
+    taskEstTime: 'Tiempo Estimado', taskApprox: 'Aprox.', taskHrsDay: 'hrs/día',
+    taskReqSimple: 'Simple', taskReqDetailed: 'Detallado', taskReqChecklist: 'Lista',
+    loading: 'Cargando…',
     appTitle: 'Mis Solicitudes',
     punchCalTitle: '📅 Calendario de Asistencia', punchHistTitle: 'Historial de Asistencia',
     punchLegendComplete: 'Completado', punchLegendWorking: 'Trabajando',
@@ -1828,19 +1837,22 @@ function _withSuffix(title) {
 // Render a single task requirement block (Simple / Detailed / Checklist)
 function _renderOneTaskReq(req) {
   const TYPE_META = {
-    simple:    { label:'Simple',    bg:'#d1fae5', color:'#065f46', border:'#6ee7b7' },
-    detailed:  { label:'Detailed',  bg:'#dbeafe', color:'#1d4ed8', border:'#93c5fd' },
-    checklist: { label:'Checklist', bg:'#fef9c3', color:'#92400e', border:'#fcd34d' },
+    simple:    { label: _t('taskReqSimple'),    bg:'#d1fae5', color:'#065f46', border:'#6ee7b7' },
+    detailed:  { label: _t('taskReqDetailed'),  bg:'#dbeafe', color:'#1d4ed8', border:'#93c5fd' },
+    checklist: { label: _t('taskReqChecklist'), bg:'#fef9c3', color:'#92400e', border:'#fcd34d' },
   };
   const m = TYPE_META[req.type] || TYPE_META.simple;
+  const desc = req._descT || req.description || '';
+  const notes = req._notesT || req.notes || '';
+  const name = req._nameT || req.name || '';
   let body = '';
   if (req.type === 'simple') {
-    body = req.description ? `<div style="font-size:.83rem;color:#374151;line-height:1.5;white-space:pre-wrap">${esc(req.description)}</div>` : '';
+    body = desc ? `<div style="font-size:.83rem;color:#374151;line-height:1.5;white-space:pre-wrap">${esc(desc)}</div>` : '';
   } else if (req.type === 'detailed') {
-    body = (req.description ? `<div style="font-size:.83rem;color:#374151;line-height:1.5;white-space:pre-wrap">${esc(req.description)}</div>` : '')
-         + (req.notes ? `<div style="font-size:.79rem;color:#6b7280;margin-top:.3rem;font-style:italic">${esc(req.notes)}</div>` : '');
+    body = (desc ? `<div style="font-size:.83rem;color:#374151;line-height:1.5;white-space:pre-wrap">${esc(desc)}</div>` : '')
+         + (notes ? `<div style="font-size:.79rem;color:#6b7280;margin-top:.3rem;font-style:italic">${esc(notes)}</div>` : '');
   } else if (req.type === 'checklist') {
-    const steps = Array.isArray(req.steps) ? req.steps.filter(Boolean) : [];
+    const steps = (req._stepsT || (Array.isArray(req.steps) ? req.steps.filter(Boolean) : []));
     body = steps.length
       ? `<ol style="margin:.3rem 0 0 1.1rem;padding:0;font-size:.83rem;color:#374151;line-height:1.6">${steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol>`
       : '';
@@ -1848,7 +1860,7 @@ function _renderOneTaskReq(req) {
   return `<div style="border:1px solid ${m.border};border-radius:8px;padding:.6rem .75rem;background:${m.bg};margin-bottom:.1rem">
     <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:${body?'.4rem':'0'}">
       <span style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:${m.color};background:#fff;border:1px solid ${m.border};border-radius:20px;padding:1px 7px;white-space:nowrap">${m.label}</span>
-      ${req.name ? `<span style="font-size:.87rem;font-weight:700;color:#1e293b">${esc(req.name)}</span>` : ''}
+      ${name ? `<span style="font-size:.87rem;font-weight:700;color:#1e293b">${esc(name)}</span>` : ''}
     </div>
     ${body}
   </div>`;
@@ -1856,23 +1868,51 @@ function _renderOneTaskReq(req) {
 
 // Pick one task requirement randomly, fallback to generic desc
 function renderDailyTaskReq(t) {
-  let reqs = [];
-  try { reqs = JSON.parse(t.task_requirements || '[]'); } catch {}
+  // Use pre-translated requirements if available
+  const reqs = t._reqsT || (() => { try { return JSON.parse(t.task_requirements || '[]'); } catch { return []; } })();
   if (!Array.isArray(reqs) || !reqs.length) {
-    return `<div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.15rem;line-height:1.45">${esc(getRotatingTaskDesc(t.id, t.title))}</div>`;
+    const desc = t._rotatingDescT || getRotatingTaskDesc(t.id, t.title);
+    return `<div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.15rem;line-height:1.45">${esc(desc)}</div>`;
   }
   const idx = Math.floor(Math.random() * reqs.length);
   return _renderOneTaskReq(reqs[idx]);
 }
 
+async function _preTranslateTasks(tasks) {
+  if (_portalLang === 'en') return;
+  await Promise.all(tasks.map(async t => {
+    t._titleT = await _gtranslate(t.title || '', _portalLang);
+    t._companyT = t.company_name ? await _gtranslate(t.company_name, _portalLang) : '';
+    // Translate task requirements (description, name, notes, steps)
+    let reqs = [];
+    try { reqs = JSON.parse(t.task_requirements || '[]'); } catch {}
+    if (reqs.length) {
+      await Promise.all(reqs.map(async r => {
+        r._nameT = r.name ? await _gtranslate(r.name, _portalLang) : '';
+        r._descT = r.description ? await _gtranslate(r.description, _portalLang) : '';
+        r._notesT = r.notes ? await _gtranslate(r.notes, _portalLang) : '';
+        if (Array.isArray(r.steps) && r.steps.length) {
+          r._stepsT = await Promise.all(r.steps.filter(Boolean).map(s => _gtranslate(s, _portalLang)));
+        }
+      }));
+      t._reqsT = reqs;
+    }
+    // Translate rotating generic description if no requirements
+    if (!reqs.length && t.id && t.title) {
+      t._rotatingDescT = await _gtranslate(getRotatingTaskDesc(t.id, t.title), _portalLang);
+    }
+  }));
+}
+
 async function loadTasks() {
   const el = document.getElementById('myTasksList');
-  el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">加载中…</p>';
+  el.innerHTML = `<p style="color:var(--gray-400);font-size:.88rem">${_t('loading')}</p>`;
 
   await _ensureSuffixes();
 
   // Load tasks and show pending ones in top confirmation card
   const tasks = await wApi('/my-tasks');
+  if (tasks && tasks.length) await _preTranslateTasks(tasks);
   const confCard = document.getElementById('shiftConfirmCard');
   const confList = document.getElementById('shiftConfirmList');
   const pendingTasks = (tasks || []).filter(t => !t.worker_response);
@@ -1893,8 +1933,8 @@ async function loadTasks() {
         <div style="border:2px solid #f59e0b;border-radius:10px;padding:.85rem;margin-bottom:.55rem;background:#fff">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem;margin-bottom:.3rem">
             <div>
-              <div style="font-weight:700;font-size:.92rem;color:#92400e">${esc(_withSuffix(t.title||'—'))}</div>
-              ${t.company_name ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">Client: ${esc(t.company_name)}</div>` : ''}
+              <div style="font-weight:700;font-size:.92rem;color:#92400e">${esc(t._titleT || _withSuffix(t.title||'—'))}</div>
+              ${(t._companyT||t.company_name) ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">Client: ${esc(t._companyT||t.company_name)}</div>` : ''}
             </div>
             <span style="background:#fef3c7;color:#92400e;border-radius:99px;padding:.2rem .7rem;font-size:.8rem;font-weight:700;white-space:nowrap">${_t('taskStatusPendingBadge')}</span>
           </div>
@@ -1941,12 +1981,14 @@ async function loadTasks() {
         <button onclick="respondTask(${t.id},'accepted')" style="flex:1;padding:.5rem;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer">${_t('taskAccept')}</button>
         <button onclick="respondTask(${t.id},'rejected')" style="flex:1;padding:.5rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.9rem;font-weight:600;cursor:pointer">${_t('taskReject')}</button>
       </div>` : '';
+    const taskTitle = t._titleT || _withSuffix(t.title);
+    const taskCompany = t._companyT || t.company_name || '';
     return `
       <div style="border:1px solid var(--gray-200);border-radius:12px;padding:1rem;margin-bottom:.85rem;background:#fafafa">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.55rem">
           <div>
-            <div style="font-weight:700;font-size:1rem;color:var(--gray-800)">${esc(_withSuffix(t.title))}</div>
-            ${t.company_name ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">Client: ${esc(t.company_name)}</div>` : ''}
+            <div style="font-weight:700;font-size:1rem;color:var(--gray-800)">${esc(taskTitle)}</div>
+            ${taskCompany ? `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.1rem">Client: ${esc(taskCompany)}</div>` : ''}
           </div>
           ${statusBadge}
         </div>
@@ -1954,9 +1996,9 @@ async function loadTasks() {
         <div style="display:flex;align-items:center;gap:.5rem;background:#eff6ff;border-radius:8px;padding:.5rem .75rem;margin-bottom:.55rem">
           <span style="font-size:1.1rem">⏱</span>
           <div>
-            <div style="font-size:.72rem;color:#3b82f6;font-weight:600;text-transform:uppercase;letter-spacing:.04em">Estimated Time</div>
+            <div style="font-size:.72rem;color:#3b82f6;font-weight:600;text-transform:uppercase;letter-spacing:.04em">${_t('taskEstTime')}</div>
             <div style="font-weight:700;font-size:.92rem;color:#1d4ed8">${esc(timeStr)}</div>
-            ${estHours ? `<div style="font-size:.78rem;color:#3b82f6">Approx. ${esc(estHours)}</div>` : ''}
+            ${estHours ? `<div style="font-size:.78rem;color:#3b82f6">${_t('taskApprox')} ${esc(estHours.replace('hrs/day', _t('taskHrsDay')))}</div>` : ''}
           </div>
         </div>` : ''}
         <div style="font-size:.83rem;color:var(--gray-600);display:grid;gap:.22rem">
@@ -1983,7 +2025,7 @@ async function respondTask(id, response) {
 async function respondShiftConfirm(id, response) {
   const r = await wApi(`/shift-confirmations/${id}/respond`, { method:'POST', body: JSON.stringify({ response }) });
   if (r && r.success) {
-    showToast(response === 'confirmed' ? '✅ 已接受' : '✕ 已拒绝');
+    showToast(response === 'confirmed' ? _t('taskToastAccepted') : _t('taskToastRejected'));
     loadTasks();
     loadWorkCalendar(); // refresh calendar dots after responding
   }
@@ -1992,7 +2034,7 @@ async function respondShiftConfirm(id, response) {
 async function confirmScheduledShift(assignmentId, date, response) {
   const r = await wApi('/shift-confirmations/preconfirm', { method:'POST', body: JSON.stringify({ assignment_id: assignmentId, date, response }) });
   if (r && r.success) {
-    showToast(response === 'confirmed' ? '✅ 已接受' : '已拒绝');
+    showToast(response === 'confirmed' ? _t('taskToastAccepted') : _t('taskToastRejected'));
     closeCalDayModal();
     loadTasks();
     loadWorkCalendar();
@@ -2136,7 +2178,7 @@ function calDayClick(dateStr) {
 
   document.getElementById('calDayModalTitle').textContent = `${dayNames[d.getDay()]} ${dateStr}`;
   const statusColor = { confirmed:'#16a34a', pending:'#f59e0b', declined:'#dc2626' };
-  const statusLabel = { confirmed:'✓ 已接受', pending:'待确认', declined:'✕ 已拒绝' };
+  const statusLabel = { confirmed: _t('taskStatusAccepted'), pending: _t('taskStatusPendingBadge'), declined: _t('taskStatusRejected') };
   const statusBg    = { confirmed:'#dcfce7', pending:'#fef3c7', declined:'#fee2e2' };
 
   const calcHours = (s, e) => {
