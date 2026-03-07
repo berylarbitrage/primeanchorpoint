@@ -163,7 +163,7 @@ tr:hover td{background:var(--sky-light)}
 .badge-ordered{background:#E8F0FE;color:var(--sky)}.badge-in_progress{background:#FFF3E0;color:var(--accent)}.badge-completed{background:#E8F5E9;color:var(--green)}.badge-failed{background:#FFEAEA;color:var(--red)}
 .badge-clear{background:#E8F5E9;color:var(--green)}.badge-flagged{background:#FFEAEA;color:var(--red)}
 .badge-ssn{background:#FFEAEA;color:var(--red)}.badge-passport{background:#E8F0FE;color:var(--blue)}.badge-i9{background:#E8F5E9;color:var(--green)}.badge-doc{background:var(--gray-200);color:var(--gray-600)}
-.badge-blue{background:#E8F0FE;color:var(--blue)}.badge-yellow{background:#FFF3E0;color:var(--accent)}.badge-red{background:#FFEAEA;color:var(--red)}.badge-green{background:#E8F5E9;color:#2D9D78}
+.badge-blue{background:#E8F0FE;color:var(--blue)}.badge-yellow{background:#FFF3E0;color:var(--accent)}.badge-orange{background:#FEF3C7;color:#92400e}.badge-red{background:#FFEAEA;color:var(--red)}.badge-green{background:#E8F5E9;color:#2D9D78}
 .ot-text{color:var(--accent);font-weight:700}
 .form-section{margin-bottom:1.5rem}.form-section h4{font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)}
 .modal-lg{max-width:700px}
@@ -661,14 +661,31 @@ tr:hover td{background:var(--sky-light)}
 <div id="tab-admin-mgr-punch" style="display:none">
   <div class="top"><h1>⏱ 经理打卡记录</h1></div>
   <div class="search-bar" style="margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
-    <select id="adminMgrPunchSel" onchange="loadAdminMgrPunch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    <select id="adminMgrPunchSel" onchange="loadAdminMgrPunch();loadAdminMgrSelfPunch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
       <option value="">— 选择经理 —</option>
     </select>
-    <input type="date" id="adminMgrPunchFrom" onchange="loadAdminMgrPunch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    <input type="date" id="adminMgrPunchFrom" onchange="loadAdminMgrPunch();loadAdminMgrSelfPunch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
     <span style="align-self:center;font-size:.85rem;color:var(--gray-500)">至</span>
-    <input type="date" id="adminMgrPunchTo" onchange="loadAdminMgrPunch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    <input type="date" id="adminMgrPunchTo" onchange="loadAdminMgrPunch();loadAdminMgrSelfPunch()" style="padding:.45rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
   </div>
+  <!-- Manager's own self-punch records -->
+  <div class="card" style="overflow-x:auto;margin-bottom:1.25rem">
+    <div style="font-weight:700;font-size:.9rem;color:var(--sky-d);margin-bottom:.75rem">经理本人打卡记录</div>
+    <table style="font-size:.82rem">
+      <thead><tr>
+        <th>上班时间</th>
+        <th>下班时间</th>
+        <th>休息</th>
+        <th>工时</th>
+        <th>状态</th>
+        <th>操作</th>
+      </tr></thead>
+      <tbody id="adminMgrSelfPunchBody"><tr><td colspan="6" style="text-align:center;color:var(--gray-400)">请先选择经理</td></tr></tbody>
+    </table>
+  </div>
+  <!-- Employees punch records managed by this manager -->
   <div class="card" style="overflow-x:auto">
+    <div style="font-weight:700;font-size:.9rem;color:var(--sky-d);margin-bottom:.75rem">经理管理的员工打卡记录</div>
     <table style="font-size:.82rem">
       <thead><tr>
         <th>员工姓名</th>
@@ -4022,7 +4039,7 @@ function showTab(t) {
   if (t === 'mgr-assignments') loadMgrAssignments();
   if (t === 'mgr-interviews')  loadMgrInterviews();
   if (t === 'admin-mgr-list')     loadAdminMgrList();
-  if (t === 'admin-mgr-punch')    { populateAdminMgrSelects(); loadAdminMgrPunch(); }
+  if (t === 'admin-mgr-punch')    { populateAdminMgrSelects(); loadAdminMgrPunch(); loadAdminMgrSelfPunch(); }
   if (t === 'admin-mgr-dispatch') { populateAdminMgrSelects(); loadAdminMgrDispatch(); }
   if (t === 'admin-mgr-staff')    { populateAdminMgrSelects(); loadAdminMgrStaff(); }
   if (t === 'admin-mgr-assign')   { populateAdminMgrSelects(); }
@@ -12764,6 +12781,7 @@ function viewMgrPunch(id, name) {
   showTab('admin-mgr-punch');
   document.getElementById('adminMgrPunchSel').value = id;
   loadAdminMgrPunch();
+  loadAdminMgrSelfPunch();
 }
 function viewMgrDispatch(id, name) {
   showTab('admin-mgr-dispatch');
@@ -12824,6 +12842,56 @@ async function loadAdminMgrPunch() {
   } catch(e) {
     tbody.innerHTML = `<tr><td colspan="7" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
   }
+}
+
+async function loadAdminMgrSelfPunch() {
+  const tbody = document.getElementById('adminMgrSelfPunchBody');
+  const mgrId = document.getElementById('adminMgrPunchSel').value;
+  if (!mgrId) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">请先选择经理</td></tr>'; return; }
+  const from = document.getElementById('adminMgrPunchFrom').value;
+  const to   = document.getElementById('adminMgrPunchTo').value;
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">加载中…</td></tr>';
+  try {
+    let url = `/admin/managers/${mgrId}/self-punch`;
+    const params = [];
+    if (from) params.push(`date_from=${from}`);
+    if (to)   params.push(`date_to=${to}`);
+    if (params.length) url += '?' + params.join('&');
+    const rows = await api(url);
+    if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">暂无记录</td></tr>'; return; }
+    function fmtBreak(mins) { return (!mins && mins!==0) ? '—' : Math.floor(mins/60)+'h'+((mins%60)?((mins%60)+'m'):''); }
+    tbody.innerHTML = rows.map(r => {
+      const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN',  {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+      const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '<span style="color:#f97316;font-weight:600">进行中</span>';
+      const hrs  = r.total_hours != null && r.total_hours > 0 ? r.total_hours.toFixed(2) + ' h' : '—';
+      let statusBadge, confirmBtn = '';
+      if (r.status === 'open') {
+        statusBadge = '<span class="badge badge-yellow">进行中</span>';
+      } else if (r.needs_review) {
+        statusBadge = '<span class="badge badge-orange">在审核</span>';
+        confirmBtn = `<button class="btn btn-sm btn-success" onclick="confirmMgrSelfPunch(${r.id})">✓ 确认</button>`;
+      } else {
+        statusBadge = '<span class="badge badge-cooperated">已完成</span>';
+      }
+      return `<tr>
+        <td style="white-space:nowrap">${cin}</td>
+        <td style="white-space:nowrap">${cout}</td>
+        <td>${fmtBreak(r.break_minutes)}</td>
+        <td style="font-weight:600">${hrs}</td>
+        <td>${statusBadge}</td>
+        <td>${confirmBtn}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:var(--red)">加载失败: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+async function confirmMgrSelfPunch(id) {
+  try {
+    await api(`/admin/manager-self-punch/${id}/confirm`, { method: 'POST' });
+    loadAdminMgrSelfPunch();
+  } catch(e) { alert('操作失败: ' + e.message); }
 }
 
 async function loadAdminMgrDispatch() {

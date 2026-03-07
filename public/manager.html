@@ -94,6 +94,7 @@ tr:hover td{background:#eef6fd !important}
 .badge-no_show{background:#fce7f3;color:#9d174d}
 .badge-open{background:#c3dff7;color:#1a4f8a}
 .badge-closed{background:var(--gray-100);color:var(--gray-500)}
+.badge-review{background:#fef3c7;color:#92400e}
 
 /* ── Assignment cards ── */
 .assign-card{border:1.5px solid #c3dff7;border-radius:12px;padding:1rem 1.15rem;margin-bottom:.75rem;background:#fff;transition:.15s}
@@ -1356,7 +1357,7 @@ async function loadSelfPunchHistory() {
       <td style="white-space:nowrap">${r.clock_out ? fmtDT(r.clock_out) : '<span style="color:#f97316;font-weight:600">进行中</span>'}</td>
       <td>${r.break_minutes ? fmtBreak(r.break_minutes) : '—'}</td>
       <td>${r.total_hours ? Number(r.total_hours).toFixed(2)+'h' : '—'}</td>
-      <td><span class="badge badge-${r.status==='closed'?'completed':'open'}">${r.status==='closed'?'已完成':'进行中'}</span></td>
+      <td><span class="badge badge-${r.status==='open'?'open':r.needs_review?'review':'completed'}">${r.status==='open'?'进行中':r.needs_review?'在审核':'已完成'}</span></td>
     </tr>`).join('');
 }
 
