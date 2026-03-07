@@ -690,7 +690,7 @@ tr:last-child td{border-bottom:none}
     <!-- Payments -->
     <div id="tabPayments" style="display:none">
       <div class="card">
-        <h2>打款记录</h2>
+        <h2 data-i18n="paymentsTitle">打款记录</h2>
         <div id="paymentsTable"></div>
       </div>
     </div>
@@ -961,8 +961,8 @@ tr:last-child td{border-bottom:none}
     <!-- Todos / Onboarding -->
     <div id="tabTodos" style="display:none">
       <div class="card">
-        <h2>📋 我的入职待办事项</h2>
-        <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1.25rem">请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。</p>
+        <h2 data-i18n="todoTitle">📋 我的入职待办事项</h2>
+        <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1.25rem" data-i18n="todoDesc">请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。</p>
         <div id="onboardingList"></div>
       </div>
     </div>
@@ -986,22 +986,22 @@ tr:last-child td{border-bottom:none}
     <!-- Referral Tab -->
     <div id="tabReferral" style="display:none">
       <div class="card" style="margin-bottom:1rem">
-        <h2 style="margin-bottom:.5rem">🎁 推荐奖励 / Referral Bonus</h2>
-        <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem">把您的专属链接分享给朋友，朋友成功注册并完成规定工时后，您可获得奖励！<br>Share your link — earn a bonus for each friend who registers and works the required hours.</p>
+        <h2 style="margin-bottom:.5rem" data-i18n="refTitle">🎁 推荐奖励</h2>
+        <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:1rem" data-i18n="refDesc">把您的专属链接分享给朋友，朋友成功注册并完成规定工时后，您可获得奖励！</p>
 
         <!-- Referral link card -->
         <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:1rem;margin-bottom:1.25rem">
-          <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.4rem">您的专属邀请链接 / Your referral link</div>
+          <div style="font-size:.78rem;color:var(--gray-500);margin-bottom:.4rem" data-i18n="refLinkLabel">您的专属邀请链接</div>
           <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:1rem">
             <input id="referralLinkInput" readonly style="flex:1;padding:.5rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.8rem;background:#fff;color:var(--gray-700)">
-            <button onclick="copyReferralLink()" style="background:var(--sky);color:#fff;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap">复制 / Copy</button>
+            <button onclick="copyReferralLink()" style="background:var(--sky);color:#fff;border:none;border-radius:8px;padding:.5rem .9rem;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap" data-i18n="refCopy">复制</button>
           </div>
 
           <!-- Share buttons -->
           <div style="margin-bottom:1rem">
-            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem">分享给朋友 / Share with friends</div>
+            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem" data-i18n="refShareLabel">分享给朋友</div>
             <div style="display:flex;flex-wrap:wrap;gap:.45rem">
-              <button id="refNativeShareBtn" onclick="shareReferral('native')" style="display:none;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#0F2B5B;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer">📤 分享</button>
+              <button id="refNativeShareBtn" onclick="shareReferral('native')" style="display:none;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#0F2B5B;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer" data-i18n="refNativeShare">📤 分享</button>
               <button onclick="shareReferral('sms')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#22c55e;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer">💬 短信 SMS</button>
               <button onclick="shareReferral('whatsapp')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#25D366;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.557 4.126 1.527 5.858L0 24l6.335-1.501A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.885 0-3.64-.52-5.144-1.422l-.366-.217-3.762.891.948-3.668-.239-.378A9.96 9.96 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg> WhatsApp</button>
               <button onclick="shareReferral('facebook')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#1877F2;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Facebook</button>
@@ -1010,7 +1010,7 @@ tr:last-child td{border-bottom:none}
 
           <!-- QR Code -->
           <div style="text-align:center">
-            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem">扫码注册 / Scan to Register</div>
+            <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem" data-i18n="refScanLabel">扫码注册</div>
             <div id="referralQR" style="display:inline-block;background:#fff;padding:10px;border:1px solid var(--gray-200);border-radius:10px;min-width:120px;min-height:120px"></div>
           </div>
         </div>
@@ -1019,15 +1019,15 @@ tr:last-child td{border-bottom:none}
         <div id="referralSummary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-bottom:1.25rem">
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:.8rem;text-align:center">
             <div style="font-size:1.4rem;font-weight:800;color:#16a34a" id="refCountEl">—</div>
-            <div style="font-size:.72rem;color:var(--gray-500)">成功邀请 / Referred</div>
+            <div style="font-size:.72rem;color:var(--gray-500)" data-i18n="refStatReferred">成功邀请</div>
           </div>
           <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:.8rem;text-align:center">
             <div style="font-size:1.4rem;font-weight:800;color:#c2410c" id="refPendingEl">—</div>
-            <div style="font-size:.72rem;color:var(--gray-500)">待达标 / Pending</div>
+            <div style="font-size:.72rem;color:var(--gray-500)" data-i18n="refStatPending">待达标</div>
           </div>
           <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:.8rem;text-align:center">
             <div style="font-size:1.4rem;font-weight:800;color:#1d4ed8" id="refBonusEl">—</div>
-            <div style="font-size:.72rem;color:var(--gray-500)">已获奖励 / Earned</div>
+            <div style="font-size:.72rem;color:var(--gray-500)" data-i18n="refStatEarned">已获奖励</div>
           </div>
         </div>
 
@@ -1037,7 +1037,7 @@ tr:last-child td{border-bottom:none}
 
       <!-- Referred workers table -->
       <div class="card">
-        <h2 style="margin-bottom:.75rem">已邀请人员 / People You Referred</h2>
+        <h2 style="margin-bottom:.75rem" data-i18n="refPeopleTitle">已邀请人员</h2>
         <div id="referralList"><p style="color:var(--gray-400);font-size:.88rem">加载中…</p></div>
       </div>
     </div>
@@ -1045,31 +1045,31 @@ tr:last-child td{border-bottom:none}
     <div id="tabProfile" style="display:none">
       <!-- Basic info -->
       <div class="card" style="margin-bottom:1rem">
-        <h2 style="margin-bottom:1rem">👤 我的信息</h2>
+        <h2 style="margin-bottom:1rem" data-i18n="profileTitle">👤 我的信息</h2>
         <div id="profileBasic"></div>
       </div>
       <!-- Contact info -->
       <div class="card" style="margin-bottom:1rem">
-        <h2 style="margin-bottom:1rem">📱 联系方式</h2>
+        <h2 style="margin-bottom:1rem" data-i18n="contactTitle">📱 联系方式</h2>
         <div id="profileContact"></div>
       </div>
       <!-- Identity Verification (hidden until admin initiates) -->
       <div id="profileIdentityCard" class="card" style="margin-bottom:1rem;display:none">
-        <h2 style="margin-bottom:.3rem">🪪 身份验证</h2>
-        <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">由HR发起 · 驾照 + 自拍 + SSN核验 · 通过Persona平台</p>
+        <h2 style="margin-bottom:.3rem" data-i18n="identityTitle">🪪 身份验证</h2>
+        <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem" data-i18n="identityDesc">由HR发起 · 驾照 + 自拍 + SSN核验 · 通过Persona平台</p>
         <div id="profileIdentity"></div>
       </div>
       <!-- Manager Punch QR Code -->
       <div class="card" style="margin-bottom:1rem">
-        <h2 style="margin-bottom:.3rem">📲 打卡二维码</h2>
-        <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">让 Manager 扫描此二维码为您打卡</p>
+        <h2 style="margin-bottom:.3rem" data-i18n="qrTitle">📲 打卡二维码</h2>
+        <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem" data-i18n="qrDesc">让 Manager 扫描此二维码为您打卡</p>
         <div id="profilePunchQRWrap" style="text-align:center">
           <div id="profilePunchQR" style="display:inline-block;background:#fff;padding:10px;border:1px solid var(--gray-200);border-radius:10px;min-width:160px;min-height:160px"></div>
         </div>
       </div>
       <!-- Uploaded documents -->
       <div class="card">
-        <h2 style="margin-bottom:1rem">📂 我的文件</h2>
+        <h2 style="margin-bottom:1rem" data-i18n="docsTitle">📂 我的文件</h2>
         <div id="profileDocs"></div>
       </div>
 
@@ -1158,7 +1158,33 @@ const PORTAL_I18N = {
     tcPunchIn: '▶ 上班打卡', tcBreakStart: '⏸ 休息开始', tcBreakEnd: '▶ 休息结束', tcPunchOut: '⏹ 下班打卡',
     tcSelectJob: '选择打卡工作 / Select job to clock in for',
     thDate: '日期', thJob: '工作', thClockIn: '上班', thBreakStart: '休息开始', thBreakEnd: '休息结束',
-    thClockOut: '下班', thHours: '工时', thRegular: '正常', thOvertime: '加班', thStatus: '状态', thLocation: '位置'
+    thClockOut: '下班', thHours: '工时', thRegular: '正常', thOvertime: '加班', thStatus: '状态', thLocation: '位置',
+    paymentsTitle: '打款记录', paymentsEmpty: '暂无打款记录', paymentsNoEmployee: '⚠️ 账号未关联员工档案', paymentsPeriod: '📅 周期：',
+    payMethodCash: '💵 现金', payMethodCheck: '📄 支票', payMethodDeposit: '🏦 直接存款', payMethodOther: '其他',
+    todoTitle: '📋 我的入职待办事项', todoDesc: '请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。',
+    refTitle: '🎁 推荐奖励', refDesc: '把您的专属链接分享给朋友，朋友成功注册并完成规定工时后，您可获得奖励！',
+    refLinkLabel: '您的专属邀请链接', refCopy: '复制', refShareLabel: '分享给朋友', refNativeShare: '📤 分享', refScanLabel: '扫码注册',
+    refStatReferred: '成功邀请', refStatPending: '待达标', refStatEarned: '已获奖励', refPeopleTitle: '已邀请人员',
+    refNoRecords: '暂无邀请记录，快去分享链接吧！',
+    refTHName: '姓名', refTHDate: '注册时间', refTHHours: '工时', refTHStatus: '状态',
+    refQualified: '✅ 达标', refPendingBadge: '⏳ 待达标', refNoWork: '未工作',
+    refRule: '规则：被推荐人工作满 {min} 小时后，您可获得 ${bonus} 奖励。',
+    refRulePending: ' 当前有 {count} 人待达标，预计奖励 ${amount}。',
+    profileTitle: '👤 我的信息', contactTitle: '📱 联系方式',
+    identityTitle: '🪪 身份验证', identityDesc: '由HR发起 · 驾照 + 自拍 + SSN核验 · 通过Persona平台',
+    qrTitle: '📲 打卡二维码', qrDesc: '让 Manager 扫描此二维码为您打卡',
+    docsTitle: '📂 我的文件',
+    profName: '姓名', profId: '工号', profPosition: '职位', profDept: '部门', profStatus: '状态',
+    profChange: '更换', profNotSet: '未设置', profAccount: '账号：',
+    profPhone: '手机号', profEmail: '邮箱',
+    profNoEmployee: '员工档案未绑定，如有疑问请联系 HR', profNoQR: '员工档案未绑定，暂无二维码',
+    profNoDocs: '暂无已提交文件，请前往"合规文件"标签上传。', profNoDocRecords: '暂无文件记录',
+    obEmpty: '入职流程尚未初始化，请联系 HR。',
+    obLocked: '🔒 未开放', obPending: '⏳ 待处理', obSubmitted: '🔄 待审核', obCompleted: '✅ 已完成', obWaived: '⏭️ 已豁免',
+    obActionInterview: '去预约面试', obActionPortalVerify: '🖥️ 在Portal中验证', obActionOpenLink: '🔗 打开链接验证',
+    obActionCheckr: '📧 请查收 Checkr 发送的邮件完成背景调查', obActionDocs: '去提交文件 →',
+    obActionGusto: '填写 Gusto 信息 →', obActionContract: '查看/签署合同 →', obActionSubmit: '标记已提交',
+    obSubmittedNote: '已提交，等待 HR 审核中…'
   },
   en: {
     loginTitle: 'Worker Portal',
@@ -1189,7 +1215,33 @@ const PORTAL_I18N = {
     tcPunchIn: '▶ Clock In', tcBreakStart: '⏸ Break Start', tcBreakEnd: '▶ Break End', tcPunchOut: '⏹ Clock Out',
     tcSelectJob: 'Select job to clock in for',
     thDate: 'Date', thJob: 'Job', thClockIn: 'In', thBreakStart: 'Break Start', thBreakEnd: 'Break End',
-    thClockOut: 'Out', thHours: 'Hours', thRegular: 'Regular', thOvertime: 'OT', thStatus: 'Status', thLocation: 'Location'
+    thClockOut: 'Out', thHours: 'Hours', thRegular: 'Regular', thOvertime: 'OT', thStatus: 'Status', thLocation: 'Location',
+    paymentsTitle: 'Payment History', paymentsEmpty: 'No payment records', paymentsNoEmployee: '⚠️ Account not linked to employee record', paymentsPeriod: '📅 Period: ',
+    payMethodCash: '💵 Cash', payMethodCheck: '📄 Check', payMethodDeposit: '🏦 Direct Deposit', payMethodOther: 'Other',
+    todoTitle: '📋 My Onboarding To-Do', todoDesc: 'Complete each step in order. After each step, HR will review and unlock the next.',
+    refTitle: '🎁 Referral Bonus', refDesc: 'Share your unique link with friends and earn a bonus for each one who registers and works the required hours!',
+    refLinkLabel: 'Your referral link', refCopy: 'Copy', refShareLabel: 'Share with friends', refNativeShare: '📤 Share', refScanLabel: 'Scan to Register',
+    refStatReferred: 'Referred', refStatPending: 'Pending', refStatEarned: 'Earned', refPeopleTitle: 'People You Referred',
+    refNoRecords: 'No referrals yet — share your link!',
+    refTHName: 'Name', refTHDate: 'Registered', refTHHours: 'Hours', refTHStatus: 'Status',
+    refQualified: '✅ Qualified', refPendingBadge: '⏳ Pending', refNoWork: 'No hours',
+    refRule: 'Rule: Earn ${bonus} after your referral works {min} hours.',
+    refRulePending: ' {count} referral(s) still pending — estimated bonus ${amount}.',
+    profileTitle: '👤 My Profile', contactTitle: '📱 Contact Info',
+    identityTitle: '🪪 Identity Verification', identityDesc: 'Initiated by HR · License + Selfie + SSN · via Persona',
+    qrTitle: '📲 Punch QR Code', qrDesc: 'Have your manager scan this code to clock you in/out',
+    docsTitle: '📂 My Documents',
+    profName: 'Name', profId: 'Employee ID', profPosition: 'Position', profDept: 'Department', profStatus: 'Status',
+    profChange: 'Change', profNotSet: 'Not set', profAccount: 'Account: ',
+    profPhone: 'Phone', profEmail: 'Email',
+    profNoEmployee: 'No employee record linked. Please contact HR.', profNoQR: 'No employee record — QR code unavailable',
+    profNoDocs: 'No submitted documents. Go to the Compliance tab to upload.', profNoDocRecords: 'No document records',
+    obEmpty: 'Onboarding not initialized yet. Please contact HR.',
+    obLocked: '🔒 Locked', obPending: '⏳ Pending', obSubmitted: '🔄 Under Review', obCompleted: '✅ Completed', obWaived: '⏭️ Waived',
+    obActionInterview: 'Book Interview', obActionPortalVerify: '🖥️ Verify in Portal', obActionOpenLink: '🔗 Open Verification Link',
+    obActionCheckr: '📧 Check your email for Checkr background check', obActionDocs: 'Submit Documents →',
+    obActionGusto: 'Complete Gusto Setup →', obActionContract: 'View/Sign Contract →', obActionSubmit: 'Mark as Submitted',
+    obSubmittedNote: 'Submitted — awaiting HR review…'
   },
   es: {
     loginTitle: 'Portal del Trabajador',
@@ -1220,15 +1272,48 @@ const PORTAL_I18N = {
     tcPunchIn: '▶ Entrada', tcBreakStart: '⏸ Inicio Descanso', tcBreakEnd: '▶ Fin Descanso', tcPunchOut: '⏹ Salida',
     tcSelectJob: 'Seleccione trabajo para registrar',
     thDate: 'Fecha', thJob: 'Trabajo', thClockIn: 'Entrada', thBreakStart: 'Inicio Desc.', thBreakEnd: 'Fin Desc.',
-    thClockOut: 'Salida', thHours: 'Horas', thRegular: 'Normal', thOvertime: 'Extra', thStatus: 'Estado', thLocation: 'Ubicación'
+    thClockOut: 'Salida', thHours: 'Horas', thRegular: 'Normal', thOvertime: 'Extra', thStatus: 'Estado', thLocation: 'Ubicación',
+    paymentsTitle: 'Historial de Pagos', paymentsEmpty: 'Sin registros de pago', paymentsNoEmployee: '⚠️ Cuenta sin expediente de empleado', paymentsPeriod: '📅 Período: ',
+    payMethodCash: '💵 Efectivo', payMethodCheck: '📄 Cheque', payMethodDeposit: '🏦 Depósito Directo', payMethodOther: 'Otro',
+    todoTitle: '📋 Mis Tareas de Incorporación', todoDesc: 'Complete cada paso en orden. Tras cada paso, RR.HH. revisará y desbloqueará el siguiente.',
+    refTitle: '🎁 Bono por Referidos', refDesc: '¡Comparte tu enlace único con amigos y gana un bono por cada uno que se registre y cumpla las horas requeridas!',
+    refLinkLabel: 'Tu enlace de referido', refCopy: 'Copiar', refShareLabel: 'Compartir con amigos', refNativeShare: '📤 Compartir', refScanLabel: 'Escanear para Registrarse',
+    refStatReferred: 'Referidos', refStatPending: 'Pendiente', refStatEarned: 'Ganado', refPeopleTitle: 'Personas Referidas',
+    refNoRecords: 'Sin referidos aún — ¡comparte tu enlace!',
+    refTHName: 'Nombre', refTHDate: 'Registrado', refTHHours: 'Horas', refTHStatus: 'Estado',
+    refQualified: '✅ Calificado', refPendingBadge: '⏳ Pendiente', refNoWork: 'Sin horas',
+    refRule: 'Regla: Gana ${bonus} cuando tu referido trabaje {min} horas.',
+    refRulePending: ' {count} referido(s) aún pendiente(s) — bono estimado ${amount}.',
+    profileTitle: '👤 Mi Perfil', contactTitle: '📱 Información de Contacto',
+    identityTitle: '🪪 Verificación de Identidad', identityDesc: 'Iniciado por RR.HH. · Licencia + Selfie + SSN · vía Persona',
+    qrTitle: '📲 Código QR de Marcaje', qrDesc: 'Pida a su supervisor que escanee este código para marcar entrada/salida',
+    docsTitle: '📂 Mis Documentos',
+    profName: 'Nombre', profId: 'ID de Empleado', profPosition: 'Puesto', profDept: 'Departamento', profStatus: 'Estado',
+    profChange: 'Cambiar', profNotSet: 'No configurado', profAccount: 'Cuenta: ',
+    profPhone: 'Teléfono', profEmail: 'Correo',
+    profNoEmployee: 'Sin expediente de empleado. Contacte a RR.HH.', profNoQR: 'Sin expediente — código QR no disponible',
+    profNoDocs: 'Sin documentos enviados. Vaya a la pestaña de Documentos para subir.', profNoDocRecords: 'Sin registros de documentos',
+    obEmpty: 'Incorporación no inicializada. Contacte a RR.HH.',
+    obLocked: '🔒 Bloqueado', obPending: '⏳ Pendiente', obSubmitted: '🔄 En Revisión', obCompleted: '✅ Completado', obWaived: '⏭️ Exento',
+    obActionInterview: 'Agendar Entrevista', obActionPortalVerify: '🖥️ Verificar en Portal', obActionOpenLink: '🔗 Abrir enlace de verificación',
+    obActionCheckr: '📧 Revise su correo para el estudio de Checkr', obActionDocs: 'Enviar Documentos →',
+    obActionGusto: 'Completar Gusto →', obActionContract: 'Ver/Firmar Contrato →', obActionSubmit: 'Marcar como Enviado',
+    obSubmittedNote: 'Enviado — esperando revisión de RR.HH.…'
   }
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
+let _activeTab = 'jobs';
+function _t(key) { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh)[key] || key; }
 function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
   applyPortalLang();
-  if (WORKER_TOKEN) loadJobs();
+  if (!WORKER_TOKEN) return;
+  if (_activeTab === 'profile') loadProfile();
+  else if (_activeTab === 'payments') loadPayments();
+  else if (_activeTab === 'todos') loadOnboarding();
+  else if (_activeTab === 'referral') loadReferrals();
+  else loadJobs();
 }
 function applyPortalLang() {
   const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
@@ -1500,12 +1585,12 @@ function closeSidebar() {
   document.getElementById('sidebarOverlay').classList.remove('show');
 }
 function showTab(tab) {
+  _activeTab = tab;
   ['jobs','interview','applications','timeclock','payments','compliance','todos','referral','profile'].forEach(t => {
     document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display = t===tab?'':'none';
   });
   document.querySelectorAll('.sidebar-nav a[data-tab]').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-  const _tabLabels={jobs:'职位浏览',interview:'我的任务',applications:'我的申请',timeclock:'打卡记录',payments:'打款记录',compliance:'合规文件',todos:'待办事项',referral:'推荐奖励',profile:'我的信息'};
-  const _tEl=document.getElementById('mobilPageTitle');if(_tEl)_tEl.textContent=_tabLabels[tab]||'';
+  const _tEl=document.getElementById('mobilPageTitle');if(_tEl){const _L=PORTAL_I18N[_portalLang]||PORTAL_I18N.zh;_tEl.textContent=(_L.tabs&&_L.tabs[tab])||tab;}
   closeSidebar();
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
@@ -2852,14 +2937,14 @@ async function loadPayments() {
   const tbody = document.getElementById('paymentsTable');
   if (!tbody) return;
   if (!payments || !Array.isArray(payments)) {
-    tbody.innerHTML = '<p class="empty">⚠️ 账号未关联员工档案</p>';
+    tbody.innerHTML = `<p class="empty">${_t('paymentsNoEmployee')}</p>`;
     return;
   }
   if (!payments.length) {
-    tbody.innerHTML = '<p class="empty">暂无打款记录</p>';
+    tbody.innerHTML = `<p class="empty">${_t('paymentsEmpty')}</p>`;
     return;
   }
-  const PAY_METHOD = { cash:'💵 现金', check:'📄 支票', direct_deposit:'🏦 直接存款', zelle:'📱 Zelle', other:'其他' };
+  const PAY_METHOD = { cash: _t('payMethodCash'), check: _t('payMethodCheck'), direct_deposit: _t('payMethodDeposit'), zelle:'📱 Zelle', other: _t('payMethodOther') };
   tbody.innerHTML = payments.map(p => {
     const period = p.period_start && p.period_end ? `${esc(p.period_start)} ~ ${esc(p.period_end)}`
                  : p.period_start ? esc(p.period_start) : '—';
@@ -2872,7 +2957,7 @@ async function loadPayments() {
       </div>
       ${p.job_title ? `<div style="font-weight:600;font-size:.92rem;margin-bottom:.3rem">${esc(p.job_title)}</div>` : ''}
       <div style="display:flex;flex-wrap:wrap;gap:.35rem .9rem;font-size:.82rem;color:var(--gray-500);margin-top:.2rem">
-        <span>📅 周期：${period}</span>
+        <span>${_t('paymentsPeriod')}${period}</span>
         <span>${method}</span>
       </div>
       ${p.notes ? `<div style="font-size:.8rem;color:var(--gray-400);margin-top:.4rem;border-top:1px solid var(--gray-100);padding-top:.4rem">${esc(p.notes)}</div>` : ''}
@@ -2910,31 +2995,32 @@ async function loadReferrals() {
 
   // Rule hint
   document.getElementById('referralRuleHint').textContent =
-    `规则：被推荐人工作满 ${data.min_hours_to_qualify} 小时后，您可获得 $${data.bonus_per_referral} 奖励。` +
-    (data.total_pending ? ` 当前有 ${data.pending_count} 人待达标，预计奖励 $${data.total_pending.toFixed(0)}。` : '');
+    _t('refRule').replace('{min}', data.min_hours_to_qualify).replace('{bonus}', data.bonus_per_referral) +
+    (data.total_pending ? _t('refRulePending').replace('{count}', data.pending_count).replace('{amount}', data.total_pending.toFixed(0)) : '');
 
   // Table
   const el = document.getElementById('referralList');
   if (!data.referred || !data.referred.length) {
-    el.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">暂无邀请记录，快去分享链接吧！</p>';
+    el.innerHTML = `<p style="color:var(--gray-400);font-size:.88rem">${_t('refNoRecords')}</p>`;
     return;
   }
   el.innerHTML = `<table style="width:100%;border-collapse:collapse">
     <thead><tr style="font-size:.78rem;color:var(--gray-500);border-bottom:1px solid var(--gray-200)">
-      <th style="text-align:left;padding:.4rem .5rem">姓名</th>
-      <th style="text-align:left;padding:.4rem .5rem">注册时间</th>
-      <th style="text-align:right;padding:.4rem .5rem">工时</th>
-      <th style="text-align:right;padding:.4rem .5rem">状态</th>
+      <th style="text-align:left;padding:.4rem .5rem">${_t('refTHName')}</th>
+      <th style="text-align:left;padding:.4rem .5rem">${_t('refTHDate')}</th>
+      <th style="text-align:right;padding:.4rem .5rem">${_t('refTHHours')}</th>
+      <th style="text-align:right;padding:.4rem .5rem">${_t('refTHStatus')}</th>
     </tr></thead>
     <tbody>${data.referred.map(r => {
       const hrs = (r.total_hours || 0).toFixed(1);
       const qualified = r.total_hours >= data.min_hours_to_qualify;
       const badge = qualified
-        ? '<span style="color:#16a34a;font-weight:600">✅ 达标</span>'
+        ? `<span style="color:#16a34a;font-weight:600">${_t('refQualified')}</span>`
         : hrs > 0
-          ? '<span style="color:var(--orange)">⏳ 待达标</span>'
-          : '<span style="color:var(--gray-400)">未工作</span>';
-      const regDate = r.created_at ? new Date(r.created_at).toLocaleDateString('zh-CN') : '—';
+          ? `<span style="color:var(--orange)">${_t('refPendingBadge')}</span>`
+          : `<span style="color:var(--gray-400)">${_t('refNoWork')}</span>`;
+      const _locale = _portalLang === 'zh' ? 'zh-CN' : _portalLang === 'es' ? 'es-MX' : 'en-US';
+      const regDate = r.created_at ? new Date(r.created_at).toLocaleDateString(_locale) : '—';
       const name = esc(r.name || [r.first_name, r.last_name].filter(Boolean).join(' ') || '—');
       return `<tr style="border-bottom:1px solid var(--gray-100);font-size:.85rem">
         <td style="padding:.5rem">${name}</td>
@@ -3033,17 +3119,17 @@ async function loadProfile() {
   if (e) {
     basicHtml = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;font-size:.88rem">
-        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">姓名</div><strong>${esc(e.first_name+' '+e.last_name)}</strong></div>
-        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">工号</div><strong>${esc(e.employee_id||'—')}</strong></div>
-        ${e.position ? `<div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">职位</div>${esc(e.position)}</div>` : ''}
-        ${e.department ? `<div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">部门</div>${esc(e.department)}</div>` : ''}
-        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">状态</div>${esc(e.status||'—')}</div>
+        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">${_t('profName')}</div><strong>${esc(e.first_name+' '+e.last_name)}</strong></div>
+        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">${_t('profId')}</div><strong>${esc(e.employee_id||'—')}</strong></div>
+        ${e.position ? `<div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">${_t('profPosition')}</div>${esc(e.position)}</div>` : ''}
+        ${e.department ? `<div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">${_t('profDept')}</div>${esc(e.department)}</div>` : ''}
+        <div><div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem">${_t('profStatus')}</div>${esc(e.status||'—')}</div>
       </div>`;
   } else {
     basicHtml = `<div style="display:flex;align-items:center;gap:.6rem">
-      <span style="font-size:.88rem;color:var(--gray-400)">员工档案未绑定，如有疑问请联系 HR</span>
+      <span style="font-size:.88rem;color:var(--gray-400)">${_t('profNoEmployee')}</span>
     </div>
-    <div style="margin-top:.6rem;font-size:.85rem;color:var(--gray-500)">账号：<strong>${esc(a.username)}</strong></div>`;
+    <div style="margin-top:.6rem;font-size:.85rem;color:var(--gray-500)">${_t('profAccount')}<strong>${esc(a.username)}</strong></div>`;
   }
   document.getElementById('profileBasic').innerHTML = basicHtml;
 
@@ -3069,26 +3155,26 @@ async function loadProfile() {
       document.head.appendChild(s);
     }
   } else if (qrWrap) {
-    qrWrap.innerHTML = '<span style="font-size:.82rem;color:var(--gray-400)">员工档案未绑定，暂无二维码</span>';
+    qrWrap.innerHTML = `<span style="font-size:.82rem;color:var(--gray-400)">${_t('profNoQR')}</span>`;
   }
 
   // ── Contact info ──
   const rowStyle = 'display:flex;align-items:center;justify-content:space-between;padding:.65rem 0;border-bottom:1px solid var(--gray-100)';
   const labelStyle = 'font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.15rem';
-  const changeBtn = (field) => `<button onclick="openContactModal('${field}')" style="background:none;border:1px solid var(--sky);color:var(--sky);border-radius:6px;padding:.28rem .7rem;font-size:.78rem;font-weight:600;cursor:pointer">更换</button>`;
+  const changeBtn = (field) => `<button onclick="openContactModal('${field}')" style="background:none;border:1px solid var(--sky);color:var(--sky);border-radius:6px;padding:.28rem .7rem;font-size:.78rem;font-weight:600;cursor:pointer">${_t('profChange')}</button>`;
 
   document.getElementById('profileContact').innerHTML = `
     <div style="${rowStyle}">
       <div>
-        <div style="${labelStyle}">手机号 / Phone</div>
-        <div style="font-size:.92rem;font-weight:600">${a.phone ? esc(a.phone) : '<span style="color:var(--gray-400)">未设置</span>'}</div>
+        <div style="${labelStyle}">${_t('profPhone')}</div>
+        <div style="font-size:.92rem;font-weight:600">${a.phone ? esc(a.phone) : `<span style="color:var(--gray-400)">${_t('profNotSet')}</span>`}</div>
       </div>
       ${changeBtn('phone')}
     </div>
     <div style="${rowStyle.replace('border-bottom:1px solid var(--gray-100)','border-bottom:none')}">
       <div>
-        <div style="${labelStyle}">邮箱 / Email</div>
-        <div style="font-size:.92rem;font-weight:600">${a.email ? esc(a.email) : '<span style="color:var(--gray-400)">未设置</span>'}</div>
+        <div style="${labelStyle}">${_t('profEmail')}</div>
+        <div style="font-size:.92rem;font-weight:600">${a.email ? esc(a.email) : `<span style="color:var(--gray-400)">${_t('profNotSet')}</span>`}</div>
       </div>
       ${changeBtn('email')}
     </div>`;
@@ -3111,12 +3197,12 @@ async function loadProfile() {
 
   const docEl = document.getElementById('profileDocs');
   if (!docs || !docs.documents) {
-    docEl.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">暂无文件记录</p>';
+    docEl.innerHTML = `<p style="color:var(--gray-400);font-size:.88rem">${_t('profNoDocRecords')}</p>`;
     return;
   }
   const submitted = Object.entries(docs.documents).filter(([,d]) => d && d.status !== 'not_submitted');
   if (!submitted.length) {
-    docEl.innerHTML = '<p style="color:var(--gray-400);font-size:.88rem">暂无已提交文件，请前往"合规文件"标签上传。</p>';
+    docEl.innerHTML = `<p style="color:var(--gray-400);font-size:.88rem">${_t('profNoDocs')}</p>`;
     return;
   }
   docEl.innerHTML = submitted.map(([type, d]) => {
@@ -3903,7 +3989,7 @@ async function loadOnboarding() {
   const list = document.getElementById('onboardingList');
   if (!tasks) return;
   if (!tasks.length) {
-    list.innerHTML = '<div class="empty">入职流程尚未初始化，请联系 HR。</div>';
+    list.innerHTML = `<div class="empty">${_t('obEmpty')}</div>`;
     return;
   }
   // If persona_verify is still pending, actively check for latest status (Persona API or identity_status fallback)
@@ -3919,7 +4005,7 @@ async function loadOnboarding() {
     } catch (e) { /* poll-status unavailable, backend /onboarding already handles sync */ }
   }
   const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
-  const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
+  const sLabel = { locked: _t('obLocked'), pending: _t('obPending'), submitted: _t('obSubmitted'), completed: _t('obCompleted'), waived: _t('obWaived') };
   const sBadgeStyle = {
     locked:'color:var(--gray-400);background:var(--gray-100);border:1px solid var(--gray-200)',
     pending:'color:#1d4ed8;background:#dbeafe;border:1px solid #bfdbfe',
@@ -3932,24 +4018,24 @@ async function loadOnboarding() {
     let actionHtml = '';
     if (s === 'pending') {
       if (t.key === 'interview') {
-        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openInterviewBookModal()">去预约面试</button>`;
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openInterviewBookModal()">${_t('obActionInterview')}</button>`;
       } else if (t.key === 'persona_verify') {
         actionHtml = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
-          <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="openPersonaInPortal()">🖥️ 在Portal中验证</button>
-          ${t.action_url ? `<a class="btn" style="font-size:.8rem;padding:.3rem .75rem;text-decoration:none;display:inline-block;background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5" href="${esc(t.action_url)}" target="_blank">🔗 打开链接验证</a>` : ''}
+          <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="openPersonaInPortal()">${_t('obActionPortalVerify')}</button>
+          ${t.action_url ? `<a class="btn" style="font-size:.8rem;padding:.3rem .75rem;text-decoration:none;display:inline-block;background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5" href="${esc(t.action_url)}" target="_blank">${_t('obActionOpenLink')}</a>` : ''}
         </div>`;
       } else if (t.key === 'background_check') {
-        actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">📧 请查收 Checkr 发送的邮件完成背景调查${t.action_url ? ` · <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">打开链接</a>` : ''}</div>`;
+        actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">${_t('obActionCheckr')}${t.action_url ? ` · <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">${_t('obActionOpenLink')}</a>` : ''}</div>`;
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
-        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">去提交文件 →</button>`;
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">${_t('obActionDocs')}</button>`;
       } else if ((t.key === 'contract' || t.key === 'gusto') && t.action_url) {
-        const label = t.key === 'gusto' ? '填写 Gusto 信息 →' : '查看/签署合同 →';
+        const label = t.key === 'gusto' ? _t('obActionGusto') : _t('obActionContract');
         actionHtml = `<a class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;text-decoration:none;display:inline-block" href="${esc(t.action_url)}" target="_blank">${label}</a>`;
       } else if (t.key !== 'phone_verify') {
-        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="submitOnboardingTask('${t.key}')">标记已提交</button>`;
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="submitOnboardingTask('${t.key}')">${_t('obActionSubmit')}</button>`;
       }
     } else if (s === 'submitted') {
-      actionHtml = `<div style="font-size:.8rem;color:var(--orange);margin-top:.4rem">已提交，等待 HR 审核中…</div>`;
+      actionHtml = `<div style="font-size:.8rem;color:var(--orange);margin-top:.4rem">${_t('obSubmittedNote')}</div>`;
     }
     return `<div class="ob-step">
       <div class="ob-icon ob-${s==='completed'?'done':s==='waived'?'waived':s==='submitted'?'submitted':s==='pending'?'pending':'locked'}">${icons[t.key]||'📌'}</div>
