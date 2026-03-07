@@ -1222,7 +1222,10 @@ const PORTAL_I18N = {
     obActionInterview: '去预约面试', obActionPortalVerify: '🖥️ 在Portal中验证', obActionOpenLink: '🔗 打开链接验证',
     obActionCheckr: '📧 请查收 Checkr 发送的邮件完成背景调查', obActionDocs: '去提交文件 →',
     obActionGusto: '填写 Gusto 信息 →', obActionContract: '查看/签署合同 →', obActionSubmit: '标记已提交',
-    obSubmittedNote: '已提交，等待 HR 审核中…'
+    obSubmittedNote: '已提交，等待 HR 审核中…',
+    obOptional: '(可豁免)',
+    obTaskTitles: { phone_verify:'手机号验证', email_verify:'邮箱验证', interview:'完成面试', persona_verify:'身份证件验证', background_check:'背景调查', id_verify:'身份证件上传', ssn_verify:'SSN 验证', ead_upload:'EAD 文件上传', i9:'I-9 表格', w9:'W-9 表格', contract:'合同签署', gusto:'Gusto 薪资信息' },
+    obSubmitSuccess: '已提交，等待 HR 审核', obSubmitFail: '提交失败'
   },
   en: {
     loginTitle: 'Worker Portal',
@@ -1298,7 +1301,10 @@ const PORTAL_I18N = {
     obActionInterview: 'Book Interview', obActionPortalVerify: '🖥️ Verify in Portal', obActionOpenLink: '🔗 Open Verification Link',
     obActionCheckr: '📧 Check your email for Checkr background check', obActionDocs: 'Submit Documents →',
     obActionGusto: 'Complete Gusto Setup →', obActionContract: 'View/Sign Contract →', obActionSubmit: 'Mark as Submitted',
-    obSubmittedNote: 'Submitted — awaiting HR review…'
+    obSubmittedNote: 'Submitted — awaiting HR review…',
+    obOptional: '(Optional)',
+    obTaskTitles: { phone_verify:'Phone Verification', email_verify:'Email Verification', interview:'Complete Interview', persona_verify:'Identity Verification', background_check:'Background Check', id_verify:'ID Document Upload', ssn_verify:'SSN Verification', ead_upload:'EAD Upload', i9:'I-9 Form', w9:'W-9 Form', contract:'Sign Contract', gusto:'Gusto Payroll Setup' },
+    obSubmitSuccess: 'Submitted — awaiting HR review', obSubmitFail: 'Submission failed'
   },
   es: {
     loginTitle: 'Portal del Trabajador',
@@ -1374,7 +1380,10 @@ const PORTAL_I18N = {
     obActionInterview: 'Agendar Entrevista', obActionPortalVerify: '🖥️ Verificar en Portal', obActionOpenLink: '🔗 Abrir enlace de verificación',
     obActionCheckr: '📧 Revise su correo para el estudio de Checkr', obActionDocs: 'Enviar Documentos →',
     obActionGusto: 'Completar Gusto →', obActionContract: 'Ver/Firmar Contrato →', obActionSubmit: 'Marcar como Enviado',
-    obSubmittedNote: 'Enviado — esperando revisión de RR.HH.…'
+    obSubmittedNote: 'Enviado — esperando revisión de RR.HH.…',
+    obOptional: '(Opcional)',
+    obTaskTitles: { phone_verify:'Verificación de Teléfono', email_verify:'Verificación de Correo', interview:'Completar Entrevista', persona_verify:'Verificación de Identidad', background_check:'Verificación de Antecedentes', id_verify:'Carga de Documento ID', ssn_verify:'Verificación de SSN', ead_upload:'Carga de EAD', i9:'Formulario I-9', w9:'Formulario W-9', contract:'Firmar Contrato', gusto:'Configuración de Nómina Gusto' },
+    obSubmitSuccess: 'Enviado — esperando revisión de RR.HH.', obSubmitFail: 'Error al enviar'
   }
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
@@ -4151,9 +4160,9 @@ async function loadOnboarding() {
     return `<div class="ob-step">
       <div class="ob-icon ob-${s==='completed'?'done':s==='waived'?'waived':s==='submitted'?'submitted':s==='pending'?'pending':'locked'}">${icons[t.key]||'📌'}</div>
       <div style="flex:1">
-        <div><span class="ob-title">${esc(t.title)}</span>
+        <div><span class="ob-title">${esc(((PORTAL_I18N[_portalLang]||PORTAL_I18N.zh).obTaskTitles||{})[t.key] || t.title)}</span>
           <span class="ob-badge" style="${sBadgeStyle[s]||''}">${sLabel[s]||s}</span>
-          ${!t.required?'<span style="font-size:.72rem;color:var(--gray-400);margin-left:.35rem">(可豁免)</span>':''}
+          ${!t.required?`<span style="font-size:.72rem;color:var(--gray-400);margin-left:.35rem">${_t('obOptional')}</span>`:''}
         </div>
         ${t.admin_note ? `<div class="ob-note">💬 ${esc(t.admin_note)}</div>` : ''}
         ${actionHtml}
@@ -4164,8 +4173,8 @@ async function loadOnboarding() {
 
 async function submitOnboardingTask(key) {
   const r = await wApi(`/onboarding/${key}/submit`, { method:'POST', body:'{}' });
-  if (r && r.success) { showToast('✅ 已提交，等待 HR 审核'); loadOnboarding(); }
-  else customAlert(r?.error || '提交失败', '提交失败', '❌');
+  if (r && r.success) { showToast('✅ ' + _t('obSubmitSuccess')); loadOnboarding(); }
+  else customAlert(r?.error || _t('obSubmitFail'), _t('obSubmitFail'), '❌');
 }
 
 // ── Cancel / Reschedule Interview ──
