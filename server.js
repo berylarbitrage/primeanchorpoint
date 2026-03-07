@@ -5491,18 +5491,21 @@ app.post('/api/timeclock/punch', (req, res) => {
   // ── Clock In ──
   if (ptype === 'in') {
     if (open) {
-      warning = `提示：您已有上班记录（${new Date(open.clock_in).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}），请确认是否漏打下班卡`;
-      return res.json({ action: 'in', already_open: true, clock_in: open.clock_in, warning, entry_id: open.id });
+      // Flag the unclosed entry for admin review and allow the new clock-in
+      const missedDate = open.clock_in ? open.clock_in.slice(0,10) : '?';
+      db.prepare("UPDATE time_entries SET status='closed',needs_review=1,review_reason=? WHERE id=?")
+        .run(`漏打下班卡（${missedDate}），由新上班打卡触发`, open.id);
+      warning = `提示：${missedDate} 忘记打下班卡，该记录已标记给管理员审核`;
     }
     const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type) VALUES(?,?,'open','[]',0,'in')").run(emp.id, now);
-    return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+    return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, warning });
   }
 
   // ── Clock Out ──
   if (ptype === 'out') {
     if (!open) {
-      warning = '提示：未找到对应上班记录，可能漏打上班卡，已记录下班时间';
-      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,total_hours,break_records,on_break,punch_type) VALUES(?,?,?,'closed',0,'[]',0,'out_only')").run(emp.id, now, now);
+      warning = '提示：未找到对应上班记录，可能漏打上班卡，已记录下班时间，标记管理员审核';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(emp.id, now);
       return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning, entry_id: r.lastInsertRowid });
     }
     if (open.on_break) warning = '提示：您处于暂停中，已自动结束暂停并打下班卡';
@@ -5515,8 +5518,8 @@ app.post('/api/timeclock/punch', (req, res) => {
   // ── Break Start (Pause) ──
   if (ptype === 'break_start') {
     if (!open) {
-      warning = '提示：未找到上班记录，可能漏打上班卡';
-      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type) VALUES(?,?,'open',?,1,'in')").run(emp.id, now, JSON.stringify([{start:now,end:null}]));
+      warning = '提示：未找到上班记录，可能漏打上班卡，已记录休息开始，标记管理员审核';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,'open',?,1,'break_start_only',1,'漏打上班卡，由break_start触发')").run(emp.id, JSON.stringify([{start:now,end:null}]));
       return res.json({ action: 'break_start', warning, entry_id: r.lastInsertRowid });
     }
     const breaks = JSON.parse(open.break_records||'[]');
@@ -5534,8 +5537,9 @@ app.post('/api/timeclock/punch', (req, res) => {
   // ── Break End (Resume) ──
   if (ptype === 'break_end') {
     if (!open) {
-      warning = '提示：未找到上班记录，可能漏打上班卡，此操作已忽略';
-      return res.json({ action: 'break_end', no_entry: true, warning });
+      warning = '提示：未找到上班记录，可能漏打上班卡及休息开始，已记录休息结束，标记管理员审核';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,'open',?,0,'break_end_only',1,'漏打上班卡及休息开始，仅有休息结束记录')").run(emp.id, JSON.stringify([{start:null,end:now}]));
+      return res.json({ action: 'break_end', break_minutes: 0, warning, entry_id: r.lastInsertRowid });
     }
     if (!open.on_break) {
       warning = '提示：您当前不在暂停中，此操作已记录';
@@ -5809,8 +5813,8 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     if (!open) bsWarning = '提示：未找到上班打卡记录，可能漏打了上班卡';
     else if (open.on_break) bsWarning = '提示：您已在休息中，已重新记录暂停开始时间';
     if (!open) {
-      // No open entry — create one with a flag
-      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'open',?,1,'in',1,'漏打上班卡，由break_start触发')").run(req.workerEmployeeId, now, JSON.stringify([{start:now,end:null}]));
+      // No open entry — record break_start with clock_in left NULL for admin review
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,'open',?,1,'break_start_only',1,'漏打上班卡，由break_start触发')").run(req.workerEmployeeId, JSON.stringify([{start:now,end:null}]));
       return res.json({ action: 'break_start', warning: bsWarning, entry_id: r2.lastInsertRowid });
     }
 
@@ -5864,10 +5868,11 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
   // ── Break end ────────────────────────────────────────────────────
   if (punch_type === 'break_end') {
     let beWarning = null;
-    if (!open) beWarning = '提示：未找到上班打卡记录';
+    if (!open) beWarning = '提示：未找到上班打卡记录，可能漏打上班卡及休息开始，已记录休息结束，标记管理员审核';
     else if (!open.on_break) beWarning = '提示：您当前不在休息中';
     if (!open) {
-      return res.json({ action: 'break_end', break_minutes: 0, warning: beWarning });
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,'open',?,0,'break_end_only',1,'漏打上班卡及休息开始，仅有休息结束记录')").run(req.workerEmployeeId, JSON.stringify([{start:null,end:now}]));
+      return res.json({ action: 'break_end', break_minutes: 0, warning: beWarning, entry_id: r2.lastInsertRowid });
     }
     const breaks = JSON.parse(open.break_records || '[]');
     const lastIdx = breaks.findIndex(b => !b.end);

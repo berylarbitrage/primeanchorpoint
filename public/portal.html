@@ -2213,46 +2213,12 @@ function enablePunchBtn(ready) {
   const btnOut  = document.getElementById('btnPunchOut');
   if (!btnIn) return;
 
-  // Helper: dim a button visually (no disabled — all buttons remain clickable)
-  const setBtn = (btn, enabled) => {
-    btn.style.opacity = enabled ? '1' : '.35';
-  };
-
+  // All 4 buttons are always enabled — GPS geofencing on the server is the only restriction.
+  // Dim all only when status is unavailable or GPS not ready.
   const s = _punchStatus;
-  if (!s || s.no_employee) {
-    [btnIn, btnBS, btnBE, btnOut].forEach(b => setBtn(b, false));
-    return;
-  }
-
-  // On break: only Resume enabled (no GPS needed)
-  if (s.clocked_in && s.on_break) {
-    setBtn(btnIn,  false);
-    setBtn(btnBS,  false);
-    setBtn(btnBE,  true);
-    setBtn(btnOut, false);
-    return;
-  }
-
-  if (!ready) {
-    // GPS not ready — allow Resume only (no geo-check needed)
-    [btnIn, btnBS, btnBE, btnOut].forEach(b => setBtn(b, false));
-    if (s.clocked_in && s.on_break) setBtn(btnBE, true);
-    return;
-  }
-
-  if (!s.clocked_in || s.missed_checkout) {
-    // Not clocked in (or previous day's entry wasn't closed — allow new clock-in)
-    setBtn(btnIn,  s.has_active_job);
-    setBtn(btnBS,  false);
-    setBtn(btnBE,  false);
-    setBtn(btnOut, false);
-  } else {
-    // Clocked in and working
-    setBtn(btnIn,  false);
-    setBtn(btnBS,  true);
-    setBtn(btnBE,  false);
-    setBtn(btnOut, true);
-  }
+  const canPunch = s && !s.no_employee && (s.has_active_job || s.clocked_in) && ready;
+  const op = canPunch ? '1' : '.35';
+  [btnIn, btnBS, btnBE, btnOut].forEach(b => b.style.opacity = op);
 }
 
 async function loadPunchStatus() {
@@ -2415,14 +2381,7 @@ function showPunchConfirmMap() {
 }
 
 function startPunchFlow(type) {
-  // Guard: reject actions that are invalid for the current punch state
   const s = _punchStatus;
-  if (s) {
-    const isClockedIn = s.clocked_in && !s.missed_checkout;
-    if ((type === 'break_start' || type === 'out') && !isClockedIn) return;
-    if (type === 'break_end' && !(s.clocked_in && s.on_break)) return;
-    if (type === 'in' && isClockedIn && !s.on_break) return;
-  }
   _pendingPunchType = type;
   const labels = { in: '▶ 上班打卡 / Clock In', break_start: '⏸ Pause Job', break_end: '▶ Resume Job', out: '⏹ 下班打卡 / Clock Out' };
   const colors  = { in: 'var(--green)', break_start: '#f97316', break_end: '#7c3aed', out: 'var(--red)' };
