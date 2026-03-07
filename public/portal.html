@@ -2348,6 +2348,9 @@ let _confirmMapFenceMarker = null;
 function showPunchConfirmMap() {
   const wrap = document.getElementById('punchConfirmMapWrap');
   const label = document.getElementById('punchConfirmMapLabel');
+  // Reset execute button to enabled state before geo check
+  const execBtn = document.getElementById('btnExecutePunch');
+  if (execBtn) { execBtn.disabled = false; execBtn.style.opacity = '1'; execBtn.style.cursor = 'pointer'; }
   if (!_gpsCoords) { wrap.style.display = 'none'; return; }
 
   wrap.style.display = '';
@@ -2412,10 +2415,20 @@ function showPunchConfirmMap() {
     const inside = dist <= fenceRadius;
     label.innerHTML = inside
       ? `<span style="color:#10b981;font-weight:600">✅ 在围栏范围内</span>，距 ${fenceName || '工作地点'} ${distStr}`
-      : `<span style="color:#ef4444;font-weight:600">⚠ 不在围栏范围内</span>，距 ${fenceName || '工作地点'} ${distStr}（允许 ${fenceRadius}m）`;
+      : `<span style="color:#ef4444;font-weight:600">⛔ 不在工作地点范围内</span>，距 ${fenceName || '工作地点'} ${distStr}（允许 ${fenceRadius}m）<br><span style="font-size:.8rem;color:#ef4444">请移至工作地点后再打卡</span>`;
+    // Disable execute button if outside geofence
+    const execBtn = document.getElementById('btnExecutePunch');
+    if (execBtn) {
+      execBtn.disabled = !inside;
+      execBtn.style.opacity = inside ? '1' : '.4';
+      execBtn.style.cursor = inside ? 'pointer' : 'not-allowed';
+    }
   } else {
     _confirmMap.setView([userLat, userLng], 16);
     label.textContent = '📍 当前位置（工作地点未配置围栏）';
+    // No geofence configured — allow punch
+    const execBtn = document.getElementById('btnExecutePunch');
+    if (execBtn) { execBtn.disabled = false; execBtn.style.opacity = '1'; execBtn.style.cursor = 'pointer'; }
   }
 
   // Ensure map renders correctly after display
