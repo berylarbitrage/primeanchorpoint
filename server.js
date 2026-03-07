@@ -1625,7 +1625,7 @@ function verifyPin(pin, salt, hash) {
   } catch { return false; }
 }
 
-// ─── Auto-generate employee ID: EMEE-CITY-MMDDYY-000001 ───
+// ─── Auto-generate employee ID: STAFF-CITY-MMDDYY-000001 ───
 function nextEmployeeId(city, hireDate) {
   const d = hireDate ? new Date(hireDate) : new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -1633,14 +1633,14 @@ function nextEmployeeId(city, hireDate) {
   const yy = String(d.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
   const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'EMEE-%' ORDER BY id DESC LIMIT 1").get();
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
   if (last) {
     const parts = last.employee_id.split('-');
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `EMEE-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `STAFF-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
 }
 
 // ─── Auto-generate worker code: PORT-CITY-MMDDYY-000001 ───
@@ -1674,7 +1674,7 @@ function activateWorkerAccount(accountId, prefix) {
   // Ensure a linked inquiry exists — prefer employee record's stored inquiry_id (survives account deletion/re-creation)
   if (!acc.linked_inquiry_id) {
     let inquiryId = null;
-    // If linked to an employee (EMEE-xxx), use that employee's persistent inquiry_id
+    // If linked to an employee (STAFF-xxx), use that employee's persistent inquiry_id
     if (acc.employee_id) {
       const emp = db.prepare('SELECT inquiry_id FROM employees WHERE id=?').get(acc.employee_id);
       if (emp && emp.inquiry_id) {
