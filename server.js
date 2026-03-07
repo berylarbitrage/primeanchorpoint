@@ -1662,31 +1662,12 @@ function activateWorkerAccount(accountId, prefix) {
     const code = generateWorkerCode(acc.city, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
-  // Ensure a linked inquiry exists (by phone → email → name → create)
-  const normPhone = s => (s || '').replace(/\D/g, '').slice(-10);
-  const wPhone = normPhone(acc.phone);
-  const wEmail = (acc.email || '').toLowerCase();
-  const wName  = (acc.name || '').trim();
-  let inqId = null;
-  if (wPhone) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE phone10(phone) = ?').get(wPhone);
-    if (row) inqId = row.id;
-  }
-  if (!inqId && wEmail) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE lower(email)=?').get(wEmail);
-    if (row) inqId = row.id;
-  }
-  if (!inqId && wName) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE lower(trim(name))=?').get(wName.toLowerCase());
-    if (row) inqId = row.id;
-  }
-  if (!inqId) {
-    // No existing inquiry — create one so dispatch always works
+  // Ensure a linked inquiry exists — create a new one if not already explicitly linked by admin
+  if (!acc.linked_inquiry_id) {
+    const wName = (acc.name || '').trim();
     const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
-    inqId = r.lastInsertRowid;
+    db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(r.lastInsertRowid, accountId);
   }
-  // Persist the link directly on the worker account
-  db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inqId, accountId);
 }
 
 // ─── Auto-generate employer ID: EMER-CITY-MMDDYY-000001 ───
@@ -6101,25 +6082,19 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     WHERE ej.employee_id = ? AND ej.job_id = ? AND ej.status = 'active'
   `).get(req.workerEmployeeId, job_id);
   if (!activeJob) {
-    const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+    const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
     const linkedInqId = wa?.linked_inquiry_id || null;
-    const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-    const wEmail = (wa?.email || '').toLowerCase();
-    activeJob = db.prepare(`
-      SELECT a.id, a.job_id, j.title, j.site_id,
-             js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.job_id = ? AND a.status != 'cancelled'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC LIMIT 1
-    `).get(job_id, linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+    if (linkedInqId) {
+      activeJob = db.prepare(`
+        SELECT a.id, a.job_id, j.title, j.site_id,
+               js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+        FROM assignments a
+        JOIN jobs j ON a.job_id = j.id
+        LEFT JOIN job_sites js ON j.site_id = js.id
+        WHERE a.job_id = ? AND a.status != 'cancelled' AND a.inquiry_id = ?
+        ORDER BY a.assigned_at DESC LIMIT 1
+      `).get(job_id, linkedInqId);
+    }
   }
   if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
 
@@ -6533,10 +6508,8 @@ app.get('/api/admin/all-referrals', requireAdmin, (req, res) => {
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
-  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-  const wEmail = (wa?.email || '').toLowerCase();
 
   const open = req.workerEmployeeId
     ? db.prepare(`SELECT t.*, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
@@ -6561,9 +6534,9 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     for (const j of ejJobs) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
   }
 
-  // Always also check assignments table — add jobs not already covered by employee_jobs
+  // Also check assignments table — add jobs not already covered by employee_jobs
   // Only include accepted assignments (worker_response = 'accepted')
-  const aJobs = db.prepare(`
+  const aJobs = linkedInqId ? db.prepare(`
     SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
            COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
            j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
@@ -6571,21 +6544,11 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     FROM assignments a
     JOIN jobs j ON a.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
-    JOIN inquiries i ON a.inquiry_id = i.id
-    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
-      AND (
-        (? IS NOT NULL AND a.inquiry_id = ?)
-        OR (? != '' AND phone10(i.phone) = ?)
-        OR (? != '' AND lower(i.email) = ?)
-      )
+    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted' AND a.inquiry_id = ?
     ORDER BY a.assigned_at DESC
-  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  `).all(linkedInqId) : [];
   for (const j of aJobs) {
     if (!seenActiveJobIds.has(j.job_id)) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
-  }
-  // Update linked_inquiry_id if we found a match via assignments and it wasn't set
-  if (aJobs.length && !linkedInqId) {
-    try { activateWorkerAccount(req.workerId); } catch {}
   }
 
   // Count pending (unaccepted) tasks
@@ -6634,10 +6597,8 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
 // Worker: get currently dispatched (active) jobs with site info
 app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json([]);
-  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-  const wEmail = (wa?.email || '').toLowerCase();
 
   const seenJobIds = new Set();
   let jobs = [];
@@ -6659,8 +6620,8 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
     for (const j of ejJobs) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
-  // Always also include assignments — add any job_ids not already covered above
-  const aJobs = db.prepare(`
+  // Also include assignments — add any job_ids not already covered above
+  const aJobs = linkedInqId ? db.prepare(`
     SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
            j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
            j.pay, j.pay_period, j.company_name, j.site_id,
@@ -6669,15 +6630,9 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
     FROM assignments a
     JOIN jobs j ON a.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
-    JOIN inquiries i ON a.inquiry_id = i.id
-    WHERE a.status != 'cancelled'
-      AND (
-        (? IS NOT NULL AND a.inquiry_id = ?)
-        OR (? != '' AND phone10(i.phone) = ?)
-        OR (? != '' AND lower(i.email) = ?)
-      )
+    WHERE a.status != 'cancelled' AND a.inquiry_id = ?
     ORDER BY a.assigned_at DESC
-  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  `).all(linkedInqId) : [];
   for (const j of aJobs) {
     if (!seenJobIds.has(j.job_id)) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
