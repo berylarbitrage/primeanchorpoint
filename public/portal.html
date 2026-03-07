@@ -158,10 +158,10 @@ tr:last-child td{border-bottom:none}
 .geo-badge{display:inline-flex;align-items:center;gap:4px;font-size:.72rem;padding:2px 8px;border-radius:12px;font-weight:600}
 .geo-ok{background:#d1fae5;color:#065f46}
 .geo-warn{background:#fef3c7;color:#92400e}
-.lang-sw{display:flex;gap:.2rem;align-items:center}
-.lang-sw button{background:rgba(255,255,255,.15);color:#fff;border:none;padding:.2rem .45rem;border-radius:4px;font-size:.72rem;font-weight:700;cursor:pointer;opacity:.65;line-height:1.4;transition:.15s}
-.lang-sw button:hover{opacity:.9}
-.lang-sw button.active{background:rgba(255,255,255,.9);color:var(--blue);opacity:1}
+.mobile-topbar .lang-sw{display:flex;gap:.2rem;align-items:center}
+.mobile-topbar .lang-sw button{background:rgba(255,255,255,.15);color:#fff;border:none;padding:.2rem .45rem;border-radius:4px;font-size:.72rem;font-weight:700;cursor:pointer;opacity:.65;line-height:1.4;transition:.15s}
+.mobile-topbar .lang-sw button:hover{opacity:.9}
+.mobile-topbar .lang-sw button.active{background:rgba(255,255,255,.9);color:var(--blue);opacity:1}
 /* Job filter bar */
 .job-filter-bar{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.75rem}
 .jfbtn{padding:5px 13px;background:#fff;color:var(--gray-500);border:1px solid var(--gray-200);border-radius:20px;font-size:.78rem;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
@@ -481,33 +481,33 @@ tr:last-child td{border-bottom:none}
         <input type="text" id="jobSearchInput" placeholder="搜索职位、地点..." oninput="filterJobs()" style="width:100%;padding:.6rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;margin-bottom:.75rem;box-sizing:border-box">
         <div id="portalFilterBody">
           <div class="job-filter-bar">
-            <span class="filter-section-label">职位类型</span>
-            <button class="jfbtn active" data-pf="type" data-v="" onclick="setPF('type','',this)">全部</button>
-            <button class="jfbtn" data-pf="type" data-v="全职" onclick="setPF('type','全职',this)">全职</button>
-            <button class="jfbtn" data-pf="type" data-v="兼职" onclick="setPF('type','兼职',this)">兼职</button>
-            <button class="jfbtn" data-pf="type" data-v="临时工" onclick="setPF('type','临时工',this)">临时工</button>
-            <button class="jfbtn" data-pf="type" data-v="临时转正" onclick="setPF('type','临时转正',this)">临时转正</button>
+            <span class="filter-section-label" data-i18n="filterType">职位类型</span>
+            <button class="jfbtn active" data-pf="type" data-v="" onclick="setPF('type','',this)" data-i18n="all">全部</button>
+            <button class="jfbtn" data-pf="type" data-v="全职" onclick="setPF('type','全职',this)" data-i18n="type_全职">全职</button>
+            <button class="jfbtn" data-pf="type" data-v="兼职" onclick="setPF('type','兼职',this)" data-i18n="type_兼职">兼职</button>
+            <button class="jfbtn" data-pf="type" data-v="临时工" onclick="setPF('type','临时工',this)" data-i18n="type_临时工">临时工</button>
+            <button class="jfbtn" data-pf="type" data-v="临时转正" onclick="setPF('type','临时转正',this)" data-i18n="type_临时转正">临时转正</button>
           </div>
           <div class="job-filter-bar">
-            <span class="filter-section-label">工作身份要求</span>
-            <button class="jfbtn active" data-pf="auth" data-v="" onclick="setPF('auth','',this)">不限</button>
-            <button class="jfbtn" data-pf="auth" data-v="any" onclick="setPF('auth','any',this)">任何身份</button>
-            <button class="jfbtn" data-pf="auth" data-v="gc" onclick="setPF('auth','gc',this)">绿卡/公民</button>
-            <button class="jfbtn" data-pf="auth" data-v="citizen" onclick="setPF('auth','citizen',this)">仅公民</button>
+            <span class="filter-section-label" data-i18n="filterAuth">工作身份要求</span>
+            <button class="jfbtn active" data-pf="auth" data-v="" onclick="setPF('auth','',this)" data-i18n="noLimit">不限</button>
+            <button class="jfbtn" data-pf="auth" data-v="any" onclick="setPF('auth','any',this)" data-i18n="auth_any">任何身份</button>
+            <button class="jfbtn" data-pf="auth" data-v="gc" onclick="setPF('auth','gc',this)" data-i18n="auth_gc">绿卡/公民</button>
+            <button class="jfbtn" data-pf="auth" data-v="citizen" onclick="setPF('auth','citizen',this)" data-i18n="auth_citizen">仅公民</button>
           </div>
           <div class="job-filter-bar">
-            <span class="filter-section-label">任务</span>
-            <button class="jfbtn active" data-pf="shift" data-v="" onclick="setPF('shift','',this)">不限</button>
-            <button class="jfbtn" data-pf="shift" data-v="1st" onclick="setPF('shift','1st',this)">早班</button>
-            <button class="jfbtn" data-pf="shift" data-v="2nd" onclick="setPF('shift','2nd',this)">中班</button>
-            <button class="jfbtn" data-pf="shift" data-v="3rd" onclick="setPF('shift','3rd',this)">晚班</button>
-            <button class="jfbtn" data-pf="shift" data-v="night" onclick="setPF('shift','night',this)">夜班</button>
-            <button class="jfbtn" data-pf="shift" data-v="flex" onclick="setPF('shift','flex',this)">弹性</button>
+            <span class="filter-section-label" data-i18n="filterShift">班次</span>
+            <button class="jfbtn active" data-pf="shift" data-v="" onclick="setPF('shift','',this)" data-i18n="noLimit">不限</button>
+            <button class="jfbtn" data-pf="shift" data-v="1st" onclick="setPF('shift','1st',this)" data-i18n="shift_1st">早班</button>
+            <button class="jfbtn" data-pf="shift" data-v="2nd" onclick="setPF('shift','2nd',this)" data-i18n="shift_2nd">中班</button>
+            <button class="jfbtn" data-pf="shift" data-v="3rd" onclick="setPF('shift','3rd',this)" data-i18n="shift_3rd">晚班</button>
+            <button class="jfbtn" data-pf="shift" data-v="night" onclick="setPF('shift','night',this)" data-i18n="shift_night">夜班</button>
+            <button class="jfbtn" data-pf="shift" data-v="flex" onclick="setPF('shift','flex',this)" data-i18n="shift_flex">弹性</button>
           </div>
           <div class="job-filter-bar">
-            <span class="filter-section-label">优先级</span>
-            <button class="jfbtn active" data-pf="urgent" data-v="" onclick="setPF('urgent','',this)">全部</button>
-            <button class="jfbtn" data-pf="urgent" data-v="1" onclick="setPF('urgent','1',this)">🔥 急聘优先</button>
+            <span class="filter-section-label" data-i18n="filterUrgent">优先级</span>
+            <button class="jfbtn active" data-pf="urgent" data-v="" onclick="setPF('urgent','',this)" data-i18n="all">全部</button>
+            <button class="jfbtn" data-pf="urgent" data-v="1" onclick="setPF('urgent','1',this)" data-i18n="urgentLabel">🔥 急聘优先</button>
           </div>
         </div>
       </div>
@@ -520,7 +520,7 @@ tr:last-child td{border-bottom:none}
       <div id="workCalendarCard" style="display:none;margin-bottom:1rem">
         <div class="card" style="padding:.85rem">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-            <h2 style="color:#1d4ed8;margin:0;font-size:1rem">📆 我的工作日历</h2>
+            <h2 style="color:#1d4ed8;margin:0;font-size:1rem" data-i18n="calTitle">📆 我的工作日历</h2>
             <div style="display:flex;gap:.35rem;align-items:center">
               <button onclick="calChangeMonth(-1)" style="width:28px;height:28px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;align-items:center;justify-content:center">‹</button>
               <span id="calMonthLabel" style="font-weight:700;font-size:.92rem;color:#1e293b;min-width:72px;text-align:center"></span>
@@ -540,12 +540,12 @@ tr:last-child td{border-bottom:none}
       <!-- Pending task confirmations -->
       <div id="shiftConfirmCard" style="display:none;margin-bottom:1rem">
         <div class="card" style="border:2px solid #f59e0b;background:#fffbeb">
-          <h2 style="color:#92400e;margin-bottom:.75rem">🔔 待确认任务</h2>
+          <h2 style="color:#92400e;margin-bottom:.75rem" data-i18n="pendingTaskTitle">🔔 待确认任务</h2>
           <div id="shiftConfirmList"></div>
         </div>
       </div>
       <div class="card">
-        <h2>📋 我的任务</h2>
+        <h2 data-i18n="taskTitle">📋 我的任务</h2>
         <div id="myTasksList" style="margin-top:.75rem"></div>
       </div>
     </div>
@@ -553,7 +553,7 @@ tr:last-child td{border-bottom:none}
     <!-- My Applications -->
     <div id="tabApplications" style="display:none">
       <div class="card">
-        <h2>我的申请记录</h2>
+        <h2 data-i18n="appTitle">我的申请记录</h2>
         <div id="applicationsTable"></div>
       </div>
     </div>
@@ -1122,7 +1122,20 @@ const PORTAL_I18N = {
     loginForgot: '忘记密码？',
     loginRegister: '注册账号',
     subtitle: '工人门户', logout: '退出',
-    tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'待办事项', referral:'推荐奖励', profile:'我的信息' }
+    tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'待办事项', referral:'推荐奖励', profile:'我的信息' },
+    searchPlaceholder: '搜索职位、地点...',
+    filterType: '职位类型', filterAuth: '工作身份要求', filterShift: '班次', filterUrgent: '优先级',
+    all: '全部', noLimit: '不限',
+    types: { '全职':'全职','兼职':'兼职','临时工':'临时工','临时转正':'临时转正' },
+    auths: { any:'任何身份', gc:'绿卡/公民', citizen:'仅公民' },
+    shifts: { '1st':'早班','2nd':'中班','3rd':'晚班', night:'夜班', flex:'弹性' },
+    urgentLabel: '🔥 急聘优先',
+    noJobs: '暂无在招职位',
+    calTitle: '📆 我的工作日历',
+    calLegend: { accepted:'已接受', pending:'待确认', declined:'已拒绝', punched:'已打卡', projected:'计划班次' },
+    calDow: ['日','一','二','三','四','五','六'],
+    taskTitle: '📋 我的任务', pendingTaskTitle: '🔔 待确认任务',
+    appTitle: '我的申请记录'
   },
   en: {
     loginTitle: 'Worker Portal',
@@ -1133,7 +1146,20 @@ const PORTAL_I18N = {
     loginForgot: 'Forgot password?',
     loginRegister: 'Register',
     subtitle: 'Worker Portal', logout: 'Logout',
-    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', compliance:'Compliance', todos:'To-Do', referral:'Referrals', profile:'Profile' }
+    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', compliance:'Compliance', todos:'To-Do', referral:'Referrals', profile:'Profile' },
+    searchPlaceholder: 'Search jobs, locations...',
+    filterType: 'Job Type', filterAuth: 'Work Authorization', filterShift: 'Shift', filterUrgent: 'Priority',
+    all: 'All', noLimit: 'Any',
+    types: { '全职':'Full-time','兼职':'Part-time','临时工':'Temp','临时转正':'Temp-to-Perm' },
+    auths: { any:'Any Status', gc:'Green Card/Citizen', citizen:'Citizen Only' },
+    shifts: { '1st':'Morning','2nd':'Afternoon','3rd':'Evening', night:'Night', flex:'Flexible' },
+    urgentLabel: '🔥 Urgent',
+    noJobs: 'No jobs available',
+    calTitle: '📆 My Work Calendar',
+    calLegend: { accepted:'Accepted', pending:'Pending', declined:'Declined', punched:'Clocked', projected:'Scheduled' },
+    calDow: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+    taskTitle: '📋 My Tasks', pendingTaskTitle: '🔔 Pending Tasks',
+    appTitle: 'My Applications'
   },
   es: {
     loginTitle: 'Portal del Trabajador',
@@ -1144,7 +1170,20 @@ const PORTAL_I18N = {
     loginForgot: '¿Olvidó su contraseña?',
     loginRegister: 'Registrarse',
     subtitle: 'Portal del Trabajador', logout: 'Salir',
-    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', compliance:'Documentos', todos:'Tareas', referral:'Referidos', profile:'Perfil' }
+    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', compliance:'Documentos', todos:'Tareas', referral:'Referidos', profile:'Perfil' },
+    searchPlaceholder: 'Buscar empleos, ubicaciones...',
+    filterType: 'Tipo de empleo', filterAuth: 'Autorización de trabajo', filterShift: 'Turno', filterUrgent: 'Prioridad',
+    all: 'Todos', noLimit: 'Cualquiera',
+    types: { '全职':'Tiempo completo','兼职':'Medio tiempo','临时工':'Temporal','临时转正':'Temporal a fijo' },
+    auths: { any:'Cualquier estatus', gc:'Green Card/Ciudadano', citizen:'Solo ciudadanos' },
+    shifts: { '1st':'Mañana','2nd':'Tarde','3rd':'Noche', night:'Nocturno', flex:'Flexible' },
+    urgentLabel: '🔥 Urgente',
+    noJobs: 'No hay empleos disponibles',
+    calTitle: '📆 Mi Calendario Laboral',
+    calLegend: { accepted:'Aceptado', pending:'Pendiente', declined:'Rechazado', punched:'Registrado', projected:'Programado' },
+    calDow: ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'],
+    taskTitle: '📋 Mis Tareas', pendingTaskTitle: '🔔 Tareas Pendientes',
+    appTitle: 'Mis Solicitudes'
   }
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
@@ -1186,6 +1225,15 @@ function applyPortalLang() {
   ['zh','en','es'].forEach(l => {
     const btn = el('pl' + l.charAt(0).toUpperCase() + l.slice(1));
     if (btn) btn.classList.toggle('active', l === _portalLang);
+  });
+  // Filter bar + page content i18n
+  if (el('jobSearchInput')) el('jobSearchInput').placeholder = L.searchPlaceholder;
+  document.querySelectorAll('[data-i18n]').forEach(node => {
+    const key = node.dataset.i18n;
+    if (L[key] !== undefined) { node.textContent = L[key]; return; }
+    if (key.startsWith('type_'))  { const v = key.slice(5);  node.textContent = (L.types && L.types[v]) || v; return; }
+    if (key.startsWith('auth_'))  { const v = key.slice(5);  node.textContent = (L.auths && L.auths[v]) || v; return; }
+    if (key.startsWith('shift_')) { const v = key.slice(6);  node.textContent = (L.shifts && L.shifts[v]) || v; return; }
   });
 }
 applyPortalLang();
@@ -2006,7 +2054,7 @@ function renderJobs(jobs) {
           ? `<button class="btn btn-gray" disabled>已申请</button>`
           : `<button class="btn btn-sky" onclick="applyJob(${j.id})">申请此职位</button>`}
       </div>
-    </div>`).join('') : '<div class="empty">暂无在招职位</div>';
+    </div>`).join('') : `<div class="empty">${(PORTAL_I18N[_portalLang]||PORTAL_I18N.zh).noJobs}</div>`;
 }
 
 let _currentApplyJob = null;
