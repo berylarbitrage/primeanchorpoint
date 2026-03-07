@@ -6262,7 +6262,7 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
 // Returns shift_confirmations + active assignments + punch records for a given month
 app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
-  if (!wa || !wa.linked_inquiry_id) return res.json({ confirmations: [], assignments: [], punchDates: [] });
+  const linkedInqId = wa?.linked_inquiry_id || null;
   const y = parseInt(req.query.year) || new Date().getFullYear();
   const m = parseInt(req.query.month) || new Date().getMonth() + 1;
   const fromStr = `${y}-${String(m).padStart(2,'0')}-01`;
@@ -6274,7 +6274,7 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
   const tzSign = localOffsetMinutes >= 0 ? '+' : '-';
   const tzAbsMins = Math.abs(localOffsetMinutes);
   const tzModifier = `${tzSign}${tzAbsMins} minutes`;
-  const confirmations = db.prepare(`
+  const confirmations = linkedInqId ? db.prepare(`
     SELECT sc.id, sc.date, sc.status, sc.shift_start, sc.shift_end,
            j.title, j.location AS job_location, j.description AS job_description,
            j.pay AS job_pay, j.company_name,
@@ -6284,8 +6284,8 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND sc.date >= ? AND sc.date <= ?
     ORDER BY sc.date ASC
-  `).all(wa.linked_inquiry_id, fromStr, toStr);
-  const assignments = db.prepare(`
+  `).all(linkedInqId, fromStr, toStr) : [];
+  const assignments = linkedInqId ? db.prepare(`
     SELECT a.id, a.work_schedule, a.start_date, j.title, j.location AS job_location,
            j.description AS job_description, j.pay AS job_pay, j.company_name,
            a.work_address, a.pay_rate, a.pay_type,
@@ -6293,7 +6293,7 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')
-  `).all(wa.linked_inquiry_id);
+  `).all(linkedInqId) : [];
   // Include actual punch records so weekend work (outside recurring schedule) is visible
   // Use client's timezone offset so punches appear on the correct local calendar day
   const punchDates = req.workerEmployeeId ? db.prepare(`
