@@ -834,8 +834,9 @@ function renderTimeClock(rows) {
       </div>`;
     }
     const breakRecs = (() => { try { return JSON.parse(t.break_records||'[]'); } catch{ return []; } })();
-    const clockInPin = (t.latitude && t.longitude) ? `<span onclick="showMiniMap(event,${t.latitude},${t.longitude},'上班打卡')" title="上班位置" style="cursor:pointer;font-size:1rem">🟢</span>` : '';
-    const clockOutPin = (t.clock_out_latitude && t.clock_out_longitude) ? `<span onclick="showMiniMap(event,${t.clock_out_latitude},${t.clock_out_longitude},'下班打卡')" title="下班位置" style="cursor:pointer;font-size:1rem">🔴</span>` : '';
+    const PIN_PH = '<span style="display:inline-block;width:1rem;height:1rem;font-size:1rem;vertical-align:middle"></span>';
+    const clockInPin = (t.latitude && t.longitude) ? `<span onclick="showMiniMap(event,${t.latitude},${t.longitude},'上班打卡')" title="上班位置" style="cursor:pointer;font-size:1rem">🟢</span>` : PIN_PH;
+    const clockOutPin = (t.clock_out_latitude && t.clock_out_longitude) ? `<span onclick="showMiniMap(event,${t.clock_out_latitude},${t.clock_out_longitude},'下班打卡')" title="下班位置" style="cursor:pointer;font-size:1rem">🔴</span>` : PIN_PH;
     const clockInPhoto = photoThumb(t.clock_in_photo_path ? `/api/admin/punch-photo/${encodeURIComponent(t.clock_in_photo_path)}` : null, '上班');
     const clockOutPhoto = t.punch_photo_path ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`, '下班') : (t.punch_photo ? photoThumb(t.punch_photo, '下班') : photoThumb(null, '下班'));
     const photoRows = [];
@@ -845,8 +846,8 @@ function renderTimeClock(rows) {
       photoRows.push(`<div style="display:flex;justify-content:space-between;align-items:center;gap:4px">${ciLeft}${coRight}</div>`);
     }
     breakRecs.forEach((b, i) => {
-      const breakStartPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}开')" title="休息${i+1}开始位置" style="cursor:pointer;font-size:1rem">🟠</span>` : '';
-      const breakEndPin = (b.end_latitude && b.end_longitude) ? `<span onclick="showMiniMap(event,${b.end_latitude},${b.end_longitude},'休息${i+1}结')" title="休息${i+1}结束位置" style="cursor:pointer;font-size:1rem">🟣</span>` : '';
+      const breakStartPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}开')" title="休息${i+1}开始位置" style="cursor:pointer;font-size:1rem">🟠</span>` : PIN_PH;
+      const breakEndPin = (b.end_latitude && b.end_longitude) ? `<span onclick="showMiniMap(event,${b.end_latitude},${b.end_longitude},'休息${i+1}结')" title="休息${i+1}结束位置" style="cursor:pointer;font-size:1rem">🟣</span>` : PIN_PH;
       const startPhoto = photoThumb(b.start_photo ? `/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}` : null, `休息${i+1}开`);
       const endPhoto = photoThumb(b.end_photo ? `/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}` : null, `休息${i+1}结`);
       const bLeft = `<div style="display:inline-flex;align-items:center;gap:2px">${breakStartPin}${startPhoto}</div>`;
@@ -1407,20 +1408,21 @@ function openEditModal(id) {
     const url = TOKEN ? path + (path.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : path;
     return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;margin:1px"><img src="${url}" onclick="openPunchPhoto('${url.replace(/'/g,"\\'")}')" title="${label}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer;border:1.5px solid var(--gray-200)"><span style="font-size:.55rem;color:var(--gray-400);line-height:1">${label}</span></div>`;
   }
-  const ciPin = (e.latitude && e.longitude) ? `<span onclick="showMiniMap(event,${e.latitude},${e.longitude},'上班打卡')" title="上班位置" style="cursor:pointer;font-size:.9rem">🟢</span>` : '';
-  const coPin = (e.clock_out_latitude && e.clock_out_longitude) ? `<span onclick="showMiniMap(event,${e.clock_out_latitude},${e.clock_out_longitude},'下班打卡')" title="下班位置" style="cursor:pointer;font-size:.9rem">🔴</span>` : '';
+  const MODAL_PIN_PH = '<span style="display:inline-block;width:.9rem;height:.9rem;font-size:.9rem;vertical-align:middle"></span>';
+  const ciPin = (e.latitude && e.longitude) ? `<span onclick="showMiniMap(event,${e.latitude},${e.longitude},'上班打卡')" title="上班位置" style="cursor:pointer;font-size:.9rem">🟢</span>` : MODAL_PIN_PH;
+  const coPin = (e.clock_out_latitude && e.clock_out_longitude) ? `<span onclick="showMiniMap(event,${e.clock_out_latitude},${e.clock_out_longitude},'下班打卡')" title="下班位置" style="cursor:pointer;font-size:.9rem">🔴</span>` : MODAL_PIN_PH;
   const ciPhoto = e.clock_in_photo_path ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(e.clock_in_photo_path)}`, '上班') : '';
   const coPhoto = e.punch_photo_path ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(e.punch_photo_path)}`, '下班') : (e.punch_photo ? _modalPhotoThumb(e.punch_photo, '下班') : '');
   const modalPhotoRows = [];
-  if (ciPin || coPin || ciPhoto || coPhoto) {
+  if (ciPhoto || coPhoto) {
     modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0">${ciPin}<div style="display:flex;gap:2px">${ciPhoto}${coPhoto}</div>${coPin}</div>`);
   }
   recs.forEach((b, i) => {
-    const bStartPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}开')" title="休息${i+1}开始位置" style="cursor:pointer;font-size:.9rem">🟠</span>` : '';
-    const bEndPin = (b.end_latitude && b.end_longitude) ? `<span onclick="showMiniMap(event,${b.end_latitude},${b.end_longitude},'休息${i+1}结')" title="休息${i+1}结束位置" style="cursor:pointer;font-size:.9rem">🟣</span>` : '';
+    const bStartPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}开')" title="休息${i+1}开始位置" style="cursor:pointer;font-size:.9rem">🟠</span>` : MODAL_PIN_PH;
+    const bEndPin = (b.end_latitude && b.end_longitude) ? `<span onclick="showMiniMap(event,${b.end_latitude},${b.end_longitude},'休息${i+1}结')" title="休息${i+1}结束位置" style="cursor:pointer;font-size:.9rem">🟣</span>` : MODAL_PIN_PH;
     const sPhoto = b.start_photo ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`) : '';
     const ePhoto = b.end_photo ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`) : '';
-    if (bStartPin || bEndPin || sPhoto || ePhoto) {
+    if (sPhoto || ePhoto) {
       modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0">${bStartPin}<div style="display:flex;gap:2px">${sPhoto}${ePhoto}</div>${bEndPin}</div>`);
     }
   });
