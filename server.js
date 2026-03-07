@@ -1441,10 +1441,12 @@ async function generateWeeklyShiftConfirmations() {
     for (const a of assignments) {
       let sched = {};
       try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+      let jobSched = null;
+      try { jobSched = JSON.parse(a.job_work_schedule || 'null'); } catch {}
       const workStart = sched.workStart || null;
       const workEnd = sched.workEnd || null;
       const untilFurther = !!sched.untilFurther;
-      const days = sched.days || {};
+      const days = _parseSchedDays(sched, jobSched);
       for (const { date, dayKey } of nextWeekDates) {
         if (workStart && date < workStart) continue;
         if (!untilFurther && workEnd && date > workEnd) continue;
