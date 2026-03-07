@@ -208,6 +208,10 @@ tr:hover td{background:#eef6fd !important}
   .main-wrap{margin-left:0}
   .mobile-topbar{display:flex}
   .content{margin:.75rem auto;padding:0 .75rem}
+  /* hide duplicate section title in selfpunch card — topbar already shows it */
+  .sp-card-title{display:none}
+  /* timeclock filter: hide text labels on mobile to save space */
+  .filter-bar label{display:none}
 }
 @media(min-width:769px){
   .main-wrap{margin-left:224px}
@@ -493,7 +497,7 @@ tr:hover td{background:#eef6fd !important}
     <!-- Self Punch -->
     <div class="section content" id="section-selfpunch">
       <div class="card" id="selfPunchCard" style="max-width:400px;margin:0 auto">
-        <div class="card-title">我的打卡 / My Attendance</div>
+        <div class="card-title sp-card-title">我的打卡 / My Attendance</div>
         <div id="spStatus" style="display:flex;align-items:center;gap:.6rem;margin-bottom:1rem">
           <div id="spStatusDot" style="width:12px;height:12px;border-radius:50%;background:var(--gray-200);flex-shrink:0"></div>
           <span id="spStatusText" style="font-size:.95rem;font-weight:600;color:var(--gray-700)">加载中…</span>
@@ -605,6 +609,7 @@ function showSection(name, link) {
   if (name === 'qrscan') loadQrJobs();
   if (name === 'selfpunch') { loadSelfPunchStatus(); loadSelfPunchHistory(); }
   closeSidebar();
+  window.scrollTo(0, 0);
 }
 function openSidebar()  { document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebarOverlay').classList.add('open'); }
 function closeSidebar() { document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
