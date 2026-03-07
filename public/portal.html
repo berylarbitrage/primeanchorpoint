@@ -53,11 +53,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#faf5ff;color:var(--
 /* App shell */
 #app{display:none}
 /* Sidebar layout */
-.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:#fff;color:var(--blue);border-right:1.5px solid #ede9fe;overflow-y:auto;display:flex;flex-direction:column;z-index:200}
+.sidebar{position:fixed;top:0;left:0;bottom:0;width:220px;background:#fff;color:var(--blue);border-right:1.5px solid #ede9fe;overflow:hidden;display:flex;flex-direction:column;z-index:200}
 .sidebar-top{padding:1.25rem 1.5rem;border-bottom:1px solid #ede9fe}
 .sidebar-top h2{font-size:.9rem;font-weight:700;color:var(--sky);letter-spacing:.02em}
 .sidebar-top .sub{font-size:.72rem;color:#a78bfa;margin-top:.15rem}
-.sidebar-nav{flex:1;padding:.5rem 0}
+.sidebar-nav{flex:1;padding:.5rem 0;overflow-y:auto}
 .sidebar-nav a{display:flex;align-items:center;gap:.5rem;padding:.6rem 1.5rem;color:#6d28d9;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none;border-left:3px solid transparent}.nav-icon{font-size:1rem;flex-shrink:0;width:1.2em;text-align:center}
 .sidebar-nav a:hover,.sidebar-nav a.active{color:var(--sky);background:#f3e8ff;border-left-color:var(--sky)}
 .sidebar-bottom{padding:1rem 1.5rem;border-top:1px solid #ede9fe}
@@ -427,7 +427,7 @@ tr:last-child td{border-bottom:none}
   <!-- Left sidebar -->
   <div class="sidebar" id="sidebar">
     <div class="sidebar-top" style="display:flex;align-items:center;gap:.75rem">
-      <img src="/logo.svg" alt="Prime Anchorpoint" style="width:36px;height:36px;object-fit:contain;flex-shrink:0;filter:brightness(0) invert(1)">
+      <img src="/logo.svg" alt="Prime Anchorpoint" style="width:36px;height:36px;object-fit:contain;flex-shrink:0">
       <div>
         <h2>Prime Anchorpoint</h2>
         <div class="sub" id="portalSubtitle">工人门户</div>
@@ -533,6 +533,7 @@ tr:last-child td{border-bottom:none}
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span>待确认</span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span>已拒绝</span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#a78bfa;display:inline-block"></span>已打卡</span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#93c5fd;display:inline-block"></span>计划班次</span>
           </div>
         </div>
       </div>
@@ -1751,9 +1752,10 @@ function renderCalendar() {
     const isToday = dateStr === todayStr;
     const confs = confMap[dateStr] || [];
     const isPunched = punchSet.has(dateStr) && !confs.length;
-    const hasWork = confs.length > 0 || isPunched;
+    const isProjected = projectedDays.has(dateStr) && !confs.length && !isPunched;
+    const hasWork = confs.length > 0 || isPunched || isProjected;
 
-    // Status dots — only for actual confirmations
+    // Status dots — for confirmations, punches, and projected days
     let dotsHtml = '';
     if (confs.length) {
       dotsHtml = confs.slice(0, 3).map(c =>
@@ -1761,10 +1763,12 @@ function renderCalendar() {
       ).join('');
     } else if (isPunched) {
       dotsHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#a78bfa;margin:0 1px"></span>`;
+    } else if (isProjected) {
+      dotsHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#93c5fd;margin:0 1px"></span>`;
     }
 
-    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : isPunched ? '#f5f3ff' : 'transparent');
-    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : isPunched ? '1px solid #ddd6fe' : '1px solid transparent';
+    const bg = isToday ? '#1d4ed8' : (confs.length ? '#f0fdf4' : isPunched ? '#f5f3ff' : isProjected ? '#eff6ff' : 'transparent');
+    const border = isToday ? 'none' : confs.length ? '1px solid #bbf7d0' : isPunched ? '1px solid #ddd6fe' : isProjected ? '1px solid #bfdbfe' : '1px solid transparent';
     const numColor = isToday ? '#fff' : hasWork ? '#1e293b' : '#cbd5e1';
     const numWeight = (isToday || hasWork) ? '700' : '400';
 
