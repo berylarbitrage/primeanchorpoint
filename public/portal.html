@@ -1152,6 +1152,7 @@ function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
   applyPortalLang();
+  if (WORKER_TOKEN) loadJobs();
 }
 function applyPortalLang() {
   const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
@@ -1957,7 +1958,7 @@ async function confirmBookSlot() {
 }
 
 async function loadJobs() {
-  const jobs = await wApi('/jobs');
+  const jobs = await wApi('/jobs?lang=' + encodeURIComponent(_portalLang));
   if (!jobs) return;
   _allJobs = jobs;
   renderJobs(jobs);
