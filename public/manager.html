@@ -547,10 +547,33 @@ tr:hover td{background:#eef6fd !important}
 
     <!-- Timesheets Under Review -->
     <div class="section content" id="section-tsreview">
+      <!-- Manager-confirmed time entries pending admin review -->
       <div class="card" style="padding:.85rem 1.1rem;margin-bottom:1rem">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem">
-          <span style="font-size:.95rem;font-weight:700;color:var(--blue)">在审核工时单</span>
+          <span style="font-size:.95rem;font-weight:700;color:var(--blue)">已确认待审核工时</span>
           <button class="btn-refresh" onclick="loadTsReview()">↻ 刷新</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>员工</th>
+            <th>上班</th>
+            <th>下班</th>
+            <th>休息</th>
+            <th style="text-align:right">总工时</th>
+            <th>状态</th>
+          </tr></thead>
+          <tbody id="tsConfirmedEntriesTable">
+            <tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--gray-400)">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Timesheet sheets under employee review -->
+      <div class="card" style="padding:.85rem 1.1rem;margin-bottom:1rem;margin-top:1.5rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem">
+          <span style="font-size:.95rem;font-weight:700;color:var(--blue)">在审核工时单</span>
         </div>
       </div>
       <div class="table-wrap">
@@ -1889,6 +1912,27 @@ async function executeBatch(action) {
 
 // ── 在审核工时 ──────────────────────────────────────────────────
 async function loadTsReview() {
+  // Load manager-confirmed time entries
+  const confirmedTbody = document.getElementById('tsConfirmedEntriesTable');
+  confirmedTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--gray-400)">加载中…</td></tr>';
+  const confirmedEntries = await mApi('/admin/time-entries?needs_review=1');
+  if (!confirmedEntries || !confirmedEntries.length) {
+    confirmedTbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无已确认待审核工时</td></tr>';
+  } else {
+    confirmedTbody.innerHTML = confirmedEntries.map(t => {
+      const tz = t.display_timezone;
+      return `<tr>
+        <td><div class="emp-row-name">${esc(t.first_name||'')} ${esc(t.last_name||'')}</div><div class="emp-row-code">${esc(t.emp_code||'')}</div></td>
+        <td style="white-space:nowrap">${fmtDT(t.clock_in, tz)}</td>
+        <td style="white-space:nowrap">${t.clock_out ? fmtDT(t.clock_out, tz) : '<span style="color:var(--orange)">进行中</span>'}</td>
+        <td>${renderBreaks(t)}</td>
+        <td style="text-align:right;font-weight:700">${fmtH(t.total_hours)}</td>
+        <td><span class="badge" style="background:#fef3c7;color:#92400e">待审核</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Load timesheet sheets
   const tbody = document.getElementById('tsReviewTable');
   tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--gray-400)">加载中…</td></tr>';
   const rows = await mApi('/admin/timesheet-sheets?stage=verify');
