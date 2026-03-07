@@ -843,14 +843,15 @@ function renderTimeClock(rows) {
     const clockOutPhoto = t.punch_photo_path ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`, '下班') : (t.punch_photo ? photoThumb(t.punch_photo, '下班') : '');
     const photoRows = [];
     if (clockInPin || clockOutPin || clockInPhoto || clockOutPhoto) {
-      photoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:1px 0"><div style="display:flex;flex-direction:column;gap:2px;min-width:22px;align-items:center">${clockInPin}${clockOutPin}</div><div style="display:flex;gap:2px">${clockInPhoto}${clockOutPhoto}</div></div>`);
+      photoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:1px 0">${clockInPin}<div style="display:flex;gap:2px">${clockInPhoto}${clockOutPhoto}</div>${clockOutPin}</div>`);
     }
     breakRecs.forEach((b, i) => {
-      const breakPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}')" title="休息${i+1}位置" style="cursor:pointer;font-size:1rem">🟡</span>` : '';
+      const breakStartPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}开')" title="休息${i+1}开始位置" style="cursor:pointer;font-size:1rem">🟠</span>` : '';
+      const breakEndPin = (b.end_latitude && b.end_longitude) ? `<span onclick="showMiniMap(event,${b.end_latitude},${b.end_longitude},'休息${i+1}结')" title="休息${i+1}结束位置" style="cursor:pointer;font-size:1rem">🟣</span>` : '';
       const startPhoto = b.start_photo ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`) : '';
       const endPhoto = b.end_photo ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`) : '';
-      if (breakPin || startPhoto || endPhoto) {
-        photoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:1px 0"><div style="min-width:22px;text-align:center">${breakPin}</div><div style="display:flex;gap:2px">${startPhoto}${endPhoto}</div></div>`);
+      if (breakStartPin || breakEndPin || startPhoto || endPhoto) {
+        photoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:1px 0">${breakStartPin}<div style="display:flex;gap:2px">${startPhoto}${endPhoto}</div>${breakEndPin}</div>`);
       }
     });
     const photoCell = photoRows.length ? `<div style="display:flex;flex-direction:column">${photoRows.join('')}</div>` : '—';
@@ -1415,14 +1416,15 @@ function openEditModal(id) {
   const coPhoto = e.punch_photo_path ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(e.punch_photo_path)}`, '下班') : (e.punch_photo ? _modalPhotoThumb(e.punch_photo, '下班') : '');
   const modalPhotoRows = [];
   if (ciPin || coPin || ciPhoto || coPhoto) {
-    modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0"><div style="display:flex;flex-direction:column;gap:2px;min-width:22px;align-items:center">${ciPin}${coPin}</div><div style="display:flex;gap:2px">${ciPhoto}${coPhoto}</div></div>`);
+    modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0">${ciPin}<div style="display:flex;gap:2px">${ciPhoto}${coPhoto}</div>${coPin}</div>`);
   }
   recs.forEach((b, i) => {
-    const bPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}')" title="休息${i+1}位置" style="cursor:pointer;font-size:.9rem">🟡</span>` : '';
+    const bStartPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}开')" title="休息${i+1}开始位置" style="cursor:pointer;font-size:.9rem">🟠</span>` : '';
+    const bEndPin = (b.end_latitude && b.end_longitude) ? `<span onclick="showMiniMap(event,${b.end_latitude},${b.end_longitude},'休息${i+1}结')" title="休息${i+1}结束位置" style="cursor:pointer;font-size:.9rem">🟣</span>` : '';
     const sPhoto = b.start_photo ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`) : '';
     const ePhoto = b.end_photo ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`) : '';
-    if (bPin || sPhoto || ePhoto) {
-      modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0"><div style="min-width:22px;text-align:center">${bPin}</div><div style="display:flex;gap:2px">${sPhoto}${ePhoto}</div></div>`);
+    if (bStartPin || bEndPin || sPhoto || ePhoto) {
+      modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0">${bStartPin}<div style="display:flex;gap:2px">${sPhoto}${ePhoto}</div>${bEndPin}</div>`);
     }
   });
   const photoDiv = document.getElementById('tcEditPhotos');
