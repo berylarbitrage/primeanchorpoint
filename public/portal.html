@@ -584,7 +584,7 @@ tr:last-child td{border-bottom:none}
     <div id="tabTimeclock" style="display:none">
       <!-- Current dispatched jobs -->
       <div class="card" style="margin-bottom:1rem">
-        <h2 style="margin-bottom:.75rem">💼 当前工作安排</h2>
+        <h2 style="margin-bottom:.75rem" data-i18n="tcCurrentJobs">💼 当前工作安排</h2>
         <div id="myJobsList"><p style="color:var(--gray-400);font-size:.88rem">加载中…</p></div>
       </div>
       <div class="card">
@@ -594,15 +594,15 @@ tr:last-child td{border-bottom:none}
           <div class="punch-sub" id="punchSub"></div>
           <!-- Job selector shown only when clocking in with multiple active jobs -->
           <div id="jobSelectorWrap" style="display:none;margin:.75rem auto;width:100%;max-width:340px">
-            <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block">选择打卡工作 / Select job to clock in for</label>
+            <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block" data-i18n="tcSelectJob">选择打卡工作 / Select job to clock in for</label>
             <select id="jobSelector" onchange="enablePunchBtn(_gpsCoords !== null)" style="width:100%;padding:.55rem .8rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem;background:#fff"></select>
           </div>
           <!-- Always-visible 4 punch buttons -->
           <div id="punchBtnsWrap" style="width:100%;max-width:340px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-            <button id="btnPunchIn"     onclick="startPunchFlow('in')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#16a34a;color:#fff;opacity:.4">▶ 上班打卡</button>
-            <button id="btnBreakStart"  onclick="startPunchFlow('break_start')" style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff;opacity:.4">⏸ 休息开始</button>
-            <button id="btnBreakEnd"    onclick="startPunchFlow('break_end')"   style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;opacity:.4">▶ 休息结束</button>
-            <button id="btnPunchOut"    onclick="startPunchFlow('out')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#dc2626;color:#fff;opacity:.4">⏹ 下班打卡</button>
+            <button id="btnPunchIn"     onclick="startPunchFlow('in')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#16a34a;color:#fff;opacity:.4" data-i18n="tcPunchIn">▶ 上班打卡</button>
+            <button id="btnBreakStart"  onclick="startPunchFlow('break_start')" style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff;opacity:.4" data-i18n="tcBreakStart">⏸ 休息开始</button>
+            <button id="btnBreakEnd"    onclick="startPunchFlow('break_end')"   style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;opacity:.4" data-i18n="tcBreakEnd">▶ 休息结束</button>
+            <button id="btnPunchOut"    onclick="startPunchFlow('out')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#dc2626;color:#fff;opacity:.4" data-i18n="tcPunchOut">⏹ 下班打卡</button>
           </div>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
           <!-- Punch confirmation modal overlay -->
@@ -652,7 +652,7 @@ tr:last-child td{border-bottom:none}
       <div class="card" style="padding:0">
         <div style="padding:1rem 1rem .5rem;font-size:1rem;font-weight:700" data-i18n="punchHistTitle">打卡历史记录</div>
         <div style="overflow-x:auto;padding:0 1rem 1rem">
-          <table style="min-width:780px"><thead><tr style="white-space:nowrap"><th>日期</th><th>工作</th><th>上班</th><th>休息开始</th><th>休息结束</th><th>下班</th><th>工时</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
+          <table style="min-width:780px"><thead><tr style="white-space:nowrap"><th data-i18n="thDate">日期</th><th data-i18n="thJob">工作</th><th data-i18n="thClockIn">上班</th><th data-i18n="thBreakStart">休息开始</th><th data-i18n="thBreakEnd">休息结束</th><th data-i18n="thClockOut">下班</th><th data-i18n="thHours">工时</th><th data-i18n="thRegular">正常</th><th data-i18n="thOvertime">加班</th><th data-i18n="thStatus">状态</th><th data-i18n="thLocation">位置</th></tr></thead>
           <tbody id="timeclockTable"></tbody></table>
         </div>
       </div>
@@ -1153,7 +1153,12 @@ const PORTAL_I18N = {
     taskTitle: '📋 我的任务', pendingTaskTitle: '🔔 待确认任务',
     appTitle: '我的申请记录',
     punchCalTitle: '📅 打卡日历', punchHistTitle: '打卡历史记录',
-    punchLegendComplete: '已完成', punchLegendWorking: '工作中'
+    punchLegendComplete: '已完成', punchLegendWorking: '工作中',
+    tcCurrentJobs: '💼 当前工作安排',
+    tcPunchIn: '▶ 上班打卡', tcBreakStart: '⏸ 休息开始', tcBreakEnd: '▶ 休息结束', tcPunchOut: '⏹ 下班打卡',
+    tcSelectJob: '选择打卡工作 / Select job to clock in for',
+    thDate: '日期', thJob: '工作', thClockIn: '上班', thBreakStart: '休息开始', thBreakEnd: '休息结束',
+    thClockOut: '下班', thHours: '工时', thRegular: '正常', thOvertime: '加班', thStatus: '状态', thLocation: '位置'
   },
   en: {
     loginTitle: 'Worker Portal',
@@ -1179,7 +1184,12 @@ const PORTAL_I18N = {
     taskTitle: '📋 My Tasks', pendingTaskTitle: '🔔 Pending Tasks',
     appTitle: 'My Applications',
     punchCalTitle: '📅 Punch Calendar', punchHistTitle: 'Punch History',
-    punchLegendComplete: 'Completed', punchLegendWorking: 'Working'
+    punchLegendComplete: 'Completed', punchLegendWorking: 'Working',
+    tcCurrentJobs: '💼 Current Assignments',
+    tcPunchIn: '▶ Clock In', tcBreakStart: '⏸ Break Start', tcBreakEnd: '▶ Break End', tcPunchOut: '⏹ Clock Out',
+    tcSelectJob: 'Select job to clock in for',
+    thDate: 'Date', thJob: 'Job', thClockIn: 'In', thBreakStart: 'Break Start', thBreakEnd: 'Break End',
+    thClockOut: 'Out', thHours: 'Hours', thRegular: 'Regular', thOvertime: 'OT', thStatus: 'Status', thLocation: 'Location'
   },
   es: {
     loginTitle: 'Portal del Trabajador',
@@ -1205,7 +1215,12 @@ const PORTAL_I18N = {
     taskTitle: '📋 Mis Tareas', pendingTaskTitle: '🔔 Tareas Pendientes',
     appTitle: 'Mis Solicitudes',
     punchCalTitle: '📅 Calendario de Asistencia', punchHistTitle: 'Historial de Asistencia',
-    punchLegendComplete: 'Completado', punchLegendWorking: 'Trabajando'
+    punchLegendComplete: 'Completado', punchLegendWorking: 'Trabajando',
+    tcCurrentJobs: '💼 Asignaciones Actuales',
+    tcPunchIn: '▶ Entrada', tcBreakStart: '⏸ Inicio Descanso', tcBreakEnd: '▶ Fin Descanso', tcPunchOut: '⏹ Salida',
+    tcSelectJob: 'Seleccione trabajo para registrar',
+    thDate: 'Fecha', thJob: 'Trabajo', thClockIn: 'Entrada', thBreakStart: 'Inicio Desc.', thBreakEnd: 'Fin Desc.',
+    thClockOut: 'Salida', thHours: 'Horas', thRegular: 'Normal', thOvertime: 'Extra', thStatus: 'Estado', thLocation: 'Ubicación'
   }
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
