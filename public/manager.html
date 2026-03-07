@@ -717,9 +717,15 @@ function renderAssignments() {
     const pe = sched.untilFurther ? '至今后通知' : (sched.workEnd ? fmtDate(sched.workEnd) : '');
     const periodStr = ps ? (pe ? `${ps} → ${pe}` : `${ps} 起`) : '';
     const payStr = a.pay_rate ? `${a.pay_rate}${a.pay_type==='hourly'?' /hr':a.pay_type==='salary'?' /月':a.pay_type==='annual'?' /年':''}` : '';
+    const workerAddrParts = [a.worker_address, a.worker_city, a.worker_state, a.worker_zip].filter(Boolean);
+    const workerAddrStr = workerAddrParts.join(', ');
     return `<div class="assign-card">
       <div class="assign-top">
-        <div><div class="assign-job">${esc(a.job_title||'未知职位')}</div><div class="assign-company">${esc(a.company_name||'—')}</div></div>
+        <div>
+          <div class="assign-job">${esc(a.job_title||'未知职位')}</div>
+          <div class="assign-company">${esc(a.company_name||'—')}</div>
+          ${a.company_address?`<div style="font-size:.78rem;color:var(--gray-500);margin-top:.15rem">📍 ${esc(a.company_address)}</div>`:''}
+        </div>
         <span class="badge badge-${esc(a.status)}">${statusLabel(a.status)}</span>
       </div>
       <div class="worker-row">
@@ -727,6 +733,7 @@ function renderAssignments() {
         ${a.worker_phone?`<a href="tel:${esc(a.worker_phone)}" style="color:var(--sky-d);text-decoration:none;font-size:.83rem">📞 ${esc(a.worker_phone)}</a>`:''}
         ${a.worker_email?`<a href="mailto:${esc(a.worker_email)}" style="color:var(--sky-d);text-decoration:none;font-size:.83rem">✉ ${esc(a.worker_email)}</a>`:''}
       </div>
+      ${workerAddrStr?`<div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem;margin-bottom:.1rem">🏠 ${esc(workerAddrStr)}</div>`:''}
       <div class="assign-meta">
         ${a.start_date?`<span>📅 ${fmtDate(a.start_date)}</span>`:''}
         ${periodStr?`<span>🗓 ${esc(periodStr)}</span>`:''}

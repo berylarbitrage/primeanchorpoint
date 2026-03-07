@@ -2119,10 +2119,15 @@ app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
            i.name  AS worker_name,
            i.phone AS worker_phone,
            i.email AS worker_email,
+           i.address AS worker_address,
+           i.city    AS worker_city,
+           i.state   AS worker_state,
+           i.zip     AS worker_zip,
            j.title AS job_title,
            ${isManager ? "'' AS job_location" : 'j.location AS job_location'},
            j.partner_id,
-           p.name  AS company_name
+           p.name    AS company_name,
+           p.address AS company_address
     FROM assignments a
     LEFT JOIN inquiries i ON a.inquiry_id = i.id
     LEFT JOIN jobs j ON a.job_id = j.id
