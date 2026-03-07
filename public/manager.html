@@ -1393,6 +1393,36 @@ function openEditModal(id) {
   const breakDiv = document.getElementById('tcEditBreaks');
   breakDiv.innerHTML = '';
   recs.forEach((b, i) => _tcRenderBreakRow(b, i));
+  // Populate photo preview
+  const e = _tcEditEntry;
+  function _modalPhotoThumb(path, label) {
+    const url = TOKEN ? path + (path.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : path;
+    return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:1px;margin:1px"><img src="${url}" onclick="openPunchPhoto('${url.replace(/'/g,"\\'")}')" title="${label}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer;border:1.5px solid var(--gray-200)"><span style="font-size:.55rem;color:var(--gray-400);line-height:1">${label}</span></div>`;
+  }
+  const ciPin = (e.latitude && e.longitude) ? `<span onclick="showMiniMap(event,${e.latitude},${e.longitude},'上班打卡')" title="上班位置" style="cursor:pointer;font-size:.9rem">🟢</span>` : '';
+  const coPin = (e.clock_out_latitude && e.clock_out_longitude) ? `<span onclick="showMiniMap(event,${e.clock_out_latitude},${e.clock_out_longitude},'下班打卡')" title="下班位置" style="cursor:pointer;font-size:.9rem">🔴</span>` : '';
+  const ciPhoto = e.clock_in_photo_path ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(e.clock_in_photo_path)}`, '上班') : '';
+  const coPhoto = e.punch_photo_path ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(e.punch_photo_path)}`, '下班') : (e.punch_photo ? _modalPhotoThumb(e.punch_photo, '下班') : '');
+  const modalPhotoRows = [];
+  if (ciPin || coPin || ciPhoto || coPhoto) {
+    modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0"><div style="display:flex;flex-direction:column;gap:2px;min-width:22px;align-items:center">${ciPin}${coPin}</div><div style="display:flex;gap:2px">${ciPhoto}${coPhoto}</div></div>`);
+  }
+  recs.forEach((b, i) => {
+    const bPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}')" title="休息${i+1}位置" style="cursor:pointer;font-size:.9rem">🟡</span>` : '';
+    const sPhoto = b.start_photo ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`) : '';
+    const ePhoto = b.end_photo ? _modalPhotoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`) : '';
+    if (bPin || sPhoto || ePhoto) {
+      modalPhotoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:2px 0"><div style="min-width:22px;text-align:center">${bPin}</div><div style="display:flex;gap:2px">${sPhoto}${ePhoto}</div></div>`);
+    }
+  });
+  const photoDiv = document.getElementById('tcEditPhotos');
+  if (modalPhotoRows.length) {
+    photoDiv.style.display = 'block';
+    photoDiv.innerHTML = `<div style="background:var(--gray-50);border-radius:7px;padding:.5rem .75rem;border:1px solid var(--gray-100)"><div style="font-size:.72rem;color:var(--gray-500);margin-bottom:.4rem;font-weight:600">照片</div><div style="display:flex;flex-direction:column">${modalPhotoRows.join('')}</div></div>`;
+  } else {
+    photoDiv.style.display = 'none';
+    photoDiv.innerHTML = '';
+  }
   updateTcHrsPreview();
   document.getElementById('tcEditModal').classList.add('open');
 }
@@ -1785,6 +1815,7 @@ async function executeBatch(action) {
 <div id="tcEditModal">
   <div class="tc-edit-box">
     <h3>修改工时</h3>
+    <div id="tcEditPhotos" style="display:none;margin-bottom:.9rem"></div>
     <div class="tc-field">
       <label>上班时间 <span id="tcEditTzLabel" style="color:var(--gray-400);font-weight:400;font-size:.74rem"></span></label>
       <input type="datetime-local" id="tcEditClockIn" oninput="updateTcHrsPreview()">
