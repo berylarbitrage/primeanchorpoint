@@ -594,7 +594,7 @@ tr:last-child td{border-bottom:none}
           <!-- Job selector shown only when clocking in with multiple active jobs -->
           <div id="jobSelectorWrap" style="display:none;margin:.75rem 0;width:100%;max-width:340px">
             <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block">选择打卡工作 / Select job to clock in for</label>
-            <select id="jobSelector" style="width:100%;padding:.55rem .8rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem;background:#fff"></select>
+            <select id="jobSelector" onchange="enablePunchBtn(_gpsCoords !== null)" style="width:100%;padding:.55rem .8rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem;background:#fff"></select>
           </div>
           <!-- Always-visible 4 punch buttons -->
           <div id="punchBtnsWrap" style="width:100%;max-width:340px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
@@ -2216,6 +2216,7 @@ function enablePunchBtn(ready) {
   // All 4 buttons are always enabled — GPS geofencing on the server is the only restriction.
   // Dim all only when status is unavailable or GPS not ready.
   const s = _punchStatus;
+  // All 4 buttons always enabled — GPS geofencing on the server is the only restriction.
   const canPunch = s && !s.no_employee && (s.has_active_job || s.clocked_in) && ready;
   const op = canPunch ? '1' : '.35';
   [btnIn, btnBS, btnBE, btnOut].forEach(b => b.style.opacity = op);
@@ -2268,13 +2269,16 @@ async function loadPunchStatus() {
     statusEl.innerHTML = '<span style="color:var(--green);font-weight:600">● Checked In</span>';
     timeEl.textContent = new Date(ci).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz});
     subEl.textContent = 'Check In · ' + new Date(ci).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz});
-    // Show selector (disabled) so user can see which job they're clocked in for
     const jobs = s.active_jobs || [];
-    selector.innerHTML = jobs.map(j =>
-      `<option value="${j.job_id}" ${j.job_id === s.open_entry.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
-    ).join('');
-    selector.disabled = true;
-    selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
+    if (jobs.length > 1) {
+      selector.innerHTML = jobs.map(j =>
+        `<option value="${j.job_id}" ${j.job_id === s.open_entry.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+      ).join('');
+      selector.disabled = false;
+      selectorWrap.style.display = '';
+    } else {
+      selectorWrap.style.display = 'none';
+    }
   } else if (!s.has_active_job) {
     statusEl.innerHTML = '<span style="color:var(--orange)">● Not Checked In</span>';
     timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
