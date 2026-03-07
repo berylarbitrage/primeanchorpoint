@@ -1214,6 +1214,7 @@ try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/C
 try { db.exec("ALTER TABLE time_entries ADD COLUMN site_timezone TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_latitude REAL DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_longitude REAL DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN manager_confirmed INTEGER DEFAULT 0"); } catch {}
 
 // Worker payments ledger
 db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
@@ -4955,7 +4956,7 @@ app.get('/api/admin/documents/:id/file', (req, res, next) => {
 // ─── TIME ENTRY ROUTES ───
 
 app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
-  const { employee_id, date_from, date_to, status } = req.query;
+  const { employee_id, date_from, date_to, status, needs_review } = req.query;
   let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code,
     COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
     FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
@@ -4965,6 +4966,7 @@ app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
   if (date_from)   { q += ' AND DATE(t.clock_in)>=?'; p.push(date_from); }
   if (date_to)     { q += ' AND DATE(t.clock_in)<=?'; p.push(date_to); }
   if (status)      { q += ' AND t.status=?'; p.push(status); }
+  if (needs_review === '1') { q += ' AND t.manager_confirmed=1 AND t.needs_review=1'; }
   // Manager: only see time entries for their assigned partners / jobs / directly assigned employees
   const pids = managerPartnerIds(req);
   const jids = managerJobIds(req);
@@ -5155,7 +5157,7 @@ app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
   db.prepare(`UPDATE time_entries SET
     clock_in=?,clock_out=?,break_minutes=?,break_records=?,
     total_hours=?,regular_hours=?,overtime_hours=?,
-    notes=?,status=?,needs_review=0,review_reason='' WHERE id=?`).run(
+    notes=?,status=?,manager_confirmed=0,needs_review=1,review_reason='' WHERE id=?`).run(
     d.clock_in||null, d.clock_out||null, breakMins, breakRecords,
     hrs.total, hrs.regular, hrs.overtime,
     d.notes||'', status, req.params.id);
@@ -5179,7 +5181,7 @@ app.patch('/api/manager/time-entries/:id/correct-time', requireAdmin, (req, res)
 });
 
 app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
-  db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?").run(req.params.id);
+  db.prepare("UPDATE time_entries SET manager_confirmed=1,needs_review=1 WHERE id=?").run(req.params.id);
   res.json({ success: true });
 });
 
@@ -5187,7 +5189,7 @@ app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
   const { ids, action, regular_hours, overtime_hours, clock_in_delta_minutes, clock_out_delta_minutes } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: '未选择记录' });
   if (action === 'confirm') {
-    const stmt = db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?");
+    const stmt = db.prepare("UPDATE time_entries SET manager_confirmed=1,needs_review=1 WHERE id=?");
     db.transaction(() => { for (const id of ids) stmt.run(id); })();
   } else if (action === 'set_hours') {
     const reg = Math.max(0, parseFloat(regular_hours) || 0);
@@ -5204,6 +5206,12 @@ app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
       }
     })();
   }
+  res.json({ success: true });
+});
+
+// Admin confirms a manager-confirmed time entry (final approval)
+app.post('/api/admin/time-entries/:id/confirm', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?").run(req.params.id);
   res.json({ success: true });
 });
 

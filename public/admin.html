@@ -1070,6 +1070,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="">全部状态</option>
       <option value="open">上班中</option>
       <option value="closed">已完成</option>
+      <option value="pending_review">待审核</option>
     </select>
   </div>
   <div class="hours-bar" id="timeSummary" style="display:none">
@@ -9307,7 +9308,8 @@ async function loadTimeEntries() {
   if (emp)  q += `employee_id=${emp}&`;
   if (from) q += `date_from=${from}&`;
   if (to)   q += `date_to=${to}&`;
-  if (st)   q += `status=${st}&`;
+  if (st === 'pending_review') q += `needs_review=1&`;
+  else if (st) q += `status=${st}&`;
   allTimeEntries = await api(q);
   renderTimeEntries(allTimeEntries);
   // Update summary bar
@@ -9336,11 +9338,12 @@ function renderTimeEntries(list) {
     <td>${fmtH(t.total_hours)}</td>
     <td>${fmtH(t.regular_hours)}</td>
     <td>${(t.overtime_hours||0)>0?`<span class="ot-text">${fmtH(t.overtime_hours)}</span>`:'—'}</td>
-    <td><span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span></td>
+    <td>${t.manager_confirmed && t.needs_review ? '<span class="badge badge-orange">待审核</span>' : `<span class="badge badge-${t.status}">${t.status==='open'?'上班中':'完成'}</span>`}</td>
     <td style="text-align:center">${photoCell}</td>
     <td>${esc(t.notes||'')} ${punchLocationPins(t)}</td>
     <td>
       ${t.status==='open'?`<button class="btn btn-sm btn-accent" onclick="clockOutEntry(${t.id})">打卡下班</button> `:''}
+      ${t.manager_confirmed && t.needs_review ? `<button class="btn btn-sm btn-success" onclick="confirmTimeEntry(${t.id})">✓ 确认</button> ` : ''}
       <button class="btn btn-sm" onclick='openTimeModal(${JSON.stringify(t).replace(/'/g,"&#39;")})'>编辑</button>
       <button class="btn btn-sm btn-red" onclick="deleteTimeEntry(${t.id})">删除</button>
     </td>
@@ -9459,6 +9462,11 @@ async function clockOutEntry(id) {
   if (!entry) return;
   await api(`/admin/time-entries/${id}`, { method:'PUT', body: JSON.stringify({ ...entry, clock_out: now }) });
   loadTimeEntries();
+}
+
+async function confirmTimeEntry(id) {
+  const r = await api(`/admin/time-entries/${id}/confirm`, { method:'POST', body:'{}' });
+  if (r) { showToast('工时已确认', 'success'); loadTimeEntries(); }
 }
 
 async function deleteTimeEntry(id) {
