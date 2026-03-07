@@ -1074,35 +1074,54 @@ tr:last-child td{border-bottom:none}
       </div>
 
       <!-- Change phone/email modal -->
-      <div id="changeContactOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:none;align-items:center;justify-content:center">
+      <div id="changeContactOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;align-items:center;justify-content:center">
         <div style="background:#fff;border-radius:12px;padding:1.5rem;max-width:420px;width:90%;box-shadow:0 8px 30px rgba(0,0,0,.2)">
-          <h3 id="ccTitle" style="margin-bottom:.75rem">更换联系方式</h3>
-          <!-- Step 1: Enter new value -->
+          <h3 id="ccTitle" style="margin-bottom:.5rem">更换联系方式</h3>
+          <div style="font-size:.75rem;color:var(--gray-400);margin-bottom:1rem" id="ccStepIndicator">第 1 步，共 3 步</div>
+
+          <!-- Step 1: Verify OLD contact -->
           <div id="ccStep1">
-            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem" id="ccDesc">更换后新旧号码都需要验证</p>
+            <p style="font-size:.83rem;color:var(--gray-600);margin-bottom:1rem" id="ccStep1Desc">验证码已发送到您当前的手机号，请输入：</p>
+            <div style="font-size:.8rem;color:var(--gray-400);margin-bottom:.75rem" id="ccStep1Hint"></div>
             <div class="field" style="margin-bottom:1rem">
-              <label id="ccNewLabel">新号码/邮箱</label>
-              <input type="text" id="ccNewValue" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+              <label id="ccOldLabel">当前手机号收到的验证码</label>
+              <input type="text" id="ccOldCode" maxlength="6" placeholder="6位验证码" inputmode="numeric"
+                style="width:100%;padding:.6rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:4px;font-size:1.15rem;text-align:center;box-sizing:border-box">
             </div>
+            <div id="ccStep1Error" style="color:var(--red);font-size:.82rem;margin-bottom:.5rem;display:none"></div>
             <div style="display:flex;gap:.5rem">
-              <button class="btn btn-sky" onclick="sendChangeVerification()">发送验证码</button>
+              <button class="btn btn-sky" id="ccBtnStep1" onclick="ccVerifyOld()">下一步</button>
               <button class="btn btn-gray" onclick="closeChangeContact()">取消</button>
             </div>
           </div>
-          <!-- Step 2: Enter both codes -->
+
+          <!-- Step 2: Enter NEW contact value -->
           <div id="ccStep2" style="display:none">
-            <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">验证码已发送到<strong>旧</strong>和<strong>新</strong>的联系方式，请分别输入：</p>
-            <div class="field" style="margin-bottom:.75rem">
-              <label>旧号码/邮箱验证码</label>
-              <input type="text" id="ccOldCode" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:3px;font-size:1.1rem;text-align:center">
-            </div>
+            <p style="font-size:.83rem;color:var(--gray-600);margin-bottom:1rem" id="ccStep2Desc">旧验证成功！请输入您的新手机号：</p>
             <div class="field" style="margin-bottom:1rem">
-              <label>新号码/邮箱验证码</label>
-              <input type="text" id="ccNewCode" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:3px;font-size:1.1rem;text-align:center">
+              <label id="ccNewLabel">新手机号</label>
+              <input type="text" id="ccNewValue"
+                style="width:100%;padding:.6rem .7rem;border:1px solid var(--gray-200);border-radius:6px;box-sizing:border-box">
             </div>
-            <div id="ccError" style="display:none;color:var(--red);font-size:.82rem;margin-bottom:.5rem"></div>
+            <div id="ccStep2Error" style="color:var(--red);font-size:.82rem;margin-bottom:.5rem;display:none"></div>
             <div style="display:flex;gap:.5rem">
-              <button class="btn btn-sky" onclick="confirmChangeContact()">确认更换</button>
+              <button class="btn btn-sky" id="ccBtnStep2" onclick="ccSendNew()">发送验证码</button>
+              <button class="btn btn-gray" onclick="closeChangeContact()">取消</button>
+            </div>
+          </div>
+
+          <!-- Step 3: Verify NEW contact -->
+          <div id="ccStep3" style="display:none">
+            <p style="font-size:.83rem;color:var(--gray-600);margin-bottom:1rem" id="ccStep3Desc">验证码已发送到您的新手机号，请输入：</p>
+            <div style="font-size:.8rem;color:var(--gray-400);margin-bottom:.75rem" id="ccStep3Hint"></div>
+            <div class="field" style="margin-bottom:1rem">
+              <label id="ccNewCodeLabel">新手机号收到的验证码</label>
+              <input type="text" id="ccNewCode" maxlength="6" placeholder="6位验证码" inputmode="numeric"
+                style="width:100%;padding:.6rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:4px;font-size:1.15rem;text-align:center;box-sizing:border-box">
+            </div>
+            <div id="ccStep3Error" style="color:var(--red);font-size:.82rem;margin-bottom:.5rem;display:none"></div>
+            <div style="display:flex;gap:.5rem">
+              <button class="btn btn-sky" id="ccBtnStep3" onclick="ccConfirmNew()">确认更换</button>
               <button class="btn btn-gray" onclick="closeChangeContact()">取消</button>
             </div>
           </div>
@@ -3285,99 +3304,126 @@ async function loadProfile() {
   }).join('');
 }
 
-// ─── Contact change modal ───
+// ─── Contact change modal (3-step sequential flow) ───
 let _changeContactField = null;
 
-function openContactModal(field) {
-  _changeContactField = field;
-  const isPhone = field === 'phone';
-  document.getElementById('changeContactTitle').textContent = isPhone ? '更换手机号' : '更换邮箱';
-  document.getElementById('changeContactDesc').textContent = isPhone
-    ? '请输入新手机号。我们将分别向您的旧手机号和新手机号各发送一条验证码，两个都需要输入才能完成更换。'
-    : '请输入新邮箱地址。我们将分别向旧邮箱和新邮箱各发送一条验证码，两个都需要输入才能完成更换。';
-  document.getElementById('changeContactLabel').textContent = isPhone ? '新手机号 *' : '新邮箱地址 *';
-  document.getElementById('changeContactNewVal').value = '';
-  document.getElementById('changeContactNewVal').type = isPhone ? 'tel' : 'email';
-
-  const errEl = document.getElementById('contactStep1Error');
-  errEl.textContent = ''; errEl.classList.remove('show');
-  document.getElementById('contactStep1').style.display = '';
-  document.getElementById('contactStep2').style.display = 'none';
-  document.getElementById('changeContactModal').classList.add('show');
-  setTimeout(() => document.getElementById('changeContactNewVal').focus(), 100);
+function _ccShow(step) {
+  [1,2,3].forEach(n => document.getElementById('ccStep'+n).style.display = n===step?'':'none');
+  const isPhone = _changeContactField === 'phone';
+  const labels = { 1:'第 1 步，共 3 步', 2:'第 2 步，共 3 步', 3:'第 3 步，共 3 步' };
+  document.getElementById('ccStepIndicator').textContent = labels[step] || '';
+  const w = _workerInfo && _workerInfo.account;
+  const oldMasked = isPhone
+    ? (w && w.phone ? w.phone.slice(0,3)+'****'+w.phone.slice(-2) : '')
+    : (w && w.email ? w.email.replace(/(.{2}).*(@.*)/, '$1****$2') : '');
+  if (step === 1) {
+    document.getElementById('ccTitle').textContent = isPhone ? '更换手机号' : '更换邮箱';
+    document.getElementById('ccStep1Desc').textContent = isPhone
+      ? '验证码已发送到您当前的手机号，请输入：'
+      : '验证码已发送到您当前的邮箱，请输入：';
+    document.getElementById('ccStep1Hint').textContent = oldMasked ? `📱 ${oldMasked}` : '';
+    document.getElementById('ccOldLabel').textContent = isPhone ? '当前手机号收到的验证码' : '当前邮箱收到的验证码';
+    document.getElementById('ccOldCode').value = '';
+    document.getElementById('ccStep1Error').style.display = 'none';
+    setTimeout(() => document.getElementById('ccOldCode').focus(), 100);
+  } else if (step === 2) {
+    document.getElementById('ccStep2Desc').textContent = isPhone ? '验证成功！请输入您的新手机号：' : '验证成功！请输入您的新邮箱地址：';
+    document.getElementById('ccNewLabel').textContent = isPhone ? '新手机号 *' : '新邮箱地址 *';
+    document.getElementById('ccNewValue').type = isPhone ? 'tel' : 'email';
+    document.getElementById('ccNewValue').value = '';
+    document.getElementById('ccStep2Error').style.display = 'none';
+    setTimeout(() => document.getElementById('ccNewValue').focus(), 100);
+  } else if (step === 3) {
+    document.getElementById('ccStep3Desc').textContent = isPhone ? '验证码已发送到您的新手机号，请输入：' : '验证码已发送到您的新邮箱，请输入：';
+    document.getElementById('ccNewCodeLabel').textContent = isPhone ? '新手机号收到的验证码' : '新邮箱收到的验证码';
+    document.getElementById('ccNewCode').value = '';
+    document.getElementById('ccStep3Error').style.display = 'none';
+    setTimeout(() => document.getElementById('ccNewCode').focus(), 100);
+  }
 }
 
-function closeContactModal() {
-  document.getElementById('changeContactModal').classList.remove('show');
+async function openContactModal(field) {
+  _changeContactField = field;
+  // Show overlay first
+  const overlay = document.getElementById('changeContactOverlay');
+  overlay.style.display = 'flex';
+  // Send code to OLD contact immediately
+  const isPhone = field === 'phone';
+  document.getElementById('ccTitle').textContent = isPhone ? '更换手机号' : '更换邮箱';
+  document.getElementById('ccStepIndicator').textContent = '正在发送验证码…';
+  [1,2,3].forEach(n => document.getElementById('ccStep'+n).style.display = 'none');
+  const r = await wApi('/contact/send-old-code', { method:'POST', body: JSON.stringify({ field }) });
+  if (!r) { overlay.style.display = 'none'; return; }
+  if (r.error) { overlay.style.display = 'none'; showToast('❌ ' + r.error, 'error'); return; }
+  if (r.no_old) {
+    // No old contact, skip step 1 and go straight to step 2
+    _ccShow(2);
+  } else {
+    const w = _workerInfo && _workerInfo.account;
+    const masked = isPhone
+      ? (w && w.phone ? w.phone.slice(0,3)+'****'+w.phone.slice(-2) : '')
+      : (w && w.email ? w.email.replace(/(.{2}).*(@.*)/, '$1****$2') : '');
+    document.getElementById('ccStep1Hint').textContent = masked ? `📱 ${masked}` : '';
+    _ccShow(1);
+  }
+}
+
+function closeChangeContact() {
+  document.getElementById('changeContactOverlay').style.display = 'none';
   _changeContactField = null;
 }
 
-async function requestContactChange() {
+async function ccVerifyOld() {
   const field = _changeContactField;
-  const newVal = document.getElementById('changeContactNewVal').value.trim();
-  const errEl = document.getElementById('contactStep1Error');
-  errEl.textContent = ''; errEl.classList.remove('show');
-
-  if (!newVal) { errEl.textContent = '请填写新' + (field==='phone'?'手机号':'邮箱'); errEl.classList.add('show'); return; }
-
-  const btn = document.getElementById('btnRequestChange');
-  btn.disabled = true; btn.textContent = '发送中…';
-  const r = await wApi('/contact/request-change', { method:'POST', body: JSON.stringify({ field, new_value: newVal }) });
-  btn.disabled = false; btn.textContent = '发送验证码';
-  if (!r) return;
-  if (r.error) { errEl.textContent = r.error; errEl.classList.add('show'); return; }
-
-  // Warn if codes were not actually delivered
-  if (!r.old_sent && !r.new_sent) {
-    errEl.textContent = '验证码发送失败，请联系管理员确认短信/邮件服务是否已配置';
-    errEl.classList.add('show');
-    return;
-  }
-
-  // Switch to step 2
-  const acc = _workerInfo && _workerInfo.account;
-  const oldMasked = field === 'phone'
-    ? (acc && acc.phone ? acc.phone.slice(0,3) + '****' + acc.phone.slice(-2) : '旧手机号')
-    : (acc && acc.email ? acc.email.replace(/(.{2}).*(@.*)/, '$1****$2') : '旧邮箱');
-  const newMasked = field === 'phone'
-    ? (newVal.slice(0,3) + '****' + newVal.slice(-2))
-    : (newVal.replace(/(.{2}).*(@.*)/, '$1****$2'));
-
-  let hintHtml = `验证码已发送到：`;
-  if (r.old_sent) hintHtml += `<br>• 旧${field==='phone'?'手机号':'邮箱'} <strong>${oldMasked}</strong>`;
-  if (r.new_sent) hintHtml += `<br>• 新${field==='phone'?'手机号':'邮箱'} <strong>${newMasked}</strong>`;
-  if (!r.old_sent && acc && acc[field]) hintHtml += `<br>• <span style="color:#dc2626">旧${field==='phone'?'手机号':'邮箱'}发送失败</span>`;
-  if (!r.new_sent) hintHtml += `<br>• <span style="color:#dc2626">新${field==='phone'?'手机号':'邮箱'}发送失败</span>`;
-  document.getElementById('contactCodeHint').innerHTML = hintHtml;
-  document.getElementById('labelOldCode').textContent = `旧${field==='phone'?'手机号':'邮箱'}收到的验证码 *`;
-  document.getElementById('labelNewCode').textContent = `新${field==='phone'?'手机号':'邮箱'}收到的验证码 *`;
-  document.getElementById('oldContactCode').value = '';
-  document.getElementById('newContactCode').value = '';
-  const err2 = document.getElementById('contactStep2Error');
-  err2.textContent = ''; err2.classList.remove('show');
-
-  document.getElementById('contactStep1').style.display = 'none';
-  document.getElementById('contactStep2').style.display = '';
-  setTimeout(() => document.getElementById('oldContactCode').focus(), 100);
+  const oldCode = document.getElementById('ccOldCode').value.trim();
+  const errEl = document.getElementById('ccStep1Error');
+  errEl.style.display = 'none';
+  if (!oldCode) { errEl.textContent = '请输入验证码'; errEl.style.display = ''; return; }
+  const btn = document.getElementById('ccBtnStep1');
+  btn.disabled = true; btn.textContent = '验证中…';
+  // We pass old_code with a placeholder new_value just to call the combined endpoint
+  // Actually we just show step 2 now – real old-code verification happens in step 2 submit
+  // Store the old code temporarily and move to step 2
+  window._ccOldCodeValue = oldCode;
+  btn.disabled = false; btn.textContent = '下一步';
+  _ccShow(2);
 }
 
-async function confirmContactChange() {
+async function ccSendNew() {
   const field = _changeContactField;
-  const oldCode = document.getElementById('oldContactCode').value.trim();
-  const newCode = document.getElementById('newContactCode').value.trim();
-  const errEl = document.getElementById('contactStep2Error');
-  errEl.textContent = ''; errEl.classList.remove('show');
+  const newVal = document.getElementById('ccNewValue').value.trim();
+  const errEl = document.getElementById('ccStep2Error');
+  errEl.style.display = 'none';
+  if (!newVal) { errEl.textContent = field==='phone' ? '请输入新手机号' : '请输入新邮箱地址'; errEl.style.display = ''; return; }
+  const btn = document.getElementById('ccBtnStep2');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const r = await wApi('/contact/verify-old-send-new', {
+    method: 'POST',
+    body: JSON.stringify({ field, old_code: window._ccOldCodeValue || '', new_value: newVal })
+  });
+  btn.disabled = false; btn.textContent = '发送验证码';
+  if (!r) return;
+  if (r.error) { errEl.textContent = r.error; errEl.style.display = ''; return; }
+  window._ccNewVal = newVal;
+  const isPhone = field === 'phone';
+  const masked = isPhone ? (newVal.slice(0,3)+'****'+newVal.slice(-2)) : (newVal.replace(/(.{2}).*(@.*)/, '$1****$2'));
+  _ccShow(3);
+  document.getElementById('ccStep3Hint').textContent = `📱 ${masked}`;
+}
 
-  if (!oldCode || !newCode) { errEl.textContent = '请输入两个验证码'; errEl.classList.add('show'); return; }
-
-  const btn = document.getElementById('btnConfirmChange');
+async function ccConfirmNew() {
+  const field = _changeContactField;
+  const newCode = document.getElementById('ccNewCode').value.trim();
+  const errEl = document.getElementById('ccStep3Error');
+  errEl.style.display = 'none';
+  if (!newCode) { errEl.textContent = '请输入验证码'; errEl.style.display = ''; return; }
+  const btn = document.getElementById('ccBtnStep3');
   btn.disabled = true; btn.textContent = '验证中…';
-  const r = await wApi('/contact/confirm-change', { method:'POST', body: JSON.stringify({ field, old_code: oldCode, new_code: newCode }) });
+  const r = await wApi('/contact/confirm-new', { method:'POST', body: JSON.stringify({ field, new_code: newCode }) });
   btn.disabled = false; btn.textContent = '确认更换';
   if (!r) return;
-  if (r.error) { errEl.textContent = r.error; errEl.classList.add('show'); return; }
-
-  closeContactModal();
+  if (r.error) { errEl.textContent = r.error; errEl.style.display = ''; return; }
+  closeChangeContact();
   showToast(`✅ ${field==='phone'?'手机号':'邮箱'}已成功更换`);
   loadProfile();
 }

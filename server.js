@@ -5706,6 +5706,84 @@ app.post('/api/worker/contact/confirm-change', requireWorker, async (req, res) =
   res.json({ success: true });
 });
 
+// ── Sequential contact-change flow ──────────────────────────────────
+// Step 1: Send verification code to the OLD contact
+app.post('/api/worker/contact/send-old-code', requireWorker, async (req, res) => {
+  const { field } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const w = db.prepare('SELECT phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const oldVal = w[field];
+  if (!oldVal) {
+    // No old contact on file – skip old verification
+    _pendingContactChange.set(`${req.workerId}_${field}_s1`, { old_verified: true, expires: Date.now() + 15*60*1000 });
+    return res.json({ success: true, old_sent: false, no_old: true });
+  }
+  const code = String(Math.floor(100000 + Math.random()*900000));
+  const expires = Date.now() + 15*60*1000;
+  _pendingContactChange.set(`${req.workerId}_${field}_s1`, { old_code: code, expires });
+  let sent = false;
+  if (field === 'phone') {
+    if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(oldVal); sent = true; }
+    else if (twilioClient && TWILIO_FROM) { sent = await sendSMS(oldVal, `[Prime Anchorpoint] Your verification code: ${code} (valid 15 min)`); }
+  } else {
+    sent = await sendEmail(oldVal, 'Prime Anchorpoint Verification Code', `Your verification code: ${code}\nValid for 15 minutes.`);
+  }
+  console.log(`[CC-S1] Worker ${req.workerId} field=${field} old_code=${code}`);
+  res.json({ success: true, old_sent: sent });
+});
+
+// Step 2: Verify old code, then send code to the NEW contact
+app.post('/api/worker/contact/verify-old-send-new', requireWorker, async (req, res) => {
+  const { field, old_code, new_value } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  if (!new_value || !new_value.trim()) return res.status(400).json({ error: field==='phone' ? 'Please enter new phone number' : 'Please enter new email' });
+  const val = new_value.trim();
+  const taken = field === 'phone'
+    ? db.prepare('SELECT id FROM worker_accounts WHERE phone=? AND id!=?').get(val, req.workerId)
+    : db.prepare('SELECT id FROM worker_accounts WHERE email=? AND id!=?').get(val, req.workerId);
+  if (taken) return res.status(400).json({ error: field==='phone' ? '该手机号已被其他账号使用' : '该邮箱已被其他账号注册' });
+  const w = db.prepare('SELECT phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const s1 = _pendingContactChange.get(`${req.workerId}_${field}_s1`);
+  if (w[field]) {
+    if (!s1 || Date.now() > s1.expires) return res.status(400).json({ error: '验证码已过期，请重新发送' });
+    let oldOk = false;
+    if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID) {
+      oldOk = await checkVerifyCode(w.phone, old_code);
+    } else { oldOk = (old_code && old_code.trim() === s1.old_code); }
+    if (!oldOk) return res.status(400).json({ error: field==='phone' ? '旧手机号验证码不正确' : '旧邮箱验证码不正确' });
+  }
+  _pendingContactChange.delete(`${req.workerId}_${field}_s1`);
+  const newCode = String(Math.floor(100000 + Math.random()*900000));
+  const expires = Date.now() + 15*60*1000;
+  _pendingContactChange.set(`${req.workerId}_${field}_s2`, { new_value: val, new_code: newCode, expires });
+  let newSent = false;
+  if (field === 'phone') {
+    if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(val); newSent = true; }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] Your new phone verification code: ${newCode} (valid 15 min)`); }
+  } else {
+    newSent = await sendEmail(val, 'Prime Anchorpoint New Email Verification', `Your verification code: ${newCode}\nValid for 15 minutes.`);
+  }
+  console.log(`[CC-S2] Worker ${req.workerId} field=${field} new_code=${newCode}`);
+  res.json({ success: true, new_sent: newSent });
+});
+
+// Step 3: Verify new code and update DB
+app.post('/api/worker/contact/confirm-new', requireWorker, async (req, res) => {
+  const { field, new_code } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const s2 = _pendingContactChange.get(`${req.workerId}_${field}_s2`);
+  if (!s2 || Date.now() > s2.expires) return res.status(400).json({ error: '验证码已过期，请重新发送' });
+  let newOk = false;
+  if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID) {
+    newOk = await checkVerifyCode(s2.new_value, new_code);
+  } else { newOk = (new_code && new_code.trim() === s2.new_code); }
+  if (!newOk) return res.status(400).json({ error: field==='phone' ? '新手机号验证码不正确' : '新邮箱验证码不正确' });
+  if (field === 'phone') db.prepare('UPDATE worker_accounts SET phone=? WHERE id=?').run(s2.new_value, req.workerId);
+  else db.prepare('UPDATE worker_accounts SET email=? WHERE id=?').run(s2.new_value, req.workerId);
+  _pendingContactChange.delete(`${req.workerId}_${field}_s2`);
+  res.json({ success: true });
+});
+
 // Worker: update profile (phone/email change triggers re-verification)
 app.put('/api/worker/me', requireWorker, async (req, res) => {
   const { field, new_value } = req.body;
