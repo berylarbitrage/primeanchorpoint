@@ -2311,7 +2311,7 @@ function renderCalendar() {
     const numColor = isToday ? '#fff' : hasWork ? '#1e293b' : '#cbd5e1';
     const numWeight = (isToday || hasWork) ? '700' : '400';
 
-    const clickable = confs.length > 0 || isProjected;
+    const clickable = confs.length > 0 || isProjected || isPunched;
     html += `<div style="border-radius:8px;padding:.28rem .05rem;background:${bg};border:${border};min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px${clickable ? ';cursor:pointer' : ''}" ${clickable ? `onclick="calDayClick('${dateStr}')"` : ''}>
       <span style="font-size:.8rem;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>
       ${dotsHtml ? `<div style="line-height:1">${dotsHtml}</div>` : ''}
@@ -2347,7 +2347,8 @@ function calDayClick(dateStr) {
     });
   }
 
-  if (!confs.length && !projItems.length) return;
+  const isPunchedDay = (_calData.punchDates || []).includes(dateStr);
+  if (!confs.length && !projItems.length && !isPunchedDay) return;
 
   document.getElementById('calDayModalTitle').textContent = `${dayNames[d.getDay()]} ${dateStr}`;
   const statusColor = { confirmed:'#16a34a', pending:'#f59e0b', declined:'#dc2626' };
@@ -2395,6 +2396,27 @@ function calDayClick(dateStr) {
     </div>`;
   }).join('');
 
+  // Projected (blue-dot) days: show scheduled time info
+  if (projItems.length) {
+    html += projItems.map(p => {
+      const timeStr = (p.start && p.end) ? `${fmt12(p.start)} – ${fmt12(p.end)}` : '';
+      const hours = calcHours(p.start, p.end);
+      return `<div style="border:1.5px solid #bfdbfe;border-radius:10px;padding:.9rem;margin-bottom:.6rem;background:#eff6ff">
+        <div style="font-weight:700;font-size:1rem;color:#1e293b;margin-bottom:.4rem">${esc(p.title||'—')}</div>
+        ${timeStr ? `<div style="font-size:.86rem;color:#374151;margin-bottom:.35rem">⏰ <strong>${timeStr}</strong>${hours ? ` <span style="color:#94a3b8;font-size:.8rem">（约 ${hours}）</span>` : ''}</div>` : ''}
+        <div style="font-size:.8rem;color:#1d4ed8;font-weight:600">📅 计划班次</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Punch-only days (purple dot, no shift confirmation or projection): redirect to Time Clock tab
+  if (!confs.length && !projItems.length && isPunchedDay) {
+    html += `<div style="border:1.5px solid #ddd6fe;border-radius:10px;padding:1rem;background:#f5f3ff;text-align:center">
+      <div style="font-size:1.2rem;margin-bottom:.4rem">🕐</div>
+      <div style="font-weight:700;color:#6d28d9;font-size:.95rem;margin-bottom:.3rem">已打卡</div>
+      <div style="font-size:.84rem;color:#475569">请在「打卡记录」标签查看详情</div>
+    </div>`;
+  }
 
   document.getElementById('calDayModalBody').innerHTML = html;
   document.getElementById('calDayModal').style.display = 'flex';
