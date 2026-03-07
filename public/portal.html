@@ -584,7 +584,7 @@ tr:last-child td{border-bottom:none}
     <div id="tabTimeclock" style="display:none">
       <!-- Current dispatched jobs -->
       <div class="card" style="margin-bottom:1rem">
-        <h2 style="margin-bottom:.75rem">💼 当前工作安排</h2>
+        <h2 style="margin-bottom:.75rem" data-i18n="tcCurrentJobs">💼 当前工作安排</h2>
         <div id="myJobsList"><p style="color:var(--gray-400);font-size:.88rem">加载中…</p></div>
       </div>
       <div class="card">
@@ -594,15 +594,15 @@ tr:last-child td{border-bottom:none}
           <div class="punch-sub" id="punchSub"></div>
           <!-- Job selector shown only when clocking in with multiple active jobs -->
           <div id="jobSelectorWrap" style="display:none;margin:.75rem auto;width:100%;max-width:340px">
-            <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block">选择打卡工作 / Select job to clock in for</label>
+            <label style="font-size:.82rem;color:var(--gray-400);margin-bottom:.3rem;display:block" data-i18n="tcSelectJob">选择打卡工作 / Select job to clock in for</label>
             <select id="jobSelector" onchange="enablePunchBtn(_gpsCoords !== null)" style="width:100%;padding:.55rem .8rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem;background:#fff"></select>
           </div>
           <!-- Always-visible 4 punch buttons -->
           <div id="punchBtnsWrap" style="width:100%;max-width:340px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
-            <button id="btnPunchIn"     onclick="startPunchFlow('in')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#16a34a;color:#fff;opacity:.4">▶ 上班打卡</button>
-            <button id="btnBreakStart"  onclick="startPunchFlow('break_start')" style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff;opacity:.4">⏸ 休息开始</button>
-            <button id="btnBreakEnd"    onclick="startPunchFlow('break_end')"   style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;opacity:.4">▶ 休息结束</button>
-            <button id="btnPunchOut"    onclick="startPunchFlow('out')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#dc2626;color:#fff;opacity:.4">⏹ 下班打卡</button>
+            <button id="btnPunchIn"     onclick="startPunchFlow('in')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#16a34a;color:#fff;opacity:.4" data-i18n="tcPunchIn">▶ 上班打卡</button>
+            <button id="btnBreakStart"  onclick="startPunchFlow('break_start')" style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#f97316;color:#fff;opacity:.4" data-i18n="tcBreakStart">⏸ 休息开始</button>
+            <button id="btnBreakEnd"    onclick="startPunchFlow('break_end')"   style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;opacity:.4" data-i18n="tcBreakEnd">▶ 休息结束</button>
+            <button id="btnPunchOut"    onclick="startPunchFlow('out')"          style="padding:.8rem .4rem;border:none;border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;background:#dc2626;color:#fff;opacity:.4" data-i18n="tcPunchOut">⏹ 下班打卡</button>
           </div>
           <div class="gps-indicator" id="gpsIndicator">📍 正在获取位置…</div>
           <!-- Punch confirmation modal overlay -->
@@ -633,10 +633,26 @@ tr:last-child td{border-bottom:none}
           </div>
         </div>
       </div>
+      <!-- Punch History Calendar -->
+      <div class="card" style="padding:.85rem;margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h2 style="color:#1d4ed8;margin:0;font-size:1rem" data-i18n="punchCalTitle">📅 打卡日历</h2>
+          <div style="display:flex;gap:.35rem;align-items:center">
+            <button onclick="punchCalChangeMonth(-1)" style="width:28px;height:28px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;align-items:center;justify-content:center">‹</button>
+            <span id="punchCalMonthLabel" style="font-weight:700;font-size:.92rem;color:#1e293b;min-width:72px;text-align:center"></span>
+            <button onclick="punchCalChangeMonth(1)" style="width:28px;height:28px;border:1px solid #e5e7eb;border-radius:6px;background:#fff;cursor:pointer;font-size:1.1rem;line-height:1;display:flex;align-items:center;justify-content:center">›</button>
+          </div>
+        </div>
+        <div id="punchCalGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center"></div>
+        <div style="display:flex;gap:.65rem;margin-top:.7rem;flex-wrap:wrap;font-size:.73rem;color:#475569">
+          <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;display:inline-block"></span><span data-i18n="punchLegendComplete">已完成</span></span>
+          <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span><span data-i18n="punchLegendWorking">工作中</span></span>
+        </div>
+      </div>
       <div class="card" style="padding:0">
-        <div style="padding:1rem 1rem .5rem;font-size:1rem;font-weight:700">打卡历史记录</div>
+        <div style="padding:1rem 1rem .5rem;font-size:1rem;font-weight:700" data-i18n="punchHistTitle">打卡历史记录</div>
         <div style="overflow-x:auto;padding:0 1rem 1rem">
-          <table style="min-width:780px"><thead><tr style="white-space:nowrap"><th>日期</th><th>工作</th><th>上班</th><th>休息开始</th><th>休息结束</th><th>下班</th><th>工时</th><th>正常</th><th>加班</th><th>状态</th><th>位置</th></tr></thead>
+          <table style="min-width:780px"><thead><tr style="white-space:nowrap"><th data-i18n="thDate">日期</th><th data-i18n="thJob">工作</th><th data-i18n="thClockIn">上班</th><th data-i18n="thBreakStart">休息开始</th><th data-i18n="thBreakEnd">休息结束</th><th data-i18n="thClockOut">下班</th><th data-i18n="thHours">工时</th><th data-i18n="thRegular">正常</th><th data-i18n="thOvertime">加班</th><th data-i18n="thStatus">状态</th><th data-i18n="thLocation">位置</th></tr></thead>
           <tbody id="timeclockTable"></tbody></table>
         </div>
       </div>
@@ -1135,7 +1151,14 @@ const PORTAL_I18N = {
     calLegend: { accepted:'已接受', pending:'待确认', declined:'已拒绝', punched:'已打卡', projected:'计划班次' },
     calDow: ['日','一','二','三','四','五','六'],
     taskTitle: '📋 我的任务', pendingTaskTitle: '🔔 待确认任务',
-    appTitle: '我的申请记录'
+    appTitle: '我的申请记录',
+    punchCalTitle: '📅 打卡日历', punchHistTitle: '打卡历史记录',
+    punchLegendComplete: '已完成', punchLegendWorking: '工作中',
+    tcCurrentJobs: '💼 当前工作安排',
+    tcPunchIn: '▶ 上班打卡', tcBreakStart: '⏸ 休息开始', tcBreakEnd: '▶ 休息结束', tcPunchOut: '⏹ 下班打卡',
+    tcSelectJob: '选择打卡工作 / Select job to clock in for',
+    thDate: '日期', thJob: '工作', thClockIn: '上班', thBreakStart: '休息开始', thBreakEnd: '休息结束',
+    thClockOut: '下班', thHours: '工时', thRegular: '正常', thOvertime: '加班', thStatus: '状态', thLocation: '位置'
   },
   en: {
     loginTitle: 'Worker Portal',
@@ -1159,7 +1182,14 @@ const PORTAL_I18N = {
     calLegend: { accepted:'Accepted', pending:'Pending', declined:'Declined', punched:'Clocked', projected:'Scheduled' },
     calDow: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
     taskTitle: '📋 My Tasks', pendingTaskTitle: '🔔 Pending Tasks',
-    appTitle: 'My Applications'
+    appTitle: 'My Applications',
+    punchCalTitle: '📅 Punch Calendar', punchHistTitle: 'Punch History',
+    punchLegendComplete: 'Completed', punchLegendWorking: 'Working',
+    tcCurrentJobs: '💼 Current Assignments',
+    tcPunchIn: '▶ Clock In', tcBreakStart: '⏸ Break Start', tcBreakEnd: '▶ Break End', tcPunchOut: '⏹ Clock Out',
+    tcSelectJob: 'Select job to clock in for',
+    thDate: 'Date', thJob: 'Job', thClockIn: 'In', thBreakStart: 'Break Start', thBreakEnd: 'Break End',
+    thClockOut: 'Out', thHours: 'Hours', thRegular: 'Regular', thOvertime: 'OT', thStatus: 'Status', thLocation: 'Location'
   },
   es: {
     loginTitle: 'Portal del Trabajador',
@@ -1183,7 +1213,14 @@ const PORTAL_I18N = {
     calLegend: { accepted:'Aceptado', pending:'Pendiente', declined:'Rechazado', punched:'Registrado', projected:'Programado' },
     calDow: ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'],
     taskTitle: '📋 Mis Tareas', pendingTaskTitle: '🔔 Tareas Pendientes',
-    appTitle: 'Mis Solicitudes'
+    appTitle: 'Mis Solicitudes',
+    punchCalTitle: '📅 Calendario de Asistencia', punchHistTitle: 'Historial de Asistencia',
+    punchLegendComplete: 'Completado', punchLegendWorking: 'Trabajando',
+    tcCurrentJobs: '💼 Asignaciones Actuales',
+    tcPunchIn: '▶ Entrada', tcBreakStart: '⏸ Inicio Descanso', tcBreakEnd: '▶ Fin Descanso', tcPunchOut: '⏹ Salida',
+    tcSelectJob: 'Seleccione trabajo para registrar',
+    thDate: 'Fecha', thJob: 'Trabajo', thClockIn: 'Entrada', thBreakStart: 'Inicio Desc.', thBreakEnd: 'Fin Desc.',
+    thClockOut: 'Salida', thHours: 'Horas', thRegular: 'Normal', thOvertime: 'Extra', thStatus: 'Estado', thLocation: 'Ubicación'
   }
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
@@ -2727,6 +2764,87 @@ async function loadTimeclock() {
     }
     return html;
   }).join('') : '<tr><td colspan="11" class="empty">暂无 Check In / Out 记录</td></tr>';
+  renderPunchCalendar(entries);
+}
+
+// ─── Punch History Calendar ───
+let _punchCalYear, _punchCalMonth, _punchCalEntries = [];
+function initPunchCal() {
+  const now = new Date();
+  _punchCalYear = now.getFullYear();
+  _punchCalMonth = now.getMonth() + 1;
+}
+initPunchCal();
+
+function punchCalChangeMonth(delta) {
+  _punchCalMonth += delta;
+  if (_punchCalMonth > 12) { _punchCalMonth = 1; _punchCalYear++; }
+  if (_punchCalMonth < 1)  { _punchCalMonth = 12; _punchCalYear--; }
+  renderPunchCalendar(_punchCalEntries);
+}
+
+function renderPunchCalendar(entries) {
+  _punchCalEntries = entries || [];
+  const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
+  const grid = document.getElementById('punchCalGrid');
+  if (!grid) return;
+
+  // Build date map from entries
+  const dayMap = {}; // dateStr -> { status, hours }
+  for (const t of _punchCalEntries) {
+    if (!t.clock_in) continue;
+    const tz = t.display_timezone || 'America/Chicago';
+    const dateStr = new Date(t.clock_in).toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+    const existing = dayMap[dateStr];
+    const hours = t.total_hours || 0;
+    const isClosed = t.status === 'closed';
+    if (!existing) {
+      dayMap[dateStr] = { hours, closed: isClosed };
+    } else {
+      existing.hours += hours;
+      if (!isClosed) existing.closed = false;
+    }
+  }
+
+  const y = _punchCalYear, m = _punchCalMonth;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const firstDow = new Date(y, m - 1, 1).getDay();
+  const todayStr = new Date().toLocaleDateString('en-CA');
+
+  const monthLabel = `${y}年${m}月`;
+  document.getElementById('punchCalMonthLabel').textContent = monthLabel;
+
+  const dowLabels = L.calDow || ['日','一','二','三','四','五','六'];
+  let html = dowLabels.map(d => `<div style="font-size:.7rem;font-weight:600;color:var(--gray-400);padding:.2rem 0">${d}</div>`).join('');
+  for (let i = 0; i < firstDow; i++) html += '<div></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday = dateStr === todayStr;
+    const entry = dayMap[dateStr];
+    const hasPunch = !!entry;
+    const isClosed = entry && entry.closed;
+
+    let dotHtml = '';
+    if (hasPunch) {
+      const color = isClosed ? '#16a34a' : '#f59e0b';
+      dotHtml = `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color}"></span>`;
+    }
+
+    const bg = isToday ? '#1d4ed8' : (hasPunch ? (isClosed ? '#f0fdf4' : '#fefce8') : 'transparent');
+    const border = isToday ? 'none' : (hasPunch ? (isClosed ? '1px solid #bbf7d0' : '1px solid #fde68a') : '1px solid transparent');
+    const numColor = isToday ? '#fff' : (hasPunch ? '#1e293b' : '#cbd5e1');
+    const numWeight = (isToday || hasPunch) ? '700' : '400';
+    const hoursLabel = entry && entry.hours ? `<div style="font-size:.55rem;color:${isClosed?'#16a34a':'#d97706'};line-height:1">${entry.hours.toFixed(1)}h</div>` : '';
+
+    html += `<div style="border-radius:8px;padding:.2rem .05rem;background:${bg};border:${border};min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+      <span style="font-size:.8rem;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>
+      ${dotHtml ? `<div style="line-height:1">${dotHtml}</div>` : ''}
+      ${hoursLabel}
+    </div>`;
+  }
+
+  grid.innerHTML = html;
 }
 
 async function loadPayments() {
