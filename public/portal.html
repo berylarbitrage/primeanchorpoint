@@ -239,21 +239,6 @@ body{top:0!important}
     }
   }
 
-  // Restore original language via GT instance API, then combo fallback.
-  function _restoreOriginal() {
-    try {
-      var inst = google.translate.TranslateElement.getInstance();
-      if (inst && typeof inst.restore === 'function') { inst.restore(); return true; }
-    } catch(e) {}
-    var combo = document.querySelector('select.goog-te-combo');
-    if (!combo) return false;
-    // Find the first option whose value is empty or equals the source lang
-    var opt = combo.querySelector('option[value=""]') || combo.querySelector('option[value="zh-CN"]');
-    combo.value = opt ? opt.value : '';
-    combo.dispatchEvent(new Event('change'));
-    return true;
-  }
-
   // Drive the goog-te-combo (Google Translate's internal select) directly.
   // Returns true if the combo was found and acted on.
   function _driveCombo(lang) {
@@ -274,14 +259,16 @@ body{top:0!important}
   }
 
   window._gtDoTranslate = function(lang) {
-    _setCookie(lang);
+    _setCookie(lang); // clears cookie when lang===zh-CN
     _syncSelects(lang);
     if (lang === 'zh-CN') {
-      // Restore to original Chinese — use GT's restore() API first
-      if (_restoreOriginal()) return;
-      // GT not ready yet — retry
-      var n = 0;
-      var t = setInterval(function(){ if (_restoreOriginal() || ++n > 30) clearInterval(t); }, 100);
+      // Clear any GT localStorage keys then reload — autoDisplay:false means
+      // GT will NOT re-translate after reload when no googtrans cookie exists.
+      try {
+        Object.keys(localStorage).filter(function(k){ return /googtrans|goog_te/.test(k); })
+          .forEach(function(k){ localStorage.removeItem(k); });
+      } catch(e) {}
+      window.location.reload();
       return;
     }
     if (_driveCombo(lang)) return;
