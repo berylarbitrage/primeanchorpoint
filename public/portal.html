@@ -2957,11 +2957,19 @@ function showPunchConfirmMap() {
     const jobId = sel ? parseInt(sel.value) : null;
     const jobs = _punchStatus.active_jobs || [];
     const job = jobs.find(j => j.job_id === jobId) || jobs[0];
-    if (job && job.site_lat && job.site_lng) {
-      fenceLat = job.site_lat;
-      fenceLng = job.site_lng;
-      fenceRadius = job.radius_meters || 200;
-      fenceName = job.site_name || job.title || '';
+    if (job) {
+      // Prefer assignment-level work location; fall back to job site
+      if (job.work_lat && job.work_lng) {
+        fenceLat = job.work_lat;
+        fenceLng = job.work_lng;
+        fenceRadius = job.work_radius || 200;
+        fenceName = job.title || '';
+      } else if (job.site_lat && job.site_lng) {
+        fenceLat = job.site_lat;
+        fenceLng = job.site_lng;
+        fenceRadius = job.radius_meters || 200;
+        fenceName = job.site_name || job.title || '';
+      }
     }
   }
 

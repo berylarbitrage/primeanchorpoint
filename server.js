@@ -6544,7 +6544,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
       SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
              COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
              j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
-             a.work_schedule
+             a.work_schedule, a.work_lat, a.work_lng, a.work_radius
       FROM employee_jobs ej
       JOIN jobs j ON ej.job_id = j.id
       LEFT JOIN job_sites js ON j.site_id = js.id
@@ -6560,7 +6560,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
            COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
            j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
-           a.work_schedule
+           a.work_schedule, a.work_lat, a.work_lng, a.work_radius
     FROM assignments a
     JOIN jobs j ON a.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
