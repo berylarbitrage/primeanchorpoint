@@ -844,7 +844,9 @@ function renderTimeClock(rows) {
     const clockOutPhoto = t.punch_photo_path ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(t.punch_photo_path)}`, '下班') : (t.punch_photo ? photoThumb(t.punch_photo, '下班') : '');
     const photoRows = [];
     if (clockInPin || clockOutPin || clockInPhoto || clockOutPhoto) {
-      photoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:1px 0">${clockInPin}<div style="display:flex;gap:2px">${clockInPhoto}${clockOutPhoto}</div>${clockOutPin}</div>`);
+      const ciPair = (clockInPin || clockInPhoto) ? `<div style="display:inline-flex;align-items:center;gap:2px">${clockInPin}${clockInPhoto}</div>` : '';
+      const coPair = (clockOutPhoto || clockOutPin) ? `<div style="display:inline-flex;align-items:center;gap:2px">${clockOutPhoto}${clockOutPin}</div>` : '';
+      photoRows.push(`<div style="display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap;margin:1px 0">${ciPair}${coPair}</div>`);
     }
     breakRecs.forEach((b, i) => {
       const breakStartPin = (b.latitude && b.longitude) ? `<span onclick="showMiniMap(event,${b.latitude},${b.longitude},'休息${i+1}开')" title="休息${i+1}开始位置" style="cursor:pointer;font-size:1rem">🟠</span>` : '';
@@ -852,10 +854,12 @@ function renderTimeClock(rows) {
       const startPhoto = b.start_photo ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.start_photo)}`, `休息${i+1}开`) : '';
       const endPhoto = b.end_photo ? photoThumb(`/api/admin/punch-photo/${encodeURIComponent(b.end_photo)}`, `休息${i+1}结`) : '';
       if (breakStartPin || breakEndPin || startPhoto || endPhoto) {
-        photoRows.push(`<div style="display:flex;align-items:center;gap:4px;margin:1px 0">${breakStartPin}<div style="display:flex;gap:2px">${startPhoto}${endPhoto}</div>${breakEndPin}</div>`);
+        const bStartPair = (breakStartPin || startPhoto) ? `<div style="display:inline-flex;align-items:center;gap:2px">${breakStartPin}${startPhoto}</div>` : '';
+        const bEndPair = (endPhoto || breakEndPin) ? `<div style="display:inline-flex;align-items:center;gap:2px">${endPhoto}${breakEndPin}</div>` : '';
+        photoRows.push(`<div style="display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap;margin:1px 0">${bStartPair}${bEndPair}</div>`);
       }
     });
-    const photoCell = photoRows.length ? `<div style="display:flex;flex-direction:column">${photoRows.join('')}</div>` : '—';
+    const photoCell = photoRows.length ? `<div style="display:flex;flex-direction:column;gap:1px">${photoRows.join('')}</div>` : '—';
     const tz = t.display_timezone;
     const incomplete = hasIncompleteLoop(t);
     const rowStyle = incomplete ? ' style="background:linear-gradient(to right,#f87171 0px,#f87171 4px,#fff5f5 4px,#fff5f5 100%);"' : '';
