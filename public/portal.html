@@ -2264,12 +2264,12 @@ function renderCalendar() {
     const untilFurther = !!sched.untilFurther;
     const days = _parseScheduleDays(sched, jobSched);
     for (let d = 1; d <= daysInMonth; d++) {
-      const dateObj = new Date(_calYear, _calMonth - 1, d);
-      const dateStr = dateObj.toISOString().slice(0, 10);
+      const dateStr = `${_calYear}-${String(_calMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const dow = new Date(_calYear, _calMonth - 1, d).getDay();
       if (confMap[dateStr]) continue; // already confirmed, don't double-mark
       if (workStart && dateStr < workStart) continue;
       if (!untilFurther && workEnd && dateStr > workEnd) continue;
-      const dayInfo = days[_CAL_DOW_KEYS[dateObj.getDay()]];
+      const dayInfo = days[_CAL_DOW_KEYS[dow]];
       if (dayInfo && !dayInfo.rest) projectedDays.add(dateStr);
     }
   });
