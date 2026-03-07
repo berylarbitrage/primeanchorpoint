@@ -1002,7 +1002,7 @@ tr:last-child td{border-bottom:none}
             <div style="font-size:.75rem;color:var(--gray-500);margin-bottom:.5rem" data-i18n="refShareLabel">分享给朋友</div>
             <div style="display:flex;flex-wrap:wrap;gap:.45rem">
               <button id="refNativeShareBtn" onclick="shareReferral('native')" style="display:none;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#0F2B5B;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer" data-i18n="refNativeShare">📤 分享</button>
-              <button onclick="shareReferral('sms')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#22c55e;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer">💬 短信 SMS</button>
+              <button onclick="shareReferral('sms')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#22c55e;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer" data-i18n="refSMS">💬 短信 SMS</button>
               <button onclick="shareReferral('whatsapp')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#25D366;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.557 4.126 1.527 5.858L0 24l6.335-1.501A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.885 0-3.64-.52-5.144-1.422l-.366-.217-3.762.891.948-3.668-.239-.378A9.96 9.96 0 012 12C2 6.477 6.477 2 12 2s10 4.477 10 10-4.477 10-10 10z"/></svg> WhatsApp</button>
               <button onclick="shareReferral('facebook')" style="display:inline-flex;align-items:center;gap:.35rem;padding:.45rem .85rem;background:#1877F2;color:#fff;border:none;border-radius:20px;font-size:.8rem;font-weight:600;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg> Facebook</button>
             </div>
@@ -1163,7 +1163,7 @@ const PORTAL_I18N = {
     payMethodCash: '💵 现金', payMethodCheck: '📄 支票', payMethodDeposit: '🏦 直接存款', payMethodOther: '其他',
     todoTitle: '📋 我的入职待办事项', todoDesc: '请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。',
     refTitle: '🎁 推荐奖励', refDesc: '把您的专属链接分享给朋友，朋友成功注册并完成规定工时后，您可获得奖励！',
-    refLinkLabel: '您的专属邀请链接', refCopy: '复制', refShareLabel: '分享给朋友', refNativeShare: '📤 分享', refScanLabel: '扫码注册',
+    refLinkLabel: '您的专属邀请链接', refCopy: '复制', refShareLabel: '分享给朋友', refNativeShare: '📤 分享', refSMS: '💬 短信 SMS', refScanLabel: '扫码注册',
     refStatReferred: '成功邀请', refStatPending: '待达标', refStatEarned: '已获奖励', refPeopleTitle: '已邀请人员',
     refNoRecords: '暂无邀请记录，快去分享链接吧！',
     refTHName: '姓名', refTHDate: '注册时间', refTHHours: '工时', refTHStatus: '状态',
@@ -1220,7 +1220,7 @@ const PORTAL_I18N = {
     payMethodCash: '💵 Cash', payMethodCheck: '📄 Check', payMethodDeposit: '🏦 Direct Deposit', payMethodOther: 'Other',
     todoTitle: '📋 My Onboarding To-Do', todoDesc: 'Complete each step in order. After each step, HR will review and unlock the next.',
     refTitle: '🎁 Referral Bonus', refDesc: 'Share your unique link with friends and earn a bonus for each one who registers and works the required hours!',
-    refLinkLabel: 'Your referral link', refCopy: 'Copy', refShareLabel: 'Share with friends', refNativeShare: '📤 Share', refScanLabel: 'Scan to Register',
+    refLinkLabel: 'Your referral link', refCopy: 'Copy', refShareLabel: 'Share with friends', refNativeShare: '📤 Share', refSMS: '💬 SMS', refScanLabel: 'Scan to Register',
     refStatReferred: 'Referred', refStatPending: 'Pending', refStatEarned: 'Earned', refPeopleTitle: 'People You Referred',
     refNoRecords: 'No referrals yet — share your link!',
     refTHName: 'Name', refTHDate: 'Registered', refTHHours: 'Hours', refTHStatus: 'Status',
@@ -1277,7 +1277,7 @@ const PORTAL_I18N = {
     payMethodCash: '💵 Efectivo', payMethodCheck: '📄 Cheque', payMethodDeposit: '🏦 Depósito Directo', payMethodOther: 'Otro',
     todoTitle: '📋 Mis Tareas de Incorporación', todoDesc: 'Complete cada paso en orden. Tras cada paso, RR.HH. revisará y desbloqueará el siguiente.',
     refTitle: '🎁 Bono por Referidos', refDesc: '¡Comparte tu enlace único con amigos y gana un bono por cada uno que se registre y cumpla las horas requeridas!',
-    refLinkLabel: 'Tu enlace de referido', refCopy: 'Copiar', refShareLabel: 'Compartir con amigos', refNativeShare: '📤 Compartir', refScanLabel: 'Escanear para Registrarse',
+    refLinkLabel: 'Tu enlace de referido', refCopy: 'Copiar', refShareLabel: 'Compartir con amigos', refNativeShare: '📤 Compartir', refSMS: '💬 SMS', refScanLabel: 'Escanear para Registrarse',
     refStatReferred: 'Referidos', refStatPending: 'Pendiente', refStatEarned: 'Ganado', refPeopleTitle: 'Personas Referidas',
     refNoRecords: 'Sin referidos aún — ¡comparte tu enlace!',
     refTHName: 'Nombre', refTHDate: 'Registrado', refTHHours: 'Horas', refTHStatus: 'Estado',
