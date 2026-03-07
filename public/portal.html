@@ -1037,11 +1037,11 @@ tr:last-child td{border-bottom:none}
         <h2 style="margin-bottom:1rem">📱 联系方式</h2>
         <div id="profileContact"></div>
       </div>
-      <!-- Identity Verification -->
-      <div class="card" style="margin-bottom:1rem">
+      <!-- Identity Verification (hidden until admin initiates) -->
+      <div id="profileIdentityCard" class="card" style="margin-bottom:1rem;display:none">
         <h2 style="margin-bottom:.3rem">🪪 身份验证</h2>
         <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem">由HR发起 · 驾照 + 自拍 + SSN核验 · 通过Persona平台</p>
-        <div id="profileIdentity"><p style="color:var(--gray-400);font-size:.88rem">加载中...</p></div>
+        <div id="profileIdentity"></div>
       </div>
       <!-- Manager Punch QR Code -->
       <div class="card" style="margin-bottom:1rem">
@@ -2875,10 +2875,13 @@ async function loadProfile() {
   const [me, docs, idStatus] = await Promise.all([wApi('/me'), wApi('/compliance'), wApi('/identity/status')]);
   if (!me) return;
 
-  // ── Identity verification ──
+  // ── Identity verification (only show if admin has initiated) ──
+  const idCard = document.getElementById('profileIdentityCard');
   const idEl = document.getElementById('profileIdentity');
   if (idEl) {
     const st = idStatus?.status || 'not_sent';
+    if (st === 'not_sent') { if (idCard) idCard.style.display = 'none'; }
+    else { if (idCard) idCard.style.display = ''; }
     const sentAt = idStatus?.sent_at ? new Date(idStatus.sent_at).toLocaleDateString('zh-CN') : '';
     const statusMap = {
       not_sent: { icon:'⬜', label:'未发起', color:'var(--gray-400)', desc:'HR 面试通过后会为您发送验证链接' },
