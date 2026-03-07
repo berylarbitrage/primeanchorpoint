@@ -66,8 +66,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#faf5ff;color:var(--
 .login-lang-btn:hover{border-color:var(--sky);color:var(--sky)}
 .login-lang-btn.active{border-color:var(--sky);background:var(--sky);color:#fff}
 .lang-sw{display:flex;gap:.3rem;margin-bottom:.65rem}
-.lang-sw button{padding:.2rem .5rem;border:1px solid #d8b4fe;background:none;color:#7c3aed;border-radius:4px;font-size:.75rem;cursor:pointer}
-.lang-sw button.active,.lang-sw button:hover{background:#ede9fe;color:#7c3aed;border-color:#a78bfa}
+.lang-sw button{padding:.2rem .5rem;border:1.5px solid #a78bfa;background:#f3e8ff;color:#7c3aed;border-radius:4px;font-size:.75rem;cursor:pointer}
+.lang-sw button.active,.lang-sw button:hover{background:#ede9fe;color:#6d28d9;border-color:#7c3aed;font-weight:700}
 .sidebar-logout{width:100%;background:#f3e8ff;color:#7c3aed;border:none;padding:.4rem .8rem;border-radius:6px;cursor:pointer;font-size:.8rem;text-align:center}
 .sidebar-logout:hover{background:#e9d5ff;color:#6d28d9}
 .main-wrap{margin-left:220px;display:flex;flex-direction:column;min-height:100vh}
@@ -1122,7 +1122,7 @@ const PORTAL_I18N = {
     loginForgot: '忘记密码？',
     loginRegister: '注册账号',
     subtitle: '工人门户', logout: '退出',
-    tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'📋 待办事项', referral:'🎁 推荐奖励', profile:'我的信息' }
+    tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'待办事项', referral:'推荐奖励', profile:'我的信息' }
   },
   en: {
     loginTitle: 'Worker Portal',
@@ -1133,7 +1133,7 @@ const PORTAL_I18N = {
     loginForgot: 'Forgot password?',
     loginRegister: 'Register',
     subtitle: 'Worker Portal', logout: 'Logout',
-    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', compliance:'Compliance', todos:'📋 To-Do', referral:'🎁 Referrals', profile:'Profile' }
+    tabs: { jobs:'Jobs', interview:'My Schedule', applications:'Applications', timeclock:'Time Clock', payments:'Payments', compliance:'Compliance', todos:'To-Do', referral:'Referrals', profile:'Profile' }
   },
   es: {
     loginTitle: 'Portal del Trabajador',
@@ -1144,7 +1144,7 @@ const PORTAL_I18N = {
     loginForgot: '¿Olvidó su contraseña?',
     loginRegister: 'Registrarse',
     subtitle: 'Portal del Trabajador', logout: 'Salir',
-    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', compliance:'Documentos', todos:'📋 Tareas', referral:'🎁 Referidos', profile:'Perfil' }
+    tabs: { jobs:'Empleos', interview:'Mi Horario', applications:'Solicitudes', timeclock:'Marcador', payments:'Pagos', compliance:'Documentos', todos:'Tareas', referral:'Referidos', profile:'Perfil' }
   }
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
