@@ -2216,10 +2216,49 @@ function enablePunchBtn(ready) {
   // All 4 buttons are always enabled — GPS geofencing on the server is the only restriction.
   // Dim all only when status is unavailable or GPS not ready.
   const s = _punchStatus;
-  // All 4 buttons always enabled — GPS geofencing on the server is the only restriction.
-  const canPunch = s && !s.no_employee && (s.has_active_job || s.clocked_in) && ready;
-  const op = canPunch ? '1' : '.35';
-  [btnIn, btnBS, btnBE, btnOut].forEach(b => b.style.opacity = op);
+  if (!s || s.no_employee) {
+    [btnIn, btnBS, btnBE, btnOut].forEach(b => setBtn(b, false));
+    return;
+  }
+
+  // On break: Resume always enabled; Clock In enabled when switching to a different job (GPS needed)
+  if (s.clocked_in && s.on_break) {
+    const sel = document.getElementById('jobSelector');
+    const currentJobId = s.open_entry?.job_id;
+    const selectedJobId = sel ? parseInt(sel.value) : null;
+    const switchingJob = currentJobId && selectedJobId && selectedJobId !== currentJobId;
+    setBtn(btnIn,  switchingJob && ready);
+    setBtn(btnBS,  false);
+    setBtn(btnBE,  true);
+    setBtn(btnOut, false);
+    return;
+  }
+
+  if (!ready) {
+    // GPS not ready — allow Resume only (no geo-check needed)
+    [btnIn, btnBS, btnBE, btnOut].forEach(b => setBtn(b, false));
+    if (s.clocked_in && s.on_break) setBtn(btnBE, true);
+    return;
+  }
+
+  if (!s.clocked_in || s.missed_checkout) {
+    // Not clocked in (or previous day's entry wasn't closed — allow new clock-in)
+    setBtn(btnIn,  s.has_active_job);
+    setBtn(btnBS,  false);
+    setBtn(btnBE,  false);
+    setBtn(btnOut, false);
+  } else {
+    // Clocked in and working
+    // Allow clock-in to a DIFFERENT job (server will auto-close current entry)
+    const sel = document.getElementById('jobSelector');
+    const currentJobId = s.open_entry?.job_id;
+    const selectedJobId = sel ? parseInt(sel.value) : null;
+    const switchingJob = currentJobId && selectedJobId && selectedJobId !== currentJobId;
+    setBtn(btnIn,  switchingJob);
+    setBtn(btnBS,  true);
+    setBtn(btnBE,  false);
+    setBtn(btnOut, true);
+  }
 }
 
 async function loadPunchStatus() {
@@ -2255,14 +2294,18 @@ async function loadPunchStatus() {
   } else if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = '<span style="color:#7c3aed;font-weight:600">☕ 休息中</span>';
     timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
-    subEl.textContent = 'On break · Click "Resume Job" to continue';
-    // Populate selector so job_id is available if user punches any type while on break
     const jobs = s.active_jobs || [];
-    selector.innerHTML = jobs.map(j =>
-      `<option value="${j.job_id}" ${j.job_id === s.open_entry?.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
-    ).join('');
-    selector.disabled = true;
-    selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
+    if (jobs.length > 1) {
+      subEl.textContent = 'On break · Resume current job or select another job to switch';
+      selector.innerHTML = jobs.map(j =>
+        `<option value="${j.job_id}" ${j.job_id === s.open_entry?.job_id ? 'selected' : ''}>${esc(j.title)}${j.company_name ? ' · ' + esc(j.company_name) : ''}${j.site_name ? ' 📍' + esc(j.site_name) : ''}</option>`
+      ).join('');
+      selector.disabled = false;
+      selectorWrap.style.display = '';
+    } else {
+      subEl.textContent = 'On break · Click "Resume Job" to continue';
+      selectorWrap.style.display = 'none';
+    }
   } else if (s.clocked_in && s.open_entry) {
     const tz = s.open_entry.display_timezone || 'America/Chicago';
     const ci = s.open_entry.clock_in;
@@ -2393,10 +2436,10 @@ function showPunchConfirmMap() {
     }
   } else {
     _confirmMap.setView([userLat, userLng], 16);
-    label.innerHTML = `<span style="color:#f97316;font-weight:600">⚠ 该工作未设置工作范围</span><br><span style="font-size:.8rem;color:#92400e">请联系管理员配置工作地点后再打卡</span>`;
-    // No geofence configured — block punch
+    label.innerHTML = `<span style="color:#f97316;font-weight:600">⚠ 该工作未设置工作范围</span><br><span style="font-size:.8rem;color:#92400e">工作地点未配置，请联系管理员</span>`;
+    // No geofence configured — allow punch but show warning
     const execBtn = document.getElementById('btnExecutePunch');
-    if (execBtn) { execBtn.disabled = true; execBtn.style.opacity = '.4'; execBtn.style.cursor = 'not-allowed'; }
+    if (execBtn) { execBtn.disabled = false; execBtn.style.opacity = '1'; execBtn.style.cursor = 'pointer'; }
   }
 
   // Ensure map renders correctly after display
