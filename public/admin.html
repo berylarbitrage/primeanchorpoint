@@ -3267,19 +3267,17 @@ tr:hover td{background:var(--sky-light)}
 <!-- Partner Delete Confirm Modal -->
 <div class="modal-bg" id="partnerDeleteModal">
   <div class="modal" style="max-width:420px">
-    <div style="text-align:center;padding:.5rem 0 1rem">
-      <div style="font-size:2.2rem;margin-bottom:.5rem">🗑️</div>
-      <h3 style="color:#B91C1C;margin:0 0 .4rem;font-size:1.1rem">确认删除合作公司</h3>
-      <p style="font-size:.85rem;color:#6B7280;margin:0 0 .2rem">即将永久删除：</p>
-      <p id="partnerDeleteName" style="font-weight:700;font-size:.95rem;color:#111827;margin:.3rem 0"></p>
-      <p id="partnerDeleteNum" style="font-size:.78rem;color:#9CA3AF;font-family:monospace;margin:0 0 1rem"></p>
-      <p style="font-size:.82rem;color:#EF4444;background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:.6rem .9rem;margin:0 0 1.2rem;line-height:1.5">
-        此操作不可撤销，公司所有文件将一并删除。
-      </p>
-    </div>
-    <div style="display:flex;gap:.7rem">
-      <button class="btn btn-outline" style="flex:1" onclick="document.getElementById('partnerDeleteModal').classList.remove('show')">取消</button>
-      <button class="btn btn-red" style="flex:1" id="partnerDeleteConfirmBtn" onclick="confirmDeletePartner()">确认删除</button>
+    <div style="font-size:1rem;font-weight:700;color:#B91C1C;margin-bottom:.6rem">⚠️ 删除合作公司</div>
+    <p style="font-size:.88rem;color:#4B5563;line-height:1.6;margin:0 0 1rem">
+      此操作将永久删除 <strong id="partnerDeleteName"></strong> 及其所有文件，无法恢复。<br>
+      请在下方输入公司名称以确认删除：
+    </p>
+    <input id="partnerDeleteInput" type="text" autocomplete="off"
+      placeholder="" oninput="onPartnerDeleteInput()"
+      style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:.88rem;margin-bottom:1.1rem;font-family:inherit;outline:none">
+    <div style="display:flex;gap:.6rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="document.getElementById('partnerDeleteModal').classList.remove('show')">取消</button>
+      <button class="btn btn-red" id="partnerDeleteConfirmBtn" disabled style="opacity:.45" onclick="confirmDeletePartner()">确认删除</button>
     </div>
   </div>
 </div>
@@ -7948,9 +7946,24 @@ let _deletePartnerId = null;
 function deletePartner(id) {
   _deletePartnerId = id;
   const p = allPartners.find(x => x.id === id);
-  document.getElementById('partnerDeleteName').textContent = p ? p.name : '';
-  document.getElementById('partnerDeleteNum').textContent = p && p.company_number ? p.company_number : '';
+  const name = p ? p.name : '';
+  document.getElementById('partnerDeleteName').textContent = name;
+  const inp = document.getElementById('partnerDeleteInput');
+  inp.value = '';
+  inp.placeholder = name;
+  const btn = document.getElementById('partnerDeleteConfirmBtn');
+  btn.disabled = true; btn.style.opacity = '.45';
   document.getElementById('partnerDeleteModal').classList.add('show');
+  setTimeout(() => inp.focus(), 80);
+}
+function onPartnerDeleteInput() {
+  const p = allPartners.find(x => x.id === _deletePartnerId);
+  const name = p ? p.name : '';
+  const inp = document.getElementById('partnerDeleteInput');
+  const btn = document.getElementById('partnerDeleteConfirmBtn');
+  const match = inp.value === name;
+  btn.disabled = !match;
+  btn.style.opacity = match ? '1' : '.45';
 }
 async function confirmDeletePartner() {
   if (!_deletePartnerId) return;
@@ -7958,7 +7971,8 @@ async function confirmDeletePartner() {
   btn.disabled = true; btn.textContent = '删除中…';
   await api(`/admin/partners/${_deletePartnerId}`, { method:'DELETE' });
   document.getElementById('partnerDeleteModal').classList.remove('show');
-  btn.disabled = false; btn.textContent = '确认删除';
+  btn.disabled = false; btn.textContent = '确认删除'; btn.style.opacity = '.45';
+  document.getElementById('partnerDeleteInput').value = '';
   _deletePartnerId = null;
   loadPartners();
 }
