@@ -1523,9 +1523,12 @@ tr:hover td{background:var(--sky-light)}
     <div id="obivBatchPreview" style="display:none;font-size:.78rem;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:5px;padding:.4rem .6rem;margin-bottom:.5rem"></div>
     <div class="field">
       <label>面试地点 *</label>
-      <select id="obivNewLocSel" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-        <option value="">— 选择地点 —</option>
-      </select>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <select id="obivNewLocSel" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <option value="">— 选择地点 —</option>
+        </select>
+        <button type="button" class="btn btn-sm" style="white-space:nowrap;background:#f0fdf4;color:#15803d;border:1px solid #86efac" onclick="obivOpenNewLocation()">＋ 新建</button>
+      </div>
     </div>
     <div class="field">
       <label>每场最大名额</label>
@@ -11738,7 +11741,11 @@ async function saveLocation() {
     if (document.getElementById('onboardingInterviewSlotModal').classList.contains('show')) {
       const locOpts = '<option value="">— 选择地点 —</option>' +
         (_ivLocations || []).map(l => `<option value="${l.id}">${esc(l.name)}${l.address ? ' — ' + esc(l.address) : ''}</option>`).join('');
-      document.getElementById('obivNewLocSel').innerHTML = locOpts;
+      const sel = document.getElementById('obivNewLocSel');
+      sel.innerHTML = locOpts;
+      // Auto-select the newly created location
+      const newId = r.id || (id ? parseInt(id) : null);
+      if (!id && newId) sel.value = newId;
     }
   } else {
     showToast('❌ ' + (r?.error || '保存失败'), 'error');
@@ -13371,6 +13378,12 @@ function obivToggleCreate() {
   _obivCreating = !_obivCreating;
   document.getElementById('obivCreateForm').style.display = _obivCreating ? '' : 'none';
   document.getElementById('obivCreateToggleBtn').textContent = _obivCreating ? '➖ 收起' : '➕ 创建新的面试时间';
+}
+
+function obivOpenNewLocation() {
+  // Open the location modal on top of the current modal, then return focus
+  document.getElementById('ivLocationModal').style.zIndex = '300';
+  openLocationModal(null);
 }
 
 function obivUpdateBatchPreview() {
