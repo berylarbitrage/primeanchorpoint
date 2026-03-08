@@ -5021,6 +5021,12 @@ app.delete('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('d
   res.json({ success: true });
 });
 
+app.delete('/api/admin/employees/:id/hard-delete', requireAdmin, requireRole('admin'), (req, res) => {
+  const id = req.params.id;
+  db.prepare('DELETE FROM employees WHERE id=?').run(id);
+  res.json({ success: true });
+});
+
 // ─── DOCUMENT ROUTES ───
 
 app.get('/api/admin/employees/:id/documents', requireAdmin, blockManager, (req, res) => {

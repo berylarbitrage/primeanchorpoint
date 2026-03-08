@@ -1060,6 +1060,7 @@ tr:hover td{background:var(--sky-light)}
     <button class="emp-menu-item" id="empMenuRegLink" style="color:#7c3aed">📱 发送注册链接</button>
     <div style="height:1px;background:var(--gray-200);margin:4px 0"></div>
     <button class="emp-menu-item" id="empMenuTerminate" style="color:#dc2626;display:none">🚪 办理离职</button>
+    <button class="emp-menu-item" id="empMenuDelete" style="color:#dc2626;display:none">🗑️ 删除员工</button>
   </div>
 </div>
 
@@ -7983,6 +7984,7 @@ function openEmpActionMenu(evt, id, name, canTerminate) {
   _empMenuCanTerminate = canTerminate;
   const menu = _empMenuEl();
   document.getElementById('empMenuTerminate').style.display = canTerminate ? '' : 'none';
+  document.getElementById('empMenuDelete').style.display = USER_ROLE === 'admin' ? '' : 'none';
   menu.style.display = 'block';
   const rect = evt.currentTarget.getBoundingClientRect();
   const menuW = 190, menuH = 290;
@@ -8004,6 +8006,7 @@ document.getElementById('empMenuRate').onclick     = () => { _closeEmpMenu(); op
 document.getElementById('empMenuDoc').onclick      = () => { _closeEmpMenu(); sendEmpDocLink(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuRegLink').onclick  = () => { _closeEmpMenu(); openSendRegLinkModal(_empMenuCurrentId, _empMenuCurrentName); };
 document.getElementById('empMenuTerminate').onclick= () => { _closeEmpMenu(); terminateEmployee(_empMenuCurrentId, _empMenuCurrentName); };
+document.getElementById('empMenuDelete').onclick   = () => { _closeEmpMenu(); deleteEmployee(_empMenuCurrentId, _empMenuCurrentName); };
 
 // ── Send Registration Link modal ──
 function openSendRegLinkModal(empId, empName) {
@@ -8707,6 +8710,40 @@ async function terminateEmployee(id, name) {
   });
   if (!confirmed) return;
   await api(`/admin/employees/${id}`, { method:'DELETE' });
+  loadEmployees();
+}
+
+async function deleteEmployee(id, name) {
+  const confirmed = await new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000;font-family:\'DM Sans\',sans-serif';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem';
+    box.innerHTML =
+      '<div style="font-size:.95rem;font-weight:700;color:#dc2626;margin-bottom:.75rem">⚠️ 永久删除员工</div>' +
+      '<div style="font-size:.875rem;color:#2D3748;line-height:1.6;margin-bottom:1rem">此操作将<strong>永久删除</strong>该员工的所有数据，不可恢复。请输入员工全名 <strong>' + name + '</strong> 以确认：</div>' +
+      '<input id="_deleteEmpInput" type="text" placeholder="输入员工全名" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #e2e5ea;border-radius:8px;font-size:.875rem;font-family:inherit;outline:none;margin-bottom:1rem">' +
+      '<div style="display:flex;gap:.6rem;justify-content:flex-end">' +
+        '<button class="_sc-cancel" style="padding:8px 18px;border:1px solid #e2e5ea;border-radius:8px;background:transparent;color:#5F6B7A;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">取消</button>' +
+        '<button class="_sc-confirm" disabled style="padding:8px 18px;border:none;border-radius:8px;background:#dc2626;color:#fff;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit;opacity:.45">永久删除</button>' +
+      '</div>';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const input = box.querySelector('#_deleteEmpInput');
+    const confirmBtn = box.querySelector('._sc-confirm');
+    input.addEventListener('input', () => {
+      const match = input.value === name;
+      confirmBtn.disabled = !match;
+      confirmBtn.style.opacity = match ? '1' : '.45';
+    });
+    const cleanup = r => { document.body.removeChild(overlay); resolve(r); };
+    confirmBtn.onclick = () => { if (!confirmBtn.disabled) cleanup(true); };
+    box.querySelector('._sc-cancel').onclick = () => cleanup(false);
+    overlay.onclick = e => { if (e.target === overlay) cleanup(false); };
+    setTimeout(() => input.focus(), 50);
+  });
+  if (!confirmed) return;
+  await api(`/admin/employees/${id}/hard-delete`, { method: 'DELETE' });
   loadEmployees();
 }
 
