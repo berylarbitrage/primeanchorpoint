@@ -2522,6 +2522,18 @@ async function confirmBookSlot() {
 // Pay period Chinese names → internal key used in payPeriods map
 const _PAY_PERIOD_ZH = { '时薪':'hourly','日薪':'daily','周薪':'weekly','双周':'biweekly','半月薪':'semimonthly','月薪':'monthly' };
 
+// Day-of-week abbreviation maps for job listing work_days field
+const _DOW_MAP = {
+  zh: { Mon:'周一', Tue:'周二', Wed:'周三', Thu:'周四', Fri:'周五', Sat:'周六', Sun:'周日' },
+  es: { Mon:'Lun', Tue:'Mar', Wed:'Mié', Thu:'Jue', Fri:'Vie', Sat:'Sáb', Sun:'Dom' }
+};
+
+function _translateWorkDays(workDays, lang) {
+  const map = _DOW_MAP[lang];
+  if (!map || !workDays) return workDays || '';
+  return workDays.split(',').map(d => map[d.trim()] || d.trim()).join(',');
+}
+
 async function _preTranslateJobs(jobs) {
   const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
   await Promise.all(jobs.map(async j => {
@@ -2535,6 +2547,8 @@ async function _preTranslateJobs(jobs) {
     j._benefitsT = j.benefits ? await _gtranslate(j.benefits, _portalLang) : '';
     // Pay period: normalize Chinese key then translate label
     j._payPeriodKey = _PAY_PERIOD_ZH[j.pay_period] || j.pay_period || '';
+    // Work days: translate day abbreviations (Mon→周一, Tue→周二, etc.)
+    j._workDaysT = _translateWorkDays(j.work_days, _portalLang);
   }));
 }
 
@@ -2584,7 +2598,7 @@ function renderJobs(jobs) {
           ${jobType?` · ${esc(jobType)}`:''}
           ${empType?` · ${esc(empType)}`:''}
         </div>
-        ${j.work_days||j.work_start?`<div class="job-meta" style="margin-top:.25rem">⏰ ${esc(j.work_days||'')} ${j.work_start?j.work_start+'–'+(j.work_end||'?'):''}</div>`:''}
+        ${j.work_days||j.work_start?`<div class="job-meta" style="margin-top:.25rem">⏰ ${esc(j._workDaysT||j.work_days||'')} ${j.work_start?j.work_start+'–'+(j.work_end||'?'):''}</div>`:''}
         ${benefits?`<div class="job-meta" style="margin-top:.25rem">🎁 ${esc(benefits)}</div>`:''}
         ${authLabel(j.work_auth)?`<div class="job-meta" style="margin-top:.2rem">🪪 ${authLabel(j.work_auth)}</div>`:''}
         ${j.description?`<div style="margin-top:.5rem;font-size:.82rem;color:var(--gray-700);line-height:1.5">${esc(j.description).slice(0,160)}${j.description.length>160?'…':''}</div>`:''}
