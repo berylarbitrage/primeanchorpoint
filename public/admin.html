@@ -1442,6 +1442,46 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- Onboarding Interview Slot Modal -->
+<div class="modal-bg" id="onboardingInterviewSlotModal"><div class="modal" style="max-width:500px">
+  <h2>📅 创建面试时间</h2>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">请先设置面试时间和地点，创建后将发送给工人。</p>
+  <div class="field">
+    <label>面试时间 *</label>
+    <input type="datetime-local" id="obivSlotDatetime" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+  </div>
+  <div class="field">
+    <label>选择预设地点</label>
+    <select id="obivSlotLocationSelect" onchange="obivToggleManualAddr()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+      <option value="">— 手动输入地址 —</option>
+    </select>
+  </div>
+  <div id="obivManualAddrWrap">
+    <div class="field">
+      <label>面试地址 * <span style="font-weight:400;color:var(--gray-400);font-size:.75rem">（需通过验证）</span></label>
+      <input type="text" id="obivSlotAddress" placeholder="例：123 Main St, Los Angeles, CA 90001" oninput="clearAddrStatus('obivAddrStatus')" onblur="autoVerifySingleAddr('obivSlotAddress','obivAddrStatus')">
+    </div>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-top:-.25rem;margin-bottom:.75rem">
+      <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('obivSlotAddress','obivAddrStatus')">🔍 验证地址</button>
+      <span id="obivAddrStatus" style="font-size:.8rem;font-weight:600"></span>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+    <div class="field">
+      <label>时长（分钟）</label>
+      <input type="number" id="obivSlotDuration" value="30" min="10" max="180">
+    </div>
+    <div class="field">
+      <label>最大预约名额</label>
+      <input type="number" id="obivSlotMax" value="1" min="1" max="20">
+    </div>
+  </div>
+  <div class="modal-actions">
+    <button class="btn btn-green" onclick="saveOnboardingInterviewSlot()">✅ 创建并发送给工人</button>
+    <button class="btn" onclick="closeModal('onboardingInterviewSlotModal')">取消</button>
+  </div>
+</div></div>
+
 <!-- Interview Location Modal -->
 <div class="modal-bg" id="ivLocationModal"><div class="modal" style="max-width:520px">
   <h2 id="ivLocModalTitle">添加面试地点</h2>
@@ -10706,6 +10746,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
+            : t.key==='interview' && !isVisible
+            ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 发送给工人面试</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -13149,6 +13191,72 @@ function toggleAllMgrAssignEmps() {
     c.checked = anyUnchecked;
     _mgrAssignEmpChecks[parseInt(c.value)] = anyUnchecked;
   });
+}
+
+// ── Onboarding Interview Slot Creation ──
+async function openOnboardingInterviewSlotModal() {
+  if (!_ivLocations || !_ivLocations.length) { await loadInterviewLocations(); }
+  const sel = document.getElementById('obivSlotLocationSelect');
+  sel.innerHTML = '<option value="">— 手动输入地址 —</option>' +
+    (_ivLocations||[]).map(l => `<option value="${l.id}">${esc(l.name)}${l.address?' — '+esc(l.address):''}</option>`).join('');
+  document.getElementById('obivSlotDatetime').value = '';
+  document.getElementById('obivSlotAddress').value = '';
+  document.getElementById('obivSlotDuration').value = '30';
+  document.getElementById('obivSlotMax').value = '1';
+  clearAddrStatus('obivAddrStatus');
+  obivToggleManualAddr();
+  document.getElementById('onboardingInterviewSlotModal').classList.add('show');
+}
+
+function obivToggleManualAddr() {
+  const sel = document.getElementById('obivSlotLocationSelect').value;
+  document.getElementById('obivManualAddrWrap').style.display = sel ? 'none' : '';
+}
+
+async function saveOnboardingInterviewSlot() {
+  const dt = document.getElementById('obivSlotDatetime').value;
+  if (!dt) return showToast('❌ 请选择面试时间', 'error');
+
+  const selId = document.getElementById('obivSlotLocationSelect').value;
+  let location = '', contact_name = '', contact_phone = '', instructions = '';
+
+  if (selId) {
+    const loc = (_ivLocations||[]).find(l => l.id == selId);
+    if (loc) {
+      location = loc.address || '';
+      contact_name = loc.contact_name || '';
+      contact_phone = loc.contact_phone || '';
+      instructions = loc.instructions || '';
+    }
+  } else {
+    location = document.getElementById('obivSlotAddress').value.trim();
+    if (!location) return showToast('❌ 请输入面试地址', 'error');
+    const addrResult = await validateAddressSingleField(location);
+    if (!addrResult.proceed) return;
+    if (addrResult.standardized) {
+      location = addrResult.standardized;
+      document.getElementById('obivSlotAddress').value = addrResult.standardized;
+    }
+  }
+
+  const r = await api('/admin/interview-slots', {
+    method: 'POST',
+    body: JSON.stringify({
+      slot_datetime: dt,
+      duration_min: parseInt(document.getElementById('obivSlotDuration').value) || 30,
+      max_bookings: parseInt(document.getElementById('obivSlotMax').value) || 1,
+      location, contact_name, contact_phone, instructions
+    })
+  });
+  if (!r || !r.success) return showToast('❌ ' + (r?.error || '创建失败'), 'error');
+
+  showToast('✅ 面试时间槽已创建');
+  closeModal('onboardingInterviewSlotModal');
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/interview/visibility`, {
+    method: 'PUT',
+    body: JSON.stringify({ visible: 1 })
+  });
+  refreshOnboardingModal();
 }
 
 async function saveMgrAssign() {
