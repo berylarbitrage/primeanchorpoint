@@ -4046,17 +4046,12 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
 });
 
 app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
-  const old = db.prepare('SELECT title, company_name, job_status FROM jobs WHERE id=?').get(req.params.id);
+  const old = db.prepare('SELECT title, company_name, close_reason FROM jobs WHERE id=?').get(req.params.id);
   if (!old) return res.status(404).json({ error: '职位不存在 / Job not found' });
-  if (old.job_status !== 'cancelled') {
-    return res.status(409).json({ error: '只有已取消的职位才能删除。请先将职位状态改为"已取消"。 / Only cancelled jobs can be deleted. Please set job status to cancelled first.' });
+  if (old.close_reason !== 'test') {
+    return res.status(403).json({ error: '非测试单职位不允许删除。如需下架请将职位状态改为已取消。' });
   }
-  // Block deletion only if job has truly active assignments (pending/assigned/working)
-  const assignmentCount = db.prepare("SELECT COUNT(*) as cnt FROM assignments WHERE job_id=? AND status IN ('pending','assigned','working')").get(req.params.id);
-  if (assignmentCount && assignmentCount.cnt > 0) {
-    return res.status(409).json({ error: `该职位已有 ${assignmentCount.cnt} 名工人被分配，无法删除。请先终止或取消所有派工记录。 / Cannot delete: ${assignmentCount.cnt} worker(s) are actively assigned to this job. Terminate or cancel all assignments first.` });
-  }
-  // Cascade delete child records to satisfy FK constraints
+  // Cascade delete all related records before deleting the job
   db.transaction(() => {
     const assignmentIds = db.prepare('SELECT id FROM assignments WHERE job_id=?').all(req.params.id).map(r => r.id);
     for (const aId of assignmentIds) {
