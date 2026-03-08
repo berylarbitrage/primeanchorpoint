@@ -3241,10 +3241,21 @@ app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res
 
 // Admin: toggle task visibility on worker portal
 app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmin, (req, res) => {
-  const { visible } = req.body;
+  const { visible, slot_ids } = req.body;
+  const workerId = parseInt(req.params.id);
   db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
-    .run(visible ? 1 : 0, req.params.id, req.params.key);
-  res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
+    .run(visible ? 1 : 0, workerId, req.params.key);
+
+  // When assigning interview slots to a worker, reserve those specific slots for them
+  if (req.params.key === 'interview' && Array.isArray(slot_ids) && slot_ids.length) {
+    // Clear previous unbooked reserved slots for this worker
+    db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(workerId);
+    // Mark selected slots as reserved for this worker
+    const stmt = db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=? WHERE id=? AND booked_count=0`);
+    for (const sid of slot_ids) stmt.run(workerId, sid);
+  }
+
+  res.json({ success: true, tasks: getOnboardingTasks(workerId) });
 });
 
 // Admin: send Persona identity verification from onboarding modal
@@ -3806,25 +3817,6 @@ app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (re
   const primaryDatetime = (Array.isArray(interview_times) && interview_times[0]) ? interview_times[0] : (interview_datetime || '');
   db.prepare('UPDATE job_applications SET status=?, notes=?, admin_note=?, interview_datetime=?, interview_location_text=?, interview_times_json=? WHERE id=?')
     .run(status, notes||'', admin_note||'', primaryDatetime, interview_location_text||'', timesJson, req.params.id);
-
-  // Auto-create reserved interview slots when admin arranges specific times for a worker
-  if (Array.isArray(interview_times) && interview_times.length) {
-    try {
-      const appRow = db.prepare('SELECT worker_account_id FROM job_applications WHERE id=?').get(req.params.id);
-      if (appRow && appRow.worker_account_id) {
-        const wid = appRow.worker_account_id;
-        // Remove old reserved slots for this worker that haven't been booked yet
-        db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(wid);
-        // Create new reserved slots for each arranged time
-        const insertSlot = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, contact_name, contact_phone, instructions, reserved_for_worker_account_id) VALUES (?,30,1,?,?,?,?,?)`);
-        const loc = interview_location_text || '';
-        for (const t of interview_times) {
-          if (t) insertSlot.run(t, loc, '', '', '', wid);
-        }
-      }
-    } catch(e) { console.error('[auto-create reserved slots]', e.message); }
-  }
-
   let emailSent = false, smsSent = false;
   if (notify && status === 'interview_scheduled') {
     try {
