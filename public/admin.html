@@ -2054,13 +2054,22 @@ tr:hover td{background:var(--sky-light)}
   <div id="entApprovalDetails" style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:1rem;margin-bottom:1.25rem;font-size:.875rem;line-height:2"></div>
   <div class="field">
     <label>关联合作公司档案 * <span style="color:var(--red);font-size:.78rem;font-weight:400">（审核通过必须选择）</span></label>
-    <select id="entApprovalPartner">
-      <option value="">— 请选择关联公司 —</option>
-    </select>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <select id="entApprovalPartner" style="flex:1">
+        <option value="">— 请选择关联公司 —</option>
+      </select>
+      <button class="btn btn-sm" style="white-space:nowrap;background:var(--teal);color:#fff;border:none" onclick="importEntAsNewPartner()">＋ 导入新建</button>
+    </div>
+    <div id="entApprovalPartnerHint" style="font-size:.75rem;color:var(--teal);margin-top:.3rem;display:none">✓ 已根据注册信息新建合作公司并自动选中</div>
+  </div>
+  <div id="entRejectReasonWrap" style="display:none" class="field">
+    <label>拒绝原因 * <span style="color:var(--red);font-size:.78rem;font-weight:400">（拒绝必须填写）</span></label>
+    <textarea id="entRejectReason" rows="3" placeholder="请填写拒绝原因，将通知申请人…" style="resize:vertical"></textarea>
   </div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('entApprovalModal')">取消</button>
-    <button class="btn btn-red" onclick="rejectEnterpriseFromModal()">拒绝注册</button>
+    <button class="btn btn-red" id="entRejectBtn" onclick="toggleEntRejectReason()">拒绝注册</button>
+    <button class="btn" id="entRejectConfirmBtn" style="display:none;background:#c0392b;color:#fff" onclick="rejectEnterpriseFromModal()">确认拒绝</button>
     <button class="btn btn-green" onclick="confirmApproveEnterprise()">通过并关联</button>
   </div>
 </div></div>
@@ -11818,7 +11827,41 @@ async function openEntApprovalModal(id) {
   _allPartners = partners;
   document.getElementById('entApprovalPartner').innerHTML = '<option value="">— 请选择关联公司 —</option>' +
     partners.map(p=>`<option value="${p.id}"${c.partner_id==p.id?' selected':''}>${esc(p.name)}${p.industry?' · '+esc(p.industry):''}</option>`).join('');
+  // reset reject area
+  document.getElementById('entRejectReasonWrap').style.display = 'none';
+  document.getElementById('entRejectReason').value = '';
+  document.getElementById('entRejectBtn').style.display = '';
+  document.getElementById('entRejectConfirmBtn').style.display = 'none';
+  document.getElementById('entApprovalPartnerHint').style.display = 'none';
   document.getElementById('entApprovalModal').classList.add('show');
+}
+
+async function importEntAsNewPartner() {
+  const id = document.getElementById('entApprovalId').value;
+  const rows = await api('/admin/customer-accounts');
+  const c = rows.find(r => r.id == id);
+  if (!c) return;
+  const r = await api('/admin/partners', { method:'POST', body: JSON.stringify({
+    name: c.company_name,
+    contact_person: c.contact_name || '',
+    phone: c.phone || '',
+    email: c.email || '',
+    notes: c.staffing_needs ? '人力需求：' + c.staffing_needs : '',
+    active: 1
+  })});
+  if (!r || r.error) return alert('新建合作公司失败：' + (r && r.error || '未知错误'));
+  // refresh partner list and select the new one
+  _allPartners = await api('/admin/partners').catch(()=>[]);
+  document.getElementById('entApprovalPartner').innerHTML = '<option value="">— 请选择关联公司 —</option>' +
+    _allPartners.map(p=>`<option value="${p.id}"${p.id==r.id?' selected':''}>${esc(p.name)}${p.industry?' · '+esc(p.industry):''}</option>`).join('');
+  document.getElementById('entApprovalPartnerHint').style.display = '';
+}
+
+function toggleEntRejectReason() {
+  document.getElementById('entRejectReasonWrap').style.display = '';
+  document.getElementById('entRejectBtn').style.display = 'none';
+  document.getElementById('entRejectConfirmBtn').style.display = '';
+  document.getElementById('entRejectReason').focus();
 }
 
 async function confirmApproveEnterprise() {
@@ -11835,8 +11878,10 @@ async function confirmApproveEnterprise() {
 
 async function rejectEnterpriseFromModal() {
   const id = document.getElementById('entApprovalId').value;
-  if (!await showConfirm('确认拒绝此企业注册？', { danger: true })) return;
-  await api(`/admin/reject-enterprise/${id}`, { method:'PUT' });
+  const reason = document.getElementById('entRejectReason').value.trim();
+  if (!reason) { document.getElementById('entRejectReason').focus(); return alert('请填写拒绝原因'); }
+  if (!await showConfirm('确认拒绝此企业注册申请？', { danger: true })) return;
+  await api(`/admin/reject-enterprise/${id}`, { method:'PUT', body:JSON.stringify({ reason }) });
   closeModal('entApprovalModal');
   showToast('❌ 企业注册已拒绝');
   loadCustomerAccounts();

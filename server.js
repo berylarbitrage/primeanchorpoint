@@ -852,6 +852,7 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFA
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_first_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_last_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN rejection_reason TEXT DEFAULT ''"); } catch {}
 db.exec(`CREATE TABLE IF NOT EXISTS enterprise_verification_codes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_account_id INTEGER NOT NULL REFERENCES customer_accounts(id),
@@ -7899,7 +7900,8 @@ app.put('/api/admin/approve-enterprise/:id', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/reject-enterprise/:id', requireAdmin, (req, res) => {
-  db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected' WHERE id=?").run(req.params.id);
+  const { reason } = req.body || {};
+  db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected', rejection_reason=? WHERE id=?").run(reason||'', req.params.id);
   res.json({ success: true });
 });
 
