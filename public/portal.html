@@ -1254,6 +1254,12 @@ const PORTAL_I18N = {
     taskReqSimple: '简单', taskReqDetailed: '详细', taskReqChecklist: '清单',
     loading: '加载中…',
     appTitle: '我的申请记录', appEmpty: '暂无申请记录',
+    appStatusPending: '待审核', appStatusInterview: '已安排面试', appStatusApproved: '已通过', appStatusRejected: '未通过', appStatusAssigned: '已派工',
+    appSectionJob: '职位信息', appSectionMine: '我的申请信息',
+    appFieldClient: 'Client: ', appFieldPay: '薪资：', appFieldType: '类型：', appFieldDays: '工作日：', appFieldTime: '时间：',
+    appFieldExpectedPay: '期望薪资：', appFieldInterviewTime: '面试时间：',
+    appInterviewNotice: '📅 面试通知', appInterviewOptions: '以下为可选时间，请留意HR后续确认：', appInterviewOption: '选项',
+    appResult: '处理结果：',
     punchCalTitle: '📅 打卡日历', punchHistTitle: '打卡历史记录',
     punchLegendComplete: '已完成', punchLegendWorking: '工作中',
     tcCurrentJobs: '💼 当前工作安排',
@@ -1368,6 +1374,12 @@ const PORTAL_I18N = {
     taskReqSimple: 'Simple', taskReqDetailed: 'Detailed', taskReqChecklist: 'Checklist',
     loading: 'Loading…',
     appTitle: 'My Applications', appEmpty: 'No applications yet',
+    appStatusPending: 'Pending Review', appStatusInterview: 'Interview Scheduled', appStatusApproved: 'Approved', appStatusRejected: 'Not Selected', appStatusAssigned: 'Assigned',
+    appSectionJob: 'Job Details', appSectionMine: 'My Application',
+    appFieldClient: 'Client: ', appFieldPay: 'Pay: ', appFieldType: 'Type: ', appFieldDays: 'Days: ', appFieldTime: 'Time: ',
+    appFieldExpectedPay: 'Expected Pay: ', appFieldInterviewTime: 'Interview Time: ',
+    appInterviewNotice: '📅 Interview Notice', appInterviewOptions: 'Multiple time slots available — HR will confirm your appointment:', appInterviewOption: 'Option',
+    appResult: 'Status: ',
     punchCalTitle: '📅 Punch Calendar', punchHistTitle: 'Punch History',
     punchLegendComplete: 'Completed', punchLegendWorking: 'Working',
     tcCurrentJobs: '💼 Current Assignments',
@@ -1482,6 +1494,12 @@ const PORTAL_I18N = {
     taskReqSimple: 'Simple', taskReqDetailed: 'Detallado', taskReqChecklist: 'Lista',
     loading: 'Cargando…',
     appTitle: 'Mis Solicitudes', appEmpty: 'Sin solicitudes aún',
+    appStatusPending: 'En revisión', appStatusInterview: 'Entrevista programada', appStatusApproved: 'Aprobado', appStatusRejected: 'No seleccionado', appStatusAssigned: 'Asignado',
+    appSectionJob: 'Detalles del puesto', appSectionMine: 'Mi solicitud',
+    appFieldClient: 'Cliente: ', appFieldPay: 'Pago: ', appFieldType: 'Tipo: ', appFieldDays: 'Días: ', appFieldTime: 'Horario: ',
+    appFieldExpectedPay: 'Pago esperado: ', appFieldInterviewTime: 'Hora de entrevista: ',
+    appInterviewNotice: '📅 Aviso de entrevista', appInterviewOptions: 'Múltiples horarios disponibles — RR.HH. confirmará su cita:', appInterviewOption: 'Opción',
+    appResult: 'Estado: ',
     punchCalTitle: '📅 Calendario de Asistencia', punchHistTitle: 'Historial de Asistencia',
     punchLegendComplete: 'Completado', punchLegendWorking: 'Trabajando',
     tcCurrentJobs: '💼 Asignaciones Actuales',
@@ -2721,13 +2739,13 @@ async function loadApplications() {
   const apps = await wApi('/assignments');
   if (!apps) return;
   _myApps = apps;
-  const statusLabel = { pending:'待审核', interview_scheduled:'已安排面试', approved:'已通过', rejected:'未通过', assigned:'已派工' };
+  const statusLabel = { pending:_t('appStatusPending'), interview_scheduled:_t('appStatusInterview'), approved:_t('appStatusApproved'), rejected:_t('appStatusRejected'), assigned:_t('appStatusAssigned') };
   const statusColor = { pending:'color:var(--orange)', interview_scheduled:'color:#2563eb', approved:'color:var(--green)', rejected:'color:var(--red)', assigned:'color:var(--sky)' };
   document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map((a,i)=>`
     <div onclick="openAppDetail(${i})" style="cursor:pointer;border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.6rem;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:.75rem;transition:background .15s" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background='#fff'">
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:.95rem;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.title||'—')}</div>
-        ${a.company_name ? `<div style="font-size:.8rem;color:var(--gray-400);margin-top:.1rem">Client: ${esc(a.company_name)}</div>` : ''}
+        ${a.company_name ? `<div style="font-size:.8rem;color:var(--gray-400);margin-top:.1rem">${_t('appFieldClient')}${esc(a.company_name)}</div>` : ''}
         <div style="font-size:.78rem;color:var(--gray-400);margin-top:.2rem">${(a.created_at||'').slice(0,10)}</div>
       </div>
       <div style="flex-shrink:0;text-align:right">
@@ -2740,42 +2758,44 @@ async function loadApplications() {
 function openAppDetail(idx) {
   const a = _myApps[idx];
   if (!a) return;
-  const statusLabel = { pending:'待审核', interview_scheduled:'已安排面试', approved:'已通过', rejected:'未通过', assigned:'已派工' };
+  const statusLabel = { pending:_t('appStatusPending'), interview_scheduled:_t('appStatusInterview'), approved:_t('appStatusApproved'), rejected:_t('appStatusRejected'), assigned:_t('appStatusAssigned') };
   const statusColor = { pending:'#f59e0b', interview_scheduled:'#2563eb', approved:'#16a34a', rejected:'#dc2626', assigned:'#0284c7' };
   const st = a.status || 'pending';
   const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
-  const DAY_ZH = { Mon:'周一',Tue:'周二',Wed:'周三',Thu:'周四',Fri:'周五',Sat:'周六',Sun:'周日' };
-  const workDays = a.work_days ? a.work_days.split(',').map(d=>DAY_ZH[d.trim()]||d.trim()).join('、') : '';
-  document.getElementById('appDetailTitle').textContent = a.title || '申请详情';
+  const workDays = a.work_days ? _translateWorkDays(a.work_days, _portalLang) : '';
+  const dayJoiner = _portalLang === 'zh' ? '、' : ', ';
+  const workDaysDisplay = workDays ? workDays.split(',').join(dayJoiner) : '';
+  document.getElementById('appDetailTitle').textContent = a.title || _t('appSectionJob');
+  const dtLocale = _portalLang === 'zh' ? 'zh-CN' : _portalLang === 'es' ? 'es-MX' : 'en-US';
   document.getElementById('appDetailBody').innerHTML = `
     <div style="display:grid;gap:.9rem">
       <div style="background:#f8fafc;border-radius:8px;padding:.9rem;display:grid;gap:.4rem;font-size:.88rem">
-        <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">职位信息</div>
-        ${a.company_name ? `<div><span style="color:var(--gray-400)">Client: </span>${esc(a.company_name)}</div>` : ''}
-        ${a.pay ? `<div><span style="color:var(--gray-400)">薪资：</span>${esc(a.pay)}</div>` : ''}
-        ${a.employment_type ? `<div><span style="color:var(--gray-400)">类型：</span>${esc(a.employment_type)}</div>` : ''}
-        ${workDays ? `<div><span style="color:var(--gray-400)">工作日：</span>${workDays}</div>` : ''}
-        ${(a.work_start&&a.work_end) ? `<div><span style="color:var(--gray-400)">时间：</span>${fmt12(a.work_start)} — ${fmt12(a.work_end)}</div>` : ''}
+        <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">${_t('appSectionJob')}</div>
+        ${a.company_name ? `<div><span style="color:var(--gray-400)">${_t('appFieldClient')}</span>${esc(a.company_name)}</div>` : ''}
+        ${a.pay ? `<div><span style="color:var(--gray-400)">${_t('appFieldPay')}</span>${esc(a.pay)}</div>` : ''}
+        ${a.employment_type ? `<div><span style="color:var(--gray-400)">${_t('appFieldType')}</span>${esc(a.employment_type)}</div>` : ''}
+        ${workDaysDisplay ? `<div><span style="color:var(--gray-400)">${_t('appFieldDays')}</span>${workDaysDisplay}</div>` : ''}
+        ${(a.work_start&&a.work_end) ? `<div><span style="color:var(--gray-400)">${_t('appFieldTime')}</span>${fmt12(a.work_start)} — ${fmt12(a.work_end)}</div>` : ''}
         ${a.description ? `<div style="margin-top:.3rem;color:var(--gray-600);font-size:.83rem;white-space:pre-wrap">${esc(a.description)}</div>` : ''}
       </div>
       <div style="background:#f0f9ff;border-radius:8px;padding:.9rem;display:grid;gap:.4rem;font-size:.88rem">
-        <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">我的申请信息</div>
-        ${a.expected_pay ? `<div><span style="color:var(--gray-400)">期望薪资：</span>${esc(a.expected_pay)}</div>` : ''}
-        ${a.interview_availability ? `<div><span style="color:var(--gray-400)">面试时间：</span>${esc(a.interview_availability)}</div>` : ''}
+        <div style="font-weight:700;color:var(--gray-700);margin-bottom:.2rem">${_t('appSectionMine')}</div>
+        ${a.expected_pay ? `<div><span style="color:var(--gray-400)">${_t('appFieldExpectedPay')}</span>${esc(a.expected_pay)}</div>` : ''}
+        ${a.interview_availability ? `<div><span style="color:var(--gray-400)">${_t('appFieldInterviewTime')}</span>${esc(a.interview_availability)}</div>` : ''}
         ${a.applicant_message ? `<div style="margin-top:.3rem;color:var(--gray-600);font-size:.83rem;white-space:pre-wrap">${esc(a.applicant_message)}</div>` : ''}
       </div>
       ${st === 'interview_scheduled' && (a.interview_datetime || a.interview_times_json) ? (() => {
         let times = [];
         if (a.interview_times_json) { try { times = JSON.parse(a.interview_times_json); } catch(e) {} }
         if (!times.length && a.interview_datetime) times = [a.interview_datetime];
-        const fmtDt = dt => new Date(dt).toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit'});
+        const fmtDt = dt => new Date(dt).toLocaleString(dtLocale,{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit'});
         const multiTime = times.length > 1;
         return `<div style="border-radius:8px;padding:.9rem;border:2px solid #2563eb40;background:#eff6ff;display:grid;gap:.5rem;font-size:.88rem">
-          <div style="font-weight:700;color:#1d4ed8;font-size:.95rem">📅 面试通知</div>
-          ${multiTime ? `<div style="font-size:.8rem;color:#1d4ed8;font-weight:600;margin-bottom:.1rem">以下为可选时间，请留意HR后续确认：</div>` : ''}
+          <div style="font-weight:700;color:#1d4ed8;font-size:.95rem">${_t('appInterviewNotice')}</div>
+          ${multiTime ? `<div style="font-size:.8rem;color:#1d4ed8;font-weight:600;margin-bottom:.1rem">${_t('appInterviewOptions')}</div>` : ''}
           ${times.map((t, i) => `<div style="display:flex;align-items:flex-start;gap:.5rem">
             <span style="font-size:1.1rem;line-height:1.3">📆</span>
-            <div><div style="font-weight:600">${multiTime ? `<span style="font-size:.78rem;color:#6b7280;margin-right:.3rem">选项${i+1}</span>` : ''}${fmtDt(t)}</div></div>
+            <div><div style="font-weight:600">${multiTime ? `<span style="font-size:.78rem;color:#6b7280;margin-right:.3rem">${_t('appInterviewOption')}${i+1}</span>` : ''}${fmtDt(t)}</div></div>
           </div>`).join('')}
           ${a.interview_location_text ? `<div style="display:flex;align-items:flex-start;gap:.5rem">
             <span style="font-size:1.1rem;line-height:1.3">📍</span>
@@ -2785,7 +2805,7 @@ function openAppDetail(idx) {
         </div>`;
       })() : `
       <div style="border-radius:8px;padding:.9rem;border:2px solid ${statusColor[st]}20;background:${statusColor[st]}08;display:grid;gap:.4rem;font-size:.88rem">
-        <div style="font-weight:700;color:${statusColor[st]}">处理结果：${statusLabel[st]||st}</div>
+        <div style="font-weight:700;color:${statusColor[st]}">${_t('appResult')}${statusLabel[st]||st}</div>
         ${a.admin_note ? `<div style="color:var(--gray-600);white-space:pre-wrap">${esc(a.admin_note)}</div>` : `<div style="color:var(--gray-400)">—</div>`}
       </div>`}
     </div>`;
