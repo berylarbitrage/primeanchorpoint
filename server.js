@@ -5041,6 +5041,8 @@ app.delete('/api/admin/employees/:id/hard-delete', requireAdmin, requireRole('ad
     db.prepare('DELETE FROM employee_jobs WHERE employee_id=?').run(id);
     db.prepare('DELETE FROM background_checks WHERE employee_id=?').run(id);
     db.prepare('DELETE FROM time_entries WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM timesheet_sheets WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_position_ratings WHERE employee_id=?').run(id);
     db.prepare('DELETE FROM worker_payments WHERE employee_id=?').run(id);
     db.prepare('UPDATE worker_accounts SET employee_id=NULL WHERE employee_id=?').run(id);
     db.prepare('DELETE FROM employees WHERE id=?').run(id);
