@@ -1003,6 +1003,8 @@ try { db.exec("ALTER TABLE interview_slots ADD COLUMN location_id INTEGER DEFAUL
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
+// Migrate interview_slots: add reserved worker column for admin-arranged times
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN reserved_for_worker_account_id INTEGER DEFAULT NULL"); } catch {}
 
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
@@ -3804,6 +3806,25 @@ app.put('/api/admin/job-applications/:id', requireAdmin, blockManager, async (re
   const primaryDatetime = (Array.isArray(interview_times) && interview_times[0]) ? interview_times[0] : (interview_datetime || '');
   db.prepare('UPDATE job_applications SET status=?, notes=?, admin_note=?, interview_datetime=?, interview_location_text=?, interview_times_json=? WHERE id=?')
     .run(status, notes||'', admin_note||'', primaryDatetime, interview_location_text||'', timesJson, req.params.id);
+
+  // Auto-create reserved interview slots when admin arranges specific times for a worker
+  if (Array.isArray(interview_times) && interview_times.length) {
+    try {
+      const appRow = db.prepare('SELECT worker_account_id FROM job_applications WHERE id=?').get(req.params.id);
+      if (appRow && appRow.worker_account_id) {
+        const wid = appRow.worker_account_id;
+        // Remove old reserved slots for this worker that haven't been booked yet
+        db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(wid);
+        // Create new reserved slots for each arranged time
+        const insertSlot = db.prepare(`INSERT INTO interview_slots (slot_datetime, duration_min, max_bookings, location, contact_name, contact_phone, instructions, reserved_for_worker_account_id) VALUES (?,30,1,?,?,?,?,?)`);
+        const loc = interview_location_text || '';
+        for (const t of interview_times) {
+          if (t) insertSlot.run(t, loc, '', '', '', wid);
+        }
+      }
+    } catch(e) { console.error('[auto-create reserved slots]', e.message); }
+  }
+
   let emailSent = false, smsSent = false;
   if (notify && status === 'interview_scheduled') {
     try {
@@ -8276,13 +8297,25 @@ app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
 
 // Worker: list available slots
 app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
-  const slots = db.prepare(`
+  // If the admin has reserved specific slots for this worker, show only those.
+  // Otherwise fall back to all general (unreserved) open slots.
+  const reserved = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
     WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+      AND reserved_for_worker_account_id=?
+    ORDER BY slot_datetime ASC
+  `).all(req.workerId);
+  if (reserved.length) return res.json(reserved);
+
+  const general = db.prepare(`
+    SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
+    FROM interview_slots
+    WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+      AND reserved_for_worker_account_id IS NULL
     ORDER BY slot_datetime ASC
   `).all();
-  res.json(slots);
+  res.json(general);
 });
 
 // Worker: get my interview
