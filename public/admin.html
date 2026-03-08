@@ -8696,7 +8696,12 @@ async function deleteEmployee(id, name) {
     setTimeout(() => input.focus(), 50);
   });
   if (!confirmed) return;
-  await api(`/admin/employees/${id}/hard-delete`, { method: 'DELETE' });
+  const result = await api(`/admin/employees/${id}/hard-delete`, { method: 'DELETE' });
+  if (result && result.error) {
+    alert(`❌ 删除失败：${result.error}`);
+    return;
+  }
+  showToast('✅ 员工已永久删除');
   loadEmployees();
 }
 
