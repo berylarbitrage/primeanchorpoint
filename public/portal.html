@@ -620,7 +620,7 @@ function googleTranslateElementInit(){
             <button class="jfbtn" data-pf="auth" data-v="citizen" onclick="setPF('auth','citizen',this)" data-i18n="auth_citizen">仅公民</button>
           </div>
           <div class="job-filter-bar">
-            <span class="filter-section-label" data-i18n="filterShift">班次</span>
+            <span class="filter-section-label" data-i18n="filterShift">班型</span>
             <button class="jfbtn active" data-pf="shift" data-v="" onclick="setPF('shift','',this)" data-i18n="noLimit">不限</button>
             <button class="jfbtn" data-pf="shift" data-v="1st" onclick="setPF('shift','1st',this)" data-i18n="shift_1st">早班</button>
             <button class="jfbtn" data-pf="shift" data-v="2nd" onclick="setPF('shift','2nd',this)" data-i18n="shift_2nd">中班</button>
@@ -657,7 +657,7 @@ function googleTranslateElementInit(){
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span><span data-i18n="calLegendPending">待确认</span></span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span><span data-i18n="calLegendDeclined">已拒绝</span></span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#a78bfa;display:inline-block"></span><span data-i18n="calLegendPunched">已打卡</span></span>
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#93c5fd;display:inline-block"></span><span data-i18n="calLegendProjected">计划班次</span></span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#93c5fd;display:inline-block"></span><span data-i18n="calLegendProjected">计划任务</span></span>
           </div>
         </div>
       </div>
@@ -1293,7 +1293,7 @@ const PORTAL_I18N = {
     subtitle: '员工自助平台', logout: '退出',
     tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'待办事项', referral:'推荐奖励', profile:'我的信息' },
     searchPlaceholder: '搜索职位、地点...',
-    filterType: '职位类型', filterAuth: '工作身份要求', filterShift: '班次', filterUrgent: '优先级',
+    filterType: '职位类型', filterAuth: '工作身份要求', filterShift: '班型', filterUrgent: '优先级',
     all: '全部', noLimit: '不限',
     types: { '全职':'全职','兼职':'兼职','临时工':'临时工','临时转正':'临时转正' },
     auths: { any:'任何身份', gc:'绿卡/公民', citizen:'仅公民' },
@@ -1304,8 +1304,8 @@ const PORTAL_I18N = {
     authLabelAny: '合法工作身份', authLabelGC: '绿卡/公民', authLabelCitizen: '仅公民',
     payPeriodHourly: '每小时', payPeriodDaily: '每天', payPeriodWeekly: '每周', payPeriodBiweekly: '每两周', payPeriodSemimonthly: '每半月', payPeriodMonthly: '每月',
     calTitle: '📆 我的工作日历',
-    calLegend: { accepted:'已接受', pending:'待确认', declined:'已拒绝', punched:'已打卡', projected:'计划班次' },
-    calLegendAccepted:'已接受', calLegendPending:'待确认', calLegendDeclined:'已拒绝', calLegendPunched:'已打卡', calLegendProjected:'计划班次',
+    calLegend: { accepted:'已接受', pending:'待确认', declined:'已拒绝', punched:'已打卡', projected:'计划任务' },
+    calLegendAccepted:'已接受', calLegendPending:'待确认', calLegendDeclined:'已拒绝', calLegendPunched:'已打卡', calLegendProjected:'计划任务',
     calDow: ['日','一','二','三','四','五','六'],
     taskTitle: '📋 我的任务', pendingTaskTitle: '🔔 待确认任务',
     taskNone: '暂无任务安排，请联系 HR。',
