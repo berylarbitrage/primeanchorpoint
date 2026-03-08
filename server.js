@@ -3909,7 +3909,26 @@ app.post('/api/admin/pending-actions/:id/approve', requireAdmin, requireRole('ad
   const params = payload._params || {};
   try {
     if (action.action_type === 'delete') {
-      db.prepare(`DELETE FROM ${action.target_table} WHERE id = ?`).run(action.target_id);
+      if (action.target_table === 'jobs') {
+        const jobToDelete = db.prepare('SELECT job_status FROM jobs WHERE id=?').get(action.target_id);
+        if (!jobToDelete || jobToDelete.job_status !== 'cancelled') {
+          return res.status(409).json({ error: '只有已取消的职位才能删除。 / Only cancelled jobs can be deleted.' });
+        }
+        // Cascade delete child records to satisfy FK constraints
+        const assignmentIds = db.prepare('SELECT id FROM assignments WHERE job_id=?').all(action.target_id).map(r => r.id);
+        db.transaction(() => {
+          for (const aId of assignmentIds) {
+            db.prepare('DELETE FROM assignment_status_history WHERE assignment_id=?').run(aId);
+            db.prepare('DELETE FROM shift_confirmations WHERE assignment_id=?').run(aId);
+          }
+          db.prepare('DELETE FROM assignments WHERE job_id=?').run(action.target_id);
+          db.prepare('DELETE FROM employee_jobs WHERE job_id=?').run(action.target_id);
+          db.prepare('DELETE FROM job_applications WHERE job_id=?').run(action.target_id);
+          db.prepare(`DELETE FROM jobs WHERE id = ?`).run(action.target_id);
+        })();
+      } else {
+        db.prepare(`DELETE FROM ${action.target_table} WHERE id = ?`).run(action.target_id);
+      }
     } else if (action.action_type === 'update') {
       delete payload._params;
       const cols = Object.keys(payload).filter(k => k !== '_params');
@@ -4007,18 +4026,29 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
 });
 
 app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
-  const old = db.prepare('SELECT title, company_name FROM jobs WHERE id=?').get(req.params.id);
+  const old = db.prepare('SELECT title, company_name, job_status FROM jobs WHERE id=?').get(req.params.id);
   if (!old) return res.status(404).json({ error: '职位不存在 / Job not found' });
-  // Block deletion if the job has any active assignments (cancelled/terminated/resigned are OK)
-  const assignmentCount = db.prepare("SELECT COUNT(*) as cnt FROM assignments WHERE job_id=? AND status NOT IN ('cancelled','terminated','resigned')").get(req.params.id);
+  if (old.job_status !== 'cancelled') {
+    return res.status(409).json({ error: '只有已取消的职位才能删除。请先将职位状态改为"已取消"。 / Only cancelled jobs can be deleted. Please set job status to cancelled first.' });
+  }
+  // Block deletion only if job has truly active assignments (pending/assigned/working)
+  const assignmentCount = db.prepare("SELECT COUNT(*) as cnt FROM assignments WHERE job_id=? AND status IN ('pending','assigned','working')").get(req.params.id);
   if (assignmentCount && assignmentCount.cnt > 0) {
     return res.status(409).json({ error: `该职位已有 ${assignmentCount.cnt} 名工人被分配，无法删除。请先终止或取消所有派工记录。 / Cannot delete: ${assignmentCount.cnt} worker(s) are actively assigned to this job. Terminate or cancel all assignments first.` });
   }
-  // Cascade-delete child records that reference this job
-  db.prepare('DELETE FROM employee_jobs WHERE job_id=?').run(req.params.id);
-  db.prepare('DELETE FROM job_applications WHERE job_id=?').run(req.params.id);
-  db.prepare('DELETE FROM job_audit_log WHERE job_id=?').run(req.params.id);
-  db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
+  // Cascade delete child records to satisfy FK constraints
+  db.transaction(() => {
+    const assignmentIds = db.prepare('SELECT id FROM assignments WHERE job_id=?').all(req.params.id).map(r => r.id);
+    for (const aId of assignmentIds) {
+      db.prepare('DELETE FROM assignment_status_history WHERE assignment_id=?').run(aId);
+      db.prepare('DELETE FROM shift_confirmations WHERE assignment_id=?').run(aId);
+    }
+    db.prepare('DELETE FROM assignments WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM employee_jobs WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM job_applications WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM job_audit_log WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
+  })();
   logJobAudit.run(req.params.id, 'deleted', JSON.stringify(old || {}), req.userName);
   res.json({ success: true });
 });
