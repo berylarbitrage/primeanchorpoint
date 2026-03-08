@@ -2201,7 +2201,6 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-sm btn-green" onclick="addIcSkill()">+ 添加技能</button>
     </div>
     <div id="icSkillsList"></div>
-    <p style="font-size:.75rem;color:var(--gray-400);margin-top:.4rem">常见: 叉车 Forklift · 打包 Packaging · 清洁 Cleaning · 搬运 Loading · 仓储 Warehouse · 厨房 Kitchen · 电焊 Welding · 机械操作 Machine Op</p>
   </div>
 
   <div class="modal-actions">
@@ -11021,10 +11020,29 @@ function renderIcSkills() {
     el.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;text-align:center;padding:.4rem">暂无技能记录，点击上方"+ 添加技能"</div>';
     return;
   }
-  el.innerHTML = _icSkills.map((s, i) => `
+  el.innerHTML = _icSkills.map((s, i) => {
+    // Build option list; include current value even if not in system list
+    const opts = _skillOptions.map(o =>
+      `<option value="${esc(o.name_zh)}" ${s.skill_name===o.name_zh?'selected':''}>${esc(o.name_zh)}${o.name_en?' '+esc(o.name_en):''}</option>`
+    ).join('');
+    const customSelected = s.skill_name && !_skillOptions.find(o => o.name_zh === s.skill_name);
+    return `
     <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
-      <input type="text" value="${esc(s.skill_name)}" placeholder="技能名称" oninput="_icSkills[${i}].skill_name=this.value"
+      <select onchange="onIcSkillSelect(${i},this.value)"
         style="flex:1;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.84rem">
+        <option value="">— 选择技能 —</option>
+        ${customSelected ? `<option value="${esc(s.skill_name)}" selected>${esc(s.skill_name)}</option>` : ''}
+        ${opts}
+        <option value="__new__">＋ 添加新技能到系统…</option>
+      </select>
+      ${s._adding ? `
+        <input type="text" id="icNewSkill_${i}" placeholder="新技能名称（中文）"
+          style="width:130px;padding:.4rem .6rem;border:1px solid var(--sky);border-radius:6px;font-size:.84rem"
+          onkeydown="if(event.key==='Enter')confirmIcNewSkill(${i})">
+        <button class="btn btn-sm btn-green" onclick="confirmIcNewSkill(${i})">保存</button>
+        <button class="btn btn-sm" onclick="_icSkills[${i}]._adding=false;_icSkills[${i}].skill_name='';renderIcSkills()"
+          style="padding:.3rem .5rem">✕</button>
+      ` : `
       <select onchange="_icSkills[${i}].rating=parseInt(this.value)"
         style="padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.84rem;width:120px">
         <option value="1" ${s.rating===1?'selected':''}>⭐ 入门</option>
@@ -11035,10 +11053,46 @@ function renderIcSkills() {
       </select>
       <button class="btn btn-sm" onclick="_icSkills.splice(${i},1);renderIcSkills()"
         style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:.3rem .5rem">✕</button>
-    </div>`).join('');
+      `}
+    </div>`;
+  }).join('');
+  // Focus new skill input if any row is in adding mode
+  const addingIdx = _icSkills.findIndex(s => s._adding);
+  if (addingIdx >= 0) setTimeout(() => { const inp = document.getElementById(`icNewSkill_${addingIdx}`); if (inp) inp.focus(); }, 0);
 }
 
-function addIcSkill() {
+function onIcSkillSelect(i, value) {
+  if (value === '__new__') {
+    _icSkills[i]._adding = true;
+    _icSkills[i].skill_name = '';
+  } else {
+    _icSkills[i].skill_name = value;
+    _icSkills[i]._adding = false;
+  }
+  renderIcSkills();
+}
+
+async function confirmIcNewSkill(i) {
+  const inp = document.getElementById(`icNewSkill_${i}`);
+  if (!inp) return;
+  const name = inp.value.trim();
+  if (!name) { inp.focus(); return; }
+  const res = await api('/admin/skill-options', { method: 'POST', body: JSON.stringify({ name_zh: name, name_en: '' }) });
+  if (res && res.success) {
+    const data = await api('/admin/skill-options');
+    if (data) _skillOptions = data;
+    _icSkills[i].skill_name = name;
+    _icSkills[i]._adding = false;
+    renderIcSkills();
+    showToast('✅ 已添加到系统技能');
+  }
+}
+
+async function addIcSkill() {
+  if (!_skillOptions.length) {
+    const data = await api('/admin/skill-options');
+    if (data && data.length) _skillOptions = data;
+  }
   _icSkills.push({ skill_name: '', rating: 3 });
   renderIcSkills();
 }
