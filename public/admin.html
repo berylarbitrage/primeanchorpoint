@@ -1473,7 +1473,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem">
       <div class="field">
-        <label>小时 *</label>
+        <label>时 *</label>
         <select id="obivNewHour" style="width:100%;padding:.5rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
           <option value="">--</option>
         </select>
@@ -13318,7 +13318,7 @@ async function obivCreateAndAdd() {
   const maxBookings = parseInt(document.getElementById('obivNewMax').value) || 1;
 
   if (!date) return showToast('❌ 请选择日期', 'error');
-  if (!hour) return showToast('❌ 请选择小时', 'error');
+  if (!hour) return showToast('❌ 请选择时', 'error');
   if (!locId) return showToast('❌ 请选择面试地点', 'error');
 
   const slot_datetime = `${date}T${hour}:${minute}:00`;
