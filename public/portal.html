@@ -205,6 +205,7 @@ body{top:0!important}
 <script>
 (function(){
   var LANGS=[
+    {code:'zh-CN',label:'🇨🇳 中文(简)'},
     {code:'zh-TW',label:'🇹🇼 中文(繁)'},
     {code:'en',   label:'🇺🇸 English'},
     {code:'es',   label:'🇲🇽 Español'},
@@ -1676,6 +1677,12 @@ async function _translateJobs(jobs) {
 function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
+  // If Google Translate is currently active, reset it so it doesn't fight with portal i18n
+  var gtCookie = (document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/) || [])[1] || '';
+  if (gtCookie && gtCookie !== 'zh-CN' && typeof window._gtDoTranslate === 'function') {
+    window._gtDoTranslate('zh-CN'); // clears cookie + reloads; page will restore to correct lang from localStorage
+    return;
+  }
   applyPortalLang();
   if (!WORKER_TOKEN) return;
   if (_activeTab === 'profile') loadProfile();
