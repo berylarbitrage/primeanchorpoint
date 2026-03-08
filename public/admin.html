@@ -2583,11 +2583,6 @@ tr:hover td{background:var(--sky-light)}
     <input id="jPartnerSearch" autocomplete="off" placeholder="搜索公司名称…" oninput="filterPartnerSearch()">
     <div class="assign-dropdown" id="jPartnerDrop"></div>
   </div>
-  <div class="field">
-    <label>职位名称 *</label>
-    <input type="text" id="jTitle" placeholder="例：Office Assistant" style="width:100%;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem;box-sizing:border-box">
-  </div>
-
   <div class="field"><label>工种类别 Job Category</label>
     <select id="jCategory" onchange="toggleCustomCategory('jCategory','jCategoryCustom')">
       <option value="">-- 请选择 --</option>
@@ -2679,6 +2674,12 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <!-- per-language title+desc sections, shown dynamically -->
+  <div id="jLangEnSection" style="display:none;border:1px solid #bfdbfe;border-radius:8px;padding:1rem;background:#eff6ff;margin-bottom:.75rem">
+    <div style="font-weight:700;color:#1d4ed8;margin-bottom:.6rem">🇺🇸 English</div>
+    <div class="field" style="margin-bottom:0"><label>Job Title (English)</label>
+      <input type="text" id="jTitleEn" placeholder="e.g. Warehouse Sorter" style="width:100%;padding:.45rem .65rem;border:1px solid #93c5fd;border-radius:6px;font-size:.9rem;box-sizing:border-box">
+    </div>
+  </div>
   <div id="jLangZhSection" style="display:none;border:1px solid #e0f2fe;border-radius:8px;padding:1rem;background:#f0f9ff;margin-bottom:.75rem">
     <div style="font-weight:700;color:var(--sky);margin-bottom:.6rem">🇨🇳 中文内容</div>
     <div class="field" style="margin-bottom:.6rem"><label>职位名称（中文）</label>
@@ -4844,6 +4845,7 @@ async function openJobModal(job) {
   document.getElementById('jLangEn').checked = activeLangs.includes('en');
   document.getElementById('jLangZh').checked = activeLangs.includes('zh');
   document.getElementById('jLangEs').checked = activeLangs.includes('es');
+  document.getElementById('jTitleEn').value = job ? (job.title || '') : '';
   document.getElementById('jTitleZh').value = job ? (job.title_zh || '') : '';
   document.getElementById('jTitleEs').value = job ? (job.title_es || '') : '';
   document.getElementById('jDescZh').value  = job ? (job.desc_zh  || '') : '';
@@ -4921,6 +4923,7 @@ function closeJobModal() { guardClose('jobModal'); }
 function editJob(j) { openJobModal(j); }
 
 function updateLangSections() {
+  document.getElementById('jLangEnSection').style.display = document.getElementById('jLangEn').checked ? '' : 'none';
   document.getElementById('jLangZhSection').style.display = document.getElementById('jLangZh').checked ? '' : 'none';
   document.getElementById('jLangEsSection').style.display = document.getElementById('jLangEs').checked ? '' : 'none';
 }
@@ -5475,7 +5478,7 @@ async function saveJob() {
   const requiredSkills = [...document.getElementById('jRequiredSkills').selectedOptions].map(o=>o.value).join(',');
   const data = {
     partner_id: partnerId,
-    title: document.getElementById('jTitle').value,
+    title: document.getElementById('jTitleEn').value,
     category: getCategoryValue('jCategory','jCategoryCustom'),
     type: document.getElementById('jType').value,
     location: buildAddressString(
