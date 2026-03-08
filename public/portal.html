@@ -192,129 +192,8 @@ tr:last-child td{border-bottom:none}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
 <!-- Google Translate -->
-<style>
-.goog-te-banner-frame,.skiptranslate{display:none!important}
-body{top:0!important}
-.gt-wrap{margin-top:.5rem}
-.gt-select-row{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
-.gt-label{font-size:.72rem;font-weight:700;color:var(--gray-500);white-space:nowrap}
-#goog-gt-select,#goog-gt-select-login{padding:.28rem .5rem;border:1.5px solid #a78bfa;background:#f3e8ff;color:#7c3aed;border-radius:6px;font-size:.75rem;cursor:pointer;max-width:140px;font-weight:600}
-#goog-gt-select:hover,#goog-gt-select-login:hover{background:#ede9fe;border-color:#7c3aed}
-.login-gt-wrap{margin-top:.5rem;display:flex;justify-content:center}
-</style>
-<script>
-// Pre-GT guard: if we just cleared GT, nuke the cookie before GT script even loads
-(function(){
-  if (sessionStorage.getItem('_gt_cleared')) {
-    sessionStorage.removeItem('_gt_cleared');
-    ['', 'domain=' + location.hostname, 'domain=.' + location.hostname].forEach(function(d) {
-      document.cookie = 'googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/' + (d ? ';' + d : '');
-    });
-    window._gtSkipInit = true;
-  }
-})();
-(function(){
-  var LANGS=[
-    {code:'zh-CN',label:'🇨🇳 中文(简)'},
-    {code:'zh-TW',label:'🇹🇼 中文(繁)'},
-    {code:'en',   label:'🇺🇸 English'},
-    {code:'es',   label:'🇲🇽 Español'},
-    {code:'ko',   label:'🇰🇷 한국어'},
-    {code:'ja',   label:'🇯🇵 日本語'},
-    {code:'vi',   label:'🇻🇳 Tiếng Việt'},
-    {code:'tl',   label:'🇵🇭 Filipino'},
-    {code:'fr',   label:'🇫🇷 Français'},
-    {code:'pt',   label:'🇧🇷 Português'},
-    {code:'ar',   label:'🇸🇦 العربية'},
-    {code:'ru',   label:'🇷🇺 Русский'},
-    {code:'hi',   label:'🇮🇳 हिन्दी'},
-    {code:'th',   label:'🇹🇭 ภาษาไทย'},
-    {code:'de',   label:'🇩🇪 Deutsch'},
-  ];
-  window._GT_LANGS = LANGS;
-  window._gtCurrentLang = 'zh-CN';
-
-  // Write / clear the googtrans persistence cookie
-  function _setCookie(lang) {
-    var exp = 'expires=Thu,01 Jan 1970 00:00:00 GMT';
-    // Clear all domain variants
-    ['','domain='+location.hostname,'domain=.'+location.hostname].forEach(function(d){
-      document.cookie='googtrans=;'+exp+';path=/'+(d?';'+d:'');
-    });
-    if (lang && lang !== 'zh-CN') {
-      var e = new Date(); e.setFullYear(e.getFullYear()+1);
-      ['','domain=.'+location.hostname].forEach(function(d){
-        document.cookie='googtrans=/zh-CN/'+lang+';expires='+e.toUTCString()+';path=/'+(d?';'+d:'');
-      });
-    }
-  }
-
-  // Drive the goog-te-combo (Google Translate's internal select) directly.
-  // Returns true if the combo was found and acted on.
-  function _driveCombo(lang) {
-    var combo = document.querySelector('select.goog-te-combo');
-    if (!combo) return false;
-    combo.value = lang;
-    combo.dispatchEvent(new Event('change'));
-    return true;
-  }
-
-  // Sync our custom dropdowns to show the active language
-  function _syncSelects(lang) {
-    window._gtCurrentLang = lang;
-    ['goog-gt-select','goog-gt-select-login'].forEach(function(id){
-      var s = document.getElementById(id);
-      if (s) s.value = lang;
-    });
-  }
-
-  window._gtDoTranslate = function(lang) {
-    _setCookie(lang); // clears cookie when lang===zh-CN
-    _syncSelects(lang);
-    if (lang === 'zh-CN') {
-      // Clear any GT localStorage keys then reload — autoDisplay:false means
-      // GT will NOT re-translate after reload when no googtrans cookie exists.
-      try {
-        Object.keys(localStorage).filter(function(k){ return /googtrans|goog_te/.test(k); })
-          .forEach(function(k){ localStorage.removeItem(k); });
-      } catch(e) {}
-      window.location.reload();
-      return;
-    }
-    if (_driveCombo(lang)) return;
-    // GT widget not ready yet — retry until it appears (up to ~3 s)
-    var n = 0;
-    var t = setInterval(function(){
-      if (_driveCombo(lang) || ++n > 30) clearInterval(t);
-    }, 100);
-  };
-
-  window._buildGtSelect = function(id){
-    var sel=document.getElementById(id); if(!sel)return;
-    var cur=(document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/)||[])[1]||'';
-    LANGS.forEach(function(l){
-      var o=document.createElement('option');
-      o.value=l.code; o.textContent=l.label;
-      if(l.code===cur) o.selected=true;
-      sel.appendChild(o);
-    });
-    sel.addEventListener('change', function(){ window._gtDoTranslate(this.value); });
-  };
-
-  document.addEventListener('DOMContentLoaded', function(){
-    window._buildGtSelect('goog-gt-select');
-    window._buildGtSelect('goog-gt-select-login');
-  });
-})();
-function googleTranslateElementInit(){
-  if (window._gtSkipInit) { delete window._gtSkipInit; return; }
-  new google.translate.TranslateElement({pageLanguage:'zh-CN',autoDisplay:false},'google_translate_element');
-}
-</script>
-<script src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" async></script>
 </head>
 <body>
-<div id="google_translate_element" style="display:none"></div>
 <div id="toast-wrap"></div>
 
 <!-- Login -->
@@ -325,11 +204,6 @@ function googleTranslateElementInit(){
       <button class="login-lang-btn" id="lbZh" onclick="setPortalLang('zh')">中文</button>
       <button class="login-lang-btn" id="lbEn" onclick="setPortalLang('en')">English</button>
       <button class="login-lang-btn" id="lbEs" onclick="setPortalLang('es')">Español</button>
-    </div>
-    <div class="login-gt-wrap" style="margin-bottom:.9rem">
-      <select id="goog-gt-select-login" title="翻译页面 / Translate page">
-        <option value="">🌐 翻译 / Translate…</option>
-      </select>
     </div>
     <img src="/logo.svg" alt="Prime Anchorpoint">
     <h1 id="loginTitle">工人门户</h1>
@@ -577,14 +451,6 @@ function googleTranslateElementInit(){
         <button onclick="setPortalLang('zh')" id="plZh">🇨🇳 中</button>
         <button onclick="setPortalLang('en')" id="plEn">🇺🇸 EN</button>
         <button onclick="setPortalLang('es')" id="plEs">🇲🇽 ES</button>
-      </div>
-      <div class="gt-wrap">
-        <div class="gt-select-row">
-          <span class="gt-label">🌐</span>
-          <select id="goog-gt-select" title="翻译页面 / Translate page" style="flex:1">
-            <option value="">🌐 翻译…</option>
-          </select>
-        </div>
       </div>
       <div class="worker-name" id="workerNameDisplay"></div>
       <button id="logoutBtn" class="sidebar-logout" onclick="workerLogout()">退出</button>
@@ -1685,32 +1551,9 @@ async function _translateJobs(jobs) {
   }));
   return jobs;
 }
-function _clearGTAndReload() {
-  // Clear all Google Translate cookies (multiple domain variants)
-  ['', 'domain=' + location.hostname, 'domain=.' + location.hostname].forEach(function(d) {
-    document.cookie = 'googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/' + (d ? ';' + d : '');
-  });
-  // Clear GT localStorage / sessionStorage keys
-  try {
-    [localStorage, sessionStorage].forEach(function(store) {
-      Object.keys(store).filter(function(k){ return /googtrans|goog_te|google_translate/i.test(k); })
-        .forEach(function(k){ store.removeItem(k); });
-    });
-  } catch(e) {}
-  // Set flag so pre-GT guard clears cookie again before GT loads + skips GT init
-  sessionStorage.setItem('_gt_cleared', '1');
-  window.location.reload();
-}
 function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
-  // If Google Translate has translated the page, clear it and reload
-  var gtActive = document.querySelector('.translated-ltr, .translated-rtl') ||
-                 (document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/) || [])[1];
-  if (gtActive) {
-    _clearGTAndReload(); // reload will restore correct portal lang from localStorage
-    return;
-  }
   applyPortalLang();
   if (!WORKER_TOKEN) return;
   if (_activeTab === 'profile') loadProfile();
