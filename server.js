@@ -6763,8 +6763,13 @@ app.post('/api/worker/reset-password', async (req, res) => {
     if (entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
   }
 
-  const { hash, salt } = hashPassword(new_password);
-  db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  const account = db.prepare('SELECT salt, password_hash FROM worker_accounts WHERE id=?').get(entry.accountId);
+  if (account && verifyPassword(new_password, account.salt, account.password_hash)) {
+    return res.status(400).json({ error: '新密码不能与原密码相同 / New password cannot be the same as your current password' });
+  }
+  const newSalt = crypto.randomBytes(16).toString('hex');
+  const newHash = hashPassword(new_password, newSalt);
+  db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(newHash, newSalt, entry.accountId);
   resetCodes.delete('worker:' + login);
   res.json({ success: true });
 });
@@ -7439,8 +7444,13 @@ app.post('/api/customer/reset-password', (req, res) => {
   const entry = resetCodes.get('customer:' + login);
   if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
   if (Date.now() > entry.expires) { resetCodes.delete('customer:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
-  const { hash, salt } = hashPassword(new_password);
-  db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  const account = db.prepare('SELECT salt, password_hash FROM customer_accounts WHERE id=?').get(entry.accountId);
+  if (account && verifyPassword(new_password, account.salt, account.password_hash)) {
+    return res.status(400).json({ error: '新密码不能与原密码相同 / New password cannot be the same as your current password' });
+  }
+  const newSalt = crypto.randomBytes(16).toString('hex');
+  const newHash = hashPassword(new_password, newSalt);
+  db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(newHash, newSalt, entry.accountId);
   resetCodes.delete('customer:' + login);
   res.json({ success: true });
 });
