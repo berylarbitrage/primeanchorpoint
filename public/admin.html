@@ -10899,8 +10899,8 @@ function renderOnboardingTasks(tasks) {
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
     const isVisible = t.visible_to_worker !== 0;
-    const tk = JSON.stringify(t.key);
-    const tt = JSON.stringify(t.title);
+    const tk = JSON.stringify(t.key).replace(/"/g, '&quot;');
+    const tt = JSON.stringify(t.title).replace(/"/g, '&quot;');
     return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100);${!isVisible?'opacity:.55':''}">
       <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
       <div style="flex:1;min-width:0">
