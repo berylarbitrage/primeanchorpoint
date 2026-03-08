@@ -3708,7 +3708,7 @@ async function submitW9(e) {
 
 // ─── Onboarding / 待办事项 ───
 async function loadOnboarding() {
-  let tasks = await wApi('/onboarding');
+  let [tasks, interview] = await Promise.all([wApi('/onboarding'), wApi('/interview')]);
   const list = document.getElementById('onboardingList');
   if (!tasks) return;
   if (!tasks.length) {
@@ -3739,10 +3739,25 @@ async function loadOnboarding() {
   list.innerHTML = tasks.map(t => {
     const s = t.status;
     let actionHtml = '';
-    if (s === 'pending') {
-      if (t.key === 'interview') {
+    if (t.key === 'interview') {
+      if (interview && interview.status !== 'cancelled') {
+        const dt = new Date(interview.slot_datetime);
+        const dtStr = dt.toLocaleString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit' });
+        actionHtml = `<div style="margin-top:.55rem;padding:.65rem .85rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem">
+          <div style="font-weight:600;color:#0369a1;margin-bottom:.35rem">📅 面试已预约</div>
+          <div>时间：<strong>${dtStr}</strong></div>
+          ${interview.location ? `<div style="margin-top:.2rem">📍 地点：${esc(interview.location)}</div>` : ''}
+          ${interview.contact_name ? `<div style="margin-top:.2rem">👤 联系人：${esc(interview.contact_name)}${interview.contact_phone ? ' · ' + esc(interview.contact_phone) : ''}</div>` : ''}
+          ${interview.instructions ? `<div style="margin-top:.3rem;padding:.35rem .5rem;background:#e0f2fe;border-radius:6px;color:#0369a1">📌 注意事项：${esc(interview.instructions)}</div>` : ''}
+          ${s === 'pending' ? `<button class="btn btn-sky" style="font-size:.78rem;padding:.25rem .65rem;margin-top:.5rem" onclick="openInterviewBookModal()">🔄 查看 / 修改预约</button>` : ''}
+        </div>`;
+      } else if (s === 'pending') {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openInterviewBookModal()">去预约面试</button>`;
-      } else if (t.key === 'persona_verify') {
+      } else if (s === 'submitted') {
+        actionHtml = `<div style="font-size:.8rem;color:var(--orange);margin-top:.4rem">已提交，等待 HR 审核中…</div>`;
+      }
+    } else if (s === 'pending') {
+      if (t.key === 'persona_verify') {
         actionHtml = `<div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
           <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="openPersonaInPortal()">🖥️ 在Portal中验证</button>
           ${t.action_url ? `<a class="btn" style="font-size:.8rem;padding:.3rem .75rem;text-decoration:none;display:inline-block;background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5" href="${esc(t.action_url)}" target="_blank">🔗 打开链接验证</a>` : ''}
