@@ -1679,6 +1679,13 @@ async function _translateJobs(jobs) {
 function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
+  // Sync Google Translate widget so it doesn't override the chosen language
+  const gtLang = lang === 'zh' ? 'zh-CN' : lang === 'es' ? 'es' : lang;
+  if (window._gtCurrentLang !== gtLang && typeof _gtDoTranslate === 'function') {
+    _gtDoTranslate(gtLang);
+    // _gtDoTranslate('zh-CN') triggers a page reload, so skip the rest
+    if (lang === 'zh') return;
+  }
   applyPortalLang();
   if (!WORKER_TOKEN) return;
   if (_activeTab === 'profile') loadProfile();
