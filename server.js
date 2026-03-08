@@ -633,6 +633,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
@@ -942,6 +943,14 @@ setTimeout(() => {
   try {
     const unlinked = db.prepare("SELECT id FROM worker_accounts WHERE active=1 AND worker_code IS NULL").all();
     unlinked.forEach(w => { try { activateWorkerAccount(w.id); } catch {} });
+    // Backfill employees.inquiry_id from existing linked worker_accounts
+    db.prepare(`
+      UPDATE employees SET inquiry_id = (
+        SELECT wa.linked_inquiry_id FROM worker_accounts wa
+        WHERE wa.employee_id = employees.id AND wa.linked_inquiry_id IS NOT NULL
+        ORDER BY wa.id DESC LIMIT 1
+      ) WHERE inquiry_id IS NULL
+    `).run();
   } catch {}
 }, 0);
 // Migrate: richer fields on job_applications
@@ -1616,22 +1625,22 @@ function verifyPin(pin, salt, hash) {
   } catch { return false; }
 }
 
-// ─── Auto-generate employee ID: EMEE-CITY-MMDDYY-000001 ───
-function nextEmployeeId(city, hireDate) {
+// ─── Auto-generate employee ID: STAFF-ST-MMDDYY-0001 ───
+function nextEmployeeId(state, hireDate) {
   const d = hireDate ? new Date(hireDate) : new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yy = String(d.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
-  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'EMEE-%' ORDER BY id DESC LIMIT 1").get();
+  const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
   if (last) {
     const parts = last.employee_id.split('-');
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `EMEE-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `STAFF-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
 // ─── Auto-generate worker code: PORT-CITY-MMDDYY-000001 ───
@@ -1662,11 +1671,26 @@ function activateWorkerAccount(accountId, prefix) {
     const code = generateWorkerCode(acc.state, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
-  // Ensure a linked inquiry exists — create a new one if not already explicitly linked by admin
+  // Ensure a linked inquiry exists — prefer employee record's stored inquiry_id (survives account deletion/re-creation)
   if (!acc.linked_inquiry_id) {
-    const wName = (acc.name || '').trim();
-    const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
-    db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(r.lastInsertRowid, accountId);
+    let inquiryId = null;
+    // If linked to an employee (STAFF-xxx), use that employee's persistent inquiry_id
+    if (acc.employee_id) {
+      const emp = db.prepare('SELECT inquiry_id FROM employees WHERE id=?').get(acc.employee_id);
+      if (emp && emp.inquiry_id) {
+        inquiryId = emp.inquiry_id;
+      }
+    }
+    if (!inquiryId) {
+      // Create a new inquiry and store it on the employee record for future re-registrations
+      const wName = (acc.name || '').trim();
+      const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
+      inquiryId = r.lastInsertRowid;
+      if (acc.employee_id) {
+        db.prepare('UPDATE employees SET inquiry_id=? WHERE id=?').run(inquiryId, acc.employee_id);
+      }
+    }
+    db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inquiryId, accountId);
   }
 }
 
@@ -4768,7 +4792,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
     }
   }
-  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
+  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.state, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
   if (d.ssn) {
     const digits = d.ssn.replace(/\D/g, '');
