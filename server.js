@@ -3548,6 +3548,7 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
     db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(id);
+    db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(id);
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(id); } catch(_) {}
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(id);
     res.json({ success: true });
