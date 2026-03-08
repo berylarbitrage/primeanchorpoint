@@ -7967,7 +7967,7 @@ function renderEmployees(list) {
     <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
     <td style="font-size:.82rem;color:var(--gray-500);white-space:nowrap">${e.hire_date||'—'}</td>
     <td>
-      <button class="emp-action-btn" onclick='openEmpActionMenu(event,${e.id},"${esc(e.first_name)} ${esc(e.last_name)}",${e.status!=='terminated'})' title="操作">⋯</button>
+      <button class="emp-action-btn" onclick='openEmpActionMenu(event,${e.id},"${esc(e.first_name)} ${esc(e.last_name)}",${e.status!=='terminated' && USER_ROLE==='admin'})' title="操作">⋯</button>
     </td>
   </tr>`}).join('') : '<tr><td colspan="7" class="empty">暂无员工记录，点击 "+ 新增员工" 添加</td></tr>';
 }
@@ -8677,7 +8677,35 @@ async function saveEmployee() {
 }
 
 async function terminateEmployee(id, name) {
-  if (!await showConfirm(`确定将 ${name} 标记为已离职？`)) return;
+  const confirmed = await new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000;font-family:\'DM Sans\',sans-serif';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem';
+    box.innerHTML =
+      '<div style="font-size:.95rem;font-weight:700;color:#dc2626;margin-bottom:.75rem">确认删除员工</div>' +
+      '<div style="font-size:.875rem;color:#2D3748;line-height:1.6;margin-bottom:1rem">此操作不可撤销。请输入员工全名 <strong>' + name + '</strong> 以确认：</div>' +
+      '<input id="_terminateInput" type="text" placeholder="输入员工全名" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #e2e5ea;border-radius:8px;font-size:.875rem;font-family:inherit;outline:none;margin-bottom:1rem">' +
+      '<div style="display:flex;gap:.6rem;justify-content:flex-end">' +
+        '<button class="_sc-cancel" style="padding:8px 18px;border:1px solid #e2e5ea;border-radius:8px;background:transparent;color:#5F6B7A;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">取消</button>' +
+        '<button class="_sc-confirm" disabled style="padding:8px 18px;border:none;border-radius:8px;background:#dc2626;color:#fff;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit;opacity:.45">确认删除</button>' +
+      '</div>';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const input = box.querySelector('#_terminateInput');
+    const confirmBtn = box.querySelector('._sc-confirm');
+    input.addEventListener('input', () => {
+      const match = input.value === name;
+      confirmBtn.disabled = !match;
+      confirmBtn.style.opacity = match ? '1' : '.45';
+    });
+    const cleanup = r => { document.body.removeChild(overlay); resolve(r); };
+    confirmBtn.onclick = () => { if (!confirmBtn.disabled) cleanup(true); };
+    box.querySelector('._sc-cancel').onclick = () => cleanup(false);
+    overlay.onclick = e => { if (e.target === overlay) cleanup(false); };
+    setTimeout(() => input.focus(), 50);
+  });
+  if (!confirmed) return;
   await api(`/admin/employees/${id}`, { method:'DELETE' });
   loadEmployees();
 }
