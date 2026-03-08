@@ -2505,82 +2505,16 @@ tr:hover td{background:var(--sky-light)}
     </select>
   </div>
 
-  <div class="field"><label>班次</label>
-    <select id="jShift">
-      <option value="">不限</option>
-      <option value="早班">早班（Morning Shift）</option>
-      <option value="中班">中班（Day Shift）</option>
-      <option value="晚班">晚班（Evening Shift）</option>
-      <option value="夜班">夜班（Night Shift）</option>
-      <option value="弹性">弹性（Flexible）</option>
-    </select>
+  <div class="field"><label>班次（可多选）<span style="color:var(--red)"> *</span></label>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;padding:.5rem 0">
+      <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" class="jShiftCheck" value="早班" onchange="updateShiftSections()"> 早班（Morning）</label>
+      <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" class="jShiftCheck" value="中班" onchange="updateShiftSections()"> 中班（Day）</label>
+      <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" class="jShiftCheck" value="晚班" onchange="updateShiftSections()"> 晚班（Evening）</label>
+      <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" class="jShiftCheck" value="夜班" onchange="updateShiftSections()"> 夜班（Night）</label>
+      <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" class="jShiftCheck" value="弹性" onchange="updateShiftSections()"> 弹性（Flexible）</label>
+    </div>
   </div>
-
-  <div class="field">
-    <label>工作日 / 工作时间 <span style="color:var(--red)">*</span></label>
-    <table id="jScheduleTable" style="width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.82rem">
-      <thead>
-        <tr style="color:var(--gray-400);font-weight:600;font-size:.74rem;border-bottom:1px solid var(--gray-200)">
-          <th style="padding:.25rem .4rem;width:30px"></th>
-          <th style="padding:.25rem .5rem;text-align:left">工作日</th>
-          <th style="padding:.25rem .5rem;text-align:left">上班时间 *</th>
-          <th style="padding:.25rem .5rem;text-align:left">下班时间 *</th>
-          <th style="padding:.25rem .4rem;width:54px"></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr data-day="Mon" style="border-bottom:1px solid #f3f4f6">
-          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
-          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Mon</td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem;white-space:nowrap"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button><button type="button" class="jAddBreak" disabled onclick="_jAddBreak(this)" style="font-size:.73rem;padding:3px 7px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;margin-left:3px" title="添加休息时间">+</button></td>
-        </tr>
-        <tr data-day="Tue" style="border-bottom:1px solid #f3f4f6">
-          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
-          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Tue</td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem;white-space:nowrap"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button><button type="button" class="jAddBreak" disabled onclick="_jAddBreak(this)" style="font-size:.73rem;padding:3px 7px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;margin-left:3px" title="添加休息时间">+</button></td>
-        </tr>
-        <tr data-day="Wed" style="border-bottom:1px solid #f3f4f6">
-          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
-          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Wed</td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem;white-space:nowrap"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button><button type="button" class="jAddBreak" disabled onclick="_jAddBreak(this)" style="font-size:.73rem;padding:3px 7px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;margin-left:3px" title="添加休息时间">+</button></td>
-        </tr>
-        <tr data-day="Thu" style="border-bottom:1px solid #f3f4f6">
-          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
-          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Thu</td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem;white-space:nowrap"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button><button type="button" class="jAddBreak" disabled onclick="_jAddBreak(this)" style="font-size:.73rem;padding:3px 7px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;margin-left:3px" title="添加休息时间">+</button></td>
-        </tr>
-        <tr data-day="Fri" style="border-bottom:1px solid #f3f4f6">
-          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
-          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Fri</td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem;white-space:nowrap"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button><button type="button" class="jAddBreak" disabled onclick="_jAddBreak(this)" style="font-size:.73rem;padding:3px 7px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;margin-left:3px" title="添加休息时间">+</button></td>
-        </tr>
-        <tr data-day="Sat" style="border-bottom:1px solid #f3f4f6">
-          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
-          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Sat</td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem;white-space:nowrap"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button><button type="button" class="jAddBreak" disabled onclick="_jAddBreak(this)" style="font-size:.73rem;padding:3px 7px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;margin-left:3px" title="添加休息时间">+</button></td>
-        </tr>
-        <tr data-day="Sun">
-          <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
-          <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">Sun</td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
-          <td style="padding:.3rem .4rem;white-space:nowrap"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;white-space:nowrap">复制</button><button type="button" class="jAddBreak" disabled onclick="_jAddBreak(this)" style="font-size:.73rem;padding:3px 7px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;margin-left:3px" title="添加休息时间">+</button></td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+  <div id="jShiftSchedulesWrap"></div>
 
   <div class="field">
     <label>福利待遇（多选）</label>
@@ -3516,6 +3450,93 @@ function showConfirmModal(title, desc, btnText, btnClass, onConfirm, iconColor, 
 function closeGenericConfirm() { document.getElementById('genericConfirmModal').classList.remove('show'); _gcmCallback = null; }
 async function execGenericConfirm() { const cb = _gcmCallback; closeGenericConfirm(); if (cb) await cb(); }
 
+// ─── Multi-shift schedule helpers ────────────────────────────────────────────
+const _SHIFT_DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+function _jShiftTableHTML(shiftName) {
+  const rows = _SHIFT_DAYS.map((day, i) => {
+    const sep = i < _SHIFT_DAYS.length - 1 ? 'border-bottom:1px solid #f3f4f6' : '';
+    return `<tr data-day="${day}" style="${sep}">
+      <td style="padding:.3rem .4rem;text-align:center"><input type="checkbox" class="jDayCheck" onchange="_jDayToggle(this)"></td>
+      <td style="padding:.3rem .5rem;font-weight:600;color:var(--gray-800)">${day}</td>
+      <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayStart" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+      <td style="padding:.3rem .4rem"><input type="time" step="60" class="jDayEnd" disabled style="border:1px solid var(--gray-200);border-radius:6px;padding:4px 7px;font-size:.82rem;width:110px;background:var(--off-white);color:var(--gray-800);outline:none"></td>
+      <td style="padding:.3rem .4rem;white-space:nowrap"><button type="button" class="jCopyDay" disabled onclick="_jCopyDay(this)" style="font-size:.73rem;padding:3px 9px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer">复制</button><button type="button" class="jAddBreak" disabled onclick="_jAddBreak(this)" style="font-size:.73rem;padding:3px 7px;border:1px solid var(--gray-200);border-radius:6px;background:#fff;color:var(--gray-400);cursor:pointer;margin-left:3px" title="添加休息时间">+</button></td>
+    </tr>`;
+  }).join('');
+  return `<div class="jShiftSection" data-shift="${shiftName}" style="border:1px solid #e0e7ff;border-radius:8px;padding:1rem;margin-bottom:.75rem">
+    <div style="font-weight:700;color:var(--sky);margin-bottom:.6rem">⏰ ${shiftName}</div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-bottom:.4rem">工作日 / 工作时间 <span style="color:var(--red)">*</span></div>
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead><tr style="color:var(--gray-400);font-weight:600;font-size:.74rem;border-bottom:1px solid var(--gray-200)">
+        <th style="padding:.25rem .4rem;width:30px"></th>
+        <th style="padding:.25rem .5rem;text-align:left">工作日</th>
+        <th style="padding:.25rem .5rem;text-align:left">上班时间</th>
+        <th style="padding:.25rem .5rem;text-align:left">下班时间</th>
+        <th style="padding:.25rem .4rem;width:54px"></th>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+function updateShiftSections() {
+  const wrap = document.getElementById('jShiftSchedulesWrap');
+  const checked = [...document.querySelectorAll('.jShiftCheck:checked')].map(c => c.value);
+  wrap.querySelectorAll('.jShiftSection').forEach(sec => {
+    if (!checked.includes(sec.dataset.shift)) sec.remove();
+  });
+  checked.forEach(shift => {
+    if (!wrap.querySelector(`.jShiftSection[data-shift="${shift}"]`))
+      wrap.insertAdjacentHTML('beforeend', _jShiftTableHTML(shift));
+  });
+}
+function _jFillTbody(tbody, sched) {
+  tbody.querySelectorAll('.jBreakRow').forEach(br => br.remove());
+  tbody.querySelectorAll('tr[data-day]').forEach(row => {
+    const day = row.dataset.day, data = sched[day];
+    const cb = row.querySelector('.jDayCheck'), start = row.querySelector('.jDayStart'), end = row.querySelector('.jDayEnd');
+    const copy = row.querySelector('.jCopyDay'), addBreak = row.querySelector('.jAddBreak');
+    cb.checked = !!data; start.disabled = !data; end.disabled = !data; copy.disabled = !data; addBreak.disabled = !data;
+    start.value = data ? (data.start||'') : ''; end.value = data ? (data.end||'') : '';
+    start.style.background = data ? '#fff' : 'var(--off-white)'; end.style.background = data ? '#fff' : 'var(--off-white)';
+    copy.style.color = data ? 'var(--sky)' : 'var(--gray-400)'; copy.style.borderColor = data ? 'var(--sky)' : 'var(--gray-200)';
+    addBreak.style.color = data ? 'var(--sky)' : 'var(--gray-400)'; addBreak.style.borderColor = data ? 'var(--sky)' : 'var(--gray-200)';
+    if (data && data.breaks) {
+      let ins = row;
+      data.breaks.forEach(b => { const br = _jCreateBreakRow(day, b.start||'', b.end||''); ins.insertAdjacentElement('afterend', br); ins = br; });
+    }
+  });
+}
+function collectShiftSchedule(tbody) {
+  const sched = {}; let firstStart='', firstEnd='', anyDay=false, allFilled=true;
+  tbody.querySelectorAll('tr[data-day]').forEach(row => {
+    if (!row.querySelector('.jDayCheck').checked) return;
+    anyDay = true;
+    const day = row.dataset.day, start = row.querySelector('.jDayStart').value, end = row.querySelector('.jDayEnd').value;
+    if (!start || !end) { allFilled = false; return; }
+    const breaks = [...tbody.querySelectorAll(`.jBreakRow[data-parent-day="${day}"]`)]
+      .map(br => ({ start: br.querySelector('.jBreakStart').value, end: br.querySelector('.jBreakEnd').value })).filter(b => b.start||b.end);
+    sched[day] = { start, end };
+    if (breaks.length) sched[day].breaks = breaks;
+    if (!firstStart) { firstStart = start; firstEnd = end; }
+  });
+  return { sched, firstStart, firstEnd, anyDay, allFilled };
+}
+function collectAllShifts() {
+  const sections = [...document.querySelectorAll('#jShiftSchedulesWrap .jShiftSection')];
+  if (!sections.length) return { allShiftData: {}, anyDay: false, allFilled: false, firstStart: '', firstEnd: '', allDays: [] };
+  const allShiftData = {}; let anyDay = false, allFilled = true, firstStart = '', firstEnd = '';
+  sections.forEach(sec => {
+    const { sched, firstStart: fs, firstEnd: fe, anyDay: ad, allFilled: af } = collectShiftSchedule(sec.querySelector('tbody'));
+    allShiftData[sec.dataset.shift] = sched;
+    if (!ad) allFilled = false;
+    anyDay = anyDay || ad;
+    allFilled = allFilled && af;
+    if (!firstStart && fs) { firstStart = fs; firstEnd = fe; }
+  });
+  const allDays = [...new Set(Object.values(allShiftData).flatMap(s => Object.keys(s)))];
+  return { allShiftData, anyDay, allFilled, firstStart, firstEnd, allDays };
+}
+
 // ─── Per-day work schedule helpers ───────────────────────────────────────────
 function _jDayToggle(cb) {
   const row = cb.closest('tr');
@@ -3552,12 +3573,10 @@ function _jCopyDay(btn) {
   const start = row.querySelector('.jDayStart').value;
   const end   = row.querySelector('.jDayEnd').value;
   if (!start && !end) return;
-  document.querySelectorAll('#jScheduleTable tbody tr').forEach(r => {
-    if (r === row) return;
-    if (r.querySelector('.jDayCheck').checked) {
-      r.querySelector('.jDayStart').value = start;
-      r.querySelector('.jDayEnd').value   = end;
-    }
+  btn.closest('table').querySelectorAll('tbody tr[data-day]').forEach(r => {
+    if (r === row || !r.querySelector('.jDayCheck').checked) return;
+    r.querySelector('.jDayStart').value = start;
+    r.querySelector('.jDayEnd').value   = end;
   });
 }
 function _jCreateBreakRow(day, startVal, endVal) {
@@ -3588,69 +3607,9 @@ function _jAddBreak(btn) {
 function _jRemoveBreak(btn) {
   btn.closest('tr').remove();
 }
-function populateScheduleTable(workSchedule, workDays, workStart, workEnd) {
-  let sched = {};
-  if (workSchedule) { try { sched = JSON.parse(workSchedule); } catch(e) {} }
-  if (!Object.keys(sched).length && workDays) {
-    workDays.split(',').map(d => d.trim()).filter(Boolean).forEach(day => {
-      sched[day] = { start: workStart || '', end: workEnd || '' };
-    });
-  }
-  const tbody = document.querySelector('#jScheduleTable tbody');
-  // Remove all existing break rows
-  tbody.querySelectorAll('.jBreakRow').forEach(br => br.remove());
-  tbody.querySelectorAll('tr[data-day]').forEach(row => {
-    const day  = row.dataset.day;
-    const data = sched[day];
-    const cb    = row.querySelector('.jDayCheck');
-    const start = row.querySelector('.jDayStart');
-    const end   = row.querySelector('.jDayEnd');
-    const copy  = row.querySelector('.jCopyDay');
-    const addBreak = row.querySelector('.jAddBreak');
-    cb.checked      = !!data;
-    start.disabled  = !data;
-    end.disabled    = !data;
-    copy.disabled   = !data;
-    addBreak.disabled = !data;
-    start.value     = data ? (data.start || '') : '';
-    end.value       = data ? (data.end   || '') : '';
-    start.style.background = data ? '#fff' : 'var(--off-white)';
-    end.style.background   = data ? '#fff' : 'var(--off-white)';
-    copy.style.color       = data ? 'var(--sky)' : 'var(--gray-400)';
-    copy.style.borderColor = data ? 'var(--sky)' : 'var(--gray-200)';
-    addBreak.style.color       = data ? 'var(--sky)' : 'var(--gray-400)';
-    addBreak.style.borderColor = data ? 'var(--sky)' : 'var(--gray-200)';
-    // Populate break rows
-    if (data && data.breaks && data.breaks.length) {
-      let insertAfter = row;
-      data.breaks.forEach(b => {
-        const breakRow = _jCreateBreakRow(day, b.start || '', b.end || '');
-        insertAfter.insertAdjacentElement('afterend', breakRow);
-        insertAfter = breakRow;
-      });
-    }
-  });
-}
-function collectScheduleTable() {
-  const sched = {};
-  let firstStart = '', firstEnd = '', anyDay = false, allFilled = true;
-  const tbody = document.querySelector('#jScheduleTable tbody');
-  tbody.querySelectorAll('tr[data-day]').forEach(row => {
-    if (!row.querySelector('.jDayCheck').checked) return;
-    anyDay = true;
-    const day   = row.dataset.day;
-    const start = row.querySelector('.jDayStart').value;
-    const end   = row.querySelector('.jDayEnd').value;
-    if (!start || !end) { allFilled = false; return; }
-    const breaks = [...tbody.querySelectorAll(`.jBreakRow[data-parent-day="${day}"]`)]
-      .map(br => ({ start: br.querySelector('.jBreakStart').value, end: br.querySelector('.jBreakEnd').value }))
-      .filter(b => b.start || b.end);
-    sched[day] = { start, end };
-    if (breaks.length) sched[day].breaks = breaks;
-    if (!firstStart) { firstStart = start; firstEnd = end; }
-  });
-  return { sched, firstStart, firstEnd, anyDay, allFilled };
-}
+// Legacy wrappers kept for any external callers
+function populateScheduleTable(workSchedule, workDays, workStart, workEnd, tbody) {}
+function collectScheduleTable() { return collectAllShifts(); }
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Promise-based confirm dialog matching site style. Returns Promise<boolean>. */
@@ -4666,7 +4625,30 @@ async function openJobModal(job) {
   updateLangSections();
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
-  document.getElementById('jShift').value = job ? (job.schedule || '') : '';
+  // Shift checkboxes
+  const activeShifts = job ? (job.schedule || '').split(',').map(s=>s.trim()).filter(Boolean) : [];
+  document.querySelectorAll('.jShiftCheck').forEach(cb => { cb.checked = activeShifts.includes(cb.value); });
+  updateShiftSections();
+  // Populate each shift's schedule table
+  if (activeShifts.length && job) {
+    let schedByShift = {};
+    try {
+      const parsed = JSON.parse(job.work_schedule || '{}');
+      const DAYS = new Set(['Mon','Tue','Wed','Thu','Fri','Sat','Sun']);
+      const keys = Object.keys(parsed);
+      if (keys.length && DAYS.has(keys[0])) schedByShift[activeShifts[0]] = parsed; // old flat format
+      else schedByShift = parsed; // new keyed format
+    } catch(e) {}
+    activeShifts.forEach(shift => {
+      const sec = document.querySelector(`#jShiftSchedulesWrap .jShiftSection[data-shift="${shift}"]`);
+      if (!sec) return;
+      let sched = schedByShift[shift] || {};
+      if (!Object.keys(sched).length && job.work_days) {
+        job.work_days.split(',').forEach(d => { sched[d.trim()] = { start: job.work_start||'', end: job.work_end||'' }; });
+      }
+      _jFillTbody(sec.querySelector('tbody'), sched);
+    });
+  }
   // Parse location into 5 fields
   const _loc = parseAddressString(job ? (job.location||'') : '');
   document.getElementById('jStreet').value  = _loc.street;
@@ -5227,10 +5209,12 @@ async function saveJob() {
   const langVal = checkedLangs[0];
   const partnerId = document.getElementById('jPartnerId').value || null;
   const partnerName = partnerId ? ((_jobPartners||[]).find(p=>p.id==partnerId)||{}).name||'' : '';
-  const { sched: _sched, firstStart: _wStart, firstEnd: _wEnd, anyDay: _anyDay, allFilled: _allFilled } = collectScheduleTable();
-  if (!_anyDay) return alert('请至少选择一个工作日');
+  const checkedShifts = [...document.querySelectorAll('.jShiftCheck:checked')].map(c => c.value);
+  if (!checkedShifts.length) return alert('请至少选择一个班次');
+  const { allShiftData, anyDay: _anyDay, allFilled: _allFilled, firstStart: _wStart, firstEnd: _wEnd, allDays } = collectAllShifts();
+  if (!_anyDay) return alert('请至少为每个班次选择一个工作日');
   if (!_allFilled) return alert('请填写所有选中工作日的上班和下班时间');
-  const workDays = Object.keys(_sched).join(',');
+  const workDays = allDays.join(',');
   const benefits = [...document.querySelectorAll('#jBenefitsWrap .benefit-btn.active')].map(b=>b.dataset.val).join(',');
   const requiredSkills = [...document.getElementById('jRequiredSkills').selectedOptions].map(o=>o.value).join(',');
   const data = {
@@ -5261,10 +5245,10 @@ async function saveJob() {
     work_days: workDays,
     work_start: _wStart,
     work_end: _wEnd,
-    work_schedule: JSON.stringify(_sched),
+    work_schedule: JSON.stringify(allShiftData),
     benefits,
     required_skills: requiredSkills,
-    schedule: document.getElementById('jShift').value,
+    schedule: checkedShifts.join(','),
     description: getJobDescValue(),
     urgent: document.getElementById('jUrgent').checked,
     headcount: parseInt(document.getElementById('jHeadcount').value) || 1,
