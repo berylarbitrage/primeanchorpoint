@@ -1003,6 +1003,8 @@ try { db.exec("ALTER TABLE interview_slots ADD COLUMN location_id INTEGER DEFAUL
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
+// Migrate interview_slots: add reserved worker column for admin-arranged times
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN reserved_for_worker_account_id INTEGER DEFAULT NULL"); } catch {}
 
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
@@ -3239,10 +3241,21 @@ app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res
 
 // Admin: toggle task visibility on worker portal
 app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmin, (req, res) => {
-  const { visible } = req.body;
+  const { visible, slot_ids } = req.body;
+  const workerId = parseInt(req.params.id);
   db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
-    .run(visible ? 1 : 0, req.params.id, req.params.key);
-  res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
+    .run(visible ? 1 : 0, workerId, req.params.key);
+
+  // When assigning interview slots to a worker, reserve those specific slots for them
+  if (req.params.key === 'interview' && Array.isArray(slot_ids) && slot_ids.length) {
+    // Clear previous unbooked reserved slots for this worker
+    db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(workerId);
+    // Mark selected slots as reserved for this worker
+    const stmt = db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=? WHERE id=? AND booked_count=0`);
+    for (const sid of slot_ids) stmt.run(workerId, sid);
+  }
+
+  res.json({ success: true, tasks: getOnboardingTasks(workerId) });
 });
 
 // Admin: send Persona identity verification from onboarding modal
@@ -8276,13 +8289,25 @@ app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
 
 // Worker: list available slots
 app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
-  const slots = db.prepare(`
+  // If the admin has reserved specific slots for this worker, show only those.
+  // Otherwise fall back to all general (unreserved) open slots.
+  const reserved = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
     WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+      AND reserved_for_worker_account_id=?
+    ORDER BY slot_datetime ASC
+  `).all(req.workerId);
+  if (reserved.length) return res.json(reserved);
+
+  const general = db.prepare(`
+    SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
+    FROM interview_slots
+    WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+      AND reserved_for_worker_account_id IS NULL
     ORDER BY slot_datetime ASC
   `).all();
-  res.json(slots);
+  res.json(general);
 });
 
 // Worker: get my interview
