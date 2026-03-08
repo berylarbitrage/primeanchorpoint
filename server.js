@@ -4005,12 +4005,8 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
 app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
   const old = db.prepare('SELECT title, company_name FROM jobs WHERE id=?').get(req.params.id);
   if (!old) return res.status(404).json({ error: '职位不存在 / Job not found' });
-  // Block deletion if the job has any assignments (workers assigned to it)
-  const assignmentCount = db.prepare('SELECT COUNT(*) as cnt FROM assignments WHERE job_id=?').get(req.params.id);
-  if (assignmentCount && assignmentCount.cnt > 0) {
-    return res.status(409).json({ error: `该职位已有 ${assignmentCount.cnt} 名工人被分配，无法删除。请先取消所有派工记录。 / Cannot delete: ${assignmentCount.cnt} worker(s) are assigned to this job. Remove all assignments first.` });
-  }
-  // Clean up related records before deleting the job
+  // Cascade delete all related records before deleting the job
+  db.prepare('DELETE FROM assignments WHERE job_id=?').run(req.params.id);
   db.prepare('DELETE FROM job_applications WHERE job_id=?').run(req.params.id);
   db.prepare('DELETE FROM employee_jobs WHERE job_id=?').run(req.params.id);
   db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
