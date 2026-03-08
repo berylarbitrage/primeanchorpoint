@@ -2604,13 +2604,8 @@ tr:hover td{background:var(--sky-light)}
     <input id="jPartnerSearch" autocomplete="off" placeholder="搜索公司名称…" oninput="filterPartnerSearch()">
     <div class="assign-dropdown" id="jPartnerDrop"></div>
   </div>
-  <div class="field">
-    <label>职位名称 *</label>
-    <input type="text" id="jTitle" placeholder="例：Office Assistant" style="width:100%;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem;box-sizing:border-box">
-  </div>
-
   <div class="field"><label>工种类别 Job Category</label>
-    <select id="jCategory">
+    <select id="jCategory" onchange="toggleCustomCategory('jCategory','jCategoryCustom')">
       <option value="">-- 请选择 --</option>
       <option value="warehouse_sorter">仓库分拣员 / Warehouse Sorter</option>
       <option value="labeler">贴标员 / Labeler</option>
@@ -2632,7 +2627,9 @@ tr:hover td{background:var(--sky-light)}
       <option value="loading_unloading">装卸工 / Loading / Unloading</option>
       <option value="order_picker">拣货员 / Order Picker</option>
       <option value="welder">焊接工 / Welder</option>
+      <option value="__other__">其他 / Other（自定义）…</option>
     </select>
+    <input type="text" id="jCategoryCustom" placeholder="请输入自定义工种 / Enter custom job category" style="display:none;margin-top:.4rem;width:100%;padding:.5rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem;box-sizing:border-box">
   </div>
 
   <div class="field"><label>职位类型</label>
@@ -2698,6 +2695,12 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <!-- per-language title+desc sections, shown dynamically -->
+  <div id="jLangEnSection" style="display:none;border:1px solid #bfdbfe;border-radius:8px;padding:1rem;background:#eff6ff;margin-bottom:.75rem">
+    <div style="font-weight:700;color:#1d4ed8;margin-bottom:.6rem">🇺🇸 English</div>
+    <div class="field" style="margin-bottom:0"><label>Job Title (English)</label>
+      <input type="text" id="jTitleEn" placeholder="e.g. Warehouse Sorter" style="width:100%;padding:.45rem .65rem;border:1px solid #93c5fd;border-radius:6px;font-size:.9rem;box-sizing:border-box">
+    </div>
+  </div>
   <div id="jLangZhSection" style="display:none;border:1px solid #e0f2fe;border-radius:8px;padding:1rem;background:#f0f9ff;margin-bottom:.75rem">
     <div style="font-weight:700;color:var(--sky);margin-bottom:.6rem">🇨🇳 中文内容</div>
     <div class="field" style="margin-bottom:.6rem"><label>职位名称（中文）</label>
@@ -2973,7 +2976,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field"><label>工种类别 Job Category</label>
-    <select id="aCategory">
+    <select id="aCategory" onchange="toggleCustomCategory('aCategory','aCategoryCustom')">
       <option value="">-- 请选择 --</option>
       <option value="warehouse_sorter">仓库分拣员 / Warehouse Sorter</option>
       <option value="labeler">贴标员 / Labeler</option>
@@ -2995,7 +2998,9 @@ tr:hover td{background:var(--sky-light)}
       <option value="loading_unloading">装卸工 / Loading / Unloading</option>
       <option value="order_picker">拣货员 / Order Picker</option>
       <option value="welder">焊接工 / Welder</option>
+      <option value="__other__">其他 / Other（自定义）…</option>
     </select>
+    <input type="text" id="aCategoryCustom" placeholder="请输入自定义工种 / Enter custom job category" style="display:none;margin-top:.4rem;width:100%;padding:.5rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem;box-sizing:border-box">
   </div>
 
   <div class="field"><label>状态</label><select id="aStatus">
@@ -4853,7 +4858,7 @@ async function openJobModal(job) {
     document.getElementById('jPartnerSearch').value = '';
   }
   document.getElementById('jTitle').value = job ? (job.title || '') : '';
-  document.getElementById('jCategory').value = job ? (job.category || '') : '';
+  setCategoryValue('jCategory','jCategoryCustom', job ? (job.category || '') : '');
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jPayPeriod').value = job ? (job.pay_period || '') : '';
@@ -4862,6 +4867,7 @@ async function openJobModal(job) {
   document.getElementById('jLangEn').checked = activeLangs.includes('en');
   document.getElementById('jLangZh').checked = activeLangs.includes('zh');
   document.getElementById('jLangEs').checked = activeLangs.includes('es');
+  document.getElementById('jTitleEn').value = job ? (job.title || '') : '';
   document.getElementById('jTitleZh').value = job ? (job.title_zh || '') : '';
   document.getElementById('jTitleEs').value = job ? (job.title_es || '') : '';
   document.getElementById('jDescZh').value  = job ? (job.desc_zh  || '') : '';
@@ -4939,6 +4945,7 @@ function closeJobModal() { guardClose('jobModal'); }
 function editJob(j) { openJobModal(j); }
 
 function updateLangSections() {
+  document.getElementById('jLangEnSection').style.display = document.getElementById('jLangEn').checked ? '' : 'none';
   document.getElementById('jLangZhSection').style.display = document.getElementById('jLangZh').checked ? '' : 'none';
   document.getElementById('jLangEsSection').style.display = document.getElementById('jLangEs').checked ? '' : 'none';
 }
@@ -4964,6 +4971,36 @@ function parseAddressString(str) {
   if (m3) return { street:m3[1].trim(), street2:'', city:m3[2].trim(), state:m3[3], zip:'' };
   if (m2) return { street:'', street2:'', city:m2[1].trim(), state:m2[2], zip:m2[3]||'' };
   return { street:'', street2:'', city:str.trim(), state:'', zip:'' };
+}
+
+// Custom job category helpers
+function toggleCustomCategory(selectId, inputId) {
+  const inp = document.getElementById(inputId);
+  if (document.getElementById(selectId).value === '__other__') {
+    inp.style.display = 'block';
+    inp.focus();
+  } else {
+    inp.style.display = 'none';
+  }
+}
+function getCategoryValue(selectId, inputId) {
+  const sel = document.getElementById(selectId);
+  if (sel.value === '__other__') return document.getElementById(inputId).value.trim();
+  return sel.value;
+}
+function setCategoryValue(selectId, inputId, value) {
+  const sel = document.getElementById(selectId);
+  const known = Array.from(sel.options).map(o => o.value).filter(v => v && v !== '__other__');
+  const inp = document.getElementById(inputId);
+  if (!value || known.includes(value)) {
+    sel.value = value || '';
+    inp.style.display = 'none';
+    inp.value = '';
+  } else {
+    sel.value = '__other__';
+    inp.value = value;
+    inp.style.display = 'block';
+  }
 }
 
 // Combine 5 address parts into a display string
@@ -5463,8 +5500,8 @@ async function saveJob() {
   const requiredSkills = [...document.getElementById('jRequiredSkills').selectedOptions].map(o=>o.value).join(',');
   const data = {
     partner_id: partnerId,
-    title: document.getElementById('jTitle').value,
-    category: document.getElementById('jCategory').value,
+    title: document.getElementById('jTitleEn').value,
+    category: getCategoryValue('jCategory','jCategoryCustom'),
     type: document.getElementById('jType').value,
     location: buildAddressString(
       document.getElementById('jStreet').value.trim(),
@@ -6199,7 +6236,7 @@ async function openAssignModal(assignment) {
   document.getElementById('assignModalTitle').textContent = assignment ? '编辑派工' : '新建派工';
   document.getElementById('assignId').value = assignment ? assignment.id : '';
   document.getElementById('aStatus').value = assignment ? assignment.status : 'assigned';
-  document.getElementById('aCategory').value = assignment ? (assignment.category || '') : '';
+  setCategoryValue('aCategory','aCategoryCustom', assignment ? (assignment.category || '') : '');
   document.getElementById('aNotes').value = assignment ? (assignment.notes || '') : '';
   document.getElementById('aStartDate').value = assignment ? (assignment.start_date || '') : '';
   document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
@@ -7032,7 +7069,7 @@ async function saveAssignment() {
     inquiry_id: isNew ? document.getElementById('aInquiryId').value : (ea ? ea.inquiry_id : document.getElementById('aInquiryId').value),
     job_id:     isNew ? document.getElementById('aJobId').value     : (ea ? ea.job_id     : document.getElementById('aJobId').value),
     status: document.getElementById('aStatus').value,
-    category: document.getElementById('aCategory').value,
+    category: getCategoryValue('aCategory','aCategoryCustom'),
     notes: document.getElementById('aNotes').value,
     start_date: document.getElementById('aWorkStart').value || document.getElementById('aStartDate').value,
     contract_type: document.getElementById('aContractType').value,
