@@ -3910,6 +3910,10 @@ app.post('/api/admin/pending-actions/:id/approve', requireAdmin, requireRole('ad
   try {
     if (action.action_type === 'delete') {
       if (action.target_table === 'jobs') {
+        const jobToDelete = db.prepare('SELECT job_status FROM jobs WHERE id=?').get(action.target_id);
+        if (!jobToDelete || jobToDelete.job_status !== 'cancelled') {
+          return res.status(409).json({ error: '只有已取消的职位才能删除。 / Only cancelled jobs can be deleted.' });
+        }
         // Cascade delete child records to satisfy FK constraints
         const assignmentIds = db.prepare('SELECT id FROM assignments WHERE job_id=?').all(action.target_id).map(r => r.id);
         db.transaction(() => {
@@ -4022,8 +4026,11 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
 });
 
 app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
-  const old = db.prepare('SELECT title, company_name FROM jobs WHERE id=?').get(req.params.id);
+  const old = db.prepare('SELECT title, company_name, job_status FROM jobs WHERE id=?').get(req.params.id);
   if (!old) return res.status(404).json({ error: '职位不存在 / Job not found' });
+  if (old.job_status !== 'cancelled') {
+    return res.status(409).json({ error: '只有已取消的职位才能删除。请先将职位状态改为"已取消"。 / Only cancelled jobs can be deleted. Please set job status to cancelled first.' });
+  }
   // Block deletion only if job has truly active assignments (pending/assigned/working)
   const assignmentCount = db.prepare("SELECT COUNT(*) as cnt FROM assignments WHERE job_id=? AND status IN ('pending','assigned','working')").get(req.params.id);
   if (assignmentCount && assignmentCount.cnt > 0) {
