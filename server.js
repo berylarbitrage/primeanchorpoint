@@ -3224,6 +3224,9 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
   const valid = ['pending','submitted','completed','waived'];
   if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
   const completedAt = ['completed','waived'].includes(status) ? new Date().toISOString() : null;
+  if (req.params.key === 'interview' && status === 'pending') {
+    db.prepare(`UPDATE interviews SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND status='scheduled'`).run(req.params.id);
+  }
   db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
     VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
     ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,

@@ -10825,8 +10825,8 @@ function renderOnboardingTasks(tasks) {
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
     const isVisible = t.visible_to_worker !== 0;
-    const tk = JSON.stringify(t.key);
-    const tt = JSON.stringify(t.title);
+    const tk = `'${t.key}'`;
+    const tt = `'${(t.title||'').replace(/'/g, "\\'")}'`;
     return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100);${!isVisible?'opacity:.55':''}">
       <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
       <div style="flex:1;min-width:0">
@@ -10848,8 +10848,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
-            : t.key==='interview' && !isVisible
-            ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 发送给工人面试</button>`
+            : t.key==='interview'
+            ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
