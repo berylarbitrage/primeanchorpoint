@@ -1362,13 +1362,14 @@ tr:hover td{background:var(--sky-light)}
     </div>
 
     <div class="card">
-      <h3 style="margin-bottom:1rem">现有时间槽</h3>
+      <h3 id="ivSlotsTitle" style="margin-bottom:1rem">未来时间槽</h3>
       <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center">
         <select id="ivSlotWeekFilter" onchange="loadInterviews()" style="padding:.4rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-          <option value="">全部时间</option>
+          <option value="future">未来全部</option>
           <option value="thisweek">本周</option>
           <option value="nextweek">下周</option>
-          <option value="future">未来全部</option>
+          <option value="">全部（含历史）</option>
+          <option value="past">历史已过期</option>
         </select>
         <button class="btn btn-sm btn-red" onclick="clearExpiredSlots()" style="margin-left:auto">清理已过期</button>
       </div>
@@ -12085,8 +12086,10 @@ async function loadInterviews() {
 
 function renderSlots(slots) {
   const tbody = document.getElementById('ivSlotsTable');
-  // Apply week filter
   const filter = document.getElementById('ivSlotWeekFilter')?.value || '';
+  const titleMap = { future:'未来时间槽', thisweek:'本周时间槽', nextweek:'下周时间槽', '':'全部时间槽（含历史）', past:'历史时间槽' };
+  const titleEl = document.getElementById('ivSlotsTitle');
+  if (titleEl) titleEl.textContent = titleMap[filter] ?? '时间槽';
   const now = new Date();
   let filtered = slots;
   if (filter === 'thisweek') {
@@ -12101,6 +12104,8 @@ function renderSlots(slots) {
     filtered = slots.filter(s => { const d = new Date(s.slot_datetime); return d >= startOfNext && d < endOfNext; });
   } else if (filter === 'future') {
     filtered = slots.filter(s => new Date(s.slot_datetime) > now);
+  } else if (filter === 'past') {
+    filtered = slots.filter(s => new Date(s.slot_datetime) <= now).reverse();
   }
 
   if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无时间槽</td></tr>'; return; }
