@@ -1449,10 +1449,10 @@ tr:hover td{background:var(--sky-light)}
 
   <!-- Select existing slot -->
   <div class="field">
-    <label style="font-weight:700">选择面试时间 *</label>
-    <select id="obivExistingSlotSel" onchange="obivOnSlotChange()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-      <option value="">— 请选择面试时间 —</option>
-    </select>
+    <label style="font-weight:700">选择面试时间（可多选）*</label>
+    <div id="obivExistingSlotSel" style="max-height:180px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:6px;padding:.4rem .6rem;background:#fff;font-size:.88rem">
+      <div style="color:var(--gray-400);font-size:.82rem;padding:.25rem 0">— 正在加载面试时间 —</div>
+    </div>
   </div>
   <div id="obivSlotInfo" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:.6rem .8rem;font-size:.84rem;color:#0369a1;margin-bottom:.75rem"></div>
 
@@ -13247,15 +13247,18 @@ async function openOnboardingInterviewSlotModal() {
   const futureSlots = _obivSlots.filter(s => s.active !== 0 && new Date(s.slot_datetime) > now);
 
   const slotSel = document.getElementById('obivExistingSlotSel');
-  slotSel.innerHTML = '<option value="">— 请选择面试时间 —</option>' +
-    futureSlots.map(s => {
+  if (!futureSlots.length) {
+    slotSel.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.25rem 0">暂无可用的面试时间，请创建新的时间段</div>';
+  } else {
+    slotSel.innerHTML = futureSlots.map(s => {
       const dt = new Date(s.slot_datetime);
       const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short' });
       const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
       const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
       const avail = (s.max_bookings || 1) - (s.booked_count || 0);
-      return `<option value="${s.id}">${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</option>`;
+      return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
     }).join('');
+  }
 
   const locOpts = '<option value="">— 选择地点 —</option>' +
     (_ivLocations || []).map(l => `<option value="${l.id}">${esc(l.name)}${l.address ? ' — ' + esc(l.address) : ''}</option>`).join('');
@@ -13283,17 +13286,20 @@ async function openOnboardingInterviewSlotModal() {
 }
 
 function obivOnSlotChange() {
-  const selId = document.getElementById('obivExistingSlotSel').value;
-  if (!selId) { document.getElementById('obivSlotInfo').style.display = 'none'; return; }
-  const slot = _obivSlots.find(s => s.id == selId);
-  if (!slot) return;
-  const dt = new Date(slot.slot_datetime);
-  const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-  const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
-  const locStr = slot.location ? ' · 📍 ' + slot.location : ' · 📍 （未设置地点）';
-  const avail = (slot.max_bookings || 1) - (slot.booked_count || 0);
+  const checked = document.querySelectorAll('#obivExistingSlotSel input[type="checkbox"]:checked');
   const infoEl = document.getElementById('obivSlotInfo');
-  infoEl.innerHTML = `⏰ ${dateStr} ${timeStr} · ${slot.duration_min || 30} 分钟${locStr} · 剩余名额：${avail}`;
+  if (!checked.length) { infoEl.style.display = 'none'; return; }
+  const lines = Array.from(checked).map(cb => {
+    const slot = _obivSlots.find(s => s.id == cb.value);
+    if (!slot) return '';
+    const dt = new Date(slot.slot_datetime);
+    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
+    const locStr = slot.location ? ' · 📍 ' + slot.location : '';
+    const avail = (slot.max_bookings || 1) - (slot.booked_count || 0);
+    return `⏰ ${dateStr} ${timeStr} · ${slot.duration_min || 30} 分钟${locStr} · 剩余名额：${avail}`;
+  }).filter(Boolean);
+  infoEl.innerHTML = lines.join('<br>');
   infoEl.style.display = 'block';
 }
 
@@ -13324,23 +13330,23 @@ async function obivCreateAndAdd() {
 
   showToast('✅ 面试时间已创建，请在列表中选择');
 
-  // Reload slots and repopulate dropdown
+  // Reload slots and repopulate list
   _obivSlots = await api('/admin/interview-slots') || [];
   const now = new Date();
   const futureSlots = _obivSlots.filter(s => s.active !== 0 && new Date(s.slot_datetime) > now);
   const slotSel = document.getElementById('obivExistingSlotSel');
-  slotSel.innerHTML = '<option value="">— 请选择面试时间 —</option>' +
-    futureSlots.map(s => {
-      const dt = new Date(s.slot_datetime);
-      const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short' });
-      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
-      const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
-      const avail = (s.max_bookings || 1) - (s.booked_count || 0);
-      return `<option value="${s.id}">${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</option>`;
-    }).join('');
+  slotSel.innerHTML = futureSlots.map(s => {
+    const dt = new Date(s.slot_datetime);
+    const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short' });
+    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
+    const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
+    const avail = (s.max_bookings || 1) - (s.booked_count || 0);
+    return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
+  }).join('');
 
-  // Auto-select the new slot
-  slotSel.value = r.id;
+  // Auto-check the new slot
+  const newCheckbox = slotSel.querySelector(`input[value="${r.id}"]`);
+  if (newCheckbox) { newCheckbox.checked = true; }
   obivOnSlotChange();
 
   // Collapse create form
@@ -13350,13 +13356,14 @@ async function obivCreateAndAdd() {
 }
 
 async function saveOnboardingInterviewSlot() {
-  const slotId = document.getElementById('obivExistingSlotSel').value;
-  if (!slotId) return showToast('❌ 请先选择面试时间', 'error');
+  const checked = document.querySelectorAll('#obivExistingSlotSel input[type="checkbox"]:checked');
+  const slotIds = Array.from(checked).map(cb => parseInt(cb.value));
+  if (!slotIds.length) return showToast('❌ 请先选择至少一个面试时间', 'error');
 
   closeModal('onboardingInterviewSlotModal');
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/interview/visibility`, {
     method: 'PUT',
-    body: JSON.stringify({ visible: 1 })
+    body: JSON.stringify({ visible: 1, slot_ids: slotIds })
   });
   showToast('✅ 面试邀请已发送给工人');
   refreshOnboardingModal();
