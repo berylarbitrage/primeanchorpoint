@@ -1267,7 +1267,7 @@ tr:hover td{background:var(--sky-light)}
       <h3 style="margin-bottom:.5rem">📅 每周面试排班</h3>
       <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">快速为一周设置面试时间。选择日期范围、勾选日期、设置时间段，一键生成。</p>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.75rem;align-items:end;margin-bottom:1rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.75rem;align-items:end;margin-bottom:.75rem">
         <div>
           <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">开始日期</label>
           <input type="date" id="batchStartDate" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
@@ -1282,27 +1282,42 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div>
           <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">时长（分钟）</label>
-          <input type="number" id="batchDuration" value="30" min="10" max="120" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <input type="number" id="batchDuration" value="30" min="10" max="120" oninput="updateBatchPreview()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.75rem;align-items:end;margin-bottom:1rem">
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试开始时间 <span style="color:#dc2626">*</span></label>
+          <input type="time" id="batchStartTime" value="09:00" oninput="updateBatchPreview()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试结束时间 <span style="color:#dc2626">*</span></label>
+          <input type="time" id="batchEndTime" value="17:00" oninput="updateBatchPreview()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
         </div>
       </div>
 
       <div style="margin-bottom:1rem">
-        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试地点（选择预设或手动输入）</label>
+        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试地点 <span style="color:#dc2626">*</span>（必填）</label>
         <div style="display:flex;gap:.5rem;align-items:center">
           <select id="batchLocationSelect" onchange="onBatchLocationSelect()" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
             <option value="">-- 选择预设地点 --</option>
+            <option value="__zoom__">📹 Zoom 视频面试</option>
           </select>
-          <span style="color:var(--gray-400);font-size:.82rem">或</span>
-          <input type="text" id="batchLocation" placeholder="手动输入地址" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <button type="button" onclick="openLocationModal()" style="white-space:nowrap;padding:.5rem .85rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;background:#f0fdf4;color:#16a34a;cursor:pointer;font-weight:600">＋ 新建地点</button>
+        </div>
+        <div id="batchZoomRow" style="display:none;margin-top:.5rem">
+          <label style="font-size:.8rem;font-weight:600;color:#0369a1;display:block;margin-bottom:.3rem">📹 Zoom 会议链接 <span style="color:#dc2626">*</span></label>
+          <input type="url" id="batchZoomLink" placeholder="https://zoom.us/j/..." style="width:100%;padding:.5rem .7rem;border:1.5px solid #bae6fd;border-radius:6px;font-size:.88rem;background:#f0f9ff;box-sizing:border-box">
         </div>
         <div id="batchLocationDetail" style="display:none;margin-top:.5rem;padding:.5rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:.82rem">
         </div>
       </div>
 
-      <!-- Day selection with time inputs -->
+      <!-- Day checkboxes -->
       <div style="margin-bottom:1rem">
-        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.5rem">选择工作日和时间段</label>
-        <div id="batchDaysGrid" style="display:grid;gap:.5rem">
+        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.5rem">选择工作日</label>
+        <div id="batchDaysGrid" style="display:grid;gap:.4rem">
         </div>
       </div>
 
@@ -1347,13 +1362,14 @@ tr:hover td{background:var(--sky-light)}
     </div>
 
     <div class="card">
-      <h3 style="margin-bottom:1rem">现有时间槽</h3>
+      <h3 id="ivSlotsTitle" style="margin-bottom:1rem">未来时间槽</h3>
       <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center">
         <select id="ivSlotWeekFilter" onchange="loadInterviews()" style="padding:.4rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-          <option value="">全部时间</option>
+          <option value="future">未来全部</option>
           <option value="thisweek">本周</option>
           <option value="nextweek">下周</option>
-          <option value="future">未来全部</option>
+          <option value="">全部（含历史）</option>
+          <option value="past">历史已过期</option>
         </select>
         <button class="btn btn-sm btn-red" onclick="clearExpiredSlots()" style="margin-left:auto">清理已过期</button>
       </div>
@@ -1650,7 +1666,6 @@ tr:hover td{background:var(--sky-light)}
     <div style="margin-left:auto;display:flex;gap:.5rem">
       <button class="btn" style="background:#f0fff4;color:#2f9e44;border:1px solid #b2f2bb" onclick="openEmailCodeTestModal()">✉️ 测试邮箱</button>
       <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
-      <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
       <button class="btn" style="background:#fefce8;color:#92400e;border:1px solid #fde68a" onclick="toggleInvitePanel()">🔗 生成邀请链接</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
     </div>
@@ -1693,9 +1708,9 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <!-- Customer -->
-  <div id="accPanelCustomer" class="card" style="display:none">
+  <div id="accPanelCustomer" class="card" style="display:none;overflow-x:auto">
     <div id="pendingEntBanner" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#92400e;font-weight:600"></div>
-    <table><thead><tr><th>公司名</th><th>联系人</th><th>邮箱</th><th>电话</th><th>EIN</th><th>审核状态</th><th>创建</th><th>操作</th></tr></thead>
+    <table style="font-size:.85rem;min-width:860px"><thead><tr><th style="min-width:180px">公司名</th><th>联系人</th><th>邮箱</th><th>电话</th><th>EIN</th><th>审核状态</th><th>创建</th><th style="min-width:160px">操作</th></tr></thead>
     <tbody id="customerAccountsTable"></tbody></table>
   </div>
 </div>
@@ -1835,7 +1850,23 @@ tr:hover td{background:var(--sky-light)}
       <div id="jobTitleOptionsList"></div>
     </div>
 
-    <!-- 3. Display Suffix Words (rotate daily in worker portal) -->
+    <!-- 3. Worker Positions (动态职位列表) -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
+      <h3 style="margin:0 0 .4rem;font-size:1rem;color:#1e293b">👷 工人职位列表 Worker Positions</h3>
+      <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
+        管理工人注册时的职位选项（注册页、面试完成、文件申请等处均引用此列表）。key 为英文小写+下划线，唯一标识。
+      </p>
+      <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+        <input id="newWPKey" placeholder="key（如：new_position）*" style="flex:1;min-width:130px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newWPZh" placeholder="中文名称 *" style="flex:1;min-width:100px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newWPEn" placeholder="English *" style="flex:2;min-width:130px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newWPEs" placeholder="Español" style="flex:1;min-width:100px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <button class="btn" onclick="addWorkerPosition()" style="white-space:nowrap">＋ 添加</button>
+      </div>
+      <div id="workerPositionsList"></div>
+    </div>
+
+    <!-- 4. Display Suffix Words (rotate daily in worker portal) -->
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
       <h3 style="margin:0 0 .4rem;font-size:1rem;color:#1e293b">🔄 工人端显示后缀词 Display Suffix Words</h3>
       <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
@@ -2038,13 +2069,22 @@ tr:hover td{background:var(--sky-light)}
   <div id="entApprovalDetails" style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:1rem;margin-bottom:1.25rem;font-size:.875rem;line-height:2"></div>
   <div class="field">
     <label>关联合作公司档案 * <span style="color:var(--red);font-size:.78rem;font-weight:400">（审核通过必须选择）</span></label>
-    <select id="entApprovalPartner">
-      <option value="">— 请选择关联公司 —</option>
-    </select>
+    <div style="display:flex;gap:.5rem;align-items:center">
+      <select id="entApprovalPartner" style="flex:1">
+        <option value="">— 请选择关联公司 —</option>
+      </select>
+      <button class="btn btn-sm" style="white-space:nowrap;background:var(--teal);color:#fff;border:none" onclick="importEntAsNewPartner()">＋ 导入新建</button>
+    </div>
+    <div id="entApprovalPartnerHint" style="font-size:.75rem;color:var(--teal);margin-top:.3rem;display:none">✓ 已根据注册信息新建合作公司并自动选中</div>
+  </div>
+  <div id="entRejectReasonWrap" style="display:none" class="field">
+    <label>拒绝原因 * <span style="color:var(--red);font-size:.78rem;font-weight:400">（拒绝必须填写）</span></label>
+    <textarea id="entRejectReason" rows="3" placeholder="请填写拒绝原因，将通知申请人…" style="resize:vertical"></textarea>
   </div>
   <div class="modal-actions">
     <button class="btn" onclick="closeModal('entApprovalModal')">取消</button>
-    <button class="btn btn-red" onclick="rejectEnterpriseFromModal()">拒绝注册</button>
+    <button class="btn btn-red" id="entRejectBtn" onclick="toggleEntRejectReason()">拒绝注册</button>
+    <button class="btn" id="entRejectConfirmBtn" style="display:none;background:#c0392b;color:#fff" onclick="rejectEnterpriseFromModal()">确认拒绝</button>
     <button class="btn btn-green" onclick="confirmApproveEnterprise()">通过并关联</button>
   </div>
 </div></div>
@@ -3269,7 +3309,15 @@ tr:hover td{background:var(--sky-light)}
       <div class="field"><label>姓 (Last Name) *</label><input id="eLast" placeholder="例：Smith"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>出生日期 *</label><input id="eDob" type="date"></div>
+      <div class="field"><label>出生日期 *</label>
+        <div style="display:flex;gap:.3rem;align-items:center">
+          <input id="eDobY" type="text" inputmode="numeric" maxlength="4" placeholder="年 YYYY" style="width:5.5rem;text-align:center;padding:.45rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+          <span style="color:var(--gray-400)">/</span>
+          <input id="eDobM" type="text" inputmode="numeric" maxlength="2" placeholder="月 MM" style="width:3.5rem;text-align:center;padding:.45rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+          <span style="color:var(--gray-400)">/</span>
+          <input id="eDobD" type="text" inputmode="numeric" maxlength="2" placeholder="日 DD" style="width:3.5rem;text-align:center;padding:.45rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+        </div>
+      </div>
     </div>
     <div class="field">
       <label>电话 * <button type="button" onclick="addEmpPhone()" style="margin-left:.5rem;padding:.1rem .5rem;font-size:.72rem;background:var(--sky-light);color:var(--blue);border:1px solid var(--sky);border-radius:4px;cursor:pointer">+ 添加</button></label>
@@ -7156,7 +7204,7 @@ function renderPartners(partners) {
       <td>
         <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
         <button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">✍ 发送合同</button>
-        <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>
+        <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id},${JSON.stringify(p.name)})">删除</button>
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="6" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
@@ -7776,8 +7824,36 @@ async function savePartner() {
   loadPartners();
 }
 
-async function deletePartner(id) {
-  if (!await showConfirm('确定删除此合作公司及其所有文件？', { danger: true })) return;
+async function deletePartner(id, name) {
+  const confirmed = await new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000;font-family:\'DM Sans\',sans-serif';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem';
+    box.innerHTML =
+      '<div style="font-size:1rem;font-weight:700;color:#B91C1C;margin-bottom:.6rem">⚠️ 删除合作公司</div>' +
+      '<div style="font-size:.88rem;color:#4B5563;line-height:1.6;margin-bottom:1rem">此操作将永久删除 <strong>' + esc(name) + '</strong> 及其所有文件，无法恢复。<br>请在下方输入公司名称以确认删除：</div>' +
+      '<input id="_del_confirm_input" type="text" placeholder="' + esc(name) + '" autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:.88rem;margin-bottom:1.1rem;font-family:inherit;outline:none">' +
+      '<div style="display:flex;gap:.6rem;justify-content:flex-end">' +
+        '<button class="_del_cancel" style="padding:8px 18px;border:1px solid #e2e5ea;border-radius:8px;background:transparent;color:#5F6B7A;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">取消</button>' +
+        '<button class="_del_ok" disabled style="padding:8px 18px;border:none;border-radius:8px;background:#E63946;color:#fff;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit;opacity:.45">确认删除</button>' +
+      '</div>';
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const inp = box.querySelector('#_del_confirm_input');
+    const btn = box.querySelector('._del_ok');
+    inp.addEventListener('input', () => {
+      const match = inp.value === name;
+      btn.disabled = !match;
+      btn.style.opacity = match ? '1' : '.45';
+    });
+    const cleanup = r => { document.body.removeChild(overlay); resolve(r); };
+    btn.onclick = () => { if (!btn.disabled) cleanup(true); };
+    box.querySelector('._del_cancel').onclick = () => cleanup(false);
+    overlay.onclick = e => { if (e.target === overlay) cleanup(false); };
+    inp.focus();
+  });
+  if (!confirmed) return;
   await api(`/admin/partners/${id}`, { method:'DELETE' });
   loadPartners();
 }
@@ -7986,6 +8062,50 @@ async function sendRegLink() {
   }
 }
 
+// ── DOB split-input helpers ──
+function setDobValue(val) {
+  // val: 'YYYY-MM-DD' or ''
+  const [y='',m='',d=''] = (val||'').split('-');
+  document.getElementById('eDobY').value = y;
+  document.getElementById('eDobM').value = m;
+  document.getElementById('eDobD').value = d;
+}
+function getDobValue() {
+  const y = document.getElementById('eDobY').value.trim();
+  const m = document.getElementById('eDobM').value.trim().padStart(2,'0');
+  const d = document.getElementById('eDobD').value.trim().padStart(2,'0');
+  if (!y && !m && !d) return '';
+  return `${y}-${m}-${d}`;
+}
+(function initDobAutoAdvance() {
+  function onlyDigits(e) {
+    const el = e.target;
+    el.value = el.value.replace(/\D/g,'');
+  }
+  function advance(el, next) {
+    el.addEventListener('input', function() {
+      this.value = this.value.replace(/\D/g,'');
+      if (this.value.length >= parseInt(this.getAttribute('maxlength'))) {
+        const n = document.getElementById(next);
+        if (n) { n.focus(); n.select(); }
+      }
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('eDobY').addEventListener('input', function() {
+      this.value = this.value.replace(/\D/g,'');
+      if (this.value.length >= 4) { const n = document.getElementById('eDobM'); if(n){n.focus();n.select();} }
+    });
+    document.getElementById('eDobM').addEventListener('input', function() {
+      this.value = this.value.replace(/\D/g,'');
+      if (this.value.length >= 2) { const n = document.getElementById('eDobD'); if(n){n.focus();n.select();} }
+    });
+    document.getElementById('eDobD').addEventListener('input', function() {
+      this.value = this.value.replace(/\D/g,'');
+    });
+  });
+})();
+
 function openEmpModal(id) {
   document.getElementById('empModalTitle').textContent = id ? '编辑员工' : '新增员工';
   document.getElementById('empId').value = id || '';
@@ -7994,7 +8114,7 @@ function openEmpModal(id) {
     document.getElementById('eFirst').value    = e.first_name||'';
     document.getElementById('eMiddle').value   = e.middle_name||'';
     document.getElementById('eLast').value     = e.last_name||'';
-    document.getElementById('eDob').value      = e.dob||'';
+    setDobValue(e.dob||'');
     document.getElementById('ePhone').value    = e.phone||'';
     document.getElementById('eEmail').value    = e.email||'';
     document.getElementById('eAddr').value     = e.address||'';
@@ -8024,9 +8144,11 @@ function openEmpModal(id) {
     document.getElementById('eSocialFacebook').value  = sm.facebook||'';
     document.getElementById('eSocialInstagram').value = sm.instagram||'';
   } else {
-    ['eFirst','eMiddle','eLast','eDob','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
+    setDobValue('');
+    ['eFirst','eMiddle','eLast','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
      'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin',
      'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    document.getElementById('eHire').value = new Date().toLocaleDateString('en-CA');
     fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
     document.getElementById('addJobRecordBtn').style.display = 'none';
@@ -8259,7 +8381,7 @@ function randomFillEmployee() {
   const fn = pick(firsts), ln = pick(lasts);
   document.getElementById('eFirst').value = fn;
   document.getElementById('eLast').value = ln;
-  document.getElementById('eDob').value = dob;
+  setDobValue(dob);
   document.getElementById('ePhone').value = phone;
   document.getElementById('eEmail').value = `${fn.toLowerCase()}.${ln.toLowerCase()}@email.com`;
   document.getElementById('eAddr').value = pick(streets);
@@ -8510,7 +8632,7 @@ async function saveEmployee() {
     first_name: document.getElementById('eFirst').value.trim(),
     middle_name: document.getElementById('eMiddle').value.trim(),
     last_name:  document.getElementById('eLast').value.trim(),
-    dob: document.getElementById('eDob').value,
+    dob: getDobValue(),
     phone: document.getElementById('ePhone').value.trim(),
     email: document.getElementById('eEmail').value.trim(),
     extra_phones: extraPhones,
@@ -8686,7 +8808,12 @@ async function deleteEmployee(id, name) {
     setTimeout(() => input.focus(), 50);
   });
   if (!confirmed) return;
-  await api(`/admin/employees/${id}/hard-delete`, { method: 'DELETE' });
+  const result = await api(`/admin/employees/${id}/hard-delete`, { method: 'DELETE' });
+  if (result && result.error) {
+    alert(`❌ 删除失败：${result.error}`);
+    return;
+  }
+  showToast('✅ 员工已永久删除');
   loadEmployees();
 }
 
@@ -9054,35 +9181,23 @@ async function deleteRating(ratingId, empId) {
 // ─── Employee Doc Request Links ───
 let _currentDocLinkUrl = '';
 
-const _DOC_POSITIONS = [
-  { key:'warehouse_sorter', zh:'仓库分拣员', en:'Warehouse Sorter', es:'Clasificador de almacén' },
-  { key:'labeler',          zh:'贴标员',     en:'Labeler',          es:'Etiquetador' },
-  { key:'packer',           zh:'打包员',     en:'Packer',           es:'Empacador' },
-  { key:'forklift_operator',zh:'叉车操作员', en:'Forklift Operator',es:'Operador de montacargas' },
-  { key:'cdl_driver',       zh:'CDL卡车司机',en:'CDL Truck Driver', es:'Conductor CDL' },
-  { key:'delivery_driver',  zh:'送货司机',   en:'Delivery Driver',  es:'Conductor de reparto' },
-  { key:'shift_supervisor', zh:'班组长',     en:'Shift Supervisor', es:'Supervisor de turno' },
-  { key:'site_manager',     zh:'现场主管',   en:'Site Manager',     es:'Gerente de sitio' },
-  { key:'quality_inspector',zh:'质检员',     en:'Quality Inspector',es:'Inspector de calidad' },
-  { key:'machine_operator', zh:'机器操作员', en:'Machine Operator', es:'Operador de máquinas' },
-  { key:'assembly_line',    zh:'装配线工人', en:'Assembly Line',    es:'Línea de ensamblaje' },
-  { key:'material_handler', zh:'物料搬运工', en:'Material Handler', es:'Manejo de materiales' },
-  { key:'inventory_clerk',  zh:'库存文员',   en:'Inventory Clerk',  es:'Empleado de inventario' },
-  { key:'general_labor',    zh:'普工',       en:'General Labor',    es:'Trabajador general' },
-  { key:'janitorial',       zh:'清洁工',     en:'Janitorial',       es:'Personal de limpieza' },
-  { key:'food_processing',  zh:'食品加工',   en:'Food Processing',  es:'Procesamiento de alimentos' },
-  { key:'warehouse_lead',   zh:'仓库领班',   en:'Warehouse Lead',   es:'Líder de almacén' },
-  { key:'loading_unloading',zh:'装卸工',     en:'Loading/Unloading',es:'Carga y descarga' },
-  { key:'order_picker',     zh:'拣货员',     en:'Order Picker',     es:'Selector de pedidos' },
-  { key:'welder',           zh:'焊接工',     en:'Welder',           es:'Soldador' },
-];
+// Worker positions loaded from DB (shared cache)
+let _WORKER_POSITIONS = [];
+async function loadWorkerPositions() {
+  if (_WORKER_POSITIONS.length) return _WORKER_POSITIONS;
+  try { _WORKER_POSITIONS = await api('/worker-positions'); } catch {}
+  return _WORKER_POSITIONS;
+}
+// Alias for doc request modal
+const _getDocPositions = () => _WORKER_POSITIONS;
 
-function toggleDocPositions() {
+async function toggleDocPositions() {
   const on = document.getElementById('docReqIncludePositions').checked;
   const block = document.getElementById('docReqPositionsBlock');
   block.style.display = on ? '' : 'none';
   if (on && !document.getElementById('docPositionCheckList').children.length) {
-    document.getElementById('docPositionCheckList').innerHTML = _DOC_POSITIONS.map(p =>
+    await loadWorkerPositions();
+    document.getElementById('docPositionCheckList').innerHTML = _WORKER_POSITIONS.map(p =>
       `<label style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;font-weight:400;text-transform:none;cursor:pointer;padding:.15rem 0">
         <input type="checkbox" class="docPosCheck" value="${p.key}" checked style="width:13px;height:13px">
         ${p.zh}
@@ -10906,8 +11021,8 @@ function renderOnboardingTasks(tasks) {
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
     const isVisible = t.visible_to_worker !== 0;
-    const tk = JSON.stringify(t.key).replace(/"/g, '&quot;');
-    const tt = JSON.stringify(t.title).replace(/"/g, '&quot;');
+    const tk = `'${t.key}'`;
+    const tt = `'${(t.title||'').replace(/'/g, "\\'")}'`;
     return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100);${!isVisible?'opacity:.55':''}">
       <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
       <div style="flex:1;min-width:0">
@@ -10938,8 +11053,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
-            : t.key==='interview' && !isVisible
-            ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 发送给工人面试</button>`
+            : t.key==='interview'
+            ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -10971,16 +11086,7 @@ function confirmOnboardingComplete(key, title) {
   showConfirmModal(`标记完成：${title}`, '确认将此任务标记为已完成？', '✅ 确认完成', 'btn-green', () => updateOnboardingTask(key, 'completed'), 'green');
 }
 // ─── Interview Complete Modal ───
-const IC_POSITIONS = [
-  { key:'warehouse_sorter', zh:'仓库分拣员' }, { key:'labeler', zh:'贴标员' },
-  { key:'packer', zh:'打包员' }, { key:'forklift_operator', zh:'叉车操作员' },
-  { key:'cdl_driver', zh:'CDL卡车司机' }, { key:'delivery_driver', zh:'送货司机' },
-  { key:'machine_operator', zh:'机器操作员' }, { key:'assembly_line', zh:'装配线工人' },
-  { key:'material_handler', zh:'物料搬运工' }, { key:'general_labor', zh:'普工' },
-  { key:'janitorial', zh:'清洁工' }, { key:'food_processing', zh:'食品加工' },
-  { key:'loading_unloading', zh:'装卸工' }, { key:'order_picker', zh:'拣货员' },
-  { key:'quality_inspector', zh:'质检员' }, { key:'shift_supervisor', zh:'班组长' }
-];
+// IC_POSITIONS now loaded dynamically from _WORKER_POSITIONS cache
 let _icSkills = [];
 
 async function openInterviewCompleteModal() {
@@ -10999,7 +11105,8 @@ async function openInterviewCompleteModal() {
   // Position interests
   let interests = [];
   try { interests = JSON.parse((w && w.position_interests) || '[]'); } catch { interests = []; }
-  document.getElementById('icPositionInterests').innerHTML = IC_POSITIONS.map(p =>
+  await loadWorkerPositions();
+  document.getElementById('icPositionInterests').innerHTML = _WORKER_POSITIONS.map(p =>
     `<label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
       <input type="checkbox" value="${p.key}" ${interests.includes(p.key)?'checked':''} style="accent-color:var(--sky)">
       ${esc(p.zh)}
@@ -11314,7 +11421,7 @@ function convertWorkerToEmployee(w) {
   document.getElementById('eLast').value  = lastName;
   document.getElementById('ePhone').value = w.phone || '';
   document.getElementById('eEmail').value = w.email || '';
-  document.getElementById('eDob').value   = w.dob   || '';
+  setDobValue(w.dob || '');
   document.getElementById('eHire').value  = new Date().toISOString().slice(0, 10);
 
   // Update modal title to signal origin
@@ -11586,31 +11693,35 @@ async function loadWorkerHistory(id) {
 async function loadCustomerAccounts() {
   const rows = await api('/admin/customer-accounts');
   if (!Array.isArray(rows)) return;
-  const pending = rows.filter(c => c.approval_status === 'pending');
+  // Only count verified (active=1) pending accounts for the banner
+  const pending = rows.filter(c => c.approval_status === 'pending' && c.active);
   const banner = document.getElementById('pendingEntBanner');
   if (pending.length) {
     banner.style.display = '';
     banner.textContent = `📨 有 ${pending.length} 个企业注册申请等待审核`;
   } else { banner.style.display = 'none'; }
   const statusBadge = (c) => {
+    if (c.approval_status === 'pending' && !c.active) return '<span style="color:var(--gray-400);font-weight:600">📧 待验证</span>';
     if (c.approval_status === 'pending') return '<span style="color:var(--orange);font-weight:600">⏳ 待审核</span>';
     if (c.approval_status === 'rejected') return '<span style="color:var(--red);font-weight:600">❌ 已拒绝</span>';
     return c.active ? '<span style="color:var(--green)">✅ 已通过</span>' : '<span style="color:var(--red)">禁用</span>';
   };
-  document.getElementById('customerAccountsTable').innerHTML = rows.length ? rows.map(c=>`<tr style="${c.approval_status==='pending'?'background:#fffef5':''}">
-    <td><strong>${esc(c.company_name)}</strong>${c.staffing_needs?`<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(c.staffing_needs).slice(0,60)}</span>`:''}</td>
-    <td>${esc(c.contact_name||'')}</td>
-    <td>${esc(c.email)}</td>
-    <td>${esc(c.phone||'')}</td>
-    <td style="font-size:.82rem">${esc(c.ein||'—')}</td>
-    <td>${statusBadge(c)}</td>
-    <td>${(c.created_at||'').slice(0,10)}</td>
-    <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
-      ${c.approval_status==='pending'?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
-      ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
-      ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
-      <button class="btn btn-sm" onclick="editCustomerAccount(${c.id})">编辑</button>
-      <button class="btn btn-sm btn-red" onclick="deleteCustomerAccount(${c.id},'${esc(c.company_name)}')">删除</button>
+  document.getElementById('customerAccountsTable').innerHTML = rows.length ? rows.map(c=>`<tr style="${c.approval_status==='pending'&&c.active?'background:#fffef5':''}">
+    <td style="max-width:200px"><strong>${esc(c.company_name)}</strong>${c.staffing_needs?`<br><span style="font-size:.72rem;color:var(--gray-400);white-space:normal;word-break:break-word">${esc(c.staffing_needs).slice(0,80)}${c.staffing_needs.length>80?'…':''}</span>`:''}</td>
+    <td style="white-space:nowrap">${esc(c.contact_name||'')}</td>
+    <td style="max-width:180px;word-break:break-all">${esc(c.email)}</td>
+    <td style="white-space:nowrap">${esc(c.phone||'')}</td>
+    <td style="font-size:.82rem;white-space:nowrap">${esc(c.ein||'—')}</td>
+    <td style="white-space:nowrap">${statusBadge(c)}</td>
+    <td style="white-space:nowrap">${(c.created_at||'').slice(0,10)}</td>
+    <td>
+      <div style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
+        ${c.approval_status==='pending'&&c.active?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
+        ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
+        ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
+        <button class="btn btn-sm" onclick="editCustomerAccount(${c.id})">编辑</button>
+        <button class="btn btn-sm btn-red" onclick="deleteCustomerAccount(${c.id},'${esc(c.company_name)}')">删除</button>
+      </div>
     </td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无客户账户</td></tr>';
 }
@@ -11771,7 +11882,41 @@ async function openEntApprovalModal(id) {
   _allPartners = partners;
   document.getElementById('entApprovalPartner').innerHTML = '<option value="">— 请选择关联公司 —</option>' +
     partners.map(p=>`<option value="${p.id}"${c.partner_id==p.id?' selected':''}>${esc(p.name)}${p.industry?' · '+esc(p.industry):''}</option>`).join('');
+  // reset reject area
+  document.getElementById('entRejectReasonWrap').style.display = 'none';
+  document.getElementById('entRejectReason').value = '';
+  document.getElementById('entRejectBtn').style.display = '';
+  document.getElementById('entRejectConfirmBtn').style.display = 'none';
+  document.getElementById('entApprovalPartnerHint').style.display = 'none';
   document.getElementById('entApprovalModal').classList.add('show');
+}
+
+async function importEntAsNewPartner() {
+  const id = document.getElementById('entApprovalId').value;
+  const rows = await api('/admin/customer-accounts');
+  const c = rows.find(r => r.id == id);
+  if (!c) return;
+  const r = await api('/admin/partners', { method:'POST', body: JSON.stringify({
+    name: c.company_name,
+    contact_person: c.contact_name || '',
+    phone: c.phone || '',
+    email: c.email || '',
+    notes: c.staffing_needs ? '人力需求：' + c.staffing_needs : '',
+    active: 1
+  })});
+  if (!r || r.error) return alert('新建合作公司失败：' + (r && r.error || '未知错误'));
+  // refresh partner list and select the new one
+  _allPartners = await api('/admin/partners').catch(()=>[]);
+  document.getElementById('entApprovalPartner').innerHTML = '<option value="">— 请选择关联公司 —</option>' +
+    _allPartners.map(p=>`<option value="${p.id}"${p.id==r.id?' selected':''}>${esc(p.name)}${p.industry?' · '+esc(p.industry):''}</option>`).join('');
+  document.getElementById('entApprovalPartnerHint').style.display = '';
+}
+
+function toggleEntRejectReason() {
+  document.getElementById('entRejectReasonWrap').style.display = '';
+  document.getElementById('entRejectBtn').style.display = 'none';
+  document.getElementById('entRejectConfirmBtn').style.display = '';
+  document.getElementById('entRejectReason').focus();
 }
 
 async function confirmApproveEnterprise() {
@@ -11788,8 +11933,10 @@ async function confirmApproveEnterprise() {
 
 async function rejectEnterpriseFromModal() {
   const id = document.getElementById('entApprovalId').value;
-  if (!await showConfirm('确认拒绝此企业注册？', { danger: true })) return;
-  await api(`/admin/reject-enterprise/${id}`, { method:'PUT' });
+  const reason = document.getElementById('entRejectReason').value.trim();
+  if (!reason) { document.getElementById('entRejectReason').focus(); return alert('请填写拒绝原因'); }
+  if (!await showConfirm('确认拒绝此企业注册申请？', { danger: true })) return;
+  await api(`/admin/reject-enterprise/${id}`, { method:'PUT', body:JSON.stringify({ reason }) });
   closeModal('entApprovalModal');
   showToast('❌ 企业注册已拒绝');
   loadCustomerAccounts();
@@ -11976,6 +12123,19 @@ async function loadInterviewLocations() {
   const locs = await api('/admin/interview-locations');
   if (!Array.isArray(locs)) return;
   _ivLocations = locs;
+  const locOpts = locs.map(l => `<option value="${l.id}">${esc(l.name)}${l.address ? ' — ' + esc(l.address) : ''}</option>`).join('');
+  const batchSel = document.getElementById('batchLocationSelect');
+  if (batchSel) {
+    const prev = batchSel.value;
+    batchSel.innerHTML = '<option value="">-- 选择预设地点 --</option><option value="__zoom__">📹 Zoom 视频面试</option>' + locOpts;
+    if (prev) batchSel.value = prev;
+  }
+  const singleSel = document.getElementById('ivSlotLocationSelect');
+  if (singleSel) {
+    const prev = singleSel.value;
+    singleSel.innerHTML = '<option value="">-- 选择预设或手动输入 --</option>' + locOpts;
+    if (prev) singleSel.value = prev;
+  }
   document.getElementById('ivLocationsTable').innerHTML = locs.length ? locs.map(l => `<tr>
     <td><strong>${esc(l.name)}</strong></td>
     <td style="font-size:.82rem">${esc(l.address||'—')}</td>
@@ -12068,8 +12228,10 @@ async function loadInterviews() {
 
 function renderSlots(slots) {
   const tbody = document.getElementById('ivSlotsTable');
-  // Apply week filter
   const filter = document.getElementById('ivSlotWeekFilter')?.value || '';
+  const titleMap = { future:'未来时间槽', thisweek:'本周时间槽', nextweek:'下周时间槽', '':'全部时间槽（含历史）', past:'历史时间槽' };
+  const titleEl = document.getElementById('ivSlotsTitle');
+  if (titleEl) titleEl.textContent = titleMap[filter] ?? '时间槽';
   const now = new Date();
   let filtered = slots;
   if (filter === 'thisweek') {
@@ -12084,6 +12246,8 @@ function renderSlots(slots) {
     filtered = slots.filter(s => { const d = new Date(s.slot_datetime); return d >= startOfNext && d < endOfNext; });
   } else if (filter === 'future') {
     filtered = slots.filter(s => new Date(s.slot_datetime) > now);
+  } else if (filter === 'past') {
+    filtered = slots.filter(s => new Date(s.slot_datetime) <= now).reverse();
   }
 
   if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无时间槽</td></tr>'; return; }
@@ -12195,6 +12359,8 @@ function initBatchDays() {
   endEl.value = nextFri.toISOString().split('T')[0];
   startEl.addEventListener('change', renderBatchDays);
   endEl.addEventListener('change', renderBatchDays);
+  document.getElementById('batchStartTime').addEventListener('change', updateBatchPreview);
+  document.getElementById('batchEndTime').addEventListener('change', updateBatchPreview);
   renderBatchDays();
 }
 
@@ -12216,31 +12382,41 @@ function renderBatchDays() {
   }
   if (days.length > 14) { grid.innerHTML = '<div style="color:var(--red);font-size:.85rem">日期范围不能超过14天</div>'; return; }
 
-  grid.innerHTML = days.map((d, idx) => {
+  grid.innerHTML = days.map(d => {
     const dateStr = d.toISOString().split('T')[0];
     const label = `${d.getMonth()+1}/${d.getDate()} ${WEEKDAY_NAMES[d.getDay()]}`;
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    return `<div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;border:1px solid var(--gray-200);border-radius:8px;background:${isWeekend?'#fef3c7':'#fff'}">
-      <label style="display:flex;align-items:center;gap:.4rem;min-width:100px;font-weight:600;font-size:.88rem;cursor:pointer">
+    return `<div style="display:flex;align-items:center;gap:.75rem;padding:.4rem .75rem;border:1px solid var(--gray-200);border-radius:8px;background:${isWeekend?'#fef3c7':'#fff'}">
+      <label style="display:flex;align-items:center;gap:.4rem;min-width:110px;font-weight:600;font-size:.88rem;cursor:pointer">
         <input type="checkbox" class="batchDayCheck" data-date="${dateStr}" ${!isWeekend?'checked':''}>
         ${label}
       </label>
-      <div style="display:flex;align-items:center;gap:.3rem;flex:1;flex-wrap:wrap">
-        <input type="text" class="batchDayTimes" data-date="${dateStr}" value="${!isWeekend?'09:00, 10:00, 11:00, 14:00, 15:00':''}" placeholder="时间段，逗号分隔 如: 09:00, 10:00, 14:00" style="flex:1;min-width:200px;padding:.35rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
-      </div>
+      <span class="batchDayPreview" data-date="${dateStr}" style="font-size:.8rem;color:var(--gray-400)"></span>
     </div>`;
   }).join('');
   updateBatchPreview();
-  // Add event listeners for preview
-  grid.querySelectorAll('.batchDayCheck, .batchDayTimes').forEach(el => {
-    el.addEventListener('change', updateBatchPreview);
-    el.addEventListener('input', updateBatchPreview);
-  });
+  grid.querySelectorAll('.batchDayCheck').forEach(el => el.addEventListener('change', updateBatchPreview));
 }
 
 function updateBatchPreview() {
   const slots = collectBatchSlots();
-  document.getElementById('batchPreviewCount').textContent = `将生成 ${slots.length} 个面试时间槽`;
+  document.getElementById('batchPreviewCount').textContent = slots.length ? `将生成 ${slots.length} 个面试时间槽` : '';
+  // Update per-day preview labels
+  const grid = document.getElementById('batchDaysGrid');
+  const duration = parseInt(document.getElementById('batchDuration').value) || 30;
+  const startTime = document.getElementById('batchStartTime').value;
+  const endTime = document.getElementById('batchEndTime').value;
+  const slotsPerDay = (startTime && endTime && endTime > startTime) ? Math.floor(calcMinutesBetween(startTime, endTime) / duration) : 0;
+  grid.querySelectorAll('.batchDayCheck').forEach(chk => {
+    const preview = grid.querySelector(`.batchDayPreview[data-date="${chk.dataset.date}"]`);
+    if (preview) preview.textContent = chk.checked && slotsPerDay > 0 ? `${slotsPerDay} 个时段` : '';
+  });
+}
+
+function calcMinutesBetween(startHHMM, endHHMM) {
+  const [sh, sm] = startHHMM.split(':').map(Number);
+  const [eh, em] = endHHMM.split(':').map(Number);
+  return (eh * 60 + em) - (sh * 60 + sm);
 }
 
 function collectBatchSlots() {
@@ -12248,29 +12424,77 @@ function collectBatchSlots() {
   const checks = grid.querySelectorAll('.batchDayCheck:checked');
   const duration = parseInt(document.getElementById('batchDuration').value) || 30;
   const maxBookings = parseInt(document.getElementById('batchMaxBookings').value) || 5;
-  const locData = getSelectedLocation('batchLocationSelect', 'batchLocation');
+  const startTime = document.getElementById('batchStartTime').value; // "HH:MM"
+  const endTime = document.getElementById('batchEndTime').value;
+  const locData = getBatchLocationData();
   const slots = [];
+
+  if (!startTime || !endTime || endTime <= startTime) return slots;
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  const endMins = eh * 60 + em;
 
   checks.forEach(chk => {
     const dateStr = chk.dataset.date;
-    const timesInput = grid.querySelector(`.batchDayTimes[data-date="${dateStr}"]`);
-    if (!timesInput) return;
-    const times = timesInput.value.split(/[,，;；\s]+/).map(t => t.trim()).filter(t => /^\d{1,2}:\d{2}$/.test(t));
-    times.forEach(time => {
-      const [h, m] = time.split(':');
+    let cur = sh * 60 + sm;
+    while (cur < endMins) {
+      const hh = String(Math.floor(cur / 60)).padStart(2, '0');
+      const mm = String(cur % 60).padStart(2, '0');
       slots.push({
-        slot_datetime: `${dateStr}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`,
+        slot_datetime: `${dateStr}T${hh}:${mm}:00`,
         duration_min: duration,
         max_bookings: maxBookings,
         ...locData
       });
-    });
+      cur += duration;
+    }
   });
   return slots;
 }
 
+function getBatchLocationData() {
+  const sel = document.getElementById('batchLocationSelect');
+  const val = sel?.value || '';
+  if (val === '__zoom__') {
+    const link = document.getElementById('batchZoomLink')?.value?.trim() || '';
+    return { location: 'Zoom', contact_name: '', contact_phone: '', instructions: link ? `Zoom 链接：${link}` : '' };
+  }
+  if (val) {
+    const loc = _ivLocations.find(l => l.id == val);
+    if (loc) return { location: loc.address || loc.name, contact_name: loc.contact_name || '', contact_phone: loc.contact_phone || '', instructions: loc.instructions || '' };
+  }
+  return { location: '', contact_name: '', contact_phone: '', instructions: '' };
+}
+
+function onBatchLocationSelect() {
+  const val = document.getElementById('batchLocationSelect').value;
+  const zoomRow = document.getElementById('batchZoomRow');
+  const detail = document.getElementById('batchLocationDetail');
+  if (val === '__zoom__') {
+    zoomRow.style.display = '';
+    detail.style.display = 'none';
+  } else if (val) {
+    zoomRow.style.display = 'none';
+    const loc = _ivLocations.find(l => l.id == val);
+    if (loc) {
+      detail.style.display = '';
+      detail.innerHTML = `📍 ${esc(loc.address||'')}${loc.contact_name ? `<span style="margin-left:.75rem">👤 ${esc(loc.contact_name)} ${esc(loc.contact_phone||'')}</span>` : ''}${loc.instructions ? `<div style="margin-top:.2rem;color:#92400e">📋 ${esc(loc.instructions)}</div>` : ''}`;
+    } else {
+      detail.style.display = 'none';
+    }
+  } else {
+    zoomRow.style.display = 'none';
+    detail.style.display = 'none';
+  }
+}
+
 async function batchCreateSlots() {
-  if (!document.getElementById('batchLocationSelect')?.value && !document.getElementById('batchLocation')?.value?.trim()) return showToast('❌ 请先选择或输入面试地点', 'error');
+  const locSel = document.getElementById('batchLocationSelect')?.value;
+  if (!locSel) return showToast('❌ 请先选择面试地点', 'error');
+  if (locSel === '__zoom__' && !document.getElementById('batchZoomLink')?.value?.trim()) return showToast('❌ 请输入 Zoom 会议链接', 'error');
+  const startTime = document.getElementById('batchStartTime')?.value;
+  const endTime = document.getElementById('batchEndTime')?.value;
+  if (!startTime || !endTime || endTime <= startTime) return showToast('❌ 请设置有效的面试时间段（结束时间须晚于开始时间）', 'error');
   const slots = collectBatchSlots();
   if (!slots.length) return showToast('❌ 没有可生成的时间槽，请检查日期和时间设置', 'error');
   if (!await showConfirm(`确定生成 ${slots.length} 个面试时间槽？`)) return;
@@ -12832,17 +13056,20 @@ async function _populateJobTitleSelect(currentVal) {
 }
 
 async function loadSkillSettings() {
-  const [skills, titles, suffixes] = await Promise.all([
+  const [skills, titles, suffixes, wpos] = await Promise.all([
     api('/admin/skill-options'),
     api('/admin/job-title-options'),
     api('/admin/display-suffix-options'),
+    api('/admin/worker-positions'),
   ]);
   _skillOptions = skills || [];
   _jobTitleOptions = titles || [];
   _displaySuffixOptions = suffixes || [];
+  _WORKER_POSITIONS = (wpos || []).filter(p => p.active);
   renderSkillOptions();
   renderJobTitleOptions();
   renderDisplaySuffixOptions();
+  renderWorkerPositions(wpos || []);
 }
 
 function renderSkillOptions() {
@@ -13043,6 +13270,72 @@ async function importDisplaySuffixCsv() {
   _displaySuffixOptions = [];
   await loadSkillSettings();
   showToast(`✅ 已导入 ${added} 条`);
+}
+
+// ─── Worker Positions CRUD ───
+let _wpData = [];
+function renderWorkerPositions(rows) {
+  _wpData = rows;
+  const el = document.getElementById('workerPositionsList');
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = '<p style="color:#94a3b8;font-size:.875rem;text-align:center;padding:1rem 0">暂无职位</p>';
+    return;
+  }
+  el.innerHTML = rows.map((p, i) => `
+    <div style="display:flex;gap:.4rem;align-items:center;padding:.4rem 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap;opacity:${p.active?1:.45}">
+      <span style="color:#94a3b8;font-size:.75rem;width:1.6rem;text-align:right;flex-shrink:0">${i+1}</span>
+      <span style="font-size:.78rem;color:#94a3b8;min-width:80px;font-family:monospace">${esc(p.key)}</span>
+      <input value="${esc(p.name_zh)}" data-id="${p.id}" data-field="name_zh" onchange="_wpChange(this)"
+        placeholder="中文 *" style="flex:1;min-width:90px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <input value="${esc(p.name_en)}" data-id="${p.id}" data-field="name_en" onchange="_wpChange(this)"
+        placeholder="English *" style="flex:2;min-width:110px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <input value="${esc(p.name_es)}" data-id="${p.id}" data-field="name_es" onchange="_wpChange(this)"
+        placeholder="Español" style="flex:1;min-width:90px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <button onclick="_wpSave(${p.id})" style="padding:.32rem .6rem;border:1px solid #86efac;background:#f0fdf4;color:#15803d;border-radius:6px;cursor:pointer;font-size:.8rem;white-space:nowrap">保存</button>
+      <button onclick="_wpToggle(${p.id},${p.active})" title="${p.active?'禁用':'启用'}"
+        style="padding:.32rem .55rem;border:1px solid ${p.active?'#fbbf24':'#86efac'};background:${p.active?'#fffbeb':'#f0fdf4'};color:${p.active?'#d97706':'#15803d'};border-radius:6px;cursor:pointer;font-size:.8rem">${p.active?'禁用':'启用'}</button>
+      <button onclick="_wpDelete(${p.id})" style="padding:.32rem .55rem;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:6px;cursor:pointer;font-size:.8rem">✕</button>
+    </div>`).join('');
+}
+function _wpChange(input) {
+  const p = _wpData.find(x => x.id === parseInt(input.dataset.id));
+  if (p) p[input.dataset.field] = input.value;
+}
+async function _wpSave(id) {
+  const p = _wpData.find(x => x.id === id);
+  if (!p) return;
+  const res = await api(`/admin/worker-positions/${id}`, { method:'PUT', body: JSON.stringify({ zh: p.name_zh, en: p.name_en, es: p.name_es }) });
+  if (res && res.success) { _WORKER_POSITIONS = _wpData.filter(x => x.active); showToast('✅ 已保存'); }
+  else alert('保存失败');
+}
+async function _wpToggle(id, active) {
+  const res = await api(`/admin/worker-positions/${id}`, { method:'PUT', body: JSON.stringify({ active: active ? 0 : 1 }) });
+  if (res && res.success) { await loadSkillSettings(); showToast(active ? '已禁用' : '已启用'); }
+}
+async function _wpDelete(id) {
+  if (!confirm('确认删除此职位？删除后历史评分数据中的 key 仍会保留，但职位不再显示在选项中。')) return;
+  const res = await api(`/admin/worker-positions/${id}`, { method:'DELETE' });
+  if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
+}
+async function addWorkerPosition() {
+  const key = document.getElementById('newWPKey').value.trim();
+  const zh  = document.getElementById('newWPZh').value.trim();
+  const en  = document.getElementById('newWPEn').value.trim();
+  const es  = document.getElementById('newWPEs').value.trim();
+  if (!key || !zh || !en) return alert('请填写 key、中文名称、英文名称（均为必填）');
+  const res = await api('/admin/worker-positions', { method:'POST', body: JSON.stringify({ key, zh, en, es }) });
+  if (res && res.id) {
+    document.getElementById('newWPKey').value = '';
+    document.getElementById('newWPZh').value = '';
+    document.getElementById('newWPEn').value = '';
+    document.getElementById('newWPEs').value = '';
+    _WORKER_POSITIONS = [];
+    await loadSkillSettings();
+    showToast('✅ 已添加');
+  } else {
+    alert(res && res.error ? res.error : '添加失败');
+  }
 }
 
 </script>

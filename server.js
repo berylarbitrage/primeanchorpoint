@@ -852,6 +852,7 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFA
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_first_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_last_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN rejection_reason TEXT DEFAULT ''"); } catch {}
 db.exec(`CREATE TABLE IF NOT EXISTS enterprise_verification_codes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_account_id INTEGER NOT NULL REFERENCES customer_accounts(id),
@@ -1008,28 +1009,48 @@ try { db.exec("ALTER TABLE interview_slots ADD COLUMN reserved_for_worker_accoun
 // Migrate interviews: add interview_type
 try { db.exec("ALTER TABLE interviews ADD COLUMN interview_type TEXT DEFAULT 'onboarding'"); } catch {}
 
-const WORKER_POSITIONS = [
-  { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
-  { key:'labeler',            zh:'贴标员',       en:'Labeler' },
-  { key:'packer',             zh:'打包员',       en:'Packer' },
-  { key:'forklift_operator',  zh:'叉车操作员',   en:'Forklift Operator' },
-  { key:'cdl_driver',         zh:'CDL卡车司机',  en:'CDL Truck Driver' },
-  { key:'delivery_driver',    zh:'送货司机',     en:'Delivery Driver' },
-  { key:'shift_supervisor',   zh:'班组长',       en:'Shift Supervisor' },
-  { key:'site_manager',       zh:'现场主管',     en:'Site Manager' },
-  { key:'quality_inspector',  zh:'质检员',       en:'Quality Inspector' },
-  { key:'machine_operator',   zh:'机器操作员',   en:'Machine Operator' },
-  { key:'assembly_line',      zh:'装配线工人',   en:'Assembly Line' },
-  { key:'material_handler',   zh:'物料搬运工',   en:'Material Handler' },
-  { key:'inventory_clerk',    zh:'库存文员',     en:'Inventory Clerk' },
-  { key:'general_labor',      zh:'普工',         en:'General Labor' },
-  { key:'janitorial',         zh:'清洁工',       en:'Janitorial' },
-  { key:'food_processing',    zh:'食品加工',     en:'Food Processing' },
-  { key:'warehouse_lead',     zh:'仓库领班',     en:'Warehouse Lead' },
-  { key:'loading_unloading',  zh:'装卸工',       en:'Loading / Unloading' },
-  { key:'order_picker',       zh:'拣货员',       en:'Order Picker' },
-  { key:'welder',             zh:'焊接工',       en:'Welder' },
-];
+// ─── Worker Positions (managed in DB) ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_positions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT UNIQUE NOT NULL,
+  name_zh TEXT NOT NULL,
+  name_en TEXT NOT NULL,
+  name_es TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM worker_positions LIMIT 1').get()) {
+  const wpSeeds = [
+    { key:'warehouse_sorter',  zh:'仓库分拣员',  en:'Warehouse Sorter',      es:'Clasificador de Almacén' },
+    { key:'labeler',           zh:'贴标员',      en:'Labeler',               es:'Etiquetador' },
+    { key:'packer',            zh:'打包员',      en:'Packer',                es:'Empacador' },
+    { key:'forklift_operator', zh:'叉车操作员',  en:'Forklift Operator',     es:'Operador de Montacargas' },
+    { key:'cdl_driver',        zh:'CDL卡车司机', en:'CDL Truck Driver',      es:'Chofer CDL' },
+    { key:'delivery_driver',   zh:'送货司机',    en:'Delivery Driver',       es:'Repartidor' },
+    { key:'shift_supervisor',  zh:'班组长',      en:'Shift Supervisor',      es:'Supervisor de Turno' },
+    { key:'site_manager',      zh:'现场主管',    en:'Site Manager',          es:'Gerente de Sitio' },
+    { key:'quality_inspector', zh:'质检员',      en:'Quality Inspector',     es:'Inspector de Calidad' },
+    { key:'machine_operator',  zh:'机器操作员',  en:'Machine Operator',      es:'Operador de Máquinas' },
+    { key:'assembly_line',     zh:'装配线工人',  en:'Assembly Line',         es:'Línea de Ensamble' },
+    { key:'material_handler',  zh:'物料搬运工',  en:'Material Handler',      es:'Manejador de Materiales' },
+    { key:'inventory_clerk',   zh:'库存文员',    en:'Inventory Clerk',       es:'Empleado de Inventario' },
+    { key:'general_labor',     zh:'普工',        en:'General Labor',         es:'Trabajo General' },
+    { key:'janitorial',        zh:'清洁工',      en:'Janitorial',            es:'Limpieza' },
+    { key:'food_processing',   zh:'食品加工',    en:'Food Processing',       es:'Procesamiento de Alimentos' },
+    { key:'warehouse_lead',    zh:'仓库领班',    en:'Warehouse Lead',        es:'Líder de Almacén' },
+    { key:'loading_unloading', zh:'装卸工',      en:'Loading / Unloading',   es:'Carga/Descarga' },
+    { key:'order_picker',      zh:'拣货员',      en:'Order Picker',          es:'Surtidor de Pedidos' },
+    { key:'welder',            zh:'焊接工',      en:'Welder',                es:'Soldador' },
+  ];
+  const wpIns = db.prepare('INSERT INTO worker_positions (key, name_zh, name_en, name_es, sort_order) VALUES (?,?,?,?,?)');
+  wpSeeds.forEach((p, i) => wpIns.run(p.key, p.zh, p.en, p.es, i));
+}
+
+function getWorkerPositions() {
+  return db.prepare('SELECT * FROM worker_positions WHERE active=1 ORDER BY sort_order, id').all()
+    .map(r => ({ id: r.id, key: r.key, zh: r.name_zh, en: r.name_en, es: r.name_es, sort_order: r.sort_order }));
+}
 // Add quote_request column to inquiries if not already present (migration)
 try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
 
@@ -3244,6 +3265,9 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
   const valid = ['pending','submitted','completed','waived'];
   if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
   const completedAt = ['completed','waived'].includes(status) ? new Date().toISOString() : null;
+  if (req.params.key === 'interview' && status === 'pending') {
+    db.prepare(`UPDATE interviews SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND status='scheduled'`).run(req.params.id);
+  }
   db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
     VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
     ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,
@@ -3905,7 +3929,26 @@ app.post('/api/admin/pending-actions/:id/approve', requireAdmin, requireRole('ad
   const params = payload._params || {};
   try {
     if (action.action_type === 'delete') {
-      db.prepare(`DELETE FROM ${action.target_table} WHERE id = ?`).run(action.target_id);
+      if (action.target_table === 'jobs') {
+        const jobToDelete = db.prepare('SELECT job_status FROM jobs WHERE id=?').get(action.target_id);
+        if (!jobToDelete || jobToDelete.job_status !== 'cancelled') {
+          return res.status(409).json({ error: '只有已取消的职位才能删除。 / Only cancelled jobs can be deleted.' });
+        }
+        // Cascade delete child records to satisfy FK constraints
+        const assignmentIds = db.prepare('SELECT id FROM assignments WHERE job_id=?').all(action.target_id).map(r => r.id);
+        db.transaction(() => {
+          for (const aId of assignmentIds) {
+            db.prepare('DELETE FROM assignment_status_history WHERE assignment_id=?').run(aId);
+            db.prepare('DELETE FROM shift_confirmations WHERE assignment_id=?').run(aId);
+          }
+          db.prepare('DELETE FROM assignments WHERE job_id=?').run(action.target_id);
+          db.prepare('DELETE FROM employee_jobs WHERE job_id=?').run(action.target_id);
+          db.prepare('DELETE FROM job_applications WHERE job_id=?').run(action.target_id);
+          db.prepare(`DELETE FROM jobs WHERE id = ?`).run(action.target_id);
+        })();
+      } else {
+        db.prepare(`DELETE FROM ${action.target_table} WHERE id = ?`).run(action.target_id);
+      }
     } else if (action.action_type === 'update') {
       delete payload._params;
       const cols = Object.keys(payload).filter(k => k !== '_params');
@@ -4009,10 +4052,18 @@ app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete
     return res.status(403).json({ error: '非测试单职位不允许删除。如需下架请将职位状态改为已取消。' });
   }
   // Cascade delete all related records before deleting the job
-  db.prepare('DELETE FROM assignments WHERE job_id=?').run(req.params.id);
-  db.prepare('DELETE FROM job_applications WHERE job_id=?').run(req.params.id);
-  db.prepare('DELETE FROM employee_jobs WHERE job_id=?').run(req.params.id);
-  db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
+  db.transaction(() => {
+    const assignmentIds = db.prepare('SELECT id FROM assignments WHERE job_id=?').all(req.params.id).map(r => r.id);
+    for (const aId of assignmentIds) {
+      db.prepare('DELETE FROM assignment_status_history WHERE assignment_id=?').run(aId);
+      db.prepare('DELETE FROM shift_confirmations WHERE assignment_id=?').run(aId);
+    }
+    db.prepare('DELETE FROM assignments WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM employee_jobs WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM job_applications WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM job_audit_log WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
+  })();
   logJobAudit.run(req.params.id, 'deleted', JSON.stringify(old || {}), req.userName);
   res.json({ success: true });
 });
@@ -4054,17 +4105,53 @@ app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('d
   res.json({ success: true });
 });
 
-// Worker positions list
-app.get('/api/admin/worker-positions', requireAdmin, (req, res) => {
-  res.json(WORKER_POSITIONS);
+// Worker positions list (public - used by register page)
+app.get('/api/positions', (req, res) => {
+  res.json(getWorkerPositions());
 });
 
-// Inquiry × Worker Position ratings (static list from website)
+// Worker positions CRUD (admin)
+app.get('/api/admin/worker-positions', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM worker_positions ORDER BY sort_order, id').all();
+  res.json(rows.map(r => ({ id: r.id, key: r.key, zh: r.name_zh, en: r.name_en, es: r.name_es, sort_order: r.sort_order, active: r.active })));
+});
+
+app.post('/api/admin/worker-positions', requireAdmin, (req, res) => {
+  const { key, zh, en, es, sort_order } = req.body;
+  if (!key || !zh || !en) return res.status(400).json({ error: '缺少必填字段 (key, zh, en)' });
+  if (!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({ error: 'key 只能包含小写字母、数字和下划线' });
+  try {
+    const info = db.prepare('INSERT INTO worker_positions (key, name_zh, name_en, name_es, sort_order) VALUES (?,?,?,?,?)')
+      .run(key, zh, en, es || '', sort_order ?? 0);
+    res.json({ id: info.lastInsertRowid, key, zh, en, es: es || '', sort_order: sort_order ?? 0, active: 1 });
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(400).json({ error: '该 key 已存在' });
+    throw e;
+  }
+});
+
+app.put('/api/admin/worker-positions/:id', requireAdmin, (req, res) => {
+  const { zh, en, es, sort_order, active } = req.body;
+  const row = db.prepare('SELECT id FROM worker_positions WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: '职位不存在' });
+  db.prepare('UPDATE worker_positions SET name_zh=COALESCE(?,name_zh), name_en=COALESCE(?,name_en), name_es=COALESCE(?,name_es), sort_order=COALESCE(?,sort_order), active=COALESCE(?,active) WHERE id=?')
+    .run(zh ?? null, en ?? null, es ?? null, sort_order ?? null, active ?? null, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/worker-positions/:id', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT id FROM worker_positions WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: '职位不存在' });
+  db.prepare('DELETE FROM worker_positions WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Inquiry × Worker Position ratings
 app.get('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
   const saved = db.prepare('SELECT * FROM inquiry_position_ratings WHERE inquiry_id=?').all(req.params.id);
   const rMap = {};
   saved.forEach(r => { rMap[r.position_key] = r; });
-  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
+  res.json(getWorkerPositions().map(p => ({ ...p, rating: rMap[p.key] || null })));
 });
 
 app.put('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
@@ -4082,7 +4169,7 @@ app.get('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager,
   const saved = db.prepare('SELECT * FROM employee_position_ratings WHERE employee_id=?').all(req.params.id);
   const rMap = {};
   saved.forEach(r => { rMap[r.position_key] = r; });
-  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
+  res.json(getWorkerPositions().map(p => ({ ...p, rating: rMap[p.key] || null })));
 });
 
 app.put('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
@@ -5037,6 +5124,8 @@ app.delete('/api/admin/employees/:id/hard-delete', requireAdmin, requireRole('ad
     db.prepare('DELETE FROM employee_jobs WHERE employee_id=?').run(id);
     db.prepare('DELETE FROM background_checks WHERE employee_id=?').run(id);
     db.prepare('DELETE FROM time_entries WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM timesheet_sheets WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_position_ratings WHERE employee_id=?').run(id);
     db.prepare('DELETE FROM worker_payments WHERE employee_id=?').run(id);
     db.prepare('UPDATE worker_accounts SET employee_id=NULL WHERE employee_id=?').run(id);
     db.prepare('DELETE FROM employees WHERE id=?').run(id);
@@ -7822,7 +7911,7 @@ app.post('/api/register/enterprise', async (req, res) => {
   // Send email code
   const emailCode = String(Math.floor(100000+Math.random()*900000));
   db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId,'email',emailCode,expires);
-  sendEmail({ to: email, subject:'Prime Anchorpoint — Enterprise Registration Verification', text:`Your verification code is: ${emailCode}\nValid for 15 minutes.` }).catch(()=>{});
+  sendEmail(email, 'Prime Anchorpoint — Enterprise Registration Verification', `Your verification code is: ${emailCode}\nValid for 15 minutes.`, verificationCodeHtml(emailCode)).catch(()=>{});
   res.json({ success: true, account_id: accountId, needs_phone: true, needs_email: true });
 });
 
@@ -7874,14 +7963,14 @@ app.post('/api/register/enterprise-resend', async (req, res) => {
   } else {
     const code = String(Math.floor(100000+Math.random()*900000));
     db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id,'email',code,expires);
-    sendEmail({ to: acct.email, subject:'Prime Anchorpoint — Verification Code', text:`Your verification code is: ${code}\nValid for 15 minutes.` }).catch(()=>{});
+    sendEmail(acct.email, 'Prime Anchorpoint — Verification Code', `Your verification code is: ${code}\nValid for 15 minutes.`, verificationCodeHtml(code)).catch(()=>{});
   }
   res.json({ success: true });
 });
 
 // Admin: pending enterprise approvals
 app.get('/api/admin/pending-enterprises', requireAdmin, (req, res) => {
-  const list = db.prepare("SELECT id, company_name, contact_name, email, phone, ein, staffing_needs, created_at FROM customer_accounts WHERE approval_status='pending' ORDER BY created_at DESC").all();
+  const list = db.prepare("SELECT id, company_name, contact_name, email, phone, ein, staffing_needs, created_at FROM customer_accounts WHERE approval_status='pending' AND active=1 ORDER BY created_at DESC").all();
   res.json(list);
 });
 
@@ -7893,7 +7982,8 @@ app.put('/api/admin/approve-enterprise/:id', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/reject-enterprise/:id', requireAdmin, (req, res) => {
-  db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected' WHERE id=?").run(req.params.id);
+  const { reason } = req.body || {};
+  db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected', rejection_reason=? WHERE id=?").run(reason||'', req.params.id);
   res.json({ success: true });
 });
 
@@ -8202,7 +8292,7 @@ app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
     db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
   }
   // Sync to onboarding task
-  if (status === 'passed' && row.worker_account_id) {
+  if ((status === 'passed' || status === 'completed') && row.worker_account_id) {
     db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(row.worker_account_id);
     syncOnboardedStatus(row.worker_account_id);
   }
