@@ -6268,6 +6268,8 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
 // ─── Work calendar endpoint ───────────────────────────────────────
 // Returns shift_confirmations + active assignments + punch records for a given month
 app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
+  // Require employee link — unlinked portal accounts have no work schedule to show
+  if (!req.workerEmployeeId) return res.json({ confirmations: [], assignments: [], punchDates: [] });
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
   const y = parseInt(req.query.year) || new Date().getFullYear();
