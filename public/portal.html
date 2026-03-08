@@ -1328,6 +1328,7 @@ const PORTAL_I18N = {
     bookNoteLabel: '💬 备注', bookNoteOptional: '（选填）', bookNotePH: '例：我没有驾照，只有护照',
     bookCancelModalBtn: '取消', bookConfirmModalBtn: '✅ 确认预约', bookBookingInProgress: '预约中…',
     bookErrContact: '请至少填写一种联系方式', bookErrPay: '请填写期望薪资', bookErrSkills: '请填写技能特长',
+    bookLoadingSlot: '加载面试信息…',
     bookDateLocale: 'zh-CN', bookTimeLocale: 'zh-CN',
     obActionCheckr: '📧 请查收 Checkr 发送的邮件完成背景调查', obActionDocs: '去提交文件 →',
     obActionGusto: '填写 Gusto 信息 →', obActionContract: '查看/签署合同 →', obActionSubmit: '标记已提交',
@@ -1474,6 +1475,7 @@ const PORTAL_I18N = {
     bookNoteLabel: '💬 Notes', bookNoteOptional: '(optional)', bookNotePH: 'e.g. I only have a passport, no driver\'s license',
     bookCancelModalBtn: 'Cancel', bookConfirmModalBtn: '✅ Confirm Booking', bookBookingInProgress: 'Booking…',
     bookErrContact: 'Please provide at least one contact method', bookErrPay: 'Expected pay is required', bookErrSkills: 'Please describe your skills',
+    bookLoadingSlot: 'Loading interview info…',
     bookDateLocale: 'en-US', bookTimeLocale: 'en-US',
     obActionCheckr: '📧 Check your email for Checkr background check', obActionDocs: 'Submit Documents →',
     obActionGusto: 'Complete Gusto Setup →', obActionContract: 'View/Sign Contract →', obActionSubmit: 'Mark as Submitted',
@@ -1620,6 +1622,7 @@ const PORTAL_I18N = {
     bookNoteLabel: '💬 Notas', bookNoteOptional: '(opcional)', bookNotePH: 'p.ej. Solo tengo pasaporte, sin licencia',
     bookCancelModalBtn: 'Cancelar', bookConfirmModalBtn: '✅ Confirmar Cita', bookBookingInProgress: 'Agendando…',
     bookErrContact: 'Por favor ingrese al menos un método de contacto', bookErrPay: 'El salario esperado es requerido', bookErrSkills: 'Por favor describa sus habilidades',
+    bookLoadingSlot: 'Cargando información de entrevista…',
     bookDateLocale: 'es-MX', bookTimeLocale: 'es-MX',
     obActionCheckr: '📧 Revise su correo para el estudio de Checkr', obActionDocs: 'Enviar Documentos →',
     obActionGusto: 'Completar Gusto →', obActionContract: 'Ver/Firmar Contrato →', obActionSubmit: 'Marcar como Enviado',
@@ -2522,16 +2525,16 @@ function openBookModal(slotId, slot) {
   const details = document.getElementById('bookSlotDetails');
   if (slot) {
     const dt = new Date(slot.slot_datetime);
-    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+    const dateStr = dt.toLocaleDateString(_t('bookDateLocale'), { year:'numeric', month:'long', day:'numeric', weekday:'long' });
+    const timeStr = dt.toLocaleTimeString(_t('bookTimeLocale'), { hour:'2-digit', minute:'2-digit' });
     details.innerHTML = `
       <div style="display:flex;flex-wrap:wrap;gap:.4rem 1.5rem">
         <span>🕐 <strong>${dateStr} ${timeStr}</strong></span>
         ${slot.location ? `<span>📍 <strong>${esc(slot.location)}</strong></span>` : ''}
-        ${slot.duration_min ? `<span>⏱ <strong>${slot.duration_min} 分钟</strong></span>` : ''}
+        ${slot.duration_min ? `<span>⏱ <strong>${slot.duration_min} ${_t('bookMinutes')}</strong></span>` : ''}
       </div>`;
   } else {
-    details.innerHTML = '<span style="color:var(--gray-400)">加载面试信息…</span>';
+    details.innerHTML = `<span style="color:var(--gray-400)">${_t('bookLoadingSlot') || '…'}</span>`;
   }
 
   // Pre-fill contact info from worker account
