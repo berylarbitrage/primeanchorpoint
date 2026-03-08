@@ -1449,7 +1449,12 @@ tr:hover td{background:var(--sky-light)}
 
   <!-- Select existing slot -->
   <div class="field">
-    <label style="font-weight:700">选择面试时间（可多选）*</label>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+      <label style="font-weight:700;margin-bottom:0">选择面试时间（可多选）*</label>
+      <select id="obivLocFilter" onchange="obivFilterSlots()" style="font-size:.8rem;padding:.25rem .5rem;border:1px solid var(--gray-200);border-radius:5px;color:var(--gray-600);background:#fff">
+        <option value="">全部地点</option>
+      </select>
+    </div>
     <div id="obivExistingSlotSel" style="max-height:180px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:6px;padding:.4rem .6rem;background:#fff;font-size:.88rem">
       <div style="color:var(--gray-400);font-size:.82rem;padding:.25rem 0">— 正在加载面试时间 —</div>
     </div>
@@ -1473,7 +1478,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem">
       <div class="field">
-        <label>小时 *</label>
+        <label>时 *</label>
         <select id="obivNewHour" style="width:100%;padding:.5rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
           <option value="">--</option>
         </select>
@@ -13292,20 +13297,15 @@ function toggleAllMgrAssignEmps() {
 
 // ── Onboarding Interview Slot Creation ──
 let _obivSlots = [];
+let _obivFutureSlots = [];
 let _obivCreating = false;
 
-async function openOnboardingInterviewSlotModal() {
-  if (!_ivLocations || !_ivLocations.length) await loadInterviewLocations();
-  _obivSlots = await api('/admin/interview-slots') || [];
-
-  const now = new Date();
-  const futureSlots = _obivSlots.filter(s => s.active !== 0 && new Date(s.slot_datetime) > now);
-
+function obivRenderSlots(slots) {
   const slotSel = document.getElementById('obivExistingSlotSel');
-  if (!futureSlots.length) {
+  if (!slots.length) {
     slotSel.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.25rem 0">暂无可用的面试时间，请创建新的时间段</div>';
   } else {
-    slotSel.innerHTML = futureSlots.map(s => {
+    slotSel.innerHTML = slots.map(s => {
       const dt = new Date(s.slot_datetime);
       const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short' });
       const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
@@ -13314,6 +13314,31 @@ async function openOnboardingInterviewSlotModal() {
       return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
     }).join('');
   }
+}
+
+function obivFilterSlots() {
+  const locFilter = document.getElementById('obivLocFilter').value;
+  const filtered = locFilter
+    ? _obivFutureSlots.filter(s => String(s.location_id) === locFilter || s.location === locFilter)
+    : _obivFutureSlots;
+  obivRenderSlots(filtered);
+}
+
+async function openOnboardingInterviewSlotModal() {
+  if (!_ivLocations || !_ivLocations.length) await loadInterviewLocations();
+  _obivSlots = await api('/admin/interview-slots') || [];
+
+  const now = new Date();
+  _obivFutureSlots = _obivSlots.filter(s => s.active !== 0 && new Date(s.slot_datetime) > now);
+
+  // Populate location filter with locations that have slots
+  const locFilter = document.getElementById('obivLocFilter');
+  const usedLocIds = [...new Set(_obivFutureSlots.map(s => s.location_id).filter(Boolean))];
+  const filterLocs = (_ivLocations || []).filter(l => usedLocIds.includes(l.id));
+  locFilter.innerHTML = '<option value="">全部地点</option>' +
+    filterLocs.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+
+  obivRenderSlots(_obivFutureSlots);
 
   const locOpts = '<option value="">— 选择地点 —</option>' +
     (_ivLocations || []).map(l => `<option value="${l.id}">${esc(l.name)}${l.address ? ' — ' + esc(l.address) : ''}</option>`).join('');
@@ -13373,7 +13398,7 @@ async function obivCreateAndAdd() {
   const maxBookings = parseInt(document.getElementById('obivNewMax').value) || 1;
 
   if (!date) return showToast('❌ 请选择日期', 'error');
-  if (!hour) return showToast('❌ 请选择小时', 'error');
+  if (!hour) return showToast('❌ 请选择时', 'error');
   if (!locId) return showToast('❌ 请选择面试地点', 'error');
 
   const slot_datetime = `${date}T${hour}:${minute}:00`;
