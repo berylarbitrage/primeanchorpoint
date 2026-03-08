@@ -1334,7 +1334,7 @@ const PORTAL_I18N = {
     applyErrAvail: '请填写面试时间', applySubmitting: '提交中…',
     forgotTitle: '忘记密码', forgotDesc: '请输入您注册时使用的邮箱或手机号',
     forgotInputPH: '邮箱或手机号', forgotSendCode: '发送验证码',
-    forgotCodeSent: '验证码已发送，请查收', forgotCodePH: '验证码', forgotResend: '重新发送', forgotSendErr: '发送失败',
+    forgotCodeSent: '验证码已发送，请查收', forgotCodePH: '验证码', forgotResend: '重新发送', forgotSendErr: '发送失败', forgotSamePassword: '新密码不能与原密码相同', forgotMismatch: '两次密码不一致', forgotResetErr: '重置失败', forgotNetErr: '网络错误',
     forgotNewPwPH: '新密码（至少6位）', forgotConfirmPwPH: '确认新密码',
     forgotResetBtn: '重置密码', forgotSuccess: '密码重置成功！', forgotClose: '关闭'
   },
@@ -1454,7 +1454,7 @@ const PORTAL_I18N = {
     applyErrAvail: 'Please enter your interview availability', applySubmitting: 'Submitting…',
     forgotTitle: 'Forgot Password', forgotDesc: 'Enter your registered email or phone',
     forgotInputPH: 'Email or Phone', forgotSendCode: 'Send Code',
-    forgotCodeSent: 'Verification code has been sent', forgotCodePH: 'Code', forgotResend: 'Resend', forgotSendErr: 'Failed to send',
+    forgotCodeSent: 'Verification code has been sent', forgotCodePH: 'Code', forgotResend: 'Resend', forgotSendErr: 'Failed to send', forgotSamePassword: 'New password cannot be the same as your current password', forgotMismatch: 'Passwords do not match', forgotResetErr: 'Reset failed', forgotNetErr: 'Network error',
     forgotNewPwPH: 'New password (min 6 chars)', forgotConfirmPwPH: 'Confirm new password',
     forgotResetBtn: 'Reset Password', forgotSuccess: 'Password reset successful!', forgotClose: 'Close'
   },
@@ -1574,7 +1574,7 @@ const PORTAL_I18N = {
     applyErrAvail: 'Ingrese su disponibilidad para entrevista', applySubmitting: 'Enviando…',
     forgotTitle: 'Olvidé mi Contraseña', forgotDesc: 'Ingrese su correo o teléfono registrado',
     forgotInputPH: 'Correo o Teléfono', forgotSendCode: 'Enviar Código',
-    forgotCodeSent: 'Se ha enviado el código de verificación', forgotCodePH: 'Código', forgotResend: 'Reenviar', forgotSendErr: 'Error al enviar',
+    forgotCodeSent: 'Se ha enviado el código de verificación', forgotCodePH: 'Código', forgotResend: 'Reenviar', forgotSendErr: 'Error al enviar', forgotSamePassword: 'La nueva contraseña no puede ser igual a la actual', forgotMismatch: 'Las contraseñas no coinciden', forgotResetErr: 'Error al restablecer', forgotNetErr: 'Error de red',
     forgotNewPwPH: 'Nueva contraseña (mín. 6 caracteres)', forgotConfirmPwPH: 'Confirmar nueva contraseña',
     forgotResetBtn: 'Restablecer Contraseña', forgotSuccess: '¡Contraseña restablecida!', forgotClose: 'Cerrar'
   }
@@ -1823,7 +1823,7 @@ async function resetPassword() {
   const pw2 = document.getElementById('newPassword2').value;
   if (!code) return showForgotMsg('请输入验证码', 'error');
   if (!pw || pw.length < 6) return showForgotMsg('密码至少6位', 'error');
-  if (pw !== pw2) return showForgotMsg('两次密码不一致', 'error');
+  if (pw !== pw2) return showForgotMsg(_t('forgotMismatch'), 'error');
   try {
     const r = await fetch('/api/worker/reset-password', {
       method: 'POST',
@@ -1831,12 +1831,12 @@ async function resetPassword() {
       body: JSON.stringify({ login: _forgotLogin, code, new_password: pw })
     });
     const d = await r.json();
-    if (!r.ok) return showForgotMsg(d.error || '重置失败', 'error');
+    if (!r.ok) return showForgotMsg(d.error_code === 'SAME_PASSWORD' ? _t('forgotSamePassword') : (d.error || _t('forgotResetErr')), 'error');
     document.getElementById('forgotStep2').style.display = 'none';
     document.getElementById('forgotStep3').style.display = '';
     setTimeout(() => closeForgotPassword(), 2000);
   } catch {
-    showForgotMsg('网络错误', 'error');
+    showForgotMsg(_t('forgotNetErr'), 'error');
   }
 }
 
@@ -2739,12 +2739,13 @@ async function loadApplications() {
   const apps = await wApi('/assignments');
   if (!apps) return;
   _myApps = apps;
+  await Promise.all(apps.map(async a => { a._titleT = await _gtranslate(a.title, _portalLang); }));
   const statusLabel = { pending:_t('appStatusPending'), interview_scheduled:_t('appStatusInterview'), approved:_t('appStatusApproved'), rejected:_t('appStatusRejected'), assigned:_t('appStatusAssigned') };
   const statusColor = { pending:'color:var(--orange)', interview_scheduled:'color:#2563eb', approved:'color:var(--green)', rejected:'color:var(--red)', assigned:'color:var(--sky)' };
   document.getElementById('applicationsTable').innerHTML = apps.length ? apps.map((a,i)=>`
     <div onclick="openAppDetail(${i})" style="cursor:pointer;border:1px solid var(--gray-200);border-radius:12px;padding:.85rem 1rem;margin-bottom:.6rem;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:.75rem;transition:background .15s" onmouseenter="this.style.background='#f8fafc'" onmouseleave="this.style.background='#fff'">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:.95rem;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a.title||'—')}</div>
+        <div style="font-weight:700;font-size:.95rem;color:var(--gray-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(a._titleT||a.title||'—')}</div>
         ${a.company_name ? `<div style="font-size:.8rem;color:var(--gray-400);margin-top:.1rem">${_t('appFieldClient')}${esc(a.company_name)}</div>` : ''}
         <div style="font-size:.78rem;color:var(--gray-400);margin-top:.2rem">${(a.created_at||'').slice(0,10)}</div>
       </div>
@@ -2765,7 +2766,7 @@ function openAppDetail(idx) {
   const workDays = a.work_days ? _translateWorkDays(a.work_days, _portalLang) : '';
   const dayJoiner = _portalLang === 'zh' ? '、' : ', ';
   const workDaysDisplay = workDays ? workDays.split(',').join(dayJoiner) : '';
-  document.getElementById('appDetailTitle').textContent = a.title || _t('appSectionJob');
+  document.getElementById('appDetailTitle').textContent = a._titleT || a.title || _t('appSectionJob');
   const dtLocale = _portalLang === 'zh' ? 'zh-CN' : _portalLang === 'es' ? 'es-MX' : 'en-US';
   document.getElementById('appDetailBody').innerHTML = `
     <div style="display:grid;gap:.9rem">
