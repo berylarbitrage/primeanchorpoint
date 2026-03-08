@@ -1267,7 +1267,7 @@ tr:hover td{background:var(--sky-light)}
       <h3 style="margin-bottom:.5rem">📅 每周面试排班</h3>
       <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:1rem">快速为一周设置面试时间。选择日期范围、勾选日期、设置时间段，一键生成。</p>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.75rem;align-items:end;margin-bottom:1rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.75rem;align-items:end;margin-bottom:.75rem">
         <div>
           <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">开始日期</label>
           <input type="date" id="batchStartDate" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
@@ -1282,27 +1282,43 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div>
           <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">时长（分钟）</label>
-          <input type="number" id="batchDuration" value="30" min="10" max="120" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <input type="number" id="batchDuration" value="30" min="10" max="120" oninput="updateBatchPreview()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:.75rem;align-items:end;margin-bottom:1rem">
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试开始时间 <span style="color:#dc2626">*</span></label>
+          <input type="time" id="batchStartTime" value="09:00" oninput="updateBatchPreview()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试结束时间 <span style="color:#dc2626">*</span></label>
+          <input type="time" id="batchEndTime" value="17:00" oninput="updateBatchPreview()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
         </div>
       </div>
 
       <div style="margin-bottom:1rem">
-        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试地点（选择预设或手动输入）</label>
-        <div style="display:flex;gap:.5rem;align-items:center">
-          <select id="batchLocationSelect" onchange="onBatchLocationSelect()" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试地点 <span style="color:#dc2626">*</span>（必填）</label>
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+          <select id="batchLocationSelect" onchange="onBatchLocationSelect()" style="flex:1;min-width:200px;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
             <option value="">-- 选择预设地点 --</option>
+            <option value="__zoom__">📹 Zoom 视频面试</option>
           </select>
           <span style="color:var(--gray-400);font-size:.82rem">或</span>
-          <input type="text" id="batchLocation" placeholder="手动输入地址" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <input type="text" id="batchLocation" placeholder="手动输入地址" style="flex:1;min-width:160px;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        </div>
+        <div id="batchZoomRow" style="display:none;margin-top:.5rem">
+          <label style="font-size:.8rem;font-weight:600;color:#0369a1;display:block;margin-bottom:.3rem">📹 Zoom 会议链接 <span style="color:#dc2626">*</span></label>
+          <input type="url" id="batchZoomLink" placeholder="https://zoom.us/j/..." style="width:100%;padding:.5rem .7rem;border:1.5px solid #bae6fd;border-radius:6px;font-size:.88rem;background:#f0f9ff;box-sizing:border-box">
         </div>
         <div id="batchLocationDetail" style="display:none;margin-top:.5rem;padding:.5rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:.82rem">
         </div>
       </div>
 
-      <!-- Day selection with time inputs -->
+      <!-- Day checkboxes -->
       <div style="margin-bottom:1rem">
-        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.5rem">选择工作日和时间段</label>
-        <div id="batchDaysGrid" style="display:grid;gap:.5rem">
+        <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.5rem">选择工作日</label>
+        <div id="batchDaysGrid" style="display:grid;gap:.4rem">
         </div>
       </div>
 
@@ -10895,8 +10911,8 @@ function renderOnboardingTasks(tasks) {
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
     const isVisible = t.visible_to_worker !== 0;
-    const tk = JSON.stringify(t.key).replace(/"/g, '&quot;');
-    const tt = JSON.stringify(t.title).replace(/"/g, '&quot;');
+    const tk = `'${t.key}'`;
+    const tt = `'${(t.title||'').replace(/'/g, "\\'")}'`;
     return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.7rem 0;border-bottom:1px solid var(--gray-100);${!isVisible?'opacity:.55':''}">
       <div style="width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;${s==='completed'?'background:#d1fae5':s==='waived'?'background:#f3e8ff':s==='submitted'?'background:#fef3c7':s==='pending'?'background:#dbeafe':'background:var(--gray-100)'}">${icons[t.key]||'📌'}</div>
       <div style="flex:1;min-width:0">
@@ -10927,8 +10943,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
-            : t.key==='interview' && !isVisible
-            ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 发送给工人面试</button>`
+            : t.key==='interview'
+            ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -11965,6 +11981,19 @@ async function loadInterviewLocations() {
   const locs = await api('/admin/interview-locations');
   if (!Array.isArray(locs)) return;
   _ivLocations = locs;
+  const locOpts = locs.map(l => `<option value="${l.id}">${esc(l.name)}${l.address ? ' — ' + esc(l.address) : ''}</option>`).join('');
+  const batchSel = document.getElementById('batchLocationSelect');
+  if (batchSel) {
+    const prev = batchSel.value;
+    batchSel.innerHTML = '<option value="">-- 选择预设地点 --</option><option value="__zoom__">📹 Zoom 视频面试</option>' + locOpts;
+    if (prev) batchSel.value = prev;
+  }
+  const singleSel = document.getElementById('ivSlotLocationSelect');
+  if (singleSel) {
+    const prev = singleSel.value;
+    singleSel.innerHTML = '<option value="">-- 选择预设或手动输入 --</option>' + locOpts;
+    if (prev) singleSel.value = prev;
+  }
   document.getElementById('ivLocationsTable').innerHTML = locs.length ? locs.map(l => `<tr>
     <td><strong>${esc(l.name)}</strong></td>
     <td style="font-size:.82rem">${esc(l.address||'—')}</td>
@@ -12184,6 +12213,8 @@ function initBatchDays() {
   endEl.value = nextFri.toISOString().split('T')[0];
   startEl.addEventListener('change', renderBatchDays);
   endEl.addEventListener('change', renderBatchDays);
+  document.getElementById('batchStartTime').addEventListener('change', updateBatchPreview);
+  document.getElementById('batchEndTime').addEventListener('change', updateBatchPreview);
   renderBatchDays();
 }
 
@@ -12205,31 +12236,41 @@ function renderBatchDays() {
   }
   if (days.length > 14) { grid.innerHTML = '<div style="color:var(--red);font-size:.85rem">日期范围不能超过14天</div>'; return; }
 
-  grid.innerHTML = days.map((d, idx) => {
+  grid.innerHTML = days.map(d => {
     const dateStr = d.toISOString().split('T')[0];
     const label = `${d.getMonth()+1}/${d.getDate()} ${WEEKDAY_NAMES[d.getDay()]}`;
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    return `<div style="display:flex;align-items:center;gap:.75rem;padding:.5rem .75rem;border:1px solid var(--gray-200);border-radius:8px;background:${isWeekend?'#fef3c7':'#fff'}">
-      <label style="display:flex;align-items:center;gap:.4rem;min-width:100px;font-weight:600;font-size:.88rem;cursor:pointer">
+    return `<div style="display:flex;align-items:center;gap:.75rem;padding:.4rem .75rem;border:1px solid var(--gray-200);border-radius:8px;background:${isWeekend?'#fef3c7':'#fff'}">
+      <label style="display:flex;align-items:center;gap:.4rem;min-width:110px;font-weight:600;font-size:.88rem;cursor:pointer">
         <input type="checkbox" class="batchDayCheck" data-date="${dateStr}" ${!isWeekend?'checked':''}>
         ${label}
       </label>
-      <div style="display:flex;align-items:center;gap:.3rem;flex:1;flex-wrap:wrap">
-        <input type="text" class="batchDayTimes" data-date="${dateStr}" value="${!isWeekend?'09:00, 10:00, 11:00, 14:00, 15:00':''}" placeholder="时间段，逗号分隔 如: 09:00, 10:00, 14:00" style="flex:1;min-width:200px;padding:.35rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
-      </div>
+      <span class="batchDayPreview" data-date="${dateStr}" style="font-size:.8rem;color:var(--gray-400)"></span>
     </div>`;
   }).join('');
   updateBatchPreview();
-  // Add event listeners for preview
-  grid.querySelectorAll('.batchDayCheck, .batchDayTimes').forEach(el => {
-    el.addEventListener('change', updateBatchPreview);
-    el.addEventListener('input', updateBatchPreview);
-  });
+  grid.querySelectorAll('.batchDayCheck').forEach(el => el.addEventListener('change', updateBatchPreview));
 }
 
 function updateBatchPreview() {
   const slots = collectBatchSlots();
-  document.getElementById('batchPreviewCount').textContent = `将生成 ${slots.length} 个面试时间槽`;
+  document.getElementById('batchPreviewCount').textContent = slots.length ? `将生成 ${slots.length} 个面试时间槽` : '';
+  // Update per-day preview labels
+  const grid = document.getElementById('batchDaysGrid');
+  const duration = parseInt(document.getElementById('batchDuration').value) || 30;
+  const startTime = document.getElementById('batchStartTime').value;
+  const endTime = document.getElementById('batchEndTime').value;
+  const slotsPerDay = (startTime && endTime && endTime > startTime) ? Math.floor(calcMinutesBetween(startTime, endTime) / duration) : 0;
+  grid.querySelectorAll('.batchDayCheck').forEach(chk => {
+    const preview = grid.querySelector(`.batchDayPreview[data-date="${chk.dataset.date}"]`);
+    if (preview) preview.textContent = chk.checked && slotsPerDay > 0 ? `${slotsPerDay} 个时段` : '';
+  });
+}
+
+function calcMinutesBetween(startHHMM, endHHMM) {
+  const [sh, sm] = startHHMM.split(':').map(Number);
+  const [eh, em] = endHHMM.split(':').map(Number);
+  return (eh * 60 + em) - (sh * 60 + sm);
 }
 
 function collectBatchSlots() {
@@ -12237,29 +12278,82 @@ function collectBatchSlots() {
   const checks = grid.querySelectorAll('.batchDayCheck:checked');
   const duration = parseInt(document.getElementById('batchDuration').value) || 30;
   const maxBookings = parseInt(document.getElementById('batchMaxBookings').value) || 5;
-  const locData = getSelectedLocation('batchLocationSelect', 'batchLocation');
+  const startTime = document.getElementById('batchStartTime').value; // "HH:MM"
+  const endTime = document.getElementById('batchEndTime').value;
+  const locData = getBatchLocationData();
   const slots = [];
+
+  if (!startTime || !endTime || endTime <= startTime) return slots;
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  const endMins = eh * 60 + em;
 
   checks.forEach(chk => {
     const dateStr = chk.dataset.date;
-    const timesInput = grid.querySelector(`.batchDayTimes[data-date="${dateStr}"]`);
-    if (!timesInput) return;
-    const times = timesInput.value.split(/[,，;；\s]+/).map(t => t.trim()).filter(t => /^\d{1,2}:\d{2}$/.test(t));
-    times.forEach(time => {
-      const [h, m] = time.split(':');
+    let cur = sh * 60 + sm;
+    while (cur < endMins) {
+      const hh = String(Math.floor(cur / 60)).padStart(2, '0');
+      const mm = String(cur % 60).padStart(2, '0');
       slots.push({
-        slot_datetime: `${dateStr}T${h.padStart(2,'0')}:${m.padStart(2,'0')}:00`,
+        slot_datetime: `${dateStr}T${hh}:${mm}:00`,
         duration_min: duration,
         max_bookings: maxBookings,
         ...locData
       });
-    });
+      cur += duration;
+    }
   });
   return slots;
 }
 
+function getBatchLocationData() {
+  const sel = document.getElementById('batchLocationSelect');
+  const val = sel?.value || '';
+  if (val === '__zoom__') {
+    const link = document.getElementById('batchZoomLink')?.value?.trim() || '';
+    return { location: 'Zoom', contact_name: '', contact_phone: '', instructions: link ? `Zoom 链接：${link}` : '' };
+  }
+  if (val) {
+    const loc = _ivLocations.find(l => l.id == val);
+    if (loc) return { location: loc.address || loc.name, contact_name: loc.contact_name || '', contact_phone: loc.contact_phone || '', instructions: loc.instructions || '' };
+  }
+  const manual = document.getElementById('batchLocation')?.value?.trim() || '';
+  return { location: manual, contact_name: '', contact_phone: '', instructions: '' };
+}
+
+function onBatchLocationSelect() {
+  const val = document.getElementById('batchLocationSelect').value;
+  const zoomRow = document.getElementById('batchZoomRow');
+  const detail = document.getElementById('batchLocationDetail');
+  const manualInput = document.getElementById('batchLocation');
+  if (val === '__zoom__') {
+    zoomRow.style.display = '';
+    detail.style.display = 'none';
+    manualInput.value = '';
+  } else if (val) {
+    zoomRow.style.display = 'none';
+    const loc = _ivLocations.find(l => l.id == val);
+    if (loc) {
+      detail.style.display = '';
+      detail.innerHTML = `📍 ${esc(loc.address||'')}${loc.contact_name ? `<span style="margin-left:.75rem">👤 ${esc(loc.contact_name)} ${esc(loc.contact_phone||'')}</span>` : ''}${loc.instructions ? `<div style="margin-top:.2rem;color:#92400e">📋 ${esc(loc.instructions)}</div>` : ''}`;
+    } else {
+      detail.style.display = 'none';
+    }
+    manualInput.value = '';
+  } else {
+    zoomRow.style.display = 'none';
+    detail.style.display = 'none';
+  }
+}
+
 async function batchCreateSlots() {
-  if (!document.getElementById('batchLocationSelect')?.value && !document.getElementById('batchLocation')?.value?.trim()) return showToast('❌ 请先选择或输入面试地点', 'error');
+  const locSel = document.getElementById('batchLocationSelect')?.value;
+  const manual = document.getElementById('batchLocation')?.value?.trim();
+  if (!locSel && !manual) return showToast('❌ 请先选择或输入面试地点', 'error');
+  if (locSel === '__zoom__' && !document.getElementById('batchZoomLink')?.value?.trim()) return showToast('❌ 请输入 Zoom 会议链接', 'error');
+  const startTime = document.getElementById('batchStartTime')?.value;
+  const endTime = document.getElementById('batchEndTime')?.value;
+  if (!startTime || !endTime || endTime <= startTime) return showToast('❌ 请设置有效的面试时间段（结束时间须晚于开始时间）', 'error');
   const slots = collectBatchSlots();
   if (!slots.length) return showToast('❌ 没有可生成的时间槽，请检查日期和时间设置', 'error');
   if (!await showConfirm(`确定生成 ${slots.length} 个面试时间槽？`)) return;
