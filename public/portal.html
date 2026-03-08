@@ -2534,6 +2534,37 @@ function _translateWorkDays(workDays, lang) {
   return workDays.split(',').map(d => map[d.trim()] || d.trim()).join(',');
 }
 
+// Benefits stored in Chinese — static map for reliable translation without Google Translate
+const _BENEFITS_MAP = {
+  en: {
+    '医疗保险':'Medical Insurance','牙科保险':'Dental Insurance','视力保险':'Vision Insurance',
+    '401k':'401k','401(k)':'401(k)','带薪休假':'Paid Time Off','带薪假':'Paid Leave',
+    '加班费':'Overtime Pay','交通补贴':'Transportation Allowance','餐饮补贴':'Meal Allowance',
+    '住房补贴':'Housing Allowance','绩效奖金':'Performance Bonus','年终奖':'Year-end Bonus',
+    '员工培训':'Employee Training','晋升机会':'Promotion Opportunities','弹性工作':'Flexible Work',
+    '股票期权':'Stock Options','健身补贴':'Gym Allowance','节日福利':'Holiday Benefits',
+    '免费停车':'Free Parking','公司用车':'Company Car','人寿保险':'Life Insurance',
+    '残疾保险':'Disability Insurance','育儿假':'Parental Leave','病假':'Sick Leave',
+  },
+  es: {
+    '医疗保险':'Seguro médico','牙科保险':'Seguro dental','视力保险':'Seguro de visión',
+    '401k':'401k','401(k)':'401(k)','带薪休假':'Vacaciones pagadas','带薪假':'Licencia pagada',
+    '加班费':'Pago de horas extras','交通补贴':'Subsidio de transporte','餐饮补贴':'Subsidio de comida',
+    '住房补贴':'Subsidio de vivienda','绩效奖金':'Bono por desempeño','年终奖':'Bono de fin de año',
+    '员工培训':'Capacitación laboral','晋升机会':'Oportunidades de ascenso','弹性工作':'Trabajo flexible',
+    '股票期权':'Opciones de acciones','健身补贴':'Subsidio de gimnasio','节日福利':'Beneficios festivos',
+    '免费停车':'Estacionamiento gratuito','公司用车':'Auto de empresa','人寿保险':'Seguro de vida',
+    '残疾保险':'Seguro por discapacidad','育儿假':'Licencia parental','病假':'Licencia por enfermedad',
+  }
+};
+
+function _translateBenefits(benefits, lang) {
+  if (!benefits || lang === 'zh') return benefits || '';
+  const map = _BENEFITS_MAP[lang];
+  if (!map) return benefits;
+  return benefits.split(',').map(b => map[b.trim()] || b.trim()).join(', ');
+}
+
 async function _preTranslateJobs(jobs) {
   const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
   await Promise.all(jobs.map(async j => {
@@ -2543,8 +2574,8 @@ async function _preTranslateJobs(jobs) {
     j._typeT = (L.types && L.types[j.type]) || j.type || '';
     // Employment type: W2/Contract are universal; translate anything else
     j._empT = j.employment_type ? (await _gtranslate(j.employment_type, _portalLang)) : '';
-    // Benefits: stored as Chinese comma list — translate to current lang
-    j._benefitsT = j.benefits ? await _gtranslate(j.benefits, _portalLang) : '';
+    // Benefits: stored as Chinese comma list — translate via static map (no external API)
+    j._benefitsT = _translateBenefits(j.benefits, _portalLang);
     // Pay period: normalize Chinese key then translate label
     j._payPeriodKey = _PAY_PERIOD_ZH[j.pay_period] || j.pay_period || '';
     // Work days: translate day abbreviations (Mon→周一, Tue→周二, etc.)
