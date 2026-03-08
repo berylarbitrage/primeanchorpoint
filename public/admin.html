@@ -2385,9 +2385,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="field">
     <label>职位名称 *</label>
-    <select id="jTitle" style="width:100%;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem;background:#fff">
-      <option value="">-- 请选择职位名称 --</option>
-    </select>
+    <input type="text" id="jTitle" placeholder="例：Office Assistant" style="width:100%;padding:.55rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem;box-sizing:border-box">
   </div>
 
   <div class="field"><label>工种类别 Job Category</label>
@@ -2471,13 +2469,30 @@ tr:hover td{background:var(--sky-light)}
       </select>
     </div>
   </div>
-  <div class="field-row">
-    <div class="field" style="flex:0 0 auto"><label>语言</label>
-      <select id="jLang">
-        <option value="en">English</option>
-        <option value="zh">中文</option>
-        <option value="es">Español</option>
-      </select>
+  <div class="field"><label>语言（可多选）</label>
+    <div style="display:flex;gap:1.2rem;flex-wrap:wrap;padding:.5rem 0">
+      <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" id="jLangEn" value="en" onchange="updateLangSections()"> English</label>
+      <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" id="jLangZh" value="zh" onchange="updateLangSections()"> 中文</label>
+      <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" id="jLangEs" value="es" onchange="updateLangSections()"> Español</label>
+    </div>
+  </div>
+  <!-- per-language title+desc sections, shown dynamically -->
+  <div id="jLangZhSection" style="display:none;border:1px solid #e0f2fe;border-radius:8px;padding:1rem;background:#f0f9ff;margin-bottom:.75rem">
+    <div style="font-weight:700;color:var(--sky);margin-bottom:.6rem">🇨🇳 中文内容</div>
+    <div class="field" style="margin-bottom:.6rem"><label>职位名称（中文）</label>
+      <input type="text" id="jTitleZh" placeholder="例：仓库分拣员" style="width:100%;padding:.45rem .65rem;border:1px solid #bae6fd;border-radius:6px;font-size:.9rem;box-sizing:border-box">
+    </div>
+    <div class="field" style="margin-bottom:0"><label>Job Description（中文）</label>
+      <textarea id="jDescZh" rows="4" placeholder="用中文描述职位内容..." style="width:100%;padding:.45rem .65rem;border:1px solid #bae6fd;border-radius:6px;font-size:.88rem;resize:vertical;box-sizing:border-box"></textarea>
+    </div>
+  </div>
+  <div id="jLangEsSection" style="display:none;border:1px solid #fde68a;border-radius:8px;padding:1rem;background:#fffbeb;margin-bottom:.75rem">
+    <div style="font-weight:700;color:#92400e;margin-bottom:.6rem">🇪🇸 Español</div>
+    <div class="field" style="margin-bottom:.6rem"><label>Título del puesto (Español)</label>
+      <input type="text" id="jTitleEs" placeholder="Ej: Clasificador de almacén" style="width:100%;padding:.45rem .65rem;border:1px solid #fcd34d;border-radius:6px;font-size:.9rem;box-sizing:border-box">
+    </div>
+    <div class="field" style="margin-bottom:0"><label>Descripción del trabajo (Español)</label>
+      <textarea id="jDescEs" rows="4" placeholder="Describa el trabajo en español..." style="width:100%;padding:.45rem .65rem;border:1px solid #fcd34d;border-radius:6px;font-size:.88rem;resize:vertical;box-sizing:border-box"></textarea>
     </div>
   </div>
 
@@ -4634,13 +4649,21 @@ async function openJobModal(job) {
     document.getElementById('jPartnerId').value = '';
     document.getElementById('jPartnerSearch').value = '';
   }
-  // Populate job title dropdown from managed list
-  await _populateJobTitleSelect(job ? job.title : '');
+  document.getElementById('jTitle').value = job ? (job.title || '') : '';
   document.getElementById('jCategory').value = job ? (job.category || '') : '';
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jPayPeriod').value = job ? (job.pay_period || '') : '';
-  document.getElementById('jLang').value = job ? job.lang : 'en';
+  // Language checkboxes
+  const activeLangs = job ? (job.langs || job.lang || 'en').split(',').map(s=>s.trim()) : ['en'];
+  document.getElementById('jLangEn').checked = activeLangs.includes('en');
+  document.getElementById('jLangZh').checked = activeLangs.includes('zh');
+  document.getElementById('jLangEs').checked = activeLangs.includes('es');
+  document.getElementById('jTitleZh').value = job ? (job.title_zh || '') : '';
+  document.getElementById('jTitleEs').value = job ? (job.title_es || '') : '';
+  document.getElementById('jDescZh').value  = job ? (job.desc_zh  || '') : '';
+  document.getElementById('jDescEs').value  = job ? (job.desc_es  || '') : '';
+  updateLangSections();
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
   document.getElementById('jShift').value = job ? (job.schedule || '') : '';
@@ -4688,6 +4711,11 @@ async function openJobModal(job) {
 }
 function closeJobModal() { guardClose('jobModal'); }
 function editJob(j) { openJobModal(j); }
+
+function updateLangSections() {
+  document.getElementById('jLangZhSection').style.display = document.getElementById('jLangZh').checked ? '' : 'none';
+  document.getElementById('jLangEsSection').style.display = document.getElementById('jLangEs').checked ? '' : 'none';
+}
 
 // ── Address helpers ──
 const _US_STATES_EARLY = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
@@ -4779,7 +4807,7 @@ async function randomFillJob() {
       desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía.' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
-  await _populateJobTitleSelect(r.title);
+  document.getElementById('jTitle').value           = r.title;
   document.getElementById('jType').value           = r.type;
   const _rloc = parseAddressString(r.location||'');
   document.getElementById('jStreet').value         = _rloc.street;
@@ -5194,7 +5222,9 @@ async function deleteDescEntry(idx) {
 async function saveJob() {
   const id = document.getElementById('jobId').value;
   const langNames = { en: 'English', zh: '中文', es: 'Español' };
-  const langVal = document.getElementById('jLang').value;
+  const checkedLangs = ['en','zh','es'].filter(l => document.getElementById('jLang'+l[0].toUpperCase()+l.slice(1)).checked);
+  if (!checkedLangs.length) return alert('请至少选择一种语言');
+  const langVal = checkedLangs[0];
   const partnerId = document.getElementById('jPartnerId').value || null;
   const partnerName = partnerId ? ((_jobPartners||[]).find(p=>p.id==partnerId)||{}).name||'' : '';
   const { sched: _sched, firstStart: _wStart, firstEnd: _wEnd, anyDay: _anyDay, allFilled: _allFilled } = collectScheduleTable();
@@ -5219,6 +5249,11 @@ async function saveJob() {
     pay_period: document.getElementById('jPayPeriod').value,
     lang: langVal,
     lang_name: langNames[langVal] || langVal,
+    langs: checkedLangs.join(','),
+    title_zh: document.getElementById('jTitleZh').value,
+    title_es: document.getElementById('jTitleEs').value,
+    desc_zh: document.getElementById('jDescZh').value,
+    desc_es: document.getElementById('jDescEs').value,
     work_auth: document.getElementById('jWorkAuth').value,
     employment_type: document.getElementById('jEmploymentType').value,
     company_id: partnerId,
