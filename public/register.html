@@ -345,7 +345,7 @@ h2{font-size:1rem;font-weight:700;color:var(--blue);margin-bottom:1.2rem;display
 </div>
 
 <script>
-let _lang = 'zh';
+let _lang = localStorage.getItem('pa_portal_lang') || 'zh';
 let _selectedType = 'worker';
 let _selectedStatus = '';
 let _typeOnly = null;
@@ -790,6 +790,7 @@ function setPh(id, key) {
 
 function setLang(lang) {
   _lang = lang;
+  localStorage.setItem('pa_portal_lang', lang);
   document.title = t('title');
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
 
@@ -1229,7 +1230,7 @@ async function enterpriseResendCode(type) {
 }
 
 // Initialize
-setLang('zh');
+setLang(_lang);
 </script>
 </body>
 </html>
