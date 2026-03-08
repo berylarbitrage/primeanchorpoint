@@ -2676,8 +2676,25 @@ tr:hover td{background:var(--sky-light)}
   <!-- per-language title+desc sections, shown dynamically -->
   <div id="jLangEnSection" style="display:none;border:1px solid #bfdbfe;border-radius:8px;padding:1rem;background:#eff6ff;margin-bottom:.75rem">
     <div style="font-weight:700;color:#1d4ed8;margin-bottom:.6rem">🇺🇸 English</div>
-    <div class="field" style="margin-bottom:0"><label>Job Title (English)</label>
+    <div class="field" style="margin-bottom:.6rem"><label>Job Title (English)</label>
       <input type="text" id="jTitleEn" placeholder="e.g. Warehouse Sorter" style="width:100%;padding:.45rem .65rem;border:1px solid #93c5fd;border-radius:6px;font-size:.9rem;box-sizing:border-box">
+    </div>
+    <div class="field" style="margin-bottom:0">
+      <label style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem">
+        <span>Job Description (English)</span>
+        <div style="display:flex;gap:.3rem">
+          <button type="button" id="jDescBtnDetailedEn" onclick="setLangDescMode('En','detailed')" style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-weight:600">Detailed</button>
+          <button type="button" id="jDescBtnChecklistEn" onclick="setLangDescMode('En','checklist')" style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer;font-weight:600">Checklist</button>
+        </div>
+      </label>
+      <input type="hidden" id="jDescModeEn" value="detailed">
+      <div id="jDescDetailedWrapEn" style="margin-top:.4rem">
+        <textarea id="jDescEn" rows="4" placeholder="Describe the job in English..." style="width:100%;padding:.45rem .65rem;border:1px solid #93c5fd;border-radius:6px;font-size:.88rem;resize:vertical;box-sizing:border-box"></textarea>
+      </div>
+      <div id="jDescChecklistWrapEn" style="display:none;margin-top:.4rem">
+        <div id="jDescStepsEn" style="display:flex;flex-direction:column;gap:.3rem"></div>
+        <button type="button" onclick="addLangDescStep('En')" style="margin-top:.35rem;font-size:.75rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-weight:600">+ Add Step</button>
+      </div>
     </div>
   </div>
   <div id="jLangZhSection" style="display:none;border:1px solid #e0f2fe;border-radius:8px;padding:1rem;background:#f0f9ff;margin-bottom:.75rem">
@@ -2685,8 +2702,22 @@ tr:hover td{background:var(--sky-light)}
     <div class="field" style="margin-bottom:.6rem"><label>职位名称（中文）</label>
       <input type="text" id="jTitleZh" placeholder="例：仓库分拣员" style="width:100%;padding:.45rem .65rem;border:1px solid #bae6fd;border-radius:6px;font-size:.9rem;box-sizing:border-box">
     </div>
-    <div class="field" style="margin-bottom:0"><label>Job Description（中文）</label>
-      <textarea id="jDescZh" rows="4" placeholder="用中文描述职位内容..." style="width:100%;padding:.45rem .65rem;border:1px solid #bae6fd;border-radius:6px;font-size:.88rem;resize:vertical;box-sizing:border-box"></textarea>
+    <div class="field" style="margin-bottom:0">
+      <label style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem">
+        <span>工作介绍（中文）</span>
+        <div style="display:flex;gap:.3rem">
+          <button type="button" id="jDescBtnDetailedZh" onclick="setLangDescMode('Zh','detailed')" style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #bae6fd;background:#e0f2fe;color:#0369a1;cursor:pointer;font-weight:600">Detailed</button>
+          <button type="button" id="jDescBtnChecklistZh" onclick="setLangDescMode('Zh','checklist')" style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer;font-weight:600">Checklist</button>
+        </div>
+      </label>
+      <input type="hidden" id="jDescModeZh" value="detailed">
+      <div id="jDescDetailedWrapZh" style="margin-top:.4rem">
+        <textarea id="jDescZh" rows="4" placeholder="用中文描述职位内容..." style="width:100%;padding:.45rem .65rem;border:1px solid #bae6fd;border-radius:6px;font-size:.88rem;resize:vertical;box-sizing:border-box"></textarea>
+      </div>
+      <div id="jDescChecklistWrapZh" style="display:none;margin-top:.4rem">
+        <div id="jDescStepsZh" style="display:flex;flex-direction:column;gap:.3rem"></div>
+        <button type="button" onclick="addLangDescStep('Zh')" style="margin-top:.35rem;font-size:.75rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #bae6fd;background:#e0f2fe;color:#0369a1;cursor:pointer;font-weight:600">+ 添加步骤</button>
+      </div>
     </div>
   </div>
   <div id="jLangEsSection" style="display:none;border:1px solid #fde68a;border-radius:8px;padding:1rem;background:#fffbeb;margin-bottom:.75rem">
@@ -2694,8 +2725,22 @@ tr:hover td{background:var(--sky-light)}
     <div class="field" style="margin-bottom:.6rem"><label>Título del puesto (Español)</label>
       <input type="text" id="jTitleEs" placeholder="Ej: Clasificador de almacén" style="width:100%;padding:.45rem .65rem;border:1px solid #fcd34d;border-radius:6px;font-size:.9rem;box-sizing:border-box">
     </div>
-    <div class="field" style="margin-bottom:0"><label>Descripción del trabajo (Español)</label>
-      <textarea id="jDescEs" rows="4" placeholder="Describa el trabajo en español..." style="width:100%;padding:.45rem .65rem;border:1px solid #fcd34d;border-radius:6px;font-size:.88rem;resize:vertical;box-sizing:border-box"></textarea>
+    <div class="field" style="margin-bottom:0">
+      <label style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem">
+        <span>Descripción del trabajo (Español)</span>
+        <div style="display:flex;gap:.3rem">
+          <button type="button" id="jDescBtnDetailedEs" onclick="setLangDescMode('Es','detailed')" style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #fcd34d;background:#fef9c3;color:#92400e;cursor:pointer;font-weight:600">Detailed</button>
+          <button type="button" id="jDescBtnChecklistEs" onclick="setLangDescMode('Es','checklist')" style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer;font-weight:600">Checklist</button>
+        </div>
+      </label>
+      <input type="hidden" id="jDescModeEs" value="detailed">
+      <div id="jDescDetailedWrapEs" style="margin-top:.4rem">
+        <textarea id="jDescEs" rows="4" placeholder="Describa el trabajo en español..." style="width:100%;padding:.45rem .65rem;border:1px solid #fcd34d;border-radius:6px;font-size:.88rem;resize:vertical;box-sizing:border-box"></textarea>
+      </div>
+      <div id="jDescChecklistWrapEs" style="display:none;margin-top:.4rem">
+        <div id="jDescStepsEs" style="display:flex;flex-direction:column;gap:.3rem"></div>
+        <button type="button" onclick="addLangDescStep('Es')" style="margin-top:.35rem;font-size:.75rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #fcd34d;background:#fef9c3;color:#92400e;cursor:pointer;font-weight:600">+ Add Step</button>
+      </div>
     </div>
   </div>
 
@@ -2741,26 +2786,6 @@ tr:hover td{background:var(--sky-light)}
     <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">按住 Ctrl（Mac：Command）可多选 · <a onclick="showTab('skill-settings')" style="cursor:pointer;color:var(--primary)">管理技能选项</a></div>
   </div>
 
-  <div class="field">
-    <label style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.4rem">
-      <span>Job Description</span>
-      <div style="display:flex;gap:.3rem">
-        <button type="button" id="jDescBtnDetailed" onclick="setJobDescMode('detailed')"
-          style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #93c5fd;background:#dbeafe;color:#1d4ed8;cursor:pointer;font-weight:600">Detailed</button>
-        <button type="button" id="jDescBtnChecklist" onclick="setJobDescMode('checklist')"
-          style="font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid #e2e8f0;background:#f8fafc;color:#64748b;cursor:pointer;font-weight:600">Checklist</button>
-      </div>
-    </label>
-    <input type="hidden" id="jDescMode" value="detailed">
-    <div id="jDescDetailedWrap" style="margin-top:.4rem">
-      <textarea id="jDesc" placeholder="Describe the scope of services, deliverables, and requirements..."></textarea>
-    </div>
-    <div id="jDescChecklistWrap" style="display:none;margin-top:.4rem">
-      <div id="jDescSteps" style="display:flex;flex-direction:column;gap:.3rem"></div>
-      <button type="button" onclick="addJobDescStep()"
-        style="margin-top:.35rem;font-size:.75rem;padding:.18rem .55rem;border-radius:5px;border:1px solid #fcd34d;background:#fef9c3;color:#92400e;cursor:pointer;font-weight:600">+ Add Step</button>
-    </div>
-  </div>
   <div class="field-row">
     <div class="field"><label>招聘人数</label><input type="number" id="jHeadcount" min="1" value="1" placeholder="1"></div>
     <div class="field" style="display:flex;align-items:flex-end;padding-bottom:.2rem"><label style="display:inline-flex;align-items:center;gap:.4rem;text-transform:none;font-size:.9rem"><input type="checkbox" id="jUrgent"> 急聘（紧急招聘）</label></div>
@@ -4835,7 +4860,7 @@ async function openJobModal(job) {
     document.getElementById('jPartnerId').value = '';
     document.getElementById('jPartnerSearch').value = '';
   }
-  document.getElementById('jTitle').value = job ? (job.title || '') : '';
+  // jTitle removed; jTitleEn is set below via loadLangDesc/openJobModal
   setCategoryValue('jCategory','jCategoryCustom', job ? (job.category || '') : '');
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jPay').value = job ? job.pay : '';
@@ -4848,8 +4873,8 @@ async function openJobModal(job) {
   document.getElementById('jTitleEn').value = job ? (job.title || '') : '';
   document.getElementById('jTitleZh').value = job ? (job.title_zh || '') : '';
   document.getElementById('jTitleEs').value = job ? (job.title_es || '') : '';
-  document.getElementById('jDescZh').value  = job ? (job.desc_zh  || '') : '';
-  document.getElementById('jDescEs').value  = job ? (job.desc_es  || '') : '';
+  loadLangDesc('Zh', job ? (job.desc_zh || '') : '');
+  loadLangDesc('Es', job ? (job.desc_es || '') : '');
   updateLangSections();
   document.getElementById('jWorkAuth').value = job ? (job.work_auth || '') : '';
   document.getElementById('jEmploymentType').value = job ? (job.employment_type || '') : '';
@@ -4885,7 +4910,7 @@ async function openJobModal(job) {
   fillStateSelect(document.getElementById('jState'), _loc.state);
   document.getElementById('jZip').value     = _loc.zip;
   document.getElementById('jAddrStatus').textContent = '';
-  loadJobDesc(job ? job.description : '');
+  loadLangDesc('En', job ? job.description : '');
   document.getElementById('jUrgent').checked = job ? !!job.urgent : false;
   document.getElementById('jHeadcount').value = job ? (job.headcount || 1) : 1;
 
@@ -5048,7 +5073,7 @@ async function randomFillJob() {
       desc: 'Se requiere licencia de montacargas vigente. Carga y descarga de mercancía.' },
   ];
   const r = pool[Math.floor(Math.random() * pool.length)];
-  document.getElementById('jTitle').value           = r.title;
+  document.getElementById('jTitleEn').value         = r.title;
   document.getElementById('jType').value           = r.type;
   const _rloc = parseAddressString(r.location||'');
   document.getElementById('jStreet').value         = _rloc.street;
@@ -5058,10 +5083,9 @@ async function randomFillJob() {
   document.getElementById('jZip').value            = _rloc.zip;
   document.getElementById('jPay').value            = r.pay;
   document.getElementById('jPayPeriod').value      = r.pay_period || '';
-  document.getElementById('jLang').value           = r.lang;
   document.getElementById('jWorkAuth').value       = r.work_auth || '';
   document.getElementById('jEmploymentType').value = r.employment_type || '';
-  loadJobDesc(r.desc || '');
+  loadLangDesc('En', r.desc || '');
   document.getElementById('jUrgent').checked       = !!r.urgent;
   populateScheduleTable('', r.work_days || '', r.work_start || '', r.work_end || '');
   // Benefits
@@ -5273,59 +5297,66 @@ function toggleAssignWordings() {
   renderDescBank();
 }
 
-// ── Job Description mode switcher ──
-function setJobDescMode(mode) {
-  document.getElementById('jDescMode').value = mode;
+// ── Per-language Job Description mode switcher ──
+const _langDescStyles = {
+  En: ['#93c5fd','#dbeafe','#1d4ed8'],
+  Zh: ['#bae6fd','#e0f2fe','#0369a1'],
+  Es: ['#fcd34d','#fef9c3','#92400e']
+};
+function setLangDescMode(lang, mode) {
+  document.getElementById('jDescMode'+lang).value = mode;
   const det = mode === 'detailed';
-  document.getElementById('jDescDetailedWrap').style.display = det ? '' : 'none';
-  document.getElementById('jDescChecklistWrap').style.display = det ? 'none' : '';
-  const activeStyle  = (border, bg, color) => `font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid ${border};background:${bg};color:${color};cursor:pointer;font-weight:600`;
-  document.getElementById('jDescBtnDetailed').style.cssText  = det ? activeStyle('#93c5fd','#dbeafe','#1d4ed8') : activeStyle('#e2e8f0','#f8fafc','#64748b');
-  document.getElementById('jDescBtnChecklist').style.cssText = det ? activeStyle('#e2e8f0','#f8fafc','#64748b') : activeStyle('#fcd34d','#fef9c3','#92400e');
-  if (!det && document.getElementById('jDescSteps').children.length === 0) addJobDescStep();
+  document.getElementById('jDescDetailedWrap'+lang).style.display = det ? '' : 'none';
+  document.getElementById('jDescChecklistWrap'+lang).style.display = det ? 'none' : '';
+  const activeStyle = (border, bg, color) => `font-size:.74rem;padding:.2rem .6rem;border-radius:6px;border:1px solid ${border};background:${bg};color:${color};cursor:pointer;font-weight:600`;
+  const [ab, ag, ac] = _langDescStyles[lang] || _langDescStyles.En;
+  document.getElementById('jDescBtnDetailed'+lang).style.cssText  = det ? activeStyle(ab,ag,ac) : activeStyle('#e2e8f0','#f8fafc','#64748b');
+  document.getElementById('jDescBtnChecklist'+lang).style.cssText = det ? activeStyle('#e2e8f0','#f8fafc','#64748b') : activeStyle(ab,ag,ac);
+  if (!det && document.getElementById('jDescSteps'+lang).children.length === 0) addLangDescStep(lang);
 }
 
-function addJobDescStep() {
-  const container = document.getElementById('jDescSteps');
+function addLangDescStep(lang) {
+  const container = document.getElementById('jDescSteps'+lang);
   const idx = container.children.length;
+  const [ab,,ac] = _langDescStyles[lang] || _langDescStyles.En;
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:flex;align-items:center;gap:.35rem';
   wrap.innerHTML = `
-    <span style="font-size:.75rem;color:#92400e;font-weight:700;min-width:18px">${idx+1}.</span>
-    <input placeholder="Step description" style="flex:1;border:1px solid #fcd34d;border-radius:5px;padding:.2rem .4rem;font-size:.81rem;background:#fff">
-    <button type="button" onclick="this.parentElement.remove();renumberJobDescSteps()"
+    <span style="font-size:.75rem;color:${ac};font-weight:700;min-width:18px">${idx+1}.</span>
+    <input placeholder="Step description" style="flex:1;border:1px solid ${ab};border-radius:5px;padding:.2rem .4rem;font-size:.81rem;background:#fff">
+    <button type="button" onclick="this.parentElement.remove();renumberLangDescSteps('${lang}')"
       style="background:none;border:none;color:#d97706;cursor:pointer;font-size:.9rem;padding:0 2px;line-height:1">×</button>`;
   container.appendChild(wrap);
 }
 
-function renumberJobDescSteps() {
-  document.querySelectorAll('#jDescSteps > div > span').forEach((s, i) => { s.textContent = (i+1)+'.'; });
+function renumberLangDescSteps(lang) {
+  document.querySelectorAll('#jDescSteps'+lang+' > div > span').forEach((s, i) => { s.textContent = (i+1)+'.'; });
 }
 
-function getJobDescValue() {
-  const mode = document.getElementById('jDescMode').value;
+function getLangDescValue(lang) {
+  const mode = document.getElementById('jDescMode'+lang).value;
   if (mode === 'checklist') {
-    const steps = [...document.querySelectorAll('#jDescSteps input')].map(i => i.value.trim()).filter(Boolean);
+    const steps = [...document.querySelectorAll('#jDescSteps'+lang+' input')].map(i => i.value.trim()).filter(Boolean);
     return JSON.stringify({ type: 'checklist', steps });
   }
-  return document.getElementById('jDesc').value;
+  return document.getElementById('jDesc'+lang).value;
 }
 
-function loadJobDesc(str) {
-  if (!str) { setJobDescMode('detailed'); document.getElementById('jDesc').value = ''; return; }
+function loadLangDesc(lang, str) {
+  if (!str) { setLangDescMode(lang, 'detailed'); document.getElementById('jDesc'+lang).value = ''; return; }
   try {
     const d = JSON.parse(str);
     if (d && d.type === 'checklist' && Array.isArray(d.steps)) {
-      setJobDescMode('checklist');
-      const container = document.getElementById('jDescSteps');
+      setLangDescMode(lang, 'checklist');
+      const container = document.getElementById('jDescSteps'+lang);
       container.innerHTML = '';
-      d.steps.forEach(() => addJobDescStep());
+      d.steps.forEach(() => addLangDescStep(lang));
       [...container.querySelectorAll('input')].forEach((inp, i) => { inp.value = d.steps[i] || ''; });
       return;
     }
   } catch {}
-  setJobDescMode('detailed');
-  document.getElementById('jDesc').value = str;
+  setLangDescMode(lang, 'detailed');
+  document.getElementById('jDesc'+lang).value = str;
 }
 
 function descRotationStatus(entry) {
@@ -5495,8 +5526,8 @@ async function saveJob() {
     langs: checkedLangs.join(','),
     title_zh: document.getElementById('jTitleZh').value,
     title_es: document.getElementById('jTitleEs').value,
-    desc_zh: document.getElementById('jDescZh').value,
-    desc_es: document.getElementById('jDescEs').value,
+    desc_zh: getLangDescValue('Zh'),
+    desc_es: getLangDescValue('Es'),
     work_auth: document.getElementById('jWorkAuth').value,
     employment_type: document.getElementById('jEmploymentType').value,
     company_id: partnerId,
@@ -5508,7 +5539,7 @@ async function saveJob() {
     benefits,
     required_skills: requiredSkills,
     schedule: checkedShifts.join(','),
-    description: getJobDescValue(),
+    description: getLangDescValue('En'),
     urgent: document.getElementById('jUrgent').checked,
     headcount: parseInt(document.getElementById('jHeadcount').value) || 1,
     job_status: 'open',
