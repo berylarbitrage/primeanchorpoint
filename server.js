@@ -6765,7 +6765,7 @@ app.post('/api/worker/reset-password', async (req, res) => {
 
   const account = db.prepare('SELECT salt, password_hash FROM worker_accounts WHERE id=?').get(entry.accountId);
   if (account && verifyPassword(new_password, account.salt, account.password_hash)) {
-    return res.status(400).json({ error: '新密码不能与原密码相同 / New password cannot be the same as your current password' });
+    return res.status(400).json({ error_code: 'SAME_PASSWORD' });
   }
   const newSalt = crypto.randomBytes(16).toString('hex');
   const newHash = hashPassword(new_password, newSalt);
@@ -7446,7 +7446,7 @@ app.post('/api/customer/reset-password', (req, res) => {
   if (Date.now() > entry.expires) { resetCodes.delete('customer:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
   const account = db.prepare('SELECT salt, password_hash FROM customer_accounts WHERE id=?').get(entry.accountId);
   if (account && verifyPassword(new_password, account.salt, account.password_hash)) {
-    return res.status(400).json({ error: '新密码不能与原密码相同 / New password cannot be the same as your current password' });
+    return res.status(400).json({ error_code: 'SAME_PASSWORD' });
   }
   const newSalt = crypto.randomBytes(16).toString('hex');
   const newHash = hashPassword(new_password, newSalt);

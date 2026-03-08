@@ -1334,7 +1334,7 @@ const PORTAL_I18N = {
     applyErrAvail: '请填写面试时间', applySubmitting: '提交中…',
     forgotTitle: '忘记密码', forgotDesc: '请输入您注册时使用的邮箱或手机号',
     forgotInputPH: '邮箱或手机号', forgotSendCode: '发送验证码',
-    forgotCodeSent: '验证码已发送，请查收', forgotCodePH: '验证码', forgotResend: '重新发送', forgotSendErr: '发送失败',
+    forgotCodeSent: '验证码已发送，请查收', forgotCodePH: '验证码', forgotResend: '重新发送', forgotSendErr: '发送失败', forgotSamePassword: '新密码不能与原密码相同', forgotMismatch: '两次密码不一致', forgotResetErr: '重置失败', forgotNetErr: '网络错误',
     forgotNewPwPH: '新密码（至少6位）', forgotConfirmPwPH: '确认新密码',
     forgotResetBtn: '重置密码', forgotSuccess: '密码重置成功！', forgotClose: '关闭'
   },
@@ -1454,7 +1454,7 @@ const PORTAL_I18N = {
     applyErrAvail: 'Please enter your interview availability', applySubmitting: 'Submitting…',
     forgotTitle: 'Forgot Password', forgotDesc: 'Enter your registered email or phone',
     forgotInputPH: 'Email or Phone', forgotSendCode: 'Send Code',
-    forgotCodeSent: 'Verification code has been sent', forgotCodePH: 'Code', forgotResend: 'Resend', forgotSendErr: 'Failed to send',
+    forgotCodeSent: 'Verification code has been sent', forgotCodePH: 'Code', forgotResend: 'Resend', forgotSendErr: 'Failed to send', forgotSamePassword: 'New password cannot be the same as your current password', forgotMismatch: 'Passwords do not match', forgotResetErr: 'Reset failed', forgotNetErr: 'Network error',
     forgotNewPwPH: 'New password (min 6 chars)', forgotConfirmPwPH: 'Confirm new password',
     forgotResetBtn: 'Reset Password', forgotSuccess: 'Password reset successful!', forgotClose: 'Close'
   },
@@ -1574,7 +1574,7 @@ const PORTAL_I18N = {
     applyErrAvail: 'Ingrese su disponibilidad para entrevista', applySubmitting: 'Enviando…',
     forgotTitle: 'Olvidé mi Contraseña', forgotDesc: 'Ingrese su correo o teléfono registrado',
     forgotInputPH: 'Correo o Teléfono', forgotSendCode: 'Enviar Código',
-    forgotCodeSent: 'Se ha enviado el código de verificación', forgotCodePH: 'Código', forgotResend: 'Reenviar', forgotSendErr: 'Error al enviar',
+    forgotCodeSent: 'Se ha enviado el código de verificación', forgotCodePH: 'Código', forgotResend: 'Reenviar', forgotSendErr: 'Error al enviar', forgotSamePassword: 'La nueva contraseña no puede ser igual a la actual', forgotMismatch: 'Las contraseñas no coinciden', forgotResetErr: 'Error al restablecer', forgotNetErr: 'Error de red',
     forgotNewPwPH: 'Nueva contraseña (mín. 6 caracteres)', forgotConfirmPwPH: 'Confirmar nueva contraseña',
     forgotResetBtn: 'Restablecer Contraseña', forgotSuccess: '¡Contraseña restablecida!', forgotClose: 'Cerrar'
   }
@@ -1823,7 +1823,7 @@ async function resetPassword() {
   const pw2 = document.getElementById('newPassword2').value;
   if (!code) return showForgotMsg('请输入验证码', 'error');
   if (!pw || pw.length < 6) return showForgotMsg('密码至少6位', 'error');
-  if (pw !== pw2) return showForgotMsg('两次密码不一致', 'error');
+  if (pw !== pw2) return showForgotMsg(_t('forgotMismatch'), 'error');
   try {
     const r = await fetch('/api/worker/reset-password', {
       method: 'POST',
@@ -1831,12 +1831,12 @@ async function resetPassword() {
       body: JSON.stringify({ login: _forgotLogin, code, new_password: pw })
     });
     const d = await r.json();
-    if (!r.ok) return showForgotMsg(d.error || '重置失败', 'error');
+    if (!r.ok) return showForgotMsg(d.error_code === 'SAME_PASSWORD' ? _t('forgotSamePassword') : (d.error || _t('forgotResetErr')), 'error');
     document.getElementById('forgotStep2').style.display = 'none';
     document.getElementById('forgotStep3').style.display = '';
     setTimeout(() => closeForgotPassword(), 2000);
   } catch {
-    showForgotMsg('网络错误', 'error');
+    showForgotMsg(_t('forgotNetErr'), 'error');
   }
 }
 
