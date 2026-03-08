@@ -1532,13 +1532,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
     <div class="field">
       <label>每场最大名额</label>
-      <select id="obivNewMax" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-        <option value="1">1 人</option>
-        <option value="2">2 人</option>
-        <option value="3">3 人</option>
-        <option value="5">5 人</option>
-        <option value="10">10 人</option>
-      </select>
+      <input type="number" id="obivNewMax" value="1" min="1" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
     </div>
     <button type="button" class="btn btn-sm btn-green" onclick="obivCreateAndAdd()">📅 批量生成面试</button>
   </div>
