@@ -10523,6 +10523,14 @@ const WORK_STATUS_MAP = { citizen:'🇺🇸 公民', green_card:'🟢 绿卡', e
 const IV_STATUS_MAP = { scheduled:'⏳ 已约', completed:'✔ 面试完成', passed:'✅ 通过', failed:'❌ 未通过', cancelled:'取消' };
 const PAY_METHOD_LABELS = { check:'✅ 支票', cash:'💵 现金', direct_deposit:'🏦 直接存款' };
 
+// Format 10-digit US phone as +1 (XXX) XXX-XXXX
+function fmtPhone(p) {
+  if (!p) return '—';
+  const d = p.replace(/\D/g, '').slice(-10);
+  if (d.length === 10) return `+1 (${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  return p; // return original if not 10-digit
+}
+
 function complianceBadge2(type, status) {
   if (!status) return `<span class="wa-cbadge na">${type}</span>`;
   const cls = { approved:'ok', pending:'pend', rejected:'fail' };
@@ -10577,7 +10585,7 @@ async function loadWorkerAccounts() {
     return `<tr>
     <td style="font-family:monospace;font-size:.78rem;white-space:nowrap;color:var(--sky)">${w.worker_code ? esc(w.worker_code) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div></td>
-    <td style="font-size:.8rem;white-space:nowrap">${esc(w.phone||'—')}</td>
+    <td style="font-size:.8rem;white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
     <td><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:110px" onchange="updateWorkerStatus(${w.id},this.value)">
       <option value="">— 未填 —</option>
@@ -10595,7 +10603,11 @@ async function loadWorkerAccounts() {
       ${complianceBadge2('W9', c.w9)}
       ${complianceBadge2('I9', c.i9)}
     </div></td>
-    <td style="font-size:.8rem;white-space:nowrap">${PAY_METHOD_LABELS[w.payment_method]||'💵 现金'}</td>
+    <td style="font-size:.8rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer" onchange="updateWorkerPayMethod(${w.id},this.value)">
+      <option value="cash" ${(w.payment_method||'cash')==='cash'?'selected':''}>💵 现金</option>
+      <option value="check" ${w.payment_method==='check'?'selected':''}>✅ 支票</option>
+      <option value="direct_deposit" ${w.payment_method==='direct_deposit'?'selected':''}>🏦 直接存款</option>
+    </select></td>
     <td style="font-size:.8rem">${w.expected_salary ? '$'+esc(w.expected_salary) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.8rem">${w.our_salary_rating ? esc(w.our_salary_rating) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="max-width:160px">${skillPills(skills)}</td>
@@ -10965,6 +10977,11 @@ async function activateWorkerAccount(id) {
 async function updateWorkerStatus(id, work_status) {
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ work_status }) });
   showToast('✅ 身份已更新');
+}
+
+async function updateWorkerPayMethod(id, payment_method) {
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ payment_method }) });
+  showToast('✅ 支付方式已更新');
 }
 
 async function showWorkerHistory(id, name) {

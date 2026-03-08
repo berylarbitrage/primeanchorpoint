@@ -1643,7 +1643,7 @@ function nextEmployeeId(state, hireDate) {
   return `STAFF-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
-// ─── Auto-generate worker code: PORT-CITY-MMDDYY-000001 ───
+// ─── Auto-generate worker code: PORT-ST-MMDDYY-0001 ───
 function generateWorkerCode(state, prefix = 'PORT') {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
