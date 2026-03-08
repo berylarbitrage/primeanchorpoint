@@ -4571,13 +4571,13 @@ function renderJobsFiltered() {
     const si = statusInfo(st);
     const reasonTip = j.close_reason ? `<br><small style="color:var(--gray-400)">${CLOSE_REASON_LABEL[j.close_reason]||j.close_reason}${j.close_note?' · '+esc(j.close_note):''}</small>` : '';
     return `<tr>
-      <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
+      <td style="white-space:nowrap"><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
       <td style="white-space:nowrap">${esc(j.type||'')}</td>
       <td style="white-space:nowrap">${etBadge(j.employment_type)}</td>
       <td style="text-align:center;white-space:nowrap">${j.headcount||1}</td>
-      <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
-      <td>${esc(j.pay||'')}</td>
-      <td>
+      <td style="min-width:160px"><span style="color:var(--sky);font-weight:500">${esc(j.location)}</span>${scheduleStr(j) ? `<br><small style="color:var(--gray-400)">🕐 ${esc(scheduleStr(j))}</small>` : ''}</td>
+      <td style="white-space:nowrap">${esc(j.pay||'')}</td>
+      <td style="white-space:nowrap">
         <span class="badge ${si.cls}">${si.text}</span>${reasonTip}
         ${j.visible === 0 ? `<br><span class="badge" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;font-size:.7rem">隐藏</span>` : ''}
       </td>
