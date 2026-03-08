@@ -7967,7 +7967,7 @@ app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
   const ct = city ?? loc.city ?? '';
   const st = state ?? loc.state ?? '';
   const zp = zip ?? loc.zip ?? '';
-  const addrDisplay = address ?? [a1, a2, ct && st ? `${ct}, ${st}${zp ? ' ' + zp : ''}` : ct].filter(Boolean).join(', ') || loc.address;
+  const addrDisplay = (address ?? [a1, a2, ct && st ? `${ct}, ${st}${zp ? ' ' + zp : ''}` : ct].filter(Boolean).join(', ')) || loc.address;
   db.prepare('UPDATE interview_locations SET name=?,address=?,address1=?,address2=?,city=?,state=?,zip=?,contact_name=?,contact_phone=?,instructions=?,active=? WHERE id=?')
     .run(name??loc.name, addrDisplay, a1, a2, ct, st, zp, contact_name??loc.contact_name, contact_phone??loc.contact_phone, instructions??loc.instructions, active??loc.active, req.params.id);
   res.json({ success: true });
