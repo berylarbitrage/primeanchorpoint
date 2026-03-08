@@ -6095,7 +6095,7 @@ function filterPartnerSearch() {
   drop.classList.add('open');
 }
 
-function selectPartnerItem(id, name) {
+async function selectPartnerItem(id, name) {
   document.getElementById('jPartnerId').value = id;
   document.getElementById('jPartnerSearch').value = name;
   document.getElementById('jPartnerDrop').classList.remove('open');
@@ -6114,9 +6114,10 @@ function selectPartnerItem(id, name) {
                   document.getElementById('jZip').value.trim();
   const addr0Str = _addrStr(addrs[0]);
   const msg = hasAddr
-    ? `是否用「${name}」的公司地址覆盖当前工作地点？\n\n${addr0Str}`
-    : `是否将「${name}」的公司地址导入到工作地点？\n\n${addr0Str}`;
-  if (!confirm(msg)) return;
+    ? `是否用「${name}」的公司地址<strong>覆盖</strong>当前工作地点？<br><br><span style="color:var(--sky)">${addr0Str}</span>`
+    : `是否将「${name}」的公司地址导入到工作地点？<br><br><span style="color:var(--sky)">${addr0Str}</span>`;
+  const ok = await showConfirm(msg, { confirmLabel: hasAddr ? '覆盖' : '导入', danger: !!hasAddr });
+  if (!ok) return;
 
   const parsed = parseAddressString(addr0Str);
   document.getElementById('jStreet').value  = parsed.street;
