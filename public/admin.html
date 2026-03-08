@@ -1551,10 +1551,12 @@ tr:hover td{background:var(--sky-light)}
   <h2 id="ivLocModalTitle">添加面试地点</h2>
   <input type="hidden" id="ivLocId">
   <div class="field"><label>地点名称 *</label><input id="ivLocName" placeholder="例：芝加哥主办公室、Zoom 线上面试"></div>
-  <div class="field"><label>地址</label><input id="ivLocAddress" placeholder="123 Main St, Chicago, IL 60601" oninput="clearAddrStatus('ivLocAddrStatus')" onblur="autoVerifySingleAddr('ivLocAddress','ivLocAddrStatus')"></div>
-  <div style="display:flex;align-items:center;gap:.5rem;margin-top:-.25rem;margin-bottom:.5rem">
-    <button type="button" class="btn btn-sm btn-outline" onclick="verifySingleAddr('ivLocAddress','ivLocAddrStatus')">🔍 验证地址 Verify</button>
-    <span id="ivLocAddrStatus" style="font-size:.8rem;font-weight:600"></span>
+  <div class="field"><label>街道地址 1 Address 1 *</label><input id="ivLocAddress1" placeholder="e.g. 123 Main St"></div>
+  <div class="field"><label>街道地址 2 Address 2 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="ivLocAddress2" placeholder="e.g. Suite 200"></div>
+  <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.75rem">
+    <div class="field"><label>城市 City *</label><input id="ivLocCity" placeholder="Chicago"></div>
+    <div class="field"><label>州 State *</label><select id="ivLocState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%"><option value="">-- 州 --</option></select></div>
+    <div class="field"><label>邮编 ZIP</label><input id="ivLocZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'')"></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
     <div class="field"><label>联系人姓名</label><input id="ivLocContactName" placeholder="张经理"></div>
@@ -11693,7 +11695,11 @@ function openLocationModal(id) {
   document.getElementById('ivLocModalTitle').textContent = loc ? '编辑面试地点' : '添加面试地点';
   document.getElementById('ivLocId').value            = loc ? loc.id : '';
   document.getElementById('ivLocName').value          = loc ? loc.name : '';
-  document.getElementById('ivLocAddress').value       = loc ? (loc.address||'') : '';
+  document.getElementById('ivLocAddress1').value      = loc ? (loc.address1||'') : '';
+  document.getElementById('ivLocAddress2').value      = loc ? (loc.address2||'') : '';
+  document.getElementById('ivLocCity').value          = loc ? (loc.city||'') : '';
+  fillStateSelect(document.getElementById('ivLocState'), loc ? (loc.state||'') : '');
+  document.getElementById('ivLocZip').value           = loc ? (loc.zip||'') : '';
   document.getElementById('ivLocContactName').value   = loc ? (loc.contact_name||'') : '';
   document.getElementById('ivLocContactPhone').value  = loc ? (loc.contact_phone||'') : '';
   document.getElementById('ivLocInstructions').value  = loc ? (loc.instructions||'') : '';
@@ -11703,23 +11709,22 @@ function openLocationModal(id) {
 function editInterviewLocation(id) { openLocationModal(id); }
 
 async function saveLocation() {
-  const id   = document.getElementById('ivLocId').value;
+  const id       = document.getElementById('ivLocId').value;
+  const address1 = document.getElementById('ivLocAddress1').value.trim();
+  const address2 = document.getElementById('ivLocAddress2').value.trim();
+  const city     = document.getElementById('ivLocCity').value.trim();
+  const state    = document.getElementById('ivLocState').value;
+  const zip      = document.getElementById('ivLocZip').value.trim();
+  const addrParts = [address1, address2, city && state ? `${city}, ${state}${zip ? ' ' + zip : ''}` : city].filter(Boolean);
   const data = {
     name:          document.getElementById('ivLocName').value.trim(),
-    address:       document.getElementById('ivLocAddress').value.trim(),
+    address1, address2, city, state, zip,
+    address:       addrParts.join(', '),
     contact_name:  document.getElementById('ivLocContactName').value.trim(),
     contact_phone: document.getElementById('ivLocContactPhone').value.trim(),
     instructions:  document.getElementById('ivLocInstructions').value.trim()
   };
   if (!data.name) return showToast('❌ 地点名称必填', 'error');
-  if (data.address) {
-    const addrResult = await validateAddressSingleField(data.address);
-    if (!addrResult.proceed) return;
-    if (addrResult.standardized) {
-      data.address = addrResult.standardized;
-      document.getElementById('ivLocAddress').value = addrResult.standardized;
-    }
-  }
   const r = await api(id ? `/admin/interview-locations/${id}` : '/admin/interview-locations', {
     method: id ? 'PUT' : 'POST',
     body: JSON.stringify(data)
