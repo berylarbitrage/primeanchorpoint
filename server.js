@@ -8198,7 +8198,7 @@ app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
     db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
   }
   // Sync to onboarding task
-  if (status === 'passed' && row.worker_account_id) {
+  if ((status === 'passed' || status === 'completed') && row.worker_account_id) {
     db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(row.worker_account_id);
     syncOnboardedStatus(row.worker_account_id);
   }
