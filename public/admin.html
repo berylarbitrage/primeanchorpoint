@@ -7202,7 +7202,7 @@ function renderPartners(partners) {
     const mainContact = contacts.length ? (contacts[0].first_name||contacts[0].last_name ? `${contacts[0].first_name||''} ${contacts[0].last_name||''}`.trim() : (contacts[0].name||'')) : (p.contact_person||'');
     const mainPhone = contacts.length ? contacts[0].phone : (p.phone||'');
     return `<tr style="cursor:pointer" onclick="showPartnerById(${p.id})">
-      <td><strong>${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}</td>
+      <td><strong>${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}<br>${p.company_number?`<span style="font-size:.72rem;color:var(--gray-400);font-family:monospace">${esc(p.company_number)}</span>`:''}</td>
       <td>${esc(mainContact)}${contacts.length>1?` <span style="color:var(--gray-400)">(+${contacts.length-1})</span>`:''}</td>
       <td>${esc(mainPhone)}</td>
       <td>${esc(p.industry)}</td>
@@ -7210,7 +7210,7 @@ function renderPartners(partners) {
       <td>
         <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
         <button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">✍ 发送合同</button>
-        <button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id},${JSON.stringify(p.name)})">删除</button>
+        ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id},${JSON.stringify(p.name)})">删除</button>`:''}
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="6" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
@@ -7230,6 +7230,7 @@ async function showPartnerById(id) {
   // load files
   const files = await api(`/admin/partners/${id}/files`);
   let html = `<div class="detail-section"><h4>基本信息</h4><div class="detail-grid">
+    ${p.company_number?`<div class="detail-row"><span>公司编号</span><span style="font-family:monospace;font-weight:600;color:var(--sky)">${esc(p.company_number)}</span></div>`:''}
     <div class="detail-row"><span>公司名称</span><span>${esc(p.name)}</span></div>
     <div class="detail-row"><span>行业</span><span>${esc(p.industry)}</span></div>
     <div class="detail-row"><span>状态</span><span>${p.active?'合作中':'已停止'}</span></div>

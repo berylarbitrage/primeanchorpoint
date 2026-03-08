@@ -336,6 +336,7 @@ db.exec(`
     addresses TEXT DEFAULT '[]',
     social_media TEXT DEFAULT '{}',
     links TEXT DEFAULT '{}',
+    company_number TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS partner_files (
@@ -588,6 +589,23 @@ const partnerMigrations = ['contacts','addresses','social_media','links'];
 partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
+try { db.exec(`ALTER TABLE partners ADD COLUMN company_number TEXT DEFAULT ''`); } catch {}
+
+function generatePartnerNumber(stateAbbr) {
+  const s = (stateAbbr || 'XX').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2).padEnd(2, 'X');
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const yy = String(now.getFullYear()).slice(-2);
+  const prefix = `COMP-${s}-${mm}${dd}${yy}-`;
+  const existing = db.prepare(`SELECT company_number FROM partners WHERE company_number LIKE ? ORDER BY company_number DESC LIMIT 1`).get(prefix + '%');
+  let seq = 1;
+  if (existing) {
+    const parts = existing.company_number.split('-');
+    seq = (parseInt(parts[parts.length - 1], 10) || 0) + 1;
+  }
+  return prefix + String(seq).padStart(4, '0');
+}
 // Migrate jobs table (add new columns if missing)
 const jobMigrations = [
   "ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL",
@@ -4294,12 +4312,19 @@ app.get('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
 app.post('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.name) return res.status(400).json({ error: 'Name required' });
-  const r = db.prepare(`INSERT INTO partners (name,contact_person,phone,email,address,industry,services,notes,active,contacts,addresses,social_media,links)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+  // Extract state from first address for company number
+  let stateAbbr = 'XX';
+  try {
+    const addrs = typeof d.addresses === 'string' ? JSON.parse(d.addresses) : (d.addresses || []);
+    if (addrs.length && addrs[0].state) stateAbbr = addrs[0].state;
+  } catch {}
+  const companyNumber = generatePartnerNumber(stateAbbr);
+  const r = db.prepare(`INSERT INTO partners (name,contact_person,phone,email,address,industry,services,notes,active,contacts,addresses,social_media,links,company_number)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
     d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
-    d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}');
-  res.json({ success: true, id: r.lastInsertRowid });
+    d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', companyNumber);
+  res.json({ success: true, id: r.lastInsertRowid, company_number: companyNumber });
 });
 
 app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('update', 'partners'), (req, res) => {
@@ -4311,7 +4336,7 @@ app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('updat
   res.json({ success: true });
 });
 
-app.delete('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('delete', 'partners'), (req, res) => {
+app.delete('/api/admin/partners/:id', requireAdmin, requireRole('admin'), (req, res) => {
   // Delete associated files
   const files = db.prepare('SELECT * FROM partner_files WHERE partner_id=?').all(req.params.id);
   files.forEach(f => { if (f.file_path) { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); } });
