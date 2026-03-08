@@ -1472,41 +1472,55 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <button type="button" class="btn btn-sm" id="obivCreateToggleBtn" onclick="obivToggleCreate()" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd;width:100%;margin-bottom:.5rem">➕ 创建新的面试时间</button>
 
-  <!-- Create new slot form -->
+  <!-- Create new slot form (batch) -->
   <div id="obivCreateForm" style="display:none;background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:.75rem;margin-bottom:.75rem">
-    <div style="font-size:.82rem;font-weight:700;color:var(--gray-600);margin-bottom:.6rem">新建面试时间</div>
+    <div style="font-size:.82rem;font-weight:700;color:var(--gray-600);margin-bottom:.6rem">批量创建面试时间</div>
     <div class="field">
       <label>日期 *</label>
       <input type="date" id="obivNewDate" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
       <div class="field">
-        <label>时 *</label>
-        <select id="obivNewHour" style="width:100%;padding:.5rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-          <option value="">--</option>
-        </select>
+        <label>开始时间 *</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem">
+          <select id="obivStartHour" onchange="obivUpdateBatchPreview()" style="padding:.5rem .3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+            <option value="">时</option>
+          </select>
+          <select id="obivStartMin" onchange="obivUpdateBatchPreview()" style="padding:.5rem .3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+            <option value="00">00</option>
+            <option value="15">15</option>
+            <option value="30">30</option>
+            <option value="45">45</option>
+          </select>
+        </div>
       </div>
       <div class="field">
-        <label>分钟 *</label>
-        <select id="obivNewMinute" style="width:100%;padding:.5rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-          <option value="00">00</option>
-          <option value="15">15</option>
-          <option value="30">30</option>
-          <option value="45">45</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>时长</label>
-        <select id="obivNewDuration" style="width:100%;padding:.5rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
-          <option value="15">15 分钟</option>
-          <option value="30" selected>30 分钟</option>
-          <option value="45">45 分钟</option>
-          <option value="60">60 分钟</option>
-          <option value="90">90 分钟</option>
-          <option value="120">120 分钟</option>
-        </select>
+        <label>结束时间 *</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem">
+          <select id="obivEndHour" onchange="obivUpdateBatchPreview()" style="padding:.5rem .3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+            <option value="">时</option>
+          </select>
+          <select id="obivEndMin" onchange="obivUpdateBatchPreview()" style="padding:.5rem .3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+            <option value="00">00</option>
+            <option value="15">15</option>
+            <option value="30">30</option>
+            <option value="45">45</option>
+          </select>
+        </div>
       </div>
     </div>
+    <div class="field">
+      <label>每场时长 *</label>
+      <select id="obivNewDuration" onchange="obivUpdateBatchPreview()" style="width:100%;padding:.5rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <option value="15">15 分钟</option>
+        <option value="30" selected>30 分钟</option>
+        <option value="45">45 分钟</option>
+        <option value="60">60 分钟</option>
+        <option value="90">90 分钟</option>
+        <option value="120">120 分钟</option>
+      </select>
+    </div>
+    <div id="obivBatchPreview" style="display:none;font-size:.78rem;color:#0369a1;background:#f0f9ff;border:1px solid #bae6fd;border-radius:5px;padding:.4rem .6rem;margin-bottom:.5rem"></div>
     <div class="field">
       <label>面试地点 *</label>
       <select id="obivNewLocSel" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
@@ -1514,7 +1528,7 @@ tr:hover td{background:var(--sky-light)}
       </select>
     </div>
     <div class="field">
-      <label>最大名额</label>
+      <label>每场最大名额</label>
       <select id="obivNewMax" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
         <option value="1">1 人</option>
         <option value="2">2 人</option>
@@ -1523,7 +1537,7 @@ tr:hover td{background:var(--sky-light)}
         <option value="10">10 人</option>
       </select>
     </div>
-    <button type="button" class="btn btn-sm btn-green" onclick="obivCreateAndAdd()">✅ 创建并加入列表</button>
+    <button type="button" class="btn btn-sm btn-green" onclick="obivCreateAndAdd()">📅 批量生成面试</button>
   </div>
 
   <div class="modal-actions">
@@ -13299,18 +13313,22 @@ async function openOnboardingInterviewSlotModal() {
     (_ivLocations || []).map(l => `<option value="${l.id}">${esc(l.name)}${l.address ? ' — ' + esc(l.address) : ''}</option>`).join('');
   document.getElementById('obivNewLocSel').innerHTML = locOpts;
 
-  // Populate hour dropdown
-  const hourSel = document.getElementById('obivNewHour');
-  hourSel.innerHTML = '<option value="">--</option>' +
+  // Populate start/end hour dropdowns
+  const hourOpts = '<option value="">时</option>' +
     Array.from({ length: 24 }, (_, i) => { const h = String(i).padStart(2,'0'); return `<option value="${h}">${h}</option>`; }).join('');
-  hourSel.value = '09';
+  document.getElementById('obivStartHour').innerHTML = hourOpts;
+  document.getElementById('obivEndHour').innerHTML   = hourOpts;
+  document.getElementById('obivStartHour').value = '09';
+  document.getElementById('obivEndHour').value   = '17';
+  document.getElementById('obivStartMin').value  = '00';
+  document.getElementById('obivEndMin').value    = '00';
 
   // Default date to tomorrow
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
   document.getElementById('obivNewDate').value = tomorrow.toISOString().split('T')[0];
-  document.getElementById('obivNewMinute').value = '00';
   document.getElementById('obivNewDuration').value = '30';
   document.getElementById('obivNewMax').value = '1';
+  document.getElementById('obivBatchPreview').style.display = 'none';
 
   document.getElementById('obivSlotInfo').style.display = 'none';
   document.getElementById('obivCreateForm').style.display = 'none';
@@ -13350,44 +13368,76 @@ function obivToggleCreate() {
   document.getElementById('obivCreateToggleBtn').textContent = _obivCreating ? '➖ 收起' : '➕ 创建新的面试时间';
 }
 
+function obivUpdateBatchPreview() {
+  const startH = document.getElementById('obivStartHour').value;
+  const startM = document.getElementById('obivStartMin').value;
+  const endH   = document.getElementById('obivEndHour').value;
+  const endM   = document.getElementById('obivEndMin').value;
+  const dur    = parseInt(document.getElementById('obivNewDuration').value) || 30;
+  const preview = document.getElementById('obivBatchPreview');
+  if (!startH || !endH) { preview.style.display = 'none'; return; }
+  const startMin = parseInt(startH) * 60 + parseInt(startM || 0);
+  const endMin   = parseInt(endH)   * 60 + parseInt(endM   || 0);
+  const count = Math.floor((endMin - startMin) / dur);
+  if (count <= 0) { preview.style.display = 'none'; return; }
+  const times = [];
+  for (let m = startMin; m + dur <= endMin; m += dur) {
+    times.push(`${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`);
+  }
+  preview.textContent = `将生成 ${count} 个时间段：${times.join('、')}`;
+  preview.style.display = 'block';
+}
+
 async function obivCreateAndAdd() {
-  const date = document.getElementById('obivNewDate').value;
-  const hour = document.getElementById('obivNewHour').value;
-  const minute = document.getElementById('obivNewMinute').value;
-  const duration = parseInt(document.getElementById('obivNewDuration').value) || 30;
-  const locId = document.getElementById('obivNewLocSel').value;
+  const date   = document.getElementById('obivNewDate').value;
+  const startH = document.getElementById('obivStartHour').value;
+  const startM = document.getElementById('obivStartMin').value  || '00';
+  const endH   = document.getElementById('obivEndHour').value;
+  const endM   = document.getElementById('obivEndMin').value    || '00';
+  const duration    = parseInt(document.getElementById('obivNewDuration').value) || 30;
+  const locId       = document.getElementById('obivNewLocSel').value;
   const maxBookings = parseInt(document.getElementById('obivNewMax').value) || 1;
 
-  if (!date) return showToast('❌ 请选择日期', 'error');
-  if (!hour) return showToast('❌ 请选择时', 'error');
-  if (!locId) return showToast('❌ 请选择面试地点', 'error');
+  if (!date)   return showToast('❌ 请选择日期', 'error');
+  if (!startH) return showToast('❌ 请选择开始时间', 'error');
+  if (!endH)   return showToast('❌ 请选择结束时间', 'error');
+  if (!locId)  return showToast('❌ 请选择面试地点', 'error');
 
-  const slot_datetime = `${date}T${hour}:${minute}:00`;
-  const r = await api('/admin/interview-slots', {
-    method: 'POST',
-    body: JSON.stringify({ slot_datetime, duration_min: duration, max_bookings: maxBookings, location_id: parseInt(locId) })
-  });
-  if (!r || !r.success) return showToast('❌ ' + (r?.error || '创建失败'), 'error');
+  const startMin = parseInt(startH) * 60 + parseInt(startM);
+  const endMin   = parseInt(endH)   * 60 + parseInt(endM);
+  if (endMin <= startMin) return showToast('❌ 结束时间必须晚于开始时间', 'error');
 
-  showToast('✅ 面试时间已创建，请在列表中选择');
+  const datetimes = [];
+  for (let m = startMin; m + duration <= endMin; m += duration) {
+    const h  = String(Math.floor(m / 60)).padStart(2, '0');
+    const mn = String(m % 60).padStart(2, '0');
+    datetimes.push(`${date}T${h}:${mn}:00`);
+  }
+  if (!datetimes.length) return showToast('❌ 时间范围内无法生成面试段', 'error');
+
+  let created = 0, newIds = [];
+  for (const slot_datetime of datetimes) {
+    const r = await api('/admin/interview-slots', {
+      method: 'POST',
+      body: JSON.stringify({ slot_datetime, duration_min: duration, max_bookings: maxBookings, location_id: parseInt(locId) })
+    });
+    if (r && (r.id || r.success)) { created++; if (r.id) newIds.push(r.id); }
+  }
+  if (!created) return showToast('❌ 创建失败', 'error');
+
+  showToast(`✅ 已批量创建 ${created} 个面试时间段`);
 
   // Reload slots and repopulate list
   _obivSlots = await api('/admin/interview-slots') || [];
   const now = new Date();
-  const futureSlots = _obivSlots.filter(s => s.active !== 0 && new Date(s.slot_datetime) > now);
-  const slotSel = document.getElementById('obivExistingSlotSel');
-  slotSel.innerHTML = futureSlots.map(s => {
-    const dt = new Date(s.slot_datetime);
-    const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short' });
-    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
-    const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
-    const avail = (s.max_bookings || 1) - (s.booked_count || 0);
-    return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
-  }).join('');
+  _obivFutureSlots = _obivSlots.filter(s => s.active !== 0 && new Date(s.slot_datetime) > now);
+  obivFilterSlots();
 
-  // Auto-check the new slot
-  const newCheckbox = slotSel.querySelector(`input[value="${r.id}"]`);
-  if (newCheckbox) { newCheckbox.checked = true; }
+  // Auto-check newly created slots
+  newIds.forEach(id => {
+    const cb = document.querySelector(`#obivExistingSlotSel input[value="${id}"]`);
+    if (cb) cb.checked = true;
+  });
   obivOnSlotChange();
 
   // Collapse create form
