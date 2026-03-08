@@ -50,7 +50,7 @@
 .btn-outline{background:transparent;border:1px solid var(--gray-200);color:var(--gray-600)}.btn-outline:hover{background:var(--gray-200);color:var(--gray-800)}
 .card{background:var(--white);border-radius:var(--radius);padding:1.5rem;box-shadow:0 2px 12px rgba(0,0,0,.04);margin-bottom:1rem}
 table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:10px 12px;font-size:.75rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--gray-200)}
+th{text-align:left;padding:10px 12px;font-size:.75rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--gray-200);white-space:nowrap}
 td{padding:10px 12px;font-size:.85rem;border-bottom:1px solid var(--gray-200);color:var(--gray-600)}
 tr:hover td{background:var(--sky-light)}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700}
@@ -4572,9 +4572,9 @@ function renderJobsFiltered() {
     const reasonTip = j.close_reason ? `<br><small style="color:var(--gray-400)">${CLOSE_REASON_LABEL[j.close_reason]||j.close_reason}${j.close_note?' · '+esc(j.close_note):''}</small>` : '';
     return `<tr>
       <td><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
-      <td>${esc(j.type||'')}</td>
-      <td>${etBadge(j.employment_type)}</td>
-      <td style="text-align:center">${j.headcount||1}</td>
+      <td style="white-space:nowrap">${esc(j.type||'')}</td>
+      <td style="white-space:nowrap">${etBadge(j.employment_type)}</td>
+      <td style="text-align:center;white-space:nowrap">${j.headcount||1}</td>
       <td>${esc(j.location)}<br><small style="color:var(--gray-500)">${esc(scheduleStr(j))}</small></td>
       <td>${esc(j.pay||'')}</td>
       <td>
