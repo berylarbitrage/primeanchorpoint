@@ -1674,15 +1674,29 @@ async function _translateJobs(jobs) {
   }));
   return jobs;
 }
+function _clearGT() {
+  // Clear all Google Translate cookies (multiple domain variants)
+  ['', 'domain=' + location.hostname, 'domain=.' + location.hostname].forEach(function(d) {
+    document.cookie = 'googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/' + (d ? ';' + d : '');
+  });
+  // Clear GT localStorage keys
+  try {
+    Object.keys(localStorage).filter(function(k){ return /googtrans|goog_te/.test(k); })
+      .forEach(function(k){ localStorage.removeItem(k); });
+  } catch(e) {}
+}
 function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
-  // If Google Translate is currently active, reset it so it doesn't fight with portal i18n
-  var gtCookie = (document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/) || [])[1] || '';
-  if (gtCookie && gtCookie !== 'zh-CN' && typeof window._gtDoTranslate === 'function') {
-    window._gtDoTranslate('zh-CN'); // clears cookie + reloads; page will restore to correct lang from localStorage
+  // Switching to Chinese: always clear GT (Google Translate may have translated the page)
+  // and reload so the original Chinese DOM is fully restored.
+  if (lang === 'zh') {
+    _clearGT();
+    window.location.reload();
     return;
   }
+  // For en/es: clear GT too so it doesn't fight with portal i18n
+  _clearGT();
   applyPortalLang();
   if (!WORKER_TOKEN) return;
   if (_activeTab === 'profile') loadProfile();
