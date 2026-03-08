@@ -633,6 +633,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
@@ -942,6 +943,14 @@ setTimeout(() => {
   try {
     const unlinked = db.prepare("SELECT id FROM worker_accounts WHERE active=1 AND worker_code IS NULL").all();
     unlinked.forEach(w => { try { activateWorkerAccount(w.id); } catch {} });
+    // Backfill employees.inquiry_id from existing linked worker_accounts
+    db.prepare(`
+      UPDATE employees SET inquiry_id = (
+        SELECT wa.linked_inquiry_id FROM worker_accounts wa
+        WHERE wa.employee_id = employees.id AND wa.linked_inquiry_id IS NOT NULL
+        ORDER BY wa.id DESC LIMIT 1
+      ) WHERE inquiry_id IS NULL
+    `).run();
   } catch {}
 }, 0);
 // Migrate: richer fields on job_applications
@@ -1616,32 +1625,32 @@ function verifyPin(pin, salt, hash) {
   } catch { return false; }
 }
 
-// ─── Auto-generate employee ID: EMEE-CITY-MMDDYY-000001 ───
-function nextEmployeeId(city, hireDate) {
+// ─── Auto-generate employee ID: STAFF-ST-MMDDYY-0001 ───
+function nextEmployeeId(state, hireDate) {
   const d = hireDate ? new Date(hireDate) : new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yy = String(d.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
-  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'EMEE-%' ORDER BY id DESC LIMIT 1").get();
+  const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
   if (last) {
     const parts = last.employee_id.split('-');
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `EMEE-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `STAFF-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
 // ─── Auto-generate worker code: PORT-CITY-MMDDYY-000001 ───
-function generateWorkerCode(city, prefix = 'PORT') {
+function generateWorkerCode(state, prefix = 'PORT') {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   const yy = String(d.getFullYear()).slice(-2);
   const dateStr = mm + dd + yy;
-  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
+  const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
   const last = db.prepare(`SELECT worker_code FROM worker_accounts WHERE worker_code LIKE ? ORDER BY id DESC LIMIT 1`).get(prefix + '-%');
   let num = 1;
   if (last) {
@@ -1649,7 +1658,7 @@ function generateWorkerCode(city, prefix = 'PORT') {
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `${prefix}-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `${prefix}-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
 // ─── On verification: assign worker_code + ensure linked inquiry exists ───
@@ -1659,34 +1668,30 @@ function activateWorkerAccount(accountId, prefix) {
   // Generate worker_code if not already set
   if (!acc.worker_code) {
     const codePrefix = prefix || 'PORT';
-    const code = generateWorkerCode(acc.city, codePrefix);
+    const code = generateWorkerCode(acc.state, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
-  // Ensure a linked inquiry exists (by phone → email → name → create)
-  const normPhone = s => (s || '').replace(/\D/g, '').slice(-10);
-  const wPhone = normPhone(acc.phone);
-  const wEmail = (acc.email || '').toLowerCase();
-  const wName  = (acc.name || '').trim();
-  let inqId = null;
-  if (wPhone) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE phone10(phone) = ?').get(wPhone);
-    if (row) inqId = row.id;
+  // Ensure a linked inquiry exists — prefer employee record's stored inquiry_id (survives account deletion/re-creation)
+  if (!acc.linked_inquiry_id) {
+    let inquiryId = null;
+    // If linked to an employee (STAFF-xxx), use that employee's persistent inquiry_id
+    if (acc.employee_id) {
+      const emp = db.prepare('SELECT inquiry_id FROM employees WHERE id=?').get(acc.employee_id);
+      if (emp && emp.inquiry_id) {
+        inquiryId = emp.inquiry_id;
+      }
+    }
+    if (!inquiryId) {
+      // Create a new inquiry and store it on the employee record for future re-registrations
+      const wName = (acc.name || '').trim();
+      const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
+      inquiryId = r.lastInsertRowid;
+      if (acc.employee_id) {
+        db.prepare('UPDATE employees SET inquiry_id=? WHERE id=?').run(inquiryId, acc.employee_id);
+      }
+    }
+    db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inquiryId, accountId);
   }
-  if (!inqId && wEmail) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE lower(email)=?').get(wEmail);
-    if (row) inqId = row.id;
-  }
-  if (!inqId && wName) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE lower(trim(name))=?').get(wName.toLowerCase());
-    if (row) inqId = row.id;
-  }
-  if (!inqId) {
-    // No existing inquiry — create one so dispatch always works
-    const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
-    inqId = r.lastInsertRowid;
-  }
-  // Persist the link directly on the worker account
-  db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inqId, accountId);
 }
 
 // ─── Auto-generate employer ID: EMER-CITY-MMDDYY-000001 ───
@@ -4787,7 +4792,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
     }
   }
-  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
+  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.state, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
   if (d.ssn) {
     const digits = d.ssn.replace(/\D/g, '');
@@ -6131,25 +6136,19 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     WHERE ej.employee_id = ? AND ej.job_id = ? AND ej.status = 'active'
   `).get(req.workerEmployeeId, job_id);
   if (!activeJob) {
-    const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+    const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
     const linkedInqId = wa?.linked_inquiry_id || null;
-    const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-    const wEmail = (wa?.email || '').toLowerCase();
-    activeJob = db.prepare(`
-      SELECT a.id, a.job_id, j.title, j.site_id,
-             js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.job_id = ? AND a.status != 'cancelled'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC LIMIT 1
-    `).get(job_id, linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+    if (linkedInqId) {
+      activeJob = db.prepare(`
+        SELECT a.id, a.job_id, j.title, j.site_id,
+               js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+        FROM assignments a
+        JOIN jobs j ON a.job_id = j.id
+        LEFT JOIN job_sites js ON j.site_id = js.id
+        WHERE a.job_id = ? AND a.status != 'cancelled' AND a.inquiry_id = ?
+        ORDER BY a.assigned_at DESC LIMIT 1
+      `).get(job_id, linkedInqId);
+    }
   }
   if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
 
@@ -6256,6 +6255,7 @@ app.get('/api/admin/punch-photo/:filename', (req, res) => {
 
 // ─── Worker task (my-tasks) endpoints ────────────────────────────
 app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json([]);
   const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!wa || !wa.linked_inquiry_id) return res.json([]);
   const tasks = db.prepare(`
@@ -6291,6 +6291,8 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
 // ─── Work calendar endpoint ───────────────────────────────────────
 // Returns shift_confirmations + active assignments + punch records for a given month
 app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
+  // Require employee link — unlinked portal accounts have no work schedule to show
+  if (!req.workerEmployeeId) return res.json({ confirmations: [], assignments: [], punchDates: [] });
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
   const y = parseInt(req.query.year) || new Date().getFullYear();
@@ -6333,6 +6335,12 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
       AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
       AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
   `).all(req.workerEmployeeId, fromStr, toStr).map(r => r.date) : [];
+  // Debug: log assignment schedules to diagnose missing Sunday
+  assignments.forEach(a => {
+    let ws = {}; try { ws = JSON.parse(a.work_schedule || '{}'); } catch {}
+    const days = ws.days || ws;
+    console.log(`[work-calendar debug] assignment ${a.id}: sun=${JSON.stringify(days.sun || days.Sun)}, sat=${JSON.stringify(days.sat || days.Sat)}, workStart=${ws.workStart||a.start_date}, workEnd=${ws.workEnd}`);
+  });
   res.json({ confirmations, assignments, punchDates });
 });
 
@@ -6565,10 +6573,8 @@ app.get('/api/admin/all-referrals', requireAdmin, (req, res) => {
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
-  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-  const wEmail = (wa?.email || '').toLowerCase();
 
   const open = req.workerEmployeeId
     ? db.prepare(`SELECT t.*, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
@@ -6593,9 +6599,9 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     for (const j of ejJobs) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
   }
 
-  // Always also check assignments table — add jobs not already covered by employee_jobs
+  // Also check assignments table — add jobs not already covered by employee_jobs
   // Only include accepted assignments (worker_response = 'accepted')
-  const aJobs = db.prepare(`
+  const aJobs = linkedInqId ? db.prepare(`
     SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
            COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
            j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
@@ -6603,21 +6609,11 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     FROM assignments a
     JOIN jobs j ON a.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
-    JOIN inquiries i ON a.inquiry_id = i.id
-    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
-      AND (
-        (? IS NOT NULL AND a.inquiry_id = ?)
-        OR (? != '' AND phone10(i.phone) = ?)
-        OR (? != '' AND lower(i.email) = ?)
-      )
+    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted' AND a.inquiry_id = ?
     ORDER BY a.assigned_at DESC
-  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  `).all(linkedInqId) : [];
   for (const j of aJobs) {
     if (!seenActiveJobIds.has(j.job_id)) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
-  }
-  // Update linked_inquiry_id if we found a match via assignments and it wasn't set
-  if (aJobs.length && !linkedInqId) {
-    try { activateWorkerAccount(req.workerId); } catch {}
   }
 
   // Count pending (unaccepted) tasks
@@ -6665,10 +6661,9 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
 
 // Worker: get currently dispatched (active) jobs with site info
 app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
-  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!req.workerEmployeeId) return res.json([]);
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-  const wEmail = (wa?.email || '').toLowerCase();
 
   const seenJobIds = new Set();
   let jobs = [];
@@ -6690,8 +6685,8 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
     for (const j of ejJobs) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
-  // Always also include assignments — add any job_ids not already covered above
-  const aJobs = db.prepare(`
+  // Also include assignments — add any job_ids not already covered above
+  const aJobs = linkedInqId ? db.prepare(`
     SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
            j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
            j.pay, j.pay_period, j.company_name, j.site_id,
@@ -6700,15 +6695,9 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
     FROM assignments a
     JOIN jobs j ON a.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
-    JOIN inquiries i ON a.inquiry_id = i.id
-    WHERE a.status != 'cancelled'
-      AND (
-        (? IS NOT NULL AND a.inquiry_id = ?)
-        OR (? != '' AND phone10(i.phone) = ?)
-        OR (? != '' AND lower(i.email) = ?)
-      )
+    WHERE a.status != 'cancelled' AND a.inquiry_id = ?
     ORDER BY a.assigned_at DESC
-  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  `).all(linkedInqId) : [];
   for (const j of aJobs) {
     if (!seenJobIds.has(j.job_id)) { seenJobIds.add(j.job_id); jobs.push(j); }
   }

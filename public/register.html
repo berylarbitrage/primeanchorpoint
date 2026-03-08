@@ -418,6 +418,7 @@ const L = {
     loginPrompt:      '已有账号？',
     loginW:           '工人登录',
     loginE:           '企业登录',
+    smsConsent:       '提供手机号并勾选此框，即表示您同意接收来自 Prime Anchorpoint 的短信（SMS），包括验证码、工作通知、班次提醒和 HR 通知。可能收取短信和流量费用，发送频率不定。回复 STOP 退订，回复 HELP 获取帮助。请参阅 <a href="/sms-terms" target="_blank" style="color:var(--sky)">短信条款</a> 及 <a href="/privacy" target="_blank" style="color:var(--sky)">隐私政策</a>。',
 
     partnerLoading:   '加载中…',
     partnerEmpty:     '— 暂无可选公司，请联系管理员 —',
@@ -529,6 +530,7 @@ const L = {
     loginPrompt:      'Already have an account?',
     loginW:           'Worker Login',
     loginE:           'Enterprise Login',
+    smsConsent:       'By providing your phone number and checking this box, you consent to receive text messages (SMS) from Prime Anchorpoint at the number provided, including verification codes, job assignment alerts, schedule reminders, and HR notifications. Msg &amp; data rates may apply. Frequency varies. Reply STOP to unsubscribe, HELP for help. See <a href="/sms-terms" target="_blank" style="color:var(--sky)">SMS Terms</a> &amp; <a href="/privacy" target="_blank" style="color:var(--sky)">Privacy Policy</a>.',
 
     partnerLoading:   'Loading…',
     partnerEmpty:     '— No companies available, please contact admin —',
@@ -649,6 +651,7 @@ const L = {
     loginPrompt:      '¿Ya tiene una cuenta?',
     loginW:           'Iniciar sesión (Trabajador)',
     loginE:           'Iniciar sesión (Empresa)',
+    smsConsent:       'Al proporcionar su número de teléfono y marcar esta casilla, usted acepta recibir mensajes de texto (SMS) de Prime Anchorpoint en el número indicado, incluyendo códigos de verificación, alertas de asignación de trabajo, recordatorios de horario y notificaciones de RR.HH. Pueden aplicarse tarifas de mensajes y datos. La frecuencia varía. Responda STOP para cancelar la suscripción, HELP para obtener ayuda. Consulte los <a href="/sms-terms" target="_blank" style="color:var(--sky)">Términos de SMS</a> y la <a href="/privacy" target="_blank" style="color:var(--sky)">Política de privacidad</a>.',
 
     partnerLoading:   'Cargando…',
     partnerEmpty:     '— Sin empresas disponibles, contacte al administrador —',
@@ -819,6 +822,7 @@ function setLang(lang) {
   setText('lWPwd', 'lPwd');     setPh('wPassword', 'phPwd');
   setText('lWPwd2', 'lPwd2');   setPh('wPassword2', 'phPwd2');
   setText('btnRegW', 'btnW');
+  setHtml('lSmsConsent', 'smsConsent');
 
   // Enterprise form
   setText('enterpriseH2', 'enterpriseH2');

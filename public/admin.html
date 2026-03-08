@@ -6592,16 +6592,23 @@ function applyJobImport() {
     });
   }
 
-  if (checked('schedule') && (j.work_start || j.work_end || j.work_days)) {
+  if (checked('schedule') && (j.work_schedule || j.work_start || j.work_end || j.work_days)) {
     const ALL_DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
     const DAY_MAP = { Mon:'mon',Tue:'tue',Wed:'wed',Thu:'thu',Fri:'fri',Sat:'sat',Sun:'sun' };
     const workDays = j.work_days ? j.work_days.split(',').map(d => DAY_MAP[d.trim()]).filter(Boolean) : [];
-    const sched = {};
+    let jobSched = {}; try { jobSched = JSON.parse(j.work_schedule || '{}'); } catch {}
+    const days = {};
     ALL_DAYS.forEach(key => {
       const isOff = workDays.length > 0 && !workDays.includes(key);
-      sched[key] = { start: isOff?'':(j.work_start||''), end: isOff?'':(j.work_end||''), breaks:'', break_times:[], off: isOff };
+      const keyPascal = key.charAt(0).toUpperCase() + key.slice(1);
+      const jobDay = (jobSched.days && jobSched.days[key]) || jobSched[key] || jobSched[keyPascal];
+      days[key] = {
+        rest: isOff,
+        start: isOff ? '' : ((jobDay && jobDay.start) || j.work_start || ''),
+        end:   isOff ? '' : ((jobDay && jobDay.end)   || j.work_end   || ''),
+      };
     });
-    initSchedTable(JSON.stringify(sched));
+    initEstimateTime(JSON.stringify({ type: 'estimate', workStart: '', workEnd: '', untilFurther: false, days }));
   }
 
   if (checked('location') && j.location)

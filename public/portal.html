@@ -280,13 +280,12 @@ body{top:0!important}
   };
 
   window._buildGtSelect = function(id){
-    var sel = document.getElementById(id); if (!sel) return;
-    // Determine current language from cookie
-    var cur = (document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/)||[])[1] || 'zh-CN';
+    var sel=document.getElementById(id); if(!sel)return;
+    var cur=(document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/)||[])[1]||'';
     LANGS.forEach(function(l){
-      var o = document.createElement('option');
-      o.value = l.code; o.textContent = l.label;
-      if (l.code === cur) o.selected = true;
+      var o=document.createElement('option');
+      o.value=l.code; o.textContent=l.label;
+      if(l.code===cur) o.selected=true;
       sel.appendChild(o);
     });
     sel.addEventListener('change', function(){ window._gtDoTranslate(this.value); });
@@ -318,7 +317,7 @@ function googleTranslateElementInit(){
     </div>
     <div class="login-gt-wrap" style="margin-bottom:.9rem">
       <select id="goog-gt-select-login" title="翻译页面 / Translate page">
-        <option value="">🌐 更多语言 / More Languages</option>
+        <option value="">🌐 翻译 / Translate…</option>
       </select>
     </div>
     <img src="/logo.svg" alt="Prime Anchorpoint">
@@ -411,11 +410,11 @@ function googleTranslateElementInit(){
 
       <div style="margin-bottom:.85rem">
         <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelOldCode"></label>
-        <input id="oldContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+        <input id="oldContactCode" type="text" maxlength="6" placeholder="6-digit code" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
       </div>
       <div style="margin-bottom:.85rem">
         <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelNewCode"></label>
-        <input id="newContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+        <input id="newContactCode" type="text" maxlength="6" placeholder="6-digit code" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
       </div>
       <div style="text-align:right;margin-top:-.4rem;margin-bottom:.75rem">
         <a href="#" onclick="requestContactChange();return false" style="font-size:.8rem;color:var(--sky)">重新发送验证码</a>
@@ -572,7 +571,7 @@ function googleTranslateElementInit(){
         <div class="gt-select-row">
           <span class="gt-label">🌐</span>
           <select id="goog-gt-select" title="翻译页面 / Translate page" style="flex:1">
-            <option value="">更多语言…</option>
+            <option value="">🌐 翻译…</option>
           </select>
         </div>
       </div>
@@ -1279,7 +1278,7 @@ function googleTranslateElementInit(){
             <div style="font-size:.8rem;color:var(--gray-400);margin-bottom:.75rem" id="ccStep1Hint"></div>
             <div class="field" style="margin-bottom:1rem">
               <label id="ccOldLabel">当前手机号收到的验证码</label>
-              <input type="text" id="ccOldCode" maxlength="6" placeholder="6位验证码" inputmode="numeric"
+              <input type="text" id="ccOldCode" maxlength="6" placeholder="6-digit code" inputmode="numeric"
                 style="width:100%;padding:.6rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:4px;font-size:1.15rem;text-align:center;box-sizing:border-box">
             </div>
             <div id="ccStep1Error" style="color:var(--red);font-size:.82rem;margin-bottom:.5rem;display:none"></div>
@@ -1310,7 +1309,7 @@ function googleTranslateElementInit(){
             <div style="font-size:.8rem;color:var(--gray-400);margin-bottom:.75rem" id="ccStep3Hint"></div>
             <div class="field" style="margin-bottom:1rem">
               <label id="ccNewCodeLabel">新手机号收到的验证码</label>
-              <input type="text" id="ccNewCode" maxlength="6" placeholder="6位验证码" inputmode="numeric"
+              <input type="text" id="ccNewCode" maxlength="6" placeholder="6-digit code" inputmode="numeric"
                 style="width:100%;padding:.6rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:4px;font-size:1.15rem;text-align:center;box-sizing:border-box">
             </div>
             <div id="ccStep3Error" style="color:var(--red);font-size:.82rem;margin-bottom:.5rem;display:none"></div>
@@ -1440,7 +1439,7 @@ const PORTAL_I18N = {
     ccStep3DescPhone: '验证码已发送到新手机号，请输入：', ccStep3DescEmail: '验证码已发送到新邮箱，请输入：',
     ccNewCodeLabelPhone: '新手机号收到的验证码', ccNewCodeLabelEmail: '新邮箱收到的验证码',
     ccNext: '下一步', ccSend: '发送验证码', ccSending2: '发送中…', ccVerifying: '验证中…',
-    ccConfirm: '确认更换', ccCancel: '取消',
+    ccConfirm: '确认更换', ccCancel: '取消', ccCodePlaceholder: '6位验证码',
     ccErrOldCode: '请输入验证码', ccErrNewPhone: '请输入新手机号', ccErrNewEmail: '请输入新邮箱地址', ccErrNewCode: '请输入验证码',
     ccChanged: '已成功更换'
   },
@@ -1542,7 +1541,7 @@ const PORTAL_I18N = {
     ccStep3DescPhone: 'A code was sent to your new phone. Enter it below:', ccStep3DescEmail: 'A code was sent to your new email. Enter it below:',
     ccNewCodeLabelPhone: 'Code sent to new phone', ccNewCodeLabelEmail: 'Code sent to new email',
     ccNext: 'Next', ccSend: 'Send Code', ccSending2: 'Sending…', ccVerifying: 'Verifying…',
-    ccConfirm: 'Confirm Change', ccCancel: 'Cancel',
+    ccConfirm: 'Confirm Change', ccCancel: 'Cancel', ccCodePlaceholder: '6-digit code',
     ccErrOldCode: 'Please enter the code', ccErrNewPhone: 'Please enter a phone number', ccErrNewEmail: 'Please enter an email address', ccErrNewCode: 'Please enter the code',
     ccChanged: 'updated successfully'
   },
@@ -1644,7 +1643,7 @@ const PORTAL_I18N = {
     ccStep3DescPhone: 'Se envió un código a tu nuevo teléfono. Ingrésalo aquí:', ccStep3DescEmail: 'Se envió un código a tu nuevo correo. Ingrésalo aquí:',
     ccNewCodeLabelPhone: 'Código enviado al nuevo teléfono', ccNewCodeLabelEmail: 'Código enviado al nuevo correo',
     ccNext: 'Siguiente', ccSend: 'Enviar Código', ccSending2: 'Enviando…', ccVerifying: 'Verificando…',
-    ccConfirm: 'Confirmar Cambio', ccCancel: 'Cancelar',
+    ccConfirm: 'Confirmar Cambio', ccCancel: 'Cancelar', ccCodePlaceholder: 'Código de 6 dígitos',
     ccErrOldCode: 'Ingresa el código', ccErrNewPhone: 'Ingresa un número de teléfono', ccErrNewEmail: 'Ingresa una dirección de correo', ccErrNewCode: 'Ingresa el código',
     ccChanged: 'actualizado correctamente'
   }
@@ -1672,19 +1671,17 @@ async function _translateJobs(jobs) {
   if (_portalLang === 'en') return jobs;
   await Promise.all(jobs.map(async j => {
     j._titleT = await _gtranslate(j.title, _portalLang);
-    j._companyT = j.company_name ? await _gtranslate(j.company_name, _portalLang) : '';
   }));
   return jobs;
 }
 function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
-  // Sync Google Translate widget so it doesn't override the chosen language
-  const gtLang = lang === 'zh' ? 'zh-CN' : lang === 'es' ? 'es' : lang;
-  if (window._gtCurrentLang !== gtLang && typeof _gtDoTranslate === 'function') {
-    _gtDoTranslate(gtLang);
-    // _gtDoTranslate('zh-CN') triggers a page reload, so skip the rest
-    if (lang === 'zh') return;
+  // If Google Translate is currently active, reset it so it doesn't fight with portal i18n
+  var gtCookie = (document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/) || [])[1] || '';
+  if (gtCookie && gtCookie !== 'zh-CN' && typeof window._gtDoTranslate === 'function') {
+    window._gtDoTranslate('zh-CN'); // clears cookie + reloads; page will restore to correct lang from localStorage
+    return;
   }
   applyPortalLang();
   if (!WORKER_TOKEN) return;
@@ -2103,7 +2100,6 @@ async function _preTranslateTasks(tasks) {
   if (_portalLang === 'en') return;
   await Promise.all(tasks.map(async t => {
     t._titleT = await _gtranslate(t.title || '', _portalLang);
-    t._companyT = t.company_name ? await _gtranslate(t.company_name, _portalLang) : '';
     // Translate task requirements (description, name, notes, steps)
     let reqs = [];
     try { reqs = JSON.parse(t.task_requirements || '[]'); } catch {}
@@ -2389,7 +2385,7 @@ function renderCalendar() {
     const numColor = isToday ? '#fff' : hasWork ? '#1e293b' : '#cbd5e1';
     const numWeight = (isToday || hasWork) ? '700' : '400';
 
-    const clickable = confs.length > 0 || isProjected;
+    const clickable = confs.length > 0 || isProjected || isPunched;
     html += `<div style="border-radius:8px;padding:.28rem .05rem;background:${bg};border:${border};min-height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px${clickable ? ';cursor:pointer' : ''}" ${clickable ? `onclick="calDayClick('${dateStr}')"` : ''}>
       <span style="font-size:.8rem;font-weight:${numWeight};color:${numColor};line-height:1">${d}</span>
       ${dotsHtml ? `<div style="line-height:1">${dotsHtml}</div>` : ''}
@@ -2425,7 +2421,8 @@ function calDayClick(dateStr) {
     });
   }
 
-  if (!confs.length && !projItems.length) return;
+  const isPunchedDay = (_calData.punchDates || []).includes(dateStr);
+  if (!confs.length && !projItems.length && !isPunchedDay) return;
 
   document.getElementById('calDayModalTitle').textContent = `${dayNames[d.getDay()]} ${dateStr}`;
   const statusColor = { confirmed:'#16a34a', pending:'#f59e0b', declined:'#dc2626' };
@@ -2473,6 +2470,27 @@ function calDayClick(dateStr) {
     </div>`;
   }).join('');
 
+  // Projected (blue-dot) days: show scheduled time info
+  if (projItems.length) {
+    html += projItems.map(p => {
+      const timeStr = (p.start && p.end) ? `${fmt12(p.start)} – ${fmt12(p.end)}` : '';
+      const hours = calcHours(p.start, p.end);
+      return `<div style="border:1.5px solid #bfdbfe;border-radius:10px;padding:.9rem;margin-bottom:.6rem;background:#eff6ff">
+        <div style="font-weight:700;font-size:1rem;color:#1e293b;margin-bottom:.4rem">${esc(p.title||'—')}</div>
+        ${timeStr ? `<div style="font-size:.86rem;color:#374151;margin-bottom:.35rem">⏰ <strong>${timeStr}</strong>${hours ? ` <span style="color:#94a3b8;font-size:.8rem">（约 ${hours}）</span>` : ''}</div>` : ''}
+        <div style="font-size:.8rem;color:#1d4ed8;font-weight:600">📅 计划班次</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Punch-only days (purple dot, no shift confirmation or projection): redirect to Time Clock tab
+  if (!confs.length && !projItems.length && isPunchedDay) {
+    html += `<div style="border:1.5px solid #ddd6fe;border-radius:10px;padding:1rem;background:#f5f3ff;text-align:center">
+      <div style="font-size:1.2rem;margin-bottom:.4rem">🕐</div>
+      <div style="font-weight:700;color:#6d28d9;font-size:.95rem;margin-bottom:.3rem">已打卡</div>
+      <div style="font-size:.84rem;color:#475569">请在「打卡记录」标签查看详情</div>
+    </div>`;
+  }
 
   document.getElementById('calDayModalBody').innerHTML = html;
   document.getElementById('calDayModal').style.display = 'flex';
@@ -2578,6 +2596,49 @@ async function confirmBookSlot() {
 // Pay period Chinese names → internal key used in payPeriods map
 const _PAY_PERIOD_ZH = { '时薪':'hourly','日薪':'daily','周薪':'weekly','双周':'biweekly','半月薪':'semimonthly','月薪':'monthly' };
 
+// Day-of-week abbreviation maps for job listing work_days field
+const _DOW_MAP = {
+  zh: { Mon:'周一', Tue:'周二', Wed:'周三', Thu:'周四', Fri:'周五', Sat:'周六', Sun:'周日' },
+  es: { Mon:'Lun', Tue:'Mar', Wed:'Mié', Thu:'Jue', Fri:'Vie', Sat:'Sáb', Sun:'Dom' }
+};
+
+function _translateWorkDays(workDays, lang) {
+  const map = _DOW_MAP[lang];
+  if (!map || !workDays) return workDays || '';
+  return workDays.split(',').map(d => map[d.trim()] || d.trim()).join(',');
+}
+
+// Benefits stored in Chinese — static map for reliable translation without Google Translate
+const _BENEFITS_MAP = {
+  en: {
+    '医疗保险':'Medical Insurance','牙科保险':'Dental Insurance','视力保险':'Vision Insurance',
+    '401k':'401k','401(k)':'401(k)','带薪休假':'Paid Time Off','带薪假':'Paid Leave',
+    '加班费':'Overtime Pay','交通补贴':'Transportation Allowance','餐饮补贴':'Meal Allowance',
+    '住房补贴':'Housing Allowance','绩效奖金':'Performance Bonus','年终奖':'Year-end Bonus',
+    '员工培训':'Employee Training','晋升机会':'Promotion Opportunities','弹性工作':'Flexible Work',
+    '股票期权':'Stock Options','健身补贴':'Gym Allowance','节日福利':'Holiday Benefits',
+    '免费停车':'Free Parking','公司用车':'Company Car','人寿保险':'Life Insurance',
+    '残疾保险':'Disability Insurance','育儿假':'Parental Leave','病假':'Sick Leave',
+  },
+  es: {
+    '医疗保险':'Seguro médico','牙科保险':'Seguro dental','视力保险':'Seguro de visión',
+    '401k':'401k','401(k)':'401(k)','带薪休假':'Vacaciones pagadas','带薪假':'Licencia pagada',
+    '加班费':'Pago de horas extras','交通补贴':'Subsidio de transporte','餐饮补贴':'Subsidio de comida',
+    '住房补贴':'Subsidio de vivienda','绩效奖金':'Bono por desempeño','年终奖':'Bono de fin de año',
+    '员工培训':'Capacitación laboral','晋升机会':'Oportunidades de ascenso','弹性工作':'Trabajo flexible',
+    '股票期权':'Opciones de acciones','健身补贴':'Subsidio de gimnasio','节日福利':'Beneficios festivos',
+    '免费停车':'Estacionamiento gratuito','公司用车':'Auto de empresa','人寿保险':'Seguro de vida',
+    '残疾保险':'Seguro por discapacidad','育儿假':'Licencia parental','病假':'Licencia por enfermedad',
+  }
+};
+
+function _translateBenefits(benefits, lang) {
+  if (!benefits || lang === 'zh') return benefits || '';
+  const map = _BENEFITS_MAP[lang];
+  if (!map) return benefits;
+  return benefits.split(',').map(b => map[b.trim()] || b.trim()).join(', ');
+}
+
 async function _preTranslateJobs(jobs) {
   const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
   await Promise.all(jobs.map(async j => {
@@ -2587,10 +2648,12 @@ async function _preTranslateJobs(jobs) {
     j._typeT = (L.types && L.types[j.type]) || j.type || '';
     // Employment type: W2/Contract are universal; translate anything else
     j._empT = j.employment_type ? (await _gtranslate(j.employment_type, _portalLang)) : '';
-    // Benefits: stored as Chinese comma list — always translate (including to English)
-    j._benefitsT = j.benefits ? await _gtranslate(j.benefits, _portalLang, true) : '';
+    // Benefits: stored as Chinese comma list — translate via static map (no external API)
+    j._benefitsT = _translateBenefits(j.benefits, _portalLang);
     // Pay period: normalize Chinese key then translate label
     j._payPeriodKey = _PAY_PERIOD_ZH[j.pay_period] || j.pay_period || '';
+    // Work days: translate day abbreviations (Mon→周一, Tue→周二, etc.)
+    j._workDaysT = _translateWorkDays(j.work_days, _portalLang);
   }));
 }
 
@@ -2640,7 +2703,7 @@ function renderJobs(jobs) {
           ${jobType?` · ${esc(jobType)}`:''}
           ${empType?` · ${esc(empType)}`:''}
         </div>
-        ${j.work_days||j.work_start?`<div class="job-meta" style="margin-top:.25rem">⏰ ${esc(j.work_days||'')} ${j.work_start?j.work_start+'–'+(j.work_end||'?'):''}</div>`:''}
+        ${j.work_days||j.work_start?`<div class="job-meta" style="margin-top:.25rem">⏰ ${esc(j._workDaysT||j.work_days||'')} ${j.work_start?j.work_start+'–'+(j.work_end||'?'):''}</div>`:''}
         ${benefits?`<div class="job-meta" style="margin-top:.25rem">🎁 ${esc(benefits)}</div>`:''}
         ${authLabel(j.work_auth)?`<div class="job-meta" style="margin-top:.2rem">🪪 ${authLabel(j.work_auth)}</div>`:''}
         ${j.description?`<div style="margin-top:.5rem;font-size:.82rem;color:var(--gray-700);line-height:1.5">${esc(j.description).slice(0,160)}${j.description.length>160?'…':''}</div>`:''}
@@ -3922,6 +3985,7 @@ function _ccShow(step) {
     document.getElementById('ccOldLabel').textContent = isPhone ? _t('ccOldLabelPhone') : _t('ccOldLabelEmail');
     document.getElementById('ccBtnStep1').textContent = _t('ccNext');
     document.getElementById('ccOldCode').value = '';
+    document.getElementById('ccOldCode').placeholder = _t('ccCodePlaceholder');
     document.getElementById('ccStep1Error').style.display = 'none';
     setTimeout(() => document.getElementById('ccOldCode').focus(), 100);
   } else if (step === 2) {
@@ -3938,6 +4002,7 @@ function _ccShow(step) {
     document.getElementById('ccNewCodeLabel').textContent = isPhone ? _t('ccNewCodeLabelPhone') : _t('ccNewCodeLabelEmail');
     document.getElementById('ccBtnStep3').textContent = _t('ccConfirm');
     document.getElementById('ccNewCode').value = '';
+    document.getElementById('ccNewCode').placeholder = _t('ccCodePlaceholder');
     document.getElementById('ccStep3Error').style.display = 'none';
     setTimeout(() => document.getElementById('ccNewCode').focus(), 100);
   }
