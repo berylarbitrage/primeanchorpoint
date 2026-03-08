@@ -1677,11 +1677,14 @@ async function _translateJobs(jobs) {
 function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
-  // If Google Translate is currently active, reset it so it doesn't fight with portal i18n
+  // If Google Translate is active, drive it to match the chosen portal language
   var gtCookie = (document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/) || [])[1] || '';
   if (gtCookie && gtCookie !== 'zh-CN' && typeof window._gtDoTranslate === 'function') {
-    window._gtDoTranslate('zh-CN'); // clears cookie + reloads; page will restore to correct lang from localStorage
-    return;
+    // Map portal lang → GT lang code
+    var gtTarget = lang === 'zh' ? 'zh-CN' : lang === 'es' ? 'es' : 'en';
+    window._gtDoTranslate(gtTarget);
+    // zh-CN triggers a page reload inside _gtDoTranslate; for en/es GT handles it live
+    if (lang === 'zh') return;
   }
   applyPortalLang();
   if (!WORKER_TOKEN) return;
