@@ -1319,7 +1319,7 @@ const PORTAL_I18N = {
     taskEstTime: '预计时间', taskApprox: '约', taskHrsDay: '小时/天',
     taskReqSimple: '简单', taskReqDetailed: '详细', taskReqChecklist: '清单',
     loading: '加载中…',
-    appTitle: '我的申请记录',
+    appTitle: '我的申请记录', appEmpty: '暂无申请记录',
     punchCalTitle: '📅 打卡日历', punchHistTitle: '打卡历史记录',
     punchLegendComplete: '已完成', punchLegendWorking: '工作中',
     tcCurrentJobs: '💼 当前工作安排',
@@ -1418,7 +1418,7 @@ const PORTAL_I18N = {
     taskEstTime: 'Estimated Time', taskApprox: 'Approx.', taskHrsDay: 'hrs/day',
     taskReqSimple: 'Simple', taskReqDetailed: 'Detailed', taskReqChecklist: 'Checklist',
     loading: 'Loading…',
-    appTitle: 'My Applications',
+    appTitle: 'My Applications', appEmpty: 'No applications yet',
     punchCalTitle: '📅 Punch Calendar', punchHistTitle: 'Punch History',
     punchLegendComplete: 'Completed', punchLegendWorking: 'Working',
     tcCurrentJobs: '💼 Current Assignments',
@@ -1517,7 +1517,7 @@ const PORTAL_I18N = {
     taskEstTime: 'Tiempo Estimado', taskApprox: 'Aprox.', taskHrsDay: 'hrs/día',
     taskReqSimple: 'Simple', taskReqDetailed: 'Detallado', taskReqChecklist: 'Lista',
     loading: 'Cargando…',
-    appTitle: 'Mis Solicitudes',
+    appTitle: 'Mis Solicitudes', appEmpty: 'Sin solicitudes aún',
     punchCalTitle: '📅 Calendario de Asistencia', punchHistTitle: 'Historial de Asistencia',
     punchLegendComplete: 'Completado', punchLegendWorking: 'Trabajando',
     tcCurrentJobs: '💼 Asignaciones Actuales',
@@ -2683,7 +2683,7 @@ async function loadApplications() {
         <span style="font-weight:700;font-size:.85rem;${statusColor[a.status]||''}">${statusLabel[a.status]||a.status}</span>
         <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">›</div>
       </div>
-    </div>`).join('') : '<div class="empty" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无申请记录</div>';
+    </div>`).join('') : `<div class="empty" style="text-align:center;padding:2rem;color:var(--gray-400)">${_t('appEmpty')}</div>`;
 }
 
 function openAppDetail(idx) {
