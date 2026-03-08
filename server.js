@@ -7882,7 +7882,7 @@ app.post('/api/register/enterprise-resend', async (req, res) => {
 
 // Admin: pending enterprise approvals
 app.get('/api/admin/pending-enterprises', requireAdmin, (req, res) => {
-  const list = db.prepare("SELECT id, company_name, contact_name, email, phone, ein, staffing_needs, created_at FROM customer_accounts WHERE approval_status='pending' ORDER BY created_at DESC").all();
+  const list = db.prepare("SELECT id, company_name, contact_name, email, phone, ein, staffing_needs, created_at FROM customer_accounts WHERE approval_status='pending' AND active=1 ORDER BY created_at DESC").all();
   res.json(list);
 });
 
