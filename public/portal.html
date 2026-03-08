@@ -409,11 +409,11 @@ function googleTranslateElementInit(){
 
       <div style="margin-bottom:.85rem">
         <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelOldCode"></label>
-        <input id="oldContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+        <input id="oldContactCode" type="text" maxlength="6" placeholder="6-digit code" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
       </div>
       <div style="margin-bottom:.85rem">
         <label style="display:block;font-size:.78rem;font-weight:700;color:var(--gray-600);margin-bottom:.3rem" id="labelNewCode"></label>
-        <input id="newContactCode" type="text" maxlength="6" placeholder="6位验证码" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
+        <input id="newContactCode" type="text" maxlength="6" placeholder="6-digit code" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:1.1rem;letter-spacing:.2rem;text-align:center">
       </div>
       <div style="text-align:right;margin-top:-.4rem;margin-bottom:.75rem">
         <a href="#" onclick="requestContactChange();return false" style="font-size:.8rem;color:var(--sky)">重新发送验证码</a>
@@ -1219,7 +1219,7 @@ function googleTranslateElementInit(){
             <div style="font-size:.8rem;color:var(--gray-400);margin-bottom:.75rem" id="ccStep1Hint"></div>
             <div class="field" style="margin-bottom:1rem">
               <label id="ccOldLabel">当前手机号收到的验证码</label>
-              <input type="text" id="ccOldCode" maxlength="6" placeholder="6位验证码" inputmode="numeric"
+              <input type="text" id="ccOldCode" maxlength="6" placeholder="6-digit code" inputmode="numeric"
                 style="width:100%;padding:.6rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:4px;font-size:1.15rem;text-align:center;box-sizing:border-box">
             </div>
             <div id="ccStep1Error" style="color:var(--red);font-size:.82rem;margin-bottom:.5rem;display:none"></div>
@@ -1250,7 +1250,7 @@ function googleTranslateElementInit(){
             <div style="font-size:.8rem;color:var(--gray-400);margin-bottom:.75rem" id="ccStep3Hint"></div>
             <div class="field" style="margin-bottom:1rem">
               <label id="ccNewCodeLabel">新手机号收到的验证码</label>
-              <input type="text" id="ccNewCode" maxlength="6" placeholder="6位验证码" inputmode="numeric"
+              <input type="text" id="ccNewCode" maxlength="6" placeholder="6-digit code" inputmode="numeric"
                 style="width:100%;padding:.6rem .7rem;border:1px solid var(--gray-200);border-radius:6px;letter-spacing:4px;font-size:1.15rem;text-align:center;box-sizing:border-box">
             </div>
             <div id="ccStep3Error" style="color:var(--red);font-size:.82rem;margin-bottom:.5rem;display:none"></div>
@@ -1377,7 +1377,7 @@ const PORTAL_I18N = {
     ccStep3DescPhone: '验证码已发送到新手机号，请输入：', ccStep3DescEmail: '验证码已发送到新邮箱，请输入：',
     ccNewCodeLabelPhone: '新手机号收到的验证码', ccNewCodeLabelEmail: '新邮箱收到的验证码',
     ccNext: '下一步', ccSend: '发送验证码', ccSending2: '发送中…', ccVerifying: '验证中…',
-    ccConfirm: '确认更换', ccCancel: '取消',
+    ccConfirm: '确认更换', ccCancel: '取消', ccCodePlaceholder: '6位验证码',
     ccErrOldCode: '请输入验证码', ccErrNewPhone: '请输入新手机号', ccErrNewEmail: '请输入新邮箱地址', ccErrNewCode: '请输入验证码',
     ccChanged: '已成功更换'
   },
@@ -1476,7 +1476,7 @@ const PORTAL_I18N = {
     ccStep3DescPhone: 'A code was sent to your new phone. Enter it below:', ccStep3DescEmail: 'A code was sent to your new email. Enter it below:',
     ccNewCodeLabelPhone: 'Code sent to new phone', ccNewCodeLabelEmail: 'Code sent to new email',
     ccNext: 'Next', ccSend: 'Send Code', ccSending2: 'Sending…', ccVerifying: 'Verifying…',
-    ccConfirm: 'Confirm Change', ccCancel: 'Cancel',
+    ccConfirm: 'Confirm Change', ccCancel: 'Cancel', ccCodePlaceholder: '6-digit code',
     ccErrOldCode: 'Please enter the code', ccErrNewPhone: 'Please enter a phone number', ccErrNewEmail: 'Please enter an email address', ccErrNewCode: 'Please enter the code',
     ccChanged: 'updated successfully'
   },
@@ -1575,7 +1575,7 @@ const PORTAL_I18N = {
     ccStep3DescPhone: 'Se envió un código a tu nuevo teléfono. Ingrésalo aquí:', ccStep3DescEmail: 'Se envió un código a tu nuevo correo. Ingrésalo aquí:',
     ccNewCodeLabelPhone: 'Código enviado al nuevo teléfono', ccNewCodeLabelEmail: 'Código enviado al nuevo correo',
     ccNext: 'Siguiente', ccSend: 'Enviar Código', ccSending2: 'Enviando…', ccVerifying: 'Verificando…',
-    ccConfirm: 'Confirmar Cambio', ccCancel: 'Cancelar',
+    ccConfirm: 'Confirmar Cambio', ccCancel: 'Cancelar', ccCodePlaceholder: 'Código de 6 dígitos',
     ccErrOldCode: 'Ingresa el código', ccErrNewPhone: 'Ingresa un número de teléfono', ccErrNewEmail: 'Ingresa una dirección de correo', ccErrNewCode: 'Ingresa el código',
     ccChanged: 'actualizado correctamente'
   }
@@ -3752,6 +3752,7 @@ function _ccShow(step) {
     document.getElementById('ccOldLabel').textContent = isPhone ? _t('ccOldLabelPhone') : _t('ccOldLabelEmail');
     document.getElementById('ccBtnStep1').textContent = _t('ccNext');
     document.getElementById('ccOldCode').value = '';
+    document.getElementById('ccOldCode').placeholder = _t('ccCodePlaceholder');
     document.getElementById('ccStep1Error').style.display = 'none';
     setTimeout(() => document.getElementById('ccOldCode').focus(), 100);
   } else if (step === 2) {
@@ -3768,6 +3769,7 @@ function _ccShow(step) {
     document.getElementById('ccNewCodeLabel').textContent = isPhone ? _t('ccNewCodeLabelPhone') : _t('ccNewCodeLabelEmail');
     document.getElementById('ccBtnStep3').textContent = _t('ccConfirm');
     document.getElementById('ccNewCode').value = '';
+    document.getElementById('ccNewCode').placeholder = _t('ccCodePlaceholder');
     document.getElementById('ccStep3Error').style.display = 'none';
     setTimeout(() => document.getElementById('ccNewCode').focus(), 100);
   }
