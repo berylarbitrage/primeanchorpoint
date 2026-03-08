@@ -2589,7 +2589,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field"><label>工种类别 Job Category</label>
-    <select id="jCategory">
+    <select id="jCategory" onchange="toggleCustomCategory('jCategory','jCategoryCustom')">
       <option value="">-- 请选择 --</option>
       <option value="warehouse_sorter">仓库分拣员 / Warehouse Sorter</option>
       <option value="labeler">贴标员 / Labeler</option>
@@ -2611,7 +2611,9 @@ tr:hover td{background:var(--sky-light)}
       <option value="loading_unloading">装卸工 / Loading / Unloading</option>
       <option value="order_picker">拣货员 / Order Picker</option>
       <option value="welder">焊接工 / Welder</option>
+      <option value="__other__">其他 / Other（自定义）…</option>
     </select>
+    <input type="text" id="jCategoryCustom" placeholder="请输入自定义工种 / Enter custom job category" style="display:none;margin-top:.4rem;width:100%;padding:.5rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem;box-sizing:border-box">
   </div>
 
   <div class="field"><label>职位类型</label>
@@ -2952,7 +2954,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field"><label>工种类别 Job Category</label>
-    <select id="aCategory">
+    <select id="aCategory" onchange="toggleCustomCategory('aCategory','aCategoryCustom')">
       <option value="">-- 请选择 --</option>
       <option value="warehouse_sorter">仓库分拣员 / Warehouse Sorter</option>
       <option value="labeler">贴标员 / Labeler</option>
@@ -2974,7 +2976,9 @@ tr:hover td{background:var(--sky-light)}
       <option value="loading_unloading">装卸工 / Loading / Unloading</option>
       <option value="order_picker">拣货员 / Order Picker</option>
       <option value="welder">焊接工 / Welder</option>
+      <option value="__other__">其他 / Other（自定义）…</option>
     </select>
+    <input type="text" id="aCategoryCustom" placeholder="请输入自定义工种 / Enter custom job category" style="display:none;margin-top:.4rem;width:100%;padding:.5rem .75rem;border:1px solid #d1d5db;border-radius:7px;font-size:.9rem;box-sizing:border-box">
   </div>
 
   <div class="field"><label>状态</label><select id="aStatus">
@@ -4831,7 +4835,7 @@ async function openJobModal(job) {
     document.getElementById('jPartnerSearch').value = '';
   }
   document.getElementById('jTitle').value = job ? (job.title || '') : '';
-  document.getElementById('jCategory').value = job ? (job.category || '') : '';
+  setCategoryValue('jCategory','jCategoryCustom', job ? (job.category || '') : '');
   document.getElementById('jType').value = job ? (job.type || '') : '';
   document.getElementById('jPay').value = job ? job.pay : '';
   document.getElementById('jPayPeriod').value = job ? (job.pay_period || '') : '';
@@ -4942,6 +4946,36 @@ function parseAddressString(str) {
   if (m3) return { street:m3[1].trim(), street2:'', city:m3[2].trim(), state:m3[3], zip:'' };
   if (m2) return { street:'', street2:'', city:m2[1].trim(), state:m2[2], zip:m2[3]||'' };
   return { street:'', street2:'', city:str.trim(), state:'', zip:'' };
+}
+
+// Custom job category helpers
+function toggleCustomCategory(selectId, inputId) {
+  const inp = document.getElementById(inputId);
+  if (document.getElementById(selectId).value === '__other__') {
+    inp.style.display = 'block';
+    inp.focus();
+  } else {
+    inp.style.display = 'none';
+  }
+}
+function getCategoryValue(selectId, inputId) {
+  const sel = document.getElementById(selectId);
+  if (sel.value === '__other__') return document.getElementById(inputId).value.trim();
+  return sel.value;
+}
+function setCategoryValue(selectId, inputId, value) {
+  const sel = document.getElementById(selectId);
+  const known = Array.from(sel.options).map(o => o.value).filter(v => v && v !== '__other__');
+  const inp = document.getElementById(inputId);
+  if (!value || known.includes(value)) {
+    sel.value = value || '';
+    inp.style.display = 'none';
+    inp.value = '';
+  } else {
+    sel.value = '__other__';
+    inp.value = value;
+    inp.style.display = 'block';
+  }
 }
 
 // Combine 5 address parts into a display string
@@ -5442,7 +5476,7 @@ async function saveJob() {
   const data = {
     partner_id: partnerId,
     title: document.getElementById('jTitle').value,
-    category: document.getElementById('jCategory').value,
+    category: getCategoryValue('jCategory','jCategoryCustom'),
     type: document.getElementById('jType').value,
     location: buildAddressString(
       document.getElementById('jStreet').value.trim(),
@@ -6177,7 +6211,7 @@ async function openAssignModal(assignment) {
   document.getElementById('assignModalTitle').textContent = assignment ? '编辑派工' : '新建派工';
   document.getElementById('assignId').value = assignment ? assignment.id : '';
   document.getElementById('aStatus').value = assignment ? assignment.status : 'assigned';
-  document.getElementById('aCategory').value = assignment ? (assignment.category || '') : '';
+  setCategoryValue('aCategory','aCategoryCustom', assignment ? (assignment.category || '') : '');
   document.getElementById('aNotes').value = assignment ? (assignment.notes || '') : '';
   document.getElementById('aStartDate').value = assignment ? (assignment.start_date || '') : '';
   document.getElementById('aContractType').value = assignment ? (assignment.contract_type || 'W2') : 'W2';
@@ -7010,7 +7044,7 @@ async function saveAssignment() {
     inquiry_id: isNew ? document.getElementById('aInquiryId').value : (ea ? ea.inquiry_id : document.getElementById('aInquiryId').value),
     job_id:     isNew ? document.getElementById('aJobId').value     : (ea ? ea.job_id     : document.getElementById('aJobId').value),
     status: document.getElementById('aStatus').value,
-    category: document.getElementById('aCategory').value,
+    category: getCategoryValue('aCategory','aCategoryCustom'),
     notes: document.getElementById('aNotes').value,
     start_date: document.getElementById('aWorkStart').value || document.getElementById('aStartDate').value,
     contract_type: document.getElementById('aContractType').value,
