@@ -7298,7 +7298,7 @@ function renderPartners(partners) {
       <td>
         <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
         <button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">✍ 发送合同</button>
-        ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id},${JSON.stringify(p.name)})">删除</button>`:''}
+        ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>`:''}
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="6" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
@@ -7945,10 +7945,10 @@ async function savePartner() {
 }
 
 let _deletePartnerId = null;
-function deletePartner(id, name) {
+function deletePartner(id) {
   _deletePartnerId = id;
   const p = allPartners.find(x => x.id === id);
-  document.getElementById('partnerDeleteName').textContent = name;
+  document.getElementById('partnerDeleteName').textContent = p ? p.name : '';
   document.getElementById('partnerDeleteNum').textContent = p && p.company_number ? p.company_number : '';
   document.getElementById('partnerDeleteModal').classList.add('show');
 }
