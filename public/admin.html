@@ -7473,7 +7473,7 @@ function getPartnerAddrs() {
     const address = parts.filter(Boolean).join(', ');
     const lat = parseFloat(row.querySelector('.pa-lat')?.value) || null;
     const lng = parseFloat(row.querySelector('.pa-lng')?.value) || null;
-    return { address, lat, lng };
+    return { address, street, street2, city, state, zip, lat, lng };
   }).filter(Boolean);
 }
 
