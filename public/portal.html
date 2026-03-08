@@ -318,7 +318,7 @@ tr:last-child td{border-bottom:none}
 <div class="modal-overlay" id="bookConfirmModal">
   <div class="modal-box" style="max-width:500px;width:96%">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-      <h2 style="margin:0;font-size:1.05rem">📅 确认面试预约 / Confirm Interview</h2>
+      <h2 style="margin:0;font-size:1.05rem" data-i18n="bookConfirmTitle">📅 确认面试预约</h2>
       <button onclick="closeBookModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
     </div>
 
@@ -328,31 +328,30 @@ tr:last-child td{border-bottom:none}
 
     <!-- Required documents -->
     <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:.85rem 1rem;margin-bottom:1rem">
-      <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.55rem">📋 请携带以下证件 / Please Bring the Following Documents</div>
+      <div style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.55rem" data-i18n="bookDocTitle">📋 请携带以下证件</div>
       <div style="font-size:.82rem;color:#78350f;line-height:1.8" id="bookDocList">
-        <div>🪪 SSN 社会安全卡（Social Security Card）</div>
-        <div>🪪 驾照（Driver's License）或州政府颁发 ID</div>
-        <div>📄 EAD 工卡（如适用 / If applicable）</div>
-        <div>🛂 护照（Passport）或其他有效身份证明</div>
-        <div>📋 任何工作授权证明（Work Authorization Documents）</div>
+        <div data-i18n="bookDoc1">🪪 SSN 社会安全卡（Social Security Card）</div>
+        <div data-i18n="bookDoc2">🪪 驾照（Driver's License）或州政府颁发 ID</div>
+        <div data-i18n="bookDoc3">📄 EAD 工卡（如适用）</div>
+        <div data-i18n="bookDoc4">🛂 护照（Passport）或其他有效身份证明</div>
+        <div data-i18n="bookDoc5">📋 任何工作授权证明（Work Authorization Documents）</div>
       </div>
       <div style="font-size:.76rem;color:#92400e;margin-top:.6rem;padding-top:.5rem;border-top:1px solid #fde68a">
-        ⚠️ 如无法找到相关人员，请致电或发邮件联系我们：<br>
-        If you can't reach anyone, contact us at:<br>
+        <span data-i18n="bookDocContactNote">⚠️ 如无法找到相关人员，请致电或发邮件联系我们：</span><br>
         <strong>📞 (847) 737-9888</strong> &nbsp;·&nbsp; <strong>✉️ info@primeanchorpoint.com</strong>
       </div>
     </div>
 
     <!-- Confirm contact info -->
     <div style="margin-bottom:.85rem">
-      <div style="font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.5rem">📱 确认您的联系方式 / Confirm Your Contact Info</div>
+      <div style="font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.5rem" data-i18n="bookContactTitle">📱 确认您的联系方式</div>
       <div style="display:flex;gap:.6rem">
         <div style="flex:1">
-          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">手机号 / Phone</label>
+          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem" data-i18n="bookPhoneLabel">手机号</label>
           <input type="tel" id="bookPhone" placeholder="(312) 555-1234" style="width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
         </div>
         <div style="flex:1">
-          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem">邮箱 / Email</label>
+          <label style="display:block;font-size:.75rem;color:var(--gray-500);margin-bottom:.25rem" data-i18n="bookEmailLabel">邮箱</label>
           <input type="email" id="bookEmail" placeholder="you@email.com" style="width:100%;padding:.55rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
         </div>
       </div>
@@ -360,27 +359,40 @@ tr:last-child td{border-bottom:none}
 
     <!-- Expected Pay (required) -->
     <div style="margin-bottom:.75rem">
-      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💰 期望薪资 / Expected Pay <span style="color:#dc2626">*</span></label>
-      <input type="text" id="bookExpectedPay" placeholder="例：$18/hr 或 $3,500/月 / e.g. $18/hr or $3,500/mo" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
+      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem"><span data-i18n="bookExpectedPayLabel">💰 期望薪资</span> <span style="color:#dc2626">*</span></label>
+      <input type="text" id="bookExpectedPay" data-i18n-ph="bookExpectedPayPH" placeholder="例：$18/hr 或 $3,500/月" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.88rem">
     </div>
 
     <!-- Skills (required) -->
     <div style="margin-bottom:.75rem">
-      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">🛠️ 技能特长 / Your Skills <span style="color:#dc2626">*</span></label>
-      <textarea id="bookSkills" rows="2" placeholder="例：叉车证、仓库经验2年、分拣/打包 / e.g. Forklift certified, 2yr warehouse, packing" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
+      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem"><span data-i18n="bookSkillsLabel">🛠️ 技能特长</span> <span style="color:#dc2626">*</span></label>
+      <textarea id="bookSkills" rows="2" data-i18n-ph="bookSkillsPH" placeholder="例：叉车证、仓库经验2年、分拣/打包" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
     </div>
 
     <!-- Note (optional) -->
     <div style="margin-bottom:.9rem">
-      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 备注 / Notes <span style="font-weight:400;color:var(--gray-400)">(选填 / optional)</span></label>
-      <textarea id="bookNote" rows="2" placeholder="例：我没有驾照，只有护照 / e.g. I only have a passport, no driver's license" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
+      <label style="display:block;font-size:.82rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem"><span data-i18n="bookNoteLabel">💬 备注</span> <span data-i18n="bookNoteOptional" style="font-weight:400;color:var(--gray-400)">（选填）</span></label>
+      <textarea id="bookNote" rows="2" data-i18n-ph="bookNotePH" placeholder="例：我没有驾照，只有护照" style="width:100%;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit"></textarea>
     </div>
 
     <div class="modal-msg error" id="bookModalError"></div>
     <div style="display:flex;gap:.6rem;margin-top:.5rem">
-      <button onclick="closeBookModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消 / Cancel</button>
-      <button onclick="confirmBookSlot()" id="bookConfirmBtn" class="modal-btn modal-btn-primary" style="flex:2">✅ 确认预约 / Confirm Booking</button>
+      <button onclick="closeBookModal()" class="modal-btn modal-btn-secondary" style="flex:1" data-i18n="bookCancelModalBtn">取消</button>
+      <button onclick="confirmBookSlot()" id="bookConfirmBtn" class="modal-btn modal-btn-primary" style="flex:2">✅ 确认预约</button>
     </div>
+  </div>
+</div>
+
+<!-- Interview Booking Slot Picker Modal -->
+<div class="modal-overlay" id="interviewBookModal" style="display:none">
+  <div class="modal-box" style="max-width:600px;width:96%;max-height:85vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <h2 style="margin:0;font-size:1.05rem" data-i18n="bookModalTitle">🗓️ 预约面试</h2>
+      <button onclick="closeInterviewBookModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">&times;</button>
+    </div>
+    <div id="interviewModalStatus" style="display:none;margin-bottom:1rem"></div>
+    <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1rem" data-i18n="bookModalDesc">请选择一个方便的时间进行面试。</p>
+    <div id="interviewModalSlots"></div>
   </div>
 </div>
 
@@ -979,21 +991,6 @@ tr:last-child td{border-bottom:none}
       </div>
     </div>
 
-    <!-- Interview Booking Modal (inline in todos) -->
-    <div class="modal-overlay" id="interviewBookModal" style="display:none">
-      <div class="modal-box" style="max-width:600px;width:96%;max-height:85vh;overflow-y:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-          <h2 style="margin:0;font-size:1.05rem" data-i18n="bookModalTitle">🗓️ 预约面试</h2>
-          <button onclick="closeInterviewBookModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">&times;</button>
-        </div>
-        <!-- Current interview status (if any) -->
-        <div id="interviewModalStatus" style="display:none;margin-bottom:1rem"></div>
-        <!-- Available slots -->
-        <p style="font-size:.83rem;color:var(--gray-500);margin-bottom:1rem" data-i18n="bookModalDesc">请选择一个方便的时间进行面试。</p>
-        <div id="interviewModalSlots"></div>
-      </div>
-    </div>
-
     <!-- Profile -->
     <!-- Referral Tab -->
     <div id="tabReferral" style="display:none">
@@ -1318,6 +1315,19 @@ const PORTAL_I18N = {
     bookCancelConfirm: '确认取消面试预约吗？', bookCancelTitle: '取消面试',
     bookRescheduleConfirm: '更改预约时间将取消当前预约，然后您可以选择新的时间。\n\n继续？', bookRescheduleTitle: '更改预约',
     bookCancelledToast: '✅ 面试预约已取消', bookRescheduledToast: '当前预约已取消，请选择新时间',
+    bookConfirmTitle: '📅 确认面试预约',
+    bookDocTitle: '📋 请携带以下证件',
+    bookDoc1: '🪪 SSN 社会安全卡（Social Security Card）', bookDoc2: '🪪 驾照（Driver\'s License）或州政府颁发 ID',
+    bookDoc3: '📄 EAD 工卡（如适用）', bookDoc4: '🛂 护照（Passport）或其他有效身份证明',
+    bookDoc5: '📋 任何工作授权证明（Work Authorization Documents）',
+    bookDocContactNote: '⚠️ 如无法找到相关人员，请致电或发邮件联系我们：',
+    bookContactTitle: '📱 确认您的联系方式',
+    bookPhoneLabel: '手机号', bookEmailLabel: '邮箱',
+    bookExpectedPayLabel: '💰 期望薪资', bookExpectedPayPH: '例：$18/hr 或 $3,500/月',
+    bookSkillsLabel: '🛠️ 技能特长', bookSkillsPH: '例：叉车证、仓库经验2年、分拣/打包',
+    bookNoteLabel: '💬 备注', bookNoteOptional: '（选填）', bookNotePH: '例：我没有驾照，只有护照',
+    bookCancelModalBtn: '取消', bookConfirmModalBtn: '✅ 确认预约', bookBookingInProgress: '预约中…',
+    bookErrContact: '请至少填写一种联系方式', bookErrPay: '请填写期望薪资', bookErrSkills: '请填写技能特长',
     bookDateLocale: 'zh-CN', bookTimeLocale: 'zh-CN',
     obActionCheckr: '📧 请查收 Checkr 发送的邮件完成背景调查', obActionDocs: '去提交文件 →',
     obActionGusto: '填写 Gusto 信息 →', obActionContract: '查看/签署合同 →', obActionSubmit: '标记已提交',
@@ -1451,6 +1461,19 @@ const PORTAL_I18N = {
     bookCancelConfirm: 'Are you sure you want to cancel your interview booking?', bookCancelTitle: 'Cancel Interview',
     bookRescheduleConfirm: 'Rescheduling will cancel your current booking, then you can pick a new time.\n\nContinue?', bookRescheduleTitle: 'Reschedule',
     bookCancelledToast: '✅ Interview booking cancelled', bookRescheduledToast: 'Booking cancelled, please select a new time',
+    bookConfirmTitle: '📅 Confirm Interview',
+    bookDocTitle: '📋 Please Bring the Following Documents',
+    bookDoc1: '🪪 SSN (Social Security Card)', bookDoc2: '🪪 Driver\'s License or State-Issued ID',
+    bookDoc3: '📄 EAD Card (if applicable)', bookDoc4: '🛂 Passport or other valid ID',
+    bookDoc5: '📋 Any Work Authorization Documents',
+    bookDocContactNote: '⚠️ If you can\'t reach anyone, contact us at:',
+    bookContactTitle: '📱 Confirm Your Contact Info',
+    bookPhoneLabel: 'Phone', bookEmailLabel: 'Email',
+    bookExpectedPayLabel: '💰 Expected Pay', bookExpectedPayPH: 'e.g. $18/hr or $3,500/mo',
+    bookSkillsLabel: '🛠️ Your Skills', bookSkillsPH: 'e.g. Forklift certified, 2yr warehouse, packing',
+    bookNoteLabel: '💬 Notes', bookNoteOptional: '(optional)', bookNotePH: 'e.g. I only have a passport, no driver\'s license',
+    bookCancelModalBtn: 'Cancel', bookConfirmModalBtn: '✅ Confirm Booking', bookBookingInProgress: 'Booking…',
+    bookErrContact: 'Please provide at least one contact method', bookErrPay: 'Expected pay is required', bookErrSkills: 'Please describe your skills',
     bookDateLocale: 'en-US', bookTimeLocale: 'en-US',
     obActionCheckr: '📧 Check your email for Checkr background check', obActionDocs: 'Submit Documents →',
     obActionGusto: 'Complete Gusto Setup →', obActionContract: 'View/Sign Contract →', obActionSubmit: 'Mark as Submitted',
@@ -1584,6 +1607,19 @@ const PORTAL_I18N = {
     bookCancelConfirm: '¿Confirma que desea cancelar su cita de entrevista?', bookCancelTitle: 'Cancelar Entrevista',
     bookRescheduleConfirm: 'Reprogramar cancelará su cita actual y podrá elegir un nuevo horario.\n\n¿Continuar?', bookRescheduleTitle: 'Reprogramar',
     bookCancelledToast: '✅ Cita de entrevista cancelada', bookRescheduledToast: 'Cita cancelada, seleccione un nuevo horario',
+    bookConfirmTitle: '📅 Confirmar Entrevista',
+    bookDocTitle: '📋 Por favor traiga los siguientes documentos',
+    bookDoc1: '🪪 SSN (Tarjeta de Seguro Social)', bookDoc2: '🪪 Licencia de conducir o ID estatal',
+    bookDoc3: '📄 Tarjeta EAD (si aplica)', bookDoc4: '🛂 Pasaporte u otro documento de identidad válido',
+    bookDoc5: '📋 Cualquier documento de autorización de trabajo',
+    bookDocContactNote: '⚠️ Si no puede encontrar a nadie, contáctenos:',
+    bookContactTitle: '📱 Confirmar Su Información de Contacto',
+    bookPhoneLabel: 'Teléfono', bookEmailLabel: 'Correo Electrónico',
+    bookExpectedPayLabel: '💰 Salario Esperado', bookExpectedPayPH: 'p.ej. $18/hr o $3,500/mes',
+    bookSkillsLabel: '🛠️ Sus Habilidades', bookSkillsPH: 'p.ej. Certificado de montacargas, 2 años almacén',
+    bookNoteLabel: '💬 Notas', bookNoteOptional: '(opcional)', bookNotePH: 'p.ej. Solo tengo pasaporte, sin licencia',
+    bookCancelModalBtn: 'Cancelar', bookConfirmModalBtn: '✅ Confirmar Cita', bookBookingInProgress: 'Agendando…',
+    bookErrContact: 'Por favor ingrese al menos un método de contacto', bookErrPay: 'El salario esperado es requerido', bookErrSkills: 'Por favor describa sus habilidades',
     bookDateLocale: 'es-MX', bookTimeLocale: 'es-MX',
     obActionCheckr: '📧 Revise su correo para el estudio de Checkr', obActionDocs: 'Enviar Documentos →',
     obActionGusto: 'Completar Gusto →', obActionContract: 'Ver/Firmar Contrato →', obActionSubmit: 'Marcar como Enviado',
@@ -2509,7 +2545,7 @@ function openBookModal(slotId, slot) {
   const errEl = document.getElementById('bookModalError');
   errEl.textContent = ''; errEl.classList.remove('show');
   const btn = document.getElementById('bookConfirmBtn');
-  btn.disabled = false; btn.textContent = '✅ 确认预约 / Confirm Booking';
+  btn.disabled = false; btn.textContent = _t('bookConfirmModalBtn');
 
   document.getElementById('bookConfirmModal').classList.add('show');
 }
@@ -2531,26 +2567,26 @@ async function confirmBookSlot() {
   const note        = document.getElementById('bookNote').value.trim();
 
   if (!phone && !email) {
-    errEl.textContent = '请至少填写一种联系方式 / Please provide at least one contact method';
+    errEl.textContent = _t('bookErrContact');
     errEl.classList.add('show'); return;
   }
   if (!expectedPay) {
-    errEl.textContent = '请填写期望薪资 / Expected pay is required';
+    errEl.textContent = _t('bookErrPay');
     errEl.classList.add('show'); return;
   }
   if (!skills) {
-    errEl.textContent = '请填写技能特长 / Please describe your skills';
+    errEl.textContent = _t('bookErrSkills');
     errEl.classList.add('show'); return;
   }
 
   const btn = document.getElementById('bookConfirmBtn');
-  btn.disabled = true; btn.textContent = '预约中…';
+  btn.disabled = true; btn.textContent = _t('bookBookingInProgress');
 
   const r = await wApi('/interviews', {
     method: 'POST',
     body: JSON.stringify({ slot_id: _pendingSlot, confirm_phone: phone, confirm_email: email, note, expected_pay: expectedPay, skills })
   });
-  btn.disabled = false; btn.textContent = '✅ 确认预约 / Confirm Booking';
+  btn.disabled = false; btn.textContent = _t('bookConfirmModalBtn');
   if (!r) return;
   if (r.success) {
     closeBookModal();
