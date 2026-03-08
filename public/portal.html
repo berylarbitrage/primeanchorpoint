@@ -2855,6 +2855,12 @@ function initGPS() {
   );
 }
 
+function setBtn(btn, enabled) {
+  if (!btn) return;
+  btn.disabled = !enabled;
+  btn.style.opacity = enabled ? '1' : '0.4';
+  btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+}
 function enablePunchBtn(ready) {
   const btnIn   = document.getElementById('btnPunchIn');
   const btnBS   = document.getElementById('btnBreakStart');
