@@ -3004,6 +3004,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN expected_salary TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN has_ssn INTEGER DEFAULT 0"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -3056,7 +3057,7 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status, has_ssn, position_interests } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -3076,17 +3077,20 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   const newExpectedSalary = expected_salary !== undefined ? expected_salary : w.expected_salary;
   const newOurRating = our_salary_rating !== undefined ? our_salary_rating : w.our_salary_rating;
   const newPaymentMethod = payment_method !== undefined ? payment_method : w.payment_method;
+  const newHasSsn = has_ssn !== undefined ? (has_ssn ? 1 : 0) : (w.has_ssn || 0);
+  const newPositionInterests = position_interests !== undefined ? JSON.stringify(position_interests) : (w.position_interests || '[]');
   logChange('active', w.active, newActive);
   logChange('suspended', w.suspended||0, newSuspended);
   logChange('work_status', w.work_status, newWorkStatus);
   logChange('expected_salary', w.expected_salary, newExpectedSalary);
   logChange('our_salary_rating', w.our_salary_rating, newOurRating);
   logChange('payment_method', w.payment_method, newPaymentMethod);
+  logChange('has_ssn', w.has_ssn||0, newHasSsn);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
     payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
-    work_status=COALESCE(?,work_status) WHERE id=?`)
+    work_status=COALESCE(?,work_status), has_ssn=?, position_interests=? WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
       newActive, newSuspended,
@@ -3095,6 +3099,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       payment_method !== undefined ? payment_method : null,
       assigned_tasks !== undefined ? JSON.stringify(assigned_tasks) : null,
       work_status !== undefined ? work_status : null,
+      newHasSsn, newPositionInterests,
       req.params.id
     );
   res.json({ success: true });
@@ -3120,6 +3125,19 @@ app.get('/api/admin/worker-accounts/:id/assignments', requireAdmin, (req, res) =
 app.get('/api/admin/worker-accounts/:id/history', requireAdmin, (req, res) => {
   const rows = db.prepare('SELECT * FROM worker_account_history WHERE worker_account_id=? ORDER BY created_at DESC LIMIT 100').all(req.params.id);
   res.json(rows);
+});
+
+// Admin: get worker's most recent interview with slot info
+app.get('/api/admin/worker-accounts/:id/interview-info', requireAdmin, (req, res) => {
+  const row = db.prepare(`
+    SELECT i.id, i.status, i.admin_notes, i.created_at,
+      s.slot_datetime, s.duration_min, s.location
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    WHERE i.worker_account_id = ?
+    ORDER BY i.id DESC LIMIT 1
+  `).get(req.params.id);
+  res.json(row || null);
 });
 
 // ── Worker Onboarding ──

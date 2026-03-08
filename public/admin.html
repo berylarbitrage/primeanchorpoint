@@ -2142,6 +2142,74 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Interview Complete Modal -->
+<div class="modal-bg" id="interviewCompleteModal" style="z-index:210"><div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto">
+  <h2>🎯 完成面试</h2>
+  <p style="font-size:.9rem;font-weight:700;color:var(--sky);margin-bottom:.75rem" id="icWorkerName"></p>
+
+  <!-- Confirmed interview time -->
+  <div id="icInterviewTimeBox" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.6rem .9rem;margin-bottom:1rem;font-size:.86rem;color:#0369a1">
+    <span style="font-weight:700">📅 已确认面试时间：</span><span id="icInterviewTime"></span>
+    <span id="icInterviewLocation" style="color:#4b5563;margin-left:.5rem"></span>
+  </div>
+
+  <!-- Section 1: Post-interview worker info -->
+  <div style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)">面试后记录</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">身份 Work Status *</label>
+        <select id="icWorkStatus" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+          <option value="">— 未确认 —</option>
+          <option value="citizen">🇺🇸 公民 Citizen</option>
+          <option value="green_card">🟢 绿卡 Green Card</option>
+          <option value="ead">📄 EAD 工作许可</option>
+          <option value="h1b">H-1B</option>
+          <option value="opt">OPT/CPT</option>
+          <option value="other">其他 Other</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">收款方式 Payment Method *</label>
+        <select id="icPaymentMethod" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+          <option value="cash">💵 现金 Cash</option>
+          <option value="check">✅ 支票 Check</option>
+          <option value="direct_deposit">🏦 直接存款 Direct Deposit</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-top:.75rem">
+      <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.88rem;font-weight:500">
+        <input type="checkbox" id="icHasSsn" style="width:16px;height:16px;accent-color:var(--sky)">
+        <span>已提供 SSN（社会安全号码）</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Section 2: Job interests -->
+  <div style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)">意向岗位 Job Interests</div>
+    <div id="icPositionInterests" style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem">
+      <!-- rendered by JS -->
+    </div>
+  </div>
+
+  <!-- Section 3: Skills assessment -->
+  <div style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)">
+      <div style="font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px">技能评估 Skills</div>
+      <button class="btn btn-sm btn-green" onclick="addIcSkill()">+ 添加技能</button>
+    </div>
+    <div id="icSkillsList"></div>
+    <p style="font-size:.75rem;color:var(--gray-400);margin-top:.4rem">常见: 叉车 Forklift · 打包 Packaging · 清洁 Cleaning · 搬运 Loading · 仓储 Warehouse · 厨房 Kitchen · 电焊 Welding · 机械操作 Machine Op</p>
+  </div>
+
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('interviewCompleteModal')">取消</button>
+    <button class="btn btn-green" onclick="saveInterviewComplete()">✅ 保存并完成面试</button>
+  </div>
+</div></div>
+
 <!-- Job Modal -->
 <div id="toastContainer"></div>
 
@@ -10768,12 +10836,18 @@ async function openOnboardingModalById(workerId) {
   if (w) openOnboardingModal(w.id, w.name || w.username);
 }
 
+let _onboardingInterviewInfo = null;
+
 async function refreshOnboardingModal() {
-  const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
-  const rows = await api('/admin/worker-accounts');
+  const [tasks, rows, intvInfo] = await Promise.all([
+    api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`),
+    api('/admin/worker-accounts'),
+    api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`)
+  ]);
   const w = rows && rows.find(r => r.id === _onboardingWorkerId);
   _onboardingDispatchReady = !!(w && w.dispatch_ready);
   _onboardingWorkerData = w || null;
+  _onboardingInterviewInfo = intvInfo || null;
 
   const hasTasks = Array.isArray(tasks) && tasks.length > 0;
   const allDone = hasTasks && tasks.every(t => t.status === 'completed' || t.status === 'waived');
@@ -10839,6 +10913,15 @@ function renderOnboardingTasks(tasks) {
         ${t.admin_note?`<div style="font-size:.78rem;color:var(--gray-500);font-style:italic;margin-top:.15rem">💬 ${esc(t.admin_note)}</div>`:''}
         ${t.action_url?`<div style="font-size:.78rem;margin-top:.15rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:420px">🔗 <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)" title="${esc(t.action_url)}">${esc(t.action_url.length>60?t.action_url.substring(0,60)+'...':t.action_url)}</a></div>`:''}
         ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 工人门户 — 已通知</div>`:''}
+        ${t.key==='interview'&&_onboardingInterviewInfo&&_onboardingInterviewInfo.slot_datetime?(()=>{
+          const dt=new Date(_onboardingInterviewInfo.slot_datetime);
+          const dtStr=dt.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit'});
+          const loc=_onboardingInterviewInfo.location?` · 📍 ${_onboardingInterviewInfo.location}`:'';
+          const statusColor=_onboardingInterviewInfo.status==='completed'?'#065f46':_onboardingInterviewInfo.status==='cancelled'?'#dc2626':'#0369a1';
+          const statusBg=_onboardingInterviewInfo.status==='completed'?'#d1fae5':_onboardingInterviewInfo.status==='cancelled'?'#fef2f2':'#f0f9ff';
+          const statusBorder=_onboardingInterviewInfo.status==='completed'?'#6ee7b7':_onboardingInterviewInfo.status==='cancelled'?'#fecaca':'#bae6fd';
+          return `<div style="font-size:.8rem;margin-top:.3rem;background:${statusBg};border:1px solid ${statusBorder};border-radius:6px;padding:.3rem .6rem;color:${statusColor};display:inline-flex;align-items:center;gap:.3rem">📅 工人已确认：${dtStr}${esc(loc)}</div>`;
+        })():''}
         <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem">
           ${canComplete?`<button class="btn btn-sm btn-green" onclick="confirmOnboardingComplete(${tk},${tt})">✅ 完成</button>`:''}
           ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="confirmOnboardingWaive(${tk},${tt})">⏭️ Waive</button>`:''}
@@ -10877,8 +10960,110 @@ function toggleOnboardingVisibility(key, visible) {
 }
 
 function confirmOnboardingComplete(key, title) {
+  if (key === 'interview') { openInterviewCompleteModal(); return; }
   showConfirmModal(`标记完成：${title}`, '确认将此任务标记为已完成？', '✅ 确认完成', 'btn-green', () => updateOnboardingTask(key, 'completed'), 'green');
 }
+// ─── Interview Complete Modal ───
+const IC_POSITIONS = [
+  { key:'warehouse_sorter', zh:'仓库分拣员' }, { key:'labeler', zh:'贴标员' },
+  { key:'packer', zh:'打包员' }, { key:'forklift_operator', zh:'叉车操作员' },
+  { key:'cdl_driver', zh:'CDL卡车司机' }, { key:'delivery_driver', zh:'送货司机' },
+  { key:'machine_operator', zh:'机器操作员' }, { key:'assembly_line', zh:'装配线工人' },
+  { key:'material_handler', zh:'物料搬运工' }, { key:'general_labor', zh:'普工' },
+  { key:'janitorial', zh:'清洁工' }, { key:'food_processing', zh:'食品加工' },
+  { key:'loading_unloading', zh:'装卸工' }, { key:'order_picker', zh:'拣货员' },
+  { key:'quality_inspector', zh:'质检员' }, { key:'shift_supervisor', zh:'班组长' }
+];
+let _icSkills = [];
+
+async function openInterviewCompleteModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  // Pre-populate worker fields
+  document.getElementById('icWorkerName').textContent = w ? (w.name || w.username) : '';
+  document.getElementById('icWorkStatus').value = (w && w.work_status) || '';
+  document.getElementById('icPaymentMethod').value = (w && w.payment_method) || 'cash';
+  document.getElementById('icHasSsn').checked = !!(w && w.has_ssn);
+
+  // Skills
+  _icSkills = w && w.skills ? w.skills.map(s => ({...s})) : [];
+  renderIcSkills();
+
+  // Position interests
+  let interests = [];
+  try { interests = JSON.parse((w && w.position_interests) || '[]'); } catch { interests = []; }
+  document.getElementById('icPositionInterests').innerHTML = IC_POSITIONS.map(p =>
+    `<label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
+      <input type="checkbox" value="${p.key}" ${interests.includes(p.key)?'checked':''} style="accent-color:var(--sky)">
+      ${esc(p.zh)}
+    </label>`
+  ).join('');
+
+  // Interview time
+  const intvBox = document.getElementById('icInterviewTimeBox');
+  const intvTimeEl = document.getElementById('icInterviewTime');
+  const intvLocEl = document.getElementById('icInterviewLocation');
+  if (_onboardingInterviewInfo && _onboardingInterviewInfo.slot_datetime) {
+    const dt = new Date(_onboardingInterviewInfo.slot_datetime);
+    intvTimeEl.textContent = dt.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short', hour:'2-digit', minute:'2-digit' });
+    intvLocEl.textContent = _onboardingInterviewInfo.location ? '📍 ' + _onboardingInterviewInfo.location : '';
+    intvBox.style.display = '';
+  } else {
+    intvBox.style.display = 'none';
+  }
+
+  document.getElementById('interviewCompleteModal').classList.add('show');
+}
+
+function renderIcSkills() {
+  const el = document.getElementById('icSkillsList');
+  if (!_icSkills.length) {
+    el.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;text-align:center;padding:.4rem">暂无技能记录，点击上方"+ 添加技能"</div>';
+    return;
+  }
+  el.innerHTML = _icSkills.map((s, i) => `
+    <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
+      <input type="text" value="${esc(s.skill_name)}" placeholder="技能名称" oninput="_icSkills[${i}].skill_name=this.value"
+        style="flex:1;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.84rem">
+      <select onchange="_icSkills[${i}].rating=parseInt(this.value)"
+        style="padding:.4rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.84rem;width:120px">
+        <option value="1" ${s.rating===1?'selected':''}>⭐ 入门</option>
+        <option value="2" ${s.rating===2?'selected':''}>⭐⭐ 基础</option>
+        <option value="3" ${s.rating===3||!s.rating?'selected':''}>⭐⭐⭐ 熟练</option>
+        <option value="4" ${s.rating===4?'selected':''}>⭐⭐⭐⭐ 精通</option>
+        <option value="5" ${s.rating===5?'selected':''}>⭐⭐⭐⭐⭐ 专家</option>
+      </select>
+      <button class="btn btn-sm" onclick="_icSkills.splice(${i},1);renderIcSkills()"
+        style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;padding:.3rem .5rem">✕</button>
+    </div>`).join('');
+}
+
+function addIcSkill() {
+  _icSkills.push({ skill_name: '', rating: 3 });
+  renderIcSkills();
+}
+
+async function saveInterviewComplete() {
+  if (!_onboardingWorkerId) return;
+  const workStatus = document.getElementById('icWorkStatus').value;
+  const paymentMethod = document.getElementById('icPaymentMethod').value;
+  const hasSsn = document.getElementById('icHasSsn').checked;
+  const positionInterests = Array.from(document.querySelectorAll('#icPositionInterests input[type="checkbox"]:checked')).map(cb => cb.value);
+  const skills = _icSkills.filter(s => s.skill_name.trim());
+
+  // Save worker profile fields
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ work_status: workStatus, payment_method: paymentMethod, has_ssn: hasSsn, position_interests: positionInterests })
+  });
+  // Save skills
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/skills`, { method: 'PUT', body: JSON.stringify({ skills }) });
+  // Mark interview as complete
+  await updateOnboardingTask('interview', 'completed');
+  closeModal('interviewCompleteModal');
+  showToast('✅ 面试已完成，信息已保存', 'success', 4000);
+}
+
 function confirmOnboardingWaive(key, title) {
   showConfirmModal(`Waive 任务：${title}`, '确认豁免此任务？豁免后该任务视为无需完成，不影响入职进度。', '⏭️ 确认 Waive', 'btn-outline', () => updateOnboardingTask(key, 'waived'), 'amber');
 }
