@@ -7828,7 +7828,7 @@ app.post('/api/register/enterprise', async (req, res) => {
   // Send email code
   const emailCode = String(Math.floor(100000+Math.random()*900000));
   db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId,'email',emailCode,expires);
-  sendEmail({ to: email, subject:'Prime Anchorpoint — Enterprise Registration Verification', text:`Your verification code is: ${emailCode}\nValid for 15 minutes.` }).catch(()=>{});
+  sendEmail(email, 'Prime Anchorpoint — Enterprise Registration Verification', `Your verification code is: ${emailCode}\nValid for 15 minutes.`, verificationCodeHtml(emailCode)).catch(()=>{});
   res.json({ success: true, account_id: accountId, needs_phone: true, needs_email: true });
 });
 
@@ -7880,7 +7880,7 @@ app.post('/api/register/enterprise-resend', async (req, res) => {
   } else {
     const code = String(Math.floor(100000+Math.random()*900000));
     db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id,'email',code,expires);
-    sendEmail({ to: acct.email, subject:'Prime Anchorpoint — Verification Code', text:`Your verification code is: ${code}\nValid for 15 minutes.` }).catch(()=>{});
+    sendEmail(acct.email, 'Prime Anchorpoint — Verification Code', `Your verification code is: ${code}\nValid for 15 minutes.`, verificationCodeHtml(code)).catch(()=>{});
   }
   res.json({ success: true });
 });
