@@ -1666,7 +1666,6 @@ tr:hover td{background:var(--sky-light)}
     <div style="margin-left:auto;display:flex;gap:.5rem">
       <button class="btn" style="background:#f0fff4;color:#2f9e44;border:1px solid #b2f2bb" onclick="openEmailCodeTestModal()">✉️ 测试邮箱</button>
       <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
-      <button class="btn btn-red" onclick="clearAllTestData()">清空所有注册数据</button>
       <button class="btn" style="background:#fefce8;color:#92400e;border:1px solid #fde68a" onclick="toggleInvitePanel()">🔗 生成邀请链接</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
     </div>
@@ -3289,7 +3288,15 @@ tr:hover td{background:var(--sky-light)}
       <div class="field"><label>姓 (Last Name) *</label><input id="eLast" placeholder="例：Smith"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>出生日期 *</label><input id="eDob" type="date"></div>
+      <div class="field"><label>出生日期 *</label>
+        <div style="display:flex;gap:.3rem;align-items:center">
+          <input id="eDobY" type="text" inputmode="numeric" maxlength="4" placeholder="年 YYYY" style="width:5.5rem;text-align:center;padding:.45rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+          <span style="color:var(--gray-400)">/</span>
+          <input id="eDobM" type="text" inputmode="numeric" maxlength="2" placeholder="月 MM" style="width:3.5rem;text-align:center;padding:.45rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+          <span style="color:var(--gray-400)">/</span>
+          <input id="eDobD" type="text" inputmode="numeric" maxlength="2" placeholder="日 DD" style="width:3.5rem;text-align:center;padding:.45rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.9rem">
+        </div>
+      </div>
     </div>
     <div class="field">
       <label>电话 * <button type="button" onclick="addEmpPhone()" style="margin-left:.5rem;padding:.1rem .5rem;font-size:.72rem;background:var(--sky-light);color:var(--blue);border:1px solid var(--sky);border-radius:4px;cursor:pointer">+ 添加</button></label>
@@ -8033,6 +8040,50 @@ async function sendRegLink() {
   }
 }
 
+// ── DOB split-input helpers ──
+function setDobValue(val) {
+  // val: 'YYYY-MM-DD' or ''
+  const [y='',m='',d=''] = (val||'').split('-');
+  document.getElementById('eDobY').value = y;
+  document.getElementById('eDobM').value = m;
+  document.getElementById('eDobD').value = d;
+}
+function getDobValue() {
+  const y = document.getElementById('eDobY').value.trim();
+  const m = document.getElementById('eDobM').value.trim().padStart(2,'0');
+  const d = document.getElementById('eDobD').value.trim().padStart(2,'0');
+  if (!y && !m && !d) return '';
+  return `${y}-${m}-${d}`;
+}
+(function initDobAutoAdvance() {
+  function onlyDigits(e) {
+    const el = e.target;
+    el.value = el.value.replace(/\D/g,'');
+  }
+  function advance(el, next) {
+    el.addEventListener('input', function() {
+      this.value = this.value.replace(/\D/g,'');
+      if (this.value.length >= parseInt(this.getAttribute('maxlength'))) {
+        const n = document.getElementById(next);
+        if (n) { n.focus(); n.select(); }
+      }
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('eDobY').addEventListener('input', function() {
+      this.value = this.value.replace(/\D/g,'');
+      if (this.value.length >= 4) { const n = document.getElementById('eDobM'); if(n){n.focus();n.select();} }
+    });
+    document.getElementById('eDobM').addEventListener('input', function() {
+      this.value = this.value.replace(/\D/g,'');
+      if (this.value.length >= 2) { const n = document.getElementById('eDobD'); if(n){n.focus();n.select();} }
+    });
+    document.getElementById('eDobD').addEventListener('input', function() {
+      this.value = this.value.replace(/\D/g,'');
+    });
+  });
+})();
+
 function openEmpModal(id) {
   document.getElementById('empModalTitle').textContent = id ? '编辑员工' : '新增员工';
   document.getElementById('empId').value = id || '';
@@ -8041,7 +8092,7 @@ function openEmpModal(id) {
     document.getElementById('eFirst').value    = e.first_name||'';
     document.getElementById('eMiddle').value   = e.middle_name||'';
     document.getElementById('eLast').value     = e.last_name||'';
-    document.getElementById('eDob').value      = e.dob||'';
+    setDobValue(e.dob||'');
     document.getElementById('ePhone').value    = e.phone||'';
     document.getElementById('eEmail').value    = e.email||'';
     document.getElementById('eAddr').value     = e.address||'';
@@ -8071,7 +8122,8 @@ function openEmpModal(id) {
     document.getElementById('eSocialFacebook').value  = sm.facebook||'';
     document.getElementById('eSocialInstagram').value = sm.instagram||'';
   } else {
-    ['eFirst','eMiddle','eLast','eDob','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
+    setDobValue('');
+    ['eFirst','eMiddle','eLast','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
      'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin',
      'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
     fillStateSelect(document.getElementById('eState'), '');
@@ -8306,7 +8358,7 @@ function randomFillEmployee() {
   const fn = pick(firsts), ln = pick(lasts);
   document.getElementById('eFirst').value = fn;
   document.getElementById('eLast').value = ln;
-  document.getElementById('eDob').value = dob;
+  setDobValue(dob);
   document.getElementById('ePhone').value = phone;
   document.getElementById('eEmail').value = `${fn.toLowerCase()}.${ln.toLowerCase()}@email.com`;
   document.getElementById('eAddr').value = pick(streets);
@@ -8557,7 +8609,7 @@ async function saveEmployee() {
     first_name: document.getElementById('eFirst').value.trim(),
     middle_name: document.getElementById('eMiddle').value.trim(),
     last_name:  document.getElementById('eLast').value.trim(),
-    dob: document.getElementById('eDob').value,
+    dob: getDobValue(),
     phone: document.getElementById('ePhone').value.trim(),
     email: document.getElementById('eEmail').value.trim(),
     extra_phones: extraPhones,
@@ -11366,7 +11418,7 @@ function convertWorkerToEmployee(w) {
   document.getElementById('eLast').value  = lastName;
   document.getElementById('ePhone').value = w.phone || '';
   document.getElementById('eEmail').value = w.email || '';
-  document.getElementById('eDob').value   = w.dob   || '';
+  setDobValue(w.dob || '');
   document.getElementById('eHire').value  = new Date().toISOString().slice(0, 10);
 
   // Update modal title to signal origin
