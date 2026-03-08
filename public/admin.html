@@ -977,7 +977,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="0">已停止</option>
     </select>
   </div>
-  <div class="card"><table><thead><tr><th>公司名称</th><th>联系人</th><th>电话</th><th>行业</th><th>状态</th><th>操作</th></tr></thead><tbody id="partnersTable"></tbody></table></div>
+  <div class="card"><table><thead><tr><th>ID</th><th>公司名称</th><th>联系人</th><th>电话</th><th>行业</th><th>状态</th><th>操作</th></tr></thead><tbody id="partnersTable"></tbody></table></div>
 </div>
 
 <!-- Backups -->
@@ -7220,6 +7220,7 @@ function renderPartners(partners) {
     const mainContact = contacts.length ? (contacts[0].first_name||contacts[0].last_name ? `${contacts[0].first_name||''} ${contacts[0].last_name||''}`.trim() : (contacts[0].name||'')) : (p.contact_person||'');
     const mainPhone = contacts.length ? contacts[0].phone : (p.phone||'');
     return `<tr style="cursor:pointer" onclick="showPartnerById(${p.id})">
+      <td style="font-size:.78rem;color:var(--gray-400);font-family:monospace;white-space:nowrap">#${p.id}</td>
       <td><strong>${esc(p.name)}</strong>${(p.file_count||0)>0?` <span class="badge badge-en">${p.file_count} files</span>`:''}<br>${p.company_number?`<span style="font-size:.72rem;color:var(--gray-400);font-family:monospace">${esc(p.company_number)}</span>`:''}</td>
       <td>${esc(mainContact)}${contacts.length>1?` <span style="color:var(--gray-400)">(+${contacts.length-1})</span>`:''}</td>
       <td>${esc(mainPhone)}</td>
@@ -7231,7 +7232,7 @@ function renderPartners(partners) {
         ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>`:''}
       </td>
     </tr>`;
-  }).join('') : '<tr><td colspan="6" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
+  }).join('') : '<tr><td colspan="7" class="empty">暂无合作公司，点击 "+ 新增公司" 添加</td></tr>';
 }
 
 function editPartnerById(id) { const p=allPartners.find(x=>x.id===id); if(p) openPartnerModal(p); }
