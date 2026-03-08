@@ -10975,6 +10975,11 @@ async function activateWorkerAccount(id) {
 }
 
 async function updateWorkerStatus(id, work_status) {
+  const label = {citizen:'公民',green_card:'绿卡',ead:'EAD',h1b:'H-1B',opt:'OPT/CPT',other:'其他'}[work_status] || work_status || '未填';
+  if (!await showConfirm(`确认将身份改为「${label}」？`)) {
+    loadWorkerAccounts();
+    return;
+  }
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ work_status }) });
   showToast('✅ 身份已更新');
 }
