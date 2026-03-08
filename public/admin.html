@@ -10979,7 +10979,13 @@ async function updateWorkerStatus(id, work_status) {
   showToast('✅ 身份已更新');
 }
 
-async function updateWorkerPayMethod(id, payment_method) {
+async function updateWorkerPayMethod(id, payment_method, sel) {
+  const label = {cash:'现金',check:'支票',direct_deposit:'直接存款'}[payment_method] || payment_method;
+  if (!await showConfirm(`确认将支付方式改为「${label}」？`)) {
+    // User cancelled — revert dropdown to previous value
+    loadWorkerAccounts();
+    return;
+  }
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ payment_method }) });
   showToast('✅ 支付方式已更新');
 }
