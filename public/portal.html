@@ -4895,8 +4895,10 @@ async function loadInterviewModalSlots() {
     return;
   }
 
+  _pendingSlotMap = {};
   const grouped = {};
   slots.forEach(s => {
+    _pendingSlotMap[s.id] = s;
     const dt = new Date(s.slot_datetime);
     const dateKey = dt.toLocaleDateString('en-CA');
     if (!grouped[dateKey]) grouped[dateKey] = { date: dt, slots: [] };
@@ -4932,17 +4934,9 @@ async function loadInterviewModalSlots() {
   slotsDiv.innerHTML = html;
 }
 
-async function modalBookSlot(slotId) {
-  const r = await wApi('/interviews', { method:'POST', body: JSON.stringify({ slot_id: slotId }) });
-  if (!r) return;
-  if (r.success) {
-    showToast(_t('bookSuccess'));
-    closeInterviewBookModal();
-    loadOnboarding();
-    loadInterview(); // also refresh the interview tab
-  } else {
-    showToast('❌ ' + (r.error || _t('bookFailed')), 'error');
-  }
+function modalBookSlot(slotId) {
+  closeInterviewBookModal();
+  openBookModal(slotId, _pendingSlotMap[slotId]);
 }
 
 // Close modal on overlay click
