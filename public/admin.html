@@ -8126,6 +8126,7 @@ function openEmpModal(id) {
     ['eFirst','eMiddle','eLast','ePhone','eEmail','eAddr','eStreet2','eCity','eZip',
      'eHire','eEmgName','eEmgPhone','eEmgRel','eNotes','eSSN','ePin',
      'eSocialWhatsapp','eSocialWechat','eSocialFacebook','eSocialInstagram'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    document.getElementById('eHire').value = new Date().toLocaleDateString('en-CA');
     fillStateSelect(document.getElementById('eState'), '');
     document.getElementById('eStatus').value  = 'active';
     document.getElementById('addJobRecordBtn').style.display = 'none';
