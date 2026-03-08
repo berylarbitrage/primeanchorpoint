@@ -5471,102 +5471,20 @@ async function saveJob() {
   loadJobs();
 }
 
-async function deleteJob(id) {
-  // Step 1: Find the job title for display
-  const job = (allJobs || []).find(j => j.id === id);
-  const jobTitle = job ? `${job.title}${job.company_name ? ' (' + job.company_name + ')' : ''}` : `#${id}`;
-
-  // Step 2: First confirmation — explain the restriction
-  const step1 = await showConfirm(
-    `⚠️ 删除职位：${jobTitle}\n\n` +
-    `请注意：\n` +
-    `• 职位删除后不可恢复\n` +
-    `• 只有录入错误才允许删除\n` +
-    `• 已分配工人的职位无法删除\n\n` +
-    `是否确认继续？`,
-    { confirmLabel: '继续', cancelLabel: '取消', danger: true }
+function deleteJob(id) {
+  const job = (_allJobs || []).find(j => j.id === id);
+  const jobTitle = job ? job.title : `#${id}`;
+  showDeleteConfirm(
+    jobTitle,
+    `此操作将永久删除该职位，不可恢复。请输入职位名称以确认：`,
+    async () => {
+      const result = await api(`/admin/jobs/${id}`, { method: 'DELETE' });
+      if (result && result.error) { showToast('❌ ' + result.error, 'error'); return; }
+      showToast('✅ 职位已删除');
+      loadJobs();
+    },
+    { title: '🗑️ 删除职位', btnText: '删除职位' }
   );
-  if (!step1) return;
-
-  // Step 3: Second confirmation — require selecting/typing reason
-  const reason = await showDeleteJobReasonDialog(jobTitle);
-  if (!reason) return;
-
-  // Step 4: Final confirmation
-  const step3 = await showConfirm(
-    `最终确认：即将永久删除职位\n"${jobTitle}"\n\n删除原因：${reason}\n\n此操作不可撤销，确定删除吗？`,
-    { confirmLabel: '确认删除', cancelLabel: '取消', danger: true }
-  );
-  if (!step3) return;
-
-  const result = await api(`/admin/jobs/${id}`, { method: 'DELETE' });
-  if (result && result.error) {
-    await showConfirm(`❌ 无法删除\n\n${result.error}`, { confirmLabel: '知道了', cancelLabel: null, danger: false });
-    return;
-  }
-  showToast('✅ 职位已删除');
-  loadJobs();
-}
-
-function showDeleteJobReasonDialog(jobTitle) {
-  return new Promise(resolve => {
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:10000;font-family:\'DM Sans\',sans-serif';
-    const box = document.createElement('div');
-    box.style.cssText = 'background:#fff;border-radius:12px;padding:1.75rem 2rem;width:100%;max-width:460px;box-shadow:0 8px 32px rgba(0,0,0,.18);margin:1rem';
-    box.innerHTML = `
-      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.25rem">
-        <div style="width:40px;height:40px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#DC2626" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        </div>
-        <div>
-          <div style="font-weight:700;color:#B91C1C;font-size:1rem">请说明删除原因</div>
-          <div style="font-size:.82rem;color:#6B7280;margin-top:.15rem">只有录入错误才允许删除职位</div>
-        </div>
-      </div>
-      <div style="background:#FFF5F5;border:1px solid #FECACA;border-radius:8px;padding:.9rem 1rem;margin-bottom:1.1rem;font-size:.84rem;color:#7F1D1D;line-height:1.6">
-        <strong>注意：</strong>删除职位是不可逆操作。请选择或填写删除原因，管理员将对此次操作负责。
-      </div>
-      <div style="margin-bottom:.75rem">
-        <label style="font-size:.85rem;font-weight:600;color:#374151;display:block;margin-bottom:.4rem">删除原因 <span style="color:#DC2626">*</span></label>
-        <select id="_djr_select" style="width:100%;border:1.5px solid #E5E7EB;border-radius:6px;padding:.5rem .7rem;font-size:.9rem;outline:none;margin-bottom:.6rem;font-family:inherit">
-          <option value="">— 请选择原因 —</option>
-          <option value="录入错误：职位信息填写有误">录入错误：职位信息填写有误</option>
-          <option value="录入错误：重复创建了职位">录入错误：重复创建了职位</option>
-          <option value="录入错误：职位属于其他系统">录入错误：职位属于其他系统</option>
-          <option value="other">其他原因（请在下方说明）</option>
-        </select>
-        <input id="_djr_other" type="text" placeholder="请详细说明删除原因（至少5个字）..." maxlength="200"
-          style="width:100%;box-sizing:border-box;border:1.5px solid #E5E7EB;border-radius:6px;padding:.5rem .7rem;font-size:.9rem;outline:none;display:none;font-family:inherit">
-      </div>
-      <div style="display:flex;gap:.6rem;justify-content:flex-end">
-        <button id="_djr_cancel" style="padding:8px 18px;border:1px solid #e2e5ea;border-radius:8px;background:transparent;color:#5F6B7A;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit">取消</button>
-        <button id="_djr_confirm" disabled style="padding:8px 18px;border:none;border-radius:8px;background:#DC2626;color:#fff;font-weight:600;font-size:.82rem;cursor:pointer;font-family:inherit;opacity:.5">确认原因</button>
-      </div>
-    `;
-    overlay.appendChild(box);
-    document.body.appendChild(overlay);
-    const sel = box.querySelector('#_djr_select');
-    const other = box.querySelector('#_djr_other');
-    const confirmBtn = box.querySelector('#_djr_confirm');
-    function updateState() {
-      const selVal = sel.value;
-      other.style.display = selVal === 'other' ? 'block' : 'none';
-      const hasReason = (selVal && selVal !== 'other') || (selVal === 'other' && other.value.trim().length >= 5);
-      confirmBtn.disabled = !hasReason;
-      confirmBtn.style.opacity = hasReason ? '1' : '.5';
-    }
-    sel.oninput = updateState;
-    other.oninput = updateState;
-    const cleanup = r => { document.body.removeChild(overlay); resolve(r); };
-    confirmBtn.onclick = () => {
-      if (confirmBtn.disabled) return;
-      const reason = sel.value === 'other' ? other.value.trim() : sel.value;
-      cleanup(reason);
-    };
-    box.querySelector('#_djr_cancel').onclick = () => cleanup(null);
-    overlay.onclick = e => { if (e.target === overlay) cleanup(null); };
-  });
 }
 
 function openJobShareModal(jobId, title) {
