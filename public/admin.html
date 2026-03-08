@@ -1299,13 +1299,12 @@ tr:hover td{background:var(--sky-light)}
 
       <div style="margin-bottom:1rem">
         <label style="font-size:.8rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.3rem">面试地点 <span style="color:#dc2626">*</span>（必填）</label>
-        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
-          <select id="batchLocationSelect" onchange="onBatchLocationSelect()" style="flex:1;min-width:200px;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <select id="batchLocationSelect" onchange="onBatchLocationSelect()" style="flex:1;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
             <option value="">-- 选择预设地点 --</option>
             <option value="__zoom__">📹 Zoom 视频面试</option>
           </select>
-          <span style="color:var(--gray-400);font-size:.82rem">或</span>
-          <input type="text" id="batchLocation" placeholder="手动输入地址" style="flex:1;min-width:160px;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <button type="button" onclick="openLocationModal()" style="white-space:nowrap;padding:.5rem .85rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;background:#f0fdf4;color:#16a34a;cursor:pointer;font-weight:600">＋ 新建地点</button>
         </div>
         <div id="batchZoomRow" style="display:none;margin-top:.5rem">
           <label style="font-size:.8rem;font-weight:600;color:#0369a1;display:block;margin-bottom:.3rem">📹 Zoom 会议链接 <span style="color:#dc2626">*</span></label>
@@ -1363,13 +1362,14 @@ tr:hover td{background:var(--sky-light)}
     </div>
 
     <div class="card">
-      <h3 style="margin-bottom:1rem">现有时间槽</h3>
+      <h3 id="ivSlotsTitle" style="margin-bottom:1rem">未来时间槽</h3>
       <div style="display:flex;gap:.5rem;margin-bottom:.75rem;align-items:center">
         <select id="ivSlotWeekFilter" onchange="loadInterviews()" style="padding:.4rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-          <option value="">全部时间</option>
+          <option value="future">未来全部</option>
           <option value="thisweek">本周</option>
           <option value="nextweek">下周</option>
-          <option value="future">未来全部</option>
+          <option value="">全部（含历史）</option>
+          <option value="past">历史已过期</option>
         </select>
         <button class="btn btn-sm btn-red" onclick="clearExpiredSlots()" style="margin-left:auto">清理已过期</button>
       </div>
@@ -12091,8 +12091,10 @@ async function loadInterviews() {
 
 function renderSlots(slots) {
   const tbody = document.getElementById('ivSlotsTable');
-  // Apply week filter
   const filter = document.getElementById('ivSlotWeekFilter')?.value || '';
+  const titleMap = { future:'未来时间槽', thisweek:'本周时间槽', nextweek:'下周时间槽', '':'全部时间槽（含历史）', past:'历史时间槽' };
+  const titleEl = document.getElementById('ivSlotsTitle');
+  if (titleEl) titleEl.textContent = titleMap[filter] ?? '时间槽';
   const now = new Date();
   let filtered = slots;
   if (filter === 'thisweek') {
@@ -12107,6 +12109,8 @@ function renderSlots(slots) {
     filtered = slots.filter(s => { const d = new Date(s.slot_datetime); return d >= startOfNext && d < endOfNext; });
   } else if (filter === 'future') {
     filtered = slots.filter(s => new Date(s.slot_datetime) > now);
+  } else if (filter === 'past') {
+    filtered = slots.filter(s => new Date(s.slot_datetime) <= now).reverse();
   }
 
   if (!filtered.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无时间槽</td></tr>'; return; }
@@ -12322,19 +12326,16 @@ function getBatchLocationData() {
     const loc = _ivLocations.find(l => l.id == val);
     if (loc) return { location: loc.address || loc.name, contact_name: loc.contact_name || '', contact_phone: loc.contact_phone || '', instructions: loc.instructions || '' };
   }
-  const manual = document.getElementById('batchLocation')?.value?.trim() || '';
-  return { location: manual, contact_name: '', contact_phone: '', instructions: '' };
+  return { location: '', contact_name: '', contact_phone: '', instructions: '' };
 }
 
 function onBatchLocationSelect() {
   const val = document.getElementById('batchLocationSelect').value;
   const zoomRow = document.getElementById('batchZoomRow');
   const detail = document.getElementById('batchLocationDetail');
-  const manualInput = document.getElementById('batchLocation');
   if (val === '__zoom__') {
     zoomRow.style.display = '';
     detail.style.display = 'none';
-    manualInput.value = '';
   } else if (val) {
     zoomRow.style.display = 'none';
     const loc = _ivLocations.find(l => l.id == val);
@@ -12344,7 +12345,6 @@ function onBatchLocationSelect() {
     } else {
       detail.style.display = 'none';
     }
-    manualInput.value = '';
   } else {
     zoomRow.style.display = 'none';
     detail.style.display = 'none';
@@ -12353,8 +12353,7 @@ function onBatchLocationSelect() {
 
 async function batchCreateSlots() {
   const locSel = document.getElementById('batchLocationSelect')?.value;
-  const manual = document.getElementById('batchLocation')?.value?.trim();
-  if (!locSel && !manual) return showToast('❌ 请先选择或输入面试地点', 'error');
+  if (!locSel) return showToast('❌ 请先选择面试地点', 'error');
   if (locSel === '__zoom__' && !document.getElementById('batchZoomLink')?.value?.trim()) return showToast('❌ 请输入 Zoom 会议链接', 'error');
   const startTime = document.getElementById('batchStartTime')?.value;
   const endTime = document.getElementById('batchEndTime')?.value;
