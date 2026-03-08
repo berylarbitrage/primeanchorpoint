@@ -225,44 +225,44 @@ tr:last-child td{border-bottom:none}
 <div class="modal-overlay" id="applyModal">
   <div class="modal-box" style="max-width:460px;width:94%">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
-      <h2 style="margin:0">申请职位 / Apply for Position</h2>
+      <h2 style="margin:0" data-i18n="applyTitle">申请职位</h2>
       <button onclick="closeApplyModal()" style="background:none;border:none;cursor:pointer;font-size:1.4rem;color:var(--gray-400);line-height:1;padding:0 .2rem">×</button>
     </div>
     <p id="applyJobLabel" style="font-size:.85rem;color:var(--sky);font-weight:600;margin-bottom:1.25rem"></p>
 
     <!-- Work auth question — shown only when job requires gc or citizen -->
     <div id="applyWorkAuthField" style="display:none;margin-bottom:1.1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem">
-      <p style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.5rem">🪪 该职位要求 <span id="applyWorkAuthRequired"></span></p>
-      <p style="font-size:.78rem;color:#92400e;margin-bottom:.6rem">请确认您的工作身份</p>
+      <p style="font-size:.82rem;font-weight:700;color:#92400e;margin-bottom:.5rem"><span data-i18n="applyWorkAuthTitle">🪪 该职位要求</span> <span id="applyWorkAuthRequired"></span></p>
+      <p style="font-size:.78rem;color:#92400e;margin-bottom:.6rem" data-i18n="applyWorkAuthDesc">请确认您的工作身份</p>
       <div style="display:flex;gap:.6rem">
         <label style="flex:1;display:flex;align-items:center;gap:.4rem;cursor:pointer;padding:.45rem .6rem;border:1px solid #fde68a;border-radius:8px;background:#fff;font-size:.85rem;font-weight:600">
-          <input type="radio" name="applyWorkAuth" value="yes" style="accent-color:var(--green)"> ✅ 是，我符合
+          <input type="radio" name="applyWorkAuth" value="yes" style="accent-color:var(--green)"> <span data-i18n="applyWorkAuthYes">✅ 是，我符合</span>
         </label>
         <label style="flex:1;display:flex;align-items:center;gap:.4rem;cursor:pointer;padding:.45rem .6rem;border:1px solid #fde68a;border-radius:8px;background:#fff;font-size:.85rem;font-weight:600">
-          <input type="radio" name="applyWorkAuth" value="no" style="accent-color:var(--red)"> ❌ 暂不符合
+          <input type="radio" name="applyWorkAuth" value="no" style="accent-color:var(--red)"> <span data-i18n="applyWorkAuthNo">❌ 暂不符合</span>
         </label>
       </div>
     </div>
 
     <div style="margin-bottom:.85rem">
-      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">📅 面试时间 / Interview Availability <span style="color:#dc2626">*</span></label>
-      <input type="text" id="applyAvailability" placeholder="例：周一至周五 9am–5pm，或具体日期 / e.g. Weekdays 9am–5pm" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem"><span data-i18n="applyInterview">📅 面试时间</span> <span style="color:#dc2626">*</span></label>
+      <input type="text" id="applyAvailability" data-i18n-ph="applyInterviewPH" placeholder="例：周一至周五 9am–5pm，或具体日期" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
     </div>
 
     <div style="margin-bottom:.85rem">
-      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💰 期望薪资 / Expected Pay</label>
-      <input type="text" id="applyExpectedPay" placeholder="例：$18/hr 或 $3,500/月" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem" data-i18n="applyPay">💰 期望薪资</label>
+      <input type="text" id="applyExpectedPay" data-i18n-ph="applyPayPH" placeholder="例：$18/hr 或 $3,500/月" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none">
     </div>
 
     <div style="margin-bottom:.85rem">
-      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem">💬 想对我们说的话 / Message to HR</label>
-      <textarea id="applyMessage" rows="3" placeholder="介绍一下您的相关经验、期望，或任何想告诉我们的 / Introduce yourself, share your expectations, or anything you'd like us to know" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit;outline:none"></textarea>
+      <label style="display:block;font-size:.8rem;font-weight:700;color:var(--gray-700);margin-bottom:.35rem" data-i18n="applyMessage">💬 想对我们说的话</label>
+      <textarea id="applyMessage" rows="3" data-i18n-ph="applyMessagePH" placeholder="介绍一下您的相关经验、期望，或任何想告诉我们的" style="width:100%;box-sizing:border-box;padding:.6rem .85rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.85rem;resize:vertical;line-height:1.5;font-family:inherit;outline:none"></textarea>
     </div>
 
     <div class="modal-msg error" id="applyModalError"></div>
     <div style="display:flex;gap:.6rem;margin-top:.75rem">
-      <button onclick="closeApplyModal()" class="modal-btn modal-btn-secondary" style="flex:1">取消 / Cancel</button>
-      <button onclick="submitApply()" id="applySubmitBtn" class="modal-btn modal-btn-primary" style="flex:2">提交申请 / Submit</button>
+      <button onclick="closeApplyModal()" class="modal-btn modal-btn-secondary" style="flex:1" data-i18n="applyCancel">取消</button>
+      <button onclick="submitApply()" id="applySubmitBtn" class="modal-btn modal-btn-primary" style="flex:2" data-i18n="applySubmit">提交申请</button>
     </div>
   </div>
 </div>
@@ -1318,7 +1318,14 @@ const PORTAL_I18N = {
     ccNext: '下一步', ccSend: '发送验证码', ccSending2: '发送中…', ccVerifying: '验证中…',
     ccConfirm: '确认更换', ccCancel: '取消', ccCodePlaceholder: '6位验证码',
     ccErrOldCode: '请输入验证码', ccErrNewPhone: '请输入新手机号', ccErrNewEmail: '请输入新邮箱地址', ccErrNewCode: '请输入验证码',
-    ccChanged: '已成功更换'
+    ccChanged: '已成功更换',
+    applyTitle: '申请职位', applyInterview: '📅 面试时间', applyPay: '💰 期望薪资', applyMessage: '💬 想对我们说的话',
+    applyInterviewPH: '例：周一至周五 9am–5pm，或具体日期', applyPayPH: '例：$18/hr 或 $3,500/月',
+    applyMessagePH: '介绍一下您的相关经验、期望，或任何想告诉我们的',
+    applyCancel: '取消', applySubmit: '提交申请',
+    applyWorkAuthTitle: '🪪 该职位要求', applyWorkAuthDesc: '请确认您的工作身份',
+    applyWorkAuthYes: '✅ 是，我符合', applyWorkAuthNo: '❌ 暂不符合',
+    applyErrAvail: '请填写面试时间', applySubmitting: '提交中…'
   },
   en: {
     loginTitle: 'Prime Anchorpoint',
@@ -1420,7 +1427,14 @@ const PORTAL_I18N = {
     ccNext: 'Next', ccSend: 'Send Code', ccSending2: 'Sending…', ccVerifying: 'Verifying…',
     ccConfirm: 'Confirm Change', ccCancel: 'Cancel', ccCodePlaceholder: '6-digit code',
     ccErrOldCode: 'Please enter the code', ccErrNewPhone: 'Please enter a phone number', ccErrNewEmail: 'Please enter an email address', ccErrNewCode: 'Please enter the code',
-    ccChanged: 'updated successfully'
+    ccChanged: 'updated successfully',
+    applyTitle: 'Apply for Position', applyInterview: '📅 Interview Availability', applyPay: '💰 Expected Pay', applyMessage: '💬 Message to HR',
+    applyInterviewPH: 'e.g. Weekdays 9am–5pm, or specific dates', applyPayPH: 'e.g. $18/hr or $3,500/month',
+    applyMessagePH: 'Introduce yourself, share your expectations, or anything you\'d like us to know',
+    applyCancel: 'Cancel', applySubmit: 'Submit',
+    applyWorkAuthTitle: '🪪 This position requires', applyWorkAuthDesc: 'Please confirm your work authorization',
+    applyWorkAuthYes: '✅ Yes, I qualify', applyWorkAuthNo: '❌ No, I don\'t',
+    applyErrAvail: 'Please enter your interview availability', applySubmitting: 'Submitting…'
   },
   es: {
     loginTitle: 'Prime Anchorpoint',
@@ -1522,7 +1536,14 @@ const PORTAL_I18N = {
     ccNext: 'Siguiente', ccSend: 'Enviar Código', ccSending2: 'Enviando…', ccVerifying: 'Verificando…',
     ccConfirm: 'Confirmar Cambio', ccCancel: 'Cancelar', ccCodePlaceholder: 'Código de 6 dígitos',
     ccErrOldCode: 'Ingresa el código', ccErrNewPhone: 'Ingresa un número de teléfono', ccErrNewEmail: 'Ingresa una dirección de correo', ccErrNewCode: 'Ingresa el código',
-    ccChanged: 'actualizado correctamente'
+    ccChanged: 'actualizado correctamente',
+    applyTitle: 'Postularse al Puesto', applyInterview: '📅 Disponibilidad para Entrevista', applyPay: '💰 Pago Esperado', applyMessage: '💬 Mensaje para RR.HH.',
+    applyInterviewPH: 'Ej: Lunes a viernes 9am–5pm, o fechas específicas', applyPayPH: 'Ej: $18/hr o $3,500/mes',
+    applyMessagePH: 'Preséntese, comparta sus expectativas o cualquier cosa que desee contarnos',
+    applyCancel: 'Cancelar', applySubmit: 'Enviar Solicitud',
+    applyWorkAuthTitle: '🪪 Este puesto requiere', applyWorkAuthDesc: 'Confirme su autorización de trabajo',
+    applyWorkAuthYes: '✅ Sí, califico', applyWorkAuthNo: '❌ No, no califico',
+    applyErrAvail: 'Ingrese su disponibilidad para entrevista', applySubmitting: 'Enviando…'
   }
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
@@ -1605,6 +1626,11 @@ function applyPortalLang() {
     if (key.startsWith('type_'))  { const v = key.slice(5);  node.textContent = (L.types && L.types[v]) || v; return; }
     if (key.startsWith('auth_'))  { const v = key.slice(5);  node.textContent = (L.auths && L.auths[v]) || v; return; }
     if (key.startsWith('shift_')) { const v = key.slice(6);  node.textContent = (L.shifts && L.shifts[v]) || v; return; }
+  });
+  // Placeholder i18n
+  document.querySelectorAll('[data-i18n-ph]').forEach(node => {
+    const key = node.dataset.i18nPh;
+    if (L[key] !== undefined) node.placeholder = L[key];
   });
 }
 applyPortalLang();
@@ -2604,16 +2630,16 @@ function applyJob(jobId) {
   const errEl = document.getElementById('applyModalError');
   errEl.textContent = ''; errEl.classList.remove('show');
   const btn = document.getElementById('applySubmitBtn');
-  btn.disabled = false; btn.textContent = '提交申请 / Submit';
+  btn.disabled = false; btn.textContent = _t('applySubmit');
 
   const authField = document.getElementById('applyWorkAuthField');
   const authReqEl = document.getElementById('applyWorkAuthRequired');
   if (job.work_auth === 'gc') {
     authField.style.display = '';
-    authReqEl.textContent = '绿卡或公民（Green Card or Citizen）';
+    authReqEl.textContent = _t('authLabelGC');
   } else if (job.work_auth === 'citizen') {
     authField.style.display = '';
-    authReqEl.textContent = '仅限美国公民（US Citizen Only）';
+    authReqEl.textContent = _t('authLabelCitizen');
   } else {
     authField.style.display = 'none';
   }
@@ -2635,7 +2661,7 @@ async function submitApply() {
 
   const interview_availability = document.getElementById('applyAvailability').value.trim();
   if (!interview_availability) {
-    errEl.textContent = '请填写面试时间 / Please enter your interview availability';
+    errEl.textContent = _t('applyErrAvail');
     errEl.classList.add('show');
     return;
   }
@@ -2655,13 +2681,13 @@ async function submitApply() {
   }
 
   const btn = document.getElementById('applySubmitBtn');
-  btn.disabled = true; btn.textContent = '提交中…';
+  btn.disabled = true; btn.textContent = _t('applySubmitting');
 
   const r = await wApi(`/apply/${job.id}`, {
     method: 'POST',
     body: JSON.stringify({ interview_availability, expected_pay, applicant_message, work_auth_confirmed })
   });
-  if (!r) { btn.disabled = false; btn.textContent = '提交申请 / Submit'; return; }
+  if (!r) { btn.disabled = false; btn.textContent = _t('applySubmit'); return; }
   if (r.success) {
     closeApplyModal();
     showToast('✅ 申请成功！HR将与您联系');
@@ -2669,7 +2695,7 @@ async function submitApply() {
   } else {
     errEl.textContent = r.error || '申请失败';
     errEl.classList.add('show');
-    btn.disabled = false; btn.textContent = '提交申请 / Submit';
+    btn.disabled = false; btn.textContent = _t('applySubmit');
   }
 }
 
