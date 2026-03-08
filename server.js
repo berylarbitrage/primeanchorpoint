@@ -5681,9 +5681,32 @@ app.post('/api/worker/login', (req, res) => {
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
   const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
-  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
+  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
   res.json({ account: w, employee: emp, compliance_docs: docs });
+});
+
+// ─── Worker Profile: Address & Emergency Contact ───
+app.get('/api/worker/maps-key', requireWorker, (req, res) => {
+  const key = process.env.GOOGLE_MAPS_API_KEY || '';
+  res.json({ key });
+});
+
+app.put('/api/worker/profile/address', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '未关联员工档案' });
+  const { address, street2, city, state, zip } = req.body || {};
+  if (!address || !address.trim()) return res.status(400).json({ error: '请填写街道地址' });
+  db.prepare('UPDATE employees SET address=?, street2=?, city=?, state=?, zip=? WHERE id=?')
+    .run((address||'').trim(), (street2||'').trim(), (city||'').trim(), (state||'').trim(), (zip||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
+});
+
+app.put('/api/worker/profile/emergency', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '未关联员工档案' });
+  const { emergency_name, emergency_phone, emergency_relation } = req.body || {};
+  db.prepare('UPDATE employees SET emergency_name=?, emergency_phone=?, emergency_relation=? WHERE id=?')
+    .run((emergency_name||'').trim(), (emergency_phone||'').trim(), (emergency_relation||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
 });
 
 // ─── Contact Change (phone / email) with dual verification ───
