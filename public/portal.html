@@ -1653,8 +1653,8 @@ function _t(key) { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh)[key] || k
 
 // ── Auto-translate job info via Google Translate (unofficial, no key needed) ──
 const _txCache = {};
-async function _gtranslate(text, lang) {
-  if (!text || !text.trim() || lang === 'en') return text;
+async function _gtranslate(text, lang, alwaysTranslate = false) {
+  if (!text || !text.trim() || (lang === 'en' && !alwaysTranslate)) return text;
   const tl = lang === 'zh' ? 'zh-CN' : lang;
   const key = tl + '\x01' + text;
   if (_txCache[key] !== undefined) return _txCache[key];
@@ -2610,8 +2610,8 @@ async function _preTranslateJobs(jobs) {
     j._typeT = (L.types && L.types[j.type]) || j.type || '';
     // Employment type: W2/Contract are universal; translate anything else
     j._empT = j.employment_type ? (await _gtranslate(j.employment_type, _portalLang)) : '';
-    // Benefits: stored as Chinese comma list — translate to current lang
-    j._benefitsT = j.benefits ? await _gtranslate(j.benefits, _portalLang) : '';
+    // Benefits: stored as Chinese comma list — always translate (including to English)
+    j._benefitsT = j.benefits ? await _gtranslate(j.benefits, _portalLang, true) : '';
     // Pay period: normalize Chinese key then translate label
     j._payPeriodKey = _PAY_PERIOD_ZH[j.pay_period] || j.pay_period || '';
     // Work days: translate day abbreviations (Mon→周一, Tue→周二, etc.)
