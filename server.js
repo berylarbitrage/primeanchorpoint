@@ -4003,8 +4003,11 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
 });
 
 app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
-  const old = db.prepare('SELECT title, company_name FROM jobs WHERE id=?').get(req.params.id);
+  const old = db.prepare('SELECT title, company_name, close_reason FROM jobs WHERE id=?').get(req.params.id);
   if (!old) return res.status(404).json({ error: '职位不存在 / Job not found' });
+  if (old.close_reason !== 'test') {
+    return res.status(403).json({ error: '非测试单职位不允许删除。如需下架请将职位状态改为已取消。' });
+  }
   // Cascade delete all related records before deleting the job
   db.prepare('DELETE FROM assignments WHERE job_id=?').run(req.params.id);
   db.prepare('DELETE FROM job_applications WHERE job_id=?').run(req.params.id);

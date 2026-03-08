@@ -2520,6 +2520,11 @@ tr:hover td{background:var(--sky-light)}
     <label class="cr-option"><input type="radio" name="closeReason" value="other"> <label>其他原因 <small>见下方备注</small></label></label>
   </div>
 
+  <div class="close-reason-group">
+    <h4>🧪 测试数据</h4>
+    <label class="cr-option"><input type="radio" name="closeReason" value="test"> <label>测试单 <small>仅测试用途，标记后可永久删除</small></label></label>
+  </div>
+
   <div class="field"><label>补充说明（选填）</label><textarea id="closeJobNote" rows="2" placeholder="如有需要，可添加更多说明..."></textarea></div>
 
   <div style="display:flex;gap:1rem;margin-top:1.5rem">
@@ -4337,6 +4342,7 @@ const JOB_STATUS_LABEL = {
   no_candidates:  { text: '无合适人选', cls: 'badge-closed' },
   closed:         { text: '已关闭',   cls: 'badge-closed' },
   other:          { text: '其他',     cls: 'badge-closed' },
+  test:           { text: '测试单',   cls: 'badge-closed' },
 };
 
 function setJobTab(tab) {
@@ -4726,7 +4732,7 @@ function renderJobsFiltered() {
     on_hold_client:'客户要求暂缓', on_hold_internal:'公司内部暂缓',
     client_cancelled:'客户撤单', budget_cut:'预算削减',
     project_end:'项目结束', position_changed:'岗位需求变更',
-    no_candidates:'长期无合适候选人', other:'其他原因'
+    no_candidates:'长期无合适候选人', other:'其他原因', test:'测试单'
   };
 
   const isHistory = _jobTab === 'history';
@@ -4753,7 +4759,7 @@ function renderJobsFiltered() {
         <button class="btn btn-sm" style="${j.visible === 0 ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#f1f5f9;color:#475569;border:1px solid #cbd5e1'}" onclick="toggleJobVisible(${j.id}, this)">
           ${j.visible === 0 ? '👁 显示' : '🚫 隐藏'}
         </button>
-        <button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>
+        ${j.close_reason === 'test' ? `<button class="btn btn-sm btn-red" onclick="deleteJob(${j.id})">删除</button>` : ''}
         <button class="btn btn-sm btn-outline" onclick="showJobHistory(${j.id},'${esc(j.title)}')">历史</button>
         <button class="btn btn-sm" style="background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="openJobShareModal(${j.id},'${esc(j.title).replace(/'/g,"&#39;")}')">🔗 分享</button>
       </td>
@@ -5562,7 +5568,7 @@ async function confirmCloseJob() {
     on_hold_client: 'on_hold_client', on_hold_internal: 'on_hold_internal',
     client_cancelled: 'client_cancelled', budget_cut: 'budget_cut',
     project_end: 'project_end', position_changed: 'position_changed',
-    no_candidates: 'no_candidates', other: 'other'
+    no_candidates: 'no_candidates', other: 'other', test: 'test'
   };
   const job = _allJobs.find(j => j.id == id);
   if (!job) return;
