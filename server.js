@@ -5681,9 +5681,32 @@ app.post('/api/worker/login', (req, res) => {
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
   const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
-  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
+  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
   res.json({ account: w, employee: emp, compliance_docs: docs });
+});
+
+// ─── Worker Profile: Address & Emergency Contact ───
+app.get('/api/worker/maps-key', requireWorker, (req, res) => {
+  const key = process.env.GOOGLE_MAPS_API_KEY || '';
+  res.json({ key });
+});
+
+app.put('/api/worker/profile/address', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '未关联员工档案' });
+  const { address, street2, city, state, zip } = req.body || {};
+  if (!address || !address.trim()) return res.status(400).json({ error: '请填写街道地址' });
+  db.prepare('UPDATE employees SET address=?, street2=?, city=?, state=?, zip=? WHERE id=?')
+    .run((address||'').trim(), (street2||'').trim(), (city||'').trim(), (state||'').trim(), (zip||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
+});
+
+app.put('/api/worker/profile/emergency', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '未关联员工档案' });
+  const { emergency_name, emergency_phone, emergency_relation } = req.body || {};
+  db.prepare('UPDATE employees SET emergency_name=?, emergency_phone=?, emergency_relation=? WHERE id=?')
+    .run((emergency_name||'').trim(), (emergency_phone||'').trim(), (emergency_relation||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
 });
 
 // ─── Contact Change (phone / email) with dual verification ───
@@ -5956,6 +5979,12 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
   const m = parseInt(req.query.month) || new Date().getMonth() + 1;
   const from = `${y}-${String(m).padStart(2,'0')}-01`;
   const to   = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
+  // Use client timezone offset so entries appear on the correct local calendar day
+  const tzOffsetMinutes = parseInt(req.query.tz_offset) || 0;
+  const localOffsetMinutes = -tzOffsetMinutes;
+  const tzSign = localOffsetMinutes >= 0 ? '+' : '-';
+  const tzAbsMins = Math.abs(localOffsetMinutes);
+  const tzModifier = `${tzSign}${tzAbsMins} minutes`;
   const entries = db.prepare(`
     SELECT t.*, j.title AS job_title, j.company_name AS job_company,
            COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
@@ -5964,7 +5993,8 @@ app.get('/api/worker/timeclock', requireWorker, (req, res) => {
     LEFT JOIN job_sites js ON j.site_id = js.id
     WHERE t.employee_id = ?
       AND t.clock_in IS NOT NULL
-      AND date(t.clock_in) >= ? AND date(t.clock_in) <= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
     ORDER BY t.clock_in DESC LIMIT 500
   `).all(req.workerEmployeeId, from, to);
   res.json(entries);
@@ -6264,13 +6294,19 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
   // Require employee link — unlinked portal accounts have no work schedule to show
   if (!req.workerEmployeeId) return res.json({ confirmations: [], assignments: [], punchDates: [] });
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
-  if (!wa || !wa.linked_inquiry_id) return res.json({ confirmations: [], assignments: [], punchDates: [] });
+  const linkedInqId = wa?.linked_inquiry_id || null;
   const y = parseInt(req.query.year) || new Date().getFullYear();
   const m = parseInt(req.query.month) || new Date().getMonth() + 1;
   const fromStr = `${y}-${String(m).padStart(2,'0')}-01`;
   const lastDay = new Date(y, m, 0).getDate();
   const toStr = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
-  const confirmations = db.prepare(`
+  // tz_offset is browser's getTimezoneOffset() — negate it to get UTC→local offset in minutes
+  const tzOffsetMinutes = parseInt(req.query.tz_offset) || 0;
+  const localOffsetMinutes = -tzOffsetMinutes;
+  const tzSign = localOffsetMinutes >= 0 ? '+' : '-';
+  const tzAbsMins = Math.abs(localOffsetMinutes);
+  const tzModifier = `${tzSign}${tzAbsMins} minutes`;
+  const confirmations = linkedInqId ? db.prepare(`
     SELECT sc.id, sc.date, sc.status, sc.shift_start, sc.shift_end,
            j.title, j.location AS job_location, j.description AS job_description,
            j.pay AS job_pay, j.company_name,
@@ -6280,8 +6316,8 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND sc.date >= ? AND sc.date <= ?
     ORDER BY sc.date ASC
-  `).all(wa.linked_inquiry_id, fromStr, toStr);
-  const assignments = db.prepare(`
+  `).all(linkedInqId, fromStr, toStr) : [];
+  const assignments = linkedInqId ? db.prepare(`
     SELECT a.id, a.work_schedule, a.start_date, j.title, j.location AS job_location,
            j.description AS job_description, j.pay AS job_pay, j.company_name,
            a.work_address, a.pay_rate, a.pay_type,
@@ -6289,12 +6325,15 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')
-  `).all(wa.linked_inquiry_id);
+  `).all(linkedInqId) : [];
   // Include actual punch records so weekend work (outside recurring schedule) is visible
+  // Use client's timezone offset so punches appear on the correct local calendar day
   const punchDates = req.workerEmployeeId ? db.prepare(`
-    SELECT DISTINCT date(clock_in) AS date
+    SELECT DISTINCT strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) AS date
     FROM time_entries
-    WHERE employee_id = ? AND date(clock_in) >= ? AND date(clock_in) <= ?
+    WHERE employee_id = ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
   `).all(req.workerEmployeeId, fromStr, toStr).map(r => r.date) : [];
   // Debug: log assignment schedules to diagnose missing Sunday
   assignments.forEach(a => {

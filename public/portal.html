@@ -620,7 +620,7 @@ function googleTranslateElementInit(){
             <button class="jfbtn" data-pf="auth" data-v="citizen" onclick="setPF('auth','citizen',this)" data-i18n="auth_citizen">仅公民</button>
           </div>
           <div class="job-filter-bar">
-            <span class="filter-section-label" data-i18n="filterShift">班次</span>
+            <span class="filter-section-label" data-i18n="filterShift">班型</span>
             <button class="jfbtn active" data-pf="shift" data-v="" onclick="setPF('shift','',this)" data-i18n="noLimit">不限</button>
             <button class="jfbtn" data-pf="shift" data-v="1st" onclick="setPF('shift','1st',this)" data-i18n="shift_1st">早班</button>
             <button class="jfbtn" data-pf="shift" data-v="2nd" onclick="setPF('shift','2nd',this)" data-i18n="shift_2nd">中班</button>
@@ -657,7 +657,7 @@ function googleTranslateElementInit(){
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#f59e0b;display:inline-block"></span><span data-i18n="calLegendPending">待确认</span></span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#dc2626;display:inline-block"></span><span data-i18n="calLegendDeclined">已拒绝</span></span>
             <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#a78bfa;display:inline-block"></span><span data-i18n="calLegendPunched">已打卡</span></span>
-            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#93c5fd;display:inline-block"></span><span data-i18n="calLegendProjected">计划班次</span></span>
+            <span style="display:flex;align-items:center;gap:.3rem"><span style="width:9px;height:9px;border-radius:50%;background:#93c5fd;display:inline-block"></span><span data-i18n="calLegendProjected">计划任务</span></span>
           </div>
         </div>
       </div>
@@ -1193,13 +1193,71 @@ function googleTranslateElementInit(){
         <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem" data-i18n="identityDesc">由HR发起 · 驾照 + 自拍 + SSN核验 · 通过Persona平台</p>
         <div id="profileIdentity"></div>
       </div>
-      <!-- Manager Punch QR Code -->
-      <div class="card" style="margin-bottom:1rem">
+      <!-- Manager Punch QR Code (only shown when linked to employee) -->
+      <div id="profileQRCard" class="card" style="margin-bottom:1rem;display:none">
         <h2 style="margin-bottom:.3rem" data-i18n="qrTitle">📲 打卡二维码</h2>
         <p style="font-size:.82rem;color:var(--gray-400);margin-bottom:1rem" data-i18n="qrDesc">让 Manager 扫描此二维码为您打卡</p>
         <div id="profilePunchQRWrap" style="text-align:center">
           <div id="profilePunchQR" style="display:inline-block;background:#fff;padding:10px;border:1px solid var(--gray-200);border-radius:10px;min-width:160px;min-height:160px"></div>
         </div>
+      </div>
+      <!-- Address (only shown when linked to employee) -->
+      <div id="profileAddressCard" class="card" style="margin-bottom:1rem;display:none">
+        <h2 style="margin-bottom:1rem" data-i18n="addrTitle">🏠 地址信息</h2>
+        <div style="display:flex;flex-direction:column;gap:.65rem">
+          <div class="field">
+            <label style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px" data-i18n="addrStreet">Street</label>
+            <input id="profAddrStreet" type="text" autocomplete="off" placeholder="Street address"
+              style="width:100%;padding:.6rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;box-sizing:border-box;margin-top:.25rem">
+          </div>
+          <div class="field">
+            <label style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px" data-i18n="addrStreet2">Street 2</label>
+            <input id="profAddrStreet2" type="text" placeholder="Apt, Suite, Unit..."
+              style="width:100%;padding:.6rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;box-sizing:border-box;margin-top:.25rem">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.65rem">
+            <div class="field">
+              <label style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px" data-i18n="addrCity">City</label>
+              <input id="profAddrCity" type="text" placeholder="City"
+                style="width:100%;padding:.6rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;box-sizing:border-box;margin-top:.25rem">
+            </div>
+            <div class="field">
+              <label style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px" data-i18n="addrState">State</label>
+              <input id="profAddrState" type="text" placeholder="State" maxlength="2"
+                style="width:100%;padding:.6rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;box-sizing:border-box;margin-top:.25rem;text-transform:uppercase">
+            </div>
+          </div>
+          <div class="field" style="max-width:180px">
+            <label style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px" data-i18n="addrZip">Zip</label>
+            <input id="profAddrZip" type="text" placeholder="Zip code" maxlength="10"
+              style="width:100%;padding:.6rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;box-sizing:border-box;margin-top:.25rem">
+          </div>
+        </div>
+        <div id="profAddrMsg" style="font-size:.82rem;margin-top:.5rem;display:none"></div>
+        <button onclick="saveProfileAddress()" style="margin-top:.85rem;padding:.55rem 1.4rem;background:var(--sky);color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer" data-i18n="saveBtn">保存</button>
+      </div>
+      <!-- Emergency Contact (only shown when linked to employee) -->
+      <div id="profileEmergencyCard" class="card" style="margin-bottom:1rem;display:none">
+        <h2 style="margin-bottom:1rem" data-i18n="emergTitle">🆘 紧急联系人</h2>
+        <div style="display:flex;flex-direction:column;gap:.65rem">
+          <div class="field">
+            <label style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px" data-i18n="emergName">姓名</label>
+            <input id="profEmergName" type="text" placeholder="Full name"
+              style="width:100%;padding:.6rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;box-sizing:border-box;margin-top:.25rem">
+          </div>
+          <div class="field">
+            <label style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px" data-i18n="emergPhone">电话</label>
+            <input id="profEmergPhone" type="tel" placeholder="Phone number"
+              style="width:100%;padding:.6rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;box-sizing:border-box;margin-top:.25rem">
+          </div>
+          <div class="field">
+            <label style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px" data-i18n="emergRelation">关系</label>
+            <input id="profEmergRelation" type="text" placeholder="e.g. Spouse, Parent, Sibling"
+              style="width:100%;padding:.6rem .75rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;box-sizing:border-box;margin-top:.25rem">
+          </div>
+        </div>
+        <div id="profEmergMsg" style="font-size:.82rem;margin-top:.5rem;display:none"></div>
+        <button onclick="saveProfileEmergency()" style="margin-top:.85rem;padding:.55rem 1.4rem;background:var(--sky);color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer" data-i18n="saveBtn">保存</button>
       </div>
       <!-- Uploaded documents -->
       <div class="card">
@@ -1293,7 +1351,7 @@ const PORTAL_I18N = {
     subtitle: '员工自助平台', logout: '退出',
     tabs: { jobs:'职位浏览', interview:'我的任务', applications:'我的申请', timeclock:'打卡记录', payments:'打款记录', compliance:'合规文件', todos:'待办事项', referral:'推荐奖励', profile:'我的信息' },
     searchPlaceholder: '搜索职位、地点...',
-    filterType: '职位类型', filterAuth: '工作身份要求', filterShift: '班次', filterUrgent: '优先级',
+    filterType: '职位类型', filterAuth: '工作身份要求', filterShift: '班型', filterUrgent: '优先级',
     all: '全部', noLimit: '不限',
     types: { '全职':'全职','兼职':'兼职','临时工':'临时工','临时转正':'临时转正' },
     auths: { any:'任何身份', gc:'绿卡/公民', citizen:'仅公民' },
@@ -1304,8 +1362,8 @@ const PORTAL_I18N = {
     authLabelAny: '合法工作身份', authLabelGC: '绿卡/公民', authLabelCitizen: '仅公民',
     payPeriodHourly: '每小时', payPeriodDaily: '每天', payPeriodWeekly: '每周', payPeriodBiweekly: '每两周', payPeriodSemimonthly: '每半月', payPeriodMonthly: '每月',
     calTitle: '📆 我的工作日历',
-    calLegend: { accepted:'已接受', pending:'待确认', declined:'已拒绝', punched:'已打卡', projected:'计划班次' },
-    calLegendAccepted:'已接受', calLegendPending:'待确认', calLegendDeclined:'已拒绝', calLegendPunched:'已打卡', calLegendProjected:'计划班次',
+    calLegend: { accepted:'已接受', pending:'待确认', declined:'已拒绝', punched:'已打卡', projected:'计划任务' },
+    calLegendAccepted:'已接受', calLegendPending:'待确认', calLegendDeclined:'已拒绝', calLegendPunched:'已打卡', calLegendProjected:'计划任务',
     calDow: ['日','一','二','三','四','五','六'],
     taskTitle: '📋 我的任务', pendingTaskTitle: '🔔 待确认任务',
     taskNone: '暂无任务安排，请联系 HR。',
@@ -1317,7 +1375,7 @@ const PORTAL_I18N = {
     taskEstTime: '预计时间', taskApprox: '约', taskHrsDay: '小时/天',
     taskReqSimple: '简单', taskReqDetailed: '详细', taskReqChecklist: '清单',
     loading: '加载中…',
-    appTitle: '我的申请记录',
+    appTitle: '我的申请记录', appEmpty: '暂无申请记录',
     punchCalTitle: '📅 打卡日历', punchHistTitle: '打卡历史记录',
     punchLegendComplete: '已完成', punchLegendWorking: '工作中',
     tcCurrentJobs: '💼 当前工作安排',
@@ -1357,6 +1415,9 @@ const PORTAL_I18N = {
     profChange: '更换', profNotSet: '未设置', profAccount: '账号：',
     profPhone: '手机号', profEmail: '邮箱',
     profNoEmployee: '员工档案未绑定，如有疑问请联系 HR', profNoQR: '员工档案未绑定，暂无二维码',
+    addrTitle: '🏠 地址信息', addrStreet: 'Street', addrStreet2: 'Street 2', addrCity: 'City', addrState: 'State', addrZip: 'Zip',
+    addrRequired: '请填写街道地址', saveBtn: '保存', saveOk: '已保存', saveErr: '保存失败',
+    emergTitle: '🆘 紧急联系人', emergName: '姓名', emergPhone: '电话', emergRelation: '关系',
     profNoDocs: '暂无已提交文件，请前往"合规文件"标签上传。', profNoDocRecords: '暂无文件记录',
     obEmpty: '入职流程尚未初始化，请联系 HR。',
     obLocked: '🔒 未开放', obPending: '⏳ 待处理', obSubmitted: '🔄 待审核', obCompleted: '✅ 已完成', obWaived: '⏭️ 已豁免',
@@ -1416,7 +1477,7 @@ const PORTAL_I18N = {
     taskEstTime: 'Estimated Time', taskApprox: 'Approx.', taskHrsDay: 'hrs/day',
     taskReqSimple: 'Simple', taskReqDetailed: 'Detailed', taskReqChecklist: 'Checklist',
     loading: 'Loading…',
-    appTitle: 'My Applications',
+    appTitle: 'My Applications', appEmpty: 'No applications yet',
     punchCalTitle: '📅 Punch Calendar', punchHistTitle: 'Punch History',
     punchLegendComplete: 'Completed', punchLegendWorking: 'Working',
     tcCurrentJobs: '💼 Current Assignments',
@@ -1456,6 +1517,9 @@ const PORTAL_I18N = {
     profChange: 'Change', profNotSet: 'Not set', profAccount: 'Account: ',
     profPhone: 'Phone', profEmail: 'Email',
     profNoEmployee: 'No employee record linked. Please contact HR.', profNoQR: 'No employee record — QR code unavailable',
+    addrTitle: '🏠 Address', addrStreet: 'Street', addrStreet2: 'Street 2', addrCity: 'City', addrState: 'State', addrZip: 'Zip',
+    addrRequired: 'Please enter a street address', saveBtn: 'Save', saveOk: 'Saved', saveErr: 'Save failed',
+    emergTitle: '🆘 Emergency Contact', emergName: 'Name', emergPhone: 'Phone', emergRelation: 'Relationship',
     profNoDocs: 'No submitted documents. Go to the Compliance tab to upload.', profNoDocRecords: 'No document records',
     obEmpty: 'Onboarding not initialized yet. Please contact HR.',
     obLocked: '🔒 Locked', obPending: '⏳ Pending', obSubmitted: '🔄 Under Review', obCompleted: '✅ Completed', obWaived: '⏭️ Waived',
@@ -1515,7 +1579,7 @@ const PORTAL_I18N = {
     taskEstTime: 'Tiempo Estimado', taskApprox: 'Aprox.', taskHrsDay: 'hrs/día',
     taskReqSimple: 'Simple', taskReqDetailed: 'Detallado', taskReqChecklist: 'Lista',
     loading: 'Cargando…',
-    appTitle: 'Mis Solicitudes',
+    appTitle: 'Mis Solicitudes', appEmpty: 'Sin solicitudes aún',
     punchCalTitle: '📅 Calendario de Asistencia', punchHistTitle: 'Historial de Asistencia',
     punchLegendComplete: 'Completado', punchLegendWorking: 'Trabajando',
     tcCurrentJobs: '💼 Asignaciones Actuales',
@@ -1555,6 +1619,9 @@ const PORTAL_I18N = {
     profChange: 'Cambiar', profNotSet: 'No configurado', profAccount: 'Cuenta: ',
     profPhone: 'Teléfono', profEmail: 'Correo',
     profNoEmployee: 'Sin expediente de empleado. Contacte a RR.HH.', profNoQR: 'Sin expediente — código QR no disponible',
+    addrTitle: '🏠 Dirección', addrStreet: 'Calle', addrStreet2: 'Calle 2', addrCity: 'Ciudad', addrState: 'Estado', addrZip: 'Código Postal',
+    addrRequired: 'Por favor ingrese la dirección de la calle', saveBtn: 'Guardar', saveOk: 'Guardado', saveErr: 'Error al guardar',
+    emergTitle: '🆘 Contacto de Emergencia', emergName: 'Nombre', emergPhone: 'Teléfono', emergRelation: 'Relación',
     profNoDocs: 'Sin documentos enviados. Vaya a la pestaña de Documentos para subir.', profNoDocRecords: 'Sin registros de documentos',
     obEmpty: 'Incorporación no inicializada. Contacte a RR.HH.',
     obLocked: '🔒 Bloqueado', obPending: '⏳ Pendiente', obSubmitted: '🔄 En Revisión', obCompleted: '✅ Completado', obWaived: '⏭️ Exento',
@@ -1586,8 +1653,8 @@ function _t(key) { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh)[key] || k
 
 // ── Auto-translate job info via Google Translate (unofficial, no key needed) ──
 const _txCache = {};
-async function _gtranslate(text, lang) {
-  if (!text || !text.trim() || lang === 'en') return text;
+async function _gtranslate(text, lang, alwaysTranslate = false) {
+  if (!text || !text.trim() || (lang === 'en' && !alwaysTranslate)) return text;
   const tl = lang === 'zh' ? 'zh-CN' : lang;
   const key = tl + '\x01' + text;
   if (_txCache[key] !== undefined) return _txCache[key];
@@ -2219,7 +2286,7 @@ let _calData = null;
 
 async function loadWorkCalendar() {
   const card = document.getElementById('workCalendarCard');
-  _calData = await wApi(`/work-calendar?year=${_calYear}&month=${_calMonth}`);
+  _calData = await wApi(`/work-calendar?year=${_calYear}&month=${_calMonth}&tz_offset=${new Date().getTimezoneOffset()}`);
   if (!_calData || (!_calData.confirmations.length && !_calData.assignments.length && !(_calData.punchDates||[]).length)) {
     card.style.display = 'none';
     return;
@@ -2264,17 +2331,17 @@ function renderCalendar() {
     const untilFurther = !!sched.untilFurther;
     const days = _parseScheduleDays(sched, jobSched);
     for (let d = 1; d <= daysInMonth; d++) {
-      const dateObj = new Date(_calYear, _calMonth - 1, d);
-      const dateStr = dateObj.toISOString().slice(0, 10);
+      const dateStr = `${_calYear}-${String(_calMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const dow = new Date(_calYear, _calMonth - 1, d).getDay();
       if (confMap[dateStr]) continue; // already confirmed, don't double-mark
       if (workStart && dateStr < workStart) continue;
       if (!untilFurther && workEnd && dateStr > workEnd) continue;
-      const dayInfo = days[_CAL_DOW_KEYS[dateObj.getDay()]];
+      const dayInfo = days[_CAL_DOW_KEYS[dow]];
       if (dayInfo && !dayInfo.rest) projectedDays.add(dateStr);
     }
   });
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = new Date().toLocaleDateString('en-CA');
   const firstDow = new Date(_calYear, _calMonth - 1, 1).getDay(); // 0=Sun
   const statusColor = { confirmed: '#16a34a', pending: '#f59e0b', declined: '#dc2626' };
 
@@ -2746,7 +2813,7 @@ async function loadApplications() {
         <span style="font-weight:700;font-size:.85rem;${statusColor[a.status]||''}">${statusLabel[a.status]||a.status}</span>
         <div style="font-size:.75rem;color:var(--gray-400);margin-top:.2rem">›</div>
       </div>
-    </div>`).join('') : '<div class="empty" style="text-align:center;padding:2rem;color:var(--gray-400)">暂无申请记录</div>';
+    </div>`).join('') : `<div class="empty" style="text-align:center;padding:2rem;color:var(--gray-400)">${_t('appEmpty')}</div>`;
 }
 
 function openAppDetail(idx) {
@@ -2851,6 +2918,12 @@ function initGPS() {
   );
 }
 
+function setBtn(btn, enabled) {
+  if (!btn) return;
+  btn.disabled = !enabled;
+  btn.style.opacity = enabled ? '1' : '0.4';
+  btn.style.cursor = enabled ? 'pointer' : 'not-allowed';
+}
 function enablePunchBtn(ready) {
   const btnIn   = document.getElementById('btnPunchIn');
   const btnBS   = document.getElementById('btnBreakStart');
@@ -3283,7 +3356,7 @@ async function loadTimeclock(year, month) {
   await Promise.all([loadPunchStatus(), loadMyJobs()]);
   const y = year  || _punchCalYear  || new Date().getFullYear();
   const m = month || _punchCalMonth || new Date().getMonth() + 1;
-  const entries = await wApi(`/timeclock?year=${y}&month=${m}`);
+  const entries = await wApi(`/timeclock?year=${y}&month=${m}&tz_offset=${new Date().getTimezoneOffset()}`);
   if (!entries || !Array.isArray(entries)) {
     renderPunchCalendar([]);
     if (entries && !Array.isArray(entries)) {
@@ -3291,10 +3364,18 @@ async function loadTimeclock(year, month) {
     }
     return;
   }
-  document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
+  try { document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
     const tz = t.display_timezone || 'America/Chicago';
-    const fmtTime = d => d ? new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz}) : '—';
-    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz}) : '—';
+    const fmtTime = d => {
+      if (!d) return '—';
+      try { return new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz}); }
+      catch(e) { return new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'}); }
+    };
+    const fmtDate = d => {
+      if (!d) return '—';
+      try { return new Date(d).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz}); }
+      catch(e) { return new Date(d).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric'}); }
+    };
     const ci = t.clock_in || null;
     const co = t.clock_out || null;
     const mapLink = t.latitude ? `<span onclick="showMiniMap(event,${t.latitude},${t.longitude})" title="${(+t.latitude).toFixed(4)},${(+t.longitude).toFixed(4)}" style="cursor:pointer;font-size:1rem">📍</span>` : '—';
@@ -3332,6 +3413,7 @@ async function loadTimeclock(year, month) {
     }
     return html;
   }).join('') : '<tr><td colspan="11" class="empty">暂无 Check In / Out 记录</td></tr>';
+  } catch(e) { console.error('timeclock table render error:', e); }
   renderPunchCalendar(entries);
 }
 
@@ -3361,8 +3443,7 @@ function renderPunchCalendar(entries) {
   const dayMap = {}; // dateStr -> { hours, closed, entries[] }
   for (const t of _punchCalEntries) {
     if (!t.clock_in) continue;
-    const tz = t.display_timezone || 'America/Chicago';
-    const dateStr = new Date(t.clock_in).toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+    const dateStr = new Date(t.clock_in).toLocaleDateString('en-CA'); // YYYY-MM-DD in browser-local time
     const existing = dayMap[dateStr];
     const hours = t.total_hours || 0;
     const isClosed = t.status === 'closed';
@@ -3619,6 +3700,92 @@ function copyReferralLink() {
   });
 }
 
+// ── Google Places Autocomplete for address ──
+let _mapsLoaded = false;
+function initGooglePlaces() {
+  const streetInput = document.getElementById('profAddrStreet');
+  if (!streetInput) return;
+  if (streetInput._placesInited) return;
+  const doInit = () => {
+    if (typeof google === 'undefined' || !google.maps || !google.maps.places) return;
+    const ac = new google.maps.places.Autocomplete(streetInput, {
+      types: ['address'],
+      componentRestrictions: { country: 'us' },
+      fields: ['address_components', 'formatted_address']
+    });
+    ac.addListener('place_changed', () => {
+      const place = ac.getPlace();
+      if (!place.address_components) return;
+      let streetNum = '', route = '', city = '', state = '', zip = '';
+      for (const comp of place.address_components) {
+        const t = comp.types[0];
+        if (t === 'street_number') streetNum = comp.long_name;
+        else if (t === 'route') route = comp.long_name;
+        else if (t === 'locality') city = comp.long_name;
+        else if (t === 'administrative_area_level_1') state = comp.short_name;
+        else if (t === 'postal_code') zip = comp.long_name;
+      }
+      streetInput.value = (streetNum + (streetNum && route ? ' ' : '') + route).trim();
+      document.getElementById('profAddrCity').value = city;
+      document.getElementById('profAddrState').value = state;
+      document.getElementById('profAddrZip').value = zip;
+    });
+    streetInput._placesInited = true;
+  };
+  if (_mapsLoaded) { doInit(); return; }
+  wApi('/maps-key').then(data => {
+    const key = data && data.key;
+    if (!key) return;
+    if (typeof google !== 'undefined' && google.maps && google.maps.places) { _mapsLoaded = true; doInit(); return; }
+    const s = document.createElement('script');
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places&callback=_googleMapsReady`;
+    window._googleMapsReady = () => { _mapsLoaded = true; doInit(); };
+    s.onerror = () => console.warn('Google Maps failed to load');
+    document.head.appendChild(s);
+  }).catch(() => {});
+}
+
+async function saveProfileAddress() {
+  const btn = event && event.target;
+  const msg = document.getElementById('profAddrMsg');
+  const body = {
+    address: document.getElementById('profAddrStreet').value.trim(),
+    street2: document.getElementById('profAddrStreet2').value.trim(),
+    city: document.getElementById('profAddrCity').value.trim(),
+    state: document.getElementById('profAddrState').value.trim(),
+    zip: document.getElementById('profAddrZip').value.trim()
+  };
+  if (!body.address) { showMsg(msg, _t('addrRequired') || '请填写街道地址', 'error'); return; }
+  if (btn) btn.disabled = true;
+  const r = await wApi('/profile/address', { method: 'PUT', body: JSON.stringify(body) });
+  if (btn) btn.disabled = false;
+  if (r && r.success) showMsg(msg, _t('saveOk') || '已保存', 'success');
+  else showMsg(msg, (r && r.error) || _t('saveErr') || '保存失败', 'error');
+}
+
+async function saveProfileEmergency() {
+  const btn = event && event.target;
+  const msg = document.getElementById('profEmergMsg');
+  const body = {
+    emergency_name: document.getElementById('profEmergName').value.trim(),
+    emergency_phone: document.getElementById('profEmergPhone').value.trim(),
+    emergency_relation: document.getElementById('profEmergRelation').value.trim()
+  };
+  if (btn) btn.disabled = true;
+  const r = await wApi('/profile/emergency', { method: 'PUT', body: JSON.stringify(body) });
+  if (btn) btn.disabled = false;
+  if (r && r.success) showMsg(msg, _t('saveOk') || '已保存', 'success');
+  else showMsg(msg, (r && r.error) || _t('saveErr') || '保存失败', 'error');
+}
+
+function showMsg(el, text, type) {
+  if (!el) return;
+  el.style.display = '';
+  el.style.color = type === 'success' ? '#15803d' : '#dc2626';
+  el.textContent = text;
+  setTimeout(() => { if (el) el.style.display = 'none'; }, 3500);
+}
+
 async function loadProfile() {
   const [me, docs, idStatus] = await Promise.all([wApi('/me'), wApi('/compliance'), wApi('/identity/status')]);
   if (!me) return;
@@ -3677,29 +3844,57 @@ async function loadProfile() {
   }
   document.getElementById('profileBasic').innerHTML = basicHtml;
 
-  // ── Punch QR Code ──
+  // ── Punch QR Code (only when linked) ──
+  const qrCard = document.getElementById('profileQRCard');
   const qrWrap = document.getElementById('profilePunchQR');
-  if (qrWrap && e && e.employee_id) {
-    const qrUrl = location.origin + '/mgr-punch?emp=' + encodeURIComponent(e.employee_id);
-    const renderPunchQR = () => {
-      qrWrap.innerHTML = '';
-      try {
-        new QRCode(qrWrap, { text: qrUrl, width: 160, height: 160, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
-      } catch(err) {
-        qrWrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrUrl)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+  if (e && e.employee_id) {
+    if (qrCard) qrCard.style.display = '';
+    if (qrWrap) {
+      const qrUrl = location.origin + '/mgr-punch?emp=' + encodeURIComponent(e.employee_id);
+      const renderPunchQR = () => {
+        qrWrap.innerHTML = '';
+        try {
+          new QRCode(qrWrap, { text: qrUrl, width: 160, height: 160, colorDark: '#0F2B5B', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.M });
+        } catch(err) {
+          qrWrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrUrl)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`;
+        }
+      };
+      if (typeof QRCode !== 'undefined') {
+        renderPunchQR();
+      } else {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+        s.onload = renderPunchQR;
+        s.onerror = () => { qrWrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrUrl)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`; };
+        document.head.appendChild(s);
       }
-    };
-    if (typeof QRCode !== 'undefined') {
-      renderPunchQR();
-    } else {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
-      s.onload = renderPunchQR;
-      s.onerror = () => { qrWrap.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrUrl)}" style="width:160px;height:160px;border-radius:4px" alt="QR">`; };
-      document.head.appendChild(s);
     }
-  } else if (qrWrap) {
-    qrWrap.innerHTML = `<span style="font-size:.82rem;color:var(--gray-400)">${_t('profNoQR')}</span>`;
+  } else {
+    if (qrCard) qrCard.style.display = 'none';
+  }
+
+  // ── Address & Emergency (only when linked) ──
+  const addrCard = document.getElementById('profileAddressCard');
+  const emergCard = document.getElementById('profileEmergencyCard');
+  if (e && e.employee_id) {
+    if (addrCard) {
+      addrCard.style.display = '';
+      document.getElementById('profAddrStreet').value = e.address || '';
+      document.getElementById('profAddrStreet2').value = e.street2 || '';
+      document.getElementById('profAddrCity').value = e.city || '';
+      document.getElementById('profAddrState').value = e.state || '';
+      document.getElementById('profAddrZip').value = e.zip || '';
+      initGooglePlaces();
+    }
+    if (emergCard) {
+      emergCard.style.display = '';
+      document.getElementById('profEmergName').value = e.emergency_name || '';
+      document.getElementById('profEmergPhone').value = e.emergency_phone || '';
+      document.getElementById('profEmergRelation').value = e.emergency_relation || '';
+    }
+  } else {
+    if (addrCard) addrCard.style.display = 'none';
+    if (emergCard) emergCard.style.display = 'none';
   }
 
   // ── Contact info ──
@@ -4722,7 +4917,7 @@ async function loadInterviewModalSlots() {
   const grouped = {};
   slots.forEach(s => {
     const dt = new Date(s.slot_datetime);
-    const dateKey = dt.toISOString().split('T')[0];
+    const dateKey = dt.toLocaleDateString('en-CA');
     if (!grouped[dateKey]) grouped[dateKey] = { date: dt, slots: [] };
     grouped[dateKey].slots.push(s);
   });
