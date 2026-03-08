@@ -203,6 +203,16 @@ body{top:0!important}
 .login-gt-wrap{margin-top:.5rem;display:flex;justify-content:center}
 </style>
 <script>
+// Pre-GT guard: if we just cleared GT, nuke the cookie before GT script even loads
+(function(){
+  if (sessionStorage.getItem('_gt_cleared')) {
+    sessionStorage.removeItem('_gt_cleared');
+    ['', 'domain=' + location.hostname, 'domain=.' + location.hostname].forEach(function(d) {
+      document.cookie = 'googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/' + (d ? ';' + d : '');
+    });
+    window._gtSkipInit = true;
+  }
+})();
 (function(){
   var LANGS=[
     {code:'zh-CN',label:'🇨🇳 中文(简)'},
@@ -297,6 +307,7 @@ body{top:0!important}
   });
 })();
 function googleTranslateElementInit(){
+  if (window._gtSkipInit) { delete window._gtSkipInit; return; }
   new google.translate.TranslateElement({pageLanguage:'zh-CN',autoDisplay:false},'google_translate_element');
 }
 </script>
@@ -1674,7 +1685,7 @@ async function _translateJobs(jobs) {
   }));
   return jobs;
 }
-function _clearGT() {
+function _clearGTAndReload() {
   // Clear all Google Translate cookies (multiple domain variants)
   ['', 'domain=' + location.hostname, 'domain=.' + location.hostname].forEach(function(d) {
     document.cookie = 'googtrans=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/' + (d ? ';' + d : '');
@@ -1686,23 +1697,20 @@ function _clearGT() {
         .forEach(function(k){ store.removeItem(k); });
     });
   } catch(e) {}
-  // Drive GT's internal combo to show original language (most reliable way to undo translation)
-  var combo = document.querySelector('select.goog-te-combo');
-  if (combo) { combo.value = ''; combo.dispatchEvent(new Event('change')); }
-  // Sync our custom dropdowns
-  if (typeof window._gtDoTranslate === 'function') {
-    ['goog-gt-select','goog-gt-select-login'].forEach(function(id) {
-      var s = document.getElementById(id);
-      if (s) s.value = 'zh-CN';
-    });
-  }
-  window._gtCurrentLang = 'zh-CN';
+  // Set flag so pre-GT guard clears cookie again before GT loads + skips GT init
+  sessionStorage.setItem('_gt_cleared', '1');
+  window.location.reload();
 }
 function setPortalLang(lang) {
   _portalLang = lang;
   localStorage.setItem('pa_portal_lang', lang);
-  // Always clear Google Translate first — it fights with portal i18n
-  _clearGT();
+  // If Google Translate has translated the page, clear it and reload
+  var gtActive = document.querySelector('.translated-ltr, .translated-rtl') ||
+                 (document.cookie.match(/googtrans=\/[^/]+\/([^;]+)/) || [])[1];
+  if (gtActive) {
+    _clearGTAndReload(); // reload will restore correct portal lang from localStorage
+    return;
+  }
   applyPortalLang();
   if (!WORKER_TOKEN) return;
   if (_activeTab === 'profile') loadProfile();
