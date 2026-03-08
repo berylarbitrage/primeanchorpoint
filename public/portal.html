@@ -387,40 +387,40 @@ tr:last-child td{border-bottom:none}
 <!-- Forgot Password Modal -->
 <div class="modal-overlay" id="forgotModal">
   <div class="modal-box">
-    <h2>忘记密码 / Forgot Password</h2>
+    <h2 data-i18n="forgotTitle">忘记密码</h2>
     <div class="modal-msg" id="forgotMsg"></div>
 
     <!-- Step 1: Enter email/phone -->
     <div id="forgotStep1">
-      <p>请输入您注册时使用的邮箱或手机号<br>Enter your registered email or phone</p>
-      <input type="text" id="forgotLogin" placeholder="邮箱或手机号 / Email or Phone">
-      <button class="modal-btn modal-btn-primary" onclick="sendResetCode()">发送验证码 / Send Code</button>
+      <p data-i18n="forgotDesc">请输入您注册时使用的邮箱或手机号</p>
+      <input type="text" id="forgotLogin" data-i18n-ph="forgotInputPH" placeholder="邮箱或手机号">
+      <button class="modal-btn modal-btn-primary" onclick="sendResetCode()" data-i18n="forgotSendCode">发送验证码</button>
     </div>
 
     <!-- Step 2: Enter code + new password -->
     <div id="forgotStep2" style="display:none">
-      <p>验证码已发送，请查收<br>Verification code has been sent</p>
+      <p data-i18n="forgotCodeSent">验证码已发送，请查收</p>
       <div class="code-row">
-        <input type="text" id="resetCode" placeholder="验证码 / Code" maxlength="6">
-        <button onclick="sendResetCode()" id="resendBtn">重新发送</button>
+        <input type="text" id="resetCode" data-i18n-ph="forgotCodePH" placeholder="验证码" maxlength="6">
+        <button onclick="sendResetCode()" id="resendBtn" data-i18n="forgotResend">重新发送</button>
       </div>
       <div class="pw-wrap">
-        <input type="password" id="newPassword" placeholder="新密码（至少6位）/ New password (min 6)">
+        <input type="password" id="newPassword" data-i18n-ph="forgotNewPwPH" placeholder="新密码（至少6位）">
         <button type="button" class="pw-eye" onclick="togglePw('newPassword',this)" tabindex="-1" aria-label="显示/隐藏密码"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
       <div class="pw-wrap">
-        <input type="password" id="newPassword2" placeholder="确认新密码 / Confirm new password">
+        <input type="password" id="newPassword2" data-i18n-ph="forgotConfirmPwPH" placeholder="确认新密码">
         <button type="button" class="pw-eye" onclick="togglePw('newPassword2',this)" tabindex="-1" aria-label="显示/隐藏密码"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
-      <button class="modal-btn modal-btn-primary" onclick="resetPassword()">重置密码 / Reset Password</button>
+      <button class="modal-btn modal-btn-primary" onclick="resetPassword()" data-i18n="forgotResetBtn">重置密码</button>
     </div>
 
     <!-- Step 3: Success -->
     <div id="forgotStep3" style="display:none">
-      <p style="color:var(--green);font-weight:600;text-align:center;font-size:1rem">密码重置成功！<br>Password reset successful!</p>
+      <p style="color:var(--green);font-weight:600;text-align:center;font-size:1rem" data-i18n="forgotSuccess">密码重置成功！</p>
     </div>
 
-    <button class="modal-btn modal-btn-secondary" onclick="closeForgotPassword()">关闭 / Close</button>
+    <button class="modal-btn modal-btn-secondary" onclick="closeForgotPassword()" data-i18n="forgotClose">关闭</button>
   </div>
 </div>
 
@@ -1325,7 +1325,12 @@ const PORTAL_I18N = {
     applyCancel: '取消', applySubmit: '提交申请',
     applyWorkAuthTitle: '🪪 该职位要求', applyWorkAuthDesc: '请确认您的工作身份',
     applyWorkAuthYes: '✅ 是，我符合', applyWorkAuthNo: '❌ 暂不符合',
-    applyErrAvail: '请填写面试时间', applySubmitting: '提交中…'
+    applyErrAvail: '请填写面试时间', applySubmitting: '提交中…',
+    forgotTitle: '忘记密码', forgotDesc: '请输入您注册时使用的邮箱或手机号',
+    forgotInputPH: '邮箱或手机号', forgotSendCode: '发送验证码',
+    forgotCodeSent: '验证码已发送，请查收', forgotCodePH: '验证码', forgotResend: '重新发送',
+    forgotNewPwPH: '新密码（至少6位）', forgotConfirmPwPH: '确认新密码',
+    forgotResetBtn: '重置密码', forgotSuccess: '密码重置成功！', forgotClose: '关闭'
   },
   en: {
     loginTitle: 'Prime Anchorpoint',
@@ -1434,7 +1439,12 @@ const PORTAL_I18N = {
     applyCancel: 'Cancel', applySubmit: 'Submit',
     applyWorkAuthTitle: '🪪 This position requires', applyWorkAuthDesc: 'Please confirm your work authorization',
     applyWorkAuthYes: '✅ Yes, I qualify', applyWorkAuthNo: '❌ No, I don\'t',
-    applyErrAvail: 'Please enter your interview availability', applySubmitting: 'Submitting…'
+    applyErrAvail: 'Please enter your interview availability', applySubmitting: 'Submitting…',
+    forgotTitle: 'Forgot Password', forgotDesc: 'Enter your registered email or phone',
+    forgotInputPH: 'Email or Phone', forgotSendCode: 'Send Code',
+    forgotCodeSent: 'Verification code has been sent', forgotCodePH: 'Code', forgotResend: 'Resend',
+    forgotNewPwPH: 'New password (min 6 chars)', forgotConfirmPwPH: 'Confirm new password',
+    forgotResetBtn: 'Reset Password', forgotSuccess: 'Password reset successful!', forgotClose: 'Close'
   },
   es: {
     loginTitle: 'Prime Anchorpoint',
@@ -1543,7 +1553,12 @@ const PORTAL_I18N = {
     applyCancel: 'Cancelar', applySubmit: 'Enviar Solicitud',
     applyWorkAuthTitle: '🪪 Este puesto requiere', applyWorkAuthDesc: 'Confirme su autorización de trabajo',
     applyWorkAuthYes: '✅ Sí, califico', applyWorkAuthNo: '❌ No, no califico',
-    applyErrAvail: 'Ingrese su disponibilidad para entrevista', applySubmitting: 'Enviando…'
+    applyErrAvail: 'Ingrese su disponibilidad para entrevista', applySubmitting: 'Enviando…',
+    forgotTitle: 'Olvidé mi Contraseña', forgotDesc: 'Ingrese su correo o teléfono registrado',
+    forgotInputPH: 'Correo o Teléfono', forgotSendCode: 'Enviar Código',
+    forgotCodeSent: 'Se ha enviado el código de verificación', forgotCodePH: 'Código', forgotResend: 'Reenviar',
+    forgotNewPwPH: 'Nueva contraseña (mín. 6 caracteres)', forgotConfirmPwPH: 'Confirmar nueva contraseña',
+    forgotResetBtn: 'Restablecer Contraseña', forgotSuccess: '¡Contraseña restablecida!', forgotClose: 'Cerrar'
   }
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
