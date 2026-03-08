@@ -1334,7 +1334,7 @@ const PORTAL_I18N = {
     applyErrAvail: '请填写面试时间', applySubmitting: '提交中…',
     forgotTitle: '忘记密码', forgotDesc: '请输入您注册时使用的邮箱或手机号',
     forgotInputPH: '邮箱或手机号', forgotSendCode: '发送验证码',
-    forgotCodeSent: '验证码已发送，请查收', forgotCodePH: '验证码', forgotResend: '重新发送',
+    forgotCodeSent: '验证码已发送，请查收', forgotCodePH: '验证码', forgotResend: '重新发送', forgotSendErr: '发送失败',
     forgotNewPwPH: '新密码（至少6位）', forgotConfirmPwPH: '确认新密码',
     forgotResetBtn: '重置密码', forgotSuccess: '密码重置成功！', forgotClose: '关闭'
   },
@@ -1454,7 +1454,7 @@ const PORTAL_I18N = {
     applyErrAvail: 'Please enter your interview availability', applySubmitting: 'Submitting…',
     forgotTitle: 'Forgot Password', forgotDesc: 'Enter your registered email or phone',
     forgotInputPH: 'Email or Phone', forgotSendCode: 'Send Code',
-    forgotCodeSent: 'Verification code has been sent', forgotCodePH: 'Code', forgotResend: 'Resend',
+    forgotCodeSent: 'Verification code has been sent', forgotCodePH: 'Code', forgotResend: 'Resend', forgotSendErr: 'Failed to send',
     forgotNewPwPH: 'New password (min 6 chars)', forgotConfirmPwPH: 'Confirm new password',
     forgotResetBtn: 'Reset Password', forgotSuccess: 'Password reset successful!', forgotClose: 'Close'
   },
@@ -1574,7 +1574,7 @@ const PORTAL_I18N = {
     applyErrAvail: 'Ingrese su disponibilidad para entrevista', applySubmitting: 'Enviando…',
     forgotTitle: 'Olvidé mi Contraseña', forgotDesc: 'Ingrese su correo o teléfono registrado',
     forgotInputPH: 'Correo o Teléfono', forgotSendCode: 'Enviar Código',
-    forgotCodeSent: 'Se ha enviado el código de verificación', forgotCodePH: 'Código', forgotResend: 'Reenviar',
+    forgotCodeSent: 'Se ha enviado el código de verificación', forgotCodePH: 'Código', forgotResend: 'Reenviar', forgotSendErr: 'Error al enviar',
     forgotNewPwPH: 'Nueva contraseña (mín. 6 caracteres)', forgotConfirmPwPH: 'Confirmar nueva contraseña',
     forgotResetBtn: 'Restablecer Contraseña', forgotSuccess: '¡Contraseña restablecida!', forgotClose: 'Cerrar'
   }
@@ -1798,18 +1798,18 @@ async function sendResetCode() {
       body: JSON.stringify({ login })
     });
     const d = await r.json();
-    if (!r.ok) return showForgotMsg(d.error || '发送失败', 'error');
+    if (!r.ok) return showForgotMsg(d.error || _t('forgotSendErr'), 'error');
     document.getElementById('forgotStep1').style.display = 'none';
     document.getElementById('forgotStep2').style.display = '';
-    showForgotMsg('验证码已发送 / Code sent', 'success');
+    showForgotMsg(_t('forgotCodeSent'), 'success');
     // Countdown on resend button
     const btn = document.getElementById('resendBtn');
     btn.disabled = true;
     let sec = 60;
     const iv = setInterval(() => {
       sec--;
-      btn.textContent = `重新发送(${sec}s)`;
-      if (sec <= 0) { clearInterval(iv); btn.disabled = false; btn.textContent = '重新发送'; }
+      btn.textContent = `${_t('forgotResend')}(${sec}s)`;
+      if (sec <= 0) { clearInterval(iv); btn.disabled = false; btn.textContent = _t('forgotResend'); }
     }, 1000);
   } catch {
     showForgotMsg('网络错误', 'error');
