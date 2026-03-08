@@ -1850,7 +1850,23 @@ tr:hover td{background:var(--sky-light)}
       <div id="jobTitleOptionsList"></div>
     </div>
 
-    <!-- 3. Display Suffix Words (rotate daily in worker portal) -->
+    <!-- 3. Worker Positions (动态职位列表) -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
+      <h3 style="margin:0 0 .4rem;font-size:1rem;color:#1e293b">👷 工人职位列表 Worker Positions</h3>
+      <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
+        管理工人注册时的职位选项（注册页、面试完成、文件申请等处均引用此列表）。key 为英文小写+下划线，唯一标识。
+      </p>
+      <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap">
+        <input id="newWPKey" placeholder="key（如：new_position）*" style="flex:1;min-width:130px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newWPZh" placeholder="中文名称 *" style="flex:1;min-width:100px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newWPEn" placeholder="English *" style="flex:2;min-width:130px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <input id="newWPEs" placeholder="Español" style="flex:1;min-width:100px;padding:.5rem .7rem;border:1px solid #d1d5db;border-radius:7px;font-size:.88rem">
+        <button class="btn" onclick="addWorkerPosition()" style="white-space:nowrap">＋ 添加</button>
+      </div>
+      <div id="workerPositionsList"></div>
+    </div>
+
+    <!-- 4. Display Suffix Words (rotate daily in worker portal) -->
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:1.75rem">
       <h3 style="margin:0 0 .4rem;font-size:1rem;color:#1e293b">🔄 工人端显示后缀词 Display Suffix Words</h3>
       <p style="color:#64748b;font-size:.875rem;margin:0 0 1.25rem">
@@ -9159,35 +9175,23 @@ async function deleteRating(ratingId, empId) {
 // ─── Employee Doc Request Links ───
 let _currentDocLinkUrl = '';
 
-const _DOC_POSITIONS = [
-  { key:'warehouse_sorter', zh:'仓库分拣员', en:'Warehouse Sorter', es:'Clasificador de almacén' },
-  { key:'labeler',          zh:'贴标员',     en:'Labeler',          es:'Etiquetador' },
-  { key:'packer',           zh:'打包员',     en:'Packer',           es:'Empacador' },
-  { key:'forklift_operator',zh:'叉车操作员', en:'Forklift Operator',es:'Operador de montacargas' },
-  { key:'cdl_driver',       zh:'CDL卡车司机',en:'CDL Truck Driver', es:'Conductor CDL' },
-  { key:'delivery_driver',  zh:'送货司机',   en:'Delivery Driver',  es:'Conductor de reparto' },
-  { key:'shift_supervisor', zh:'班组长',     en:'Shift Supervisor', es:'Supervisor de turno' },
-  { key:'site_manager',     zh:'现场主管',   en:'Site Manager',     es:'Gerente de sitio' },
-  { key:'quality_inspector',zh:'质检员',     en:'Quality Inspector',es:'Inspector de calidad' },
-  { key:'machine_operator', zh:'机器操作员', en:'Machine Operator', es:'Operador de máquinas' },
-  { key:'assembly_line',    zh:'装配线工人', en:'Assembly Line',    es:'Línea de ensamblaje' },
-  { key:'material_handler', zh:'物料搬运工', en:'Material Handler', es:'Manejo de materiales' },
-  { key:'inventory_clerk',  zh:'库存文员',   en:'Inventory Clerk',  es:'Empleado de inventario' },
-  { key:'general_labor',    zh:'普工',       en:'General Labor',    es:'Trabajador general' },
-  { key:'janitorial',       zh:'清洁工',     en:'Janitorial',       es:'Personal de limpieza' },
-  { key:'food_processing',  zh:'食品加工',   en:'Food Processing',  es:'Procesamiento de alimentos' },
-  { key:'warehouse_lead',   zh:'仓库领班',   en:'Warehouse Lead',   es:'Líder de almacén' },
-  { key:'loading_unloading',zh:'装卸工',     en:'Loading/Unloading',es:'Carga y descarga' },
-  { key:'order_picker',     zh:'拣货员',     en:'Order Picker',     es:'Selector de pedidos' },
-  { key:'welder',           zh:'焊接工',     en:'Welder',           es:'Soldador' },
-];
+// Worker positions loaded from DB (shared cache)
+let _WORKER_POSITIONS = [];
+async function loadWorkerPositions() {
+  if (_WORKER_POSITIONS.length) return _WORKER_POSITIONS;
+  try { _WORKER_POSITIONS = await api('/worker-positions'); } catch {}
+  return _WORKER_POSITIONS;
+}
+// Alias for doc request modal
+const _getDocPositions = () => _WORKER_POSITIONS;
 
-function toggleDocPositions() {
+async function toggleDocPositions() {
   const on = document.getElementById('docReqIncludePositions').checked;
   const block = document.getElementById('docReqPositionsBlock');
   block.style.display = on ? '' : 'none';
   if (on && !document.getElementById('docPositionCheckList').children.length) {
-    document.getElementById('docPositionCheckList').innerHTML = _DOC_POSITIONS.map(p =>
+    await loadWorkerPositions();
+    document.getElementById('docPositionCheckList').innerHTML = _WORKER_POSITIONS.map(p =>
       `<label style="display:flex;align-items:center;gap:.4rem;font-size:.82rem;font-weight:400;text-transform:none;cursor:pointer;padding:.15rem 0">
         <input type="checkbox" class="docPosCheck" value="${p.key}" checked style="width:13px;height:13px">
         ${p.zh}
@@ -11076,16 +11080,7 @@ function confirmOnboardingComplete(key, title) {
   showConfirmModal(`标记完成：${title}`, '确认将此任务标记为已完成？', '✅ 确认完成', 'btn-green', () => updateOnboardingTask(key, 'completed'), 'green');
 }
 // ─── Interview Complete Modal ───
-const IC_POSITIONS = [
-  { key:'warehouse_sorter', zh:'仓库分拣员' }, { key:'labeler', zh:'贴标员' },
-  { key:'packer', zh:'打包员' }, { key:'forklift_operator', zh:'叉车操作员' },
-  { key:'cdl_driver', zh:'CDL卡车司机' }, { key:'delivery_driver', zh:'送货司机' },
-  { key:'machine_operator', zh:'机器操作员' }, { key:'assembly_line', zh:'装配线工人' },
-  { key:'material_handler', zh:'物料搬运工' }, { key:'general_labor', zh:'普工' },
-  { key:'janitorial', zh:'清洁工' }, { key:'food_processing', zh:'食品加工' },
-  { key:'loading_unloading', zh:'装卸工' }, { key:'order_picker', zh:'拣货员' },
-  { key:'quality_inspector', zh:'质检员' }, { key:'shift_supervisor', zh:'班组长' }
-];
+// IC_POSITIONS now loaded dynamically from _WORKER_POSITIONS cache
 let _icSkills = [];
 
 async function openInterviewCompleteModal() {
@@ -11104,7 +11099,8 @@ async function openInterviewCompleteModal() {
   // Position interests
   let interests = [];
   try { interests = JSON.parse((w && w.position_interests) || '[]'); } catch { interests = []; }
-  document.getElementById('icPositionInterests').innerHTML = IC_POSITIONS.map(p =>
+  await loadWorkerPositions();
+  document.getElementById('icPositionInterests').innerHTML = _WORKER_POSITIONS.map(p =>
     `<label style="display:flex;align-items:center;gap:.4rem;font-size:.84rem;cursor:pointer">
       <input type="checkbox" value="${p.key}" ${interests.includes(p.key)?'checked':''} style="accent-color:var(--sky)">
       ${esc(p.zh)}
@@ -13054,17 +13050,20 @@ async function _populateJobTitleSelect(currentVal) {
 }
 
 async function loadSkillSettings() {
-  const [skills, titles, suffixes] = await Promise.all([
+  const [skills, titles, suffixes, wpos] = await Promise.all([
     api('/admin/skill-options'),
     api('/admin/job-title-options'),
     api('/admin/display-suffix-options'),
+    api('/admin/worker-positions'),
   ]);
   _skillOptions = skills || [];
   _jobTitleOptions = titles || [];
   _displaySuffixOptions = suffixes || [];
+  _WORKER_POSITIONS = (wpos || []).filter(p => p.active);
   renderSkillOptions();
   renderJobTitleOptions();
   renderDisplaySuffixOptions();
+  renderWorkerPositions(wpos || []);
 }
 
 function renderSkillOptions() {
@@ -13265,6 +13264,72 @@ async function importDisplaySuffixCsv() {
   _displaySuffixOptions = [];
   await loadSkillSettings();
   showToast(`✅ 已导入 ${added} 条`);
+}
+
+// ─── Worker Positions CRUD ───
+let _wpData = [];
+function renderWorkerPositions(rows) {
+  _wpData = rows;
+  const el = document.getElementById('workerPositionsList');
+  if (!el) return;
+  if (!rows.length) {
+    el.innerHTML = '<p style="color:#94a3b8;font-size:.875rem;text-align:center;padding:1rem 0">暂无职位</p>';
+    return;
+  }
+  el.innerHTML = rows.map((p, i) => `
+    <div style="display:flex;gap:.4rem;align-items:center;padding:.4rem 0;border-bottom:1px solid #f1f5f9;flex-wrap:wrap;opacity:${p.active?1:.45}">
+      <span style="color:#94a3b8;font-size:.75rem;width:1.6rem;text-align:right;flex-shrink:0">${i+1}</span>
+      <span style="font-size:.78rem;color:#94a3b8;min-width:80px;font-family:monospace">${esc(p.key)}</span>
+      <input value="${esc(p.name_zh)}" data-id="${p.id}" data-field="name_zh" onchange="_wpChange(this)"
+        placeholder="中文 *" style="flex:1;min-width:90px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <input value="${esc(p.name_en)}" data-id="${p.id}" data-field="name_en" onchange="_wpChange(this)"
+        placeholder="English *" style="flex:2;min-width:110px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <input value="${esc(p.name_es)}" data-id="${p.id}" data-field="name_es" onchange="_wpChange(this)"
+        placeholder="Español" style="flex:1;min-width:90px;padding:.38rem .55rem;border:1px solid #e2e8f0;border-radius:6px;font-size:.85rem">
+      <button onclick="_wpSave(${p.id})" style="padding:.32rem .6rem;border:1px solid #86efac;background:#f0fdf4;color:#15803d;border-radius:6px;cursor:pointer;font-size:.8rem;white-space:nowrap">保存</button>
+      <button onclick="_wpToggle(${p.id},${p.active})" title="${p.active?'禁用':'启用'}"
+        style="padding:.32rem .55rem;border:1px solid ${p.active?'#fbbf24':'#86efac'};background:${p.active?'#fffbeb':'#f0fdf4'};color:${p.active?'#d97706':'#15803d'};border-radius:6px;cursor:pointer;font-size:.8rem">${p.active?'禁用':'启用'}</button>
+      <button onclick="_wpDelete(${p.id})" style="padding:.32rem .55rem;border:1px solid #fca5a5;background:#fef2f2;color:#dc2626;border-radius:6px;cursor:pointer;font-size:.8rem">✕</button>
+    </div>`).join('');
+}
+function _wpChange(input) {
+  const p = _wpData.find(x => x.id === parseInt(input.dataset.id));
+  if (p) p[input.dataset.field] = input.value;
+}
+async function _wpSave(id) {
+  const p = _wpData.find(x => x.id === id);
+  if (!p) return;
+  const res = await api(`/admin/worker-positions/${id}`, { method:'PUT', body: JSON.stringify({ zh: p.name_zh, en: p.name_en, es: p.name_es }) });
+  if (res && res.success) { _WORKER_POSITIONS = _wpData.filter(x => x.active); showToast('✅ 已保存'); }
+  else alert('保存失败');
+}
+async function _wpToggle(id, active) {
+  const res = await api(`/admin/worker-positions/${id}`, { method:'PUT', body: JSON.stringify({ active: active ? 0 : 1 }) });
+  if (res && res.success) { await loadSkillSettings(); showToast(active ? '已禁用' : '已启用'); }
+}
+async function _wpDelete(id) {
+  if (!confirm('确认删除此职位？删除后历史评分数据中的 key 仍会保留，但职位不再显示在选项中。')) return;
+  const res = await api(`/admin/worker-positions/${id}`, { method:'DELETE' });
+  if (res && res.success) { await loadSkillSettings(); showToast('已删除'); }
+}
+async function addWorkerPosition() {
+  const key = document.getElementById('newWPKey').value.trim();
+  const zh  = document.getElementById('newWPZh').value.trim();
+  const en  = document.getElementById('newWPEn').value.trim();
+  const es  = document.getElementById('newWPEs').value.trim();
+  if (!key || !zh || !en) return alert('请填写 key、中文名称、英文名称（均为必填）');
+  const res = await api('/admin/worker-positions', { method:'POST', body: JSON.stringify({ key, zh, en, es }) });
+  if (res && res.id) {
+    document.getElementById('newWPKey').value = '';
+    document.getElementById('newWPZh').value = '';
+    document.getElementById('newWPEn').value = '';
+    document.getElementById('newWPEs').value = '';
+    _WORKER_POSITIONS = [];
+    await loadSkillSettings();
+    showToast('✅ 已添加');
+  } else {
+    alert(res && res.error ? res.error : '添加失败');
+  }
 }
 
 </script>

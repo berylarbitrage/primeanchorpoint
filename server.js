@@ -1009,28 +1009,48 @@ try { db.exec("ALTER TABLE interview_slots ADD COLUMN reserved_for_worker_accoun
 // Migrate interviews: add interview_type
 try { db.exec("ALTER TABLE interviews ADD COLUMN interview_type TEXT DEFAULT 'onboarding'"); } catch {}
 
-const WORKER_POSITIONS = [
-  { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
-  { key:'labeler',            zh:'贴标员',       en:'Labeler' },
-  { key:'packer',             zh:'打包员',       en:'Packer' },
-  { key:'forklift_operator',  zh:'叉车操作员',   en:'Forklift Operator' },
-  { key:'cdl_driver',         zh:'CDL卡车司机',  en:'CDL Truck Driver' },
-  { key:'delivery_driver',    zh:'送货司机',     en:'Delivery Driver' },
-  { key:'shift_supervisor',   zh:'班组长',       en:'Shift Supervisor' },
-  { key:'site_manager',       zh:'现场主管',     en:'Site Manager' },
-  { key:'quality_inspector',  zh:'质检员',       en:'Quality Inspector' },
-  { key:'machine_operator',   zh:'机器操作员',   en:'Machine Operator' },
-  { key:'assembly_line',      zh:'装配线工人',   en:'Assembly Line' },
-  { key:'material_handler',   zh:'物料搬运工',   en:'Material Handler' },
-  { key:'inventory_clerk',    zh:'库存文员',     en:'Inventory Clerk' },
-  { key:'general_labor',      zh:'普工',         en:'General Labor' },
-  { key:'janitorial',         zh:'清洁工',       en:'Janitorial' },
-  { key:'food_processing',    zh:'食品加工',     en:'Food Processing' },
-  { key:'warehouse_lead',     zh:'仓库领班',     en:'Warehouse Lead' },
-  { key:'loading_unloading',  zh:'装卸工',       en:'Loading / Unloading' },
-  { key:'order_picker',       zh:'拣货员',       en:'Order Picker' },
-  { key:'welder',             zh:'焊接工',       en:'Welder' },
-];
+// ─── Worker Positions (managed in DB) ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_positions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT UNIQUE NOT NULL,
+  name_zh TEXT NOT NULL,
+  name_en TEXT NOT NULL,
+  name_es TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM worker_positions LIMIT 1').get()) {
+  const wpSeeds = [
+    { key:'warehouse_sorter',  zh:'仓库分拣员',  en:'Warehouse Sorter',      es:'Clasificador de Almacén' },
+    { key:'labeler',           zh:'贴标员',      en:'Labeler',               es:'Etiquetador' },
+    { key:'packer',            zh:'打包员',      en:'Packer',                es:'Empacador' },
+    { key:'forklift_operator', zh:'叉车操作员',  en:'Forklift Operator',     es:'Operador de Montacargas' },
+    { key:'cdl_driver',        zh:'CDL卡车司机', en:'CDL Truck Driver',      es:'Chofer CDL' },
+    { key:'delivery_driver',   zh:'送货司机',    en:'Delivery Driver',       es:'Repartidor' },
+    { key:'shift_supervisor',  zh:'班组长',      en:'Shift Supervisor',      es:'Supervisor de Turno' },
+    { key:'site_manager',      zh:'现场主管',    en:'Site Manager',          es:'Gerente de Sitio' },
+    { key:'quality_inspector', zh:'质检员',      en:'Quality Inspector',     es:'Inspector de Calidad' },
+    { key:'machine_operator',  zh:'机器操作员',  en:'Machine Operator',      es:'Operador de Máquinas' },
+    { key:'assembly_line',     zh:'装配线工人',  en:'Assembly Line',         es:'Línea de Ensamble' },
+    { key:'material_handler',  zh:'物料搬运工',  en:'Material Handler',      es:'Manejador de Materiales' },
+    { key:'inventory_clerk',   zh:'库存文员',    en:'Inventory Clerk',       es:'Empleado de Inventario' },
+    { key:'general_labor',     zh:'普工',        en:'General Labor',         es:'Trabajo General' },
+    { key:'janitorial',        zh:'清洁工',      en:'Janitorial',            es:'Limpieza' },
+    { key:'food_processing',   zh:'食品加工',    en:'Food Processing',       es:'Procesamiento de Alimentos' },
+    { key:'warehouse_lead',    zh:'仓库领班',    en:'Warehouse Lead',        es:'Líder de Almacén' },
+    { key:'loading_unloading', zh:'装卸工',      en:'Loading / Unloading',   es:'Carga/Descarga' },
+    { key:'order_picker',      zh:'拣货员',      en:'Order Picker',          es:'Surtidor de Pedidos' },
+    { key:'welder',            zh:'焊接工',      en:'Welder',                es:'Soldador' },
+  ];
+  const wpIns = db.prepare('INSERT INTO worker_positions (key, name_zh, name_en, name_es, sort_order) VALUES (?,?,?,?,?)');
+  wpSeeds.forEach((p, i) => wpIns.run(p.key, p.zh, p.en, p.es, i));
+}
+
+function getWorkerPositions() {
+  return db.prepare('SELECT * FROM worker_positions WHERE active=1 ORDER BY sort_order, id').all()
+    .map(r => ({ id: r.id, key: r.key, zh: r.name_zh, en: r.name_en, es: r.name_es, sort_order: r.sort_order }));
+}
 // Add quote_request column to inquiries if not already present (migration)
 try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
 
@@ -4090,17 +4110,53 @@ app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('d
   res.json({ success: true });
 });
 
-// Worker positions list
-app.get('/api/admin/worker-positions', requireAdmin, (req, res) => {
-  res.json(WORKER_POSITIONS);
+// Worker positions list (public - used by register page)
+app.get('/api/positions', (req, res) => {
+  res.json(getWorkerPositions());
 });
 
-// Inquiry × Worker Position ratings (static list from website)
+// Worker positions CRUD (admin)
+app.get('/api/admin/worker-positions', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM worker_positions ORDER BY sort_order, id').all();
+  res.json(rows.map(r => ({ id: r.id, key: r.key, zh: r.name_zh, en: r.name_en, es: r.name_es, sort_order: r.sort_order, active: r.active })));
+});
+
+app.post('/api/admin/worker-positions', requireAdmin, (req, res) => {
+  const { key, zh, en, es, sort_order } = req.body;
+  if (!key || !zh || !en) return res.status(400).json({ error: '缺少必填字段 (key, zh, en)' });
+  if (!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({ error: 'key 只能包含小写字母、数字和下划线' });
+  try {
+    const info = db.prepare('INSERT INTO worker_positions (key, name_zh, name_en, name_es, sort_order) VALUES (?,?,?,?,?)')
+      .run(key, zh, en, es || '', sort_order ?? 0);
+    res.json({ id: info.lastInsertRowid, key, zh, en, es: es || '', sort_order: sort_order ?? 0, active: 1 });
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(400).json({ error: '该 key 已存在' });
+    throw e;
+  }
+});
+
+app.put('/api/admin/worker-positions/:id', requireAdmin, (req, res) => {
+  const { zh, en, es, sort_order, active } = req.body;
+  const row = db.prepare('SELECT id FROM worker_positions WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: '职位不存在' });
+  db.prepare('UPDATE worker_positions SET name_zh=COALESCE(?,name_zh), name_en=COALESCE(?,name_en), name_es=COALESCE(?,name_es), sort_order=COALESCE(?,sort_order), active=COALESCE(?,active) WHERE id=?')
+    .run(zh ?? null, en ?? null, es ?? null, sort_order ?? null, active ?? null, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/worker-positions/:id', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT id FROM worker_positions WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: '职位不存在' });
+  db.prepare('DELETE FROM worker_positions WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Inquiry × Worker Position ratings
 app.get('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
   const saved = db.prepare('SELECT * FROM inquiry_position_ratings WHERE inquiry_id=?').all(req.params.id);
   const rMap = {};
   saved.forEach(r => { rMap[r.position_key] = r; });
-  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
+  res.json(getWorkerPositions().map(p => ({ ...p, rating: rMap[p.key] || null })));
 });
 
 app.put('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
@@ -4118,7 +4174,7 @@ app.get('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager,
   const saved = db.prepare('SELECT * FROM employee_position_ratings WHERE employee_id=?').all(req.params.id);
   const rMap = {};
   saved.forEach(r => { rMap[r.position_key] = r; });
-  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
+  res.json(getWorkerPositions().map(p => ({ ...p, rating: rMap[p.key] || null })));
 });
 
 app.put('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager, (req, res) => {

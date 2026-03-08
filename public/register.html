@@ -706,28 +706,13 @@ const L = {
 
 function t(key) { return (L[_lang] || L.zh)[key] || ''; }
 
-const POSITIONS = [
-  { key:'warehouse_sorter', zh:'仓库分拣员', en:'Warehouse Sorter',   es:'Clasificador de Almacén' },
-  { key:'labeler',          zh:'贴标员',     en:'Labeler',            es:'Etiquetador' },
-  { key:'packer',           zh:'打包员',     en:'Packer',             es:'Empacador' },
-  { key:'forklift_operator',zh:'叉车操作员', en:'Forklift Operator',  es:'Operador de Montacargas' },
-  { key:'cdl_driver',       zh:'CDL卡车司机',en:'CDL Truck Driver',   es:'Chofer CDL' },
-  { key:'delivery_driver',  zh:'送货司机',   en:'Delivery Driver',    es:'Repartidor' },
-  { key:'shift_supervisor', zh:'班组长',     en:'Shift Supervisor',   es:'Supervisor de Turno' },
-  { key:'site_manager',     zh:'现场主管',   en:'Site Manager',       es:'Gerente de Sitio' },
-  { key:'quality_inspector',zh:'质检员',     en:'Quality Inspector',  es:'Inspector de Calidad' },
-  { key:'machine_operator', zh:'机器操作员', en:'Machine Operator',   es:'Operador de Máquinas' },
-  { key:'assembly_line',    zh:'装配线工人', en:'Assembly Line',      es:'Línea de Ensamble' },
-  { key:'material_handler', zh:'物料搬运工', en:'Material Handler',   es:'Manejador de Materiales' },
-  { key:'inventory_clerk',  zh:'库存文员',   en:'Inventory Clerk',    es:'Empleado de Inventario' },
-  { key:'general_labor',    zh:'普工',       en:'General Labor',      es:'Trabajo General' },
-  { key:'janitorial',       zh:'清洁工',     en:'Janitorial',         es:'Limpieza' },
-  { key:'food_processing',  zh:'食品加工',   en:'Food Processing',    es:'Procesamiento de Alimentos' },
-  { key:'warehouse_lead',   zh:'仓库领班',   en:'Warehouse Lead',     es:'Líder de Almacén' },
-  { key:'loading_unloading',zh:'装卸工',     en:'Loading/Unloading',  es:'Carga/Descarga' },
-  { key:'order_picker',     zh:'拣货员',     en:'Order Picker',       es:'Surtidor de Pedidos' },
-  { key:'welder',           zh:'焊接工',     en:'Welder',             es:'Soldador' },
-];
+let POSITIONS = [];
+async function loadPositions() {
+  try {
+    const r = await fetch('/api/positions');
+    if (r.ok) POSITIONS = await r.json();
+  } catch {}
+}
 
 const STATUS_KEYS = ['statCitizen','statGC','statEAD','statH1B','statOPT','statOther'];
 const STATUS_VALS = ['citizen','green_card','ead','h1b','opt','other'];
@@ -1230,7 +1215,10 @@ async function enterpriseResendCode(type) {
 }
 
 // Initialize
-setLang(_lang);
+(async () => {
+  await loadPositions();
+  setLang(_lang);
+})();
 </script>
 </body>
 </html>
