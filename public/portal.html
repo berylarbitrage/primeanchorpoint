@@ -2613,8 +2613,14 @@ function _translateBenefits(benefits, lang) {
 async function _preTranslateJobs(jobs) {
   const L = PORTAL_I18N[_portalLang] || PORTAL_I18N.zh;
   await Promise.all(jobs.map(async j => {
-    // Title: stored in English — translate to zh/es
-    j._titleT = await _gtranslate(j.title, _portalLang);
+    // Title: use stored translation if available, fallback to auto-translate
+    if (_portalLang === 'zh') j._titleT = j.title_zh || await _gtranslate(j.title, _portalLang);
+    else if (_portalLang === 'es') j._titleT = j.title_es || await _gtranslate(j.title, _portalLang);
+    else j._titleT = j.title;
+    // Description: use stored translation
+    if (_portalLang === 'zh') j._descT = j.desc_zh || j.description || '';
+    else if (_portalLang === 'es') j._descT = j.desc_es || j.description || '';
+    else j._descT = j.description || '';
     // Job type: use i18n mapping (全职→Full-time, etc.)
     j._typeT = (L.types && L.types[j.type]) || j.type || '';
     // Employment type: W2/Contract are universal; translate anything else
@@ -2677,7 +2683,7 @@ function renderJobs(jobs) {
         ${j.work_days||j.work_start?`<div class="job-meta" style="margin-top:.25rem">⏰ ${esc(j._workDaysT||j.work_days||'')} ${j.work_start?j.work_start+'–'+(j.work_end||'?'):''}</div>`:''}
         ${benefits?`<div class="job-meta" style="margin-top:.25rem">🎁 ${esc(benefits)}</div>`:''}
         ${authLabel(j.work_auth)?`<div class="job-meta" style="margin-top:.2rem">🪪 ${authLabel(j.work_auth)}</div>`:''}
-        ${j.description?`<div style="margin-top:.5rem;font-size:.82rem;color:var(--gray-700);line-height:1.5">${esc(j.description).slice(0,160)}${j.description.length>160?'…':''}</div>`:''}
+        ${(j._descT||j.description)?`<div style="margin-top:.5rem;font-size:.82rem;color:var(--gray-700);line-height:1.5">${esc(j._descT||j.description).slice(0,160)}${(j._descT||j.description).length>160?'…':''}</div>`:''}
       </div>
       <div style="flex-shrink:0">
         ${j.applied

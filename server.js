@@ -554,6 +554,11 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_times_json TEXT
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN visible INTEGER DEFAULT 1`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN langs TEXT DEFAULT 'en'`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN title_zh TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN title_es TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN desc_zh TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN desc_es TEXT DEFAULT ''`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
@@ -3918,15 +3923,17 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
     (partner_id, title, type, category, location, pay, pay_period, lang, lang_name, description, urgent,
      work_auth, benefits, schedule, company_id, company_name, employment_type,
      work_days, work_start, work_end, work_schedule, schedule_days, schedule_start, schedule_end,
-     job_status, active, close_reason, close_note, headcount)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+     job_status, active, close_reason, close_note, headcount,
+     langs, title_zh, title_es, desc_zh, desc_es)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
     d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
     d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
     d.company_id||null, d.company_name||'', d.employment_type||'',
     d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
     d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
-    jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1
+    jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1,
+    d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||''
   );
   logJobAudit.run(r.lastInsertRowid, 'created', JSON.stringify({ title: d.title, company_name: d.company_name||'' }), req.userName);
   res.json({ success: true, id: r.lastInsertRowid });
@@ -3940,7 +3947,8 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
     description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
     company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?, work_schedule=?,
     schedule_days=?, schedule_start=?, schedule_end=?,
-    job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
+    job_status=?, close_reason=?, close_note=?, headcount=?,
+    langs=?, title_zh=?, title_es=?, desc_zh=?, desc_es=? WHERE id=?`)
     .run(
       d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
       d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
@@ -3949,6 +3957,7 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
       d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
       d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
       jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
+      d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||'',
       req.params.id
     );
   // Determine action type
@@ -5964,12 +5973,13 @@ app.get('/api/worker/jobs', requireWorker, (req, res) => {
   const base = `
     SELECT j.id, j.title, j.type, j.location, j.pay, j.pay_period,
            j.work_auth, j.benefits, j.work_days, j.work_start, j.work_end,
-           j.employment_type, j.description, j.urgent, j.lang,
+           j.employment_type, j.description, j.urgent, j.lang, j.langs,
+           j.title_zh, j.title_es, j.desc_zh, j.desc_es,
            COALESCE(NULLIF(j.company_name,''), p.name, '') AS company_name
     FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id
     WHERE j.active=1`;
   const jobs = (lang && lang !== 'all')
-    ? db.prepare(base + ' AND j.lang=? ORDER BY j.created_at DESC').all(lang)
+    ? db.prepare(base + ` AND (j.langs IS NULL OR j.langs='' OR instr(','||j.langs||',', ','||?||',')>0) ORDER BY j.created_at DESC`).all(lang)
     : db.prepare(base + ' ORDER BY j.created_at DESC').all();
   const applied = db.prepare('SELECT job_id FROM job_applications WHERE worker_account_id=?').all(req.workerId).map(r => r.job_id);
   res.json(jobs.map(j => ({ ...j, applied: applied.includes(j.id) })));
