@@ -3246,10 +3246,18 @@ async function loadTimeclock(year, month) {
     }
     return;
   }
-  document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
+  try { document.getElementById('timeclockTable').innerHTML = entries.length ? entries.map(t => {
     const tz = t.display_timezone || 'America/Chicago';
-    const fmtTime = d => d ? new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz}) : '—';
-    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz}) : '—';
+    const fmtTime = d => {
+      if (!d) return '—';
+      try { return new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz}); }
+      catch(e) { return new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'}); }
+    };
+    const fmtDate = d => {
+      if (!d) return '—';
+      try { return new Date(d).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz}); }
+      catch(e) { return new Date(d).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric'}); }
+    };
     const ci = t.clock_in || null;
     const co = t.clock_out || null;
     const mapLink = t.latitude ? `<span onclick="showMiniMap(event,${t.latitude},${t.longitude})" title="${(+t.latitude).toFixed(4)},${(+t.longitude).toFixed(4)}" style="cursor:pointer;font-size:1rem">📍</span>` : '—';
@@ -3287,6 +3295,7 @@ async function loadTimeclock(year, month) {
     }
     return html;
   }).join('') : '<tr><td colspan="11" class="empty">暂无 Check In / Out 记录</td></tr>';
+  } catch(e) { console.error('timeclock table render error:', e); }
   renderPunchCalendar(entries);
 }
 
