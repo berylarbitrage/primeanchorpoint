@@ -1709,9 +1709,9 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <!-- Customer -->
-  <div id="accPanelCustomer" class="card" style="display:none">
+  <div id="accPanelCustomer" class="card" style="display:none;overflow-x:auto">
     <div id="pendingEntBanner" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.6rem 1rem;margin-bottom:1rem;font-size:.85rem;color:#92400e;font-weight:600"></div>
-    <table><thead><tr><th>公司名</th><th>联系人</th><th>邮箱</th><th>电话</th><th>EIN</th><th>审核状态</th><th>创建</th><th>操作</th></tr></thead>
+    <table style="font-size:.85rem;min-width:860px"><thead><tr><th style="min-width:180px">公司名</th><th>联系人</th><th>邮箱</th><th>电话</th><th>EIN</th><th>审核状态</th><th>创建</th><th style="min-width:160px">操作</th></tr></thead>
     <tbody id="customerAccountsTable"></tbody></table>
   </div>
 </div>
@@ -11629,31 +11629,35 @@ async function loadWorkerHistory(id) {
 async function loadCustomerAccounts() {
   const rows = await api('/admin/customer-accounts');
   if (!Array.isArray(rows)) return;
-  const pending = rows.filter(c => c.approval_status === 'pending');
+  // Only count verified (active=1) pending accounts for the banner
+  const pending = rows.filter(c => c.approval_status === 'pending' && c.active);
   const banner = document.getElementById('pendingEntBanner');
   if (pending.length) {
     banner.style.display = '';
     banner.textContent = `📨 有 ${pending.length} 个企业注册申请等待审核`;
   } else { banner.style.display = 'none'; }
   const statusBadge = (c) => {
+    if (c.approval_status === 'pending' && !c.active) return '<span style="color:var(--gray-400);font-weight:600">📧 待验证</span>';
     if (c.approval_status === 'pending') return '<span style="color:var(--orange);font-weight:600">⏳ 待审核</span>';
     if (c.approval_status === 'rejected') return '<span style="color:var(--red);font-weight:600">❌ 已拒绝</span>';
     return c.active ? '<span style="color:var(--green)">✅ 已通过</span>' : '<span style="color:var(--red)">禁用</span>';
   };
-  document.getElementById('customerAccountsTable').innerHTML = rows.length ? rows.map(c=>`<tr style="${c.approval_status==='pending'?'background:#fffef5':''}">
-    <td><strong>${esc(c.company_name)}</strong>${c.staffing_needs?`<br><span style="font-size:.72rem;color:var(--gray-400)">${esc(c.staffing_needs).slice(0,60)}</span>`:''}</td>
-    <td>${esc(c.contact_name||'')}</td>
-    <td>${esc(c.email)}</td>
-    <td>${esc(c.phone||'')}</td>
-    <td style="font-size:.82rem">${esc(c.ein||'—')}</td>
-    <td>${statusBadge(c)}</td>
-    <td>${(c.created_at||'').slice(0,10)}</td>
-    <td style="white-space:nowrap;display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
-      ${c.approval_status==='pending'?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
-      ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
-      ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
-      <button class="btn btn-sm" onclick="editCustomerAccount(${c.id})">编辑</button>
-      <button class="btn btn-sm btn-red" onclick="deleteCustomerAccount(${c.id},'${esc(c.company_name)}')">删除</button>
+  document.getElementById('customerAccountsTable').innerHTML = rows.length ? rows.map(c=>`<tr style="${c.approval_status==='pending'&&c.active?'background:#fffef5':''}">
+    <td style="max-width:200px"><strong>${esc(c.company_name)}</strong>${c.staffing_needs?`<br><span style="font-size:.72rem;color:var(--gray-400);white-space:normal;word-break:break-word">${esc(c.staffing_needs).slice(0,80)}${c.staffing_needs.length>80?'…':''}</span>`:''}</td>
+    <td style="white-space:nowrap">${esc(c.contact_name||'')}</td>
+    <td style="max-width:180px;word-break:break-all">${esc(c.email)}</td>
+    <td style="white-space:nowrap">${esc(c.phone||'')}</td>
+    <td style="font-size:.82rem;white-space:nowrap">${esc(c.ein||'—')}</td>
+    <td style="white-space:nowrap">${statusBadge(c)}</td>
+    <td style="white-space:nowrap">${(c.created_at||'').slice(0,10)}</td>
+    <td>
+      <div style="display:flex;gap:.25rem;flex-wrap:wrap;align-items:center">
+        ${c.approval_status==='pending'&&c.active?`<button class="btn btn-sm btn-green" onclick="openEntApprovalModal(${c.id})">审核</button>`:''}
+        ${c.approval_status==='approved'?(c.active?`<button class="btn btn-sm" style="background:#fff3e0;color:#c05621;border:1px solid #fbd38d" onclick="suspendCustomerAccount(${c.id},false)">暂停</button>`:`<button class="btn btn-sm btn-green" onclick="suspendCustomerAccount(${c.id},true)">恢复</button>`):''}
+        ${c.approval_status!=='pending'?`<button class="btn btn-sm btn-blue" onclick="openResetPwdModal('customer',${c.id},'${esc(c.company_name)}')">改密码</button>`:''}
+        <button class="btn btn-sm" onclick="editCustomerAccount(${c.id})">编辑</button>
+        <button class="btn btn-sm btn-red" onclick="deleteCustomerAccount(${c.id},'${esc(c.company_name)}')">删除</button>
+      </div>
     </td>
   </tr>`).join('') : '<tr><td colspan="8" class="empty">暂无客户账户</td></tr>';
 }
