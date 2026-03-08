@@ -1397,9 +1397,15 @@ tr:hover td{background:var(--sky-light)}
 
   <!-- Interviews pane -->
   <div id="ivPaneList" style="display:none">
-    <div class="card">
-      <div style="display:flex;gap:.75rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+    <div class="card" style="margin-bottom:1rem">
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
         <input type="text" id="ivSearch" placeholder="搜索姓名、电话..." oninput="filterInterviews()" style="flex:1;min-width:180px;padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <select id="ivTypeFilter" onchange="filterInterviews()" style="padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <option value="">全部类型</option>
+          <option value="onboarding">入职面试</option>
+          <option value="job">工作面试</option>
+          <option value="other">其他</option>
+        </select>
         <select id="ivStatusFilter" onchange="filterInterviews()" style="padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
           <option value="">全部状态</option>
           <option value="scheduled">已预约</option>
@@ -1409,9 +1415,8 @@ tr:hover td{background:var(--sky-light)}
           <option value="cancelled">已取消</option>
         </select>
       </div>
-      <table><thead><tr><th>姓名</th><th>电话</th><th>面试时间</th><th>地点</th><th>状态</th><th>身份验证</th><th>支付方式</th><th>操作</th></tr></thead>
-      <tbody id="ivInterviewsTable"></tbody></table>
     </div>
+    <div id="ivInterviewsTable"></div>
   </div>
 
   <!-- Locations pane -->
@@ -12371,76 +12376,103 @@ async function batchCreateSlots() {
 }
 
 function filterInterviews() {
-  const q = (document.getElementById('ivSearch')?.value || '').toLowerCase();
+  const q  = (document.getElementById('ivSearch')?.value || '').toLowerCase();
   const st = document.getElementById('ivStatusFilter')?.value || '';
+  const tp = document.getElementById('ivTypeFilter')?.value || '';
   const rows = _allInterviews.filter(i =>
-    (!q || (i.worker_name+i.worker_phone+i.worker_email).toLowerCase().includes(q)) &&
-    (!st || i.status === st)
+    (!q  || (i.worker_name+i.worker_phone+(i.worker_email||'')).toLowerCase().includes(q)) &&
+    (!st || i.status === st) &&
+    (!tp || (i.interview_type||'onboarding') === tp)
   );
   renderInterviews(rows);
 }
 
-const IV_STATUS = {
-  scheduled: '<span class="badge badge-yellow">⏳ 已预约</span>',
-  completed: '<span class="badge badge-blue">✔ 完成</span>',
-  passed:    '<span class="badge badge-green">✅ 通过</span>',
-  failed:    '<span class="badge badge-red">❌ 未通过</span>',
-  cancelled: '<span class="badge">已取消</span>',
+const IV_TYPE_LABEL = { onboarding:'入职面试', job:'工作面试', other:'其他' };
+const IV_TYPE_COLOR = {
+  onboarding: 'background:#ede9fe;color:#5b21b6',
+  job:        'background:#dbeafe;color:#1d4ed8',
+  other:      'background:#f3f4f6;color:#374151',
 };
-const ID_VERIFY_BADGE = {
-  '':          '',
-  'not_sent':  '',
-  'pending':   '<span style="background:#fef9c3;color:#854d0e;padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700">🕐 验证中</span>',
-  'completed': '<span style="background:#dbeafe;color:#1d4ed8;padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700">⏳ 待审批</span>',
-  'approved':  '<span style="background:#dcfce7;color:#15803d;padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700">✅ 已验证</span>',
-  'declined':  '<span style="background:#fee2e2;color:#dc2626;padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700">❌ 验证失败</span>',
+const IV_STATUS_STYLE = {
+  scheduled: 'background:#fef9c3;color:#854d0e',
+  completed: 'background:#dbeafe;color:#1d4ed8',
+  passed:    'background:#dcfce7;color:#15803d',
+  failed:    'background:#fee2e2;color:#dc2626',
+  cancelled: 'background:#f3f4f6;color:#9ca3af',
 };
+const IV_STATUS_LABEL = { scheduled:'⏳ 已预约', completed:'✔ 面试完成', passed:'✅ 通过', failed:'❌ 未通过', cancelled:'已取消' };
+const ID_VERIFY_LABEL = {
+  '':'—', not_sent:'未发送', pending:'🕐 验证中', completed:'⏳ 待审批', approved:'✅ 已验证', declined:'❌ 验证失败'
+};
+const ID_VERIFY_COLOR = {
+  pending:'background:#fef9c3;color:#854d0e', completed:'background:#dbeafe;color:#1d4ed8',
+  approved:'background:#dcfce7;color:#15803d', declined:'background:#fee2e2;color:#dc2626'
+};
+const PAY_LABEL = { '':'—', cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直存' };
 
 function renderInterviews(rows) {
-  const tbody = document.getElementById('ivInterviewsTable');
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无面试预约</td></tr>'; return; }
-  const idOpts = [
-    ['', '— 未设置 —'],
-    ['not_sent', '未发送'],
-    ['pending', '🕐 验证中'],
-    ['completed', '⏳ 待审批'],
-    ['approved', '✅ 已验证'],
-    ['declined', '❌ 验证失败'],
-  ];
-  const payOpts = [
-    ['', '— 未设置 —'],
-    ['cash', '💵 现金 Cash'],
-    ['check', '✅ 支票 Check'],
-    ['direct_deposit', '🏦 直存 Direct Deposit'],
-  ];
-  const sel = (opts, val, fn) =>
-    `<select style="padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem;max-width:140px" onchange="${fn}">
-      ${opts.map(([v,l])=>`<option value="${v}"${val===v?' selected':''}>${l}</option>`).join('')}
-    </select>`;
-  tbody.innerHTML = rows.map(i => {
-    const dt = new Date(i.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
-    const idSel  = sel(idOpts,  i.identity_status||'',  `setIvField(${i.id},'identity_status',this.value)`);
-    const paySel = sel(payOpts, i.payment_method||'',   `setIvField(${i.id},'payment_method',this.value)`);
-    const payBadge   = i.expected_pay ? `<div style="font-size:.72rem;color:#0369a1;margin-top:2px">💰 ${esc(i.expected_pay)}</div>` : '';
-    const skillsLine = i.skills ? `<div style="font-size:.72rem;color:var(--gray-500);margin-top:1px">🛠 ${esc(i.skills)}</div>` : '';
-    const noteLine   = i.applicant_note ? `<div style="font-size:.72rem;color:var(--gray-500);margin-top:1px;font-style:italic">💬 ${esc(i.applicant_note)}</div>` : '';
-    return `<tr>
-      <td><strong>${esc(i.worker_name||'')}</strong>${payBadge}${skillsLine}${noteLine}</td>
-      <td>${esc(i.worker_phone||'')}</td>
-      <td>${dt}</td>
-      <td style="font-size:.82rem">${esc(i.location||'—')}</td>
-      <td>${IV_STATUS[i.status] || i.status}</td>
-      <td>${idSel}</td>
-      <td>${paySel}</td>
-      <td style="white-space:nowrap;display:flex;gap:.3rem;flex-wrap:wrap">
-        ${i.status==='scheduled'?`<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1" onclick="setIvStatus(${i.id},'completed')">标记完成</button>`:''}
-        ${i.status==='completed'?`
-          <button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">通过并发链接</button>
-          <button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'failed')">未通过</button>`:''}
-        ${i.status==='passed'?`<button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">${i.doc_request_token?'重发链接':'发文件链接'}</button>`:''}
-        ${i.status==='scheduled'?`<button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'cancelled')">取消</button>`:''}
-      </td>
-    </tr>`;
+  const wrap = document.getElementById('ivInterviewsTable');
+  if (!rows.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:2.5rem;color:var(--gray-400);background:#fff;border-radius:10px;border:1px solid var(--gray-200)">暂无面试预约</div>';
+    return;
+  }
+  const ivTypeOpts = [['onboarding','入职面试'],['job','工作面试'],['other','其他']];
+  const idOpts  = [['','— 未设置 —'],['not_sent','未发送'],['pending','🕐 验证中'],['completed','⏳ 待审批'],['approved','✅ 已验证'],['declined','❌ 验证失败']];
+  const payOpts = [['','— 未设置 —'],['cash','💵 现金 Cash'],['check','✅ 支票 Check'],['direct_deposit','🏦 直存 Direct Deposit']];
+  const selStyle = 'padding:.28rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:#fff;cursor:pointer';
+  const mkSel = (opts, val, fn) =>
+    `<select style="${selStyle}" onchange="${fn}">${opts.map(([v,l])=>`<option value="${v}"${val===v?' selected':''}>${l}</option>`).join('')}</select>`;
+
+  wrap.innerHTML = rows.map(i => {
+    const dt  = i.slot_datetime ? new Date(i.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    const typ = i.interview_type || 'onboarding';
+    const typBadge  = `<span style="padding:.15rem .6rem;border-radius:20px;font-size:.73rem;font-weight:700;${IV_TYPE_COLOR[typ]||IV_TYPE_COLOR.other}">${IV_TYPE_LABEL[typ]||typ}</span>`;
+    const stBadge   = `<span style="padding:.15rem .6rem;border-radius:20px;font-size:.73rem;font-weight:700;${IV_STATUS_STYLE[i.status]||'background:#f3f4f6;color:#374151'}">${IV_STATUS_LABEL[i.status]||i.status}</span>`;
+    const idVal  = i.identity_status||'';
+    const payVal = i.payment_method||'';
+    const idBadge  = idVal && idVal!=='not_sent' ? `<span style="font-size:.73rem;font-weight:600;padding:.12rem .5rem;border-radius:20px;${ID_VERIFY_COLOR[idVal]||''}">${ID_VERIFY_LABEL[idVal]||idVal}</span>` : `<span style="color:var(--gray-400);font-size:.78rem">—</span>`;
+    const payBadge = payVal ? `<span style="font-size:.78rem;color:var(--gray-600)">${PAY_LABEL[payVal]||payVal}</span>` : `<span style="color:var(--gray-400);font-size:.78rem">—</span>`;
+    const interests = i.position_interests ? `<span style="font-size:.75rem;color:#0369a1">🛠 ${esc(i.position_interests)}</span>` : '';
+    const workStatus= i.work_status ? `<span style="font-size:.75rem;color:var(--gray-500)">• ${esc(i.work_status)}</span>` : '';
+    const dur = i.duration_min ? `${i.duration_min}min` : '';
+    return `<div style="background:#fff;border:1px solid var(--gray-200);border-radius:10px;padding:1rem 1.2rem;margin-bottom:.75rem">
+      <div style="display:flex;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+        <!-- Left: worker info -->
+        <div style="flex:1;min-width:180px">
+          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.3rem">
+            <span style="font-weight:700;font-size:.95rem;color:var(--gray-800)">${esc(i.worker_name||'—')}</span>
+            ${typBadge}
+          </div>
+          <div style="font-size:.82rem;color:var(--gray-500);display:flex;gap:.75rem;flex-wrap:wrap">
+            ${i.worker_phone?`<span>📞 ${esc(i.worker_phone)}</span>`:''}
+            ${i.worker_email?`<span>📧 ${esc(i.worker_email)}</span>`:''}
+          </div>
+          ${interests||workStatus?`<div style="margin-top:.3rem;display:flex;gap:.5rem;flex-wrap:wrap">${interests}${workStatus}</div>`:''}
+        </div>
+        <!-- Middle: time & location -->
+        <div style="flex:1;min-width:180px">
+          <div style="font-size:.88rem;font-weight:600;color:var(--gray-700)">🗓 ${dt}${dur?` <span style="font-size:.75rem;font-weight:400;color:var(--gray-400)">(${dur})</span>`:''}</div>
+          <div style="font-size:.82rem;color:var(--gray-500);margin-top:.25rem">📍 ${esc(i.location||'—')}</div>
+          <div style="margin-top:.4rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">
+            ${stBadge}
+          </div>
+        </div>
+        <!-- Right: meta + actions -->
+        <div style="display:flex;flex-direction:column;gap:.4rem;align-items:flex-end;min-width:160px">
+          <div style="display:flex;gap:.3rem;flex-wrap:wrap;justify-content:flex-end">
+            ${i.status==='scheduled'?`<button class="btn btn-sm" style="background:#e0f2fe;color:#0369a1" onclick="setIvStatus(${i.id},'completed')">标记完成</button>`:''}
+            ${i.status==='completed'?`<button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">通过并发链接</button><button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'failed')">未通过</button>`:''}
+            ${i.status==='passed'?`<button class="btn btn-sm btn-green" onclick="ivPassAndSend(${i.id})">${i.doc_request_token?'重发链接':'发文件链接'}</button>`:''}
+            ${i.status==='scheduled'?`<button class="btn btn-sm btn-red" onclick="setIvStatus(${i.id},'cancelled')">取消</button>`:''}
+          </div>
+          <div style="display:grid;grid-template-columns:auto auto;gap:.3rem .6rem;align-items:center;font-size:.78rem;color:var(--gray-500)">
+            <span>类型</span>${mkSel(ivTypeOpts, typ, `setIvField(${i.id},'interview_type',this.value)`)}
+            <span>身份验证</span>${mkSel(idOpts,  idVal,  `setIvField(${i.id},'identity_status',this.value)`)}
+            <span>支付方式</span>${mkSel(payOpts, payVal, `setIvField(${i.id},'payment_method',this.value)`)}
+          </div>
+        </div>
+      </div>
+    </div>`;
   }).join('');
 }
 

@@ -1005,6 +1005,8 @@ try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
 // Migrate interview_slots: add reserved worker column for admin-arranged times
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN reserved_for_worker_account_id INTEGER DEFAULT NULL"); } catch {}
+// Migrate interviews: add interview_type
+try { db.exec("ALTER TABLE interviews ADD COLUMN interview_type TEXT DEFAULT 'onboarding'"); } catch {}
 
 const WORKER_POSITIONS = [
   { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
@@ -8101,7 +8103,10 @@ app.delete('/api/admin/interview-slots/:id', requireAdmin, (req, res) => {
 // Admin: list all interviews
 app.get('/api/admin/interviews', requireAdmin, (req, res) => {
   const rows = db.prepare(`
-    SELECT i.*, s.slot_datetime, s.duration_min, s.location,
+    SELECT i.id, i.worker_account_id, i.slot_id, i.status, i.admin_notes,
+      i.doc_request_token, i.created_at, i.updated_at,
+      COALESCE(i.interview_type,'onboarding') AS interview_type,
+      s.slot_datetime, s.duration_min, s.location,
       w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
       w.work_status, w.position_interests,
       w.identity_status, w.persona_inquiry_id, w.identity_sent_at,
@@ -8189,11 +8194,11 @@ app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
 
 // Admin: update interview status / notes
 app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
-  const { status, admin_notes, identity_status, payment_method } = req.body;
+  const { status, admin_notes, identity_status, payment_method, interview_type } = req.body;
   const row = db.prepare('SELECT * FROM interviews WHERE id=?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  db.prepare(`UPDATE interviews SET status=?, admin_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(status ?? row.status, admin_notes ?? row.admin_notes, req.params.id);
+  db.prepare(`UPDATE interviews SET status=?, admin_notes=?, interview_type=COALESCE(?,interview_type,'onboarding'), updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(status ?? row.status, admin_notes ?? row.admin_notes, interview_type ?? null, req.params.id);
   if (status === 'cancelled' && row.status !== 'cancelled') {
     db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
   }
