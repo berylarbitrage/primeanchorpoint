@@ -554,6 +554,11 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_times_json TEXT
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN visible INTEGER DEFAULT 1`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN langs TEXT DEFAULT 'en'`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN title_zh TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN title_es TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN desc_zh TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN desc_es TEXT DEFAULT ''`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
@@ -633,6 +638,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
@@ -942,6 +948,14 @@ setTimeout(() => {
   try {
     const unlinked = db.prepare("SELECT id FROM worker_accounts WHERE active=1 AND worker_code IS NULL").all();
     unlinked.forEach(w => { try { activateWorkerAccount(w.id); } catch {} });
+    // Backfill employees.inquiry_id from existing linked worker_accounts
+    db.prepare(`
+      UPDATE employees SET inquiry_id = (
+        SELECT wa.linked_inquiry_id FROM worker_accounts wa
+        WHERE wa.employee_id = employees.id AND wa.linked_inquiry_id IS NOT NULL
+        ORDER BY wa.id DESC LIMIT 1
+      ) WHERE inquiry_id IS NULL
+    `).run();
   } catch {}
 }, 0);
 // Migrate: richer fields on job_applications
@@ -1326,6 +1340,36 @@ setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
 // work_schedule JSON. Skips terminated / resigned / cancelled.
 const _WEEK_DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
 
+// Normalize work_schedule to a {mon:{rest,start,end}, ...} days map.
+// Handles both formats:
+//   New: { type:"estimate", days:{ mon:{rest,start,end}, sat:{...}, ... } }
+//   Legacy: { Mon:{start,end}, Sat:{start,end}, ... }  (flat PascalCase, no rest field)
+// Falls back to jobSchedJson when the assignment schedule has no usable days.
+function _parseSchedDays(schedJson, jobSchedJson) {
+  function _extract(s) {
+    if (!s || typeof s !== 'object') return {};
+    if (s.days && typeof s.days === 'object') return s.days;
+    // Legacy flat format
+    const out = {};
+    _WEEK_DAY_KEYS.forEach(k => {
+      const v = s[k] || s[k.charAt(0).toUpperCase() + k.slice(1)];
+      if (v && (v.start || v.end)) out[k] = { rest: false, start: v.start || '', end: v.end || '' };
+    });
+    return out;
+  }
+  let days = _extract(schedJson);
+  // If assignment has no usable work days, fall back to job schedule
+  const hasWork = Object.values(days).some(d => !d.rest && (d.start || d.end));
+  if (!hasWork && jobSchedJson) {
+    const jobDays = _extract(jobSchedJson);
+    // Merge: use job days for any day not explicitly set in assignment
+    _WEEK_DAY_KEYS.forEach(k => {
+      if (!days[k] && jobDays[k]) days[k] = jobDays[k];
+    });
+  }
+  return days;
+}
+
 async function generateWeeklyShiftConfirmations() {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -1347,7 +1391,7 @@ async function generateWeeklyShiftConfirmations() {
   // Active assignments only (not terminated / resigned / cancelled)
   const assignments = db.prepare(`
     SELECT a.id, a.work_schedule,
-           j.title,
+           j.title, j.work_schedule AS job_work_schedule,
            w.id as worker_id, w.phone, w.first_name, w.name as wname
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
@@ -1362,10 +1406,12 @@ async function generateWeeklyShiftConfirmations() {
   for (const a of assignments) {
     let sched = {};
     try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+    let jobSched = null;
+    try { jobSched = JSON.parse(a.job_work_schedule || 'null'); } catch {}
     const workStart = sched.workStart || null;
     const workEnd = sched.workEnd || null;
     const untilFurther = !!sched.untilFurther;
-    const days = sched.days || {};
+    const days = _parseSchedDays(sched, jobSched);
 
     for (const { date, dayKey } of weekDates) {
       if (workStart && date < workStart) continue;
@@ -1411,10 +1457,12 @@ async function generateWeeklyShiftConfirmations() {
     for (const a of assignments) {
       let sched = {};
       try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+      let jobSched = null;
+      try { jobSched = JSON.parse(a.job_work_schedule || 'null'); } catch {}
       const workStart = sched.workStart || null;
       const workEnd = sched.workEnd || null;
       const untilFurther = !!sched.untilFurther;
-      const days = sched.days || {};
+      const days = _parseSchedDays(sched, jobSched);
       for (const { date, dayKey } of nextWeekDates) {
         if (workStart && date < workStart) continue;
         if (!untilFurther && workEnd && date > workEnd) continue;
@@ -1584,32 +1632,47 @@ function verifyPin(pin, salt, hash) {
   } catch { return false; }
 }
 
-// ─── Auto-generate employee ID: EMEE-CITY-MMDDYY-000001 ───
-function nextEmployeeId(city, hireDate) {
-  const d = hireDate ? new Date(hireDate) : new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  const dateStr = mm + dd + yy;
-  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'EMEE-%' ORDER BY id DESC LIMIT 1").get();
+// ─── US state → IANA timezone ───
+const STATE_TZ = {
+  AL:'America/Chicago',AK:'America/Anchorage',AZ:'America/Phoenix',AR:'America/Chicago',
+  CA:'America/Los_Angeles',CO:'America/Denver',CT:'America/New_York',DE:'America/New_York',
+  FL:'America/New_York',GA:'America/New_York',HI:'Pacific/Honolulu',ID:'America/Boise',
+  IL:'America/Chicago',IN:'America/Indiana/Indianapolis',IA:'America/Chicago',KS:'America/Chicago',
+  KY:'America/New_York',LA:'America/Chicago',ME:'America/New_York',MD:'America/New_York',
+  MA:'America/New_York',MI:'America/Detroit',MN:'America/Chicago',MS:'America/Chicago',
+  MO:'America/Chicago',MT:'America/Denver',NE:'America/Chicago',NV:'America/Los_Angeles',
+  NH:'America/New_York',NJ:'America/New_York',NM:'America/Denver',NY:'America/New_York',
+  NC:'America/New_York',ND:'America/Chicago',OH:'America/New_York',OK:'America/Chicago',
+  OR:'America/Los_Angeles',PA:'America/New_York',RI:'America/New_York',SC:'America/New_York',
+  SD:'America/Chicago',TN:'America/Chicago',TX:'America/Chicago',UT:'America/Denver',
+  VT:'America/New_York',VA:'America/New_York',WA:'America/Los_Angeles',WV:'America/New_York',
+  WI:'America/Chicago',WY:'America/Denver',DC:'America/New_York',
+};
+function localDateStr(state, dateObj) {
+  const tz = STATE_TZ[(state||'').toUpperCase()] || 'America/Chicago';
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, month:'2-digit', day:'2-digit', year:'numeric' }).formatToParts(dateObj || new Date());
+  const p = Object.fromEntries(parts.map(x => [x.type, x.value]));
+  return p.month + p.day + String(p.year).slice(-2);
+}
+
+// ─── Auto-generate employee ID: STAFF-ST-MMDDYY-0001 ───
+function nextEmployeeId(state, hireDate) {
+  const dateStr = localDateStr(state, hireDate ? new Date(hireDate) : null);
+  const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
   if (last) {
     const parts = last.employee_id.split('-');
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `EMEE-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `STAFF-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
-// ─── Auto-generate worker code: PORT-CITY-MMDDYY-000001 ───
-function generateWorkerCode(city, prefix = 'PORT') {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  const dateStr = mm + dd + yy;
-  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
+// ─── Auto-generate worker code: PORT-ST-MMDDYY-0001 ───
+function generateWorkerCode(state, prefix = 'PORT') {
+  const dateStr = localDateStr(state);
+  const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
   const last = db.prepare(`SELECT worker_code FROM worker_accounts WHERE worker_code LIKE ? ORDER BY id DESC LIMIT 1`).get(prefix + '-%');
   let num = 1;
   if (last) {
@@ -1617,7 +1680,7 @@ function generateWorkerCode(city, prefix = 'PORT') {
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `${prefix}-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `${prefix}-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
 // ─── On verification: assign worker_code + ensure linked inquiry exists ───
@@ -1627,34 +1690,30 @@ function activateWorkerAccount(accountId, prefix) {
   // Generate worker_code if not already set
   if (!acc.worker_code) {
     const codePrefix = prefix || 'PORT';
-    const code = generateWorkerCode(acc.city, codePrefix);
+    const code = generateWorkerCode(acc.state, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
-  // Ensure a linked inquiry exists (by phone → email → name → create)
-  const normPhone = s => (s || '').replace(/\D/g, '').slice(-10);
-  const wPhone = normPhone(acc.phone);
-  const wEmail = (acc.email || '').toLowerCase();
-  const wName  = (acc.name || '').trim();
-  let inqId = null;
-  if (wPhone) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE phone10(phone) = ?').get(wPhone);
-    if (row) inqId = row.id;
+  // Ensure a linked inquiry exists — prefer employee record's stored inquiry_id (survives account deletion/re-creation)
+  if (!acc.linked_inquiry_id) {
+    let inquiryId = null;
+    // If linked to an employee (STAFF-xxx), use that employee's persistent inquiry_id
+    if (acc.employee_id) {
+      const emp = db.prepare('SELECT inquiry_id FROM employees WHERE id=?').get(acc.employee_id);
+      if (emp && emp.inquiry_id) {
+        inquiryId = emp.inquiry_id;
+      }
+    }
+    if (!inquiryId) {
+      // Create a new inquiry and store it on the employee record for future re-registrations
+      const wName = (acc.name || '').trim();
+      const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
+      inquiryId = r.lastInsertRowid;
+      if (acc.employee_id) {
+        db.prepare('UPDATE employees SET inquiry_id=? WHERE id=?').run(inquiryId, acc.employee_id);
+      }
+    }
+    db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inquiryId, accountId);
   }
-  if (!inqId && wEmail) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE lower(email)=?').get(wEmail);
-    if (row) inqId = row.id;
-  }
-  if (!inqId && wName) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE lower(trim(name))=?').get(wName.toLowerCase());
-    if (row) inqId = row.id;
-  }
-  if (!inqId) {
-    // No existing inquiry — create one so dispatch always works
-    const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
-    inqId = r.lastInsertRowid;
-  }
-  // Persist the link directly on the worker account
-  db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inqId, accountId);
 }
 
 // ─── Auto-generate employer ID: EMER-CITY-MMDDYY-000001 ───
@@ -3522,6 +3581,7 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
     db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(id);
+    db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(id);
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(id); } catch(_) {}
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(id);
     res.json({ success: true });
@@ -3876,15 +3936,17 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
     (partner_id, title, type, category, location, pay, pay_period, lang, lang_name, description, urgent,
      work_auth, benefits, schedule, company_id, company_name, employment_type,
      work_days, work_start, work_end, work_schedule, schedule_days, schedule_start, schedule_end,
-     job_status, active, close_reason, close_note, headcount)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+     job_status, active, close_reason, close_note, headcount,
+     langs, title_zh, title_es, desc_zh, desc_es)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
     d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
     d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
     d.company_id||null, d.company_name||'', d.employment_type||'',
     d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
     d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
-    jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1
+    jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1,
+    d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||''
   );
   logJobAudit.run(r.lastInsertRowid, 'created', JSON.stringify({ title: d.title, company_name: d.company_name||'' }), req.userName);
   res.json({ success: true, id: r.lastInsertRowid });
@@ -3898,7 +3960,8 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
     description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
     company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?, work_schedule=?,
     schedule_days=?, schedule_start=?, schedule_end=?,
-    job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
+    job_status=?, close_reason=?, close_note=?, headcount=?,
+    langs=?, title_zh=?, title_es=?, desc_zh=?, desc_es=? WHERE id=?`)
     .run(
       d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
       d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
@@ -3907,6 +3970,7 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
       d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
       d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
       jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
+      d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||'',
       req.params.id
     );
   // Determine action type
@@ -4766,7 +4830,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
     }
   }
-  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
+  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.state, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
   if (d.ssn) {
     const digits = d.ssn.replace(/\D/g, '');
@@ -5655,9 +5719,32 @@ app.post('/api/worker/login', (req, res) => {
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
   const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
-  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
+  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
   res.json({ account: w, employee: emp, compliance_docs: docs });
+});
+
+// ─── Worker Profile: Address & Emergency Contact ───
+app.get('/api/worker/maps-key', requireWorker, (req, res) => {
+  const key = process.env.GOOGLE_MAPS_API_KEY || '';
+  res.json({ key });
+});
+
+app.put('/api/worker/profile/address', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '未关联员工档案' });
+  const { address, street2, city, state, zip } = req.body || {};
+  if (!address || !address.trim()) return res.status(400).json({ error: '请填写街道地址' });
+  db.prepare('UPDATE employees SET address=?, street2=?, city=?, state=?, zip=? WHERE id=?')
+    .run((address||'').trim(), (street2||'').trim(), (city||'').trim(), (state||'').trim(), (zip||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
+});
+
+app.put('/api/worker/profile/emergency', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '未关联员工档案' });
+  const { emergency_name, emergency_phone, emergency_relation } = req.body || {};
+  db.prepare('UPDATE employees SET emergency_name=?, emergency_phone=?, emergency_relation=? WHERE id=?')
+    .run((emergency_name||'').trim(), (emergency_phone||'').trim(), (emergency_relation||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
 });
 
 // ─── Contact Change (phone / email) with dual verification ───
@@ -5716,6 +5803,84 @@ app.post('/api/worker/contact/confirm-change', requireWorker, async (req, res) =
   if (field === 'phone') db.prepare('UPDATE worker_accounts SET phone=? WHERE id=?').run(pending.new_value, req.workerId);
   else db.prepare('UPDATE worker_accounts SET email=? WHERE id=?').run(pending.new_value, req.workerId);
   _pendingContactChange.delete(key);
+  res.json({ success: true });
+});
+
+// ── Sequential contact-change flow ──────────────────────────────────
+// Step 1: Send verification code to the OLD contact
+app.post('/api/worker/contact/send-old-code', requireWorker, async (req, res) => {
+  const { field } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const w = db.prepare('SELECT phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const oldVal = w[field];
+  if (!oldVal) {
+    // No old contact on file – skip old verification
+    _pendingContactChange.set(`${req.workerId}_${field}_s1`, { old_verified: true, expires: Date.now() + 15*60*1000 });
+    return res.json({ success: true, old_sent: false, no_old: true });
+  }
+  const code = String(Math.floor(100000 + Math.random()*900000));
+  const expires = Date.now() + 15*60*1000;
+  _pendingContactChange.set(`${req.workerId}_${field}_s1`, { old_code: code, expires });
+  let sent = false;
+  if (field === 'phone') {
+    if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(oldVal); sent = true; }
+    else if (twilioClient && TWILIO_FROM) { sent = await sendSMS(oldVal, `[Prime Anchorpoint] Your verification code: ${code} (valid 15 min)`); }
+  } else {
+    sent = await sendEmail(oldVal, 'Prime Anchorpoint Verification Code', `Your verification code: ${code}\nValid for 15 minutes.`);
+  }
+  console.log(`[CC-S1] Worker ${req.workerId} field=${field} old_code=${code}`);
+  res.json({ success: true, old_sent: sent });
+});
+
+// Step 2: Verify old code, then send code to the NEW contact
+app.post('/api/worker/contact/verify-old-send-new', requireWorker, async (req, res) => {
+  const { field, old_code, new_value } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  if (!new_value || !new_value.trim()) return res.status(400).json({ error: field==='phone' ? 'Please enter new phone number' : 'Please enter new email' });
+  const val = new_value.trim();
+  const taken = field === 'phone'
+    ? db.prepare('SELECT id FROM worker_accounts WHERE phone=? AND id!=?').get(val, req.workerId)
+    : db.prepare('SELECT id FROM worker_accounts WHERE email=? AND id!=?').get(val, req.workerId);
+  if (taken) return res.status(400).json({ error: field==='phone' ? '该手机号已被其他账号使用' : '该邮箱已被其他账号注册' });
+  const w = db.prepare('SELECT phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const s1 = _pendingContactChange.get(`${req.workerId}_${field}_s1`);
+  if (w[field]) {
+    if (!s1 || Date.now() > s1.expires) return res.status(400).json({ error: '验证码已过期，请重新发送' });
+    let oldOk = false;
+    if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID) {
+      oldOk = await checkVerifyCode(w.phone, old_code);
+    } else { oldOk = (old_code && old_code.trim() === s1.old_code); }
+    if (!oldOk) return res.status(400).json({ error: field==='phone' ? '旧手机号验证码不正确' : '旧邮箱验证码不正确' });
+  }
+  _pendingContactChange.delete(`${req.workerId}_${field}_s1`);
+  const newCode = String(Math.floor(100000 + Math.random()*900000));
+  const expires = Date.now() + 15*60*1000;
+  _pendingContactChange.set(`${req.workerId}_${field}_s2`, { new_value: val, new_code: newCode, expires });
+  let newSent = false;
+  if (field === 'phone') {
+    if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(val); newSent = true; }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] Your new phone verification code: ${newCode} (valid 15 min)`); }
+  } else {
+    newSent = await sendEmail(val, 'Prime Anchorpoint New Email Verification', `Your verification code: ${newCode}\nValid for 15 minutes.`);
+  }
+  console.log(`[CC-S2] Worker ${req.workerId} field=${field} new_code=${newCode}`);
+  res.json({ success: true, new_sent: newSent });
+});
+
+// Step 3: Verify new code and update DB
+app.post('/api/worker/contact/confirm-new', requireWorker, async (req, res) => {
+  const { field, new_code } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const s2 = _pendingContactChange.get(`${req.workerId}_${field}_s2`);
+  if (!s2 || Date.now() > s2.expires) return res.status(400).json({ error: '验证码已过期，请重新发送' });
+  let newOk = false;
+  if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID) {
+    newOk = await checkVerifyCode(s2.new_value, new_code);
+  } else { newOk = (new_code && new_code.trim() === s2.new_code); }
+  if (!newOk) return res.status(400).json({ error: field==='phone' ? '新手机号验证码不正确' : '新邮箱验证码不正确' });
+  if (field === 'phone') db.prepare('UPDATE worker_accounts SET phone=? WHERE id=?').run(s2.new_value, req.workerId);
+  else db.prepare('UPDATE worker_accounts SET email=? WHERE id=?').run(s2.new_value, req.workerId);
+  _pendingContactChange.delete(`${req.workerId}_${field}_s2`);
   res.json({ success: true });
 });
 
@@ -5817,14 +5982,18 @@ app.post('/api/worker/me/verify-change', requireWorker, (req, res) => {
 });
 
 app.get('/api/worker/jobs', requireWorker, (req, res) => {
-  const jobs = db.prepare(`
+  const lang = req.query.lang;
+  const base = `
     SELECT j.id, j.title, j.type, j.location, j.pay, j.pay_period,
            j.work_auth, j.benefits, j.work_days, j.work_start, j.work_end,
-           j.employment_type, j.description, j.urgent,
+           j.employment_type, j.description, j.urgent, j.lang, j.langs,
+           j.title_zh, j.title_es, j.desc_zh, j.desc_es,
            COALESCE(NULLIF(j.company_name,''), p.name, '') AS company_name
     FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id
-    WHERE j.active=1 ORDER BY j.created_at DESC
-  `).all();
+    WHERE j.active=1`;
+  const jobs = (lang && lang !== 'all')
+    ? db.prepare(base + ` AND (j.langs IS NULL OR j.langs='' OR instr(','||j.langs||',', ','||?||',')>0) ORDER BY j.created_at DESC`).all(lang)
+    : db.prepare(base + ' ORDER BY j.created_at DESC').all();
   const applied = db.prepare('SELECT job_id FROM job_applications WHERE worker_account_id=?').all(req.workerId).map(r => r.job_id);
   res.json(jobs.map(j => ({ ...j, applied: applied.includes(j.id) })));
 });
@@ -5845,14 +6014,28 @@ app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
 
 app.get('/api/worker/timeclock', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json([]);
+  const y = parseInt(req.query.year)  || new Date().getFullYear();
+  const m = parseInt(req.query.month) || new Date().getMonth() + 1;
+  const from = `${y}-${String(m).padStart(2,'0')}-01`;
+  const to   = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
+  // Use client timezone offset so entries appear on the correct local calendar day
+  const tzOffsetMinutes = parseInt(req.query.tz_offset) || 0;
+  const localOffsetMinutes = -tzOffsetMinutes;
+  const tzSign = localOffsetMinutes >= 0 ? '+' : '-';
+  const tzAbsMins = Math.abs(localOffsetMinutes);
+  const tzModifier = `${tzSign}${tzAbsMins} minutes`;
   const entries = db.prepare(`
     SELECT t.*, j.title AS job_title, j.company_name AS job_company,
            COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
     FROM time_entries t
     LEFT JOIN jobs j ON t.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
-    WHERE t.employee_id = ? ORDER BY t.clock_in DESC LIMIT 200
-  `).all(req.workerEmployeeId);
+    WHERE t.employee_id = ?
+      AND t.clock_in IS NOT NULL
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
+    ORDER BY t.clock_in DESC LIMIT 500
+  `).all(req.workerEmployeeId, from, to);
   res.json(entries);
 });
 
@@ -5992,25 +6175,19 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     WHERE ej.employee_id = ? AND ej.job_id = ? AND ej.status = 'active'
   `).get(req.workerEmployeeId, job_id);
   if (!activeJob) {
-    const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+    const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
     const linkedInqId = wa?.linked_inquiry_id || null;
-    const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-    const wEmail = (wa?.email || '').toLowerCase();
-    activeJob = db.prepare(`
-      SELECT a.id, a.job_id, j.title, j.site_id,
-             js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.job_id = ? AND a.status != 'cancelled'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC LIMIT 1
-    `).get(job_id, linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+    if (linkedInqId) {
+      activeJob = db.prepare(`
+        SELECT a.id, a.job_id, j.title, j.site_id,
+               js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+        FROM assignments a
+        JOIN jobs j ON a.job_id = j.id
+        LEFT JOIN job_sites js ON j.site_id = js.id
+        WHERE a.job_id = ? AND a.status != 'cancelled' AND a.inquiry_id = ?
+        ORDER BY a.assigned_at DESC LIMIT 1
+      `).get(job_id, linkedInqId);
+    }
   }
   if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
 
@@ -6117,6 +6294,7 @@ app.get('/api/admin/punch-photo/:filename', (req, res) => {
 
 // ─── Worker task (my-tasks) endpoints ────────────────────────────
 app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json([]);
   const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!wa || !wa.linked_inquiry_id) return res.json([]);
   const tasks = db.prepare(`
@@ -6127,7 +6305,7 @@ app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
            j.work_days, j.work_start, j.work_end, j.description
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
-    WHERE a.inquiry_id = ? AND a.status != 'cancelled'
+    WHERE a.inquiry_id = ? AND (a.status != 'cancelled' OR a.worker_response = 'rejected')
     ORDER BY a.assigned_at DESC
   `).all(wa.linked_inquiry_id);
   res.json(tasks);
@@ -6152,14 +6330,22 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
 // ─── Work calendar endpoint ───────────────────────────────────────
 // Returns shift_confirmations + active assignments + punch records for a given month
 app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
+  // Require employee link — unlinked portal accounts have no work schedule to show
+  if (!req.workerEmployeeId) return res.json({ confirmations: [], assignments: [], punchDates: [] });
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
-  if (!wa || !wa.linked_inquiry_id) return res.json({ confirmations: [], assignments: [], punchDates: [] });
+  const linkedInqId = wa?.linked_inquiry_id || null;
   const y = parseInt(req.query.year) || new Date().getFullYear();
   const m = parseInt(req.query.month) || new Date().getMonth() + 1;
   const fromStr = `${y}-${String(m).padStart(2,'0')}-01`;
   const lastDay = new Date(y, m, 0).getDate();
   const toStr = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
-  const confirmations = db.prepare(`
+  // tz_offset is browser's getTimezoneOffset() — negate it to get UTC→local offset in minutes
+  const tzOffsetMinutes = parseInt(req.query.tz_offset) || 0;
+  const localOffsetMinutes = -tzOffsetMinutes;
+  const tzSign = localOffsetMinutes >= 0 ? '+' : '-';
+  const tzAbsMins = Math.abs(localOffsetMinutes);
+  const tzModifier = `${tzSign}${tzAbsMins} minutes`;
+  const confirmations = linkedInqId ? db.prepare(`
     SELECT sc.id, sc.date, sc.status, sc.shift_start, sc.shift_end,
            j.title, j.location AS job_location, j.description AS job_description,
            j.pay AS job_pay, j.company_name,
@@ -6169,21 +6355,31 @@ app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND sc.date >= ? AND sc.date <= ?
     ORDER BY sc.date ASC
-  `).all(wa.linked_inquiry_id, fromStr, toStr);
-  const assignments = db.prepare(`
+  `).all(linkedInqId, fromStr, toStr) : [];
+  const assignments = linkedInqId ? db.prepare(`
     SELECT a.id, a.work_schedule, a.start_date, j.title, j.location AS job_location,
            j.description AS job_description, j.pay AS job_pay, j.company_name,
-           a.work_address, a.pay_rate, a.pay_type
+           a.work_address, a.pay_rate, a.pay_type,
+           j.work_schedule AS job_work_schedule
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')
-  `).all(wa.linked_inquiry_id);
+  `).all(linkedInqId) : [];
   // Include actual punch records so weekend work (outside recurring schedule) is visible
+  // Use client's timezone offset so punches appear on the correct local calendar day
   const punchDates = req.workerEmployeeId ? db.prepare(`
-    SELECT DISTINCT date(clock_in) AS date
+    SELECT DISTINCT strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) AS date
     FROM time_entries
-    WHERE employee_id = ? AND date(clock_in) >= ? AND date(clock_in) <= ?
+    WHERE employee_id = ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
   `).all(req.workerEmployeeId, fromStr, toStr).map(r => r.date) : [];
+  // Debug: log assignment schedules to diagnose missing Sunday
+  assignments.forEach(a => {
+    let ws = {}; try { ws = JSON.parse(a.work_schedule || '{}'); } catch {}
+    const days = ws.days || ws;
+    console.log(`[work-calendar debug] assignment ${a.id}: sun=${JSON.stringify(days.sun || days.Sun)}, sat=${JSON.stringify(days.sat || days.Sat)}, workStart=${ws.workStart||a.start_date}, workEnd=${ws.workEnd}`);
+  });
   res.json({ confirmations, assignments, punchDates });
 });
 
@@ -6416,10 +6612,8 @@ app.get('/api/admin/all-referrals', requireAdmin, (req, res) => {
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
-  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-  const wEmail = (wa?.email || '').toLowerCase();
 
   const open = req.workerEmployeeId
     ? db.prepare(`SELECT t.*, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
@@ -6434,7 +6628,7 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
       SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
              COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
              j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
-             a.work_schedule
+             a.work_schedule, a.work_lat, a.work_lng, a.work_radius
       FROM employee_jobs ej
       JOIN jobs j ON ej.job_id = j.id
       LEFT JOIN job_sites js ON j.site_id = js.id
@@ -6444,31 +6638,21 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     for (const j of ejJobs) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
   }
 
-  // Always also check assignments table — add jobs not already covered by employee_jobs
+  // Also check assignments table — add jobs not already covered by employee_jobs
   // Only include accepted assignments (worker_response = 'accepted')
-  const aJobs = db.prepare(`
+  const aJobs = linkedInqId ? db.prepare(`
     SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
            COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
            j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
-           a.work_schedule
+           a.work_schedule, a.work_lat, a.work_lng, a.work_radius
     FROM assignments a
     JOIN jobs j ON a.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
-    JOIN inquiries i ON a.inquiry_id = i.id
-    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
-      AND (
-        (? IS NOT NULL AND a.inquiry_id = ?)
-        OR (? != '' AND phone10(i.phone) = ?)
-        OR (? != '' AND lower(i.email) = ?)
-      )
+    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted' AND a.inquiry_id = ?
     ORDER BY a.assigned_at DESC
-  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  `).all(linkedInqId) : [];
   for (const j of aJobs) {
     if (!seenActiveJobIds.has(j.job_id)) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
-  }
-  // Update linked_inquiry_id if we found a match via assignments and it wasn't set
-  if (aJobs.length && !linkedInqId) {
-    try { activateWorkerAccount(req.workerId); } catch {}
   }
 
   // Count pending (unaccepted) tasks
@@ -6516,10 +6700,9 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
 
 // Worker: get currently dispatched (active) jobs with site info
 app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
-  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!req.workerEmployeeId) return res.json([]);
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-  const wEmail = (wa?.email || '').toLowerCase();
 
   const seenJobIds = new Set();
   let jobs = [];
@@ -6541,8 +6724,8 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
     for (const j of ejJobs) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
-  // Always also include assignments — add any job_ids not already covered above
-  const aJobs = db.prepare(`
+  // Also include assignments — add any job_ids not already covered above
+  const aJobs = linkedInqId ? db.prepare(`
     SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
            j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
            j.pay, j.pay_period, j.company_name, j.site_id,
@@ -6551,15 +6734,9 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
     FROM assignments a
     JOIN jobs j ON a.job_id = j.id
     LEFT JOIN job_sites js ON j.site_id = js.id
-    JOIN inquiries i ON a.inquiry_id = i.id
-    WHERE a.status != 'cancelled'
-      AND (
-        (? IS NOT NULL AND a.inquiry_id = ?)
-        OR (? != '' AND phone10(i.phone) = ?)
-        OR (? != '' AND lower(i.email) = ?)
-      )
+    WHERE a.status != 'cancelled' AND a.inquiry_id = ?
     ORDER BY a.assigned_at DESC
-  `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  `).all(linkedInqId) : [];
   for (const j of aJobs) {
     if (!seenJobIds.has(j.job_id)) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
@@ -6625,8 +6802,13 @@ app.post('/api/worker/reset-password', async (req, res) => {
     if (entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
   }
 
-  const { hash, salt } = hashPassword(new_password);
-  db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  const account = db.prepare('SELECT salt, password_hash FROM worker_accounts WHERE id=?').get(entry.accountId);
+  if (account && verifyPassword(new_password, account.salt, account.password_hash)) {
+    return res.status(400).json({ error_code: 'SAME_PASSWORD' });
+  }
+  const newSalt = crypto.randomBytes(16).toString('hex');
+  const newHash = hashPassword(new_password, newSalt);
+  db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(newHash, newSalt, entry.accountId);
   resetCodes.delete('worker:' + login);
   res.json({ success: true });
 });
@@ -7301,8 +7483,13 @@ app.post('/api/customer/reset-password', (req, res) => {
   const entry = resetCodes.get('customer:' + login);
   if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
   if (Date.now() > entry.expires) { resetCodes.delete('customer:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
-  const { hash, salt } = hashPassword(new_password);
-  db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  const account = db.prepare('SELECT salt, password_hash FROM customer_accounts WHERE id=?').get(entry.accountId);
+  if (account && verifyPassword(new_password, account.salt, account.password_hash)) {
+    return res.status(400).json({ error_code: 'SAME_PASSWORD' });
+  }
+  const newSalt = crypto.randomBytes(16).toString('hex');
+  const newHash = hashPassword(new_password, newSalt);
+  db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(newHash, newSalt, entry.accountId);
   resetCodes.delete('customer:' + login);
   res.json({ success: true });
 });
@@ -7793,7 +7980,7 @@ app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
   const ct = city ?? loc.city ?? '';
   const st = state ?? loc.state ?? '';
   const zp = zip ?? loc.zip ?? '';
-  const addrDisplay = address ?? [a1, a2, ct && st ? `${ct}, ${st}${zp ? ' ' + zp : ''}` : ct].filter(Boolean).join(', ') || loc.address;
+  const addrDisplay = (address ?? [a1, a2, ct && st ? `${ct}, ${st}${zp ? ' ' + zp : ''}` : ct].filter(Boolean).join(', ')) || loc.address;
   db.prepare('UPDATE interview_locations SET name=?,address=?,address1=?,address2=?,city=?,state=?,zip=?,contact_name=?,contact_phone=?,instructions=?,active=? WHERE id=?')
     .run(name??loc.name, addrDisplay, a1, a2, ct, st, zp, contact_name??loc.contact_name, contact_phone??loc.contact_phone, instructions??loc.instructions, active??loc.active, req.params.id);
   res.json({ success: true });
