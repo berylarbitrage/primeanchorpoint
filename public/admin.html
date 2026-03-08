@@ -231,6 +231,7 @@ tr:hover td{background:var(--sky-light)}
 .svc-tags{display:flex;flex-wrap:wrap;gap:.4rem}
 .svc-tag{padding:5px 12px;background:var(--off-white);color:var(--gray-600);border:1px solid var(--gray-200);border-radius:16px;font-size:.78rem;font-weight:600;cursor:pointer;transition:all .2s;user-select:none}
 .svc-tag:hover{border-color:var(--sky);color:var(--sky)}.svc-tag.active{background:var(--sky);color:#fff;border-color:var(--sky)}
+.svc-tag-new{border-style:dashed;border-color:#f59e0b;color:#92400e}.svc-tag-new.active{background:#f59e0b;color:#fff;border-color:#f59e0b}.svc-tag-new.active:after{content:' ✦';font-size:.65rem}
 .social-grid{display:grid;grid-template-columns:1fr 1fr;gap:.5rem}
 .social-grid .field label{font-size:.72rem}
 .social-grid .field input{padding:6px 8px;font-size:.82rem}
@@ -3146,22 +3147,24 @@ tr:hover td{background:var(--sky-light)}
   <div class="form-section"><h4>基本信息</h4>
     <div class="field"><label>公司名称 *</label><input id="pName" placeholder="例：ABC Logistics Inc."></div>
     <div class="field-row">
-      <div class="field"><label>行业 *</label><select id="pIndustry">
-        <option value="">-- 请选择 --</option>
-        <option value="物流 Logistics">物流 Logistics</option>
-        <option value="制造业 Manufacturing">制造业 Manufacturing</option>
-        <option value="食品加工 Food Processing">食品加工 Food Processing</option>
-        <option value="餐饮 Restaurant">餐饮 Restaurant</option>
-        <option value="零售 Retail">零售 Retail</option>
-        <option value="建筑 Construction">建筑 Construction</option>
-        <option value="农业 Agriculture">农业 Agriculture</option>
-        <option value="仓储 Warehousing">仓储 Warehousing</option>
-        <option value="清洁 Cleaning">清洁 Cleaning</option>
-        <option value="酒店 Hospitality">酒店 Hospitality</option>
-        <option value="医疗 Healthcare">医疗 Healthcare</option>
-        <option value="运输 Transportation">运输 Transportation</option>
-        <option value="其他 Other">其他 Other</option>
-      </select></div>
+      <div class="field"><label>行业 *</label>
+        <input id="pIndustry" list="pIndustryList" placeholder="-- 选择或输入新行业 --" autocomplete="off" onblur="confirmNewIndustry(this)" style="width:100%">
+        <datalist id="pIndustryList">
+          <option value="物流 Logistics">
+          <option value="制造业 Manufacturing">
+          <option value="食品加工 Food Processing">
+          <option value="餐饮 Restaurant">
+          <option value="零售 Retail">
+          <option value="建筑 Construction">
+          <option value="农业 Agriculture">
+          <option value="仓储 Warehousing">
+          <option value="清洁 Cleaning">
+          <option value="酒店 Hospitality">
+          <option value="医疗 Healthcare">
+          <option value="运输 Transportation">
+          <option value="其他 Other">
+        </datalist>
+      </div>
       <div class="field"><label>合作状态</label><label style="display:flex;align-items:center;gap:.5rem;margin-top:.4rem;cursor:pointer;font-weight:600"><input type="checkbox" id="pActive" checked style="width:16px;height:16px;cursor:pointer"> 合作中</label></div>
     </div>
   </div>
@@ -3200,7 +3203,10 @@ tr:hover td{background:var(--sky-light)}
       <span class="svc-tag" data-v="耗材供应" onclick="this.classList.toggle('active')">耗材供应</span>
       <span class="svc-tag" data-v="物流配送" onclick="this.classList.toggle('active')">物流配送</span>
     </div>
-    <div class="field" style="margin-top:.5rem"><input id="pSvcOther" placeholder="其他服务（手动输入，逗号分隔）"></div>
+    <div style="display:flex;gap:.5rem;align-items:center;margin-top:.5rem">
+      <input id="pSvcNewInput" placeholder="输入新服务名称，按回车添加" autocomplete="off" style="flex:1;padding:7px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.85rem" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewSvcTag()}">
+      <button class="btn-add-sm" onclick="addNewSvcTag()" style="white-space:nowrap">+ 添加服务</button>
+    </div>
   </div>
 
   <div class="form-section"><h4>上传文件 (合同/图片/文档)</h4>
@@ -7543,12 +7549,7 @@ function openPartnerModal(p) {
   document.getElementById('partnerModalTitle').textContent = p ? '编辑合作公司' : '新增合作公司';
   document.getElementById('partnerId').value = p ? p.id : '';
   document.getElementById('pName').value = p ? p.name : '';
-  const pIndSel = document.getElementById('pIndustry');
-  const indVal = p ? (p.industry||'') : '';
-  if (indVal && !Array.from(pIndSel.options).some(o=>o.value===indVal)) {
-    const opt = document.createElement('option'); opt.value = indVal; opt.textContent = indVal; pIndSel.appendChild(opt);
-  }
-  pIndSel.value = indVal;
+  document.getElementById('pIndustry').value = p ? (p.industry||'') : '';
   document.getElementById('pNotes').value = p ? p.notes : '';
   document.getElementById('pActive').checked = p ? !!p.active : true;
   // Contacts
@@ -7572,10 +7573,21 @@ function openPartnerModal(p) {
   // Services
   const svcs = p ? safeJSON(p.services,'') : '';
   const svcList = typeof svcs==='string'? svcs.split(',').map(s=>s.trim()).filter(Boolean) : (Array.isArray(svcs)?svcs:[]);
+  // Remove any previously added custom tags
+  document.querySelectorAll('#pSvcTags .svc-tag[data-custom]').forEach(t=>t.remove());
+  document.getElementById('pSvcNewInput').value = '';
   document.querySelectorAll('#pSvcTags .svc-tag').forEach(t=>{
     t.classList.toggle('active', svcList.includes(t.dataset.v));
   });
-  document.getElementById('pSvcOther').value = svcList.filter(s=>!document.querySelector(`#pSvcTags .svc-tag[data-v="${s}"]`)).join(', ');
+  // Re-create custom tags for saved services not in predefined list
+  svcList.filter(s=>!document.querySelector(`#pSvcTags .svc-tag[data-v="${CSS.escape(s)}"]`)).forEach(s=>{
+    const tag = document.createElement('span');
+    tag.className = 'svc-tag svc-tag-new active';
+    tag.dataset.v = s; tag.dataset.custom = '1';
+    tag.textContent = s;
+    tag.onclick = ()=>tag.classList.toggle('active');
+    document.getElementById('pSvcTags').appendChild(tag);
+  });
   // Files
   if (p && p.id) loadPartnerFiles(p.id);
   else document.getElementById('pFilesList').innerHTML = '';
@@ -7583,6 +7595,27 @@ function openPartnerModal(p) {
   captureModalState('partnerModal');
 }
 
+const _PREDEFINED_INDUSTRIES = ['物流 Logistics','制造业 Manufacturing','食品加工 Food Processing','餐饮 Restaurant','零售 Retail','建筑 Construction','农业 Agriculture','仓储 Warehousing','清洁 Cleaning','酒店 Hospitality','医疗 Healthcare','运输 Transportation','其他 Other'];
+function confirmNewIndustry(el) {
+  const val = el.value.trim();
+  if (!val || _PREDEFINED_INDUSTRIES.includes(val)) return;
+  if (!confirm(`确认新增行业 "${val}"？`)) el.value = '';
+}
+function addNewSvcTag() {
+  const input = document.getElementById('pSvcNewInput');
+  const val = input.value.trim();
+  if (!val) return;
+  const existing = document.querySelector(`#pSvcTags .svc-tag[data-v="${val.replace(/"/g,'&quot;')}"]`);
+  if (existing) { existing.classList.add('active'); input.value = ''; return; }
+  if (!confirm(`确认新增合作服务 "${val}"？`)) return;
+  const tag = document.createElement('span');
+  tag.className = 'svc-tag svc-tag-new active';
+  tag.dataset.v = val; tag.dataset.custom = '1';
+  tag.textContent = val;
+  tag.onclick = ()=>tag.classList.toggle('active');
+  document.getElementById('pSvcTags').appendChild(tag);
+  input.value = '';
+}
 function closePartnerModal() {
   document.querySelectorAll('#pAddrList .pa-addr-row').forEach(row => destroyPartnerAddrMap(row));
   guardClose('partnerModal');
@@ -7773,9 +7806,7 @@ async function savePartner() {
   }
   const id = document.getElementById('partnerId').value;
   // Collect services
-  const selectedSvcs = Array.from(document.querySelectorAll('#pSvcTags .svc-tag.active')).map(t=>t.dataset.v);
-  const otherSvcs = document.getElementById('pSvcOther').value.split(',').map(s=>s.trim()).filter(Boolean);
-  const allSvcs = [...selectedSvcs, ...otherSvcs];
+  const allSvcs = Array.from(document.querySelectorAll('#pSvcTags .svc-tag.active')).map(t=>t.dataset.v);
   const contacts = getPartnerContacts();
   const data = {
     name: document.getElementById('pName').value,
@@ -8482,9 +8513,18 @@ function randomFillPartner() {
   tags.forEach(t => t.classList.remove('active'));
   const shuffled = [...tags].sort(() => Math.random() - 0.5);
   shuffled.slice(0, rnd(2, 4)).forEach(t => t.classList.add('active'));
+  // Remove previously added custom tags before adding new ones
+  document.querySelectorAll('#pSvcTags .svc-tag[data-custom]').forEach(t=>t.remove());
+  document.getElementById('pSvcNewInput').value = '';
   const extraSvcs = ['驾驶员派遣','安保人员','餐饮外包','行政助理','IT外包'];
-  if (Math.random() > 0.5) document.getElementById('pSvcOther').value = pick(extraSvcs);
-  else document.getElementById('pSvcOther').value = '';
+  if (Math.random() > 0.5) {
+    const s = pick(extraSvcs);
+    const tag = document.createElement('span');
+    tag.className = 'svc-tag svc-tag-new active';
+    tag.dataset.v = s; tag.dataset.custom = '1';
+    tag.textContent = s; tag.onclick = ()=>tag.classList.toggle('active');
+    document.getElementById('pSvcTags').appendChild(tag);
+  }
 
   // ── 备注 ──
   const notes = [
