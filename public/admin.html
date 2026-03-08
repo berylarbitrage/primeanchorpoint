@@ -2201,7 +2201,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-sm btn-green" onclick="addIcSkill()">+ 添加技能</button>
     </div>
     <div id="icSkillsList"></div>
-    <p style="font-size:.75rem;color:var(--gray-400);margin-top:.4rem">常见: 叉车 Forklift · 打包 Packaging · 清洁 Cleaning · 搬运 Loading · 仓储 Warehouse · 厨房 Kitchen · 电焊 Welding · 机械操作 Machine Op</p>
+    <div id="icSkillSuggestions" style="margin-top:.4rem"></div>
   </div>
 
   <div class="modal-actions">
@@ -11012,6 +11012,7 @@ async function openInterviewCompleteModal() {
     intvBox.style.display = 'none';
   }
 
+  renderIcSkillSuggestions();
   document.getElementById('interviewCompleteModal').classList.add('show');
 }
 
@@ -11041,6 +11042,29 @@ function renderIcSkills() {
 function addIcSkill() {
   _icSkills.push({ skill_name: '', rating: 3 });
   renderIcSkills();
+}
+
+async function renderIcSkillSuggestions() {
+  const el = document.getElementById('icSkillSuggestions');
+  if (!el) return;
+  if (!_skillOptions.length) {
+    const data = await api('/admin/skill-options');
+    if (data && data.length) _skillOptions = data;
+  }
+  if (!_skillOptions.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<span style="font-size:.75rem;color:var(--gray-400)">常见: </span>' +
+    _skillOptions.map((s, i) =>
+      `<span onclick="addIcSkillByIdx(${i})" style="display:inline;font-size:.75rem;color:var(--sky);cursor:pointer;text-decoration:underline dotted">${esc(s.name_zh)}${s.name_en ? ' ' + esc(s.name_en) : ''}</span>`
+    ).join('<span style="color:var(--gray-300)"> · </span>');
+}
+
+function addIcSkillByIdx(i) {
+  const s = _skillOptions[i];
+  if (!s) return;
+  if (!_icSkills.find(x => x.skill_name === s.name_zh)) {
+    _icSkills.push({ skill_name: s.name_zh, rating: 3 });
+    renderIcSkills();
+  }
 }
 
 async function saveInterviewComplete() {
