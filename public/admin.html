@@ -4276,15 +4276,29 @@ function fmtDate(s) {
 
 // ─── Danger Confirm Modal ───
 let _dangerConfirmCallback = null;
-function showDeleteConfirm(targetName, description, onConfirm) {
-  document.getElementById('dangerConfirmTitle').textContent = '确认删除';
+function showDeleteConfirm(targetName, description, onConfirm, { title = '确认删除', btnText = '确认删除' } = {}) {
+  document.getElementById('dangerConfirmTitle').textContent = title;
   document.getElementById('dangerConfirmDesc').textContent = description || '';
   document.getElementById('dangerConfirmTarget').textContent = targetName;
   document.getElementById('dangerConfirmInput').value = '';
+  document.getElementById('dangerConfirmBtn').textContent = btnText;
   document.getElementById('dangerConfirmBtn').disabled = true;
   _dangerConfirmCallback = onConfirm;
   document.getElementById('dangerConfirmModal').classList.add('show');
   setTimeout(() => document.getElementById('dangerConfirmInput').focus(), 80);
+}
+function permanentDeleteEmployee(id, name) {
+  showDeleteConfirm(
+    name,
+    `此操作将永久删除该员工的所有数据，不可恢复。请输入员工全名 ${name} 以确认：`,
+    async () => {
+      const r = await api(`/admin/employees/${id}/permanent`, { method: 'DELETE' });
+      if (r && r.error) return showToast('❌ 删除失败：' + r.error, 'error');
+      loadEmployees();
+      showToast('✅ 员工已永久删除');
+    },
+    { title: '⚠️ 永久删除员工', btnText: '永久删除' }
+  );
 }
 function checkDangerConfirm() {
   const val = document.getElementById('dangerConfirmInput').value;

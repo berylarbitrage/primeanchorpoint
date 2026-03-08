@@ -5023,7 +5023,20 @@ app.delete('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('d
 
 app.delete('/api/admin/employees/:id/hard-delete', requireAdmin, requireRole('admin'), (req, res) => {
   const id = req.params.id;
-  db.prepare('DELETE FROM employees WHERE id=?').run(id);
+  const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(id);
+  if (!emp) return res.status(404).json({ error: '员工不存在' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM employee_documents WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_ratings WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_doc_requests WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_registration_invites WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_jobs WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM background_checks WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM time_entries WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM worker_payments WHERE employee_id=?').run(id);
+    db.prepare('UPDATE worker_accounts SET employee_id=NULL WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employees WHERE id=?').run(id);
+  })();
   res.json({ success: true });
 });
 
