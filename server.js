@@ -7925,24 +7925,7 @@ app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM interview_locations WHERE active=1 ORDER BY name').all());
 });
 
-// Admin: create interview location
-app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
-  const { name, address, contact_name, contact_phone, instructions } = req.body;
-  if (!name || !address) return res.status(400).json({ error: 'name and address required' });
-  const r = db.prepare('INSERT INTO interview_locations (name, address, contact_name, contact_phone, instructions) VALUES (?,?,?,?,?)')
-    .run(name, address, contact_name || '', contact_phone || '', instructions || '');
-  res.json({ success: true, id: r.lastInsertRowid });
-});
-
-// Admin: update interview location
-app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
-  const loc = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(req.params.id);
-  if (!loc) return res.status(404).json({ error: 'Not found' });
-  const { name, address, contact_name, contact_phone, instructions } = req.body;
-  db.prepare('UPDATE interview_locations SET name=?, address=?, contact_name=?, contact_phone=?, instructions=? WHERE id=?')
-    .run(name ?? loc.name, address ?? loc.address, contact_name ?? loc.contact_name, contact_phone ?? loc.contact_phone, instructions ?? loc.instructions, req.params.id);
-  res.json({ success: true });
-});
+// Admin: create interview location (legacy handler - see below for active handler)
 
 // Admin: delete interview location
 app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
@@ -7968,18 +7951,25 @@ app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM interview_locations WHERE active=1 ORDER BY name').all());
 });
 app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
-  const { name, address, contact_name, contact_phone, instructions } = req.body;
+  const { name, address, address1, address2, city, state, zip, contact_name, contact_phone, instructions } = req.body;
   if (!name) return res.status(400).json({ error: '地点名称必填 / name required' });
-  const r = db.prepare('INSERT INTO interview_locations (name,address,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?)')
-    .run(name, address||'', contact_name||'', contact_phone||'', instructions||'');
+  const addrDisplay = address || [address1, address2, city && state ? `${city}, ${state}${zip ? ' ' + zip : ''}` : city].filter(Boolean).join(', ') || '';
+  const r = db.prepare('INSERT INTO interview_locations (name,address,address1,address2,city,state,zip,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(name, addrDisplay, address1||'', address2||'', city||'', state||'', zip||'', contact_name||'', contact_phone||'', instructions||'');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
   const loc = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(req.params.id);
   if (!loc) return res.status(404).json({ error: 'Not found' });
-  const { name, address, contact_name, contact_phone, instructions, active } = req.body;
-  db.prepare('UPDATE interview_locations SET name=?,address=?,contact_name=?,contact_phone=?,instructions=?,active=? WHERE id=?')
-    .run(name??loc.name, address??loc.address, contact_name??loc.contact_name, contact_phone??loc.contact_phone, instructions??loc.instructions, active??loc.active, req.params.id);
+  const { name, address, address1, address2, city, state, zip, contact_name, contact_phone, instructions, active } = req.body;
+  const a1 = address1 ?? loc.address1 ?? '';
+  const a2 = address2 ?? loc.address2 ?? '';
+  const ct = city ?? loc.city ?? '';
+  const st = state ?? loc.state ?? '';
+  const zp = zip ?? loc.zip ?? '';
+  const addrDisplay = address ?? [a1, a2, ct && st ? `${ct}, ${st}${zp ? ' ' + zp : ''}` : ct].filter(Boolean).join(', ') || loc.address;
+  db.prepare('UPDATE interview_locations SET name=?,address=?,address1=?,address2=?,city=?,state=?,zip=?,contact_name=?,contact_phone=?,instructions=?,active=? WHERE id=?')
+    .run(name??loc.name, addrDisplay, a1, a2, ct, st, zp, contact_name??loc.contact_name, contact_phone??loc.contact_phone, instructions??loc.instructions, active??loc.active, req.params.id);
   res.json({ success: true });
 });
 app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
@@ -7991,6 +7981,13 @@ app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
+
+// Add structured address columns to interview_locations if missing
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN address1 TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN address2 TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN city TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN state TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN zip TEXT DEFAULT ''"); } catch {}
 
 app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
   const slots = db.prepare(`
