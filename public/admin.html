@@ -939,7 +939,7 @@ tr:hover td{background:var(--sky-light)}
     <input type="text" id="jobSearch" placeholder="搜索职位名称、公司、地点..." oninput="renderJobsFiltered()" style="flex:1">
   </div>
   <div id="jobsSection">
-    <div class="card"><table><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>人数</th><th>地点 / 时间</th><th>薪资</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
+    <div class="card" style="overflow-x:auto"><table style="min-width:900px"><thead><tr><th>职位名称</th><th>职位类型</th><th>雇佣性质</th><th>人数</th><th>地点 / 时间</th><th>薪资</th><th>状态</th><th>操作</th></tr></thead><tbody id="jobsTable"></tbody></table></div>
   </div>
   <div id="jobAppsSection" style="display:none">
     <div class="search-bar" style="margin-top:0;padding-top:0">
@@ -4739,7 +4739,7 @@ function renderJobsFiltered() {
       <td style="white-space:nowrap">${esc(j.type||'')}</td>
       <td style="white-space:nowrap">${etBadge(j.employment_type)}</td>
       <td style="text-align:center;white-space:nowrap">${j.headcount||1}</td>
-      <td style="min-width:160px"><span style="color:var(--sky);font-weight:500">${esc(j.location)}</span>${scheduleStr(j) ? `<br><small style="color:var(--gray-400)">🕐 ${esc(scheduleStr(j))}</small>` : ''}</td>
+      <td style="white-space:nowrap"><span style="color:var(--sky);font-weight:500">${esc(j.location)}</span>${scheduleStr(j) ? `<br><small style="color:var(--gray-400)">🕐 ${esc(scheduleStr(j))}</small>` : ''}</td>
       <td style="white-space:nowrap">${esc(j.pay||'')}</td>
       <td style="white-space:nowrap">
         <span class="badge ${si.cls}">${si.text}</span>${reasonTip}
