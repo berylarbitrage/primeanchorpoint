@@ -4844,6 +4844,90 @@ app.post('/api/admin/partners/:id/generate-agreement', requireAdmin, blockManage
   }
 });
 
+// POST /api/admin/partners/:id/generate-custom-agreement — generate PDF from user-supplied contract text
+// Anchor strings (/sig1/ /date1/ /sig2/ /date2/) are rendered as 1pt white (invisible) text
+// so DocuSign can anchor tabs while keeping the document visually clean.
+app.post('/api/admin/partners/:id/generate-custom-agreement', requireAdmin, blockManager, async (req, res) => {
+  const partner = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!partner) return res.status(404).json({ error: 'Partner not found' });
+  const content = (req.body.content || '').trim();
+  if (!content) return res.status(400).json({ error: '合同内容不能为空' });
+
+  const partnerName = partner.name || 'Partner';
+  const fileName = `Contract_${partnerName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
+  const filePath = path.join(docsDir, fileName);
+
+  try {
+    await new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'LETTER', margins: { top: 72, bottom: 72, left: 72, right: 72 } });
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+
+      const ANCHORS = ['/sig1/', '/sig2/', '/date1/', '/date2/'];
+      const L = 72;
+      const pageW = doc.page.width - 144;
+
+      const lines = content.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Ensure we have space for this line
+        if (doc.y > doc.page.height - doc.page.margins.bottom - 40) doc.addPage();
+
+        // Check if line contains anchor strings — render visible portion + invisible anchors
+        const hasAnchor = ANCHORS.some(a => line.includes(a));
+        if (hasAnchor) {
+          // Split the line into parts: text and anchors
+          // Render all visible text (anchors stripped out) then add invisible anchors
+          const visibleText = line.replace(/\/(sig1|sig2|date1|date2)\//g, '').trimEnd();
+          const curY = doc.y;
+          if (visibleText) {
+            doc.fontSize(10).font('Helvetica').fillColor('black').text(visibleText, { lineBreak: false });
+          }
+          // Write each anchor string at the same Y position as invisible text
+          ANCHORS.forEach(anchor => {
+            if (line.includes(anchor)) {
+              doc.fontSize(1).fillColor('white').text(anchor, L, curY, { lineBreak: false });
+            }
+          });
+          doc.moveDown(0.6);
+        } else {
+          const trimmed = line.trim();
+          if (trimmed === '') {
+            doc.moveDown(0.4);
+          } else if (trimmed === 'SIGNATURES' || /^[A-Z][A-Z\s]{3,}$/.test(trimmed)) {
+            // All-caps section title
+            if (doc.y > doc.page.height - doc.page.margins.bottom - 80) doc.addPage();
+            doc.moveDown(0.3);
+            doc.fontSize(13).font('Helvetica-Bold').fillColor('black').text(trimmed, { width: pageW });
+            doc.moveDown(0.3);
+          } else if (/^\d+\.\s+[A-Z]/.test(trimmed)) {
+            // Numbered section heading
+            doc.moveDown(0.2);
+            doc.fontSize(11).font('Helvetica-Bold').fillColor('black').text(trimmed, { width: pageW });
+            doc.moveDown(0.1);
+          } else {
+            doc.fontSize(10).font('Helvetica').fillColor('#222').text(trimmed, { width: pageW });
+          }
+        }
+      }
+
+      doc.end();
+    });
+
+    const r = db.prepare(
+      `INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes) VALUES (?,?,?,?,?,?)`
+    ).run(req.params.id, 'contract', 'Partnership Agreement', fileName, fileName, 'Generated from contract editor');
+
+    res.json({ success: true, id: r.lastInsertRowid, file_name: fileName });
+  } catch (e) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    console.error('[GenerateCustomAgreement]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.delete('/api/admin/partner-files/:id', requireAdmin, blockManager, staffGuard('delete', 'partner_files'), (req, res) => {
   const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
   if (!f) return res.status(404).json({ error: 'Not found' });

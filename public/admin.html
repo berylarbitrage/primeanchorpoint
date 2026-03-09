@@ -3254,7 +3254,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="field"><input type="file" id="pFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%"></div>
     <div style="display:flex;gap:.5rem;margin-top:.5rem;align-items:center;flex-wrap:wrap">
       <button class="btn-add-sm" onclick="uploadPartnerFile()">上传文件</button>
-      <button class="btn-add-sm" style="background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE" onclick="generateAgreementTemplate()" title="自动生成格式正确的合伙协议 PDF，锚点字符隐藏，可直接发送 DocuSign">⚡ 生成合伙协议模板</button>
+      <button class="btn-add-sm" style="background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE" onclick="openContractEditor()" title="编辑并生成格式正确的合伙协议 PDF，锚点字符隐藏，可直接发送 DocuSign">📄 编辑合同模板</button>
     </div>
   </div>
 
@@ -3364,6 +3364,39 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn btn-blue" id="partnerDsSendBtn" onclick="doSendPartnerDocuSign()">✍ 发送签署邀请</button>
   </div>
 </div></div>
+
+<!-- ════ Contract Editor Modal ════ -->
+<div class="modal-bg" id="contractEditorModal">
+  <div class="modal" style="max-width:1100px;width:95vw;height:88vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.8rem;flex-shrink:0">
+      <h2 style="margin:0">合同编辑器</h2>
+      <a href="#" style="font-size:.85rem;color:#1d4ed8" onclick="event.preventDefault();window.open('about:blank').document.write(document.getElementById('contractPreview').innerHTML)">编辑合同文件</a>
+    </div>
+    <div style="display:flex;gap:1rem;flex:1;min-height:0">
+      <!-- Left: editor -->
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.4px">
+          合同内容 <span style="font-weight:400;color:#d97706">（须保留 /sig1/ 和 /sig2/ 签名锚点）</span>
+        </div>
+        <textarea id="contractEditorText" spellcheck="false"
+          style="flex:1;font-family:monospace;font-size:.8rem;line-height:1.6;padding:.75rem;border:1px solid var(--gray-200);border-radius:var(--radius);resize:none;overflow-y:auto;background:#fafafa"
+          oninput="renderContractPreview()"></textarea>
+      </div>
+      <!-- Right: preview -->
+      <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+        <div style="font-size:.78rem;font-weight:600;color:var(--gray-500);margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.4px">预览</div>
+        <div id="contractPreview"
+          style="flex:1;overflow-y:auto;padding:1.5rem 2rem;border:1px solid var(--gray-200);border-radius:var(--radius);background:#fff;font-family:Georgia,serif;font-size:.82rem;line-height:1.7;color:#222">
+        </div>
+      </div>
+    </div>
+    <div id="contractEditorMsg" style="display:none;margin-top:.7rem;padding:.55rem .9rem;border-radius:8px;font-size:.85rem;flex-shrink:0"></div>
+    <div style="display:flex;justify-content:flex-end;gap:.8rem;margin-top:.8rem;flex-shrink:0">
+      <button class="btn" onclick="document.getElementById('contractEditorModal').classList.remove('show')">取消</button>
+      <button class="btn btn-green" id="contractEditorSaveBtn" onclick="saveContractPdf()">📄 生成PDF文件</button>
+    </div>
+  </div>
+</div>
 
 <!-- ════ Employee Add/Edit Modal ════ -->
 <!-- ═══ Send Registration Link Modal ═══ -->
@@ -7943,6 +7976,129 @@ async function generateAgreementTemplate() {
   } finally {
     btn.disabled = false;
     btn.textContent = '⚡ 生成合伙协议模板';
+  }
+}
+
+// ── Contract Editor Modal ──────────────────────────────────────
+let _contractEditorPid = null;
+
+const DEFAULT_AGREEMENT_TEMPLATE = (partnerName, today) => `PARTNERSHIP AGREEMENT
+
+This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between Prime Anchorpoint LLC, a staffing and workforce solutions company ("Service Provider"), and ${partnerName} ("Partner").
+
+1. SERVICES
+Service Provider agrees to provide staffing, recruitment, and workforce management services as mutually agreed upon by the parties in writing. Specific scope, timelines, and deliverables for each engagement shall be documented in separate statements of work.
+
+2. COMPENSATION
+Partner agrees to compensate Service Provider at rates mutually agreed upon prior to each engagement. Invoices are submitted bi-weekly and due within thirty (30) days of receipt.
+
+3. TERM AND TERMINATION
+This Agreement commences on the date above and continues for one (1) year unless terminated earlier by either party upon 30 days written notice.
+
+4. CONFIDENTIALITY
+Each party agrees to keep confidential any proprietary information disclosed by the other.
+
+5. INDEPENDENT CONTRACTOR
+Partner is an independent contractor, not an employee of the Company.
+
+6. GOVERNING LAW
+This Agreement shall be governed by the laws of the State of Illinois.
+
+7. ENTIRE AGREEMENT
+This Agreement constitutes the entire understanding between the parties.
+
+SIGNATURES
+
+Prime Anchorpoint LLC (Service Provider)
+Authorized Signature: /sig1/
+Date: /date1/
+
+${partnerName} (Partner)
+Partner Signature: /sig2/
+Date: /date2/`;
+
+function renderContractPreview() {
+  const raw = document.getElementById('contractEditorText').value || '';
+  const lines = raw.split('\n');
+  let html = '';
+  const anchorBox = t => `<span style="display:inline-block;border:1.5px dashed #2563eb;color:#2563eb;font-family:monospace;font-size:.75rem;padding:1px 6px;border-radius:3px;background:#eff6ff">${t}</span>`;
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+    // Replace anchor strings with styled boxes
+    line = line.replace(/\/sig1\//g, anchorBox('/sig1/'))
+               .replace(/\/sig2\//g, anchorBox('/sig2/'))
+               .replace(/\/date1\//g, anchorBox('/date1/'))
+               .replace(/\/date2\//g, anchorBox('/date2/'));
+    // Escape remaining HTML (after anchor replacement)
+    const escaped = line.replace(/&(?!(?:amp|lt|gt|quot|#\d+);)/g,'&amp;');
+    // Detect section headings: "SIGNATURES", "1. TITLE", all-caps lines ≥4 chars
+    const stripped = lines[i].trim();
+    if (stripped === 'SIGNATURES' || /^[A-Z][A-Z\s]{3,}$/.test(stripped)) {
+      html += `<p style="font-weight:700;font-size:.9rem;margin:1.2rem 0 .3rem">${line}</p>`;
+    } else if (/^\d+\.\s+[A-Z]/.test(stripped)) {
+      html += `<p style="font-weight:700;margin:.9rem 0 .15rem">${line}</p>`;
+    } else if (stripped === '') {
+      html += '<p style="margin:.15rem 0"></p>';
+    } else {
+      html += `<p style="margin:.1rem 0">${line}</p>`;
+    }
+  }
+  document.getElementById('contractPreview').innerHTML = html || '<span style="color:#aaa;font-style:italic">预览将在此显示...</span>';
+}
+
+function openContractEditor() {
+  const pid = document.getElementById('partnerId').value;
+  if (!pid) return alert('请先保存公司信息后再编辑合同');
+  _contractEditorPid = pid;
+  const pName = document.getElementById('pName').value || 'Partner Company';
+  const today = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
+  document.getElementById('contractEditorText').value = DEFAULT_AGREEMENT_TEMPLATE(pName, today);
+  const msgEl = document.getElementById('contractEditorMsg');
+  msgEl.style.display = 'none';
+  document.getElementById('contractEditorSaveBtn').disabled = false;
+  renderContractPreview();
+  document.getElementById('contractEditorModal').classList.add('show');
+}
+
+async function saveContractPdf() {
+  const pid = _contractEditorPid;
+  if (!pid) return;
+  const content = document.getElementById('contractEditorText').value.trim();
+  const msgEl = document.getElementById('contractEditorMsg');
+  const btn = document.getElementById('contractEditorSaveBtn');
+  if (!content) {
+    msgEl.style.cssText = 'display:;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:.55rem .9rem;border-radius:8px';
+    msgEl.textContent = '合同内容不能为空';
+    return;
+  }
+  if (!content.includes('/sig1/') || !content.includes('/sig2/')) {
+    msgEl.style.cssText = 'display:;background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:.55rem .9rem;border-radius:8px';
+    msgEl.textContent = '警告：合同内容中未找到 /sig1/ 或 /sig2/ 锚点，DocuSign 将无法正确放置签名框。';
+  } else {
+    msgEl.style.display = 'none';
+  }
+  btn.disabled = true;
+  btn.textContent = '生成中...';
+  try {
+    const r = await api(`/admin/partners/${pid}/generate-custom-agreement`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    });
+    if (r.success) {
+      await loadPartnerFiles(pid);
+      document.getElementById('contractEditorModal').classList.remove('show');
+      showToast('合同PDF已生成，可直接发送 DocuSign 签署');
+    } else {
+      msgEl.style.cssText = 'display:;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:.55rem .9rem;border-radius:8px';
+      msgEl.textContent = '生成失败：' + (r.error || '生成失败');
+    }
+  } catch(e) {
+    msgEl.style.cssText = 'display:;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:.55rem .9rem;border-radius:8px';
+    msgEl.textContent = '生成失败：' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📄 生成PDF文件';
   }
 }
 
