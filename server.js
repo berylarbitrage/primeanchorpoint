@@ -1926,6 +1926,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
 // Clean up expired sessions on startup
 try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
 
+// DB-backed worker session store (survives server restarts)
+db.exec(`CREATE TABLE IF NOT EXISTS worker_sessions (
+  token TEXT PRIMARY KEY,
+  worker_id INTEGER NOT NULL,
+  employee_id TEXT,
+  created_at INTEGER NOT NULL
+)`);
+try { db.prepare('DELETE FROM worker_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+
+// DB-backed customer session store (survives server restarts)
+db.exec(`CREATE TABLE IF NOT EXISTS customer_sessions (
+  token TEXT PRIMARY KEY,
+  customer_id INTEGER NOT NULL,
+  partner_id INTEGER,
+  created_at INTEGER NOT NULL
+)`);
+try { db.prepare('DELETE FROM customer_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
   db.prepare('INSERT INTO admin_sessions (token, user_id, username, role, created_at) VALUES (?,?,?,?,?)')
@@ -2001,8 +2019,6 @@ function managerJobIds(req) {
 }
 
 // ─── Worker / Customer portal auth ───
-const workerSessions = new Map();
-const customerSessions = new Map();
 const resetCodes = new Map(); // key: "worker:login" or "customer:login", value: { code, expires }
 
 function requireWorker(req, res, next) {
@@ -2013,18 +2029,19 @@ function requireWorker(req, res, next) {
     const m = (req.headers.cookie || '').match(/pa_worker=([^;]+)/);
     if (m) token = m[1];
   }
-  const s = workerSessions.get(token);
-  if (!s || Date.now() - s.created > 24 * 60 * 60 * 1000) {
-    if (token) workerSessions.delete(token);
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const s = db.prepare('SELECT * FROM worker_sessions WHERE token=?').get(token);
+  if (!s || Date.now() - s.created_at > 24 * 60 * 60 * 1000) {
+    if (s) db.prepare('DELETE FROM worker_sessions WHERE token=?').run(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
   // Verify account still exists and is not suspended
-  const w = db.prepare('SELECT id, active, suspended, employee_id FROM worker_accounts WHERE id=?').get(s.workerId);
+  const w = db.prepare('SELECT id, active, suspended, employee_id FROM worker_accounts WHERE id=?').get(s.worker_id);
   if (!w || !w.active || w.suspended) {
-    workerSessions.delete(token);
+    db.prepare('DELETE FROM worker_sessions WHERE token=?').run(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  req.workerId = s.workerId;
+  req.workerId = s.worker_id;
   req.workerEmployeeId = w.employee_id;
   next();
 }
@@ -2037,18 +2054,19 @@ function requireCustomer(req, res, next) {
     const m = (req.headers.cookie || '').match(/pa_customer=([^;]+)/);
     if (m) token = m[1];
   }
-  const s = customerSessions.get(token);
-  if (!s || Date.now() - s.created > 24 * 60 * 60 * 1000) {
-    if (token) customerSessions.delete(token);
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const s = db.prepare('SELECT * FROM customer_sessions WHERE token=?').get(token);
+  if (!s || Date.now() - s.created_at > 24 * 60 * 60 * 1000) {
+    if (s) db.prepare('DELETE FROM customer_sessions WHERE token=?').run(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
   // Verify account still exists
-  const c = db.prepare('SELECT id, active, partner_id FROM customer_accounts WHERE id=?').get(s.customerId);
+  const c = db.prepare('SELECT id, active, partner_id FROM customer_accounts WHERE id=?').get(s.customer_id);
   if (!c || !c.active) {
-    customerSessions.delete(token);
+    db.prepare('DELETE FROM customer_sessions WHERE token=?').run(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  req.customerId = s.customerId;
+  req.customerId = s.customer_id;
   req.customerPartnerId = c.partner_id;
   next();
 }
@@ -3616,9 +3634,7 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
   try {
     const id = req.params.id;
     // Invalidate all active sessions for this worker
-    for (const [token, session] of workerSessions.entries()) {
-      if (String(session.workerId) === String(id)) workerSessions.delete(token);
-    }
+    db.prepare('DELETE FROM worker_sessions WHERE worker_id=?').run(id);
     db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(id);
@@ -3813,9 +3829,7 @@ app.put('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), 
 app.delete('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const id = req.params.id;
   // Invalidate all active sessions for this customer
-  for (const [token, session] of customerSessions.entries()) {
-    if (String(session.customerId) === String(id)) customerSessions.delete(token);
-  }
+  db.prepare('DELETE FROM customer_sessions WHERE customer_id=?').run(id);
   db.prepare('DELETE FROM customer_accounts WHERE id=?').run(id);
   res.json({ success: true });
 });
@@ -3825,8 +3839,8 @@ app.post('/api/admin/clear-test-data', requireAdmin, requireRole('admin'), (req,
   const { confirm_text } = req.body;
   if (confirm_text !== 'I confirm') return res.status(400).json({ error: 'Please type "I confirm" to proceed' });
   // Invalidate all worker and customer sessions
-  workerSessions.clear();
-  customerSessions.clear();
+  db.prepare('DELETE FROM worker_sessions').run();
+  db.prepare('DELETE FROM customer_sessions').run();
   const wDel = db.prepare('DELETE FROM worker_accounts').run();
   const cDel = db.prepare('DELETE FROM customer_accounts').run();
   db.prepare('DELETE FROM verification_codes').run();
@@ -5818,7 +5832,7 @@ app.post('/api/worker/login', (req, res) => {
   if (w.suspended)
     return res.status(403).json({ error: '账号已被暂停，请联系管理员 / Account suspended. Please contact admin.' });
   const token = crypto.randomBytes(32).toString('hex');
-  workerSessions.set(token, { created: Date.now(), workerId: w.id, employeeId: w.employee_id });
+  db.prepare('INSERT INTO worker_sessions (token, worker_id, employee_id, created_at) VALUES (?,?,?,?)').run(token, w.id, w.employee_id, Date.now());
   res.json({ token, employee_id: w.employee_id });
 });
 
@@ -7532,7 +7546,7 @@ app.post('/api/customer/login', (req, res) => {
   if (!c)
     return res.status(401).json({ error: '邮箱/电话或密码错误 / Invalid email/phone or password' });
   const token = crypto.randomBytes(32).toString('hex');
-  customerSessions.set(token, { created: Date.now(), customerId: c.id, partnerId: c.partner_id });
+  db.prepare('INSERT INTO customer_sessions (token, customer_id, partner_id, created_at) VALUES (?,?,?,?)').run(token, c.id, c.partner_id, Date.now());
   res.json({ token, company_name: c.company_name });
 });
 
@@ -7696,7 +7710,7 @@ app.post('/api/register/worker', async (req, res) => {
     // No verification channels configured — activate immediately and auto-login
     activateWorkerAccount(accountId);
     const token = crypto.randomBytes(32).toString('hex');
-    workerSessions.set(token, { created: Date.now(), workerId: accountId, employeeId: null });
+    db.prepare('INSERT INTO worker_sessions (token, worker_id, employee_id, created_at) VALUES (?,?,?,?)').run(token, accountId, null, Date.now());
     console.log(`[Register] Worker #${accountId} activated immediately (no verification channels configured)`);
     return res.json({ success: true, account_id: accountId, needs_verification: false, token });
   }
@@ -7807,7 +7821,7 @@ app.post('/api/register/verify', async (req, res) => {
   activateWorkerAccount(account_id);
   // Auto-login
   const token = crypto.randomBytes(32).toString('hex');
-  workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+  db.prepare('INSERT INTO worker_sessions (token, worker_id, employee_id, created_at) VALUES (?,?,?,?)').run(token, acc.id, acc.employee_id, Date.now());
   res.json({ success: true, token, message: 'Verification successful' });
 });
 
@@ -7847,7 +7861,7 @@ app.post('/api/register/verify-step', async (req, res) => {
     db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
     activateWorkerAccount(account_id);
     const token = crypto.randomBytes(32).toString('hex');
-    workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+    db.prepare('INSERT INTO worker_sessions (token, worker_id, employee_id, created_at) VALUES (?,?,?,?)').run(token, acc.id, acc.employee_id, Date.now());
     return res.json({ success: true, all_done: true, token });
   }
   return res.json({ success: true, all_done: false, next_steps: remaining.map(r => r.type) });
