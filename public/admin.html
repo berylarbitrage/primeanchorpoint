@@ -7587,7 +7587,11 @@ async function showPartnerById(id) {
     html += `<div class="detail-section"><h4>文件 (${files.length})</h4>` +
       files.map(f=>{
         const isContractFile = f.file_type==='contract'||f.file_type==='agreement';
-        const signBtn = isContractFile ? `<button class="btn btn-sm" style="margin-left:.5rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;padding:2px 8px;font-size:.75rem" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送签名</button>` : '';
+        const signBtn = isContractFile
+          ? (f.ds_envelope_id
+            ? `<span class="badge" style="background:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')}20;color:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')};font-size:.72rem;margin-left:.4rem;cursor:pointer" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ ${DS_STATUS_LABELS[f.ds_status]||f.ds_status||'签署中'}</span>`
+            : `<button class="btn btn-sm" style="margin-left:.5rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;padding:2px 8px;font-size:.75rem" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送签名</button>`)
+          : '';
         return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span>${signBtn}</div>`;
       }).join('')+'</div>';
   }
