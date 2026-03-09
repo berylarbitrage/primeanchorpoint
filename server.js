@@ -253,6 +253,35 @@ async function sendEmail(to, subject, text, html) {
   }
 }
 
+// ─── Email with PDF attachment ───
+async function sendEmailWithAttachment(to, subject, text, pdfBuffer, pdfFileName) {
+  if (_sgKey) {
+    try {
+      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: { email: EMAIL_FROM },
+          subject,
+          content: [{ type: 'text/plain', value: text }],
+          attachments: [{ content: pdfBuffer.toString('base64'), filename: pdfFileName, type: 'application/pdf', disposition: 'attachment' }],
+        }),
+      });
+      if (r.status === 202) { console.log(`[EMAIL] Sent attachment to ${to}`); return true; }
+      const body = await r.text();
+      console.error(`[EMAIL-ERR] SendGrid ${r.status}: ${body}`);
+      return false;
+    } catch (e) { console.error(`[EMAIL-ERR] ${e.message}`); return false; }
+  }
+  if (!emailTransporter) { console.log(`[EMAIL-SKIP] No transport. To: ${to}`); return false; }
+  try {
+    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text, attachments: [{ filename: pdfFileName, content: pdfBuffer }] });
+    console.log(`[EMAIL] Sent attachment to ${to}`);
+    return true;
+  } catch (e) { console.error(`[EMAIL-ERR] ${e.message}`); return false; }
+}
+
 // ─── Database Setup ───
 const dataDir = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
@@ -2053,6 +2082,109 @@ function generatePartnerContractText({ partnerName, companyName, partnerAddress,
     `${partnerName} (Partner)`,
     'Partner Signature: /sig2/',
     'Date: /date2/',
+  ].join('\n');
+}
+
+function generateTerminationNoticeText({ partnerName, companyName, dateStr }) {
+  const c = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'NOTICE OF SERVICE TERMINATION', '服务终止通知书', '',
+    `Date / 日期: ${dateStr}`, '',
+    `To / 致: ${partnerName}`, '',
+    `Dear ${partnerName},`, '',
+    `This letter serves as formal written notice that ${c} hereby terminates`,
+    'the Partnership Service Agreement entered into between the parties,',
+    'effective thirty (30) days from the date of this notice.',
+    '',
+    'This termination is made in accordance with the termination clause of the',
+    'Agreement, which permits either party to terminate upon 30 days written',
+    'notice without cause.', '',
+    'During the notice period, all ongoing work and assignments shall be',
+    'completed or transitioned in an orderly manner. Final invoices must be',
+    'submitted within 15 days of the termination effective date.', '',
+    'Any outstanding balances owed by either party shall be settled within',
+    '30 days of the effective termination date.', '',
+    'We appreciate the partnership and wish you success in your future endeavors.', '',
+    'Sincerely,', '', c, '',
+    'Authorized Representative: ________________________', `Date: ${dateStr}`,
+  ].join('\n');
+}
+
+function generateBreachNoticeText({ partnerName, companyName, dateStr }) {
+  const c = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'NOTICE OF TERMINATION FOR BREACH', '违约终止通知书', '',
+    `Date / 日期: ${dateStr}`, '',
+    `To / 致: ${partnerName}`, '',
+    'Re: Termination of Partnership Service Agreement Due to Breach',
+    '事由：因违约终止合作服务协议', '',
+    `Dear ${partnerName},`, '',
+    `This letter constitutes formal notice that ${c} is terminating the`,
+    'Partnership Service Agreement ("Agreement") due to material breach.', '',
+    'THE FOLLOWING BREACH(ES) HAVE BEEN IDENTIFIED / 违约事项：',
+    '[请在此处描述具体违约行为 / DESCRIBE THE SPECIFIC BREACH(ES) HERE]', '',
+    'Despite prior notice and a reasonable opportunity to cure, the breach',
+    'remains unremedied. Accordingly, this Agreement is terminated effective',
+    'immediately upon receipt of this notice.', '',
+    'All outstanding obligations, including final settlements and return of any',
+    'proprietary materials, must be completed within 10 business days.', '',
+    `${c} reserves all rights and remedies available under the Agreement`, 'and applicable law.', '',
+    'Sincerely,', '', c, '',
+    'Authorized Representative: ________________________', `Date: ${dateStr}`,
+  ].join('\n');
+}
+
+function generateAmendmentText({ partnerName, companyName, dateStr }) {
+  const c = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'CONTRACT AMENDMENT AGREEMENT', '合同修改协议', '',
+    `This Amendment is entered into as of ${dateStr}, by and between:`, '',
+    `${c} ("Company")`, 'and', `${partnerName} ("Partner")`, '',
+    'WHEREAS, the parties entered into a Partnership Service Agreement',
+    '(the "Original Agreement");', '',
+    'NOW, THEREFORE, the parties agree to amend the Original Agreement as follows:', '',
+    '1. MODIFICATIONS / 修改内容',
+    '[请在此处详细描述对原合同的修改内容 / DESCRIBE ALL MODIFICATIONS HERE]', '',
+    '2. EFFECTIVE DATE / 生效日期',
+    'This Amendment shall be effective as of the date first written above.', '',
+    '3. CONTINUING EFFECT / 原合同持续效力',
+    'All other terms and conditions of the Original Agreement remain in full',
+    'force and effect.', '', '',
+    'IN WITNESS WHEREOF, the parties have executed this Amendment.', '',
+    `${c} (Company)`,
+    'Authorized Signature: /sig1/', 'Date: /date1/', '',
+    `${partnerName} (Partner)`,
+    'Partner Signature: /sig2/', 'Date: /date2/',
+  ].join('\n');
+}
+
+function generateMutualTerminationText({ partnerName, companyName, dateStr }) {
+  const c = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'MUTUAL TERMINATION AGREEMENT', '协商解除协议', '',
+    `This Mutual Termination Agreement is entered into as of ${dateStr},`,
+    'by and between:', '',
+    `${c} ("Company")`, 'and', `${partnerName} ("Partner")`, '',
+    'The parties previously entered into a Partnership Service Agreement and',
+    'now mutually agree to terminate it on the following terms:', '',
+    '1. TERMINATION DATE / 终止日期',
+    '[请填写终止生效日期 / TERMINATION EFFECTIVE DATE]', '',
+    '2. FINAL SETTLEMENT / 最终结算',
+    '[请在此处约定最终结算事项 / FINAL SETTLEMENT TERMS]', '',
+    '3. MUTUAL RELEASE / 相互免责',
+    'Each party releases the other from all claims and liabilities arising from',
+    'the Partnership Service Agreement, except as provided herein.', '',
+    '4. CONFIDENTIALITY / 保密',
+    "Each party shall maintain confidentiality of the other party's proprietary",
+    'information following termination.', '',
+    '5. NO FURTHER OBLIGATIONS / 无进一步义务',
+    'Following termination, neither party shall have further obligations to the',
+    'other except as set forth in this Agreement.', '', '',
+    'IN WITNESS WHEREOF, the parties have executed this Mutual Termination Agreement.', '',
+    `${c} (Company)`,
+    'Authorized Signature: /sig1/', 'Date: /date1/', '',
+    `${partnerName} (Partner)`,
+    'Partner Signature: /sig2/', 'Date: /date2/',
   ].join('\n');
 }
 
@@ -4732,6 +4864,81 @@ app.post('/api/admin/partner-files/:id/save-contract-from-editor', requireAdmin,
   fs.writeFileSync(path.join(docsDir, filePath), pdfBuf);
   db.prepare("UPDATE partner_files SET contract_content=?, file_path=?, ds_status='', ds_envelope_id='' WHERE id=?").run(content, filePath, f.id);
   res.json({ success: true, fileName: f.file_name || filePath });
+});
+
+// GET /api/admin/partners/:id/legal-template?type=termination|breach|amendment|mutual
+app.get('/api/admin/partners/:id/legal-template', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const type = req.query.type || 'termination';
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const args = { partnerName: p.name, companyName, dateStr };
+  let content = '';
+  if (type === 'termination') content = generateTerminationNoticeText(args);
+  else if (type === 'breach') content = generateBreachNoticeText(args);
+  else if (type === 'amendment') content = generateAmendmentText(args);
+  else if (type === 'mutual') content = generateMutualTerminationText(args);
+  else return res.status(400).json({ error: 'Invalid type' });
+  res.json({ content });
+});
+
+// POST /api/admin/partners/:id/save-legal-doc
+// Body: { content, type, setInactive }
+app.post('/api/admin/partners/:id/save-legal-doc', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const { content, type, setInactive } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: '文件内容不能为空' });
+  const typeMap = {
+    termination: { file_type: 'termination_notice', label: '终止通知书', prefix: 'termination' },
+    breach:      { file_type: 'breach_notice',       label: '违约终止通知书', prefix: 'breach' },
+    amendment:   { file_type: 'amendment',           label: '合同修改协议', prefix: 'amendment' },
+    mutual:      { file_type: 'mutual_termination',  label: '协商解除协议', prefix: 'mutual' },
+  };
+  const meta = typeMap[type];
+  if (!meta) return res.status(400).json({ error: 'Invalid type' });
+  const pdfBuf = buildContractPdf(content);
+  const filename = `${meta.prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  const displayName = `${meta.label} - ${p.name}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filename), pdfBuf);
+  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, contract_content) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(req.params.id, meta.file_type, meta.label, filename, displayName, content);
+  if (setInactive) db.prepare('UPDATE partners SET active=0 WHERE id=?').run(req.params.id);
+  res.json({ success: true, id: r.lastInsertRowid, fileName: displayName, filePath: filename });
+});
+
+// POST /api/admin/partner-files/:id/send-notice-email
+// Sends the saved PDF as an email attachment to the partner's contact
+app.post('/api/admin/partner-files/:id/send-notice-email', requireAdmin, blockManager, async (req, res) => {
+  const f = db.prepare(`SELECT pf.*, p.name as partner_name, p.email as partner_email, p.contacts as partner_contacts
+    FROM partner_files pf LEFT JOIN partners p ON pf.partner_id=p.id WHERE pf.id=?`).get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  let toEmail = req.body.email || f.partner_email || '';
+  let toName = f.partner_name || '';
+  if (!toEmail) {
+    try {
+      const contacts = JSON.parse(f.partner_contacts || '[]');
+      const c = contacts.find(c => c.email);
+      if (c) { toEmail = c.email; toName = [c.first_name, c.last_name].filter(Boolean).join(' ') || toName; }
+    } catch {}
+  }
+  if (!toEmail) return res.status(400).json({ error: '未找到合作方邮箱，请手动填写收件邮箱' });
+  const filePath = path.join(docsDir, f.file_path);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: '文件不存在，请先生成PDF' });
+  const pdfBuffer = fs.readFileSync(filePath);
+  const typeSubjects = {
+    termination_notice: 'Notice of Service Termination — 服务终止通知书',
+    breach_notice:      'Notice of Termination for Breach — 违约终止通知书',
+    amendment:          'Contract Amendment Agreement — 合同修改协议',
+    mutual_termination: 'Mutual Termination Agreement — 协商解除协议',
+  };
+  const subject = typeSubjects[f.file_type] || `Legal Notice — ${f.file_name}`;
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const text = `Dear ${toName || 'Partner'},\n\nPlease find attached the following document: ${f.file_name}.\n\nThis document requires your attention. Please review and respond accordingly.\n\nBest regards,\n${companyName}`;
+  const ok = await sendEmailWithAttachment(toEmail, subject, text, pdfBuffer, f.file_name || 'notice.pdf');
+  if (ok) res.json({ success: true, sentTo: toEmail });
+  else res.status(500).json({ error: '邮件发送失败，请检查邮件配置' });
 });
 
 // Partner files

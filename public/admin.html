@@ -3306,7 +3306,6 @@ tr:hover td{background:var(--sky-light)}
       <button id="btnEditContract" class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE" onclick="openContractEditorForNewPartnerContract(currentPartner&&currentPartner.id)">✏️ 编辑合同</button>
       <button id="btnRefreshDsStatus" class="btn btn-sm" style="display:none;background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="refreshAllPartnerFileStatuses()">⟳ 刷新签署状态</button>
       <button id="btnSendContract" class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="_stopDsPolling();document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送合同</button>
-      <button id="btnTerminatePartner" class="btn btn-sm btn-red" style="display:none" onclick="terminatePartner()">⛔ 终止合作</button>
       <button id="btnReactivatePartner" class="btn btn-sm btn-green" style="display:none" onclick="reactivatePartner()">✅ 恢复合作</button>
       <button class="btn btn-sm btn-outline" onclick="_stopDsPolling();document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
     </div>
@@ -3332,8 +3331,8 @@ tr:hover td{background:var(--sky-light)}
       </div>
     </div>
     <div id="contractEditorMsg" style="display:none;padding:.5rem .8rem;border-radius:6px;font-size:.87rem"></div>
-    <div style="display:flex;gap:.5rem;justify-content:flex-end">
-      <button class="btn btn-sm" onclick="document.getElementById('contractEditorModal').classList.remove('show')">取消</button>
+    <div id="contractEditorActions" style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('contractEditorModal').classList.remove('show')">取消</button>
       <button class="btn btn-blue" id="contractGenerateBtn" onclick="generateContractPdfFromEditor()">📄 生成PDF文件</button>
     </div>
   </div>
@@ -6545,10 +6544,16 @@ async function _openContractEditor(mode, id, titleHint, onSuccess) {
   _ceMode = mode;
   _ceId = id;
   _ceOnSuccess = onSuccess || null;
+  _ceType = null; // reset legal doc type
   const msgEl = document.getElementById('contractEditorMsg');
   msgEl.style.display = 'none';
-  document.getElementById('contractGenerateBtn').disabled = false;
-  document.getElementById('contractGenerateBtn').textContent = '📄 生成PDF文件';
+  // Restore default actions (in case legal editor changed them)
+  document.getElementById('contractEditorActions').innerHTML = `
+    <button class="btn btn-sm btn-outline" onclick="document.getElementById('contractEditorModal').classList.remove('show')">取消</button>
+    <button class="btn btn-blue" id="contractGenerateBtn" onclick="generateContractPdfFromEditor()">📄 生成PDF文件</button>`;
+  // Also restore hint
+  const hintSpan = document.querySelector('#contractEditorModal textarea')?.previousElementSibling?.querySelector('span');
+  if (hintSpan) hintSpan.textContent = '（须保留 /sig1/ 和 /sig2/ 签名锚点）';
   document.getElementById('contractEditorTextarea').value = '加载中…';
   document.getElementById('contractEditorPreview').innerHTML = '';
   const titles = { 'partner-new': '新建合作协议', 'partner-file': '编辑合同文件', 'assignment': '编辑雇用合同' };
@@ -7717,14 +7722,14 @@ async function showPartnerById(id) {
     html += `<div class="detail-section"><h4>合作服务</h4><div class="detail-tags">${svcList.map(s=>'<span>'+esc(s)+'</span>').join('')}</div></div>`;
   }
   if (files.length) {
-    const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
+    const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',termination_notice:'终止通知',breach_notice:'违约通知',amendment:'合同修改',mutual_termination:'协商解除',other:'其他'};
     html += `<div class="detail-section"><h4>文件 (${files.length})</h4>` +
       files.map(f=>{
-        const isContractFile = f.file_type==='contract'||f.file_type==='agreement';
-        const forceDownloadBtn = (isContractFile && f.ds_envelope_id && f.ds_status === 'completed')
+        const isSignableFile = ['contract','agreement','amendment','mutual_termination'].includes(f.file_type);
+        const forceDownloadBtn = (isSignableFile && f.ds_envelope_id && f.ds_status === 'completed')
           ? `<button class="btn btn-sm" style="margin-left:.3rem;background:#F0FDF4;color:#059669;border:1px solid #BBF7D0;padding:2px 7px;font-size:.72rem" onclick="forceDownloadSigned(${f.id})" title="从 DocuSign 重新下载已签版本">⬇ 获取已签版本</button>`
           : '';
-        const signBtn = isContractFile
+        const signBtn = isSignableFile
           ? (f.ds_envelope_id
             ? `<span class="badge" style="background:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')}20;color:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')};font-size:.72rem;margin-left:.4rem;cursor:pointer" onclick="refreshDsStatusInDetail('partnerfile',${f.id},this)" title="点击刷新签署状态">✍ ${DS_STATUS_LABELS[f.ds_status]||f.ds_status||'签署中'}</span>${forceDownloadBtn}`
             : `<button class="btn btn-sm" style="margin-left:.5rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;padding:2px 8px;font-size:.75rem" onclick="_stopDsPolling();document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送签名</button>`)
@@ -7733,10 +7738,22 @@ async function showPartnerById(id) {
       }).join('')+'</div>';
   }
   if (p.notes) html += `<div class="detail-section"><h4>备注</h4><p style="font-size:.85rem;color:var(--gray-600)">${esc(p.notes)}</p></div>`;
+  // Legal action section (admin only, when partner is active)
+  if (USER_ROLE === 'admin' && p.active) {
+    html += `<div class="detail-section">
+      <h4 style="color:#92400e">⚖️ 法律操作</h4>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem">
+        <button class="btn btn-sm" style="background:#FFF7ED;color:#c2410c;border:1px solid #fed7aa" onclick="openLegalDocEditor('termination')">📄 单方面终止</button>
+        <button class="btn btn-sm" style="background:#FEF2F2;color:#b91c1c;border:1px solid #fecaca" onclick="openLegalDocEditor('breach')">⚠️ 违约终止</button>
+        <button class="btn btn-sm" style="background:#F5F3FF;color:#7c3aed;border:1px solid #ddd6fe" onclick="openLegalDocEditor('amendment')">✏️ 修改合同</button>
+        <button class="btn btn-sm" style="background:#ECFDF5;color:#065f46;border:1px solid #a7f3d0" onclick="openLegalDocEditor('mutual')">🤝 协商解除</button>
+      </div>
+      <p style="font-size:.75rem;color:var(--gray-400);margin-top:.5rem">前两项发送邮件通知，后两项需双方 DocuSign 签署</p>
+    </div>`;
+  }
   document.getElementById('partnerDetailTitle').textContent = p.name;
   document.getElementById('partnerDetail').innerHTML = html;
-  // Show terminate / reactivate buttons based on status (admin only)
-  document.getElementById('btnTerminatePartner').style.display = (USER_ROLE === 'admin' && p.active) ? '' : 'none';
+  // Show reactivate button (admin only, when partner is stopped)
   document.getElementById('btnReactivatePartner').style.display = (USER_ROLE === 'admin' && !p.active) ? '' : 'none';
   document.getElementById('partnerDetailModal').classList.add('show');
   // Auto-poll contract status if there are pending DocuSign envelopes
@@ -7820,6 +7837,149 @@ async function reactivatePartner() {
     _stopDsPolling();
   } else {
     await adminAlert('操作失败：' + (r && r.error || '请重试'), '错误');
+  }
+}
+
+// ─── Legal Document Editor ───
+let _ceType = null; // 'termination' | 'breach' | 'amendment' | 'mutual'
+let _ceLegalPartnerId = null;
+let _ceSavedFileId = null; // id of the saved partner_file after PDF is generated
+
+const _legalDocMeta = {
+  termination: { title: '单方面终止通知书', hint: '此文件将以邮件形式发送给合作方，无需双方签字', emailBtn: true, dsBtn: false },
+  breach:      { title: '违约终止通知书',   hint: '此文件将以邮件形式发送给合作方，无需双方签字', emailBtn: true, dsBtn: false },
+  amendment:   { title: '合同修改协议',      hint: '此文件需双方通过 DocuSign 签署后生效', emailBtn: false, dsBtn: true },
+  mutual:      { title: '协商解除协议',      hint: '此文件需双方通过 DocuSign 签署后生效', emailBtn: false, dsBtn: true },
+};
+
+async function openLegalDocEditor(type) {
+  if (!currentPartner) return;
+  _ceType = type;
+  _ceLegalPartnerId = currentPartner.id;
+  _ceSavedFileId = null;
+  const meta = _legalDocMeta[type];
+  // Update editor hint
+  const hintEl = document.querySelector('#contractEditorModal .modal > div:first-child');
+  document.getElementById('contractEditorTitle').textContent = meta.title;
+  // Update hint text in label
+  const hintSpan = document.querySelector('#contractEditorModal textarea').previousElementSibling?.querySelector('span');
+  if (hintSpan) hintSpan.textContent = '（' + meta.hint + '）';
+  // Set action buttons
+  _updateLegalEditorActions(type, false);
+  document.getElementById('contractEditorMsg').style.display = 'none';
+  document.getElementById('contractEditorTextarea').value = '加载中…';
+  document.getElementById('contractEditorPreview').innerHTML = '';
+  document.getElementById('contractEditorModal').classList.add('show');
+  document.getElementById('partnerDetailModal').classList.remove('show');
+  // Load template
+  try {
+    const r = await api(`/admin/partners/${currentPartner.id}/legal-template?type=${type}`);
+    document.getElementById('contractEditorTextarea').value = r.content || '';
+    previewContractEditor();
+  } catch (e) {
+    document.getElementById('contractEditorTextarea').value = '';
+    await adminAlert('加载模板失败：' + e.message, '错误');
+  }
+}
+
+function _updateLegalEditorActions(type, saved) {
+  const meta = _legalDocMeta[type];
+  const actionsEl = document.getElementById('contractEditorActions');
+  if (!actionsEl) return;
+  if (saved) {
+    // After PDF saved: show send button
+    if (meta.emailBtn) {
+      actionsEl.innerHTML = `
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('contractEditorModal').classList.remove('show')">关闭</button>
+        <button class="btn btn-sm" style="background:#1d4ed8;color:#fff" onclick="sendLegalDocEmail()">📧 发送邮件给合作方</button>`;
+    } else {
+      actionsEl.innerHTML = `
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('contractEditorModal').classList.remove('show')">关闭</button>
+        <button class="btn btn-sm" style="background:#059669;color:#fff" onclick="sendLegalDocDocuSign()">✍ 发送 DocuSign 签署</button>`;
+    }
+  } else {
+    // Before save: show save button
+    actionsEl.innerHTML = `
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('contractEditorModal').classList.remove('show')">取消</button>
+      <button class="btn btn-sm" style="background:#b45309;color:#fff" id="legalSaveBtn" onclick="saveLegalDocPdf()">📄 生成PDF文件</button>`;
+  }
+}
+
+async function saveLegalDocPdf() {
+  const content = document.getElementById('contractEditorTextarea').value.trim();
+  if (!content) { await adminAlert('文件内容不能为空', '提示'); return; }
+  const btn = document.getElementById('legalSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
+  const msgEl = document.getElementById('contractEditorMsg');
+  msgEl.style.display = 'none';
+  // For amendment/mutual: require sig anchors
+  const needsSig = (_ceType === 'amendment' || _ceType === 'mutual');
+  if (needsSig && (!content.includes('/sig1/') || !content.includes('/sig2/'))) {
+    if (!await adminConfirm('⚠️ 未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSign 签字框将使用固定坐标，可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) {
+      if (btn) { btn.disabled = false; btn.textContent = '📄 生成PDF文件'; }
+      return;
+    }
+  }
+  const setInactive = (_ceType === 'termination' || _ceType === 'breach');
+  try {
+    const r = await api(`/admin/partners/${_ceLegalPartnerId}/save-legal-doc`, {
+      method: 'POST', body: JSON.stringify({ content, type: _ceType, setInactive })
+    });
+    if (!r || r.error) throw new Error(r?.error || '保存失败');
+    _ceSavedFileId = r.id;
+    msgEl.style.cssText = 'display:block;background:#F0FDF4;border:1px solid #BBF7D0;color:#059669;padding:.5rem .8rem;border-radius:6px';
+    msgEl.textContent = `✅ PDF 已生成：${r.fileName}`;
+    _updateLegalEditorActions(_ceType, true);
+    await loadPartners(); // refresh partner list (status may have changed)
+  } catch (e) {
+    msgEl.style.cssText = 'display:block;background:#FEF2F2;border:1px solid #FECACA;color:#DC2626;padding:.5rem .8rem;border-radius:6px';
+    msgEl.textContent = '生成失败：' + e.message;
+    if (btn) { btn.disabled = false; btn.textContent = '📄 生成PDF文件'; }
+  }
+}
+
+async function sendLegalDocEmail() {
+  if (!_ceSavedFileId) { await adminAlert('请先生成PDF文件', '提示'); return; }
+  // Check if partner has a contact email, if not ask
+  const p = allPartners.find(x => x.id === _ceLegalPartnerId);
+  let contacts = [];
+  try { contacts = JSON.parse(p?.contacts || '[]'); } catch {}
+  const defaultEmail = contacts.find(c => c.email)?.email || p?.email || '';
+  let toEmail = defaultEmail;
+  if (!toEmail) {
+    toEmail = await adminPrompt('未找到合作方邮箱，请手动输入收件邮箱：', '发送邮件', '');
+    if (!toEmail) return;
+  }
+  const actionsEl = document.getElementById('contractEditorActions');
+  const sendBtn = actionsEl.querySelector('button:last-child');
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = '发送中…'; }
+  try {
+    const r = await api(`/admin/partner-files/${_ceSavedFileId}/send-notice-email`, {
+      method: 'POST', body: JSON.stringify({ email: toEmail })
+    });
+    if (r && r.success) {
+      await adminAlert(`✅ 邮件已发送至：${r.sentTo}\n\nPDF 已作为附件发送给合作方。`, '发送成功');
+      document.getElementById('contractEditorModal').classList.remove('show');
+    } else {
+      await adminAlert('发送失败：' + (r?.error || '请检查邮件配置'), '错误');
+      if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '📧 发送邮件给合作方'; }
+    }
+  } catch (e) {
+    await adminAlert('发送失败：' + e.message, '错误');
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = '📧 发送邮件给合作方'; }
+  }
+}
+
+async function sendLegalDocDocuSign() {
+  if (!_ceSavedFileId) { await adminAlert('请先生成PDF文件', '提示'); return; }
+  document.getElementById('contractEditorModal').classList.remove('show');
+  // Open the DocuSign modal for this file
+  const p = allPartners.find(x => x.id === _ceLegalPartnerId);
+  if (p) {
+    // Reload partners to pick up the new file, then open DocuSign
+    await loadPartners();
+    _dsPartnerId = _ceLegalPartnerId;
+    await openPartnerDocuSign(_ceLegalPartnerId);
   }
 }
 
@@ -8163,7 +8323,7 @@ function closePartnerModal() {
 
 async function loadPartnerFiles(pid) {
   const files = await api(`/admin/partners/${pid}/files`);
-  const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
+  const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',termination_notice:'终止通知',breach_notice:'违约通知',amendment:'合同修改',mutual_termination:'协商解除',other:'其他'};
   const signable = new Set(['contract','agreement']);
   document.getElementById('pFilesList').innerHTML = files.length ? files.map(f=>{
     const dsLabel = f.ds_status ? (DS_STATUS_LABELS[f.ds_status] || f.ds_status) : '';
