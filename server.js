@@ -4493,7 +4493,7 @@ app.delete('/api/admin/quotes/:id', requireAdmin, blockManager, staffGuard('dele
 
 // Partners CRUD
 app.get('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
-  const rows = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id) as file_count FROM partners p ORDER BY p.created_at DESC`).all();
+  const rows = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id) as file_count, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id AND f.ds_status='completed') as signed_contract_count FROM partners p ORDER BY p.created_at DESC`).all();
   res.json(rows);
 });
 
