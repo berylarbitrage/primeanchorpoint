@@ -3294,8 +3294,8 @@ tr:hover td{background:var(--sky-light)}
     <h2 id="partnerDetailTitle">公司详情</h2>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="editPartnerFromDetail()">编辑</button>
-      <button class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE" onclick="openContractEditorForNewPartnerContract(currentPartner&&currentPartner.id)">✏️ 编辑合同</button>
-      <button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送合同</button>
+      <button id="btnEditContract" class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE" onclick="openContractEditorForNewPartnerContract(currentPartner&&currentPartner.id)">✏️ 编辑合同</button>
+      <button id="btnSendContract" class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送合同</button>
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
     </div>
   </div>
@@ -7537,6 +7537,9 @@ async function showPartnerById(id) {
   const svcList = typeof svcs==='string'? svcs.split(',').map(s=>s.trim()).filter(Boolean) : (Array.isArray(svcs)?svcs:[]);
   // load files
   const files = await api(`/admin/partners/${id}/files`);
+  const hasContract = files.some(f=>f.file_type==='contract'||f.file_type==='agreement');
+  document.getElementById('btnEditContract').style.display = hasContract ? 'none' : '';
+  document.getElementById('btnSendContract').style.display = hasContract ? 'none' : '';
   let html = `<div class="detail-section"><h4>基本信息</h4><div class="detail-grid">
     ${p.company_number?`<div class="detail-row"><span>公司编号</span><span style="font-family:monospace;font-weight:600;color:var(--sky)">${esc(p.company_number)}</span></div>`:''}
     <div class="detail-row"><span>公司名称</span><span>${esc(p.name)}</span></div>
@@ -7581,7 +7584,11 @@ async function showPartnerById(id) {
   if (files.length) {
     const typeLabels={contract:'合同',agreement:'协议',license:'营业执照',photo:'照片',invoice:'发票',other:'其他'};
     html += `<div class="detail-section"><h4>文件 (${files.length})</h4>` +
-      files.map(f=>`<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span></div>`).join('')+'</div>';
+      files.map(f=>{
+        const isContractFile = f.file_type==='contract'||f.file_type==='agreement';
+        const signBtn = isContractFile ? `<button class="btn btn-sm" style="margin-left:.5rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;padding:2px 8px;font-size:.75rem" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送签名</button>` : '';
+        return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span>${signBtn}</div>`;
+      }).join('')+'</div>';
   }
   if (p.notes) html += `<div class="detail-section"><h4>备注</h4><p style="font-size:.85rem;color:var(--gray-600)">${esc(p.notes)}</p></div>`;
   document.getElementById('partnerDetailTitle').textContent = p.name;
