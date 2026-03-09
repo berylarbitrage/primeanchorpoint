@@ -2684,7 +2684,25 @@ tr:hover td{background:var(--sky-light)}
   </div>
 
   <div class="field-row">
-    <div class="field"><label>薪资</label><input id="jPay" placeholder="例：$18-22/hr"></div>
+    <div class="field">
+      <label>薪资</label>
+      <div style="display:flex;gap:.75rem;margin-bottom:.4rem">
+        <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-weight:normal;font-size:.88rem">
+          <input type="radio" name="jPayType" id="jPayTypeFixed" value="fixed" onchange="updatePayInputs()" checked> 固定 (Fixed)
+        </label>
+        <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-weight:normal;font-size:.88rem">
+          <input type="radio" name="jPayType" id="jPayTypeRange" value="range" onchange="updatePayInputs()"> 范围 (Range)
+        </label>
+      </div>
+      <div id="jPayFixedWrap">
+        <input id="jPayFixed" placeholder="例：$18" style="width:100%;box-sizing:border-box">
+      </div>
+      <div id="jPayRangeWrap" style="display:none;gap:.4rem;align-items:center">
+        <input id="jPayLow" placeholder="最低 Low" style="flex:1;min-width:0">
+        <span style="color:#6b7280;padding:0 .1rem">—</span>
+        <input id="jPayHigh" placeholder="最高 High" style="flex:1;min-width:0">
+      </div>
+    </div>
     <div class="field"><label>结算周期</label>
       <select id="jPayPeriod">
         <option value="">不指定</option>
@@ -2694,6 +2712,7 @@ tr:hover td{background:var(--sky-light)}
         <option value="biweekly">每两周 (Bi-weekly)</option>
         <option value="semimonthly">每半月 (Semi-monthly)</option>
         <option value="monthly">每月 (Monthly)</option>
+        <option value="yearly">每年 (Yearly)</option>
       </select>
     </div>
   </div>
@@ -4661,7 +4680,7 @@ function showJobAppDetail(id) {
   const DAY_ZH = { Mon:'周一',Tue:'周二',Wed:'周三',Thu:'周四',Fri:'周五',Sat:'周六',Sun:'周日' };
   const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
   const workDays = a.work_days ? a.work_days.split(',').map(d=>DAY_ZH[d.trim()]||d.trim()).join('、') : '';
-  const payPeriodLabel = {'hourly':'每小时','daily':'每天','weekly':'每周','biweekly':'每两周','semimonthly':'每半月','monthly':'每月'};
+  const payPeriodLabel = {'hourly':'每小时','daily':'每天','weekly':'每周','biweekly':'每两周','semimonthly':'每半月','monthly':'每月','yearly':'每年'};
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
   overlay.innerHTML = `<div style="background:#fff;border-radius:14px;padding:1.5rem;width:min(480px,94vw);max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
@@ -5057,7 +5076,18 @@ async function openJobModal(job) {
   // jTitle removed; jTitleEn is set below via loadLangDesc/openJobModal
   setCategoryValue('jCategory','jCategoryCustom', job ? (job.category || '') : '');
   document.getElementById('jType').value = job ? (job.type || '') : '';
-  document.getElementById('jPay').value = job ? job.pay : '';
+  // Parse pay into fixed vs range inputs
+  const rawPay = job ? (job.pay || '') : '';
+  const rangeMatch = rawPay.match(/^(.+?)\s*-\s*(.+)$/);
+  if (rangeMatch) {
+    document.getElementById('jPayTypeRange').checked = true;
+    document.getElementById('jPayLow').value = rangeMatch[1].trim();
+    document.getElementById('jPayHigh').value = rangeMatch[2].trim();
+  } else {
+    document.getElementById('jPayTypeFixed').checked = true;
+    document.getElementById('jPayFixed').value = rawPay;
+  }
+  updatePayInputs();
   document.getElementById('jPayPeriod').value = job ? (job.pay_period || '') : '';
   // Language checkboxes
   const activeLangs = job ? (job.langs || job.lang || 'en').split(',').map(s=>s.trim()) : ['en'];
@@ -5140,6 +5170,12 @@ async function openJobModal(job) {
 }
 function closeJobModal() { guardClose('jobModal'); }
 function editJob(j) { openJobModal(j); }
+
+function updatePayInputs() {
+  const isRange = document.getElementById('jPayTypeRange').checked;
+  document.getElementById('jPayFixedWrap').style.display = isRange ? 'none' : '';
+  document.getElementById('jPayRangeWrap').style.display = isRange ? 'flex' : 'none';
+}
 
 function updateLangSections() {
   document.getElementById('jLangEnSection').style.display = document.getElementById('jLangEn').checked ? '' : 'none';
@@ -5275,7 +5311,18 @@ async function randomFillJob() {
   document.getElementById('jCity').value           = _rloc.city;
   fillStateSelect(document.getElementById('jState'), _rloc.state);
   document.getElementById('jZip').value            = _rloc.zip;
-  document.getElementById('jPay').value            = r.pay;
+  // Parse pay into structured inputs
+  const _rfPay = r.pay || '';
+  const _rfRange = _rfPay.match(/^(.+?)\s*-\s*(.+)$/);
+  if (_rfRange) {
+    document.getElementById('jPayTypeRange').checked = true;
+    document.getElementById('jPayLow').value = _rfRange[1].trim();
+    document.getElementById('jPayHigh').value = _rfRange[2].trim();
+  } else {
+    document.getElementById('jPayTypeFixed').checked = true;
+    document.getElementById('jPayFixed').value = _rfPay;
+  }
+  updatePayInputs();
   document.getElementById('jPayPeriod').value      = r.pay_period || '';
   document.getElementById('jWorkAuth').value       = r.work_auth || '';
   document.getElementById('jEmploymentType').value = r.employment_type || '';
@@ -5713,7 +5760,15 @@ async function saveJob() {
       document.getElementById('jState').value,
       document.getElementById('jZip').value.trim()
     ),
-    pay: document.getElementById('jPay').value,
+    pay: (() => {
+      const isRange = document.getElementById('jPayTypeRange').checked;
+      if (isRange) {
+        const lo = document.getElementById('jPayLow').value.trim();
+        const hi = document.getElementById('jPayHigh').value.trim();
+        return lo && hi ? `${lo}-${hi}` : (lo || hi);
+      }
+      return document.getElementById('jPayFixed').value.trim();
+    })(),
     pay_period: document.getElementById('jPayPeriod').value,
     lang: langVal,
     lang_name: langNames[langVal] || langVal,
