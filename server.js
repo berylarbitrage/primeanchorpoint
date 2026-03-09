@@ -1917,11 +1917,11 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
 }
 
 // Create an embedded signing URL (recipient view) for signer1 (company, clientUserId '1')
-async function dsCreateSignUrl(envelopeId, signerEmail, signerName, returnUrl) {
+async function dsCreateSignUrl(envelopeId, signerEmail, signerName, returnUrl, frameOrigin) {
   const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-  const r = await dsApiCall('POST', `/restapi/v2.1/accounts/${accountId}/envelopes/${envelopeId}/views/recipient`, {
-    returnUrl, authenticationMethod: 'none', email: signerEmail, userName: signerName, clientUserId: '1'
-  });
+  const body = { returnUrl, authenticationMethod: 'none', email: signerEmail, userName: signerName, clientUserId: '1' };
+  if (frameOrigin) body.frameOrigin = frameOrigin;
+  const r = await dsApiCall('POST', `/restapi/v2.1/accounts/${accountId}/envelopes/${envelopeId}/views/recipient`, body);
   if (r.status !== 201) throw new Error(`DocuSign view ${r.status}: ${JSON.stringify(r.data)}`);
   return r.data.url;
 }
@@ -4989,8 +4989,9 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: companyEmail, name: companyName }, signer2: { email: partnerEmail, name: partnerName } });
     db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, f.id);
     const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
+    const frameOrigin = `${req.protocol}://${req.get('host')}`;
     let signUrl = null;
-    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
+    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl, frameOrigin); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
     res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
   } catch (e) {
     console.error('[DocuSign PartnerFile]', e.message);
@@ -5016,7 +5017,8 @@ app.get('/api/admin/partner-files/:id/docusign-sign-url', requireAdmin, blockMan
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
     const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
     const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
-    const signUrl = await dsCreateSignUrl(f.ds_envelope_id, companyEmail, companyName, returnUrl);
+    const frameOrigin = `${req.protocol}://${req.get('host')}`;
+    const signUrl = await dsCreateSignUrl(f.ds_envelope_id, companyEmail, companyName, returnUrl, frameOrigin);
     res.json({ signUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -5164,8 +5166,9 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
     const result = await dsSendEnvelope({ docPath, docName: a.contract_filename || a.contract_file, emailSubject: `请签署雇用合同 - ${a.inquiry_name || ''}`, signer1: { email: companyEmail, name: companyName }, signer2: { email: workerEmail, name: workerName } });
     db.prepare("UPDATE assignments SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, a.id);
     const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
+    const frameOrigin = `${req.protocol}://${req.get('host')}`;
     let signUrl = null;
-    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
+    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl, frameOrigin); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
     res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
   } catch (e) {
     console.error('[DocuSign Assignment]', e.message);
@@ -5182,7 +5185,8 @@ app.get('/api/admin/assignments/:id/docusign-sign-url', requireAdmin, blockManag
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
     const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
     const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
-    const signUrl = await dsCreateSignUrl(a.ds_envelope_id, companyEmail, companyName, returnUrl);
+    const frameOrigin = `${req.protocol}://${req.get('host')}`;
+    const signUrl = await dsCreateSignUrl(a.ds_envelope_id, companyEmail, companyName, returnUrl, frameOrigin);
     res.json({ signUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
