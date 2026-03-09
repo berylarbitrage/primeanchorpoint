@@ -12463,8 +12463,9 @@ function initBatchDays() {
 
   const startEl = document.getElementById('batchStartDate');
   const endEl = document.getElementById('batchEndDate');
-  startEl.value = nextMon.toISOString().split('T')[0];
-  endEl.value = nextFri.toISOString().split('T')[0];
+  const toLocalDateStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  startEl.value = toLocalDateStr(nextMon);
+  endEl.value = toLocalDateStr(nextFri);
   startEl.addEventListener('change', renderBatchDays);
   endEl.addEventListener('change', renderBatchDays);
   document.getElementById('batchStartTime').addEventListener('change', updateBatchPreview);
@@ -12491,7 +12492,7 @@ function renderBatchDays() {
   if (days.length > 14) { grid.innerHTML = '<div style="color:var(--red);font-size:.85rem">日期范围不能超过14天</div>'; return; }
 
   grid.innerHTML = days.map(d => {
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const label = `${d.getMonth()+1}/${d.getDate()} ${WEEKDAY_NAMES[d.getDay()]}`;
     const isWeekend = d.getDay() === 0 || d.getDay() === 6;
     return `<div style="display:flex;align-items:center;gap:.75rem;padding:.4rem .75rem;border:1px solid var(--gray-200);border-radius:8px;background:${isWeekend?'#fef3c7':'#fff'}">
