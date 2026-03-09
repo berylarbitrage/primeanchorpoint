@@ -192,6 +192,29 @@ tr:last-child td{border-bottom:none}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
 <!-- Google Translate -->
+<style>
+/* Hide Google's top banner/iframe injection */
+.goog-te-banner-frame,.goog-te-balloon-frame{display:none!important}
+body{top:0!important}
+/* Style the select widget to match portal theme */
+.goog-te-gadget-simple{border:1.5px solid #a78bfa!important;border-radius:6px!important;padding:2px 8px!important;background:#f3e8ff!important;font-size:.72rem!important;cursor:pointer!important}
+.goog-te-gadget-simple .goog-te-menu-value span{color:#7c3aed!important;font-weight:600!important;font-size:.72rem!important;font-family:'Segoe UI',system-ui,sans-serif!important}
+.goog-te-gadget-simple img{display:none!important}
+#google_translate_element{margin-top:.4rem}
+#gt_login_element{margin-top:.5rem;text-align:center}
+#gt_login_element .goog-te-gadget-simple{width:100%!important;justify-content:center!important;display:inline-flex!important;align-items:center!important}
+</style>
+<script>
+function googleTranslateElementInit() {
+  new google.translate.TranslateElement({
+    pageLanguage: 'zh',
+    includedLanguages: 'en,zh-CN,zh-TW,es,ko,ja,vi,tl,pt,fr,ar,hi,th,ru,de',
+    layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+    autoDisplay: false
+  }, 'google_translate_element');
+}
+</script>
+<script src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" defer></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -464,6 +487,7 @@ tr:last-child td{border-bottom:none}
         <button onclick="setPortalLang('en')" id="plEn">🇺🇸 EN</button>
         <button onclick="setPortalLang('es')" id="plEs">🇲🇽 ES</button>
       </div>
+      <div id="google_translate_element"></div>
       <div class="worker-name" id="workerNameDisplay"></div>
       <button id="logoutBtn" class="sidebar-logout" onclick="workerLogout()">退出</button>
     </div>
