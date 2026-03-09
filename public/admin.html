@@ -6381,6 +6381,31 @@ async function refreshDsStatus(type, id, badgeEl) {
   } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
 }
 
+// Like refreshDsStatus but reloads the partner detail modal on completion to show the updated signed file
+async function refreshDsStatusInDetail(type, id, badgeEl) {
+  const url = type === 'assignment' ? `/admin/assignments/${id}/docusign-status` : `/admin/partner-files/${id}/docusign-status`;
+  try {
+    if (badgeEl) badgeEl.textContent = '⟳ 刷新中…';
+    const r = await api(url);
+    const label = DS_STATUS_LABELS[r.status] || r.status || '未知';
+    const color = DS_STATUS_COLORS[r.status] || '#6B7280';
+    if (badgeEl) { badgeEl.style.color = color; badgeEl.style.background = color + '20'; badgeEl.textContent = `✍ ${label}`; }
+    if (r.status === 'completed') {
+      // Reload the detail modal so the signed PDF download link reflects the updated file
+      if (currentPartner) await showPartnerById(currentPartner.id);
+      alert(`合同完成！双方均已签署，已签版本已更新。\n公司: ${r.companySigned || '—'}\n对方: ${r.partnerSigned || r.workerSigned || '—'}`);
+    } else if (r.status === 'declined') {
+      const reason = r.declineReason ? `\n拒签理由：${r.declineReason}` : '';
+      const doVoid = confirm(`对方已拒绝签署。${reason}\n\n是否撤销当前信封？`);
+      if (doVoid) await voidDsEnvelope(type, id, badgeEl);
+    } else {
+      const s1 = r.partnerSigned || r.workerSigned ? '✓ 对方已签' : '○ 对方待签';
+      const s2 = r.companySigned ? '✓ 公司已签' : '○ 公司待签';
+      if (badgeEl) badgeEl.title = `${s2} | ${s1}（点击刷新）`;
+    }
+  } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
+}
+
 // ── Contract Editor ───────────────────────────────────────────────────────────
 let _ceMode = null; // 'partner-new' | 'partner-file' | 'assignment'
 let _ceId = null;
@@ -7545,7 +7570,7 @@ async function showPartnerById(id) {
     ${p.company_number?`<div class="detail-row"><span>公司编号</span><span style="font-family:monospace;font-weight:600;color:var(--sky)">${esc(p.company_number)}</span></div>`:''}
     <div class="detail-row"><span>公司名称</span><span>${esc(p.name)}</span></div>
     <div class="detail-row"><span>行业</span><span>${esc(p.industry)}</span></div>
-    <div class="detail-row"><span>状态</span><span>${p.active?'合作中':'已停止'}</span></div>
+    <div class="detail-row"><span>状态</span><span>${p.active?'合作中':(p.signed_contract_count||0)>0?'已停止':'待签约'}</span></div>
     <div class="detail-row"><span>添加时间</span><span>${new Date(p.created_at).toLocaleString()}</span></div>
   </div></div>`;
   if (contacts.length) {
@@ -7589,7 +7614,7 @@ async function showPartnerById(id) {
         const isContractFile = f.file_type==='contract'||f.file_type==='agreement';
         const signBtn = isContractFile
           ? (f.ds_envelope_id
-            ? `<span class="badge" style="background:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')}20;color:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')};font-size:.72rem;margin-left:.4rem;cursor:pointer" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ ${DS_STATUS_LABELS[f.ds_status]||f.ds_status||'签署中'}</span>`
+            ? `<span class="badge" style="background:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')}20;color:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')};font-size:.72rem;margin-left:.4rem;cursor:pointer" onclick="refreshDsStatusInDetail('partnerfile',${f.id},this)" title="点击刷新签署状态">✍ ${DS_STATUS_LABELS[f.ds_status]||f.ds_status||'签署中'}</span>`
             : `<button class="btn btn-sm" style="margin-left:.5rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;padding:2px 8px;font-size:.75rem" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送签名</button>`)
           : '';
         return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span>${signBtn}</div>`;
