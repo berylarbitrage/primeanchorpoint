@@ -3331,6 +3331,10 @@ tr:hover td{background:var(--sky-light)}
       </div>
     </div>
     <div id="contractEditorMsg" style="display:none;padding:.5rem .8rem;border-radius:6px;font-size:.87rem"></div>
+    <div id="contractSignatureRow" style="display:none;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:.65rem 1rem">
+      <div style="font-size:.72rem;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.4px;margin-bottom:.35rem">授权代表签名 / Authorized Representative Signature</div>
+      <input id="contractSignatureInput" type="text" placeholder="输入签名姓名（将显示在文件上）" style="width:100%;padding:.45rem .75rem;border:1px solid #CBD5E1;border-radius:6px;font-size:.9rem;font-family:inherit;box-sizing:border-box" oninput="previewContractEditor()">
+    </div>
     <div id="contractEditorActions" style="display:flex;gap:.5rem;justify-content:flex-end">
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('contractEditorModal').classList.remove('show')">取消</button>
       <button class="btn btn-blue" id="contractGenerateBtn" onclick="generateContractPdfFromEditor()">📄 生成PDF文件</button>
@@ -6576,15 +6580,24 @@ async function _openContractEditor(mode, id, titleHint, onSuccess) {
 
 function previewContractEditor() {
   const text = document.getElementById('contractEditorTextarea').value;
+  const sigName = (document.getElementById('contractSignatureInput')?.value || '').trim();
   let html = '';
   for (const line of text.split('\n')) {
     if (!line.trim()) { html += '<div style="height:.6em"></div>'; continue; }
-    if (/^[A-Z][A-Z\s]{3,}$/.test(line.trim()) || /^\d+\.\s/.test(line.trim())) {
-      html += `<div style="font-weight:700;font-size:1.05em;margin-top:.6em;color:#1e293b">${esc(line)}</div>`;
-    } else if (line.includes('/sig1/') || line.includes('/sig2/') || line.includes('/date1/') || line.includes('/date2/')) {
-      html += `<div style="background:#EFF6FF;border:1px dashed #93C5FD;padding:1px 6px;border-radius:3px;margin:.2rem 0;display:inline-block;color:#1D4ED8;font-family:monospace;font-size:.95em">${esc(line)}</div><br>`;
+    // Replace blank signature placeholder with entered name for preview
+    let displayLine = line;
+    if (sigName && displayLine.includes('________________________')) {
+      displayLine = displayLine.replace('________________________', sigName);
+    }
+    if (/^[A-Z][A-Z\s]{3,}$/.test(displayLine.trim()) || /^\d+\.\s/.test(displayLine.trim())) {
+      html += `<div style="font-weight:700;font-size:1.05em;margin-top:.6em;color:#1e293b">${esc(displayLine)}</div>`;
+    } else if (displayLine.includes('/sig1/') || displayLine.includes('/sig2/') || displayLine.includes('/date1/') || displayLine.includes('/date2/')) {
+      html += `<div style="background:#EFF6FF;border:1px dashed #93C5FD;padding:1px 6px;border-radius:3px;margin:.2rem 0;display:inline-block;color:#1D4ED8;font-family:monospace;font-size:.95em">${esc(displayLine)}</div><br>`;
+    } else if (sigName && line.includes('________________________')) {
+      // Highlight the signed line
+      html += `<div style="color:#1e3a5f;font-style:italic">${esc(displayLine)}</div>`;
     } else {
-      html += `<div>${esc(line)}</div>`;
+      html += `<div>${esc(displayLine)}</div>`;
     }
   }
   document.getElementById('contractEditorPreview').innerHTML = html;
@@ -7858,6 +7871,13 @@ async function openLegalDocEditor(type) {
   _ceLegalPartnerId = currentPartner.id;
   _ceSavedFileId = null;
   const meta = _legalDocMeta[type];
+  // Show signature input only for email-only notices (termination, breach)
+  const sigRow = document.getElementById('contractSignatureRow');
+  const sigInput = document.getElementById('contractSignatureInput');
+  if (sigRow) {
+    sigRow.style.display = (type === 'termination' || type === 'breach') ? 'block' : 'none';
+    if (sigInput) sigInput.value = '';
+  }
   // Update editor hint
   const hintEl = document.querySelector('#contractEditorModal .modal > div:first-child');
   document.getElementById('contractEditorTitle').textContent = meta.title;
@@ -7906,8 +7926,14 @@ function _updateLegalEditorActions(type, saved) {
 }
 
 async function saveLegalDocPdf() {
-  const content = document.getElementById('contractEditorTextarea').value.trim();
+  let content = document.getElementById('contractEditorTextarea').value.trim();
   if (!content) { await adminAlert('文件内容不能为空', '提示'); return; }
+  // For email-only notices, inject the authorized representative signature if provided
+  if (_ceType === 'termination' || _ceType === 'breach') {
+    const sigName = (document.getElementById('contractSignatureInput')?.value || '').trim();
+    if (!sigName) { await adminAlert('请在下方输入授权代表签名姓名后再生成文件。', '签名不能为空'); return; }
+    content = content.replace('________________________', sigName);
+  }
   const btn = document.getElementById('legalSaveBtn');
   if (btn) { btn.disabled = true; btn.textContent = '生成中…'; }
   const msgEl = document.getElementById('contractEditorMsg');
