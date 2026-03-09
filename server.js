@@ -4,6 +4,7 @@ const Database = require('better-sqlite3');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const PDFDocument = require('pdfkit');
 
 const nodemailer = require('nodemailer');
 
@@ -4683,6 +4684,164 @@ app.post('/api/admin/partners/:id/files', requireAdmin, blockManager, docUpload.
     req.params.id, req.body.file_type||'other', req.body.file_label||'',
     req.file?req.file.filename:'', req.file?req.file.originalname:'', req.body.notes||'');
   res.json({ success: true, id: r.lastInsertRowid });
+});
+
+// POST /api/admin/partners/:id/generate-agreement — generate a clean Partnership Agreement PDF template
+// The PDF uses 1pt white anchor strings (/sig1/ /date1/ /sig2/ /date2/) so DocuSign can position tabs
+// while the anchor text stays invisible in the document.
+app.post('/api/admin/partners/:id/generate-agreement', requireAdmin, blockManager, async (req, res) => {
+  const partner = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!partner) return res.status(404).json({ error: 'Partner not found' });
+
+  const partnerName = partner.name || 'Partner Company';
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const fileName = `Partnership_Agreement_${partnerName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
+  const filePath = path.join(docsDir, fileName);
+
+  try {
+    await new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'LETTER', margins: { top: 72, bottom: 72, left: 72, right: 72 } });
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+
+      const W = doc.page.width - 144; // usable width
+      const L = 72; // left margin
+
+      // ── Title ───────────────────────────────────────────────
+      doc.fontSize(18).font('Helvetica-Bold').fillColor('black')
+        .text('PARTNERSHIP AGREEMENT', { align: 'center' });
+      doc.moveDown(0.4);
+      doc.fontSize(11).font('Helvetica').fillColor('#444')
+        .text(`This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between:`, { align: 'left' });
+      doc.moveDown(1);
+
+      // ── Parties ──────────────────────────────────────────────
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('black').text('Service Provider:');
+      doc.font('Helvetica').fillColor('#333').text('Prime Anchorpoint LLC, a staffing and workforce solutions company ("Service Provider").');
+      doc.moveDown(0.8);
+      doc.font('Helvetica-Bold').fillColor('black').text('Partner:');
+      doc.font('Helvetica').fillColor('#333').text(`${partnerName} ("Partner").`);
+      doc.moveDown(1.2);
+
+      // ── Recitals ─────────────────────────────────────────────
+      doc.fontSize(13).font('Helvetica-Bold').fillColor('black').text('RECITALS');
+      doc.moveDown(0.4);
+      doc.fontSize(10).font('Helvetica').fillColor('#333').text(
+        'WHEREAS, Service Provider is in the business of providing staffing, recruitment, and workforce management services; and\n\n' +
+        'WHEREAS, Partner desires to engage Service Provider to provide such services in accordance with the terms and conditions set forth herein;\n\n' +
+        'NOW, THEREFORE, in consideration of the mutual covenants and agreements contained herein, and for other good and valuable consideration, the receipt and sufficiency of which are hereby acknowledged, the parties agree as follows:'
+      );
+      doc.moveDown(1.2);
+
+      // ── Terms ────────────────────────────────────────────────
+      const sections = [
+        ['1. SERVICES', 'Service Provider agrees to provide staffing, recruitment, and workforce management services as mutually agreed upon by the parties in writing from time to time ("Services"). The specific scope, timeline, and deliverables for each engagement shall be set forth in separate statements of work or work orders executed by both parties.'],
+        ['2. COMPENSATION', 'Partner agrees to compensate Service Provider at rates mutually agreed upon prior to the commencement of each engagement. Invoices shall be submitted by Service Provider on a bi-weekly basis and shall be due and payable within thirty (30) days of receipt.'],
+        ['3. CONFIDENTIALITY', 'Each party agrees to keep confidential all non-public information received from the other party in connection with this Agreement, and shall not disclose such information to any third party without the prior written consent of the disclosing party, except as required by law.'],
+        ['4. TERM AND TERMINATION', 'This Agreement shall commence on the date first written above and shall continue for a period of one (1) year, unless earlier terminated. Either party may terminate this Agreement upon thirty (30) days\' prior written notice to the other party.'],
+        ['5. INDEMNIFICATION', 'Each party shall indemnify, defend, and hold harmless the other party and its officers, directors, employees, and agents from and against any claims, damages, losses, and expenses arising out of or resulting from the indemnifying party\'s negligence or willful misconduct.'],
+        ['6. GOVERNING LAW', 'This Agreement shall be governed by and construed in accordance with the laws of the State in which Service Provider maintains its principal place of business, without regard to its conflict of law provisions.'],
+        ['7. ENTIRE AGREEMENT', 'This Agreement constitutes the entire agreement between the parties with respect to its subject matter and supersedes all prior negotiations, representations, warranties, and understandings of the parties.'],
+      ];
+
+      for (const [title, body] of sections) {
+        if (doc.y > doc.page.height - 200) doc.addPage();
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('black').text(title);
+        doc.moveDown(0.2);
+        doc.fontSize(10).font('Helvetica').fillColor('#333').text(body);
+        doc.moveDown(0.8);
+      }
+
+      // ── Signature Page ───────────────────────────────────────
+      doc.addPage();
+      doc.fontSize(14).font('Helvetica-Bold').fillColor('black').text('SIGNATURES', { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(10).font('Helvetica').fillColor('#444')
+        .text('IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written above.', { align: 'center' });
+      doc.moveDown(2);
+
+      // Two-column signature blocks
+      const col1X = L;
+      const col2X = L + W / 2 + 20;
+      const colW = W / 2 - 30;
+      const startY = doc.y;
+
+      // ── Column 1: Service Provider ──────────────────────────
+      let y1 = startY;
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('black')
+        .text('Prime Anchorpoint LLC', col1X, y1, { width: colW });
+      y1 += 16;
+      doc.fontSize(10).font('Helvetica').fillColor('#555')
+        .text('(Service Provider)', col1X, y1, { width: colW });
+      y1 += 32;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Authorized Signature:', col1X, y1, { width: colW });
+      y1 += 14;
+      doc.moveTo(col1X, y1 + 18).lineTo(col1X + colW, y1 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      // Invisible DocuSign anchor for sig1 — placed on the signature line
+      doc.fontSize(1).fillColor('white').text('/sig1/', col1X, y1 + 10, { lineBreak: false, width: colW });
+      y1 += 36;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Print Name:', col1X, y1, { width: colW });
+      y1 += 14;
+      doc.moveTo(col1X, y1 + 18).lineTo(col1X + colW, y1 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      y1 += 36;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Date:', col1X, y1, { width: colW });
+      y1 += 14;
+      doc.moveTo(col1X, y1 + 18).lineTo(col1X + colW, y1 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      // Invisible DocuSign anchor for date1
+      doc.fontSize(1).fillColor('white').text('/date1/', col1X, y1 + 10, { lineBreak: false, width: colW });
+
+      // ── Column 2: Partner ────────────────────────────────────
+      let y2 = startY;
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('black')
+        .text(partnerName, col2X, y2, { width: colW });
+      y2 += 16;
+      doc.fontSize(10).font('Helvetica').fillColor('#555')
+        .text('(Partner)', col2X, y2, { width: colW });
+      y2 += 32;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Authorized Signature:', col2X, y2, { width: colW });
+      y2 += 14;
+      doc.moveTo(col2X, y2 + 18).lineTo(col2X + colW, y2 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      // Invisible DocuSign anchor for sig2
+      doc.fontSize(1).fillColor('white').text('/sig2/', col2X, y2 + 10, { lineBreak: false, width: colW });
+      y2 += 36;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Print Name:', col2X, y2, { width: colW });
+      y2 += 14;
+      doc.moveTo(col2X, y2 + 18).lineTo(col2X + colW, y2 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      y2 += 36;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Date:', col2X, y2, { width: colW });
+      y2 += 14;
+      doc.moveTo(col2X, y2 + 18).lineTo(col2X + colW, y2 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      // Invisible DocuSign anchor for date2
+      doc.fontSize(1).fillColor('white').text('/date2/', col2X, y2 + 10, { lineBreak: false, width: colW });
+
+      doc.end();
+    });
+
+    // Save as a partner_file record
+    const r = db.prepare(
+      `INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes) VALUES (?,?,?,?,?,?)`
+    ).run(req.params.id, 'contract', 'Partnership Agreement', fileName, fileName, 'Auto-generated template');
+
+    res.json({ success: true, id: r.lastInsertRowid, file_name: fileName });
+  } catch (e) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    console.error('[GenerateAgreement]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete('/api/admin/partner-files/:id', requireAdmin, blockManager, staffGuard('delete', 'partner_files'), (req, res) => {
