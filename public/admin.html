@@ -3041,9 +3041,12 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <div class="form-section" style="margin-top:.5rem">
-    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">劳务合同上传</label>
+    <label style="font-weight:700;font-size:.82rem;text-transform:uppercase;color:var(--gray-500)">劳务合同</label>
     <div id="aContractFileInfo" style="font-size:.82rem;color:var(--gray-500);margin:.3rem 0"></div>
-    <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%;margin-top:.3rem">
+    <div style="display:flex;gap:.5rem;align-items:center;margin-top:.3rem;flex-wrap:wrap">
+      <input type="file" id="aContractFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);flex:1;min-width:0">
+      <button type="button" class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE;white-space:nowrap" onclick="openContractEditorForAssignment()">✏️ 在线编辑合同</button>
+    </div>
   </div>
   <!-- Work period dates -->
   <div style="display:flex;align-items:center;gap:.5rem;margin-top:.75rem;flex-wrap:wrap">
@@ -3258,12 +3261,38 @@ tr:hover td{background:var(--sky-light)}
     <h2 id="partnerDetailTitle">公司详情</h2>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="editPartnerFromDetail()">编辑</button>
+      <button class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE" onclick="openContractEditorForNewPartnerContract(currentPartner&&currentPartner.id)">✏️ 编辑合同</button>
       <button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送合同</button>
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
     </div>
   </div>
   <div id="partnerDetail"></div>
 </div></div>
+
+<!-- ════ Contract Editor Modal ════ -->
+<div class="modal-bg" id="contractEditorModal">
+  <div class="modal" style="max-width:1180px;width:96%;max-height:93vh;display:flex;flex-direction:column;gap:1rem;padding:1.5rem">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="margin:0;font-size:1.15rem">📝 合同编辑器</h2>
+      <span id="contractEditorTitle" style="font-size:.85rem;color:var(--gray-500)"></span>
+    </div>
+    <div style="display:flex;gap:1rem;flex:1;min-height:520px;overflow:hidden">
+      <div style="flex:1;display:flex;flex-direction:column;gap:.4rem">
+        <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px">合同内容 <span style="color:#dc2626;font-weight:400;text-transform:none">（须保留 /sig1/ 和 /sig2/ 签名锚点）</span></div>
+        <textarea id="contractEditorTextarea" style="flex:1;font-family:monospace;font-size:12.5px;line-height:1.65;padding:.65rem;border:1px solid var(--gray-200);border-radius:8px;resize:none;background:#fafafa;color:#1f2937" oninput="previewContractEditor()"></textarea>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:.4rem">
+        <div style="font-size:.75rem;font-weight:700;color:var(--gray-500);text-transform:uppercase;letter-spacing:.4px">预览</div>
+        <div id="contractEditorPreview" style="flex:1;overflow-y:auto;background:white;border:1px solid var(--gray-200);border-radius:8px;padding:1.5rem;font-family:Georgia,serif;font-size:11.5px;line-height:1.75;box-shadow:inset 0 1px 3px rgba(0,0,0,.04)"></div>
+      </div>
+    </div>
+    <div id="contractEditorMsg" style="display:none;padding:.5rem .8rem;border-radius:6px;font-size:.87rem"></div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn btn-sm" onclick="document.getElementById('contractEditorModal').classList.remove('show')">取消</button>
+      <button class="btn btn-blue" id="contractGenerateBtn" onclick="generateContractPdfFromEditor()">📄 生成PDF文件</button>
+    </div>
+  </div>
+</div>
 
 <!-- ════ Partner DocuSign Send Modal ════ -->
 <div class="modal-bg" id="partnerDsModal"><div class="modal" style="max-width:480px">
@@ -3281,6 +3310,9 @@ tr:hover td{background:var(--sky-light)}
       <select id="partnerDsFileSelect" style="width:100%;padding:.65rem .9rem;border:1px solid var(--gray-200);border-radius:8px;font-size:.9rem;margin-top:.3rem;font-family:inherit">
         <option value="">— 请选择 —</option>
       </select>
+    </div>
+    <div style="margin:.4rem 0 .6rem">
+      <button class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE;font-size:.78rem" onclick="openContractEditorForPartnerFile()">✏️ 查看/编辑合同内容</button>
     </div>
     <div id="partnerDsCurrentStatus" style="display:none;font-size:.8rem;margin:.3rem 0 .75rem;padding:.4rem .75rem;border-radius:6px;background:var(--gray-100);color:var(--gray-600)"></div>
     <div class="field">
@@ -6230,6 +6262,111 @@ async function refreshDsStatus(type, id, badgeEl) {
       }
     }
   } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
+}
+
+// ── Contract Editor ───────────────────────────────────────────────────────────
+let _ceMode = null; // 'partner-new' | 'partner-file' | 'assignment'
+let _ceId = null;
+let _ceOnSuccess = null;
+
+async function openContractEditorForNewPartnerContract(partnerId) {
+  if (!partnerId) return;
+  document.getElementById('partnerDetailModal').classList.remove('show');
+  await _openContractEditor('partner-new', partnerId, 'title', () => {
+    if (_dsPartnerId) openPartnerDocuSign(_dsPartnerId);
+    else if (currentPartner) openPartnerDocuSign(currentPartner.id);
+  });
+}
+
+async function openContractEditorForPartnerFile() {
+  const fileId = document.getElementById('partnerDsFileSelect').value;
+  if (!fileId) return alert('请先选择合同文件');
+  await _openContractEditor('partner-file', fileId, 'file', () => openPartnerDocuSign(_dsPartnerId));
+}
+
+async function openContractEditorForAssignment() {
+  const id = document.getElementById('assignId').value;
+  if (!id) return alert('请先保存派工记录再编辑合同');
+  await _openContractEditor('assignment', id, 'assignment', r => {
+    const fi = document.getElementById('aContractFileInfo');
+    if (fi && r && r.fileName) fi.innerHTML = `✅ 合同已生成: <strong>${esc(r.fileName)}</strong>`;
+  });
+}
+
+async function _openContractEditor(mode, id, titleHint, onSuccess) {
+  _ceMode = mode;
+  _ceId = id;
+  _ceOnSuccess = onSuccess || null;
+  const msgEl = document.getElementById('contractEditorMsg');
+  msgEl.style.display = 'none';
+  document.getElementById('contractGenerateBtn').disabled = false;
+  document.getElementById('contractGenerateBtn').textContent = '📄 生成PDF文件';
+  document.getElementById('contractEditorTextarea').value = '加载中…';
+  document.getElementById('contractEditorPreview').innerHTML = '';
+  const titles = { 'partner-new': '新建合作协议', 'partner-file': '编辑合同文件', 'assignment': '编辑雇用合同' };
+  document.getElementById('contractEditorTitle').textContent = titles[mode] || '';
+  document.getElementById('contractEditorModal').classList.add('show');
+  const urlMap = {
+    'partner-new': `/admin/partners/${id}/contract-template`,
+    'partner-file': `/admin/partner-files/${id}/contract-content`,
+    'assignment': `/admin/assignments/${id}/contract-template`
+  };
+  try {
+    const r = await api(urlMap[mode]);
+    document.getElementById('contractEditorTextarea').value = r.content || '';
+    previewContractEditor();
+  } catch (e) {
+    document.getElementById('contractEditorTextarea').value = '';
+    alert('加载模板失败：' + e.message);
+  }
+}
+
+function previewContractEditor() {
+  const text = document.getElementById('contractEditorTextarea').value;
+  let html = '';
+  for (const line of text.split('\n')) {
+    if (!line.trim()) { html += '<div style="height:.6em"></div>'; continue; }
+    if (/^[A-Z][A-Z\s]{3,}$/.test(line.trim()) || /^\d+\.\s/.test(line.trim())) {
+      html += `<div style="font-weight:700;font-size:1.05em;margin-top:.6em;color:#1e293b">${esc(line)}</div>`;
+    } else if (line.includes('/sig1/') || line.includes('/sig2/') || line.includes('/date1/') || line.includes('/date2/')) {
+      html += `<div style="background:#EFF6FF;border:1px dashed #93C5FD;padding:1px 6px;border-radius:3px;margin:.2rem 0;display:inline-block;color:#1D4ED8;font-family:monospace;font-size:.95em">${esc(line)}</div><br>`;
+    } else {
+      html += `<div>${esc(line)}</div>`;
+    }
+  }
+  document.getElementById('contractEditorPreview').innerHTML = html;
+}
+
+async function generateContractPdfFromEditor() {
+  const content = document.getElementById('contractEditorTextarea').value.trim();
+  if (!content) return alert('合同内容不能为空');
+  if (!content.includes('/sig1/') || !content.includes('/sig2/')) {
+    if (!confirm('⚠️ 合同中未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSign 将使用固定坐标定位签字框，位置可能不准确。是否继续？')) return;
+  }
+  const btn = document.getElementById('contractGenerateBtn');
+  const msgEl = document.getElementById('contractEditorMsg');
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  msgEl.style.display = 'none';
+  const urlMap = {
+    'partner-new': `/admin/partners/${_ceId}/save-contract-from-editor`,
+    'partner-file': `/admin/partner-files/${_ceId}/save-contract-from-editor`,
+    'assignment': `/admin/assignments/${_ceId}/save-contract-from-editor`
+  };
+  try {
+    const r = await api(urlMap[_ceMode], { method: 'POST', body: JSON.stringify({ content }) });
+    if (r.success) {
+      msgEl.style.cssText = 'display:block;background:#F0FDF4;border:1px solid #BBF7D0;color:#059669;padding:.5rem .8rem;border-radius:6px';
+      msgEl.textContent = `✅ PDF 已生成：${r.fileName || '合同文件'}`;
+      if (_ceOnSuccess) _ceOnSuccess(r);
+      setTimeout(() => document.getElementById('contractEditorModal').classList.remove('show'), 1800);
+    } else { throw new Error(r.error || '生成失败'); }
+  } catch (e) {
+    msgEl.style.cssText = 'display:block;background:#FEF2F2;border:1px solid #FECACA;color:#DC2626;padding:.5rem .8rem;border-radius:6px';
+    msgEl.textContent = '生成失败：' + e.message;
+  }
+  btn.disabled = false;
+  btn.textContent = '📄 生成PDF文件';
 }
 
 async function voidDsEnvelope(type, id, badgeEl) {

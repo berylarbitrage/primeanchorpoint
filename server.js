@@ -664,6 +664,7 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFA
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
 try { db.exec("ALTER TABLE assignments ADD COLUMN ds_decline_reason TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE assignments ADD COLUMN contract_content TEXT DEFAULT ''"); } catch {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN work_schedule TEXT DEFAULT '{}'`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_address TEXT DEFAULT ''"); } catch(e) {}
@@ -674,6 +675,7 @@ try { db.exec("ALTER TABLE assignments ADD COLUMN worker_response TEXT DEFAULT N
 try { db.exec("ALTER TABLE assignments ADD COLUMN task_requirements TEXT DEFAULT '[]'"); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
 try { db.exec("ALTER TABLE partner_files ADD COLUMN ds_decline_reason TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE partner_files ADD COLUMN contract_content TEXT DEFAULT ''"); } catch {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS assignment_status_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1928,6 +1930,138 @@ function checkDsAnchors(docPath) {
     const t = fs.readFileSync(docPath).toString('binary');
     return { sig1: t.includes('/sig1/'), sig2: t.includes('/sig2/'), date1: t.includes('/date1/'), date2: t.includes('/date2/') };
   } catch { return { sig1: false, sig2: false, date1: false, date2: false }; }
+}
+
+// Multi-page PDF builder from plain text (word-wrap + auto-paginate)
+function buildContractPdf(plainText) {
+  const esc = s => String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const pageW = 612, pageH = 792, margin = 60, lineH = 16;
+  const allLines = [];
+  for (const rawLine of (plainText || '').split('\n')) {
+    const t = rawLine.trimEnd();
+    if (!t) { allLines.push({ text: '', size: 11 }); continue; }
+    const isHeading = /^[A-Z][A-Z\s]{3,}$/.test(t.trim()) || /^\d+\.\s/.test(t.trim());
+    const size = isHeading ? 12 : 11;
+    const maxW = isHeading ? 72 : 82;
+    const words = t.split(' ');
+    let cur = '';
+    for (const w of words) {
+      if (!cur) { cur = w; continue; }
+      if ((cur + ' ' + w).length <= maxW) { cur += ' ' + w; }
+      else { allLines.push({ text: cur, size }); cur = w; }
+    }
+    if (cur) allLines.push({ text: cur, size });
+  }
+  const lpp = Math.floor((pageH - 2 * margin) / lineH);
+  const pages = [];
+  for (let i = 0; i < allLines.length; i += lpp) pages.push(allLines.slice(i, i + lpp));
+  if (!pages.length) pages.push([]);
+  const pc = pages.length;
+  // Object IDs: 1=Catalog, 2=Pages, 3=Font, then per page: 4+p*2=PageObj, 5+p*2=Stream
+  const header = '%PDF-1.4\n';
+  const parts = [Buffer.from(header)];
+  let off = header.length;
+  const xr = {};
+  const wo = (id, raw) => { xr[id] = off; const b = Buffer.from(raw, 'latin1'); parts.push(b); off += b.length; };
+  const kids = Array.from({ length: pc }, (_, p) => `${4 + p * 2} 0 R`).join(' ');
+  wo(1, `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`);
+  wo(2, `2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${pc} >>\nendobj\n`);
+  wo(3, `3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`);
+  for (let p = 0; p < pc; p++) {
+    const pid = 4 + p * 2, sid = 5 + p * 2;
+    wo(pid, `${pid} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${sid} 0 R >>\nendobj\n`);
+    let stream = ''; let y = pageH - margin;
+    for (const { text, size } of pages[p]) {
+      if (!text) { y -= lineH; continue; }
+      stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
+      y -= lineH;
+    }
+    const sb = Buffer.from(stream, 'latin1');
+    wo(sid, `${sid} 0 obj\n<< /Length ${sb.length} >>\nstream\n${stream}endstream\nendobj\n`);
+  }
+  const maxId = 3 + pc * 2;
+  let xrefStr = `xref\n0 ${maxId + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i <= maxId; i++) xrefStr += (xr[i] !== undefined ? String(xr[i]).padStart(10, '0') : '0000000000') + ' 00000 n \n';
+  xrefStr += `trailer\n<< /Size ${maxId + 1} /Root 1 0 R >>\nstartxref\n${off}\n%%EOF`;
+  parts.push(Buffer.from(xrefStr));
+  return Buffer.concat(parts);
+}
+
+function generatePartnerContractText({ partnerName, companyName, partnerAddress, dateStr }) {
+  const cname = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'PARTNERSHIP SERVICE AGREEMENT', '',
+    `Date: ${dateStr}`, '',
+    'This Partnership Service Agreement ("Agreement") is entered into between:', '',
+    `Company: ${cname}  ("Service Provider")`,
+    `Partner: ${partnerName}`,
+    ...(partnerAddress ? [`Address: ${partnerAddress}`] : []),
+    '("Partner")', '',
+    '1. SCOPE OF SERVICES',
+    'The Partner agrees to provide staffing and workforce services as mutually agreed.',
+    'The Company will refer client engagements based on Partner availability and qualifications.', '',
+    '2. COMPENSATION',
+    'Compensation terms shall be agreed upon for each individual engagement or project.',
+    'Payment shall be made within 30 days of receipt of a valid invoice.', '',
+    '3. TERM',
+    'This Agreement commences on the date above and continues for one (1) year unless',
+    'terminated earlier by either party upon 30 days written notice.', '',
+    '4. CONFIDENTIALITY',
+    'Each party agrees to keep confidential any proprietary information disclosed by the other.', '',
+    '5. INDEPENDENT CONTRACTOR',
+    'Partner is an independent contractor, not an employee of the Company.', '',
+    '6. GOVERNING LAW',
+    'This Agreement shall be governed by the laws of the State of Illinois.', '',
+    '7. ENTIRE AGREEMENT',
+    'This Agreement constitutes the entire understanding between the parties.', '', '',
+    'SIGNATURES', '',
+    `${cname} (Service Provider)`,
+    'Authorized Signature: /sig1/',
+    'Date: /date1/', '',
+    `${partnerName} (Partner)`,
+    'Partner Signature: /sig2/',
+    'Date: /date2/',
+  ].join('\n');
+}
+
+function generateAssignmentContractText({ workerName, companyName, jobTitle, payRate, payType, startDate, workLocation, contractType }) {
+  const cname = companyName || 'Prime Anchorpoint LLC';
+  const payLabels = { hourly: 'per hour', salary: 'per month', annual: 'per year', per_piece: 'per piece' };
+  const payLabel = payLabels[payType] || 'per hour';
+  const dateStr = startDate || new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  return [
+    'EMPLOYMENT AGREEMENT', '',
+    `Date: ${dateStr}`, '',
+    'This Employment Agreement is entered into between:', '',
+    `Employer: ${cname}`,
+    `Employee: ${workerName || ''}`, '',
+    '1. POSITION AND DUTIES',
+    `Employee is hired as ${jobTitle || 'Staff Member'} and agrees to perform all duties`,
+    'as assigned by the Employer.', '',
+    '2. COMPENSATION',
+    `Employee will be compensated at ${payRate ? `$${payRate} ${payLabel}` : 'rates as mutually agreed'}.`,
+    `Classification: ${contractType || 'W2'}.`, '',
+    '3. WORK LOCATION',
+    workLocation || 'As assigned by Employer.', '',
+    '4. TERM',
+    `This Agreement begins on ${dateStr} and continues until terminated by either`,
+    'party with two (2) weeks written notice.', '',
+    '5. CONFIDENTIALITY',
+    'Employee shall maintain the confidentiality of all proprietary information',
+    'and trade secrets of the Employer and its clients.', '',
+    '6. AT-WILL EMPLOYMENT',
+    'Employment is at-will and may be terminated by either party at any time,',
+    'with or without cause, subject to applicable law.', '',
+    '7. GOVERNING LAW',
+    'This Agreement is governed by the laws of the State of Illinois.', '', '',
+    'SIGNATURES', '',
+    `${cname} (Employer)`,
+    'Authorized Signature: /sig1/',
+    'Date: /date1/', '',
+    `${workerName || 'Employee'} (Employee)`,
+    'Employee Signature: /sig2/',
+    'Date: /date2/',
+  ].join('\n');
 }
 
 // Seed default admin into admin_users table if empty
@@ -4464,13 +4598,63 @@ app.post('/api/admin/partners/:id/generate-default-contract', requireAdmin, bloc
   if (!p) return res.status(404).json({ error: 'Partner not found' });
   const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
-  const lines = generatePartnerContractLines({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
-  const pdfBuf = buildMinimalPdf(lines);
+  const content = generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
+  const pdfBuf = buildContractPdf(content);
   const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
   fs.writeFileSync(path.join(docsDir, filename), pdfBuf);
-  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes) VALUES (?, 'contract', '合作协议 Partnership Agreement', ?, ?, '自动生成的默认合同模板')`)
-    .run(req.params.id, filename, `Partnership Agreement - ${p.name}.pdf`);
+  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes, contract_content) VALUES (?, 'contract', '合作协议 Partnership Agreement', ?, ?, '自动生成的默认合同模板', ?)`)
+    .run(req.params.id, filename, `Partnership Agreement - ${p.name}.pdf`, content);
   res.json({ success: true, id: r.lastInsertRowid, file_name: `Partnership Agreement - ${p.name}.pdf` });
+});
+
+// GET /api/admin/partners/:id/contract-template — return default contract text (no file created)
+app.get('/api/admin/partners/:id/contract-template', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  res.json({ content: generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr }) });
+});
+
+// POST /api/admin/partners/:id/save-contract-from-editor — create new partner file from edited content
+app.post('/api/admin/partners/:id/save-contract-from-editor', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const content = req.body?.content || '';
+  if (!content.trim()) return res.status(400).json({ error: '合同内容不能为空' });
+  const pdfBuf = buildContractPdf(content);
+  const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  const displayName = `Partnership Agreement - ${p.name}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filename), pdfBuf);
+  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, contract_content) VALUES (?, 'contract', '合作协议', ?, ?, ?)`)
+    .run(req.params.id, filename, displayName, content);
+  res.json({ success: true, id: r.lastInsertRowid, fileName: displayName });
+});
+
+// GET /api/admin/partner-files/:id/contract-content — return stored contract content
+app.get('/api/admin/partner-files/:id/contract-content', requireAdmin, blockManager, (req, res) => {
+  const f = db.prepare('SELECT pf.*, p.name as partner_name, p.address as partner_address FROM partner_files pf LEFT JOIN partners p ON pf.partner_id=p.id WHERE pf.id=?').get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  if (f.contract_content) return res.json({ content: f.contract_content });
+  // Generate default content from partner data
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  res.json({ content: generatePartnerContractText({ partnerName: f.partner_name || '', companyName, partnerAddress: f.partner_address || '', dateStr }) });
+});
+
+// POST /api/admin/partner-files/:id/save-contract-from-editor — update content + regenerate PDF
+app.post('/api/admin/partner-files/:id/save-contract-from-editor', requireAdmin, blockManager, (req, res) => {
+  const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  const content = req.body?.content || '';
+  if (!content.trim()) return res.status(400).json({ error: '合同内容不能为空' });
+  const pdfBuf = buildContractPdf(content);
+  // Reuse existing file_path or create new
+  let filePath = f.file_path;
+  if (!filePath) { filePath = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`; }
+  fs.writeFileSync(path.join(docsDir, filePath), pdfBuf);
+  db.prepare("UPDATE partner_files SET contract_content=?, file_path=?, ds_status='', ds_envelope_id='' WHERE id=?").run(content, filePath, f.id);
+  res.json({ success: true, fileName: f.file_name || filePath });
 });
 
 // Partner files
@@ -4761,6 +4945,35 @@ app.get('/api/admin/assignments/:id/docusign-status', requireAdmin, blockManager
     db.prepare("UPDATE assignments SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, workerSigned, companySigned, declineReason, a.id);
     res.json({ status, workerSigned, companySigned, declineReason });
   } catch (e) { res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at, declineReason: a.ds_decline_reason, error: e.message }); }
+});
+
+// GET /api/admin/assignments/:id/contract-template — return default employment contract text
+app.get('/api/admin/assignments/:id/contract-template', requireAdmin, blockManager, (req, res) => {
+  const a = db.prepare(`SELECT a.*, i.name as inquiry_name, i.email as inquiry_email FROM assignments a LEFT JOIN inquiries i ON a.inquiry_id=i.id WHERE a.id=?`).get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  if (a.contract_content) return res.json({ content: a.contract_content });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const content = generateAssignmentContractText({
+    workerName: a.inquiry_name || '', companyName,
+    jobTitle: a.category || '', payRate: a.pay_rate || '', payType: a.pay_type || 'hourly',
+    startDate: a.start_date || '', workLocation: a.work_address || '', contractType: a.contract_type || 'W2'
+  });
+  res.json({ content });
+});
+
+// POST /api/admin/assignments/:id/save-contract-from-editor — save content + generate PDF + set contract_file
+app.post('/api/admin/assignments/:id/save-contract-from-editor', requireAdmin, blockManager, (req, res) => {
+  const a = db.prepare(`SELECT a.*, i.name as inquiry_name FROM assignments a LEFT JOIN inquiries i ON a.inquiry_id=i.id WHERE a.id=?`).get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  const content = req.body?.content || '';
+  if (!content.trim()) return res.status(400).json({ error: '合同内容不能为空' });
+  const pdfBuf = buildContractPdf(content);
+  let filePath = a.contract_file;
+  if (!filePath) filePath = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  const displayName = `Employment Agreement - ${a.inquiry_name || 'Worker'}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filePath), pdfBuf);
+  db.prepare("UPDATE assignments SET contract_file=?, contract_filename=?, contract_content=?, ds_status='', ds_envelope_id='' WHERE id=?").run(filePath, displayName, content, a.id);
+  res.json({ success: true, fileName: displayName });
 });
 
 // ─── Employee Doc Requests (私密材料链接) ───
