@@ -1842,7 +1842,9 @@ function dsMakeJWT() {
   const hdr = b64u(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const pay = b64u(JSON.stringify({ iss: process.env.DOCUSIGN_INTEGRATION_KEY, sub: process.env.DOCUSIGN_USER_ID, aud, iat: now, exp: now + 3600, scope: 'signature impersonation' }));
   const unsigned = `${hdr}.${pay}`;
-  let pem = (process.env.DOCUSIGN_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  let pem = (process.env.DOCUSIGN_PRIVATE_KEY || '')
+    .replace(/^["']|["']$/g, '')  // strip surrounding quotes if any
+    .replace(/\\n/g, '\n');       // convert literal \n to real newlines
   // Use KeyObject for signing - handles PKCS#1 and PKCS#8, OpenSSL 3.x compatible
   const keyObject = crypto.createPrivateKey({ key: pem, format: 'pem' });
   const signer = crypto.createSign('RSA-SHA256');
