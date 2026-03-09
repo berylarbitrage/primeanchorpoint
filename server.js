@@ -5111,6 +5111,17 @@ app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManag
       if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
     }
     db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, partnerSigned, companySigned, declineReason, f.id);
+    // If completed, download and overwrite local file with signed PDF (fallback if webhook missed)
+    if (status === 'completed') {
+      try {
+        const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(f.id);
+        if (pfRecord && pfRecord.file_path) {
+          const signedBuf = await dsDownloadSignedDoc(f.ds_envelope_id);
+          fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
+          console.log(`[DocuSign] Saved signed partner contract for file id=${f.id}`);
+        }
+      } catch (dlErr) { console.error('[DocuSign] Failed to download signed partner doc on status refresh:', dlErr.message); }
+    }
     res.json({ status, partnerSigned, companySigned, declineReason });
   } catch (e) { res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason, error: e.message }); }
 });
