@@ -7537,8 +7537,8 @@ function destroyPartnerAddrMap(row) {
   if (mapWrap) mapWrap.style.display = 'none';
 }
 
-async function geocodePartnerAddr(btn) {
-  const row = btn.closest('.pa-addr-row');
+async function geocodePartnerAddr(btnOrRow) {
+  const row = btnOrRow.classList.contains('pa-addr-row') ? btnOrRow : btnOrRow.closest('.pa-addr-row');
   const street = row.querySelector('.pa-street').value.trim();
   const city   = row.querySelector('.pa-city').value.trim();
   const state  = row.querySelector('.pa-state').value;
@@ -7560,6 +7560,9 @@ async function geocodePartnerAddr(btn) {
     row.querySelector('.pa-lng').value = lng;
     statusEl.textContent = `✅ ${data[0].display_name.split(',').slice(0,3).join(',')}`;
     statusEl.style.color = '#16a34a';
+    // Show the loc-section so map is visible
+    const locSec = row.querySelector('.pa-loc-section');
+    if (locSec) locSec.style.display = '';
     updatePartnerAddrMap(row);
   } catch(e) {
     statusEl.textContent = '⚠ 查询失败，请手动输入坐标'; statusEl.style.color = '#dc2626';
@@ -8316,7 +8319,12 @@ async function _doVerifyPartnerAddr(row, silent) {
     const result = await validateAddress({
       street, street2: street2El ? street2El.value.trim() : '', city, state: stateEl.value, zip
     }, { silent });
-    if (result.skipped) { if (!silent && statusEl) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; } else if (statusEl) statusEl.textContent = ''; return; }
+    if (result.skipped) {
+      if (statusEl) statusEl.textContent = '';
+      // Still try to geocode even when address validation service is not configured
+      if (!row.querySelector('.pa-lat').value) geocodePartnerAddr(row);
+      return;
+    }
     if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
     if (result.standardized) {
       const s = result.standardized;
@@ -8326,6 +8334,8 @@ async function _doVerifyPartnerAddr(row, silent) {
       zipEl.value    = s.zip;
     }
     _setAddrStatus(statusEl, result.verified === true);
+    // Auto-geocode after successful verification if no coords yet
+    if (!row.querySelector('.pa-lat').value) geocodePartnerAddr(row);
   } catch (e) {
     console.error('[verifyPartnerAddr]', e);
     _setAddrStatus(statusEl, false);
