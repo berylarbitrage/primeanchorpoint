@@ -7751,6 +7751,8 @@ async function showPartnerById(id) {
       }).join('')+'</div>';
   }
   if (p.notes) html += `<div class="detail-section"><h4>备注</h4><p style="font-size:.85rem;color:var(--gray-600)">${esc(p.notes)}</p></div>`;
+  // History timeline
+  html += renderPartnerHistory(p, files);
   // Legal action section (admin only, when partner is active)
   if (USER_ROLE === 'admin' && p.active) {
     html += `<div class="detail-section">
@@ -7857,6 +7859,94 @@ async function reactivatePartner() {
 let _ceType = null; // 'termination' | 'breach' | 'amendment' | 'mutual'
 let _ceLegalPartnerId = null;
 let _ceSavedFileId = null; // id of the saved partner_file after PDF is generated
+
+// ── Partner history timeline ──
+function renderPartnerHistory(p, files) {
+  const FILE_META = {
+    contract:           { icon: '📄', color: '#1d4ed8', bg: '#EFF6FF', label: '合同文件' },
+    agreement:          { icon: '📄', color: '#1d4ed8', bg: '#EFF6FF', label: '协议文件' },
+    license:            { icon: '📋', color: '#6B7280', bg: '#F9FAFB', label: '营业执照' },
+    photo:              { icon: '🖼', color: '#6B7280', bg: '#F9FAFB', label: '照片' },
+    invoice:            { icon: '🧾', color: '#6B7280', bg: '#F9FAFB', label: '发票' },
+    termination_notice: { icon: '📮', color: '#b91c1c', bg: '#FEF2F2', label: '终止通知书' },
+    breach_notice:      { icon: '⚠️', color: '#b45309', bg: '#FFFBEB', label: '违约终止通知' },
+    amendment:          { icon: '✏️', color: '#7c3aed', bg: '#F5F3FF', label: '合同修改协议' },
+    mutual_termination: { icon: '🤝', color: '#065f46', bg: '#ECFDF5', label: '协商解除协议' },
+    other:              { icon: '📎', color: '#6B7280', bg: '#F9FAFB', label: '其他文件' },
+  };
+  const events = [];
+  let seq = 0;
+  function addEv(tsStr, icon, color, bg, text, sub) {
+    const ts = tsStr ? new Date(tsStr) : null;
+    if (!ts || isNaN(ts)) return;
+    events.push({ ts, seq: seq++, icon, color, bg, text, sub: sub || '' });
+  }
+
+  // 1. Partner created
+  addEv(p.created_at, '🎉', '#059669', '#ECFDF5', '合作公司建立', '');
+
+  // 2. Events from each file (sorted chronologically)
+  const sortedFiles = [...files].sort((a, b) => new Date(a.uploaded_at) - new Date(b.uploaded_at));
+  for (const f of sortedFiles) {
+    const m = FILE_META[f.file_type] || FILE_META.other;
+    const fname = f.file_name || f.file_label || m.label;
+
+    // File generated/uploaded
+    addEv(f.uploaded_at, m.icon, m.color, m.bg, `${m.label}已生成`, fname);
+
+    if (f.ds_envelope_id) {
+      // DocuSign invitation sent (same time as upload — that's when it's sent)
+      addEv(f.uploaded_at, '✉️', '#1d4ed8', '#EFF6FF', '合同已发送，等待双方 DocuSign 签署', fname);
+
+      // Individual signatures
+      if (f.ds_company_signed_at)
+        addEv(f.ds_company_signed_at, '✅', '#059669', '#ECFDF5', '公司代表已完成签署', fname);
+      if (f.ds_partner_signed_at)
+        addEv(f.ds_partner_signed_at, '✅', '#059669', '#ECFDF5', '合作方已完成签署', fname);
+
+      // Completion
+      if (f.ds_status === 'completed') {
+        const completedAt = [f.ds_company_signed_at, f.ds_partner_signed_at]
+          .filter(Boolean).map(d => new Date(d)).sort((a, b) => b - a)[0];
+        if (completedAt) addEv(completedAt.toISOString(), '🤝', '#059669', '#ECFDF5', '合同签署完成，正式合作生效', fname);
+      } else if (f.ds_status === 'voided') {
+        addEv(f.uploaded_at, '🚫', '#6B7280', '#F9FAFB', 'DocuSign 签署已撤销', fname);
+      } else if (f.ds_status === 'declined') {
+        addEv(f.uploaded_at, '❌', '#b91c1c', '#FEF2F2',
+          '签署被拒绝' + (f.ds_decline_reason ? '：' + f.ds_decline_reason : ''), fname);
+      }
+    }
+  }
+
+  // Sort by timestamp, then insertion order
+  events.sort((a, b) => a.ts - b.ts || a.seq - b.seq);
+  if (!events.length) return '';
+
+  let html = `<div class="detail-section">
+    <h4>📋 历史记录</h4>
+    <div style="position:relative;padding-left:1.8rem;margin-top:.75rem">
+      <div style="position:absolute;left:.65rem;top:.4rem;bottom:.4rem;width:2px;background:#E2E8F0;border-radius:2px"></div>`;
+
+  let lastDateStr = '';
+  for (const ev of events) {
+    const dateStr = ev.ts.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric' });
+    const timeStr = ev.ts.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+    if (dateStr !== lastDateStr) {
+      lastDateStr = dateStr;
+      html += `<div style="font-size:.7rem;font-weight:700;color:var(--gray-400);margin:.75rem 0 .25rem;letter-spacing:.3px">${dateStr}</div>`;
+    }
+    html += `<div style="display:flex;align-items:flex-start;gap:.55rem;margin-bottom:.55rem;position:relative">
+      <div style="position:absolute;left:-1.35rem;top:.15rem;width:1.3rem;height:1.3rem;border-radius:50%;background:${ev.bg};border:2px solid ${ev.color};display:flex;align-items:center;justify-content:center;font-size:.6rem;flex-shrink:0">${ev.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:.84rem;font-weight:600;color:#1e293b;line-height:1.3">${esc(ev.text)}</div>
+        ${ev.sub ? `<div style="font-size:.73rem;color:var(--gray-400);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px" title="${esc(ev.sub)}">${esc(ev.sub)}</div>` : ''}
+        <div style="font-size:.7rem;color:var(--gray-400)">${timeStr}</div>
+      </div>
+    </div>`;
+  }
+  html += `</div></div>`;
+  return html;
+}
 
 const _legalDocMeta = {
   termination: { title: '单方面终止通知书', hint: '此文件将以邮件形式发送给合作方，无需双方签字', emailBtn: true, dsBtn: false },
