@@ -1891,8 +1891,9 @@ async function dsApiCall(method, apiPath, body) {
 }
 
 // Build a signHere tab using anchor string (preferred) with absolute fallback
+// anchorYOffset: '20' pushes the signature box 20pts below the anchor, keeping it clear of label text
 function dsSignTab(anchorStr, fallX, fallY) {
-  return { anchorString: anchorStr, anchorIgnoreIfNotPresent: 'true', anchorXOffset: '0', anchorYOffset: '0', xPosition: String(fallX), yPosition: String(fallY), pageNumber: '1', documentId: '1' };
+  return { anchorString: anchorStr, anchorIgnoreIfNotPresent: 'true', anchorXOffset: '0', anchorYOffset: '20', xPosition: String(fallX), yPosition: String(fallY), pageNumber: '1', documentId: '1' };
 }
 
 async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
@@ -4973,7 +4974,7 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     const anchors = checkDsAnchors(docPath);
     const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: companyEmail, name: companyName }, signer2: { email: partnerEmail, name: partnerName } });
     db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, f.id);
-    const returnUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`) + '/admin';
+    const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
     let signUrl = null;
     try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
     res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
@@ -4983,7 +4984,16 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
   }
 });
 
-// GET /api/admin/partner-files/:id/docusign-sign-url — get embedded signing URL for company
+// GET /docusign-return — served inside the signing iframe; postMessages result to parent so modal can close
+app.get('/docusign-return', (req, res) => {
+  const event = req.query.event || '';
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>
+    try { window.parent.postMessage({ type: 'docusign_return', event: ${JSON.stringify(event)} }, '*'); } catch(e) {}
+  </script></body></html>`);
+});
+
+// GET /api/admin/partner-files/:id/docusign-sign-url — get embedded signing URL for company (signer1)
 app.get('/api/admin/partner-files/:id/docusign-sign-url', requireAdmin, blockManager, async (req, res) => {
   if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
   try {
@@ -4991,7 +5001,7 @@ app.get('/api/admin/partner-files/:id/docusign-sign-url', requireAdmin, blockMan
     if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
     const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
-    const returnUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`) + '/admin';
+    const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
     const signUrl = await dsCreateSignUrl(f.ds_envelope_id, companyEmail, companyName, returnUrl);
     res.json({ signUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -5139,7 +5149,7 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
     const anchors = checkDsAnchors(docPath);
     const result = await dsSendEnvelope({ docPath, docName: a.contract_filename || a.contract_file, emailSubject: `请签署雇用合同 - ${a.inquiry_name || ''}`, signer1: { email: companyEmail, name: companyName }, signer2: { email: workerEmail, name: workerName } });
     db.prepare("UPDATE assignments SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, a.id);
-    const returnUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`) + '/admin';
+    const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
     let signUrl = null;
     try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
     res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
@@ -5149,7 +5159,7 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
   }
 });
 
-// GET /api/admin/assignments/:id/docusign-sign-url — get embedded signing URL for company
+// GET /api/admin/assignments/:id/docusign-sign-url — get embedded signing URL for company (signer1)
 app.get('/api/admin/assignments/:id/docusign-sign-url', requireAdmin, blockManager, async (req, res) => {
   if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
   try {
@@ -5157,7 +5167,7 @@ app.get('/api/admin/assignments/:id/docusign-sign-url', requireAdmin, blockManag
     if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
     const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
-    const returnUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`) + '/admin';
+    const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
     const signUrl = await dsCreateSignUrl(a.ds_envelope_id, companyEmail, companyName, returnUrl);
     res.json({ signUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
