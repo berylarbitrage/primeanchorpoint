@@ -3271,7 +3271,8 @@ tr:hover td{background:var(--sky-light)}
   <p id="partnerDsCompanyName" style="font-weight:700;color:var(--sky);margin-bottom:1rem"></p>
 
   <div id="partnerDsNoFiles" style="display:none;background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;padding:.75rem 1rem;font-size:.87rem;color:#92400E;margin-bottom:1rem">
-    该公司暂无合同 / 协议文件。请先在编辑页上传合同文件，再发送签署。
+    该公司暂无合同 / 协议文件。
+    <button id="partnerDsGenBtn" class="btn btn-sm" style="margin-top:.5rem;width:100%;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D" onclick="generateDefaultPartnerContract()">📄 自动生成默认合同模板</button>
   </div>
 
   <div id="partnerDsFileWrap">
@@ -7798,6 +7799,27 @@ async function doSendPartnerDocuSign() {
   }
 }
 
+async function generateDefaultPartnerContract() {
+  const btn = document.getElementById('partnerDsGenBtn');
+  if (!_dsPartnerId) return;
+  btn.disabled = true;
+  btn.textContent = '生成中…';
+  try {
+    const r = await api(`/admin/partners/${_dsPartnerId}/generate-default-contract`, { method: 'POST' });
+    if (r && r.success) {
+      btn.textContent = '✅ 已生成，正在加载…';
+      // Reload the modal with the new file
+      await openPartnerDocuSign(_dsPartnerId);
+    } else {
+      throw new Error(r?.error || '生成失败');
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '📄 自动生成默认合同模板';
+    alert('生成失败：' + e.message);
+  }
+}
+
 async function savePartner() {
   if (!validatePartnerAddrs()) return;
   const addrRows = Array.from(document.querySelectorAll('#pAddrList .pa-addr-row'));
@@ -7862,6 +7884,22 @@ async function savePartner() {
   if (!addrs.length || !addrs.some(a => (a.street||a.address||'').trim())) return alert('请至少填写一个公司地址');
   // Validate at least one service
   if (!allSvcs.length) return alert('请至少选择一项合作服务');
+  // Guard: warn if trying to activate partner without a completed contract
+  if (data.active && id) {
+    const existingPartner = allPartners.find(p => p.id == id);
+    if (!existingPartner || !existingPartner.active) {
+      // Was inactive — check for a completed contract
+      const files = await api(`/admin/partners/${id}/files`).catch(() => []);
+      const hasSignedContract = (files || []).some(f => f.ds_status === 'completed');
+      if (!hasSignedContract) {
+        const proceed = await showConfirm(
+          '⚠️ 该公司尚未通过 DocuSign 完成双方签署合同。\n\n正常流程应由双方签署合同后自动激活为"合作中"。\n\n是否仍要手动标记为合作中？',
+          { danger: true, confirmLabel: '强制激活', cancelLabel: '取消' }
+        );
+        if (!proceed) return;
+      }
+    }
+  }
   if (id) {
     await api(`/admin/partners/${id}`, { method:'PUT', body:JSON.stringify(data) });
     showToast(`✅ 公司「${data.name}」(#${id}) 信息已更新`);
