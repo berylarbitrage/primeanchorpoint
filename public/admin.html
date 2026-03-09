@@ -340,6 +340,15 @@ tr:hover td{background:var(--sky-light)}
 .wa-dropdown-sep{height:1px;background:var(--gray-200);margin:4px 0}
 .wa-skill-pill{display:inline-flex;align-items:center;gap:3px;padding:1px 7px;border-radius:10px;font-size:.7rem;background:#f0f5ff;color:var(--blue);margin:1px 0;white-space:nowrap}
 .wa-skill-pill .stars{color:#f59e0b;font-size:.65rem}
+/* Custom admin dialog */
+.adm-dlg-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:9999}
+.adm-dlg-bg.show{display:flex}
+.adm-dlg{background:#fff;border-radius:12px;padding:1.5rem 2rem;max-width:440px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.18)}
+.adm-dlg h4{font-size:1rem;color:var(--blue);margin-bottom:.75rem}
+.adm-dlg p{font-size:.88rem;color:var(--gray-600);margin-bottom:1.25rem;white-space:pre-wrap;line-height:1.55;word-break:break-word}
+.adm-dlg input[type=text]{width:100%;padding:8px 10px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:.88rem;margin-bottom:1.25rem;outline:none}
+.adm-dlg input[type=text]:focus{border-color:var(--sky)}
+.adm-dlg-btns{display:flex;gap:.5rem;justify-content:flex-end}
 </style>
 <script src="/address-validator.js" defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
@@ -3296,8 +3305,8 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-sm" onclick="editPartnerFromDetail()">编辑</button>
       <button id="btnEditContract" class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE" onclick="openContractEditorForNewPartnerContract(currentPartner&&currentPartner.id)">✏️ 编辑合同</button>
       <button id="btnRefreshDsStatus" class="btn btn-sm" style="display:none;background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="refreshAllPartnerFileStatuses()">⟳ 刷新签署状态</button>
-      <button id="btnSendContract" class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送合同</button>
-      <button class="btn btn-sm btn-outline" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
+      <button id="btnSendContract" class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="_stopDsPolling();document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送合同</button>
+      <button class="btn btn-sm btn-outline" onclick="_stopDsPolling();document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
     </div>
   </div>
   <div id="partnerDetail"></div>
@@ -4009,6 +4018,47 @@ let USER_ROLE = '';
 let USER_NAME = '';
 let _currentUserId = 0;
 
+// ─── Custom Admin Dialog (replaces native alert/confirm/prompt) ───
+let _admDlgResolve = null;
+function adminAlert(msg, title = '提示') {
+  return new Promise(resolve => {
+    _admDlgResolve = resolve;
+    document.getElementById('admDlgTitle').textContent = title;
+    document.getElementById('admDlgMsg').textContent = msg;
+    document.getElementById('admDlgInputWrap').style.display = 'none';
+    document.getElementById('admDlgBtns').innerHTML = `<button class="btn btn-sm" onclick="_admDlgClose(true)">确定</button>`;
+    document.getElementById('admDlgBg').classList.add('show');
+  });
+}
+function adminConfirm(msg, title = '确认', confirmTxt = '确认', cancelTxt = '取消') {
+  return new Promise(resolve => {
+    _admDlgResolve = resolve;
+    document.getElementById('admDlgTitle').textContent = title;
+    document.getElementById('admDlgMsg').textContent = msg;
+    document.getElementById('admDlgInputWrap').style.display = 'none';
+    document.getElementById('admDlgBtns').innerHTML = `<button class="btn btn-sm btn-outline" onclick="_admDlgClose(false)">${cancelTxt}</button><button class="btn btn-sm" onclick="_admDlgClose(true)">${confirmTxt}</button>`;
+    document.getElementById('admDlgBg').classList.add('show');
+  });
+}
+function adminPrompt(msg, title = '请输入', defaultVal = '') {
+  return new Promise(resolve => {
+    _admDlgResolve = resolve;
+    document.getElementById('admDlgTitle').textContent = title;
+    document.getElementById('admDlgMsg').textContent = msg;
+    const inputWrap = document.getElementById('admDlgInputWrap');
+    inputWrap.style.display = '';
+    document.getElementById('admDlgInput').value = defaultVal;
+    document.getElementById('admDlgBtns').innerHTML = `<button class="btn btn-sm btn-outline" onclick="_admDlgClose(null)">取消</button><button class="btn btn-sm" onclick="_admDlgClose(document.getElementById('admDlgInput').value)">确定</button>`;
+    document.getElementById('admDlgBg').classList.add('show');
+    setTimeout(() => document.getElementById('admDlgInput').focus(), 50);
+  });
+}
+function _admDlgClose(val) {
+  document.getElementById('admDlgBg').classList.remove('show');
+  document.getElementById('admDlgInputWrap').style.display = 'none';
+  if (_admDlgResolve) { _admDlgResolve(val); _admDlgResolve = null; }
+}
+
 // Determine which role this portal expects based on URL path
 const _PATH_ROLE = { '/admin': 'admin', '/staff': 'staff', '/manager': 'manager' };
 const PAGE_ROLE = _PATH_ROLE[window.location.pathname.replace(/\/$/, '')] || null;
@@ -4304,12 +4354,14 @@ function logout() {
   if (PAGE_ROLE) document.getElementById('loginSubtitle').textContent = subtitles[PAGE_ROLE] + ' 登录';
 })();
 
-// Check cookie on load
+// Check cookie on load — hide login immediately to avoid flash, restore if validation fails
 (function() {
   const m = document.cookie.match(/pa_token=([^;]+)/);
   if (m) {
     const cookieToken = m[1];
     TOKEN = cookieToken;
+    // Hide login immediately so user doesn't see a flash of the login form
+    document.getElementById('loginWrap').style.display = 'none';
     fetch(API + '/admin/me', { headers: { 'Authorization': `Bearer ${cookieToken}` } })
       .then(r => { if (r.ok) return r.json(); throw 0; })
       .then(u => {
@@ -4320,12 +4372,12 @@ function logout() {
         if (PAGE_ROLE && role !== PAGE_ROLE) {
           TOKEN = '';
           document.cookie = 'pa_token=;path=/;max-age=0';
+          document.getElementById('loginWrap').style.display = '';
           return;
         }
         USER_ROLE = role;
         USER_NAME = u.username || '';
         _currentUserId = u.id || 0;
-        document.getElementById('loginWrap').style.display = 'none';
         document.getElementById('app').classList.add('show');
         applyRoleUI();
         if (USER_ROLE === 'manager') { showTab('time'); }
@@ -4336,6 +4388,7 @@ function logout() {
         if (TOKEN === cookieToken) {
           TOKEN = '';
           document.cookie = 'pa_token=;path=/;max-age=0';
+          document.getElementById('loginWrap').style.display = '';
         }
       });
   }
@@ -6338,10 +6391,10 @@ function renderAssignments(assigns) {
 }
 
 async function sendForDocuSign(type, id, defaultEmail, defaultName) {
-  const email = prompt(`请输入${type === 'assignment' ? '工人' : '合作方'}的邮箱地址：`, defaultEmail || '');
+  const email = await adminPrompt(`请输入${type === 'assignment' ? '工人' : '合作方'}的邮箱地址：`, '发送合同', defaultEmail || '');
   if (email === null) return;
-  if (!email.trim()) return alert('邮箱不能为空');
-  const name = prompt('请输入姓名（可选）：', defaultName || '');
+  if (!email.trim()) { await adminAlert('邮箱不能为空', '提示'); return; }
+  const name = await adminPrompt('请输入姓名（可选）：', '发送合同', defaultName || '');
   if (name === null) return;
   const url = type === 'assignment' ? `/admin/assignments/${id}/send-docusign` : `/admin/partner-files/${id}/send-docusign`;
   const body = type === 'assignment' ? { worker_email: email.trim(), worker_name: name.trim() } : { partner_email: email.trim(), partner_name: name.trim() };
@@ -6351,12 +6404,12 @@ async function sendForDocuSign(type, id, defaultEmail, defaultName) {
       let msg = `合同信封已创建！Envelope ID: ${r.envelopeId}`;
       if (r.anchors && (!r.anchors.sig1 || !r.anchors.sig2)) msg += '\n\n⚠️ 警告：PDF 中未检测到签名锚点 /sig1/ 或 /sig2/，签字框将使用固定坐标，请确认位置正确。';
       if (r.signUrl) {
-        alert(msg + '\n\n请在弹出窗口中完成公司签字。签完后对方将自动收到邮件邀请。');
+        await adminAlert(msg + '\n\n请在弹出窗口中完成公司签字。签完后对方将自动收到邮件邀请。', '✅ 合同已发送');
         openDsCompanySign(type, id);
-      } else { alert(msg); }
+      } else { await adminAlert(msg, '✅ 合同已发送'); }
       if (type === 'assignment') loadAssignments();
-    } else { alert('发送失败：' + (r.error || '未知错误')); }
-  } catch (e) { alert('发送失败：' + e.message); }
+    } else { await adminAlert('发送失败：' + (r.error || '未知错误'), '错误'); }
+  } catch (e) { await adminAlert('发送失败：' + e.message, '错误'); }
 }
 
 async function refreshDsStatus(type, id, badgeEl) {
@@ -6370,13 +6423,13 @@ async function refreshDsStatus(type, id, badgeEl) {
     const s2 = r.companySigned ? '✓ 公司已签' : '○ 公司待签';
     if (badgeEl) { badgeEl.style.color = color; badgeEl.style.background = color + '20'; badgeEl.textContent = `✍ ${label}`; badgeEl.title = `${s2} | ${s1}  (点击刷新)`; }
     if (r.status === 'completed') {
-      alert(`合同完成！双方均已签署。\n公司: ${r.companySigned || '—'}\n对方: ${r.workerSigned || r.partnerSigned || '—'}`);
+      await adminAlert(`合同完成！双方均已签署。\n公司: ${r.companySigned || '—'}\n对方: ${r.workerSigned || r.partnerSigned || '—'}`, '✅ 合同已完成');
     } else if (r.status === 'declined') {
       const reason = r.declineReason ? `\n拒签理由：${r.declineReason}` : '';
-      const doVoid = confirm(`对方已拒绝签署。${reason}\n\n是否撤销当前信封，以便修改文件后重新发送？`);
+      const doVoid = await adminConfirm(`对方已拒绝签署。${reason}\n\n是否撤销当前信封，以便修改文件后重新发送？`, '⚠️ 对方已拒签', '撤销信封', '暂不');
       if (doVoid) await voidDsEnvelope(type, id, badgeEl);
     } else if (r.status === 'sent' || r.status === 'delivered') {
-      const action = confirm(`当前状态：${label}\n${s2} | ${s1}\n\n是否打开公司签字页面？（如需撤销请点取消后再点"撤销信封"）`);
+      const action = await adminConfirm(`当前状态：${label}\n${s2} | ${s1}\n\n是否打开公司签字页面？（如需撤销请点取消后再点"撤销信封"）`, '签署状态', '打开签字页', '暂不');
       if (action) openDsCompanySign(type, id);
     }
   } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
@@ -6402,10 +6455,10 @@ async function refreshAllPartnerFileStatuses() {
     // Reload the detail modal to reflect updated statuses and signed PDF
     await loadPartners();
     await showPartnerById(currentPartner.id);
-    if (anyCompleted) alert('✅ 合同已完成签署！已签版本已更新，请重新下载文件查看。');
-    else alert('合同尚未完成签署，当前状态已刷新。\n\n如果你已在 DocuSign 完成签署但状态未更新，请检查 DocuSign Connect 的 Webhook 配置是否指向：\n' + location.origin + '/api/docusign/webhook');
+    if (anyCompleted) await adminAlert('✅ 合同已完成签署！已签版本已更新，请重新下载文件查看。', '合同签署完成');
+    else await adminAlert('合同尚未完成签署，当前状态已刷新。\n\n如果你已在 DocuSign 完成签署但状态未更新，请检查 DocuSign Connect 的 Webhook 配置是否指向：\n' + location.origin + '/api/docusign/webhook', '签署状态');
   } catch(e) {
-    alert('刷新失败: ' + e.message);
+    await adminAlert('刷新失败: ' + e.message, '错误');
   } finally {
     btn.textContent = origText;
     btn.disabled = false;
@@ -6424,10 +6477,10 @@ async function refreshDsStatusInDetail(type, id, badgeEl) {
     if (r.status === 'completed') {
       // Reload the detail modal so the signed PDF download link reflects the updated file
       if (currentPartner) await showPartnerById(currentPartner.id);
-      alert(`合同完成！双方均已签署，已签版本已更新。\n公司: ${r.companySigned || '—'}\n对方: ${r.partnerSigned || r.workerSigned || '—'}`);
+      await adminAlert(`合同完成！双方均已签署，已签版本已更新。\n公司: ${r.companySigned || '—'}\n对方: ${r.partnerSigned || r.workerSigned || '—'}`, '✅ 合同已完成');
     } else if (r.status === 'declined') {
       const reason = r.declineReason ? `\n拒签理由：${r.declineReason}` : '';
-      const doVoid = confirm(`对方已拒绝签署。${reason}\n\n是否撤销当前信封？`);
+      const doVoid = await adminConfirm(`对方已拒绝签署。${reason}\n\n是否撤销当前信封？`, '⚠️ 对方已拒签', '撤销信封', '暂不');
       if (doVoid) await voidDsEnvelope(type, id, badgeEl);
     } else {
       const s1 = r.partnerSigned || r.workerSigned ? '✓ 对方已签' : '○ 对方待签';
@@ -6454,45 +6507,6 @@ async function forceDownloadSigned(fileId) {
     alert('获取失败: ' + e.message);
   } finally {
     if (btn) { btn.textContent = origText; btn.disabled = false; }
-  }
-}
-
-// Diagnostic: show detailed DocuSign status for a partner file
-async function debugDsStatus(fileId) {
-  try {
-    const r = await api(`/admin/partner-files/${fileId}/docusign-debug`);
-    const lines = [
-      `=== DocuSign 诊断信息 ===`,
-      `文件: ${r.db.file_name || r.db.file_path}`,
-      `本地文件: ${r.local_file.exists ? `存在 (${r.local_file.size_bytes} bytes)` : '❌ 不存在'}`,
-      `DB状态: ${r.db.ds_status || '空'}`,
-      `信封ID: ${r.db.ds_envelope_id || '无'}`,
-      `公司签署时间: ${r.db.ds_company_signed_at || '未签'}`,
-      `对方签署时间: ${r.db.ds_partner_signed_at || '未签'}`,
-      `DocuSign配置: ${r.docusign_configured ? '✅' : '❌'}`,
-      `Webhook地址: ${r.webhook_url}`,
-      `HMAC密钥: ${r.hmac_configured ? '已配置' : '未配置（跳过验证）'}`,
-      ``
-    ];
-    if (r.docusign_live) {
-      lines.push(`=== DocuSign 实时状态 ===`);
-      lines.push(`实时状态: ${r.docusign_live.status}`);
-      lines.push(`状态不一致: ${r.status_mismatch ? '❌ 是（DB和DocuSign不同步）' : '✅ 否'}`);
-      lines.push(`完成时间: ${r.docusign_live.completed_date || '未完成'}`);
-      for (const s of (r.docusign_live.signers || [])) {
-        lines.push(`签署人${s.recipientId} (${s.name}): ${s.status}${s.signedDateTime ? ' @ ' + new Date(s.signedDateTime).toLocaleString() : ''}${s.declinedReason ? ' — 拒签: ' + s.declinedReason : ''}`);
-      }
-    } else if (r.docusign_live_error) {
-      lines.push(`DocuSign API错误: ${r.docusign_live_error}`);
-    }
-    alert(lines.join('\n'));
-    // If status mismatch detected, offer to sync immediately
-    if (r.status_mismatch && r.docusign_live && r.docusign_live.status === 'completed') {
-      const doSync = confirm('检测到状态不一致：DocuSign 已完成签署，但数据库未更新。\n\n是否立即从 DocuSign 同步状态并下载已签版本？');
-      if (doSync) await forceDownloadSigned(fileId);
-    }
-  } catch(e) {
-    alert('诊断失败: ' + e.message);
   }
 }
 
@@ -6571,9 +6585,9 @@ function previewContractEditor() {
 
 async function generateContractPdfFromEditor() {
   const content = document.getElementById('contractEditorTextarea').value.trim();
-  if (!content) return alert('合同内容不能为空');
+  if (!content) { await adminAlert('合同内容不能为空', '提示'); return; }
   if (!content.includes('/sig1/') || !content.includes('/sig2/')) {
-    if (!confirm('⚠️ 合同中未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSign 将使用固定坐标定位签字框，位置可能不准确。是否继续？')) return;
+    if (!await adminConfirm('⚠️ 合同中未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSign 将使用固定坐标定位签字框，位置可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) return;
   }
   const btn = document.getElementById('contractGenerateBtn');
   const msgEl = document.getElementById('contractEditorMsg');
@@ -6602,17 +6616,17 @@ async function generateContractPdfFromEditor() {
 }
 
 async function voidDsEnvelope(type, id, badgeEl) {
-  const reason = prompt('请输入撤销原因（可留空）：', '');
+  const reason = await adminPrompt('请输入撤销原因（可留空）：', '撤销信封', '');
   if (reason === null) return;
   const url = type === 'assignment' ? `/admin/assignments/${id}/docusign-void` : `/admin/partner-files/${id}/docusign-void`;
   try {
     const r = await api(url, { method: 'POST', body: JSON.stringify({ reason: reason.trim() || '管理员撤销' }) });
     if (r.success) {
-      alert('信封已撤销，现在可以修改文件后重新发送。');
+      await adminAlert('信封已撤销，现在可以修改文件后重新发送。', '✅ 已撤销');
       if (badgeEl) { badgeEl.style.color = '#6B7280'; badgeEl.style.background = '#6B728020'; badgeEl.textContent = '✍ 已撤销'; badgeEl.title = '点击刷新'; }
       if (type === 'assignment') loadAssignments();
-    } else { alert('撤销失败：' + (r.error || '未知错误')); }
-  } catch (e) { alert('撤销失败：' + e.message); }
+    } else { await adminAlert('撤销失败：' + (r.error || '未知错误'), '错误'); }
+  } catch (e) { await adminAlert('撤销失败：' + e.message, '错误'); }
 }
 
 // Cache for assignment search
@@ -7711,21 +7725,53 @@ async function showPartnerById(id) {
         const signBtn = isContractFile
           ? (f.ds_envelope_id
             ? `<span class="badge" style="background:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')}20;color:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')};font-size:.72rem;margin-left:.4rem;cursor:pointer" onclick="refreshDsStatusInDetail('partnerfile',${f.id},this)" title="点击刷新签署状态">✍ ${DS_STATUS_LABELS[f.ds_status]||f.ds_status||'签署中'}</span>${forceDownloadBtn}`
-            : `<button class="btn btn-sm" style="margin-left:.5rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;padding:2px 8px;font-size:.75rem" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送签名</button>`)
+            : `<button class="btn btn-sm" style="margin-left:.5rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;padding:2px 8px;font-size:.75rem" onclick="_stopDsPolling();document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送签名</button>`)
           : '';
-        const debugBtn = (isContractFile && f.ds_envelope_id)
-          ? `<button class="btn btn-sm" style="margin-left:.3rem;background:#FFF7ED;color:#92400E;border:1px solid #FDE68A;padding:2px 5px;font-size:.68rem" onclick="debugDsStatus(${f.id})" title="查看 DocuSign 诊断信息">🔍 诊断</button>`
-          : '';
-        return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span>${signBtn}${debugBtn}</div>`;
+        return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span>${signBtn}</div>`;
       }).join('')+'</div>';
   }
   if (p.notes) html += `<div class="detail-section"><h4>备注</h4><p style="font-size:.85rem;color:var(--gray-600)">${esc(p.notes)}</p></div>`;
   document.getElementById('partnerDetailTitle').textContent = p.name;
   document.getElementById('partnerDetail').innerHTML = html;
   document.getElementById('partnerDetailModal').classList.add('show');
+  // Auto-poll contract status if there are pending DocuSign envelopes
+  if (hasPendingDs) _startDsPolling(id);
+  else _stopDsPolling();
+}
+
+// ─── DocuSign auto-polling when partner detail modal is open ───
+let _dsPollTimer = null;
+function _startDsPolling(partnerId) {
+  _stopDsPolling();
+  _dsPollTimer = setInterval(async () => {
+    const modal = document.getElementById('partnerDetailModal');
+    if (!modal || !modal.classList.contains('show')) { _stopDsPolling(); return; }
+    try {
+      const files = await api(`/admin/partners/${partnerId}/files`);
+      if (!files || !files.length) return;
+      const pending = files.filter(f => f.ds_envelope_id && f.ds_status && f.ds_status !== 'completed' && f.ds_status !== 'voided');
+      if (!pending.length) { _stopDsPolling(); return; }
+      let anyUpdated = false;
+      for (const f of pending) {
+        try {
+          const r = await api(`/admin/partner-files/${f.id}/docusign-status`);
+          if (r.status && r.status !== f.ds_status) anyUpdated = true;
+        } catch {}
+      }
+      if (anyUpdated) {
+        await loadPartners();
+        await showPartnerById(partnerId);
+        showToast('✅ 合同签署状态已更新', 'success');
+      }
+    } catch {}
+  }, 45000); // poll every 45 seconds
+}
+function _stopDsPolling() {
+  if (_dsPollTimer) { clearInterval(_dsPollTimer); _dsPollTimer = null; }
 }
 
 function editPartnerFromDetail() {
+  _stopDsPolling();
   document.getElementById('partnerDetailModal').classList.remove('show');
   if (currentPartner) openPartnerModal(currentPartner);
 }
@@ -14933,5 +14979,14 @@ async function saveMgrAssign() {
 }
 
 </script>
+<!-- Custom Admin Dialog -->
+<div class="adm-dlg-bg" id="admDlgBg">
+  <div class="adm-dlg">
+    <h4 id="admDlgTitle">提示</h4>
+    <p id="admDlgMsg"></p>
+    <div id="admDlgInputWrap" style="display:none"><input type="text" id="admDlgInput"></div>
+    <div class="adm-dlg-btns" id="admDlgBtns"></div>
+  </div>
+</div>
 </body>
 </html>
