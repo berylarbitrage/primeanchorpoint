@@ -4988,8 +4988,10 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     const anchors = checkDsAnchors(docPath);
     const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: companyEmail, name: companyName }, signer2: { email: partnerEmail, name: partnerName } });
     db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, f.id);
-    const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
-    const frameOrigin = `${req.protocol}://${req.get('host')}`;
+    const _proto1 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const _host1 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const returnUrl = `${_proto1}://${_host1}/docusign-return`;
+    const frameOrigin = `${_proto1}://${_host1}`;
     let signUrl = null;
     try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl, frameOrigin); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
     res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
@@ -5016,8 +5018,10 @@ app.get('/api/admin/partner-files/:id/docusign-sign-url', requireAdmin, blockMan
     if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
     const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
-    const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
-    const frameOrigin = `${req.protocol}://${req.get('host')}`;
+    const _proto2 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const _host2 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const returnUrl = `${_proto2}://${_host2}/docusign-return`;
+    const frameOrigin = `${_proto2}://${_host2}`;
     const signUrl = await dsCreateSignUrl(f.ds_envelope_id, companyEmail, companyName, returnUrl, frameOrigin);
     res.json({ signUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -5165,8 +5169,10 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
     const anchors = checkDsAnchors(docPath);
     const result = await dsSendEnvelope({ docPath, docName: a.contract_filename || a.contract_file, emailSubject: `请签署雇用合同 - ${a.inquiry_name || ''}`, signer1: { email: companyEmail, name: companyName }, signer2: { email: workerEmail, name: workerName } });
     db.prepare("UPDATE assignments SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, a.id);
-    const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
-    const frameOrigin = `${req.protocol}://${req.get('host')}`;
+    const _proto3 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const _host3 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const returnUrl = `${_proto3}://${_host3}/docusign-return`;
+    const frameOrigin = `${_proto3}://${_host3}`;
     let signUrl = null;
     try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl, frameOrigin); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
     res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
@@ -5184,8 +5190,10 @@ app.get('/api/admin/assignments/:id/docusign-sign-url', requireAdmin, blockManag
     if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
     const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
     const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
-    const returnUrl = `${req.protocol}://${req.get('host')}/docusign-return`;
-    const frameOrigin = `${req.protocol}://${req.get('host')}`;
+    const _proto4 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const _host4 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const returnUrl = `${_proto4}://${_host4}/docusign-return`;
+    const frameOrigin = `${_proto4}://${_host4}`;
     const signUrl = await dsCreateSignUrl(a.ds_envelope_id, companyEmail, companyName, returnUrl, frameOrigin);
     res.json({ signUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
