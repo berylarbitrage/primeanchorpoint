@@ -1987,6 +1987,28 @@ async function showApp() {
   document.getElementById('navTodos').style.display = '';
 
   loadJobs();
+
+  // Auto-refresh: when user comes back to this browser tab or window, reload current tab data
+  let _lastAutoRefresh = 0;
+  function _autoRefreshCurrentTab() {
+    if (document.getElementById('app').style.display === 'none') return; // not logged in
+    const now = Date.now();
+    if (now - _lastAutoRefresh < 30000) return; // throttle: at most once per 30s
+    _lastAutoRefresh = now;
+    if (_activeTab === 'applications') loadApplications();
+    else if (_activeTab === 'timeclock') loadTimeclock();
+    else if (_activeTab === 'payments') loadPayments();
+    else if (_activeTab === 'compliance') loadCompliance();
+    else if (_activeTab === 'profile') loadProfile();
+    else if (_activeTab === 'interview') loadInterview();
+    else if (_activeTab === 'todos') loadOnboarding();
+    else if (_activeTab === 'referral') loadReferrals();
+    else loadJobs();
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) _autoRefreshCurrentTab();
+  });
+  window.addEventListener('focus', _autoRefreshCurrentTab);
 }
 
 function toggleSidebar() {
