@@ -1972,10 +1972,24 @@ function buildContractPdf(plainText) {
   for (let p = 0; p < pc; p++) {
     const pid = 4 + p * 2, sid = 5 + p * 2;
     wo(pid, `${pid} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${sid} 0 R >>\nendobj\n`);
+    const DS_ANCHORS = ['/sig1/', '/sig2/', '/date1/', '/date2/'];
     let stream = ''; let y = pageH - margin;
     for (const { text, size } of pages[p]) {
       if (!text) { y -= lineH; continue; }
-      stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
+      const anchor = DS_ANCHORS.find(a => text.includes(a));
+      if (anchor) {
+        const idx = text.indexOf(anchor);
+        const before = text.slice(0, idx);
+        const after = text.slice(idx + anchor.length);
+        let s = `BT /F1 ${size} Tf ${margin} ${y} Td `;
+        if (before) s += `(${esc(before)}) Tj `;
+        s += `1 1 1 rg (${esc(anchor)}) Tj 0 0 0 rg`;
+        if (after) s += ` (${esc(after)}) Tj`;
+        s += ` ET\n`;
+        stream += s;
+      } else {
+        stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
+      }
       y -= lineH;
     }
     const sb = Buffer.from(stream, 'latin1');
