@@ -6486,6 +6486,11 @@ async function debugDsStatus(fileId) {
       lines.push(`DocuSign API错误: ${r.docusign_live_error}`);
     }
     alert(lines.join('\n'));
+    // If status mismatch detected, offer to sync immediately
+    if (r.status_mismatch && r.docusign_live && r.docusign_live.status === 'completed') {
+      const doSync = confirm('检测到状态不一致：DocuSign 已完成签署，但数据库未更新。\n\n是否立即从 DocuSign 同步状态并下载已签版本？');
+      if (doSync) await forceDownloadSigned(fileId);
+    }
   } catch(e) {
     alert('诊断失败: ' + e.message);
   }
