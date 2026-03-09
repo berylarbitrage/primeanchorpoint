@@ -2683,39 +2683,46 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="field-row">
-    <div class="field">
-      <label>薪资</label>
-      <div style="display:flex;gap:.75rem;margin-bottom:.4rem">
-        <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-weight:normal;font-size:.88rem">
-          <input type="radio" name="jPayType" id="jPayTypeFixed" value="fixed" onchange="updatePayInputs()" checked> 固定 (Fixed)
-        </label>
-        <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-weight:normal;font-size:.88rem">
-          <input type="radio" name="jPayType" id="jPayTypeRange" value="range" onchange="updatePayInputs()"> 范围 (Range)
-        </label>
-      </div>
-      <div id="jPayFixedWrap">
-        <input id="jPayFixed" placeholder="例：$18" style="width:100%;box-sizing:border-box">
-      </div>
-      <div id="jPayRangeWrap" style="display:none;gap:.4rem;align-items:center">
-        <input id="jPayLow" placeholder="最低 Low" style="flex:1;min-width:0">
-        <span style="color:#6b7280;padding:0 .1rem">—</span>
-        <input id="jPayHigh" placeholder="最高 High" style="flex:1;min-width:0">
-      </div>
+  <div class="field">
+    <label>薪资</label>
+    <div style="display:flex;gap:.75rem;margin-bottom:.4rem">
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-weight:normal;font-size:.88rem">
+        <input type="radio" name="jPayType" id="jPayTypeFixed" value="fixed" onchange="updatePayInputs()" checked> 固定 (Fixed)
+      </label>
+      <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;font-weight:normal;font-size:.88rem">
+        <input type="radio" name="jPayType" id="jPayTypeRange" value="range" onchange="updatePayInputs()"> 范围 (Range)
+      </label>
     </div>
-    <div class="field"><label>结算周期</label>
-      <select id="jPayPeriod">
-        <option value="">不指定</option>
-        <option value="hourly">每小时 (Hourly)</option>
-        <option value="daily">每天 (Daily)</option>
-        <option value="weekly">每周 (Weekly)</option>
-        <option value="biweekly">每两周 (Bi-weekly)</option>
-        <option value="semimonthly">每半月 (Semi-monthly)</option>
-        <option value="monthly">每月 (Monthly)</option>
-        <option value="yearly">每年 (Yearly)</option>
+    <div style="display:flex;align-items:center;gap:.4rem">
+      <div id="jPayFixedWrap" style="flex:1;min-width:0">
+        <input id="jPayFixed" placeholder="例：20" style="width:100%;box-sizing:border-box">
+      </div>
+      <div id="jPayRangeWrap" style="display:none;flex:1;gap:.4rem;align-items:center;min-width:0">
+        <input id="jPayLow" placeholder="最低" style="flex:1;min-width:0">
+        <span style="color:#6b7280;white-space:nowrap">—</span>
+        <input id="jPayHigh" placeholder="最高" style="flex:1;min-width:0">
+      </div>
+      <select id="jPayUnit" style="width:90px;flex-shrink:0">
+        <option value="">— 单位 —</option>
+        <option value="/hr">/ hr</option>
+        <option value="/day">/ day</option>
+        <option value="/week">/ week</option>
+        <option value="/month">/ month</option>
+        <option value="/year">/ year</option>
       </select>
     </div>
   </div>
+  <!-- hidden pay_period kept for backend compatibility -->
+  <select id="jPayPeriod" style="display:none">
+    <option value="">不指定</option>
+    <option value="hourly">hourly</option>
+    <option value="daily">daily</option>
+    <option value="weekly">weekly</option>
+    <option value="biweekly">biweekly</option>
+    <option value="semimonthly">semimonthly</option>
+    <option value="monthly">monthly</option>
+    <option value="yearly">yearly</option>
+  </select>
   <div class="field"><label>语言（可多选）</label>
     <div style="display:flex;gap:1.2rem;flex-wrap:wrap;padding:.5rem 0">
       <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" id="jLangEn" value="en" onchange="updateLangSections()"> English</label>
@@ -5076,19 +5083,23 @@ async function openJobModal(job) {
   // jTitle removed; jTitleEn is set below via loadLangDesc/openJobModal
   setCategoryValue('jCategory','jCategoryCustom', job ? (job.category || '') : '');
   document.getElementById('jType').value = job ? (job.type || '') : '';
-  // Parse pay into fixed vs range inputs
+  // Parse pay into fixed vs range inputs + unit
   const rawPay = job ? (job.pay || '') : '';
-  const rangeMatch = rawPay.match(/^(.+?)\s*-\s*(.+)$/);
+  const unitMatch = rawPay.match(/(\/hr|\/day|\/week|\/month|\/year)$/i);
+  const payUnit = unitMatch ? unitMatch[1].toLowerCase() : '';
+  const payNum = payUnit ? rawPay.slice(0, rawPay.length - payUnit.length).trim() : rawPay;
+  document.getElementById('jPayUnit').value = payUnit;
+  document.getElementById('jPayPeriod').value = {'/hr':'hourly','/day':'daily','/week':'weekly','/month':'monthly','/year':'yearly'}[payUnit] || (job ? (job.pay_period || '') : '');
+  const rangeMatch = payNum.match(/^(.+?)\s*-\s*(.+)$/);
   if (rangeMatch) {
     document.getElementById('jPayTypeRange').checked = true;
     document.getElementById('jPayLow').value = rangeMatch[1].trim();
     document.getElementById('jPayHigh').value = rangeMatch[2].trim();
   } else {
     document.getElementById('jPayTypeFixed').checked = true;
-    document.getElementById('jPayFixed').value = rawPay;
+    document.getElementById('jPayFixed').value = payNum;
   }
   updatePayInputs();
-  document.getElementById('jPayPeriod').value = job ? (job.pay_period || '') : '';
   // Language checkboxes
   const activeLangs = job ? (job.langs || job.lang || 'en').split(',').map(s=>s.trim()) : ['en'];
   document.getElementById('jLangEn').checked = activeLangs.includes('en');
@@ -5176,6 +5187,13 @@ function updatePayInputs() {
   document.getElementById('jPayFixedWrap').style.display = isRange ? 'none' : '';
   document.getElementById('jPayRangeWrap').style.display = isRange ? 'flex' : 'none';
 }
+// Sync hidden jPayPeriod from jPayUnit selection
+const _unitToPeriod = {'/hr':'hourly','/day':'daily','/week':'weekly','/month':'monthly','/year':'yearly'};
+document.addEventListener('change', e => {
+  if (e.target && e.target.id === 'jPayUnit') {
+    document.getElementById('jPayPeriod').value = _unitToPeriod[e.target.value] || '';
+  }
+});
 
 function updateLangSections() {
   document.getElementById('jLangEnSection').style.display = document.getElementById('jLangEn').checked ? '' : 'none';
@@ -5311,19 +5329,23 @@ async function randomFillJob() {
   document.getElementById('jCity').value           = _rloc.city;
   fillStateSelect(document.getElementById('jState'), _rloc.state);
   document.getElementById('jZip').value            = _rloc.zip;
-  // Parse pay into structured inputs
+  // Parse pay into structured inputs + unit
   const _rfPay = r.pay || '';
-  const _rfRange = _rfPay.match(/^(.+?)\s*-\s*(.+)$/);
+  const _rfUnitM = _rfPay.match(/(\/hr|\/day|\/week|\/month|\/year)$/i);
+  const _rfUnit = _rfUnitM ? _rfUnitM[1].toLowerCase() : '';
+  const _rfNum = _rfUnit ? _rfPay.slice(0, _rfPay.length - _rfUnit.length).trim() : _rfPay;
+  document.getElementById('jPayUnit').value = _rfUnit;
+  document.getElementById('jPayPeriod').value = {'/hr':'hourly','/day':'daily','/week':'weekly','/month':'monthly','/year':'yearly'}[_rfUnit] || r.pay_period || '';
+  const _rfRange = _rfNum.match(/^(.+?)\s*-\s*(.+)$/);
   if (_rfRange) {
     document.getElementById('jPayTypeRange').checked = true;
     document.getElementById('jPayLow').value = _rfRange[1].trim();
     document.getElementById('jPayHigh').value = _rfRange[2].trim();
   } else {
     document.getElementById('jPayTypeFixed').checked = true;
-    document.getElementById('jPayFixed').value = _rfPay;
+    document.getElementById('jPayFixed').value = _rfNum;
   }
   updatePayInputs();
-  document.getElementById('jPayPeriod').value      = r.pay_period || '';
   document.getElementById('jWorkAuth').value       = r.work_auth || '';
   document.getElementById('jEmploymentType').value = r.employment_type || '';
   loadLangDesc('En', r.desc || '');
@@ -5762,12 +5784,15 @@ async function saveJob() {
     ),
     pay: (() => {
       const isRange = document.getElementById('jPayTypeRange').checked;
+      const unit = document.getElementById('jPayUnit').value;
       if (isRange) {
         const lo = document.getElementById('jPayLow').value.trim();
         const hi = document.getElementById('jPayHigh').value.trim();
-        return lo && hi ? `${lo}-${hi}` : (lo || hi);
+        const num = lo && hi ? `${lo}-${hi}` : (lo || hi);
+        return num ? num + unit : '';
       }
-      return document.getElementById('jPayFixed').value.trim();
+      const v = document.getElementById('jPayFixed').value.trim();
+      return v ? v + unit : '';
     })(),
     pay_period: document.getElementById('jPayPeriod').value,
     lang: langVal,
