@@ -6437,6 +6437,60 @@ async function refreshDsStatusInDetail(type, id, badgeEl) {
   } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
 }
 
+// Force download signed PDF from DocuSign for partner file
+async function forceDownloadSigned(fileId) {
+  const btn = event && event.target;
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.textContent = '⟳ 获取中…'; btn.disabled = true; }
+  try {
+    const r = await api(`/admin/partner-files/${fileId}/force-download-signed`, { method: 'POST' });
+    if (r.success) {
+      showToast('✅ ' + r.message, 'success');
+      if (currentPartner) await showPartnerById(currentPartner.id);
+    } else {
+      alert(`未能获取已签版本：\n${r.message}\n\n状态: ${r.status}\n公司签署: ${r.companySigned||'未签'}\n对方签署: ${r.partnerSigned||'未签'}`);
+    }
+  } catch(e) {
+    alert('获取失败: ' + e.message);
+  } finally {
+    if (btn) { btn.textContent = origText; btn.disabled = false; }
+  }
+}
+
+// Diagnostic: show detailed DocuSign status for a partner file
+async function debugDsStatus(fileId) {
+  try {
+    const r = await api(`/admin/partner-files/${fileId}/docusign-debug`);
+    const lines = [
+      `=== DocuSign 诊断信息 ===`,
+      `文件: ${r.db.file_name || r.db.file_path}`,
+      `本地文件: ${r.local_file.exists ? `存在 (${r.local_file.size_bytes} bytes)` : '❌ 不存在'}`,
+      `DB状态: ${r.db.ds_status || '空'}`,
+      `信封ID: ${r.db.ds_envelope_id || '无'}`,
+      `公司签署时间: ${r.db.ds_company_signed_at || '未签'}`,
+      `对方签署时间: ${r.db.ds_partner_signed_at || '未签'}`,
+      `DocuSign配置: ${r.docusign_configured ? '✅' : '❌'}`,
+      `Webhook地址: ${r.webhook_url}`,
+      `HMAC密钥: ${r.hmac_configured ? '已配置' : '未配置（跳过验证）'}`,
+      ``
+    ];
+    if (r.docusign_live) {
+      lines.push(`=== DocuSign 实时状态 ===`);
+      lines.push(`实时状态: ${r.docusign_live.status}`);
+      lines.push(`状态不一致: ${r.status_mismatch ? '❌ 是（DB和DocuSign不同步）' : '✅ 否'}`);
+      lines.push(`完成时间: ${r.docusign_live.completed_date || '未完成'}`);
+      for (const s of (r.docusign_live.signers || [])) {
+        lines.push(`签署人${s.recipientId} (${s.name}): ${s.status}${s.signedDateTime ? ' @ ' + new Date(s.signedDateTime).toLocaleString() : ''}${s.declinedReason ? ' — 拒签: ' + s.declinedReason : ''}`);
+      }
+    } else if (r.docusign_live_error) {
+      lines.push(`DocuSign API错误: ${r.docusign_live_error}`);
+    }
+    alert(lines.join('\n'));
+  } catch(e) {
+    alert('诊断失败: ' + e.message);
+  }
+}
+
 // ── Contract Editor ───────────────────────────────────────────────────────────
 let _ceMode = null; // 'partner-new' | 'partner-file' | 'assignment'
 let _ceId = null;
@@ -7646,12 +7700,18 @@ async function showPartnerById(id) {
     html += `<div class="detail-section"><h4>文件 (${files.length})</h4>` +
       files.map(f=>{
         const isContractFile = f.file_type==='contract'||f.file_type==='agreement';
+        const forceDownloadBtn = (isContractFile && f.ds_envelope_id && f.ds_status === 'completed')
+          ? `<button class="btn btn-sm" style="margin-left:.3rem;background:#F0FDF4;color:#059669;border:1px solid #BBF7D0;padding:2px 7px;font-size:.72rem" onclick="forceDownloadSigned(${f.id})" title="从 DocuSign 重新下载已签版本">⬇ 获取已签版本</button>`
+          : '';
         const signBtn = isContractFile
           ? (f.ds_envelope_id
-            ? `<span class="badge" style="background:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')}20;color:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')};font-size:.72rem;margin-left:.4rem;cursor:pointer" onclick="refreshDsStatusInDetail('partnerfile',${f.id},this)" title="点击刷新签署状态">✍ ${DS_STATUS_LABELS[f.ds_status]||f.ds_status||'签署中'}</span>`
+            ? `<span class="badge" style="background:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')}20;color:${(DS_STATUS_COLORS[f.ds_status]||'#6B7280')};font-size:.72rem;margin-left:.4rem;cursor:pointer" onclick="refreshDsStatusInDetail('partnerfile',${f.id},this)" title="点击刷新签署状态">✍ ${DS_STATUS_LABELS[f.ds_status]||f.ds_status||'签署中'}</span>${forceDownloadBtn}`
             : `<button class="btn btn-sm" style="margin-left:.5rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE;padding:2px 8px;font-size:.75rem" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送签名</button>`)
           : '';
-        return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span>${signBtn}</div>`;
+        const debugBtn = (isContractFile && f.ds_envelope_id)
+          ? `<button class="btn btn-sm" style="margin-left:.3rem;background:#FFF7ED;color:#92400E;border:1px solid #FDE68A;padding:2px 5px;font-size:.68rem" onclick="debugDsStatus(${f.id})" title="查看 DocuSign 诊断信息">🔍 诊断</button>`
+          : '';
+        return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||f.file_label||'文件')}</a> <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span> <span style="font-size:.72rem;color:var(--gray-400)">${new Date(f.uploaded_at).toLocaleDateString()}</span>${signBtn}${debugBtn}</div>`;
       }).join('')+'</div>';
   }
   if (p.notes) html += `<div class="detail-section"><h4>备注</h4><p style="font-size:.85rem;color:var(--gray-600)">${esc(p.notes)}</p></div>`;
@@ -8427,11 +8487,20 @@ window.addEventListener('message', (ev) => {
     const event = ev.data.event || '';
     closeDsSignModal();
     if (event === 'signing_complete') {
-      showToast('✅ 签署完成！', 'success');
+      showToast('✅ 公司已签署，等待对方签署…', 'success');
       if (ctx) {
         if (ctx.type === 'partnerfile') {
-          const pidEl = document.getElementById('partnerId');
-          if (pidEl && pidEl.value) loadPartnerFiles(parseInt(pidEl.value));
+          // Auto-refresh status from DocuSign to check if both parties signed
+          try {
+            const r = await api(`/admin/partner-files/${ctx.id}/docusign-status`);
+            if (r.status === 'completed') {
+              showToast('✅ 双方均已签署！已签版本已保存。', 'success');
+            }
+          } catch(e) {}
+          if (currentPartner) await showPartnerById(currentPartner.id);
+        } else if (ctx.type === 'assignment') {
+          try { await api(`/admin/assignments/${ctx.id}/docusign-status`); } catch(e) {}
+          loadAssignments && loadAssignments();
         } else {
           loadAssignments && loadAssignments();
         }

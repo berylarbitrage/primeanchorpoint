@@ -5126,6 +5126,91 @@ app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManag
   } catch (e) { res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason, error: e.message }); }
 });
 
+// GET /api/admin/partner-files/:id/force-download-signed — force download signed PDF from DocuSign and save
+app.post('/api/admin/partner-files/:id/force-download-signed', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const f = db.prepare('SELECT id, ds_envelope_id, ds_status, file_path, file_name FROM partner_files WHERE id=?').get(req.params.id);
+    if (!f) return res.status(404).json({ error: '文件不存在' });
+    if (!f.ds_envelope_id) return res.status(400).json({ error: '该文件没有关联的 DocuSign 信封' });
+    // First refresh status from DocuSign
+    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+    const [envRes, rcpRes] = await Promise.all([
+      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
+      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
+    ]);
+    const status = envRes.data?.status || f.ds_status;
+    let partnerSigned = null, companySigned = null, declineReason = '';
+    for (const s of (rcpRes.data?.signers || [])) {
+      if (s.status === 'completed' && s.signedDateTime) {
+        if (s.recipientId === '1') companySigned = s.signedDateTime;
+        if (s.recipientId === '2') partnerSigned = s.signedDateTime;
+      }
+      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
+    }
+    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?")
+      .run(status, partnerSigned, companySigned, declineReason, f.id);
+    if (status !== 'completed') {
+      return res.json({ success: false, status, message: `当前签署状态为 "${status}"，只有双方都签署后才能下载已签版本。`, partnerSigned, companySigned });
+    }
+    // Download signed PDF
+    const signedBuf = await dsDownloadSignedDoc(f.ds_envelope_id);
+    if (f.file_path) {
+      fs.writeFileSync(path.join(docsDir, f.file_path), signedBuf);
+      console.log(`[DocuSign] Force-saved signed partner contract for file id=${f.id}`);
+    }
+    res.json({ success: true, status, partnerSigned, companySigned, fileSize: signedBuf.length, message: '已签版本已下载并保存，请重新下载文件查看。' });
+  } catch (e) {
+    console.error('[DocuSign ForceDownload]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/partner-files/:id/docusign-debug — detailed diagnostic info
+app.get('/api/admin/partner-files/:id/docusign-debug', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
+    if (!f) return res.status(404).json({ error: '文件不存在' });
+    const localFilePath = f.file_path ? path.join(docsDir, f.file_path) : null;
+    const localFileExists = localFilePath ? fs.existsSync(localFilePath) : false;
+    const localFileSize = localFileExists ? fs.statSync(localFilePath).size : 0;
+    const debug = {
+      db: {
+        id: f.id, file_name: f.file_name, file_path: f.file_path,
+        ds_envelope_id: f.ds_envelope_id, ds_status: f.ds_status,
+        ds_partner_signed_at: f.ds_partner_signed_at, ds_company_signed_at: f.ds_company_signed_at,
+        ds_decline_reason: f.ds_decline_reason
+      },
+      local_file: { path: f.file_path, exists: localFileExists, size_bytes: localFileSize },
+      docusign_configured: dsEnabled(),
+      webhook_url: `${(req.headers['x-forwarded-proto'] || req.protocol)}://${(req.headers['x-forwarded-host'] || req.headers.host)}/api/docusign/webhook`,
+      hmac_configured: !!process.env.DOCUSIGN_WEBHOOK_HMAC
+    };
+    if (dsEnabled() && f.ds_envelope_id) {
+      try {
+        const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+        const [envRes, rcpRes] = await Promise.all([
+          dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
+          dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
+        ]);
+        debug.docusign_live = {
+          status: envRes.data?.status,
+          sent_date: envRes.data?.sentDateTime,
+          completed_date: envRes.data?.completedDateTime,
+          signers: (rcpRes.data?.signers || []).map(s => ({
+            name: s.name, email: s.email, recipientId: s.recipientId,
+            status: s.status, signedDateTime: s.signedDateTime, declinedReason: s.declinedReason
+          }))
+        };
+        debug.status_mismatch = (envRes.data?.status !== f.ds_status);
+      } catch (apiErr) {
+        debug.docusign_live_error = apiErr.message;
+      }
+    }
+    res.json(debug);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Assignments CRUD
 app.get('/api/admin/assignments', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare(`
