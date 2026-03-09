@@ -8803,17 +8803,22 @@ app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 
 
 // POST /api/docusign/webhook — DocuSign Connect event notifications
 app.post('/api/docusign/webhook', express.raw({ type: '*/*' }), async (req, res) => {
+  console.log(`[DocuSign Webhook] Received request from ${req.ip} at ${new Date().toISOString()}`);
   try {
     const rawBody = req.body.toString('utf8');
     const hmacSecret = process.env.DOCUSIGN_WEBHOOK_HMAC;
     if (hmacSecret) {
       const sig = req.headers['x-docusign-signature-1'] || '';
       const expected = crypto.createHmac('sha256', hmacSecret).update(rawBody).digest('base64');
-      if (sig !== expected) return res.status(401).json({ error: 'Invalid signature' });
+      if (sig !== expected) {
+        console.error(`[DocuSign Webhook] HMAC signature mismatch — received: ${sig.substring(0,20)}...`);
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
     }
     const event = JSON.parse(rawBody);
     const envelopeId = event?.data?.envelopeId || event?.envelopeId;
     const status = event?.data?.envelopeSummary?.status || event?.status;
+    console.log(`[DocuSign Webhook] envelopeId=${envelopeId} status=${status}`);
     if (envelopeId && status) {
       const asgn = db.prepare("SELECT id FROM assignments WHERE ds_envelope_id=?").get(envelopeId);
       if (asgn) db.prepare("UPDATE assignments SET ds_status=? WHERE id=?").run(status, asgn.id);

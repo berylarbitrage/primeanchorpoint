@@ -3295,6 +3295,7 @@ tr:hover td{background:var(--sky-light)}
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
       <button class="btn btn-sm" onclick="editPartnerFromDetail()">编辑</button>
       <button id="btnEditContract" class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE" onclick="openContractEditorForNewPartnerContract(currentPartner&&currentPartner.id)">✏️ 编辑合同</button>
+      <button id="btnRefreshDsStatus" class="btn btn-sm" style="display:none;background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="refreshAllPartnerFileStatuses()">⟳ 刷新签署状态</button>
       <button id="btnSendContract" class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送合同</button>
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
     </div>
@@ -6381,6 +6382,36 @@ async function refreshDsStatus(type, id, badgeEl) {
   } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
 }
 
+// Refresh all pending DocuSign files for the current partner (called from "刷新签署状态" button)
+async function refreshAllPartnerFileStatuses() {
+  if (!currentPartner) return;
+  const btn = document.getElementById('btnRefreshDsStatus');
+  const origText = btn.textContent;
+  btn.textContent = '⟳ 刷新中…';
+  btn.disabled = true;
+  try {
+    const files = await api(`/admin/partners/${currentPartner.id}/files`);
+    const pending = files.filter(f => f.ds_envelope_id && f.ds_status && f.ds_status !== 'completed' && f.ds_status !== 'voided');
+    let anyCompleted = false;
+    for (const f of pending) {
+      try {
+        const r = await api(`/admin/partner-files/${f.id}/docusign-status`);
+        if (r.status === 'completed') anyCompleted = true;
+      } catch(e) {}
+    }
+    // Reload the detail modal to reflect updated statuses and signed PDF
+    await loadPartners();
+    await showPartnerById(currentPartner.id);
+    if (anyCompleted) alert('✅ 合同已完成签署！已签版本已更新，请重新下载文件查看。');
+    else alert('合同尚未完成签署，当前状态已刷新。\n\n如果你已在 DocuSign 完成签署但状态未更新，请检查 DocuSign Connect 的 Webhook 配置是否指向：\n' + location.origin + '/api/docusign/webhook');
+  } catch(e) {
+    alert('刷新失败: ' + e.message);
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
+  }
+}
+
 // Like refreshDsStatus but reloads the partner detail modal on completion to show the updated signed file
 async function refreshDsStatusInDetail(type, id, badgeEl) {
   const url = type === 'assignment' ? `/admin/assignments/${id}/docusign-status` : `/admin/partner-files/${id}/docusign-status`;
@@ -7566,6 +7597,9 @@ async function showPartnerById(id) {
   const hasContract = files.some(f=>f.file_type==='contract'||f.file_type==='agreement');
   document.getElementById('btnEditContract').style.display = hasContract ? 'none' : '';
   document.getElementById('btnSendContract').style.display = hasContract ? 'none' : '';
+  // Show refresh button if there are any files with an active DocuSign envelope (not yet completed)
+  const hasPendingDs = files.some(f => f.ds_envelope_id && f.ds_status && f.ds_status !== 'completed' && f.ds_status !== 'voided');
+  document.getElementById('btnRefreshDsStatus').style.display = hasPendingDs ? '' : 'none';
   let html = `<div class="detail-section"><h4>基本信息</h4><div class="detail-grid">
     ${p.company_number?`<div class="detail-row"><span>公司编号</span><span style="font-family:monospace;font-weight:600;color:var(--sky)">${esc(p.company_number)}</span></div>`:''}
     <div class="detail-row"><span>公司名称</span><span>${esc(p.name)}</span></div>
