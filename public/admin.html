@@ -3344,8 +3344,9 @@ tr:hover td{background:var(--sky-light)}
         <option value="">— 请选择 —</option>
       </select>
     </div>
-    <div style="margin:.4rem 0 .6rem">
+    <div style="margin:.4rem 0 .6rem;display:flex;gap:.5rem;flex-wrap:wrap">
       <button class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE;font-size:.78rem" onclick="openContractEditorForPartnerFile()">✏️ 查看/编辑合同内容</button>
+      <button id="partnerDsResetBtn" class="btn btn-sm" style="background:#FFF1F2;color:#BE123C;border:1px solid #FECDD3;font-size:.78rem" onclick="resetPartnerContract()">🔄 清空重新生成</button>
     </div>
     <div id="partnerDsCurrentStatus" style="display:none;font-size:.8rem;margin:.3rem 0 .75rem;padding:.4rem .75rem;border-radius:6px;background:var(--gray-100);color:var(--gray-600)"></div>
     <div class="field">
@@ -7510,13 +7511,13 @@ function renderPartners(partners) {
       <td>${esc(mainContact)}${contacts.length>1?` <span style="color:var(--gray-400)">(+${contacts.length-1})</span>`:''}</td>
       <td>${esc(mainPhone)}</td>
       <td>${esc(p.industry)}</td>
-      <td>${p.active?'<span class="badge badge-completed">合作中</span>':'<span class="badge badge-cancelled">已停止</span>'}</td>
+      <td>${p.active?'<span class="badge badge-completed">合作中</span>':(p.signed_contract_count||0)>0?'<span class="badge badge-cancelled">已停止</span>':'<span class="badge" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;padding:2px 8px;border-radius:4px;font-size:.75rem">待签约</span>'}</td>
       <td>
         <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
         ${(p.signed_contract_count||0)>0
           ? `<button class="btn btn-sm" style="background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="event.stopPropagation();showPartnerById(${p.id})">📄 查看合同</button>`
           : (p.contract_file_count||0)>0
-            ? `<button class="btn btn-sm" style="background:#FFFBEB;color:#B45309;border:1px solid #FDE68A" onclick="event.stopPropagation();showPartnerById(${p.id})">📄 查看合同</button>`
+            ? `<button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A" onclick="event.stopPropagation();showPartnerById(${p.id})">📋 签署中</button>`
             : `<button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">✍ 发送合同</button>`}
         ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>`:''}
       </td>
@@ -8261,6 +8262,26 @@ async function generateDefaultPartnerContract() {
     btn.disabled = false;
     btn.textContent = '📄 自动生成默认合同模板';
     alert('生成失败：' + e.message);
+  }
+}
+
+async function resetPartnerContract() {
+  if (!_dsPartnerId) return;
+  if (!confirm('确定要清空现有合同并重新生成新合同吗？\n\n现有合同文件及签署邀请将被删除/撤销，生成全新的默认合同模板。')) return;
+  const btn = document.getElementById('partnerDsResetBtn');
+  btn.disabled = true;
+  btn.textContent = '处理中…';
+  try {
+    const r = await api(`/admin/partners/${_dsPartnerId}/reset-contract`, { method: 'POST' });
+    if (r && r.success) {
+      await openPartnerDocuSign(_dsPartnerId);
+    } else {
+      throw new Error(r?.error || '操作失败');
+    }
+  } catch (e) {
+    alert('操作失败：' + e.message);
+    btn.disabled = false;
+    btn.textContent = '🔄 清空重新生成';
   }
 }
 

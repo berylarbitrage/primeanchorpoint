@@ -4526,7 +4526,7 @@ app.post('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
   const r = db.prepare(`INSERT INTO partners (name,contact_person,phone,email,address,industry,services,notes,active,contacts,addresses,social_media,links,company_number)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
-    d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
+    d.industry||'', d.services||'', d.notes||'', 0,
     d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', companyNumber);
   res.json({ success: true, id: r.lastInsertRowid, company_number: companyNumber });
 });
@@ -4637,6 +4637,37 @@ function generatePartnerContractLines({ partnerName, companyName, partnerAddress
     { text: 'Date: __________________________    Date: __________________________', size: 11 },
   ];
 }
+
+// POST /api/admin/partners/:id/reset-contract
+// Voids any active DocuSign envelopes, deletes all existing contract/agreement files for this partner,
+// then generates a fresh default contract PDF ready for editing or sending.
+app.post('/api/admin/partners/:id/reset-contract', requireAdmin, blockManager, async (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const existingFiles = db.prepare("SELECT * FROM partner_files WHERE partner_id=? AND file_type IN ('contract','agreement')").all(req.params.id);
+  // Void active envelopes
+  for (const f of existingFiles) {
+    if (f.ds_envelope_id && dsEnabled() && f.ds_status && !['completed','voided','declined'].includes(f.ds_status)) {
+      try {
+        const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+        await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`, { status: 'voided', voidedReason: '管理员重新生成合同' });
+      } catch (e) { console.error('[reset-contract] void envelope error:', e.message); }
+    }
+    // Delete local file
+    if (f.file_path) { try { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {} }
+    db.prepare('DELETE FROM partner_files WHERE id=?').run(f.id);
+  }
+  // Generate new default contract
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const content = generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
+  const pdfBuf = buildContractPdf(content);
+  const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filename), pdfBuf);
+  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes, contract_content) VALUES (?, 'contract', '合作协议 Partnership Agreement', ?, ?, '重新生成的默认合同模板', ?)`)
+    .run(req.params.id, filename, `Partnership Agreement - ${p.name}.pdf`, content);
+  res.json({ success: true, id: r.lastInsertRowid, file_name: `Partnership Agreement - ${p.name}.pdf` });
+});
 
 // POST /api/admin/partners/:id/generate-default-contract
 app.post('/api/admin/partners/:id/generate-default-contract', requireAdmin, blockManager, (req, res) => {
