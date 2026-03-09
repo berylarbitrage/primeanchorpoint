@@ -3208,7 +3208,10 @@ tr:hover td{background:var(--sky-light)}
       <div class="field"><label>文件标签</label><input id="pFileLabel" placeholder="例：2026年合同"></div>
     </div>
     <div class="field"><input type="file" id="pFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%"></div>
-    <button class="btn-add-sm" style="margin-top:.5rem" onclick="uploadPartnerFile()">上传文件</button>
+    <div style="display:flex;gap:.5rem;margin-top:.5rem;align-items:center;flex-wrap:wrap">
+      <button class="btn-add-sm" onclick="uploadPartnerFile()">上传文件</button>
+      <button class="btn-add-sm" style="background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE" onclick="generateAgreementTemplate()" title="自动生成格式正确的合伙协议 PDF，锚点字符隐藏，可直接发送 DocuSign">⚡ 生成合伙协议模板</button>
+    </div>
   </div>
 
   <div class="form-section"><h4>备注</h4>
@@ -7621,6 +7624,28 @@ async function deletePartnerFile(fid, pid) {
   if (!await showConfirm('确定删除此文件？', { danger: true })) return;
   await api(`/admin/partner-files/${fid}`, {method:'DELETE'});
   loadPartnerFiles(pid);
+}
+
+async function generateAgreementTemplate() {
+  const pid = document.getElementById('partnerId').value;
+  if (!pid) return alert('请先保存公司信息后再生成模板');
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = '生成中...';
+  try {
+    const r = await api(`/admin/partners/${pid}/generate-agreement`, { method: 'POST' });
+    if (r.success) {
+      await loadPartnerFiles(pid);
+      showToast('合伙协议模板已生成，可直接发送 DocuSign 签署');
+    } else {
+      alert(r.error || '生成失败');
+    }
+  } catch(e) {
+    alert('生成失败：' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '⚡ 生成合伙协议模板';
+  }
 }
 
 // ── Partner DocuSign Send Modal ────────────────────────────────
