@@ -663,6 +663,7 @@ try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFA
 
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
+try { db.exec("ALTER TABLE assignments ADD COLUMN ds_decline_reason TEXT DEFAULT ''"); } catch {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN work_schedule TEXT DEFAULT '{}'`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_address TEXT DEFAULT ''"); } catch(e) {}
@@ -672,6 +673,7 @@ try { db.exec("ALTER TABLE assignments ADD COLUMN work_radius INTEGER DEFAULT 20
 try { db.exec("ALTER TABLE assignments ADD COLUMN worker_response TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN task_requirements TEXT DEFAULT '[]'"); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
+try { db.exec("ALTER TABLE partner_files ADD COLUMN ds_decline_reason TEXT DEFAULT ''"); } catch {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS assignment_status_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1899,7 +1901,7 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
     documents: [{ documentBase64: docBase64, name: docName, fileExtension: fileExt, documentId: '1' }],
     recipients: {
       signers: [
-        { email: signer1.email, name: signer1.name, recipientId: '1', routingOrder: '1', tabs: { signHereTabs: [dsSignTab('/sig1/', 50, 680)], dateSignedTabs: [{ ...dsSignTab('/date1/', 50, 715), tabLabel: 'date1' }] } },
+        { email: signer1.email, name: signer1.name, recipientId: '1', routingOrder: '1', clientUserId: '1', tabs: { signHereTabs: [dsSignTab('/sig1/', 50, 680)], dateSignedTabs: [{ ...dsSignTab('/date1/', 50, 715), tabLabel: 'date1' }] } },
         { email: signer2.email, name: signer2.name, recipientId: '2', routingOrder: '2', tabs: { signHereTabs: [dsSignTab('/sig2/', 320, 680)], dateSignedTabs: [{ ...dsSignTab('/date2/', 320, 715), tabLabel: 'date2' }] } }
       ]
     },
@@ -1908,6 +1910,24 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
   const result = await dsApiCall('POST', `/restapi/v2.1/accounts/${accountId}/envelopes`, envelope);
   if (result.status !== 201) throw new Error(`DocuSign ${result.status}: ${JSON.stringify(result.data)}`);
   return result.data;
+}
+
+// Create an embedded signing URL (recipient view) for signer1 (company, clientUserId '1')
+async function dsCreateSignUrl(envelopeId, signerEmail, signerName, returnUrl) {
+  const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+  const r = await dsApiCall('POST', `/restapi/v2.1/accounts/${accountId}/envelopes/${envelopeId}/views/recipient`, {
+    returnUrl, authenticationMethod: 'none', email: signerEmail, userName: signerName, clientUserId: '1'
+  });
+  if (r.status !== 201) throw new Error(`DocuSign view ${r.status}: ${JSON.stringify(r.data)}`);
+  return r.data.url;
+}
+
+// Check whether PDF contains DocuSign anchor strings
+function checkDsAnchors(docPath) {
+  try {
+    const t = fs.readFileSync(docPath).toString('binary');
+    return { sig1: t.includes('/sig1/'), sig2: t.includes('/sig2/'), date1: t.includes('/date1/'), date2: t.includes('/date2/') };
+  } catch { return { sig1: false, sig2: false, date1: false, date2: false }; }
 }
 
 // Seed default admin into admin_users table if empty
@@ -4509,20 +4529,51 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, f.file_path);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
+    const anchors = checkDsAnchors(docPath);
     const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: companyEmail, name: companyName }, signer2: { email: partnerEmail, name: partnerName } });
-    db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent' WHERE id=?").run(result.envelopeId, f.id);
-    res.json({ success: true, envelopeId: result.envelopeId });
+    db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, f.id);
+    const returnUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`) + '/admin';
+    let signUrl = null;
+    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
+    res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
   } catch (e) {
     console.error('[DocuSign PartnerFile]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
+// GET /api/admin/partner-files/:id/docusign-sign-url — get embedded signing URL for company
+app.get('/api/admin/partner-files/:id/docusign-sign-url', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const f = db.prepare("SELECT id, ds_envelope_id, ds_status FROM partner_files WHERE id=?").get(req.params.id);
+    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const returnUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`) + '/admin';
+    const signUrl = await dsCreateSignUrl(f.ds_envelope_id, companyEmail, companyName, returnUrl);
+    res.json({ signUrl });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/partner-files/:id/docusign-void — void the active envelope
+app.post('/api/admin/partner-files/:id/docusign-void', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const f = db.prepare("SELECT id, ds_envelope_id, ds_status FROM partner_files WHERE id=?").get(req.params.id);
+    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+    await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`, { status: 'voided', voidedReason: req.body?.reason || '管理员撤销' });
+    db.prepare("UPDATE partner_files SET ds_status='voided', ds_envelope_id='', ds_decline_reason='' WHERE id=?").run(f.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/partner-files/:id/docusign-status — refresh signing status from DocuSign
 app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManager, async (req, res) => {
-  const f = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_partner_signed_at, ds_company_signed_at FROM partner_files WHERE id=?").get(req.params.id);
+  const f = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_partner_signed_at, ds_company_signed_at, ds_decline_reason FROM partner_files WHERE id=?").get(req.params.id);
   if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-  if (!dsEnabled()) return res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at });
+  if (!dsEnabled()) return res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason });
   try {
     const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
     const [envRes, rcpRes] = await Promise.all([
@@ -4537,9 +4588,13 @@ app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManag
         if (s.recipientId === '2') partnerSigned = s.signedDateTime;
       }
     }
-    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=? WHERE id=?").run(status, partnerSigned, companySigned, f.id);
-    res.json({ status, partnerSigned, companySigned });
-  } catch (e) { res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, error: e.message }); }
+    let declineReason = f.ds_decline_reason || '';
+    for (const s of (rcpRes.data?.signers || [])) {
+      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
+    }
+    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, partnerSigned, companySigned, declineReason, f.id);
+    res.json({ status, partnerSigned, companySigned, declineReason });
+  } catch (e) { res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason, error: e.message }); }
 });
 
 // Assignments CRUD
@@ -4640,20 +4695,51 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, a.contract_file);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '合同文件不存在' });
+    const anchors = checkDsAnchors(docPath);
     const result = await dsSendEnvelope({ docPath, docName: a.contract_filename || a.contract_file, emailSubject: `请签署雇用合同 - ${a.inquiry_name || ''}`, signer1: { email: companyEmail, name: companyName }, signer2: { email: workerEmail, name: workerName } });
-    db.prepare("UPDATE assignments SET ds_envelope_id=?, ds_status='sent' WHERE id=?").run(result.envelopeId, a.id);
-    res.json({ success: true, envelopeId: result.envelopeId });
+    db.prepare("UPDATE assignments SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, a.id);
+    const returnUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`) + '/admin';
+    let signUrl = null;
+    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
+    res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
   } catch (e) {
     console.error('[DocuSign Assignment]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
+// GET /api/admin/assignments/:id/docusign-sign-url — get embedded signing URL for company
+app.get('/api/admin/assignments/:id/docusign-sign-url', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const a = db.prepare("SELECT id, ds_envelope_id FROM assignments WHERE id=?").get(req.params.id);
+    if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const returnUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`) + '/admin';
+    const signUrl = await dsCreateSignUrl(a.ds_envelope_id, companyEmail, companyName, returnUrl);
+    res.json({ signUrl });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/assignments/:id/docusign-void — void the active envelope
+app.post('/api/admin/assignments/:id/docusign-void', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const a = db.prepare("SELECT id, ds_envelope_id, ds_status FROM assignments WHERE id=?").get(req.params.id);
+    if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+    await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${a.ds_envelope_id}`, { status: 'voided', voidedReason: req.body?.reason || '管理员撤销' });
+    db.prepare("UPDATE assignments SET ds_status='voided', ds_envelope_id='', ds_decline_reason='' WHERE id=?").run(a.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/assignments/:id/docusign-status — refresh signing status from DocuSign
 app.get('/api/admin/assignments/:id/docusign-status', requireAdmin, blockManager, async (req, res) => {
-  const a = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_worker_signed_at, ds_company_signed_at FROM assignments WHERE id=?").get(req.params.id);
+  const a = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_worker_signed_at, ds_company_signed_at, ds_decline_reason FROM assignments WHERE id=?").get(req.params.id);
   if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-  if (!dsEnabled()) return res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at });
+  if (!dsEnabled()) return res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at, declineReason: a.ds_decline_reason });
   try {
     const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
     const [envRes, rcpRes] = await Promise.all([
@@ -4668,9 +4754,13 @@ app.get('/api/admin/assignments/:id/docusign-status', requireAdmin, blockManager
         if (s.recipientId === '2') workerSigned = s.signedDateTime;
       }
     }
-    db.prepare("UPDATE assignments SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=? WHERE id=?").run(status, workerSigned, companySigned, a.id);
-    res.json({ status, workerSigned, companySigned });
-  } catch (e) { res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at, error: e.message }); }
+    let declineReason = a.ds_decline_reason || '';
+    for (const s of (rcpRes.data?.signers || [])) {
+      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
+    }
+    db.prepare("UPDATE assignments SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, workerSigned, companySigned, declineReason, a.id);
+    res.json({ status, workerSigned, companySigned, declineReason });
+  } catch (e) { res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at, declineReason: a.ds_decline_reason, error: e.message }); }
 });
 
 // ─── Employee Doc Requests (私密材料链接) ───
@@ -8168,13 +8258,17 @@ app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
       for (const s of (event?.data?.envelopeSummary?.recipients?.signers || [])) {
         if (s.status === 'completed' && s.signedDateTime) {
           if (asgn) {
-            if (s.recipientId === '1') db.prepare("UPDATE assignments SET ds_worker_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
-            if (s.recipientId === '2') db.prepare("UPDATE assignments SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
+            if (s.recipientId === '1') db.prepare("UPDATE assignments SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
+            if (s.recipientId === '2') db.prepare("UPDATE assignments SET ds_worker_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
           }
           if (pf) {
-            if (s.recipientId === '1') db.prepare("UPDATE partner_files SET ds_partner_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
-            if (s.recipientId === '2') db.prepare("UPDATE partner_files SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
+            if (s.recipientId === '1') db.prepare("UPDATE partner_files SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
+            if (s.recipientId === '2') db.prepare("UPDATE partner_files SET ds_partner_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
           }
+        }
+        if (s.status === 'declined' && s.declinedReason) {
+          if (asgn) db.prepare("UPDATE assignments SET ds_decline_reason=? WHERE id=?").run(s.declinedReason, asgn.id);
+          if (pf) db.prepare("UPDATE partner_files SET ds_decline_reason=? WHERE id=?").run(s.declinedReason, pf.id);
         }
       }
       // Auto-activate partner when contract envelope is fully completed (both parties signed)
