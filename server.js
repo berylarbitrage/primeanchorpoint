@@ -8802,16 +8802,16 @@ app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'publi
 app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
 
 // POST /api/docusign/webhook — DocuSign Connect event notifications
-app.post('/api/docusign/webhook', express.json({ type: '*/*' }), async (req, res) => {
+app.post('/api/docusign/webhook', express.raw({ type: '*/*' }), async (req, res) => {
   try {
+    const rawBody = req.body.toString('utf8');
     const hmacSecret = process.env.DOCUSIGN_WEBHOOK_HMAC;
     if (hmacSecret) {
       const sig = req.headers['x-docusign-signature-1'] || '';
-      const rawBody = JSON.stringify(req.body);
       const expected = crypto.createHmac('sha256', hmacSecret).update(rawBody).digest('base64');
       if (sig !== expected) return res.status(401).json({ error: 'Invalid signature' });
     }
-    const event = req.body;
+    const event = JSON.parse(rawBody);
     const envelopeId = event?.data?.envelopeId || event?.envelopeId;
     const status = event?.data?.envelopeSummary?.status || event?.status;
     if (envelopeId && status) {
