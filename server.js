@@ -1906,7 +1906,7 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
     recipients: {
       signers: [
         { email: signer1.email, name: signer1.name, recipientId: '1', routingOrder: '1', clientUserId: '1', tabs: { signHereTabs: [dsSignTab('/sig1/', 50, 680)], dateSignedTabs: [{ ...dsSignTab('/date1/', 50, 715), tabLabel: 'date1' }] } },
-        { email: signer2.email, name: signer2.name, recipientId: '2', routingOrder: '2', tabs: { signHereTabs: [dsSignTab('/sig2/', 320, 680)], dateSignedTabs: [{ ...dsSignTab('/date2/', 320, 715), tabLabel: 'date2' }] } }
+        { email: signer2.email, name: signer2.name, recipientId: '2', routingOrder: '1', tabs: { signHereTabs: [dsSignTab('/sig2/', 320, 680)], dateSignedTabs: [{ ...dsSignTab('/date2/', 320, 715), tabLabel: 'date2' }] } }
       ]
     },
     status: 'sent'
@@ -4493,7 +4493,7 @@ app.delete('/api/admin/quotes/:id', requireAdmin, blockManager, staffGuard('dele
 
 // Partners CRUD
 app.get('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
-  const rows = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id) as file_count, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id AND f.ds_status='completed') as signed_contract_count FROM partners p ORDER BY p.created_at DESC`).all();
+  const rows = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id) as file_count, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id AND f.ds_status='completed') as signed_contract_count, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id AND f.file_type IN ('contract','agreement')) as contract_file_count FROM partners p ORDER BY p.created_at DESC`).all();
   res.json(rows);
 });
 
