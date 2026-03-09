@@ -4345,6 +4345,110 @@ app.delete('/api/admin/partners/:id', requireAdmin, requireRole('admin'), (req, 
   res.json({ success: true });
 });
 
+// ─── Minimal PDF builder (no external deps) ───────────────────────────────────
+function buildMinimalPdf(pageLines) {
+  // pageLines: array of { text, size, bold }
+  // Returns a Buffer containing a valid single-page PDF
+  const esc = s => String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const pageW = 612, pageH = 792, margin = 60;
+  let stream = '';
+  let y = pageH - margin;
+  for (const { text, size = 11 } of pageLines) {
+    if (!text) { y -= 14; continue; }
+    const lh = size + 4;
+    if (y < margin) break;
+    stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
+    y -= lh;
+  }
+  const streamBytes = Buffer.from(stream, 'latin1');
+  const objs = [];
+  objs.push(`1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj`);
+  objs.push(`2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj`);
+  objs.push(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}]\n   /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj`);
+  objs.push(`4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj`);
+  objs.push(`5 0 obj\n<< /Length ${streamBytes.length} >>\nstream\n${stream}endstream\nendobj`);
+  const header = '%PDF-1.4\n';
+  const parts = [Buffer.from(header)];
+  const offsets = [];
+  let offset = header.length;
+  for (const obj of objs) {
+    offsets.push(offset);
+    const buf = Buffer.from(obj + '\n', 'latin1');
+    parts.push(buf);
+    offset += buf.length;
+  }
+  const xref = `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` +
+    offsets.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('') +
+    `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${offset}\n%%EOF`;
+  parts.push(Buffer.from(xref));
+  return Buffer.concat(parts);
+}
+
+function generatePartnerContractLines({ partnerName, companyName, partnerAddress, dateStr }) {
+  const cname = companyName || 'Prime Anchorpoint LLC';
+  return [
+    { text: 'PARTNERSHIP SERVICE AGREEMENT', size: 15 },
+    { text: '' },
+    { text: `Date: ${dateStr}`, size: 11 },
+    { text: '' },
+    { text: 'This Partnership Service Agreement ("Agreement") is entered into between:', size: 11 },
+    { text: '' },
+    { text: `Company: ${cname}  ("Service Provider")`, size: 11 },
+    { text: '' },
+    { text: `Partner: ${partnerName}`, size: 11 },
+    { text: partnerAddress ? `Address: ${partnerAddress}` : '', size: 11 },
+    { text: '("Partner")', size: 11 },
+    { text: '' },
+    { text: '1. SCOPE OF SERVICES', size: 11 },
+    { text: 'The Partner agrees to provide staffing and workforce services as mutually agreed.', size: 11 },
+    { text: 'The Company will refer client engagements based on Partner availability and qualifications.', size: 11 },
+    { text: '' },
+    { text: '2. COMPENSATION', size: 11 },
+    { text: 'Compensation terms shall be agreed upon for each individual engagement or project.', size: 11 },
+    { text: 'Payment shall be made within 30 days of receipt of a valid invoice.', size: 11 },
+    { text: '' },
+    { text: '3. TERM', size: 11 },
+    { text: 'This Agreement commences on the date above and continues for one (1) year unless', size: 11 },
+    { text: 'terminated earlier by either party upon 30 days written notice.', size: 11 },
+    { text: '' },
+    { text: '4. CONFIDENTIALITY', size: 11 },
+    { text: 'Each party agrees to keep confidential any proprietary information disclosed by the other.', size: 11 },
+    { text: '' },
+    { text: '5. INDEPENDENT CONTRACTOR', size: 11 },
+    { text: 'Partner is an independent contractor, not an employee of the Company.', size: 11 },
+    { text: '' },
+    { text: '6. GOVERNING LAW', size: 11 },
+    { text: 'This Agreement shall be governed by the laws of the State of Illinois.', size: 11 },
+    { text: '' },
+    { text: '7. ENTIRE AGREEMENT', size: 11 },
+    { text: 'This Agreement constitutes the entire understanding between the parties.', size: 11 },
+    { text: '' },
+    { text: '' },
+    { text: 'SIGNATURES', size: 12 },
+    { text: '' },
+    { text: `${cname.padEnd(38)}${partnerName}`, size: 11 },
+    { text: 'By: ____________________________    By: ____________________________', size: 11 },
+    { text: 'Name: __________________________    Name: __________________________', size: 11 },
+    { text: 'Title: _________________________    Title: _________________________', size: 11 },
+    { text: 'Date: __________________________    Date: __________________________', size: 11 },
+  ];
+}
+
+// POST /api/admin/partners/:id/generate-default-contract
+app.post('/api/admin/partners/:id/generate-default-contract', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const lines = generatePartnerContractLines({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
+  const pdfBuf = buildMinimalPdf(lines);
+  const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filename), pdfBuf);
+  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes) VALUES (?, 'contract', '合作协议 Partnership Agreement', ?, ?, '自动生成的默认合同模板')`)
+    .run(req.params.id, filename, `Partnership Agreement - ${p.name}.pdf`);
+  res.json({ success: true, id: r.lastInsertRowid, file_name: `Partnership Agreement - ${p.name}.pdf` });
+});
+
 // Partner files
 app.get('/api/admin/partners/:id/files', requireAdmin, blockManager, (req, res) => {
   res.json(db.prepare('SELECT * FROM partner_files WHERE partner_id=? ORDER BY uploaded_at DESC').all(req.params.id));
@@ -8068,6 +8172,10 @@ app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
             if (s.recipientId === '2') db.prepare("UPDATE partner_files SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
           }
         }
+      }
+      // Auto-activate partner when contract envelope is fully completed (both parties signed)
+      if (pf && status === 'completed') {
+        db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
       }
     }
     res.json({ received: true });
