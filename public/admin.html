@@ -7611,22 +7611,20 @@ async function geocodePartnerAddr(btnOrRow) {
   const city   = row.querySelector('.pa-city').value.trim();
   const state  = row.querySelector('.pa-state').value;
   const zip    = row.querySelector('.pa-zip').value.trim();
+  // Strip unit/apt suffixes for geocoding (Google handles them, but Nominatim doesn't)
   const streetForGeo = street.replace(/\s*(#\S+|(?:apt|apartment|suite|ste|unit|bldg|building|fl|floor)\s*\S+)\s*$/i, '').trim();
   const addrStr = [streetForGeo, city, state && zip ? `${state} ${zip}` : (state || zip), 'USA'].filter(Boolean).join(', ');
   if (!addrStr.trim()) { showToast('请先填写地址', 'error'); return; }
   const statusEl = row.querySelector('.pa-geo-status');
   statusEl.textContent = '查询中…'; statusEl.style.color = 'var(--gray-400)';
   try {
-    const data = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addrStr)}&limit=1&countrycodes=us`,
-      { headers: { 'Accept-Language': 'en' } }
-    ).then(r => r.json());
-    if (!data.length) { statusEl.textContent = '⚠ 未找到，请手动输入坐标'; statusEl.style.color = '#dc2626'; return; }
-    const lat = parseFloat(data[0].lat).toFixed(6);
-    const lng = parseFloat(data[0].lon).toFixed(6);
+    const result = await fetch(`/api/geocode?q=${encodeURIComponent(addrStr)}`).then(r => r.json());
+    if (!result.lat) { statusEl.textContent = '⚠ 未找到，请手动输入坐标'; statusEl.style.color = '#dc2626'; return; }
+    const lat = parseFloat(result.lat).toFixed(6);
+    const lng = parseFloat(result.lng).toFixed(6);
     row.querySelector('.pa-lat').value = lat;
     row.querySelector('.pa-lng').value = lng;
-    statusEl.textContent = `✅ ${data[0].display_name.split(',').slice(0,3).join(',')}`;
+    statusEl.textContent = `✅ ${(result.display || '').split(',').slice(0,3).join(',')}`;
     statusEl.style.color = '#16a34a';
     // Show the loc-section so map is visible
     const locSec = row.querySelector('.pa-loc-section');

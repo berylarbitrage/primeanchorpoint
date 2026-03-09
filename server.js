@@ -8520,6 +8520,44 @@ app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
   res.json({ success: true });
 });
 
+// ─── Geocode proxy: Google Maps → Nominatim fallback ───
+app.get('/api/geocode', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'q required' });
+  const https = require('https');
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  // Try Google Geocoding API first if key is available
+  if (apiKey) {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${apiKey}`;
+      const data = await new Promise((resolve, reject) => {
+        https.get(url, resp => {
+          let d = ''; resp.on('data', c => d += c); resp.on('end', () => resolve(JSON.parse(d)));
+        }).on('error', reject);
+      });
+      if (data.status === 'OK' && data.results.length) {
+        const r = data.results[0];
+        return res.json({ lat: r.geometry.location.lat, lng: r.geometry.location.lng, display: r.formatted_address, source: 'google' });
+      }
+    } catch (e) { /* fall through to Nominatim */ }
+  }
+  // Nominatim fallback
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&countrycodes=us`;
+    const data = await new Promise((resolve, reject) => {
+      https.get(url, { headers: { 'User-Agent': 'PrimeAnchorpoint/1.0' } }, resp => {
+        let d = ''; resp.on('data', c => d += c); resp.on('end', () => resolve(JSON.parse(d)));
+      }).on('error', reject);
+    });
+    if (data.length) {
+      return res.json({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name, source: 'nominatim' });
+    }
+    return res.json({ found: false });
+  } catch (e) {
+    return res.status(500).json({ error: 'geocode failed' });
+  }
+});
+
 // ─── Google Address Validation ───
 app.post('/api/validate-address', async (req, res) => {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
