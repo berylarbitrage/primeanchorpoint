@@ -7545,7 +7545,7 @@ async function showPartnerById(id) {
     ${p.company_number?`<div class="detail-row"><span>公司编号</span><span style="font-family:monospace;font-weight:600;color:var(--sky)">${esc(p.company_number)}</span></div>`:''}
     <div class="detail-row"><span>公司名称</span><span>${esc(p.name)}</span></div>
     <div class="detail-row"><span>行业</span><span>${esc(p.industry)}</span></div>
-    <div class="detail-row"><span>状态</span><span>${p.active?'合作中':'已停止'}</span></div>
+    <div class="detail-row"><span>状态</span><span>${p.active?'合作中':(p.signed_contract_count||0)>0?'已停止':'待签约'}</span></div>
     <div class="detail-row"><span>添加时间</span><span>${new Date(p.created_at).toLocaleString()}</span></div>
   </div></div>`;
   if (contacts.length) {
