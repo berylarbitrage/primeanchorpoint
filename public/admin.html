@@ -3956,6 +3956,10 @@ function _jCopyDay(btn) {
   const start = row.querySelector('.jDayStart').value;
   const end   = row.querySelector('.jDayEnd').value;
   if (!start && !end) return;
+  if (start && !end) {
+    showToast('请先填写完整的下班时间（选择 AM/PM）再复制', 'toast-error');
+    return;
+  }
   btn.closest('table').querySelectorAll('tbody tr[data-day]').forEach(r => {
     if (r === row || !r.querySelector('.jDayCheck').checked) return;
     r.querySelector('.jDayStart').value = start;
