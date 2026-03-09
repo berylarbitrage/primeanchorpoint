@@ -3365,6 +3365,18 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- ════ DocuSign Embedded Signing Modal ════ -->
+<div id="dsSignModal" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;width:min(96vw,900px);height:min(90vh,700px);display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.1rem;border-bottom:1px solid #e2e8f0;flex-shrink:0">
+      <span style="font-weight:700;font-size:.95rem;color:#1e3a5f">✍ 公司签署合同</span>
+      <button onclick="closeDsSignModal()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:#64748b;line-height:1">&times;</button>
+    </div>
+    <div id="dsSignLoading" style="flex:1;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:#64748b">加载签署页面中…</div>
+    <iframe id="dsSignIframe" src="about:blank" style="flex:1;border:none;display:none" allow="same-origin"></iframe>
+  </div>
+</div>
+
 <!-- ════ Contract Editor Modal ════ -->
 <div class="modal-bg" id="contractEditorModal">
   <div class="modal" style="max-width:1100px;width:95vw;height:88vh;display:flex;flex-direction:column">
@@ -6293,7 +6305,8 @@ function renderAssignments(assigns) {
     const dsLabel = a.ds_status ? (DS_STATUS_LABELS[a.ds_status] || a.ds_status) : '';
     const dsColor = DS_STATUS_COLORS[a.ds_status] || '#6B7280';
     const dsBadge = a.ds_envelope_id
-      ? `<br><span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer" onclick="refreshDsStatus('assignment',${a.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
+      ? `<br><span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer" onclick="refreshDsStatus('assignment',${a.id},this)" title="点击刷新">✍ ${dsLabel}</span>` +
+        (a.ds_status !== 'completed' ? `<br><button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-top:2px;background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="openDsCompanySign('assignment',${a.id})">✍ 公司签署</button>` : '')
       : (a.contract_file ? `<br><button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-top:2px;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('assignment',${a.id},'${esc(a.inquiry_email||'')}','${esc(a.inquiry_name||'')}')">✍ DocuSign</button>` : '');
     const statusSelect = `<select class="assign-status-select badge-select badge-${a.status}" onchange="updateAssignmentStatus(${a.id},this.value,this)">
       ${statusOpts.map(([v,l]) => `<option value="${v}"${a.status===v?' selected':''}>${l}</option>`).join('')}
@@ -6333,9 +6346,8 @@ async function sendForDocuSign(type, id, defaultEmail, defaultName) {
       let msg = `合同信封已创建！Envelope ID: ${r.envelopeId}`;
       if (r.anchors && (!r.anchors.sig1 || !r.anchors.sig2)) msg += '\n\n⚠️ 警告：PDF 中未检测到签名锚点 /sig1/ 或 /sig2/，签字框将使用固定坐标，请确认位置正确。';
       if (r.signUrl) {
-        msg += '\n\n即将打开签名页面，请在新标签页中完成公司签字。签完后对方将自动收到邮件邀请。';
-        alert(msg);
-        window.open(r.signUrl, '_blank');
+        alert(msg + '\n\n请在弹出窗口中完成公司签字。签完后对方将自动收到邮件邀请。');
+        openDsCompanySign(type, id);
       } else { alert(msg); }
       if (type === 'assignment') loadAssignments();
     } else { alert('发送失败：' + (r.error || '未知错误')); }
@@ -6360,10 +6372,7 @@ async function refreshDsStatus(type, id, badgeEl) {
       if (doVoid) await voidDsEnvelope(type, id, badgeEl);
     } else if (r.status === 'sent' || r.status === 'delivered') {
       const action = confirm(`当前状态：${label}\n${s2} | ${s1}\n\n是否打开公司签字页面？（如需撤销请点取消后再点"撤销信封"）`);
-      if (action) {
-        const signUrl = type === 'assignment' ? `/admin/assignments/${id}/docusign-sign-url` : `/admin/partner-files/${id}/docusign-sign-url`;
-        try { const sr = await api(signUrl); if (sr.signUrl) window.open(sr.signUrl, '_blank'); } catch {}
-      }
+      if (action) openDsCompanySign(type, id);
     }
   } catch (e) { if (badgeEl) badgeEl.textContent = '✍ 刷新失败'; }
 }
@@ -7924,7 +7933,8 @@ async function loadPartnerFiles(pid) {
     const dsLabel = f.ds_status ? (DS_STATUS_LABELS[f.ds_status] || f.ds_status) : '';
     const dsColor = DS_STATUS_COLORS[f.ds_status] || '#6B7280';
     const dsBtn = f.ds_envelope_id
-      ? `<span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer;margin-left:.4rem" onclick="refreshDsStatus('partnerfile',${f.id},this)" title="点击刷新">✍ ${dsLabel}</span>`
+      ? `<span class="badge" style="background:${dsColor}20;color:${dsColor};font-size:.68rem;cursor:pointer;margin-left:.4rem" onclick="refreshDsStatus('partnerfile',${f.id},this)" title="点击刷新">✍ ${dsLabel}</span>` +
+        (f.ds_status !== 'completed' ? `<button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-left:.3rem;background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="openDsCompanySign('partnerfile',${f.id})">✍ 公司签署</button>` : '')
       : (signable.has(f.file_type) && f.file_path ? `<button class="btn btn-sm" style="font-size:.68rem;padding:1px 6px;margin-left:.4rem;background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="sendForDocuSign('partnerfile',${f.id},'','')">✍ DocuSign</button>` : '');
     return `<div class="pf-item"><a href="/api/admin/partner-files/${f.id}/download?token=${TOKEN}" target="_blank">${esc(f.file_name||'文件')}</a>
       <span class="badge badge-en">${typeLabels[f.file_type]||f.file_type}</span>
@@ -8203,9 +8213,8 @@ async function doSendPartnerDocuSign() {
       if (r.anchors && (!r.anchors.sig1 || !r.anchors.sig2)) msg += '  ⚠️ PDF 未检测到签名锚点，签字框将用固定坐标。';
       if (r.signUrl) msg += '  即将打开公司签字页面…';
       msgEl.style.cssText = 'display:;background:#F0FDF4;border:1px solid #BBF7D0;color:#059669;padding:.6rem .9rem;border-radius:8px';
-      msgEl.textContent = msg;
+      msgEl.innerHTML = msg + (r.signUrl ? `<br><button onclick="closeModal('partnerDsModal');openDsCompanySign('partnerfile',${fileId})" style="margin-top:.5rem;padding:.4rem .9rem;background:#1e3a5f;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.84rem">✍ 现在公司签署</button>` : '');
       btn.textContent = '✅ 已发送';
-      if (r.signUrl) setTimeout(() => window.open(r.signUrl, '_blank'), 800);
       // Refresh partner files if the edit modal is open
       const pidEl = document.getElementById('partnerId');
       if (pidEl && pidEl.value == _dsPartnerId) loadPartnerFiles(_dsPartnerId);
@@ -8240,6 +8249,63 @@ async function generateDefaultPartnerContract() {
     alert('生成失败：' + e.message);
   }
 }
+
+// ── DocuSign Embedded Signing Modal ─────────────────────────────
+let _dsSignContext = null; // { type: 'partnerfile'|'assignment', id }
+
+async function openDsCompanySign(type, id) {
+  _dsSignContext = { type, id };
+  const modal = document.getElementById('dsSignModal');
+  const iframe = document.getElementById('dsSignIframe');
+  const loading = document.getElementById('dsSignLoading');
+  modal.style.display = 'flex';
+  iframe.style.display = 'none';
+  loading.style.display = 'flex';
+
+  try {
+    const endpoint = type === 'partnerfile'
+      ? `/admin/partner-files/${id}/docusign-sign-url`
+      : `/admin/assignments/${id}/docusign-sign-url`;
+    const r = await api(endpoint);
+    if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
+    iframe.src = r.signUrl;
+    loading.style.display = 'none';
+    iframe.style.display = '';
+  } catch (e) {
+    loading.textContent = '加载失败：' + e.message;
+  }
+}
+
+function closeDsSignModal() {
+  const modal = document.getElementById('dsSignModal');
+  const iframe = document.getElementById('dsSignIframe');
+  modal.style.display = 'none';
+  iframe.src = 'about:blank';
+  _dsSignContext = null;
+}
+
+// Listen for DocuSign return postMessage from /docusign-return inside iframe
+window.addEventListener('message', (ev) => {
+  if (ev.data && ev.data.type === 'docusign_return') {
+    const ctx = _dsSignContext;
+    const event = ev.data.event || '';
+    closeDsSignModal();
+    if (event === 'signing_complete') {
+      showToast('✅ 签署完成！', 'success');
+      if (ctx) {
+        if (ctx.type === 'partnerfile') {
+          const pidEl = document.getElementById('partnerId');
+          if (pidEl && pidEl.value) loadPartnerFiles(parseInt(pidEl.value));
+        } else {
+          loadAssignments && loadAssignments();
+        }
+      }
+    } else if (event === 'cancel' || event === 'decline') {
+      showToast('签署已取消', 'info');
+    }
+  }
+});
+
 
 async function savePartner() {
   if (!validatePartnerAddrs()) return;
