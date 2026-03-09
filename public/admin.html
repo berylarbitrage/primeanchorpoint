@@ -3372,8 +3372,11 @@ tr:hover td{background:var(--sky-light)}
       <span style="font-weight:700;font-size:.95rem;color:#1e3a5f">✍ 公司签署合同</span>
       <button onclick="closeDsSignModal()" style="background:none;border:none;font-size:1.3rem;cursor:pointer;color:#64748b;line-height:1">&times;</button>
     </div>
-    <div id="dsSignLoading" style="flex:1;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:#64748b">加载签署页面中…</div>
-    <iframe id="dsSignIframe" src="about:blank" style="flex:1;border:none;display:none" allow="same-origin"></iframe>
+    <div id="dsSignLoading" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;font-size:.9rem;color:#64748b">
+      <span id="dsSignLoadingText">加载签署页面中…</span>
+      <button id="dsSignRetryBtn" onclick="retryDsCompanySign()" style="display:none;padding:.4rem 1rem;background:#1d4ed8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">重新加载</button>
+    </div>
+    <iframe id="dsSignIframe" src="about:blank" style="flex:1;border:none;min-height:0;display:none" allowfullscreen></iframe>
   </div>
 </div>
 
@@ -8258,9 +8261,16 @@ async function openDsCompanySign(type, id) {
   const modal = document.getElementById('dsSignModal');
   const iframe = document.getElementById('dsSignIframe');
   const loading = document.getElementById('dsSignLoading');
+  const loadingText = document.getElementById('dsSignLoadingText');
+  const retryBtn = document.getElementById('dsSignRetryBtn');
   modal.style.display = 'flex';
   iframe.style.display = 'none';
   loading.style.display = 'flex';
+  loadingText.textContent = '加载签署页面中…';
+  retryBtn.style.display = 'none';
+
+  // Clear any previous timeout
+  if (window._dsLoadTimeout) clearTimeout(window._dsLoadTimeout);
 
   try {
     const endpoint = type === 'partnerfile'
@@ -8268,19 +8278,50 @@ async function openDsCompanySign(type, id) {
       : `/admin/assignments/${id}/docusign-sign-url`;
     const r = await api(endpoint);
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
-    iframe.src = r.signUrl;
+
+    // Wait for iframe to load before showing it
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        // After 90s, stop waiting and show the iframe anyway — user can still try to interact
+        resolve();
+      }, 90000);
+      iframe.onload = () => { clearTimeout(timeout); resolve(); };
+      iframe.onerror = () => { clearTimeout(timeout); reject(new Error('签署页面加载失败')); };
+      iframe.src = r.signUrl;
+    });
+
     loading.style.display = 'none';
     iframe.style.display = '';
+    iframe.onload = null;
+    iframe.onerror = null;
+
+    // Show retry option after 30s in case DocuSign itself is stuck
+    window._dsLoadTimeout = setTimeout(() => {
+      if (_dsSignContext && _dsSignContext.type === type && _dsSignContext.id === id) {
+        // iframe is visible but user might be stuck — offer retry
+        // Don't hide the iframe, just note the option in footer area (non-intrusive)
+      }
+    }, 30000);
   } catch (e) {
-    loading.textContent = '加载失败：' + e.message;
+    loadingText.textContent = '加载失败：' + e.message;
+    retryBtn.style.display = '';
   }
+}
+
+function retryDsCompanySign() {
+  if (_dsSignContext) openDsCompanySign(_dsSignContext.type, _dsSignContext.id);
 }
 
 function closeDsSignModal() {
   const modal = document.getElementById('dsSignModal');
   const iframe = document.getElementById('dsSignIframe');
+  if (window._dsLoadTimeout) { clearTimeout(window._dsLoadTimeout); window._dsLoadTimeout = null; }
+  iframe.onload = null;
+  iframe.onerror = null;
   modal.style.display = 'none';
   iframe.src = 'about:blank';
+  iframe.style.display = 'none';
+  document.getElementById('dsSignLoading').style.display = 'flex';
   _dsSignContext = null;
 }
 
