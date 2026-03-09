@@ -1843,14 +1843,11 @@ function dsMakeJWT() {
   const pay = b64u(JSON.stringify({ iss: process.env.DOCUSIGN_INTEGRATION_KEY, sub: process.env.DOCUSIGN_USER_ID, aud, iat: now, exp: now + 3600, scope: 'signature impersonation' }));
   const unsigned = `${hdr}.${pay}`;
   let pem = (process.env.DOCUSIGN_PRIVATE_KEY || '').replace(/\\n/g, '\n');
-  // Convert PKCS#1 to PKCS#8 if needed (OpenSSL 3.x compatibility)
-  if (pem.includes('BEGIN RSA PRIVATE KEY')) {
-    const keyObj = crypto.createPrivateKey({ key: pem, format: 'pem' });
-    pem = keyObj.export({ type: 'pkcs8', format: 'pem' });
-  }
+  // Use KeyObject for signing - handles PKCS#1 and PKCS#8, OpenSSL 3.x compatible
+  const keyObject = crypto.createPrivateKey({ key: pem, format: 'pem' });
   const signer = crypto.createSign('RSA-SHA256');
   signer.update(unsigned);
-  const sig = signer.sign(pem, 'base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const sig = signer.sign(keyObject, 'base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   return `${unsigned}.${sig}`;
 }
 
