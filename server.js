@@ -4526,7 +4526,7 @@ app.post('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
   const r = db.prepare(`INSERT INTO partners (name,contact_person,phone,email,address,industry,services,notes,active,contacts,addresses,social_media,links,company_number)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
-    d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
+    d.industry||'', d.services||'', d.notes||'', 0,
     d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', companyNumber);
   res.json({ success: true, id: r.lastInsertRowid, company_number: companyNumber });
 });

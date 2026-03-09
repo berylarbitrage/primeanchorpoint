@@ -7511,13 +7511,13 @@ function renderPartners(partners) {
       <td>${esc(mainContact)}${contacts.length>1?` <span style="color:var(--gray-400)">(+${contacts.length-1})</span>`:''}</td>
       <td>${esc(mainPhone)}</td>
       <td>${esc(p.industry)}</td>
-      <td>${p.active?'<span class="badge badge-completed">合作中</span>':'<span class="badge badge-cancelled">已停止</span>'}</td>
+      <td>${p.active?'<span class="badge badge-completed">合作中</span>':(p.signed_contract_count||0)>0?'<span class="badge badge-cancelled">已停止</span>':'<span class="badge" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A;padding:2px 8px;border-radius:4px;font-size:.75rem">待签约</span>'}</td>
       <td>
         <button class="btn btn-sm" onclick="event.stopPropagation();editPartnerById(${p.id})">编辑</button>
         ${(p.signed_contract_count||0)>0
           ? `<button class="btn btn-sm" style="background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="event.stopPropagation();showPartnerById(${p.id})">📄 查看合同</button>`
           : (p.contract_file_count||0)>0
-            ? `<button class="btn btn-sm" style="background:#FFFBEB;color:#B45309;border:1px solid #FDE68A" onclick="event.stopPropagation();showPartnerById(${p.id})">📄 查看合同</button>`
+            ? `<button class="btn btn-sm" style="background:#FEF3C7;color:#92400E;border:1px solid #FDE68A" onclick="event.stopPropagation();showPartnerById(${p.id})">📋 签署中</button>`
             : `<button class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="event.stopPropagation();openPartnerDocuSign(${p.id})">✍ 发送合同</button>`}
         ${USER_ROLE==='admin'?`<button class="btn btn-sm btn-red" onclick="event.stopPropagation();deletePartner(${p.id})">删除</button>`:''}
       </td>
