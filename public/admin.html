@@ -8481,7 +8481,7 @@ function closeDsSignModal() {
 }
 
 // Listen for DocuSign return postMessage from /docusign-return inside iframe
-window.addEventListener('message', (ev) => {
+window.addEventListener('message', async (ev) => {
   if (ev.data && ev.data.type === 'docusign_return') {
     const ctx = _dsSignContext;
     const event = ev.data.event || '';
