@@ -590,6 +590,7 @@ try { db.exec(`ALTER TABLE jobs ADD COLUMN title_zh TEXT DEFAULT ''`); } catch(e
 try { db.exec(`ALTER TABLE jobs ADD COLUMN title_es TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN desc_zh TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN desc_es TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN job_id TEXT DEFAULT ''`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
@@ -1809,6 +1810,25 @@ function nextEmployerId(city) {
   return `EMER-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
 }
 
+// ─── Auto-generate job ID: JOB-STATE-MMDDYY-0001 ───
+function generateJobId(location) {
+  const stateMatch = (location || '').match(/,\s*([A-Z]{2})\b/);
+  const state = stateMatch ? stateMatch[1] : 'XX';
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const prefix = `JOB-${state}-${mm}${dd}${yy}-`;
+  const last = db.prepare(`SELECT job_id FROM jobs WHERE job_id LIKE ? ORDER BY job_id DESC LIMIT 1`).get(prefix + '%');
+  let seq = 1;
+  if (last && last.job_id) {
+    const parts = last.job_id.split('-');
+    const n = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(n)) seq = n + 1;
+  }
+  return prefix + String(seq).padStart(4, '0');
+}
+
 // ─── Haversine distance (GPS geofencing) ───
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371000; // Earth radius in meters
@@ -2418,19 +2438,23 @@ app.get('/api/jobs', (req, res) => {
   const lang = req.query.lang;
   const base = `SELECT j.*, p.name as partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id WHERE j.active=1 AND j.visible=1`;
   const jobs = (lang && lang !== 'all')
-    ? db.prepare(base + ' AND j.lang=? ORDER BY j.created_at DESC').all(lang)
+    ? db.prepare(base + ` AND (j.langs LIKE ? OR (COALESCE(j.langs,'')='' AND j.lang=?)) ORDER BY j.created_at DESC`).all(`%${lang}%`, lang)
     : db.prepare(base + ' ORDER BY j.created_at DESC').all();
   res.json(jobs.map(j => ({
     id: j.id, title: j.title, type: j.type, location: j.location,
-    pay: j.pay, lang: j.lang, lang_name: j.lang_name,
-    desc: j.description, urgent: !!j.urgent, work_auth: j.work_auth || '',
+    pay: j.pay, pay_period: j.pay_period || '', lang: j.lang, lang_name: j.lang_name,
+    langs: j.langs || j.lang || 'en',
+    title_zh: j.title_zh || '', title_es: j.title_es || '',
+    desc: j.description, desc_zh: j.desc_zh || '', desc_es: j.desc_es || '',
+    urgent: !!j.urgent, work_auth: j.work_auth || '',
     partner_name: j.partner_name || '',
     company_name: j.company_name || '', employment_type: j.employment_type || '',
     benefits: j.benefits || '[]', schedule: j.schedule || '',
     schedule_days: j.schedule_days || '[]',
     schedule_start: j.schedule_start || '',
     schedule_end: j.schedule_end || '',
-    work_days: j.work_days || '', work_start: j.work_start || '', work_end: j.work_end || ''
+    work_days: j.work_days || '', work_start: j.work_start || '', work_end: j.work_end || '',
+    job_id: j.job_id || ''
   })));
 });
 
@@ -4365,8 +4389,10 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
     jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1,
     d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||''
   );
-  logJobAudit.run(r.lastInsertRowid, 'created', JSON.stringify({ title: d.title, company_name: d.company_name||'' }), req.userName);
-  res.json({ success: true, id: r.lastInsertRowid });
+  const jobId = generateJobId(d.location || '');
+  db.prepare('UPDATE jobs SET job_id=? WHERE id=?').run(jobId, r.lastInsertRowid);
+  logJobAudit.run(r.lastInsertRowid, 'created', JSON.stringify({ title: d.title, company_name: d.company_name||'', job_id: jobId }), req.userName);
+  res.json({ success: true, id: r.lastInsertRowid, job_id: jobId });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
