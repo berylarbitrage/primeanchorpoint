@@ -1926,6 +1926,22 @@ async function dsCreateSignUrl(envelopeId, signerEmail, signerName, returnUrl, f
   return r.data.url;
 }
 
+// Download the completed (signed) document PDF from DocuSign and return as Buffer
+async function dsDownloadSignedDoc(envelopeId) {
+  const token = await getDsToken();
+  const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+  const baseUri = (process.env.DOCUSIGN_BASE_URI || 'https://demo.docusign.net').replace(/\/$/, '');
+  const hostname = new URL(baseUri).hostname;
+  const apiPath = `/restapi/v2.1/accounts/${accountId}/envelopes/${envelopeId}/documents/combined`;
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname, path: apiPath, method: 'GET', headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/pdf' } }, (res) => {
+      if (res.statusCode !== 200) { let d = ''; res.on('data', c => d += c); res.on('end', () => reject(new Error(`DocuSign download ${res.statusCode}: ${d}`))); return; }
+      const chunks = []; res.on('data', c => chunks.push(c)); res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+    req.on('error', reject); req.end();
+  });
+}
+
 // Check whether PDF contains DocuSign anchor strings
 function checkDsAnchors(docPath) {
   try {
@@ -8744,7 +8760,7 @@ app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'publi
 app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
 
 // POST /api/docusign/webhook — DocuSign Connect event notifications
-app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
+app.post('/api/docusign/webhook', express.json({ type: '*/*' }), async (req, res) => {
   try {
     const hmacSecret = process.env.DOCUSIGN_WEBHOOK_HMAC;
     if (hmacSecret) {
@@ -8780,6 +8796,26 @@ app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
       // Auto-activate partner when contract envelope is fully completed (both parties signed)
       if (pf && status === 'completed') {
         db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
+        // Download the signed PDF from DocuSign and overwrite the local file
+        try {
+          const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
+          if (pfRecord && pfRecord.file_path) {
+            const signedBuf = await dsDownloadSignedDoc(envelopeId);
+            fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
+            console.log(`[DocuSign] Saved signed partner contract for file id=${pf.id}`);
+          }
+        } catch (dlErr) { console.error('[DocuSign] Failed to download signed partner doc:', dlErr.message); }
+      }
+      if (asgn && status === 'completed') {
+        // Download the signed PDF from DocuSign and overwrite the local contract file
+        try {
+          const asgnRecord = db.prepare("SELECT contract_file FROM assignments WHERE id=?").get(asgn.id);
+          if (asgnRecord && asgnRecord.contract_file) {
+            const signedBuf = await dsDownloadSignedDoc(envelopeId);
+            fs.writeFileSync(path.join(docsDir, asgnRecord.contract_file), signedBuf);
+            console.log(`[DocuSign] Saved signed assignment contract for assignment id=${asgn.id}`);
+          }
+        } catch (dlErr) { console.error('[DocuSign] Failed to download signed assignment doc:', dlErr.message); }
       }
     }
     res.json({ received: true });
