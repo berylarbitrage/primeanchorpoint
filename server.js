@@ -1893,7 +1893,7 @@ async function dsApiCall(method, apiPath, body) {
 // Build a signHere tab using anchor string (preferred) with absolute fallback
 // anchorYOffset: '20' pushes the signature box 20pts below the anchor, keeping it clear of label text
 function dsSignTab(anchorStr, fallX, fallY) {
-  return { anchorString: anchorStr, anchorIgnoreIfNotPresent: 'true', anchorXOffset: '0', anchorYOffset: '20', xPosition: String(fallX), yPosition: String(fallY), pageNumber: '1', documentId: '1' };
+  return { anchorString: anchorStr, anchorIgnoreIfNotPresent: 'true', anchorXOffset: '0', anchorYOffset: '5', xPosition: String(fallX), yPosition: String(fallY), pageNumber: '1', documentId: '1' };
 }
 
 async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
@@ -5113,6 +5113,8 @@ app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManag
     db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, partnerSigned, companySigned, declineReason, f.id);
     // If completed, download and overwrite local file with signed PDF (fallback if webhook missed)
     if (status === 'completed') {
+      // Auto-activate partner (fallback if webhook missed)
+      db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(f.id);
       try {
         const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(f.id);
         if (pfRecord && pfRecord.file_path) {
@@ -5153,6 +5155,8 @@ app.post('/api/admin/partner-files/:id/force-download-signed', requireAdmin, blo
     if (status !== 'completed') {
       return res.json({ success: false, status, message: `当前签署状态为 "${status}"，只有双方都签署后才能下载已签版本。`, partnerSigned, companySigned });
     }
+    // Auto-activate partner (fallback if webhook missed)
+    db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(f.id);
     // Download signed PDF
     const signedBuf = await dsDownloadSignedDoc(f.ds_envelope_id);
     if (f.file_path) {
