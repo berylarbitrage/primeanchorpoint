@@ -7611,7 +7611,8 @@ async function geocodePartnerAddr(btn) {
   const city   = row.querySelector('.pa-city').value.trim();
   const state  = row.querySelector('.pa-state').value;
   const zip    = row.querySelector('.pa-zip').value.trim();
-  const addrStr = [street, city, state && zip ? `${state} ${zip}` : (state || zip), 'USA'].filter(Boolean).join(', ');
+  const streetForGeo = street.replace(/\s*(#\S+|(?:apt|apartment|suite|ste|unit|bldg|building|fl|floor)\s*\S+)\s*$/i, '').trim();
+  const addrStr = [streetForGeo, city, state && zip ? `${state} ${zip}` : (state || zip), 'USA'].filter(Boolean).join(', ');
   if (!addrStr.trim()) { showToast('请先填写地址', 'error'); return; }
   const statusEl = row.querySelector('.pa-geo-status');
   statusEl.textContent = '查询中…'; statusEl.style.color = 'var(--gray-400)';
