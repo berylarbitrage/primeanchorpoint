@@ -3306,6 +3306,8 @@ tr:hover td{background:var(--sky-light)}
       <button id="btnEditContract" class="btn btn-sm" style="background:#F5F3FF;color:#7C3AED;border:1px solid #DDD6FE" onclick="openContractEditorForNewPartnerContract(currentPartner&&currentPartner.id)">✏️ 编辑合同</button>
       <button id="btnRefreshDsStatus" class="btn btn-sm" style="display:none;background:#F0FDF4;color:#059669;border:1px solid #BBF7D0" onclick="refreshAllPartnerFileStatuses()">⟳ 刷新签署状态</button>
       <button id="btnSendContract" class="btn btn-sm" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE" onclick="_stopDsPolling();document.getElementById('partnerDetailModal').classList.remove('show');openPartnerDocuSign(currentPartner&&currentPartner.id)">✍ 发送合同</button>
+      <button id="btnTerminatePartner" class="btn btn-sm btn-red" style="display:none" onclick="terminatePartner()">⛔ 终止合作</button>
+      <button id="btnReactivatePartner" class="btn btn-sm btn-green" style="display:none" onclick="reactivatePartner()">✅ 恢复合作</button>
       <button class="btn btn-sm btn-outline" onclick="_stopDsPolling();document.getElementById('partnerDetailModal').classList.remove('show')">关闭</button>
     </div>
   </div>
@@ -7733,6 +7735,9 @@ async function showPartnerById(id) {
   if (p.notes) html += `<div class="detail-section"><h4>备注</h4><p style="font-size:.85rem;color:var(--gray-600)">${esc(p.notes)}</p></div>`;
   document.getElementById('partnerDetailTitle').textContent = p.name;
   document.getElementById('partnerDetail').innerHTML = html;
+  // Show terminate / reactivate buttons based on status (admin only)
+  document.getElementById('btnTerminatePartner').style.display = (USER_ROLE === 'admin' && p.active) ? '' : 'none';
+  document.getElementById('btnReactivatePartner').style.display = (USER_ROLE === 'admin' && !p.active) ? '' : 'none';
   document.getElementById('partnerDetailModal').classList.add('show');
   // Auto-poll contract status if there are pending DocuSign envelopes
   if (hasPendingDs) _startDsPolling(id);
@@ -7764,7 +7769,7 @@ function _startDsPolling(partnerId) {
         showToast('✅ 合同签署状态已更新', 'success');
       }
     } catch {}
-  }, 45000); // poll every 45 seconds
+  }, 10000); // poll every 10 seconds
 }
 function _stopDsPolling() {
   if (_dsPollTimer) { clearInterval(_dsPollTimer); _dsPollTimer = null; }
@@ -7774,6 +7779,48 @@ function editPartnerFromDetail() {
   _stopDsPolling();
   document.getElementById('partnerDetailModal').classList.remove('show');
   if (currentPartner) openPartnerModal(currentPartner);
+}
+
+async function terminatePartner() {
+  if (!currentPartner) return;
+  const ok = await adminConfirm(
+    `确认终止与「${currentPartner.name}」的合作？\n\n终止后该公司状态将变为"已停止"，现有派工记录不受影响，日后可随时恢复合作。`,
+    '⛔ 终止合作',
+    '确认终止',
+    '取消'
+  );
+  if (!ok) return;
+  const d = { ...currentPartner, active: false };
+  const r = await api(`/admin/partners/${currentPartner.id}`, { method: 'PUT', body: JSON.stringify(d) });
+  if (r && r.success) {
+    showToast('已终止合作关系', 'success');
+    await loadPartners();
+    document.getElementById('partnerDetailModal').classList.remove('show');
+    _stopDsPolling();
+  } else {
+    await adminAlert('操作失败：' + (r && r.error || '请重试'), '错误');
+  }
+}
+
+async function reactivatePartner() {
+  if (!currentPartner) return;
+  const ok = await adminConfirm(
+    `确认恢复与「${currentPartner.name}」的合作？`,
+    '✅ 恢复合作',
+    '确认恢复',
+    '取消'
+  );
+  if (!ok) return;
+  const d = { ...currentPartner, active: true };
+  const r = await api(`/admin/partners/${currentPartner.id}`, { method: 'PUT', body: JSON.stringify(d) });
+  if (r && r.success) {
+    showToast('已恢复合作关系', 'success');
+    await loadPartners();
+    document.getElementById('partnerDetailModal').classList.remove('show');
+    _stopDsPolling();
+  } else {
+    await adminAlert('操作失败：' + (r && r.error || '请重试'), '错误');
+  }
 }
 
 // ── Dynamic contacts list ──
