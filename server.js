@@ -4509,7 +4509,7 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, f.file_path);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
-    const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: partnerEmail, name: partnerName }, signer2: { email: companyEmail, name: companyName } });
+    const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: companyEmail, name: companyName }, signer2: { email: partnerEmail, name: partnerName } });
     db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent' WHERE id=?").run(result.envelopeId, f.id);
     res.json({ success: true, envelopeId: result.envelopeId });
   } catch (e) {
@@ -4533,8 +4533,8 @@ app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManag
     let partnerSigned = f.ds_partner_signed_at, companySigned = f.ds_company_signed_at;
     for (const s of (rcpRes.data?.signers || [])) {
       if (s.status === 'completed' && s.signedDateTime) {
-        if (s.recipientId === '1') partnerSigned = s.signedDateTime;
-        if (s.recipientId === '2') companySigned = s.signedDateTime;
+        if (s.recipientId === '1') companySigned = s.signedDateTime;
+        if (s.recipientId === '2') partnerSigned = s.signedDateTime;
       }
     }
     db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=? WHERE id=?").run(status, partnerSigned, companySigned, f.id);
@@ -4640,7 +4640,7 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, a.contract_file);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '合同文件不存在' });
-    const result = await dsSendEnvelope({ docPath, docName: a.contract_filename || a.contract_file, emailSubject: `请签署雇用合同 - ${a.inquiry_name || ''}`, signer1: { email: workerEmail, name: workerName }, signer2: { email: companyEmail, name: companyName } });
+    const result = await dsSendEnvelope({ docPath, docName: a.contract_filename || a.contract_file, emailSubject: `请签署雇用合同 - ${a.inquiry_name || ''}`, signer1: { email: companyEmail, name: companyName }, signer2: { email: workerEmail, name: workerName } });
     db.prepare("UPDATE assignments SET ds_envelope_id=?, ds_status='sent' WHERE id=?").run(result.envelopeId, a.id);
     res.json({ success: true, envelopeId: result.envelopeId });
   } catch (e) {
@@ -4664,8 +4664,8 @@ app.get('/api/admin/assignments/:id/docusign-status', requireAdmin, blockManager
     let workerSigned = a.ds_worker_signed_at, companySigned = a.ds_company_signed_at;
     for (const s of (rcpRes.data?.signers || [])) {
       if (s.status === 'completed' && s.signedDateTime) {
-        if (s.recipientId === '1') workerSigned = s.signedDateTime;
-        if (s.recipientId === '2') companySigned = s.signedDateTime;
+        if (s.recipientId === '1') companySigned = s.signedDateTime;
+        if (s.recipientId === '2') workerSigned = s.signedDateTime;
       }
     }
     db.prepare("UPDATE assignments SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=? WHERE id=?").run(status, workerSigned, companySigned, a.id);

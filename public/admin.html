@@ -6212,7 +6212,7 @@ function filterAssignments() {
 }
 
 const payTypeLabel = t => ({ hourly:'时薪', salary:'月薪', annual:'年薪', per_piece:'计件' }[t] || t);
-const DS_STATUS_LABELS = { sent:'已发送(待签)', delivered:'已送达', completed:'双方已签', declined:'已拒签', voided:'已撤销' };
+const DS_STATUS_LABELS = { sent:'已发送(待签)', delivered:'已送达', completed:'合同完成', declined:'已拒签', voided:'已撤销' };
 const DS_STATUS_COLORS = { sent:'#F59E0B', delivered:'#3B82F6', completed:'#10B981', declined:'#EF4444', voided:'#6B7280' };
 
 function renderAssignments(assigns) {
