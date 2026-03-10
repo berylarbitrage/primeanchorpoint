@@ -1081,6 +1081,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="top-actions">
       <button class="btn btn-outline" onclick="exportTimeCSV()">导出 CSV</button>
       <button class="btn btn-accent" onclick="showTimeReport()">工时汇总报表</button>
+      <button class="btn btn-outline" onclick="openInvoiceModal()" style="background:#f0fdf4;color:#16a34a;border-color:#86efac">🧾 生成发票</button>
       <button class="btn btn-green" onclick="openTsModal()">+ 手动录入</button>
     </div>
   </div>
@@ -15402,6 +15403,197 @@ async function saveMgrAssign() {
   }
 }
 
+
+
+// ═══════════════════════════════════════════════════════
+// INVOICE GENERATION
+// ═══════════════════════════════════════════════════════
+let _invoiceCompanies = [];
+let _invoiceEmployees = [];
+
+async function openInvoiceModal() {
+  // Load companies from partners
+  const partners = await api('/admin/partners').catch(() => []);
+  _invoiceCompanies = Array.isArray(partners) ? partners.filter(p => p.active) : (partners?.partners || []).filter(p => p.active);
+
+  const sel = document.getElementById('invCompanySelect');
+  sel.innerHTML = '<option value="">— 请选择客户公司 —</option>'
+    + _invoiceCompanies.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+
+  // Default period: previous week Mon-Sun
+  const today = new Date();
+  const dow = today.getDay() || 7; // 1=Mon … 7=Sun
+  const mon = new Date(today); mon.setDate(today.getDate() - dow - 6);
+  const sun = new Date(today); sun.setDate(today.getDate() - dow);
+  document.getElementById('invPeriodStart').value = mon.toISOString().slice(0,10);
+  document.getElementById('invPeriodEnd').value   = sun.toISOString().slice(0,10);
+
+  document.getElementById('invEmpList').innerHTML = '<div style="color:var(--gray-400);font-size:.85rem">请先选择公司和周期后点击「加载员工」</div>';
+  document.getElementById('invMsg').textContent = '';
+  document.getElementById('invoiceModal').style.display = 'flex';
+}
+function closeInvoiceModal() { document.getElementById('invoiceModal').style.display = 'none'; }
+
+async function loadInvoiceEmployees() {
+  const company = document.getElementById('invCompanySelect').value;
+  const ps = document.getElementById('invPeriodStart').value;
+  const pe = document.getElementById('invPeriodEnd').value;
+  if (!company || !ps || !pe) { alert('请先选择公司和周期'); return; }
+
+  const msg = document.getElementById('invMsg');
+  msg.textContent = '加载中…'; msg.style.color = 'var(--gray-400)';
+
+  const qs = new URLSearchParams({ company_name: company, period_start: ps, period_end: pe });
+  const rows = await api('/admin/invoice/employees?' + qs).catch(() => []);
+  _invoiceEmployees = Array.isArray(rows) ? rows : [];
+
+  const container = document.getElementById('invEmpList');
+  if (!_invoiceEmployees.length) {
+    container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem">该公司在所选周期内无打卡记录</div>';
+    msg.textContent = ''; return;
+  }
+  container.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.87rem">
+      <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
+        <th style="padding:6px 8px;text-align:left"><input type="checkbox" id="invSelAll" onchange="invToggleAll(this)" checked> 全选</th>
+        <th style="padding:6px 8px">姓名</th>
+        <th style="padding:6px 8px;text-align:right">正常工时</th>
+        <th style="padding:6px 8px;text-align:right">加班工时</th>
+        <th style="padding:6px 8px;text-align:right">合计</th>
+        <th style="padding:6px 8px;text-align:right">计费时薪 ($)</th>
+      </tr></thead>
+      <tbody>
+        ${_invoiceEmployees.map(e => `
+          <tr>
+            <td style="padding:5px 8px"><input type="checkbox" class="inv-emp-chk" value="${e.employee_id}" checked></td>
+            <td style="padding:5px 8px">${esc(e.name||e.first_name+' '+e.last_name)} <span style="font-size:.75rem;color:var(--gray-400)">${esc(e.emp_code||'')}</span></td>
+            <td style="padding:5px 8px;text-align:right">${(e.regular_hours||0).toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right">${(e.overtime_hours||0).toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right"><strong>${(e.total_hours||0).toFixed(2)}</strong></td>
+            <td style="padding:5px 8px;text-align:right"><input type="number" class="inv-rate-input" data-id="${e.employee_id}" value="${(e.client_hourly_rate||0).toFixed(2)}" min="0" step="0.01" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.85rem"></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  msg.textContent = `已加载 ${_invoiceEmployees.length} 名员工`;
+  msg.style.color = 'var(--green)';
+}
+
+function invToggleAll(chk) {
+  document.querySelectorAll('.inv-emp-chk').forEach(c => c.checked = chk.checked);
+}
+
+async function generateInvoice() {
+  const company = document.getElementById('invCompanySelect').value;
+  const ps = document.getElementById('invPeriodStart').value;
+  const pe = document.getElementById('invPeriodEnd').value;
+  if (!company || !ps || !pe) { alert('请填写完整信息'); return; }
+
+  const selected = [...document.querySelectorAll('.inv-emp-chk:checked')].map(c => parseInt(c.value));
+  if (!selected.length) { alert('请至少选择一名员工'); return; }
+
+  const bill_rates = {};
+  document.querySelectorAll('.inv-rate-input').forEach(inp => {
+    bill_rates[inp.dataset.id] = parseFloat(inp.value) || 0;
+  });
+
+  const msg = document.getElementById('invMsg');
+  msg.textContent = '生成中…'; msg.style.color = 'var(--gray-400)';
+
+  const data = await api('/admin/invoice/generate', {
+    method: 'POST',
+    body: JSON.stringify({ company_name: company, period_start: ps, period_end: pe, employee_ids: selected, bill_rates })
+  }).catch(e => ({ error: e.message }));
+
+  if (!data || data.error) {
+    msg.textContent = '❌ ' + (data?.error || '生成失败'); msg.style.color = 'var(--red)'; return;
+  }
+  msg.textContent = '';
+  closeInvoiceModal();
+  showInvoicePreview(data);
+}
+
+function showInvoicePreview(inv) {
+  const p = inv.partner || {};
+  const fmtDate = d => d ? d.replace(/-/g,'/') : '';
+  const fmtMoney = n => '$' + (n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+
+  const rows = inv.items.map(item => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9">${esc(item.name)} <span style="font-size:.78rem;color:#94a3b8">${esc(item.emp_code||'')} ${item.position ? '· '+esc(item.position) : ''}</span></td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right">${(item.regular_hours||0).toFixed(2)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right">${(item.overtime_hours||0).toFixed(2)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right">${fmtMoney(item.rate)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right">${fmtMoney(item.rate*1.5)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600">${fmtMoney(item.total_amount)}</td>
+    </tr>`).join('');
+
+  const html = `
+    <div id="invoicePrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;max-width:800px;margin:0 auto">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:2px solid #e2e8f0">
+        <div>
+          <div style="font-size:1.6rem;font-weight:800;color:#0f172a;letter-spacing:-.5px">INVOICE</div>
+          <div style="font-size:.85rem;color:#64748b;margin-top:.25rem">发票编号：<strong style="color:#0f172a">${esc(inv.invoice_number)}</strong></div>
+          <div style="font-size:.85rem;color:#64748b">生成日期：${new Date(inv.generated_at).toLocaleDateString('zh-CN')}</div>
+          <div style="font-size:.85rem;color:#64748b">服务周期：${fmtDate(inv.period_start)} — ${fmtDate(inv.period_end)}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:1.05rem;font-weight:700;color:#0f172a">Prime Anchor Point</div>
+        </div>
+      </div>
+      <!-- Bill To -->
+      <div style="margin-bottom:1.5rem">
+        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:.35rem">账单发往</div>
+        <div style="font-size:1rem;font-weight:700;color:#0f172a">${esc(inv.company_name)}</div>
+        ${p.contact_person ? `<div style="font-size:.87rem;color:#475569">${esc(p.contact_person)}</div>` : ''}
+        ${p.address ? `<div style="font-size:.87rem;color:#475569">${esc(p.address)}</div>` : ''}
+        ${p.email ? `<div style="font-size:.87rem;color:#475569">${esc(p.email)}</div>` : ''}
+        ${p.phone ? `<div style="font-size:.87rem;color:#475569">${esc(p.phone)}</div>` : ''}
+      </div>
+      <!-- Table -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem">
+        <thead>
+          <tr style="background:#f8fafc;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b">
+            <th style="padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid #e2e8f0">员工</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">正常工时</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">加班工时</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">时薪</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">加班时薪</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">小计</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <!-- Total -->
+      <div style="display:flex;justify-content:flex-end">
+        <div style="min-width:260px">
+          <div style="display:flex;justify-content:space-between;padding:.5rem 12px;font-size:.9rem;color:#475569">
+            <span>小计</span><span>${fmtMoney(inv.subtotal)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:.75rem 12px;background:#0f172a;color:#fff;font-size:1rem;font-weight:700;border-radius:6px;margin-top:.25rem">
+            <span>合计</span><span>${fmtMoney(inv.subtotal)}</span>
+          </div>
+        </div>
+      </div>
+      <!-- Footer -->
+      <div style="margin-top:2rem;padding-top:1rem;border-top:1px solid #e2e8f0;font-size:.78rem;color:#94a3b8;text-align:center">
+        Payment shall be made within 30 days of receipt of this invoice. Thank you for your business.
+      </div>
+    </div>`;
+
+  document.getElementById('invPreviewContent').innerHTML = html;
+  document.getElementById('invoicePreviewModal').style.display = 'flex';
+}
+function closeInvoicePreview() { document.getElementById('invoicePreviewModal').style.display = 'none'; }
+function printInvoice() {
+  const content = document.getElementById('invoicePrintArea').innerHTML;
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>Invoice</title>
+    <style>body{margin:2rem;font-family:'Helvetica Neue',Arial,sans-serif}@media print{body{margin:1cm}}</style>
+    </head><body>${content}</body></html>`);
+  w.document.close(); w.focus(); w.print();
+}
+
 </script>
 <!-- Custom Admin Dialog -->
 <div class="adm-dlg-bg" id="admDlgBg">
@@ -15410,6 +15602,57 @@ async function saveMgrAssign() {
     <p id="admDlgMsg"></p>
     <div id="admDlgInputWrap" style="display:none"><input type="text" id="admDlgInput"></div>
     <div class="adm-dlg-btns" id="admDlgBtns"></div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE GENERATION MODAL ════════════════════ -->
+<div class="modal-bg" id="invoiceModal" style="display:none">
+  <div class="modal" style="max-width:660px">
+    <h2>🧾 生成工时发票</h2>
+    <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1.25rem">选择客户公司和服务周期，加载员工工时后生成 Invoice。</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1rem">
+      <div class="field" style="grid-column:1/-1">
+        <label>客户公司 <span style="color:var(--red)">*</span></label>
+        <select id="invCompanySelect" style="width:100%"><option value="">— 请选择 —</option></select>
+      </div>
+      <div class="field">
+        <label>周期开始 <span style="color:var(--red)">*</span></label>
+        <input type="date" id="invPeriodStart">
+      </div>
+      <div class="field">
+        <label>周期结束 <span style="color:var(--red)">*</span></label>
+        <input type="date" id="invPeriodEnd">
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <button class="btn btn-outline" onclick="loadInvoiceEmployees()" style="width:100%">加载员工</button>
+      </div>
+    </div>
+
+    <div id="invEmpList" style="margin-bottom:1rem;min-height:60px;max-height:320px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;background:#fafafa">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先选择公司和周期后点击「加载员工」</div>
+    </div>
+
+    <div id="invMsg" style="font-size:.84rem;margin-bottom:.75rem"></div>
+
+    <div style="display:flex;gap:.75rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeInvoiceModal()">取消</button>
+      <button class="btn btn-green" onclick="generateInvoice()">生成发票</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE PREVIEW MODAL ════════════════════ -->
+<div class="modal-bg" id="invoicePreviewModal" style="display:none">
+  <div class="modal" style="max-width:880px;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2 style="margin:0">发票预览</h2>
+      <div style="display:flex;gap:.6rem">
+        <button class="btn btn-outline" onclick="printInvoice()">🖨️ 打印 / 另存为 PDF</button>
+        <button class="btn btn-outline" onclick="closeInvoicePreview()">关闭</button>
+      </div>
+    </div>
+    <div id="invPreviewContent" style="background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:2rem"></div>
   </div>
 </div>
 </body>

@@ -6641,6 +6641,84 @@ app.post('/api/admin/timesheet-sheets/:id/vote-distributed', requireAdmin, (req,
   res.json({ success: true, all_distributed: allDistributed, dist_count: distCount, staff_count: staffCount });
 });
 
+// ─── INVOICE GENERATION ───
+
+// Get employees (and their hours) for a given company + period (for invoice builder)
+app.get('/api/admin/invoice/employees', requireAdmin, (req, res) => {
+  const { company_name, period_start, period_end } = req.query;
+  const conds = ['te.status != ?'];
+  const params = ['open'];
+  if (company_name) { conds.push('te.company_name=?'); params.push(company_name); }
+  if (period_start) { conds.push("date(te.clock_in) >= ?"); params.push(period_start); }
+  if (period_end)   { conds.push("date(te.clock_in) <= ?"); params.push(period_end); }
+
+  const rows = db.prepare(`
+    SELECT e.id as employee_id, e.first_name, e.last_name, e.employee_id as emp_code, e.position,
+      ROUND(SUM(COALESCE(te.regular_hours,0)),2) as regular_hours,
+      ROUND(SUM(COALESCE(te.overtime_hours,0)),2) as overtime_hours,
+      ROUND(SUM(COALESCE(te.total_hours,0)),2) as total_hours,
+      COALESCE(MAX(ej.client_hourly_rate),0) as client_hourly_rate
+    FROM time_entries te
+    JOIN employees e ON te.employee_id = e.id
+    LEFT JOIN employee_jobs ej ON ej.employee_id = e.id AND ej.status='active'
+    WHERE ${conds.join(' AND ')}
+    GROUP BY e.id
+    ORDER BY e.last_name, e.first_name
+  `).all(...params);
+  res.json(rows);
+});
+
+// Generate invoice JSON for a company + period
+app.post('/api/admin/invoice/generate', requireAdmin, (req, res) => {
+  const { company_name, period_start, period_end, employee_ids, bill_rates } = req.body;
+  if (!company_name || !period_start || !period_end)
+    return res.status(400).json({ error: '请填写公司名称和周期' });
+
+  const ids = Array.isArray(employee_ids) && employee_ids.length > 0 ? employee_ids : null;
+  const conds = ["te.status != 'open'", 'te.company_name=?', "date(te.clock_in) >= ?", "date(te.clock_in) <= ?"];
+  const params = [company_name, period_start, period_end];
+  if (ids) { conds.push(`te.employee_id IN (${ids.map(() => '?').join(',')})`); params.push(...ids); }
+
+  const rows = db.prepare(`
+    SELECT e.id as employee_id, e.first_name, e.last_name, e.employee_id as emp_code, e.position,
+      ROUND(SUM(COALESCE(te.regular_hours,0)),2) as regular_hours,
+      ROUND(SUM(COALESCE(te.overtime_hours,0)),2) as overtime_hours,
+      ROUND(SUM(COALESCE(te.total_hours,0)),2) as total_hours,
+      COALESCE(MAX(ej.client_hourly_rate),0) as client_hourly_rate
+    FROM time_entries te
+    JOIN employees e ON te.employee_id = e.id
+    LEFT JOIN employee_jobs ej ON ej.employee_id = e.id AND ej.status='active'
+    WHERE ${conds.join(' AND ')}
+    GROUP BY e.id ORDER BY e.last_name, e.first_name
+  `).all(...params);
+
+  const partner = db.prepare('SELECT * FROM partners WHERE name=? LIMIT 1').get(company_name);
+
+  const items = rows.map(r => {
+    const rate = (bill_rates && bill_rates[String(r.employee_id)] != null)
+      ? parseFloat(bill_rates[String(r.employee_id)]) : (r.client_hourly_rate || 0);
+    const regAmt  = Math.round((r.regular_hours  || 0) * rate * 100) / 100;
+    const otAmt   = Math.round((r.overtime_hours || 0) * rate * 1.5 * 100) / 100;
+    return {
+      employee_id: r.employee_id, name: `${r.first_name} ${r.last_name}`,
+      emp_code: r.emp_code, position: r.position || '',
+      regular_hours: r.regular_hours || 0, overtime_hours: r.overtime_hours || 0,
+      total_hours: r.total_hours || 0, rate,
+      regular_amount: regAmt, overtime_amount: otAmt,
+      total_amount: Math.round((regAmt + otAmt) * 100) / 100
+    };
+  });
+
+  const subtotal = Math.round(items.reduce((s, i) => s + i.total_amount, 0) * 100) / 100;
+  const invoiceNum = 'INV-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.random().toString(36).slice(2,6).toUpperCase();
+  res.json({
+    invoice_number: invoiceNum, company_name, partner,
+    period_start, period_end,
+    generated_at: new Date().toISOString(),
+    items, subtotal
+  });
+});
+
 // ─── PUBLIC TIMESHEET CONFIRMATION ───
 
 // Get sheet data (no auth — token is the secret)
