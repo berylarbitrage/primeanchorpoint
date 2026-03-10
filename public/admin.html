@@ -5027,7 +5027,7 @@ function renderJobsFiltered() {
     const si = statusInfo(st);
     const reasonTip = j.close_reason ? `<br><small style="color:var(--gray-400)">${CLOSE_REASON_LABEL[j.close_reason]||j.close_reason}${j.close_note?' · '+esc(j.close_note):''}</small>` : '';
     return `<tr>
-      <td style="white-space:nowrap"><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
+      <td style="white-space:nowrap"><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small><br><small style="color:var(--gray-400)">ID: ${j.id}</small></td>
       <td style="white-space:nowrap">${esc(j.type||'')}</td>
       <td style="white-space:nowrap">${etBadge(j.employment_type)}</td>
       <td style="text-align:center;white-space:nowrap">${j.headcount||1}</td>
@@ -5836,6 +5836,8 @@ async function saveJob() {
   };
   if (!data.partner_id) return alert('请选择合作公司');
   if (!data.title) return alert('请填写职位名称');
+  if (!data.type) return alert('请选择职位类型');
+  if (!data.employment_type) return alert('请选择雇佣性质');
   const jCity = document.getElementById('jCity').value.trim();
   const jState = document.getElementById('jState').value;
   if (!jCity || !jState) return alert('请填写工作地点的城市和州');
