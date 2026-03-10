@@ -1207,137 +1207,180 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <!-- Invoice List -->
-  <div class="card">
-    <div id="invpListWrap">
-      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+  <!-- Sub-tabs -->
+  <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:1rem">
+    <button id="invSubTabBtn-history" class="btn" onclick="switchInvSubTab('history')"
+      style="padding:.5rem 1.25rem;font-size:.9rem;border:none;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky);background:transparent;font-weight:600;cursor:pointer">
+      📋 历史记录
+    </button>
+    <button id="invSubTabBtn-settings" class="btn" onclick="switchInvSubTab('settings')"
+      style="padding:.5rem 1.25rem;font-size:.9rem;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500);background:transparent;font-weight:500;cursor:pointer">
+      ⚙️ 预设设置
+    </button>
+  </div>
+
+  <!-- Sub-tab: 历史记录 -->
+  <div id="invSubTab-history">
+    <div class="card">
+      <div id="invpListWrap">
+        <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sub-tab: 预设设置 -->
+  <div id="invSubTab-settings" style="display:none">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem">
+
+      <!-- 发票抬头（我方） -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">发票抬头（我方）</h3>
+          <button class="btn btn-sm btn-green" onclick="openInvpPresetModal('sender')">+ 新建</button>
+        </div>
+        <div id="invpSettingSenderList" style="font-size:.85rem">
+          <div style="color:var(--gray-400)">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 银行收款信息 -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">银行收款信息</h3>
+          <button class="btn btn-sm btn-green" onclick="openInvpPresetModal('bank')">+ 新建</button>
+        </div>
+        <div id="invpSettingBankList" style="font-size:.85rem">
+          <div style="color:var(--gray-400)">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 联系人页脚 -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">联系人页脚</h3>
+          <button class="btn btn-sm btn-green" onclick="openInvpPresetModal('contact')">+ 新建</button>
+        </div>
+        <div id="invpSettingContactList" style="font-size:.85rem">
+          <div style="color:var(--gray-400)">加载中…</div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
 
 <!-- ════════════════════ INVOICE BUILDER MODAL ════════════════════ -->
 <div class="modal-bg" id="invpBuilderModal" style="display:none" onclick="if(event.target===this)closeInvpBuilderModal()">
-  <div class="modal" style="max-width:1100px;width:95vw;max-height:94vh;overflow-y:auto">
+  <div class="modal" style="max-width:900px;width:95vw;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
       <h2 style="margin:0">+ 新建 Invoice</h2>
       <button class="btn btn-outline" onclick="closeInvpBuilderModal()">✕ 关闭</button>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 320px;gap:1.25rem;align-items:start">
+    <div class="card">
+      <h3 style="margin:0 0 1rem">发票信息</h3>
 
-      <!-- LEFT: Invoice Builder -->
-      <div class="card">
-        <h3 style="margin:0 0 1rem">发票信息</h3>
-
-        <!-- Meta info -->
-        <input type="hidden" id="invPageNumber">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-          <div class="field">
-            <label>Invoice 日期</label>
-            <input type="date" id="invPageDate">
-          </div>
-          <div class="field">
-            <label>服务周期 开始 <span style="color:var(--red)">*</span></label>
-            <input type="date" id="invPageStart" onchange="renderInvpManualTable()">
-          </div>
-          <div class="field">
-            <label>服务周期 结束 <span style="color:var(--red)">*</span></label>
-            <input type="date" id="invPageEnd" onchange="renderInvpManualTable()">
-          </div>
+      <!-- Meta info -->
+      <input type="hidden" id="invPageNumber">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+        <div class="field">
+          <label>Invoice 日期</label>
+          <input type="date" id="invPageDate">
         </div>
-
-        <!-- Bill To -->
-        <h3 style="margin:0 0 .75rem">账单发往（Bill To）</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-          <div class="field" style="grid-column:1/-1;position:relative">
-            <label>搜索客户公司</label>
-            <input type="text" id="invPageCompanySearch" placeholder="输入公司名搜索..." autocomplete="off"
-              style="width:100%"
-              oninput="onInvPageCompanySearch(this.value)"
-              onfocus="onInvPageCompanySearch(this.value)"
-              onblur="setTimeout(()=>{const d=document.getElementById('invCompanySuggestions');if(d)d.style.display='none'},200)">
-            <div id="invCompanySuggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:220px;overflow-y:auto"></div>
-          </div>
-          <div class="field">
-            <label>公司名称 <span style="color:var(--red)">*</span></label>
-            <input type="text" id="invPageBillName" placeholder="客户公司名称" oninput="onInvBillNameInput()">
-          </div>
-          <div class="field">
-            <label>地址</label>
-            <input type="text" id="invPageBillAddr" placeholder="客户地址">
-          </div>
+        <div class="field">
+          <label>服务周期 开始 <span style="color:var(--red)">*</span></label>
+          <input type="date" id="invPageStart" onchange="renderInvpManualTable()">
         </div>
+        <div class="field">
+          <label>服务周期 结束 <span style="color:var(--red)">*</span></label>
+          <input type="date" id="invPageEnd" onchange="renderInvpManualTable()">
+        </div>
+      </div>
 
-        <!-- Employee list -->
+      <!-- Bill To -->
+      <h3 style="margin:0 0 .75rem">账单发往（Bill To）</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+        <div class="field" style="grid-column:1/-1;position:relative">
+          <label>搜索客户公司</label>
+          <input type="text" id="invPageCompanySearch" placeholder="输入公司名搜索..." autocomplete="off"
+            style="width:100%"
+            oninput="onInvPageCompanySearch(this.value)"
+            onfocus="onInvPageCompanySearch(this.value)"
+            onblur="setTimeout(()=>{const d=document.getElementById('invCompanySuggestions');if(d)d.style.display='none'},200)">
+          <div id="invCompanySuggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:220px;overflow-y:auto"></div>
+        </div>
+        <div class="field">
+          <label>公司名称 <span style="color:var(--red)">*</span></label>
+          <input type="text" id="invPageBillName" placeholder="客户公司名称" oninput="onInvBillNameInput()">
+        </div>
+        <div class="field">
+          <label>地址</label>
+          <input type="text" id="invPageBillAddr" placeholder="客户地址">
+        </div>
+      </div>
+
+      <!-- Employee list -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <h3 style="margin:0">员工工时明细</h3>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
+          <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
+          <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
+        </div>
+      </div>
+      <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
+        <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先设置服务周期开始和结束日期</div>
+      </div>
+      <!-- Employee import search (hidden by default) -->
+      <div id="invpEmpImportWrap" style="display:none;position:relative;margin-bottom:.5rem">
+        <input type="text" id="invpEmpImportInput" placeholder="搜索系统员工姓名..." autocomplete="off"
+          style="width:100%;border:1px solid var(--sky);border-radius:6px;padding:5px 10px;font-size:.85rem"
+          oninput="onInvpEmpImportSearch(this.value)"
+          onblur="setTimeout(()=>{const d=document.getElementById('invpEmpImportSugg');if(d)d.style.display='none'},200)">
+        <div id="invpEmpImportSugg" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:200px;overflow-y:auto"></div>
+      </div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 手动添加员工</button>
+        <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpToggleEmpImport()">📥 从系统导入员工</button>
+      </div>
+    </div>
+
+    <!-- Preset selectors at bottom -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-top:1rem">
+      <div style="border:1px solid var(--gray-200);border-radius:8px;padding:.75rem">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-          <h3 style="margin:0">员工工时明细</h3>
-          <div style="display:flex;gap:.5rem;align-items:center">
-            <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
-            <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
-            <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
-          </div>
+          <span style="font-weight:600;font-size:.88rem">发票抬头（我方）</span>
+          <button class="btn btn-sm btn-outline" onclick="openInvpPresetModal('sender')" style="font-size:.75rem;padding:.15rem .5rem">+ 新建</button>
         </div>
-        <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
-          <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先设置服务周期开始和结束日期</div>
-        </div>
-        <!-- Employee import search (hidden by default) -->
-        <div id="invpEmpImportWrap" style="display:none;position:relative;margin-bottom:.5rem">
-          <input type="text" id="invpEmpImportInput" placeholder="搜索系统员工姓名..." autocomplete="off"
-            style="width:100%;border:1px solid var(--sky);border-radius:6px;padding:5px 10px;font-size:.85rem"
-            oninput="onInvpEmpImportSearch(this.value)"
-            onblur="setTimeout(()=>{const d=document.getElementById('invpEmpImportSugg');if(d)d.style.display='none'},200)">
-          <div id="invpEmpImportSugg" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:200px;overflow-y:auto"></div>
-        </div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 手动添加员工</button>
-          <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpToggleEmpImport()">📥 从系统导入员工</button>
-        </div>
-
-        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
-          <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
-        </div>
+        <select id="invpSenderSelect" onchange="onInvpPresetSelect('sender')" style="width:100%;font-size:.84rem;padding:.35rem .5rem;border-radius:5px;border:1px solid var(--gray-200)">
+          <option value="">-- 选择预设 --</option>
+        </select>
+        <div id="invpSenderPreview" style="font-size:.8rem;color:var(--gray-500);line-height:1.7;margin-top:.4rem"></div>
       </div>
-
-      <!-- RIGHT: Profile Preview -->
-      <div>
-        <div class="card" style="margin-bottom:1rem">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-            <h3 style="margin:0;font-size:.95rem">发票抬头（我方）</h3>
-            <div style="display:flex;gap:.4rem;align-items:center">
-              <select id="invpSenderSelect" onchange="onInvpPresetSelect('sender')" style="font-size:.82rem;padding:.25rem .5rem;border-radius:5px;border:1px solid var(--gray-200)">
-                <option value="">-- 选择预设 --</option>
-              </select>
-              <button class="btn btn-sm btn-outline" onclick="openInvpPresetModal('sender')" title="管理预设">+ 新建</button>
-            </div>
-          </div>
-          <div id="invpSenderPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+      <div style="border:1px solid var(--gray-200);border-radius:8px;padding:.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+          <span style="font-weight:600;font-size:.88rem">银行收款信息</span>
+          <button class="btn btn-sm btn-outline" onclick="openInvpPresetModal('bank')" style="font-size:.75rem;padding:.15rem .5rem">+ 新建</button>
         </div>
-        <div class="card" style="margin-bottom:1rem">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-            <h3 style="margin:0;font-size:.95rem">银行收款信息</h3>
-            <div style="display:flex;gap:.4rem;align-items:center">
-              <select id="invpBankSelect" onchange="onInvpPresetSelect('bank')" style="font-size:.82rem;padding:.25rem .5rem;border-radius:5px;border:1px solid var(--gray-200)">
-                <option value="">-- 选择预设 --</option>
-              </select>
-              <button class="btn btn-sm btn-outline" onclick="openInvpPresetModal('bank')" title="管理预设">+ 新建</button>
-            </div>
-          </div>
-          <div id="invpBankPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
-        </div>
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-            <h3 style="margin:0;font-size:.95rem">联系人页脚</h3>
-            <div style="display:flex;gap:.4rem;align-items:center">
-              <select id="invpContactSelect" onchange="onInvpPresetSelect('contact')" style="font-size:.82rem;padding:.25rem .5rem;border-radius:5px;border:1px solid var(--gray-200)">
-                <option value="">-- 选择预设 --</option>
-              </select>
-              <button class="btn btn-sm btn-outline" onclick="openInvpPresetModal('contact')" title="管理预设">+ 新建</button>
-            </div>
-          </div>
-          <div id="invpContactPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
-        </div>
+        <select id="invpBankSelect" onchange="onInvpPresetSelect('bank')" style="width:100%;font-size:.84rem;padding:.35rem .5rem;border-radius:5px;border:1px solid var(--gray-200)">
+          <option value="">-- 选择预设 --</option>
+        </select>
+        <div id="invpBankPreview" style="font-size:.8rem;color:var(--gray-500);line-height:1.7;margin-top:.4rem"></div>
       </div>
+      <div style="border:1px solid var(--gray-200);border-radius:8px;padding:.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+          <span style="font-weight:600;font-size:.88rem">联系人页脚</span>
+          <button class="btn btn-sm btn-outline" onclick="openInvpPresetModal('contact')" style="font-size:.75rem;padding:.15rem .5rem">+ 新建</button>
+        </div>
+        <select id="invpContactSelect" onchange="onInvpPresetSelect('contact')" style="width:100%;font-size:.84rem;padding:.35rem .5rem;border-radius:5px;border:1px solid var(--gray-200)">
+          <option value="">-- 选择预设 --</option>
+        </select>
+        <div id="invpContactPreview" style="font-size:.8rem;color:var(--gray-500);line-height:1.7;margin-top:.4rem"></div>
+      </div>
+    </div>
 
+    <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
+      <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
     </div>
   </div>
 </div>
@@ -15671,9 +15714,11 @@ function saveInvpProfileData(data) {
 
 async function loadInvpPresets() {
   _invpPresets = await api('/admin/invoice-profiles').catch(() => []);
+  window._invpAllPresets = _invpPresets;
   populateInvpDropdown('sender');
   populateInvpDropdown('bank');
   populateInvpDropdown('contact');
+  renderInvpSettingsLists();
 }
 
 function populateInvpDropdown(section) {
@@ -15708,6 +15753,7 @@ function onInvpPresetSelect(section) {
   saved[section + '_preset_id'] = id;
   saveInvpProfileData(saved);
   renderInvpProfilePreview();
+  renderInvpSettingsLists();
 }
 
 function openInvpPresetModal(section, editId) {
@@ -15801,6 +15847,92 @@ function initInvoicePage() {
   loadInvpList();
   loadInvpCompanies();
   renderInvpProfilePreview();
+  renderInvpSettingsLists();
+}
+
+function switchInvSubTab(tab) {
+  ['history','settings'].forEach(t => {
+    const panel = document.getElementById('invSubTab-' + t);
+    const btn   = document.getElementById('invSubTabBtn-' + t);
+    if (!panel || !btn) return;
+    if (t === tab) {
+      panel.style.display = '';
+      btn.style.borderBottomColor = 'var(--sky)';
+      btn.style.color = 'var(--sky)';
+      btn.style.fontWeight = '600';
+    } else {
+      panel.style.display = 'none';
+      btn.style.borderBottomColor = 'transparent';
+      btn.style.color = 'var(--gray-500)';
+      btn.style.fontWeight = '500';
+    }
+  });
+  if (tab === 'settings') renderInvpSettingsLists();
+}
+
+function renderInvpSettingsLists() {
+  const presets = window._invpAllPresets || [];
+  const profile = getInvpProfile();
+
+  const sections = [
+    { key: 'sender', listId: 'invpSettingSenderList', fields: [
+      { k: 'sender_name', label: '公司名称' }, { k: 'sender_address', label: '地址' },
+      { k: 'sender_phone', label: '电话' }, { k: 'sender_email', label: '邮箱' }
+    ]},
+    { key: 'bank', listId: 'invpSettingBankList', fields: [
+      { k: 'bank_account_name', label: 'Account Name' }, { k: 'bank_name', label: 'Bank Name' },
+      { k: 'bank_account_no', label: 'Account No' }, { k: 'bank_routing_no', label: 'Routing No' }
+    ]},
+    { key: 'contact', listId: 'invpSettingContactList', fields: [
+      { k: 'contact_name', label: '联系人' }, { k: 'contact_phone', label: '电话' },
+      { k: 'contact_email', label: '邮箱' }
+    ]}
+  ];
+
+  sections.forEach(sec => {
+    const wrap = document.getElementById(sec.listId);
+    if (!wrap) return;
+    const items = presets.filter(p => p.section === sec.key);
+    if (!items.length) {
+      wrap.innerHTML = '<div style="color:var(--gray-400);padding:.5rem 0">暂无预设，点击「+ 新建」创建</div>';
+      return;
+    }
+    const activeId = profile[sec.key + '_preset_id'];
+    wrap.innerHTML = items.map(p => {
+      const isActive = p.id == activeId;
+      const d = typeof p.data === 'string' ? (function(){ try { return JSON.parse(p.data); } catch(e) { return {}; } })() : (p.data || {});
+      const details = sec.fields.map(f => d[f.k] ? `<div style="color:var(--gray-500)">${esc(f.label)}: ${esc(d[f.k])}</div>` : '').join('');
+      return `<div style="border:1px solid ${isActive ? 'var(--sky)' : 'var(--gray-200)'};border-radius:8px;padding:.75rem;margin-bottom:.5rem;background:${isActive ? '#f0f9ff' : '#fff'};position:relative">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+          <strong style="font-size:.9rem">${esc(p.name || '未命名')}</strong>
+          ${isActive ? '<span style="font-size:.72rem;background:var(--sky);color:#fff;padding:1px 8px;border-radius:10px">当前使用</span>' : ''}
+        </div>
+        <div style="font-size:.82rem;line-height:1.7;margin-bottom:.5rem">${details}</div>
+        <div style="display:flex;gap:.4rem">
+          ${!isActive ? `<button class="btn btn-sm btn-outline" style="font-size:.75rem;padding:.15rem .6rem;color:var(--sky);border-color:var(--sky)" onclick="selectInvpPresetFromSettings('${sec.key}',${p.id})">选用</button>` : ''}
+          <button class="btn btn-sm btn-outline" style="font-size:.75rem;padding:.15rem .6rem" onclick="openInvpPresetModal('${sec.key}',${p.id})">编辑</button>
+          <button class="btn btn-sm" style="font-size:.75rem;padding:.15rem .6rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5" onclick="deleteInvpPreset(${p.id},'${sec.key}')">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+
+async function selectInvpPresetFromSettings(section, presetId) {
+  const presets = window._invpAllPresets || [];
+  const preset = presets.find(p => p.id == presetId);
+  if (!preset) return;
+  const data = typeof preset.data === 'string' ? JSON.parse(preset.data) : (preset.data || {});
+  const saved = getInvpProfile();
+  saved[section + '_preset_id'] = presetId;
+  Object.keys(data).forEach(k => { saved[k] = data[k]; });
+  saveInvpProfileData(saved);
+  // Sync dropdown in builder modal
+  const sel = document.getElementById('invp' + section.charAt(0).toUpperCase() + section.slice(1) + 'Select');
+  if (sel) sel.value = presetId;
+  renderInvpProfilePreview();
+  renderInvpSettingsLists();
+  showToast('已选用预设', 'success');
 }
 
 function openInvpPageModal() {
