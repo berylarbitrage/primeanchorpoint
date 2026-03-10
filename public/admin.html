@@ -10595,7 +10595,7 @@ let _currentDocLinkUrl = '';
 let _WORKER_POSITIONS = [];
 async function loadWorkerPositions() {
   if (_WORKER_POSITIONS.length) return _WORKER_POSITIONS;
-  try { _WORKER_POSITIONS = await api('/worker-positions'); } catch {}
+  try { const d = await api('/admin/worker-positions'); _WORKER_POSITIONS = Array.isArray(d) ? d.filter(p => p.active) : []; } catch {}
   return _WORKER_POSITIONS;
 }
 // Alias for doc request modal
