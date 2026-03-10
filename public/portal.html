@@ -1266,6 +1266,9 @@ const PORTAL_I18N = {
     calLegend: { accepted:'已接受', pending:'待确认', declined:'已拒绝', punched:'已打卡', projected:'计划任务' },
     calLegendAccepted:'已接受', calLegendPending:'待确认', calLegendDeclined:'已拒绝', calLegendPunched:'已打卡', calLegendProjected:'计划任务',
     calDow: ['日','一','二','三','四','五','六'],
+    calDayNames: ['周日','周一','周二','周三','周四','周五','周六'],
+    calProjLabel: '📅 计划任务', calConfirmPrompt: '请确认您是否接受此任务安排：',
+    calPayLabel: '💰 薪资：', calDescLabel: '📋 ', calAccept: '✓ 接受', calDecline: '✕ 拒绝',
     taskTitle: '📋 我的任务', pendingTaskTitle: '🔔 待确认任务',
     taskNone: '暂无任务安排，请联系 HR。',
     taskPendingCount: '个任务待确认', taskPendingConfirm: '请确认是否接受以下任务安排',
@@ -1414,6 +1417,9 @@ const PORTAL_I18N = {
     calLegend: { accepted:'Accepted', pending:'Pending', declined:'Declined', punched:'Clocked', projected:'Scheduled' },
     calLegendAccepted:'Accepted', calLegendPending:'Pending', calLegendDeclined:'Declined', calLegendPunched:'Clocked', calLegendProjected:'Scheduled',
     calDow: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+    calDayNames: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
+    calProjLabel: '📅 Scheduled Task', calConfirmPrompt: 'Please confirm whether you accept this task:',
+    calPayLabel: '💰 Pay: ', calDescLabel: '📋 ', calAccept: '✓ Accept', calDecline: '✕ Decline',
     taskTitle: '📋 My Tasks', pendingTaskTitle: '🔔 Pending Tasks',
     taskNone: 'No assignments yet. Please contact HR.',
     taskPendingCount: 'task(s) awaiting confirmation', taskPendingConfirm: 'Please confirm whether you accept the following assignments',
@@ -1562,6 +1568,9 @@ const PORTAL_I18N = {
     calLegend: { accepted:'Aceptado', pending:'Pendiente', declined:'Rechazado', punched:'Registrado', projected:'Programado' },
     calLegendAccepted:'Aceptado', calLegendPending:'Pendiente', calLegendDeclined:'Rechazado', calLegendPunched:'Registrado', calLegendProjected:'Programado',
     calDow: ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'],
+    calDayNames: ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'],
+    calProjLabel: '📅 Tarea Programada', calConfirmPrompt: 'Por favor confirme si acepta esta tarea:',
+    calPayLabel: '💰 Pago: ', calDescLabel: '📋 ', calAccept: '✓ Aceptar', calDecline: '✕ Rechazar',
     taskTitle: '📋 Mis Tareas', pendingTaskTitle: '🔔 Tareas Pendientes',
     taskNone: 'Sin asignaciones aún. Contacte a RR.HH.',
     taskPendingCount: 'tarea(s) pendiente(s) de confirmar', taskPendingConfirm: 'Por favor confirme si acepta las siguientes asignaciones',
@@ -2504,7 +2513,7 @@ function calDayClick(dateStr) {
   const confs = (_calData.confirmations || []).filter(c => c.date === dateStr);
   const d = new Date(dateStr + 'T00:00:00');
   const dow = _CAL_DOW_KEYS[d.getDay()];
-  const dayNames = ['周日','周一','周二','周三','周四','周五','周六'];
+  const dayNames = _t('calDayNames') || ['周日','周一','周二','周三','周四','周五','周六'];
   const fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
 
   // Find projected assignments for this date (not already in confirmations)
@@ -2527,7 +2536,12 @@ function calDayClick(dateStr) {
       if (workStart && dateStr < workStart) return;
       if (!untilFurther && workEnd && dateStr > workEnd) return;
       const dayInfo = days[dow];
-      if (dayInfo && !dayInfo.rest) projItems.push({ assignmentId: a.id, title: a.title, start: dayInfo.start, end: dayInfo.end, canConfirm: true });
+      if (dayInfo && !dayInfo.rest) projItems.push({
+        assignmentId: a.id, title: a.title, start: dayInfo.start, end: dayInfo.end, canConfirm: true,
+        company: a.company_name || '', location: a.work_address || a.job_location || '',
+        desc: a.job_description || '', pay: a.pay_rate || a.job_pay || '',
+        payType: a.pay_type === 'salary' ? '/月' : (a.pay_rate ? '/hr' : '')
+      });
     });
   }
 
@@ -2560,8 +2574,8 @@ function calDayClick(dateStr) {
     const isPending = !c.status || c.status === 'pending';
     const actionBtns = `
       <div style="display:flex;gap:.6rem;margin-top:.75rem">
-        <button onclick="respondShiftConfirm(${c.id},'confirmed');closeCalDayModal()" style="flex:1;padding:.55rem .4rem;background:${c.status==='confirmed'?'#16a34a':'#fff'};color:${c.status==='confirmed'?'#fff':'#16a34a'};border:1.5px solid #16a34a;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">✓ 接受</button>
-        <button onclick="respondShiftConfirm(${c.id},'declined');closeCalDayModal()" style="flex:1;padding:.55rem .4rem;background:${c.status==='declined'?'#dc2626':'#fff'};color:${c.status==='declined'?'#fff':'#dc2626'};border:1.5px solid #dc2626;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">✕ 拒绝</button>
+        <button onclick="respondShiftConfirm(${c.id},'confirmed');closeCalDayModal()" style="flex:1;padding:.55rem .4rem;background:${c.status==='confirmed'?'#16a34a':'#fff'};color:${c.status==='confirmed'?'#fff':'#16a34a'};border:1.5px solid #16a34a;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">${_t('calAccept')}</button>
+        <button onclick="respondShiftConfirm(${c.id},'declined');closeCalDayModal()" style="flex:1;padding:.55rem .4rem;background:${c.status==='declined'?'#dc2626':'#fff'};color:${c.status==='declined'?'#fff':'#dc2626'};border:1.5px solid #dc2626;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">${_t('calDecline')}</button>
       </div>`;
     return `<div style="border:1.5px solid ${c.status==='pending'||!c.status?'#f59e0b':'#e5e7eb'};border-radius:10px;padding:.9rem;margin-bottom:.6rem;background:${c.status==='pending'||!c.status?'#fffbeb':'#fff'}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem">
@@ -2571,28 +2585,36 @@ function calDayClick(dateStr) {
         </div>
         ${badge}
       </div>
-      ${timeStr ? `<div style="font-size:.86rem;color:#374151;margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem">⏰ <span><strong>${timeStr}</strong>${hours?` <span style="color:#94a3b8;font-size:.8rem">（约 ${hours}）</span>`:''}</span></div>` : ''}
-      ${pay ? `<div style="font-size:.84rem;color:#374151;margin-bottom:.35rem">💰 薪资：<strong>${esc(pay)}${payType}</strong></div>` : ''}
+      ${timeStr ? `<div style="font-size:.86rem;color:#374151;margin-bottom:.35rem;display:flex;align-items:center;gap:.35rem">⏰ <span><strong>${timeStr}</strong>${hours?` <span style="color:#94a3b8;font-size:.8rem">（${_t('taskApprox')} ${hours}）</span>`:''}</span></div>` : ''}
+      ${pay ? `<div style="font-size:.84rem;color:#374151;margin-bottom:.35rem">${_t('calPayLabel')}<strong>${esc(pay)}${payType}</strong></div>` : ''}
       ${location ? `<div style="font-size:.82rem;color:#475569;margin-bottom:.35rem">📍 ${esc(location)}</div>` : ''}
-      ${desc ? `<div style="font-size:.82rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.4rem .55rem;margin-bottom:.35rem;line-height:1.5">📋 ${esc(desc.length>120?desc.slice(0,120)+'…':desc)}</div>` : ''}
-      ${isPending ? `<div style="font-size:.8rem;color:#92400e;font-weight:600;margin-bottom:.2rem">请确认您是否接受此任务安排：</div>` : ''}
-      ${actionBtns}
+      ${desc ? `<div style="font-size:.82rem;color:#475569;background:#f1f5f9;border-radius:6px;padding:.4rem .55rem;margin-bottom:.35rem;line-height:1.5">${_t('calDescLabel')}${esc(desc.length>120?desc.slice(0,120)+'…':desc)}</div>` : ''}
+      ${isPending ? `<div style="font-size:.8rem;color:#92400e;font-weight:600;margin-bottom:.2rem">${_t('calConfirmPrompt')}</div>` : ''}
+      ${isPending ? actionBtns : ''}
     </div>`;
   }).join('');
 
-  // Projected (blue-dot) days: show scheduled time info
+  // Projected (blue-dot) days: show full task details with confirm buttons
   if (projItems.length) {
     html += projItems.map(p => {
       const timeStr = (p.start && p.end) ? `${fmt12(p.start)} – ${fmt12(p.end)}` : '';
       const hours = calcHours(p.start, p.end);
       return `<div style="border:1.5px solid #bfdbfe;border-radius:10px;padding:.9rem;margin-bottom:.6rem;background:#eff6ff">
-        <div style="font-weight:700;font-size:1rem;color:#1e293b;margin-bottom:.4rem">${esc(p.title||'—')}</div>
-        ${timeStr ? `<div style="font-size:.86rem;color:#374151;margin-bottom:.35rem">⏰ <strong>${timeStr}</strong>${hours ? ` <span style="color:#94a3b8;font-size:.8rem">（约 ${hours}）</span>` : ''}</div>` : ''}
-        <div style="font-size:.8rem;color:#1d4ed8;font-weight:600">📅 计划任务</div>
-        ${p.canConfirm ? `<div style="font-size:.8rem;color:#92400e;font-weight:600;margin-top:.5rem">请确认您是否接受此任务安排：</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.5rem">
+          <div>
+            <div style="font-weight:700;font-size:1rem;color:#1e293b">${esc(p.title||'—')}</div>
+            ${p.company ? `<div style="font-size:.8rem;color:#64748b;margin-top:.1rem">${esc(p.company)}</div>` : ''}
+          </div>
+          <span style="background:#dbeafe;color:#1d4ed8;border-radius:99px;padding:.18rem .65rem;font-size:.8rem;font-weight:700">${_t('calProjLabel')}</span>
+        </div>
+        ${timeStr ? `<div style="font-size:.86rem;color:#374151;margin-bottom:.35rem">⏰ <strong>${timeStr}</strong>${hours ? ` <span style="color:#94a3b8;font-size:.8rem">（${_t('taskApprox')} ${hours}）</span>` : ''}</div>` : ''}
+        ${p.pay ? `<div style="font-size:.84rem;color:#374151;margin-bottom:.35rem">${_t('calPayLabel')}<strong>${esc(p.pay)}${p.payType}</strong></div>` : ''}
+        ${p.location ? `<div style="font-size:.82rem;color:#475569;margin-bottom:.35rem">📍 ${esc(p.location)}</div>` : ''}
+        ${p.desc ? `<div style="font-size:.82rem;color:#475569;background:#e0f2fe;border-radius:6px;padding:.4rem .55rem;margin-bottom:.35rem;line-height:1.5">${_t('calDescLabel')}${esc(p.desc.length>120?p.desc.slice(0,120)+'…':p.desc)}</div>` : ''}
+        ${p.canConfirm ? `<div style="font-size:.8rem;color:#92400e;font-weight:600;margin-top:.5rem">${_t('calConfirmPrompt')}</div>
         <div style="display:flex;gap:.6rem;margin-top:.5rem">
-          <button onclick="preconfirmShift(${p.assignmentId},'${dateStr}','confirmed')" style="flex:1;padding:.55rem .4rem;background:#fff;color:#16a34a;border:1.5px solid #16a34a;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">✓ 接受</button>
-          <button onclick="preconfirmShift(${p.assignmentId},'${dateStr}','declined')" style="flex:1;padding:.55rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">✕ 拒绝</button>
+          <button onclick="preconfirmShift(${p.assignmentId},'${dateStr}','confirmed')" style="flex:1;padding:.55rem .4rem;background:#fff;color:#16a34a;border:1.5px solid #16a34a;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">${_t('calAccept')}</button>
+          <button onclick="preconfirmShift(${p.assignmentId},'${dateStr}','declined')" style="flex:1;padding:.55rem .4rem;background:#fff;color:#dc2626;border:1.5px solid #dc2626;border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer">${_t('calDecline')}</button>
         </div>` : ''}
       </div>`;
     }).join('');
