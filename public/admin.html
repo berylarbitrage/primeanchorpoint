@@ -3153,6 +3153,14 @@ tr:hover td{background:var(--sky-light)}
     <div class="assign-dropdown" id="aJobDrop"></div>
     <div id="aJobErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请搜索并选择职位</div>
   </div>
+  <div id="aJobImportPanel" style="display:none;margin-bottom:.75rem;border:1px solid #bfdbfe;border-radius:8px;padding:.65rem .85rem;background:#f0f9ff">
+    <div style="font-size:.83rem;font-weight:600;color:#1d4ed8;margin-bottom:.4rem">从职位导入</div>
+    <div id="aJobImportChecks" style="font-size:.82rem;display:flex;flex-direction:column;gap:.3rem"></div>
+    <div style="display:flex;gap:.5rem;margin-top:.5rem">
+      <button type="button" onclick="applyJobImport()" style="padding:.3rem .75rem;background:#1d4ed8;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:.82rem;font-weight:600">确认导入</button>
+      <button type="button" onclick="document.getElementById('aJobImportPanel').style.display='none'" style="padding:.3rem .6rem;background:#fff;border:1px solid var(--gray-200);border-radius:5px;cursor:pointer;font-size:.82rem">取消</button>
+    </div>
+  </div>
 
   <div class="field"><label>工种类别 Job Category</label>
     <select id="aCategory" onchange="toggleCustomCategory('aCategory','aCategoryCustom')">
@@ -3206,7 +3214,7 @@ tr:hover td{background:var(--sky-light)}
     </select></div>
     <div class="field"><label>薪资 / 工资</label><input id="aPayRate" placeholder="例：18.50/hr 或 $3,200/月"></div>
   </div>
-  <div class="field"><label>工作地址</label><input id="aWorkAddr" placeholder="例：123 Main St, Chicago, IL"></div>
+  <!-- Address now uses the 5-field section below (打卡围栏) -->
   <div class="field">
     <label>福利待遇（多选）</label>
     <div id="aBenefitsWrap" style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.4rem">
@@ -6892,6 +6900,7 @@ async function openAssignModal(assignment) {
   document.getElementById('aWorkGeoStatus').textContent = '';
   document.getElementById('aJobAddrPickerWrap').style.display = 'none';
   document.getElementById('aJobImportConfirm').style.display = 'none';
+  document.getElementById('aJobImportPanel').style.display = 'none';
   document.getElementById('aJobAddrPickerStatus').textContent = '';
   ['aWorkAddrErr','aWorkLatErr','aWorkLngErr'].forEach(id => document.getElementById(id).style.display='none');
   destroyAssignWorkMap();
@@ -7400,9 +7409,7 @@ function showJobImportPanel(jobId) {
   if (!j) return;
 
   const items = [];
-  if (j.pay)             items.push({ key:'pay',      label:`薪资/工资：${j.pay}`, checked: true });
   if (j.employment_type) items.push({ key:'contract',  label:`合同类型：${j.employment_type}`, checked: true });
-  if (j.pay)             items.push({ key:'pay_type',  label:`薪资方式：${/\/hr|hourly/i.test(j.pay)?'按小时':/\/mo|month|salary/i.test(j.pay)?'月薪':'按小时'}`, checked: true });
   if (j.benefits)        items.push({ key:'benefits',  label:`福利：${j.benefits}`, checked: true });
   if (j.work_start || j.work_end || j.work_days)
                          items.push({ key:'schedule',  label:`排班：${j.work_days||'每天'} ${j.work_start||''}${j.work_end?'–'+j.work_end:''}`, checked: true });
@@ -7428,18 +7435,10 @@ function applyJobImport() {
     return el && el.checked;
   };
 
-  if (checked('pay') && j.pay)
-    document.getElementById('aPayRate').value = j.pay;
-
   if (checked('contract') && j.employment_type) {
     const typeMap = { 'W2':'W2','Contract':'Contract','1099':'1099','W2+Contract':'W2' };
     const ct = typeMap[j.employment_type];
     if (ct) document.getElementById('aContractType').value = ct;
-  }
-
-  if (checked('pay_type') && j.pay) {
-    if (/\/hr|hourly/i.test(j.pay)) document.getElementById('aPayType').value = 'hourly';
-    else if (/\/mo|month|salary/i.test(j.pay)) document.getElementById('aPayType').value = 'salary';
   }
 
   if (checked('benefits') && j.benefits) {
@@ -7469,7 +7468,7 @@ function applyJobImport() {
   }
 
   if (checked('location') && j.location)
-    document.getElementById('aWorkAddr').value = j.location;
+    parseLocationIntoFields(j.location);
 
   document.getElementById('aJobImportPanel').style.display = 'none';
 }
@@ -7547,8 +7546,8 @@ function showAssignImportConfirm(jobOrId) {
     const span = document.getElementById(id + 'Text');
     if (span && text) span.textContent = text;
   };
-  showRow('aImportPay', !!j.pay, `薪资：${j.pay}`);
-  showRow('aImportPayType', !!j.pay_period, `薪资方式：${j.pay_period}`);
+  showRow('aImportPay', false, '');
+  showRow('aImportPayType', false, '');
   showRow('aImportContract', !!j.employment_type, `合同类型：${j.employment_type}`);
   document.getElementById('aImportBenRow').style.display = j.benefits ? 'flex' : 'none';
   document.getElementById('aJobImportConfirm').style.display = '';
@@ -7558,16 +7557,7 @@ function confirmAssignJobImport() {
   const j = _pendingImportJob;
   if (!j) return;
   if (document.getElementById('aImportAddr').checked && j.location) {
-    document.getElementById('aWorkStreet').value  = j.location;
-    document.getElementById('aWorkCity').value    = '';
-    document.getElementById('aWorkState').value   = '';
-    document.getElementById('aWorkZip').value     = '';
-    document.getElementById('aWorkCountry').value = 'USA';
-    document.getElementById('aWorkAddrErr').style.display = 'none';
-    geocodeWorkAddress();
-  }
-  if (document.getElementById('aImportPay').checked && j.pay) {
-    document.getElementById('aPayRate').value = j.pay;
+    parseLocationIntoFields(j.location);
   }
   if (document.getElementById('aImportPayType').checked && j.pay_period) {
     document.getElementById('aPayType').value = j.pay_period;
@@ -7584,6 +7574,47 @@ function confirmAssignJobImport() {
   document.getElementById('aJobImportConfirm').style.display = 'none';
   document.getElementById('aJobAddrPickerStatus').textContent = '';
   _pendingImportJob = null;
+}
+
+function parseLocationIntoFields(loc) {
+  // Parse "street, city, state zip" or "street, suite, city, state zip" into 5 fields
+  const parts = loc.split(',').map(s => s.trim()).filter(Boolean);
+  let street = '', city = '', state = '', zip = '';
+  if (parts.length >= 3) {
+    // Last part: "IL 60056" or "IL" — extract state + zip
+    const lastPart = parts[parts.length - 1];
+    const szMatch = lastPart.match(/^([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+    if (szMatch) {
+      state = szMatch[1]; zip = szMatch[2];
+      city = parts[parts.length - 2];
+      street = parts.slice(0, parts.length - 2).join(', ');
+    } else {
+      // Try second-to-last for "State ZIP"
+      const penult = parts.length >= 4 ? parts[parts.length - 2] : '';
+      const szMatch2 = penult.match(/^([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+      if (szMatch2) {
+        state = szMatch2[1]; zip = szMatch2[2];
+        city = parts[parts.length - 3] || '';
+        street = parts.slice(0, parts.length - 3).join(', ');
+      } else {
+        // Fallback: treat last as state, second-to-last as city, rest as street
+        state = lastPart;
+        city = parts[parts.length - 2];
+        street = parts.slice(0, parts.length - 2).join(', ');
+      }
+    }
+  } else if (parts.length === 2) {
+    street = parts[0]; city = parts[1];
+  } else {
+    street = loc;
+  }
+  document.getElementById('aWorkStreet').value  = street;
+  document.getElementById('aWorkCity').value    = city;
+  document.getElementById('aWorkState').value   = state;
+  document.getElementById('aWorkZip').value     = zip;
+  document.getElementById('aWorkCountry').value = 'USA';
+  document.getElementById('aWorkAddrErr').style.display = 'none';
+  geocodeWorkAddress();
 }
 
 function getWorkAddressString() {
@@ -7713,7 +7744,6 @@ async function saveAssignment() {
     contract_type: document.getElementById('aContractType').value,
     pay_type: document.getElementById('aPayType').value,
     pay_rate: document.getElementById('aPayRate').value,
-    work_address: document.getElementById('aWorkAddr').value,
     benefits,
     work_schedule: getEstimateTimeJson(),
     task_requirements: getTasksJson(),
