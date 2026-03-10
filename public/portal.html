@@ -4848,6 +4848,7 @@ async function loadOnboarding() {
   let [tasks, interview] = await Promise.all([wApi('/onboarding'), wApi('/interview')]);
   const list = document.getElementById('onboardingList');
   if (!tasks) return;
+  updateSidebarBadgesFromTasks(tasks);
   if (!tasks.length) {
     list.innerHTML = `<div class="empty">${_t('obEmpty')}</div>`;
     return;
@@ -4861,6 +4862,7 @@ async function loadOnboarding() {
         // Status was updated — reload tasks to get fresh data
         tasks = await wApi('/onboarding');
         if (!tasks) return;
+        updateSidebarBadgesFromTasks(tasks);
       }
     } catch (e) { /* poll-status unavailable, backend /onboarding already handles sync */ }
   }
@@ -4931,21 +4933,22 @@ function _setBadge(id, count) {
   else { el.textContent = ''; el.classList.remove('show'); }
 }
 
-async function updateSidebarBadges() {
-  const tasks = await wApi('/onboarding');
+function updateSidebarBadgesFromTasks(tasks) {
   if (!Array.isArray(tasks)) return;
-  // Count tasks that are pending or submitted (i.e. need worker attention)
   const pendingCount = tasks.filter(t => t.status === 'pending' || t.status === 'submitted').length;
   _setBadge('badgeTodos', pendingCount);
 
-  // Tasks that relate to compliance docs
   const complianceKeys = ['ead_upload', 'i9', 'w9', 'contract', 'gusto'];
   const compliancePending = tasks.filter(t => complianceKeys.includes(t.key) && (t.status === 'pending' || t.status === 'submitted')).length;
   _setBadge('badgeCompliance', compliancePending);
 
-  // Interview-related tasks
   const interviewPending = tasks.filter(t => t.key === 'interview' && t.status === 'pending').length;
   _setBadge('badgeInterview', interviewPending);
+}
+
+async function updateSidebarBadges() {
+  const tasks = await wApi('/onboarding');
+  updateSidebarBadgesFromTasks(tasks);
 }
 
 async function submitOnboardingTask(key) {
