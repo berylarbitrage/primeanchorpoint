@@ -13739,7 +13739,7 @@ async function addInterviewSlot() {
   const r = await api('/admin/interview-slots', {
     method: 'POST',
     body: JSON.stringify({
-      slot_datetime: dt,
+      slot_datetime: new Date(dt).toISOString().replace('T', ' ').slice(0, 19),
       duration_min: parseInt(document.getElementById('ivSlotDuration').value) || 30,
       max_bookings: parseInt(document.getElementById('ivSlotMax').value) || 1,
       ...locData
@@ -13880,7 +13880,7 @@ function collectBatchSlots() {
       const hh = String(Math.floor(cur / 60)).padStart(2, '0');
       const mm = String(cur % 60).padStart(2, '0');
       slots.push({
-        slot_datetime: `${dateStr}T${hh}:${mm}:00`,
+        slot_datetime: new Date(`${dateStr}T${hh}:${mm}:00`).toISOString().replace('T', ' ').slice(0, 19),
         duration_min: duration,
         max_bookings: maxBookings,
         ...locData
