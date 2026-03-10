@@ -555,7 +555,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
-      <a onclick="openInvpPageModal()" data-role="admin,staff">🧾 Invoice</a>
+      <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 Invoice</a>
     </div>
   </div>
 
@@ -1198,23 +1198,20 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════════════════════ INVOICE PAGE MODAL ════════════════════ -->
-<div class="modal-bg" id="invpPageModal" style="display:none" onclick="if(event.target===this)closeInvpPageModal()">
-  <div class="modal" style="max-width:1100px;width:95vw;max-height:94vh;overflow-y:auto">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
-      <h2 style="margin:0">🧾 Invoice 管理</h2>
-      <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-        <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
-        <button class="btn btn-outline" onclick="openInvpProfileModal()">⚙️ 发票配置（我方信息）</button>
-        <button class="btn btn-outline" onclick="closeInvpPageModal()">✕ 关闭</button>
-      </div>
+<div id="tab-ts-invoice" style="display:none">
+  <div class="top">
+    <h1>🧾 Invoice 管理</h1>
+    <div class="top-actions">
+      <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
+      <button class="btn btn-outline" onclick="openInvpProfileModal()">⚙️ 发票配置（我方信息）</button>
+      <button class="btn btn-outline" onclick="loadInvpList()">刷新</button>
     </div>
+  </div>
 
-    <!-- Invoice List -->
-    <div class="card" style="margin-bottom:1.25rem">
-      <div id="invpListWrap">
-        <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
-      </div>
+  <!-- Invoice List -->
+  <div class="card">
+    <div id="invpListWrap">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
     </div>
   </div>
 </div>
@@ -4623,6 +4620,7 @@ function showTab(t) {
   if (t === 'ts-payment')  loadTsPayment();
   if (t === 'ts-dividend') loadTsDividend();
   if (t === 'ts-history')  loadTsHistory();
+  if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -15654,12 +15652,11 @@ function initInvoicePage() {
 }
 
 function openInvpPageModal() {
-  document.getElementById('invpPageModal').style.display = 'flex';
-  initInvoicePage();
+  showTab('ts-invoice');
 }
 
 function closeInvpPageModal() {
-  document.getElementById('invpPageModal').style.display = 'none';
+  // no-op: Invoice is now a full tab, not a modal
 }
 
 function openInvpBuilderModal() {
