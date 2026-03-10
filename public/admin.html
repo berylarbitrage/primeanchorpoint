@@ -1207,10 +1207,64 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <!-- Invoice List -->
-  <div class="card">
-    <div id="invpListWrap">
-      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+  <!-- Sub-tabs -->
+  <div style="display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin-bottom:1rem">
+    <button id="invSubTabBtn-history" class="btn" onclick="switchInvSubTab('history')"
+      style="padding:.5rem 1.25rem;font-size:.9rem;border:none;border-bottom:2px solid var(--sky);margin-bottom:-2px;color:var(--sky);background:transparent;font-weight:600;cursor:pointer">
+      📋 历史记录
+    </button>
+    <button id="invSubTabBtn-settings" class="btn" onclick="switchInvSubTab('settings')"
+      style="padding:.5rem 1.25rem;font-size:.9rem;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500);background:transparent;font-weight:500;cursor:pointer">
+      ⚙️ 预设设置
+    </button>
+  </div>
+
+  <!-- Sub-tab: 历史记录 -->
+  <div id="invSubTab-history">
+    <div class="card">
+      <div id="invpListWrap">
+        <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sub-tab: 预设设置 -->
+  <div id="invSubTab-settings" style="display:none">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem">
+
+      <!-- 发票抬头（我方） -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">发票抬头（我方）</h3>
+          <button class="btn btn-sm btn-green" onclick="openInvpPresetModal('sender')">+ 新建</button>
+        </div>
+        <div id="invpSettingSenderList" style="font-size:.85rem">
+          <div style="color:var(--gray-400)">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 银行收款信息 -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">银行收款信息</h3>
+          <button class="btn btn-sm btn-green" onclick="openInvpPresetModal('bank')">+ 新建</button>
+        </div>
+        <div id="invpSettingBankList" style="font-size:.85rem">
+          <div style="color:var(--gray-400)">加载中…</div>
+        </div>
+      </div>
+
+      <!-- 联系人页脚 -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">联系人页脚</h3>
+          <button class="btn btn-sm btn-green" onclick="openInvpPresetModal('contact')">+ 新建</button>
+        </div>
+        <div id="invpSettingContactList" style="font-size:.85rem">
+          <div style="color:var(--gray-400)">加载中…</div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -15671,9 +15725,11 @@ function saveInvpProfileData(data) {
 
 async function loadInvpPresets() {
   _invpPresets = await api('/admin/invoice-profiles').catch(() => []);
+  window._invpAllPresets = _invpPresets;
   populateInvpDropdown('sender');
   populateInvpDropdown('bank');
   populateInvpDropdown('contact');
+  renderInvpSettingsLists();
 }
 
 function populateInvpDropdown(section) {
@@ -15708,6 +15764,7 @@ function onInvpPresetSelect(section) {
   saved[section + '_preset_id'] = id;
   saveInvpProfileData(saved);
   renderInvpProfilePreview();
+  renderInvpSettingsLists();
 }
 
 function openInvpPresetModal(section, editId) {
@@ -15801,6 +15858,92 @@ function initInvoicePage() {
   loadInvpList();
   loadInvpCompanies();
   renderInvpProfilePreview();
+  renderInvpSettingsLists();
+}
+
+function switchInvSubTab(tab) {
+  ['history','settings'].forEach(t => {
+    const panel = document.getElementById('invSubTab-' + t);
+    const btn   = document.getElementById('invSubTabBtn-' + t);
+    if (!panel || !btn) return;
+    if (t === tab) {
+      panel.style.display = '';
+      btn.style.borderBottomColor = 'var(--sky)';
+      btn.style.color = 'var(--sky)';
+      btn.style.fontWeight = '600';
+    } else {
+      panel.style.display = 'none';
+      btn.style.borderBottomColor = 'transparent';
+      btn.style.color = 'var(--gray-500)';
+      btn.style.fontWeight = '500';
+    }
+  });
+  if (tab === 'settings') renderInvpSettingsLists();
+}
+
+function renderInvpSettingsLists() {
+  const presets = window._invpAllPresets || [];
+  const profile = getInvpProfile();
+
+  const sections = [
+    { key: 'sender', listId: 'invpSettingSenderList', fields: [
+      { k: 'sender_name', label: '公司名称' }, { k: 'sender_address', label: '地址' },
+      { k: 'sender_phone', label: '电话' }, { k: 'sender_email', label: '邮箱' }
+    ]},
+    { key: 'bank', listId: 'invpSettingBankList', fields: [
+      { k: 'bank_account_name', label: 'Account Name' }, { k: 'bank_name', label: 'Bank Name' },
+      { k: 'bank_account_no', label: 'Account No' }, { k: 'bank_routing_no', label: 'Routing No' }
+    ]},
+    { key: 'contact', listId: 'invpSettingContactList', fields: [
+      { k: 'contact_name', label: '联系人' }, { k: 'contact_phone', label: '电话' },
+      { k: 'contact_email', label: '邮箱' }
+    ]}
+  ];
+
+  sections.forEach(sec => {
+    const wrap = document.getElementById(sec.listId);
+    if (!wrap) return;
+    const items = presets.filter(p => p.section === sec.key);
+    if (!items.length) {
+      wrap.innerHTML = '<div style="color:var(--gray-400);padding:.5rem 0">暂无预设，点击「+ 新建」创建</div>';
+      return;
+    }
+    const activeId = profile[sec.key + '_preset_id'];
+    wrap.innerHTML = items.map(p => {
+      const isActive = p.id == activeId;
+      const d = typeof p.data === 'string' ? (function(){ try { return JSON.parse(p.data); } catch(e) { return {}; } })() : (p.data || {});
+      const details = sec.fields.map(f => d[f.k] ? `<div style="color:var(--gray-500)">${esc(f.label)}: ${esc(d[f.k])}</div>` : '').join('');
+      return `<div style="border:1px solid ${isActive ? 'var(--sky)' : 'var(--gray-200)'};border-radius:8px;padding:.75rem;margin-bottom:.5rem;background:${isActive ? '#f0f9ff' : '#fff'};position:relative">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+          <strong style="font-size:.9rem">${esc(p.name || '未命名')}</strong>
+          ${isActive ? '<span style="font-size:.72rem;background:var(--sky);color:#fff;padding:1px 8px;border-radius:10px">当前使用</span>' : ''}
+        </div>
+        <div style="font-size:.82rem;line-height:1.7;margin-bottom:.5rem">${details}</div>
+        <div style="display:flex;gap:.4rem">
+          ${!isActive ? `<button class="btn btn-sm btn-outline" style="font-size:.75rem;padding:.15rem .6rem;color:var(--sky);border-color:var(--sky)" onclick="selectInvpPresetFromSettings('${sec.key}',${p.id})">选用</button>` : ''}
+          <button class="btn btn-sm btn-outline" style="font-size:.75rem;padding:.15rem .6rem" onclick="openInvpPresetModal('${sec.key}',${p.id})">编辑</button>
+          <button class="btn btn-sm" style="font-size:.75rem;padding:.15rem .6rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5" onclick="deleteInvpPreset(${p.id},'${sec.key}')">删除</button>
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+
+async function selectInvpPresetFromSettings(section, presetId) {
+  const presets = window._invpAllPresets || [];
+  const preset = presets.find(p => p.id == presetId);
+  if (!preset) return;
+  const data = typeof preset.data === 'string' ? JSON.parse(preset.data) : (preset.data || {});
+  const saved = getInvpProfile();
+  saved[section + '_preset_id'] = presetId;
+  Object.keys(data).forEach(k => { saved[k] = data[k]; });
+  saveInvpProfileData(saved);
+  // Sync dropdown in builder modal
+  const sel = document.getElementById('invp' + section.charAt(0).toUpperCase() + section.slice(1) + 'Select');
+  if (sel) sel.value = presetId;
+  renderInvpProfilePreview();
+  renderInvpSettingsLists();
+  showToast('已选用预设', 'success');
 }
 
 function openInvpPageModal() {
