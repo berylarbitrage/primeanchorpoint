@@ -16229,7 +16229,7 @@ function renderInvpManualTable() {
       const val = (emp.days && emp.days[d]) ? emp.days[d] : '';
       return `<td style="padding:3px 4px;text-align:center">
         <input type="number" class="invp-man-day" data-uid="${emp.uid}" data-date="${d}"
-          value="${esc(String(val))}" min="0" step="0.5" placeholder="0"
+          value="${esc(String(val))}" min="0" step="any" placeholder="0"
           style="width:52px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.83rem"
           oninput="invpUpdateRowTotal(this.closest('tr'))">
       </td>`;
@@ -16243,7 +16243,8 @@ function renderInvpManualTable() {
       </td>
       <td style="padding:3px 4px">
         <select class="invp-man-cat" data-uid="${emp.uid}"
-          style="border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.78rem;max-width:140px">
+          style="border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.78rem;max-width:140px"
+          onchange="_invpSaveTableState()">
           ${catOptsHtml}
         </select>
       </td>
