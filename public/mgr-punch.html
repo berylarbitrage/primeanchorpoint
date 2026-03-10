@@ -148,9 +148,10 @@ select.job-sel:focus{border-color:var(--sky)}
 const empCode = new URLSearchParams(location.search).get('emp');
 let _status = null;
 
+const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 function fmt(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  return new Date(iso).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', second:'2-digit', timeZone: localTz(), timeZoneName: 'short'});
 }
 
 function show(id) {

@@ -179,12 +179,14 @@ let geoBlocked = false;
 // Live clock
 (function tick(){
   const el = document.getElementById('liveClock');
-  if (el) el.textContent = new Date().toLocaleString('zh-CN', {hour12:false, weekday:'short', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  const _ltz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (el) el.textContent = new Date().toLocaleString('zh-CN', {hour12:false, weekday:'short', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', timeZone:_ltz, timeZoneName:'short'});
   setTimeout(tick, 1000);
 })();
 
 function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
-function fmt(iso) { if (!iso) return '—'; return new Date(iso).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'}); }
+const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+function fmt(iso) { if (!iso) return '—'; return new Date(iso).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', timeZone:localTz(), timeZoneName:'short'}); }
 
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -386,7 +388,7 @@ function renderResult(r, ptype) {
       ? `上班：${fmt(r.clock_in)}<br>下班：${fmt(r.clock_out)}<br>正常工时：<strong>${reg}h</strong>${otTxt}<br>本班合计：<strong>${total}h</strong>`
       : `下班打卡时间：<strong>${fmt(r.clock_out)}</strong>`;
   } else if (ptype === 'break_start') {
-    detail = `暂停记录时间：<strong>${new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}</strong>`;
+    detail = `暂停记录时间：<strong>${new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</strong>`;
   } else if (ptype === 'break_end') {
     const bm = r.break_minutes || 0;
     detail = `<span class="dot-on"></span><span class="dot-purple"></span> 继续上班，本次暂停：<strong>${bm} 分钟</strong>`;

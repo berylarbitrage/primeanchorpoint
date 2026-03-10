@@ -4781,7 +4781,7 @@ function renderJobApps(list) {
   document.getElementById('jobAppsTable').innerHTML = list.length ? list.map(a => {
     const name = a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : (a.username || '—');
     const ivInfo = a.status === 'interview_scheduled' && a.interview_datetime
-      ? `<br><small style="color:#2563eb">📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</small>` : '';
+      ? `<br><small style="color:#2563eb">📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</small>` : '';
     return `<tr>
       <td style="font-size:.8rem">${(a.created_at||'').slice(0,10)}</td>
       <td><strong>${esc(name)}</strong><br><small style="color:var(--gray-400)">${esc(a.worker_phone||a.worker_email||'')}</small></td>
@@ -4837,7 +4837,7 @@ function showJobAppDetail(id) {
       </div>
       ${a.interview_datetime ? `<div style="background:#eff6ff;border-radius:10px;padding:1rem;font-size:.88rem">
         <div style="font-weight:700;color:var(--gray-700);margin-bottom:.3rem">已安排面试</div>
-        <div>📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit'})}</div>
+        <div>📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</div>
         ${a.interview_location_text ? `<div style="margin-top:.25rem">📍 ${esc(a.interview_location_text)}</div>` : ''}
       </div>` : ''}
     </div>
@@ -6120,7 +6120,7 @@ async function showJobHistory(jobId, title) {
       } else {
         detail = '<span style="color:var(--gray-400)">无字段变更</span>';
       }
-      const dt = new Date(l.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+      const dt = new Date(l.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
       const actionBadge = l.action === 'deleted' ? 'badge-red' : l.action === 'created' ? 'badge-green' : l.action === 'closed' ? 'badge-yellow' : 'badge-blue';
       return `<tr>
         <td style="white-space:nowrap;font-size:.78rem">${dt}</td>
@@ -6170,7 +6170,7 @@ function filterClientInquiries() {
   else if (sort === 'pos_asc')   f = [...f].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
   else if (sort === 'pos_desc')  f = [...f].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
   document.getElementById('cliInqTable').innerHTML = f.length ? f.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
-    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></td>
+    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</span></td>
     <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
     <td><strong>${esc(i.company||i.name)}</strong>${i.company&&i.company!==i.name?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.name)}</span>`:''}</td>
     <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}${i.quote_request?' <span class="badge badge-urgent" style="background:#F5A623">报价</span>':''}</td>
@@ -6235,7 +6235,7 @@ function filterWorkerInquiries() {
   else if (sort === 'pos_asc')   f = [...f].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
   else if (sort === 'pos_desc')  f = [...f].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
   document.getElementById('wrkInqTable').innerHTML = f.length ? f.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
-    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></td>
+    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</span></td>
     <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
     <td style="max-width:180px">${i.job_id?`<span style="font-size:.78rem;background:var(--sky-light);color:var(--sky);padding:1px 6px;border-radius:4px">职位申请</span> `:''}${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.82rem">${esc(i.experience||'—')}</td>
@@ -6333,7 +6333,7 @@ function showInquiry(i) {
     ['语言能力', i.languages], ['备注', i.comments],
     ['简历', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank" style="color:var(--sky)">📄 下载简历</a>` : ''],
     ['报价请求', i.quote_request ? '<span class="badge badge-urgent" style="background:#F5A623">是 — 需要报价</span>' : '否'],
-    ['提交时间', new Date(i.created_at).toLocaleString()]
+    ['提交时间', new Date(i.created_at).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})]
   ].filter(([k, v]) => v);
   document.getElementById('inqDetail').innerHTML = '<table style="width:100%">' +
     fields.map(([k, v]) => `<tr><td style="font-weight:700;width:90px;padding:5px 8px 5px 0;color:var(--gray-500);font-size:.82rem;vertical-align:top">${k}</td><td style="padding:5px 0;font-size:.85rem">${v}</td></tr>`).join('') + '</table>';
@@ -6350,7 +6350,7 @@ function showInquiry(i) {
         const link = `${location.origin}/onboard.html?token=${existing.token}`;
         statusDiv.style.display = '';
         statusDiv.innerHTML = existing.status === 'completed'
-          ? `✅ 已完成入职材料提交 <span style="color:var(--gray-400);font-size:.78rem">${new Date(existing.completed_at).toLocaleString()}</span><br><a href="${link}" target="_blank" style="color:var(--sky);word-break:break-all;font-size:.78rem">${link}</a>`
+          ? `✅ 已完成入职材料提交 <span style="color:var(--gray-400);font-size:.78rem">${new Date(existing.completed_at).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})}</span><br><a href="${link}" target="_blank" style="color:var(--sky);word-break:break-all;font-size:.78rem">${link}</a>`
           : `⏳ 链接已发送，等待填写中<br><span style="color:var(--gray-400);font-size:.78rem;user-select:all">${link}</span>
              <button class="btn btn-sm" style="margin-left:.5rem" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='✓ 已复制').catch(()=>{})">复制</button>`;
       } else {
@@ -7825,7 +7825,7 @@ async function showAssignmentHistory(id, name) {
     const statusLabelMap = { pending:'待确认', assigned:'已分配', working:'进行中', completed:'已完成', terminated:'已解雇', resigned:'已辞职', no_show:'未出勤', cancelled:'已取消' };
     document.getElementById('assignHistoryList').innerHTML = rows.length
       ? rows.map(r => `<tr style="border-bottom:1px solid var(--gray-100)">
-          <td style="white-space:nowrap;font-size:.82rem;padding:8px 10px">${new Date(r.changed_at).toLocaleString()}</td>
+          <td style="white-space:nowrap;font-size:.82rem;padding:8px 10px">${new Date(r.changed_at).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})}</td>
           <td style="padding:8px 10px"><span class="badge badge-${r.old_status||''}">${statusLabelMap[r.old_status] || r.old_status || '—'}</span></td>
           <td style="padding:8px 4px;color:var(--gray-400)">→</td>
           <td style="padding:8px 10px"><span class="badge badge-${r.new_status}">${statusLabelMap[r.new_status] || r.new_status}</span></td>
@@ -7914,7 +7914,7 @@ async function showPartnerById(id) {
     <div class="detail-row"><span>公司名称</span><span>${esc(p.name)}</span></div>
     <div class="detail-row"><span>行业</span><span>${esc(p.industry)}</span></div>
     <div class="detail-row"><span>状态</span><span>${p.active?'合作中':(p.signed_contract_count||0)>0?'已停止':'待签约'}</span></div>
-    <div class="detail-row"><span>添加时间</span><span>${new Date(p.created_at).toLocaleString()}</span></div>
+    <div class="detail-row"><span>添加时间</span><span>${new Date(p.created_at).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})}</span></div>
   </div></div>`;
   if (contacts.length) {
     html += `<div class="detail-section"><h4>联系人 (${contacts.length})</h4>` +
@@ -8145,8 +8145,8 @@ function renderPartnerHistory(p, files) {
 
   let lastDateStr = '';
   for (const ev of events) {
-    const dateStr = ev.ts.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric' });
-    const timeStr = ev.ts.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+    const dateStr = ev.ts.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', timeZone: localTz() });
+    const timeStr = ev.ts.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
     if (dateStr !== lastDateStr) {
       lastDateStr = dateStr;
       html += `<div style="font-size:.7rem;font-weight:700;color:var(--gray-400);margin:.75rem 0 .25rem;letter-spacing:.3px">${dateStr}</div>`;
@@ -9264,7 +9264,7 @@ async function loadBackups() {
   // Render backup log
   document.getElementById('backupLogTable').innerHTML = data.log.length ? '<table><thead><tr><th>时间</th><th>触发方式</th><th>结果</th></tr></thead><tbody>' +
     data.log.map(l => `<tr>
-      <td>${new Date(l.time).toLocaleString()}</td>
+      <td>${new Date(l.time).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})}</td>
       <td>${esc(l.trigger)}</td>
       <td>${l.results.map(r => `<span class="badge ${r.status === 'ok' ? 'badge-completed' : 'badge-urgent'}">${r.status === 'ok' ? '成功' : '失败'}</span> ${esc(r.dir.split('/').pop())}`).join(' &nbsp; ')}</td>
     </tr>`).join('') +
@@ -10790,7 +10790,7 @@ async function generateEmpDocLink() {
       btn.textContent = '已生成';
       // Show expiry info
       if (r.expires_at) {
-        const exp = new Date(r.expires_at).toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric' });
+        const exp = new Date(r.expires_at).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric', timeZone: localTz(), timeZoneName: 'short' });
         document.getElementById('empDocLinkUrl').textContent += '\n⏰ 有效期至 ' + exp + '（3天）';
       }
       // Show send-to summary
@@ -10988,16 +10988,17 @@ function exportEmployeeCSV() {
 // ══════════════════════════════════════════════════════
 let allTimeEntries = [];
 
+const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 function fmtDT(dt, tz) {
   if (!dt) return '—';
   const d = new Date(dt);
   if (isNaN(d)) return dt;
-  const opts = { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false };
-  if (tz) opts.timeZone = tz;
+  const opts = { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false, timeZoneName:'short' };
+  opts.timeZone = tz || localTz();
   const parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(d);
   const p = {};
   parts.forEach(x => p[x.type] = x.value);
-  return `${p.month}/${p.day} ${p.hour}:${p.minute}`;
+  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.timeZoneName}`;
 }
 function fmtD(dt)  { return dt ? new Date(dt).toLocaleDateString() : '—'; }
 function fmtH(h)   { return h != null ? (+h).toFixed(2)+'h' : '—'; }
@@ -11578,7 +11579,7 @@ function fmtPeriod(s, e) {
 }
 function fmtDt(dt) {
   if (!dt) return '—';
-  return new Date(dt).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  return new Date(dt).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
 }
 
 // ─── 工时核对 ───
@@ -11996,7 +11997,7 @@ async function loadInviteLinks() {
     if (!rows.length) { el.innerHTML = '<span style="color:#92400e;opacity:.7">暂无有效邀请链接</span>'; return; }
     const ROLE = { admin:'Admin', staff:'Staff', manager:'Manager' };
     el.innerHTML = rows.map(r => {
-      const exp = new Date(r.expires_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'numeric',minute:'numeric'});
+      const exp = new Date(r.expires_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',timeZone:localTz(),timeZoneName:'short'});
       return `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;flex-wrap:wrap">
         <span style="background:#fff;border:1px solid #fde68a;border-radius:6px;padding:.15rem .5rem;font-weight:700;color:#92400e">${ROLE[r.role]||r.role}</span>
         <span style="flex:1;word-break:break-all;color:#44403c;cursor:pointer;text-decoration:underline" onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))" title="点击复制">${esc(r.url)}</span>
@@ -12475,7 +12476,7 @@ function renderOnboardingTasks(tasks) {
         ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 工人门户 — 已通知</div>`:''}
         ${t.key==='interview'&&_onboardingInterviewInfo&&_onboardingInterviewInfo.slot_datetime?(()=>{
           const dt=new Date(_onboardingInterviewInfo.slot_datetime);
-          const dtStr=dt.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit'});
+          const dtStr=dt.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
           const loc=_onboardingInterviewInfo.location?` · 📍 ${_onboardingInterviewInfo.location}`:'';
           const statusColor=_onboardingInterviewInfo.status==='completed'?'#065f46':_onboardingInterviewInfo.status==='cancelled'?'#dc2626':'#0369a1';
           const statusBg=_onboardingInterviewInfo.status==='completed'?'#d1fae5':_onboardingInterviewInfo.status==='cancelled'?'#fef2f2':'#f0f9ff';
@@ -12557,7 +12558,7 @@ async function openInterviewCompleteModal() {
   const intvLocEl = document.getElementById('icInterviewLocation');
   if (_onboardingInterviewInfo && _onboardingInterviewInfo.slot_datetime) {
     const dt = new Date(_onboardingInterviewInfo.slot_datetime);
-    intvTimeEl.textContent = dt.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short', hour:'2-digit', minute:'2-digit' });
+    intvTimeEl.textContent = dt.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
     intvLocEl.textContent = _onboardingInterviewInfo.location ? '📍 ' + _onboardingInterviewInfo.location : '';
     intvBox.style.display = '';
   } else {
@@ -12933,7 +12934,7 @@ async function showWorkerHistory(id, name) {
         <th style="text-align:left;padding:.4rem .5rem">新值</th>
       </tr></thead>
       <tbody>${rows.map(r => {
-        const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+        const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
         const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
         const oldV = fmtWdVal(r.old_value);
         const newV = fmtWdVal(r.new_value);
@@ -13114,7 +13115,7 @@ async function loadWorkerHistory(id) {
     const rows = await api(`/admin/worker-accounts/${id}/history`);
     if (!rows || !rows.length) { el.innerHTML = '<span style="color:var(--gray-300)">暂无变更记录</span>'; return; }
     el.innerHTML = rows.map(r => {
-      const ts = new Date(r.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+      const ts = new Date(r.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
       const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
       const oldV = fmtWdVal(r.old_value);
       const newV = fmtWdVal(r.new_value);
@@ -13693,7 +13694,7 @@ function renderSlots(slots) {
   // Group by date
   const grouped = {};
   filtered.forEach(s => {
-    const dateKey = new Date(s.slot_datetime).toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short' });
+    const dateKey = new Date(s.slot_datetime).toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short', timeZone: localTz() });
     if (!grouped[dateKey]) grouped[dateKey] = [];
     grouped[dateKey].push(s);
   });
@@ -13704,7 +13705,7 @@ function renderSlots(slots) {
     daySlots.forEach(s => {
       const dt = new Date(s.slot_datetime);
       const past = dt <= now;
-      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
       const contactInfo = s.contact_name ? `<div style="font-size:.72rem;color:var(--gray-500)">👤 ${esc(s.contact_name)} ${esc(s.contact_phone||'')}</div>` : '';
       const instrInfo = s.instructions ? `<div style="font-size:.72rem;color:var(--gray-500);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(s.instructions)}">📋 ${esc(s.instructions)}</div>` : '';
       html += `<tr style="${past ? 'opacity:.55' : ''}">
@@ -13999,7 +14000,7 @@ function renderInterviews(rows) {
     `<select style="${selStyle}" onchange="${fn}">${opts.map(([v,l])=>`<option value="${v}"${val===v?' selected':''}>${l}</option>`).join('')}</select>`;
 
   wrap.innerHTML = rows.map(i => {
-    const dt  = i.slot_datetime ? new Date(i.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    const dt  = i.slot_datetime ? new Date(i.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'}) : '—';
     const typ = i.interview_type || 'onboarding';
     const typBadge  = `<span style="padding:.15rem .6rem;border-radius:20px;font-size:.73rem;font-weight:700;${IV_TYPE_COLOR[typ]||IV_TYPE_COLOR.other}">${IV_TYPE_LABEL[typ]||typ}</span>`;
     const stBadge   = `<span style="padding:.15rem .6rem;border-radius:20px;font-size:.73rem;font-weight:700;${IV_STATUS_STYLE[i.status]||'background:#f3f4f6;color:#374151'}">${IV_STATUS_LABEL[i.status]||i.status}</span>`;
@@ -14923,7 +14924,7 @@ async function loadMgrInterviews() {
     const interviewStatus = { scheduled:'<span class="badge badge-filled">已预约</span>', completed:'<span class="badge badge-cooperated">已完成</span>', cancelled:'<span class="badge badge-rejected">已取消</span>', no_show:'<span class="badge badge-urgent">未出席</span>' };
     const idStatus = { approved:'<span class="badge badge-cooperated">已通过</span>', pending:'<span class="badge badge-employment">审核中</span>', declined:'<span class="badge badge-rejected">未通过</span>' };
     tbody.innerHTML = rows.map(r => {
-      const dt = r.slot_datetime ? new Date(r.slot_datetime).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+      const dt = r.slot_datetime ? new Date(r.slot_datetime).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'}) : '—';
       return `<tr>
         <td><div style="font-weight:600">${esc(r.worker_name||'—')}</div></td>
         <td><div>${r.worker_phone?`<a href="tel:${esc(r.worker_phone)}" style="color:var(--sky)">${esc(r.worker_phone)}</a>`:'—'}</div><div style="font-size:.78rem">${r.worker_email?`<a href="mailto:${esc(r.worker_email)}" style="color:var(--sky)">${esc(r.worker_email)}</a>`:'—'}</div></td>
@@ -15043,7 +15044,7 @@ async function loadAdminMgrPunch() {
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无打卡记录</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => {
       const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || '—';
-      const tzOpts = r.display_timezone ? {timeZone: r.display_timezone, month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'} : {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'};
+      const tzOpts = r.display_timezone ? {timeZone: r.display_timezone, month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZoneName:'short'} : {timeZone:localTz(),month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZoneName:'short'};
       const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN', tzOpts) : '—';
       const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN', tzOpts) : '—';
       const hrs  = r.total_hours != null ? r.total_hours.toFixed(2) + ' h' : '—';
@@ -15080,8 +15081,9 @@ async function loadAdminMgrSelfPunch() {
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">暂无记录</td></tr>'; return; }
     function fmtBreak(mins) { return (!mins && mins!==0) ? '—' : Math.floor(mins/60)+'h'+((mins%60)?((mins%60)+'m'):''); }
     tbody.innerHTML = rows.map(r => {
-      const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN',  {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
-      const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '<span style="color:#f97316;font-weight:600">进行中</span>';
+      const _tz = r.display_timezone || localTz();
+      const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN',  {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:_tz,timeZoneName:'short'}) : '—';
+      const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:_tz,timeZoneName:'short'}) : '<span style="color:#f97316;font-weight:600">进行中</span>';
       const hrs  = r.total_hours != null && r.total_hours > 0 ? r.total_hours.toFixed(2) + ' h' : '—';
       let statusBadge, confirmBtn = '';
       if (r.status === 'open') {
@@ -15343,8 +15345,8 @@ function obivRenderSlots(slots) {
   } else {
     slotSel.innerHTML = slots.map(s => {
       const dt = new Date(s.slot_datetime);
-      const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short' });
-      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
+      const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short', timeZone: localTz() });
+      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone: localTz(), timeZoneName: 'short' });
       const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
       const avail = (s.max_bookings || 1) - (s.booked_count || 0);
       return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
@@ -15413,8 +15415,8 @@ function obivOnSlotChange() {
     const slot = _obivSlots.find(s => s.id == cb.value);
     if (!slot) return '';
     const dt = new Date(slot.slot_datetime);
-    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
+    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long', timeZone: localTz() });
+    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone: localTz(), timeZoneName: 'short' });
     const locStr = slot.location ? ' · 📍 ' + slot.location : '';
     const avail = (slot.max_bookings || 1) - (slot.booked_count || 0);
     return `⏰ ${dateStr} ${timeStr} · ${slot.duration_min || 30} 分钟${locStr} · 剩余名额：${avail}`;
