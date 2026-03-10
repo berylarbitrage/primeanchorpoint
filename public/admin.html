@@ -555,6 +555,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
+      <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 Invoice</a>
     </div>
   </div>
 
@@ -1194,6 +1195,113 @@ tr:hover td{background:var(--sky-light)}
       <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>客户付款时间</th><th>劳务付款时间</th><th>Staff 备注</th></tr></thead>
       <tbody id="tsHistoryTable"></tbody>
     </table>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE PAGE TAB ════════════════════ -->
+<div id="tab-ts-invoice" style="display:none">
+  <div class="top">
+    <h1>🧾 Invoice 生成</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="openInvpProfileModal()">⚙️ 发票配置（我方信息）</button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 320px;gap:1.25rem;align-items:start">
+
+    <!-- LEFT: Invoice Builder -->
+    <div class="card">
+      <h3 style="margin:0 0 1rem">发票信息</h3>
+
+      <!-- Meta info -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+        <div class="field">
+          <label>Invoice 编号</label>
+          <input type="text" id="invPageNumber" placeholder="e.g. JCSL20260234">
+        </div>
+        <div class="field">
+          <label>Invoice 日期</label>
+          <input type="date" id="invPageDate">
+        </div>
+        <div class="field">
+          <label>FOR（职位/工种）</label>
+          <input type="text" id="invPageFor" placeholder="e.g. Sorter / Scanner">
+        </div>
+        <div class="field">
+          <label>服务周期 开始 <span style="color:var(--red)">*</span></label>
+          <input type="date" id="invPageStart">
+        </div>
+        <div class="field">
+          <label>服务周期 结束 <span style="color:var(--red)">*</span></label>
+          <input type="date" id="invPageEnd">
+        </div>
+        <div class="field" style="display:flex;align-items:flex-end">
+          <button class="btn btn-outline" style="width:100%" onclick="loadInvPageEmployees()">📥 加载员工工时</button>
+        </div>
+      </div>
+
+      <!-- Bill To -->
+      <h3 style="margin:0 0 .75rem">账单发往（Bill To）</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+        <div class="field" style="grid-column:1/-1">
+          <label>快速选择客户公司</label>
+          <select id="invPageCompany" onchange="onInvPageCompanyChange()" style="width:100%">
+            <option value="">— 从合作公司中选择 —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>公司名称 <span style="color:var(--red)">*</span></label>
+          <input type="text" id="invPageBillName" placeholder="客户公司名称">
+        </div>
+        <div class="field">
+          <label>地址</label>
+          <input type="text" id="invPageBillAddr" placeholder="客户地址">
+        </div>
+      </div>
+
+      <!-- Employee list -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <h3 style="margin:0">员工工时明细</h3>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
+          <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
+          <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
+        </div>
+      </div>
+      <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:1rem;max-height:340px;overflow-y:auto">
+        <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先设置服务周期后点击「加载员工工时」</div>
+      </div>
+
+      <div style="display:flex;gap:.75rem;justify-content:flex-end">
+        <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Profile Preview -->
+    <div>
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">发票抬头（我方）</h3>
+          <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+        </div>
+        <div id="invpSenderPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+      </div>
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">银行收款信息</h3>
+          <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+        </div>
+        <div id="invpBankPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">联系人页脚</h3>
+          <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+        </div>
+        <div id="invpContactPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -4444,7 +4552,7 @@ const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
-  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time',
   approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
   'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
@@ -4478,6 +4586,7 @@ function showTab(t) {
   if (t === 'ts-payment')  loadTsPayment();
   if (t === 'ts-dividend') loadTsDividend();
   if (t === 'ts-history')  loadTsHistory();
+  if (t === 'ts-invoice')  initInvoicePage();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -15452,6 +15561,349 @@ async function saveMgrAssign() {
 
 
 // ═══════════════════════════════════════════════════════
+// INVOICE PAGE (ts-invoice tab)
+// ═══════════════════════════════════════════════════════
+
+const INVP_PROFILE_KEY = 'inv_profile_v1';
+
+function getInvpProfile() {
+  try { return JSON.parse(localStorage.getItem(INVP_PROFILE_KEY)) || {}; } catch { return {}; }
+}
+function saveInvpProfileData(data) {
+  localStorage.setItem(INVP_PROFILE_KEY, JSON.stringify(data));
+}
+
+function initInvoicePage() {
+  const today = new Date();
+  const dow = today.getDay() || 7;
+  const mon = new Date(today); mon.setDate(today.getDate() - dow - 6);
+  const sun = new Date(today); sun.setDate(today.getDate() - dow);
+
+  const startEl = document.getElementById('invPageStart');
+  const endEl   = document.getElementById('invPageEnd');
+  const dateEl  = document.getElementById('invPageDate');
+  const numEl   = document.getElementById('invPageNumber');
+
+  if (startEl && !startEl.value) startEl.value = mon.toISOString().slice(0,10);
+  if (endEl   && !endEl.value)   endEl.value   = sun.toISOString().slice(0,10);
+  if (dateEl  && !dateEl.value)  dateEl.value  = today.toISOString().slice(0,10);
+  if (numEl   && !numEl.value) {
+    const yy = String(today.getFullYear()).slice(2);
+    const mm = String(today.getMonth()+1).padStart(2,'0');
+    const seq = String(Math.floor(Math.random()*900)+100);
+    numEl.value = 'INV' + yy + mm + seq;
+  }
+
+  loadInvpCompanies();
+  renderInvpProfilePreview();
+}
+
+async function loadInvpCompanies() {
+  const res = await api('/admin/partners').catch(() => []);
+  const list = Array.isArray(res) ? res.filter(p => p.active) : (res?.partners || []).filter(p => p.active);
+  window._invpPartners = list;
+  const sel = document.getElementById('invPageCompany');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— 从合作公司中选择 —</option>'
+    + list.map(p => `<option value="${esc(p.name)}" data-addr="${esc(p.address||'')}">${esc(p.name)}</option>`).join('');
+}
+
+function onInvPageCompanyChange() {
+  const sel  = document.getElementById('invPageCompany');
+  const name = sel.value;
+  if (!name) return;
+  document.getElementById('invPageBillName').value = name;
+  const partner = (window._invpPartners||[]).find(p => p.name === name);
+  if (partner) {
+    document.getElementById('invPageBillAddr').value = partner.address || '';
+  }
+}
+
+async function loadInvPageEmployees() {
+  const company = document.getElementById('invPageBillName').value.trim();
+  const ps = document.getElementById('invPageStart').value;
+  const pe = document.getElementById('invPageEnd').value;
+  if (!company) { alert('请先填写客户公司名称（用于匹配打卡记录）'); return; }
+  if (!ps || !pe) { alert('请先填写服务周期'); return; }
+
+  const wrap = document.getElementById('invPageEmpWrap');
+  wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>';
+
+  const qs = new URLSearchParams({ company_name: company, period_start: ps, period_end: pe });
+  const rows = await api('/admin/invoice/employees?' + qs).catch(() => []);
+  window._invpEmps = Array.isArray(rows) ? rows : [];
+
+  if (!window._invpEmps.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">该公司在所选周期内无打卡记录</div>';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.87rem">
+      <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
+        <th style="padding:6px 8px;text-align:left;width:32px"><input type="checkbox" id="invpSelAll" onchange="invpToggleAll(this)" checked></th>
+        <th style="padding:6px 8px;text-align:left">姓名</th>
+        <th style="padding:6px 8px;text-align:right">总工时</th>
+        <th style="padding:6px 8px;text-align:right">时薪 ($/h)</th>
+        <th style="padding:6px 8px;text-align:right">小计</th>
+      </tr></thead>
+      <tbody>
+        ${window._invpEmps.map(e => {
+          const hrs  = e.total_hours || 0;
+          const rate = e.client_hourly_rate || 0;
+          return `<tr>
+            <td style="padding:5px 8px"><input type="checkbox" class="invp-emp-chk" value="${e.employee_id}" checked></td>
+            <td style="padding:5px 8px">${esc(e.name || ((e.last_name||'')+(e.first_name||'')))}</td>
+            <td style="padding:5px 8px;text-align:right">${hrs.toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right">
+              <input type="number" class="invp-rate-input" data-id="${e.employee_id}" data-hrs="${hrs}"
+                value="${rate.toFixed(2)}" min="0" step="0.01"
+                style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 5px;font-size:.85rem"
+                oninput="updateInvpSub(this)">
+            </td>
+            <td style="padding:5px 8px;text-align:right" class="invp-sub" data-id="${e.employee_id}">${(hrs*rate).toFixed(2)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+function invpToggleAll(chk) {
+  document.querySelectorAll('.invp-emp-chk').forEach(c => c.checked = chk.checked);
+}
+
+function applyInvUniformRate(val) {
+  const rate = parseFloat(val);
+  if (!rate || rate <= 0) return;
+  document.querySelectorAll('.invp-rate-input').forEach(inp => {
+    inp.value = rate.toFixed(2);
+    updateInvpSub(inp);
+  });
+}
+
+function updateInvpSub(inp) {
+  const hrs  = parseFloat(inp.dataset.hrs) || 0;
+  const rate = parseFloat(inp.value) || 0;
+  const cell = document.querySelector(`.invp-sub[data-id="${inp.dataset.id}"]`);
+  if (cell) cell.textContent = (hrs * rate).toFixed(2);
+}
+
+function generateInvpPreview() {
+  const invNum  = document.getElementById('invPageNumber').value.trim();
+  const invDate = document.getElementById('invPageDate').value;
+  const ps      = document.getElementById('invPageStart').value;
+  const pe      = document.getElementById('invPageEnd').value;
+  const forFld  = document.getElementById('invPageFor').value.trim();
+  const billName= document.getElementById('invPageBillName').value.trim();
+  const billAddr= document.getElementById('invPageBillAddr').value.trim();
+
+  if (!billName)    { alert('请填写账单发往公司名称'); return; }
+  if (!ps || !pe)   { alert('请填写服务周期'); return; }
+  if (!window._invpEmps || !window._invpEmps.length) { alert('请先加载员工工时'); return; }
+
+  const selectedIds = new Set([...document.querySelectorAll('.invp-emp-chk:checked')].map(c => c.value));
+  if (!selectedIds.size) { alert('请至少勾选一名员工'); return; }
+
+  const rates = {};
+  document.querySelectorAll('.invp-rate-input').forEach(inp => { rates[inp.dataset.id] = parseFloat(inp.value)||0; });
+
+  const items = window._invpEmps
+    .filter(e => selectedIds.has(String(e.employee_id)))
+    .map(e => ({
+      name:  e.name || ((e.last_name||'')+(e.first_name||'')),
+      hours: e.total_hours || 0,
+      rate:  rates[e.employee_id] || e.client_hourly_rate || 0,
+      total: ((e.total_hours||0) * (rates[e.employee_id] || e.client_hourly_rate || 0))
+    }));
+
+  const profile = getInvpProfile();
+
+  const fmtD = d => {
+    if (!d) return '';
+    const [y,m,day] = d.split('-');
+    return `${parseInt(m)}/${parseInt(day)}/${y}`;
+  };
+  const fmtShort = d => {
+    if (!d) return '';
+    const [y,m,day] = d.split('-');
+    return `${parseInt(m)}/${parseInt(day)}`;
+  };
+  const periodLabel = `${fmtShort(ps)}-${fmtShort(pe)}`;
+  const totalHours  = items.reduce((s,i) => s+i.hours, 0);
+  const totalAmt    = items.reduce((s,i) => s+i.total, 0);
+
+  const tableRows = items.map(i => `
+    <tr style="background:#fff">
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${i.rate.toFixed(1)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.hours.toFixed(2)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.total.toFixed(2)}</td>
+    </tr>`).join('');
+
+  const bankBlock = (profile.bank_account_name||profile.bank_name||profile.bank_account_no||profile.bank_routing_no) ? `
+    <div style="margin-bottom:1.5rem;font-size:.88rem;color:#1e293b;line-height:1.9">
+      ${profile.bank_account_name ? `<div>Account&nbsp;&nbsp;Name：${esc(profile.bank_account_name)}</div>` : ''}
+      ${profile.bank_name         ? `<div>Bank Name：${esc(profile.bank_name)}</div>` : ''}
+      ${profile.bank_account_no   ? `<div>Account&nbsp;&nbsp;No：${esc(profile.bank_account_no)}</div>` : ''}
+      ${profile.bank_routing_no   ? `<div>Routing&nbsp;&nbsp;No：${esc(profile.bank_routing_no)}</div>` : ''}
+    </div>` : '';
+
+  const contactBlock = (profile.contact_name||profile.contact_phone||profile.contact_email) ? `
+    <div style="font-size:.88rem;color:#1e293b;line-height:1.7">
+      If you have any questions concerning this invoice,<br>
+      Contact ${[profile.contact_name,profile.contact_phone,profile.contact_email].filter(Boolean).map(s=>esc(s)).join(' | ')}
+    </div>` : '';
+
+  const html = `
+    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;max-width:760px;margin:0 auto;padding:1rem 0">
+      <!-- Header row: sender left, INVOICE block right -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2rem">
+        <div style="line-height:1.75;font-size:.9rem">
+          <div style="font-size:1.05rem;font-weight:700;margin-bottom:.3rem">${esc(profile.sender_name||'')}</div>
+          ${profile.sender_address ? `<div>${esc(profile.sender_address)}</div>` : ''}
+          ${profile.sender_phone   ? `<div>Phone：${esc(profile.sender_phone)}</div>` : ''}
+          ${profile.sender_email   ? `<div>Email：${esc(profile.sender_email)}</div>` : ''}
+        </div>
+        <div style="text-align:right;font-size:.9rem;line-height:1.75">
+          <div style="font-size:1.9rem;font-weight:800;letter-spacing:3px;margin-bottom:.4rem">INVOICE</div>
+          <div>INVOICE Number：<strong>${esc(invNum||'—')}</strong></div>
+          <div>Pay Period：${fmtD(ps)}-${fmtD(pe)}</div>
+          <div>Invoice Date：${fmtD(invDate)}</div>
+          ${forFld ? `<div>FOR&nbsp;&nbsp;${esc(forFld)}</div>` : ''}
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div style="border-top:1.5px solid #334155;margin-bottom:1.25rem"></div>
+
+      <!-- Bill To -->
+      <div style="margin-bottom:1.5rem;font-size:.9rem;line-height:1.75">
+        <div style="font-weight:700;text-transform:uppercase;font-size:.8rem;letter-spacing:.06em;color:#64748b;margin-bottom:.3rem">BILL TO</div>
+        <div style="font-weight:600">${esc(billName)}</div>
+        ${billAddr ? `<div>${esc(billAddr)}</div>` : ''}
+      </div>
+
+      <!-- Table -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:2rem">
+        <thead>
+          <tr style="background:#4472c4;color:#fff">
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Date</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Name</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Price per hour</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Hours</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Total Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+          <tr style="background:#f6c26b;font-weight:700">
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="2">Total</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${totalHours.toFixed(1)}h</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${totalAmt.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      ${bankBlock}
+      ${contactBlock}
+    </div>`;
+
+  document.getElementById('invpPreviewContent').innerHTML = html;
+  document.getElementById('invpPreviewModal').style.display = 'flex';
+}
+
+function closeInvpPreview() { document.getElementById('invpPreviewModal').style.display = 'none'; }
+
+function printInvpInvoice() {
+  const content = document.getElementById('invpPrintArea').outerHTML;
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>Invoice</title>
+    <style>
+      body { margin: 1.5cm; font-family: 'Helvetica Neue', Arial, sans-serif; }
+      @media print { body { margin: 1cm; } }
+      table { page-break-inside: avoid; }
+    </style>
+    </head><body>${content}</body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+}
+
+function renderInvpProfilePreview() {
+  const p = getInvpProfile();
+
+  const senderEl  = document.getElementById('invpSenderPreview');
+  const bankEl    = document.getElementById('invpBankPreview');
+  const contactEl = document.getElementById('invpContactPreview');
+
+  if (senderEl) {
+    senderEl.innerHTML = [
+      p.sender_name    ? `<div><strong>${esc(p.sender_name)}</strong></div>` : '',
+      p.sender_address ? `<div>${esc(p.sender_address)}</div>` : '',
+      p.sender_phone   ? `<div>Phone: ${esc(p.sender_phone)}</div>` : '',
+      p.sender_email   ? `<div>Email: ${esc(p.sender_email)}</div>` : '',
+    ].join('') || '<div style="color:var(--gray-400)">（未设置，点击「编辑」配置）</div>';
+  }
+
+  if (bankEl) {
+    bankEl.innerHTML = [
+      p.bank_account_name ? `<div>Account Name: ${esc(p.bank_account_name)}</div>` : '',
+      p.bank_name         ? `<div>Bank Name: ${esc(p.bank_name)}</div>` : '',
+      p.bank_account_no   ? `<div>Account No: ${esc(p.bank_account_no)}</div>` : '',
+      p.bank_routing_no   ? `<div>Routing No: ${esc(p.bank_routing_no)}</div>` : '',
+    ].join('') || '<div style="color:var(--gray-400)">（未设置）</div>';
+  }
+
+  if (contactEl) {
+    contactEl.innerHTML = [
+      p.contact_name  ? `<div>联系人: ${esc(p.contact_name)}</div>` : '',
+      p.contact_phone ? `<div>Tel: ${esc(p.contact_phone)}</div>` : '',
+      p.contact_email ? `<div>Email: ${esc(p.contact_email)}</div>` : '',
+    ].join('') || '<div style="color:var(--gray-400)">（未设置）</div>';
+  }
+}
+
+function openInvpProfileModal() {
+  const p = getInvpProfile();
+  document.getElementById('invpSenderName').value    = p.sender_name    || '';
+  document.getElementById('invpSenderAddr').value    = p.sender_address || '';
+  document.getElementById('invpSenderPhone').value   = p.sender_phone   || '';
+  document.getElementById('invpSenderEmail').value   = p.sender_email   || '';
+  document.getElementById('invpBankAccountName').value = p.bank_account_name || '';
+  document.getElementById('invpBankName').value        = p.bank_name        || '';
+  document.getElementById('invpBankAccountNo').value   = p.bank_account_no  || '';
+  document.getElementById('invpBankRoutingNo').value   = p.bank_routing_no  || '';
+  document.getElementById('invpContactName').value  = p.contact_name  || '';
+  document.getElementById('invpContactPhone').value = p.contact_phone || '';
+  document.getElementById('invpContactEmail').value = p.contact_email || '';
+  document.getElementById('invpProfileModal').style.display = 'flex';
+}
+
+function closeInvpProfileModal() { document.getElementById('invpProfileModal').style.display = 'none'; }
+
+function saveInvpProfile() {
+  const p = {
+    sender_name:      document.getElementById('invpSenderName').value.trim(),
+    sender_address:   document.getElementById('invpSenderAddr').value.trim(),
+    sender_phone:     document.getElementById('invpSenderPhone').value.trim(),
+    sender_email:     document.getElementById('invpSenderEmail').value.trim(),
+    bank_account_name:document.getElementById('invpBankAccountName').value.trim(),
+    bank_name:        document.getElementById('invpBankName').value.trim(),
+    bank_account_no:  document.getElementById('invpBankAccountNo').value.trim(),
+    bank_routing_no:  document.getElementById('invpBankRoutingNo').value.trim(),
+    contact_name:     document.getElementById('invpContactName').value.trim(),
+    contact_phone:    document.getElementById('invpContactPhone').value.trim(),
+    contact_email:    document.getElementById('invpContactEmail').value.trim(),
+  };
+  saveInvpProfileData(p);
+  closeInvpProfileModal();
+  renderInvpProfilePreview();
+  showToast('✅ 配置已保存', 'success');
+}
+
+// ═══════════════════════════════════════════════════════
 // INVOICE GENERATION
 // ═══════════════════════════════════════════════════════
 let _invoiceCompanies = [];
@@ -15648,6 +16100,89 @@ function printInvoice() {
     <p id="admDlgMsg"></p>
     <div id="admDlgInputWrap" style="display:none"><input type="text" id="admDlgInput"></div>
     <div class="adm-dlg-btns" id="admDlgBtns"></div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE PAGE: PROFILE SETTINGS MODAL ════════════════════ -->
+<div class="modal-bg" id="invpProfileModal" style="display:none">
+  <div class="modal" style="max-width:600px;max-height:92vh;overflow-y:auto">
+    <h2>⚙️ 发票配置</h2>
+    <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1.25rem">信息保存在本地，下次打开自动载入。</p>
+
+    <h4 style="margin:.25rem 0 .75rem;color:var(--gray-700)">我方信息（Invoice 抬头）</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+      <div class="field" style="grid-column:1/-1">
+        <label>公司名称</label>
+        <input type="text" id="invpSenderName" placeholder="e.g. JC-SL Express Inc">
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label>地址</label>
+        <input type="text" id="invpSenderAddr" placeholder="e.g. 1001 Doubleday Ave., Ontario, CA 91761">
+      </div>
+      <div class="field">
+        <label>电话</label>
+        <input type="text" id="invpSenderPhone" placeholder="626-695-8857">
+      </div>
+      <div class="field">
+        <label>邮箱</label>
+        <input type="text" id="invpSenderEmail" placeholder="email@example.com">
+      </div>
+    </div>
+
+    <h4 style="margin:.25rem 0 .75rem;color:var(--gray-700)">银行收款信息</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+      <div class="field">
+        <label>Account Name</label>
+        <input type="text" id="invpBankAccountName" placeholder="e.g. JC-SL Express Inc">
+      </div>
+      <div class="field">
+        <label>Bank Name</label>
+        <input type="text" id="invpBankName" placeholder="e.g. JPMorgan Bank">
+      </div>
+      <div class="field">
+        <label>Account No</label>
+        <input type="text" id="invpBankAccountNo" placeholder="2904088524">
+      </div>
+      <div class="field">
+        <label>Routing No</label>
+        <input type="text" id="invpBankRoutingNo" placeholder="322271627">
+      </div>
+    </div>
+
+    <h4 style="margin:.25rem 0 .75rem;color:var(--gray-700)">页脚联系人</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.5rem">
+      <div class="field">
+        <label>姓名</label>
+        <input type="text" id="invpContactName" placeholder="Keon">
+      </div>
+      <div class="field">
+        <label>电话</label>
+        <input type="text" id="invpContactPhone" placeholder="626-695-8857">
+      </div>
+      <div class="field">
+        <label>邮箱</label>
+        <input type="text" id="invpContactEmail" placeholder="keonhua88@gmail.com">
+      </div>
+    </div>
+
+    <div style="display:flex;gap:.75rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeInvpProfileModal()">取消</button>
+      <button class="btn btn-green" onclick="saveInvpProfile()">💾 保存配置</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE PAGE: PREVIEW MODAL ════════════════════ -->
+<div class="modal-bg" id="invpPreviewModal" style="display:none">
+  <div class="modal" style="max-width:900px;max-height:94vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2 style="margin:0">Invoice 预览</h2>
+      <div style="display:flex;gap:.6rem">
+        <button class="btn btn-green" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
+        <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
+      </div>
+    </div>
+    <div id="invpPreviewContent" style="background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:2.5rem"></div>
   </div>
 </div>
 
