@@ -15703,8 +15703,7 @@ async function invpRefreshInvoiceNumber() {
   const dd = String(today.getDate()).padStart(2,'0');
   const yy = String(today.getFullYear()).slice(2);
   const datePart = mm + dd + yy;
-  const profilePrefix = (getInvpProfile().inv_number_prefix || 'INV').toUpperCase();
-  const prefix = `${profilePrefix}-${state}-${datePart}-`;
+  const prefix = `INV-${state}-${datePart}-`;
   const existing = await api('/admin/invoices').catch(() => []);
   const nums = (Array.isArray(existing) ? existing : [])
     .map(r => r.invoice_number || '')
@@ -16139,11 +16138,10 @@ function renderInvpProfilePreview() {
 
   if (senderEl) {
     senderEl.innerHTML = [
-      p.sender_name       ? `<div><strong>${esc(p.sender_name)}</strong></div>` : '',
-      p.sender_address    ? `<div>${esc(p.sender_address)}</div>` : '',
-      p.sender_phone      ? `<div>Phone: ${esc(p.sender_phone)}</div>` : '',
-      p.sender_email      ? `<div>Email: ${esc(p.sender_email)}</div>` : '',
-      p.inv_number_prefix ? `<div style="margin-top:.25rem;font-size:.8rem;color:var(--gray-500)">Invoice 编号前缀: <strong>${esc(p.inv_number_prefix)}</strong></div>` : '',
+      p.sender_name    ? `<div><strong>${esc(p.sender_name)}</strong></div>` : '',
+      p.sender_address ? `<div>${esc(p.sender_address)}</div>` : '',
+      p.sender_phone   ? `<div>Phone: ${esc(p.sender_phone)}</div>` : '',
+      p.sender_email   ? `<div>Email: ${esc(p.sender_email)}</div>` : '',
     ].join('') || '<div style="color:var(--gray-400)">（未设置，点击「编辑」配置）</div>';
   }
 
@@ -16169,7 +16167,6 @@ function openInvpProfileModal() {
   const p = getInvpProfile();
   document.getElementById('invpSenderName').value    = p.sender_name    || '';
   document.getElementById('invpSenderState').value   = p.sender_state   || '';
-  document.getElementById('invpNumberPrefix').value  = p.inv_number_prefix || '';
   document.getElementById('invpSenderAddr').value    = p.sender_address || '';
   document.getElementById('invpSenderPhone').value   = p.sender_phone   || '';
   document.getElementById('invpSenderEmail').value   = p.sender_email   || '';
@@ -16189,7 +16186,6 @@ function saveInvpProfile() {
   const p = {
     sender_name:      document.getElementById('invpSenderName').value.trim(),
     sender_state:     document.getElementById('invpSenderState').value.trim().toUpperCase(),
-    inv_number_prefix:document.getElementById('invpNumberPrefix').value.trim().toUpperCase(),
     sender_address:   document.getElementById('invpSenderAddr').value.trim(),
     sender_phone:     document.getElementById('invpSenderPhone').value.trim(),
     sender_email:     document.getElementById('invpSenderEmail').value.trim(),
@@ -16422,10 +16418,6 @@ function printInvoice() {
       <div class="field">
         <label>州缩写（用于 Invoice 编号）</label>
         <input type="text" id="invpSenderState" placeholder="e.g. CA" maxlength="2" style="text-transform:uppercase">
-      </div>
-      <div class="field">
-        <label>Invoice 编号前缀</label>
-        <input type="text" id="invpNumberPrefix" placeholder="e.g. INV" style="text-transform:uppercase">
       </div>
       <div class="field">
         <label>地址</label>
