@@ -2200,6 +2200,7 @@ async function loadTasks() {
   const confCard = document.getElementById('shiftConfirmCard');
   const confList = document.getElementById('shiftConfirmList');
   const pendingTasks = (tasks || []).filter(t => !t.worker_response);
+  _setBadge('badgeInterview', pendingTasks.length);
   if (pendingTasks.length) {
     confCard.style.display = '';
     const _fmt12 = t => { if (!t) return ''; const [h,m] = t.split(':'); const hh=parseInt(h); return `${hh>12?hh-12:hh||12}:${m} ${hh>=12?'PM':'AM'}`; };
@@ -4941,14 +4942,13 @@ function updateSidebarBadgesFromTasks(tasks) {
   const complianceKeys = ['ead_upload', 'i9', 'w9', 'contract', 'gusto'];
   const compliancePending = tasks.filter(t => complianceKeys.includes(t.key) && (t.status === 'pending' || t.status === 'submitted')).length;
   _setBadge('badgeCompliance', compliancePending);
-
-  const interviewPending = tasks.filter(t => t.key === 'interview' && t.status === 'pending').length;
-  _setBadge('badgeInterview', interviewPending);
 }
 
 async function updateSidebarBadges() {
-  const tasks = await wApi('/onboarding');
+  const [tasks, myTasks] = await Promise.all([wApi('/onboarding'), wApi('/my-tasks')]);
   updateSidebarBadgesFromTasks(tasks);
+  const pendingAssignments = (myTasks || []).filter(t => !t.worker_response).length;
+  _setBadge('badgeInterview', pendingAssignments);
 }
 
 async function submitOnboardingTask(key) {
