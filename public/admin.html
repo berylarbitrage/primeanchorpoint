@@ -12416,6 +12416,12 @@ function fmtPhone(p) {
   if (d.length === 10) return `+1 (${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
   return p; // return original if not 10-digit
 }
+function fmtPhoneInput(el) {
+  const d = el.value.replace(/\D/g, '').slice(0, 10);
+  if (d.length <= 3) { el.value = d; return; }
+  if (d.length <= 6) { el.value = d.slice(0,3) + '-' + d.slice(3); return; }
+  el.value = d.slice(0,3) + '-' + d.slice(3,6) + '-' + d.slice(6);
+}
 
 function complianceBadge2(type, status) {
   if (!status) return `<span class="wa-cbadge na">${type}</span>`;
@@ -16734,7 +16740,7 @@ function printInvoice() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
         <div class="field" style="grid-column:1/-1"><label>公司名称</label><input type="text" id="invpSenderName" placeholder="e.g. JC-SL Express Inc"></div>
         <div class="field" style="grid-column:1/-1"><label>地址</label><input type="text" id="invpSenderAddr" placeholder="e.g. 1001 Doubleday Ave., Ontario, CA 91761"></div>
-        <div class="field"><label>电话</label><input type="text" id="invpSenderPhone" placeholder="626-695-8857"></div>
+        <div class="field"><label>电话</label><input type="text" id="invpSenderPhone" placeholder="626-695-8857" maxlength="12" oninput="fmtPhoneInput(this)"></div>
         <div class="field"><label>邮箱</label><input type="text" id="invpSenderEmail" placeholder="email@example.com"></div>
       </div>
     </div>
@@ -16749,7 +16755,7 @@ function printInvoice() {
     <div id="invpPresetFieldsContact" style="display:none">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem">
         <div class="field"><label>姓名</label><input type="text" id="invpContactName" placeholder="Keon"></div>
-        <div class="field"><label>电话</label><input type="text" id="invpContactPhone" placeholder="626-695-8857"></div>
+        <div class="field"><label>电话</label><input type="text" id="invpContactPhone" placeholder="626-695-8857" maxlength="12" oninput="fmtPhoneInput(this)"></div>
         <div class="field"><label>邮箱</label><input type="text" id="invpContactEmail" placeholder="keonhua88@gmail.com"></div>
       </div>
     </div>
