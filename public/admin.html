@@ -3650,7 +3650,7 @@ tr:hover td{background:var(--sky-light)}
       </div>
       <div id="tsEmpTags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px"></div>
     </div>
-    <div class="field"><label>公司 (客户)</label><input id="tsCompany" type="text" placeholder="例：ABC Logistics"></div>
+    <div class="field"><label>公司 (客户)</label><select id="tsCompany"><option value="">无</option></select></div>
     <div class="field"><label>起始日期 (周一)</label><input id="tsStartDate" type="date" onchange="buildTsRows()"></div>
   </div>
   <div class="field-row no-print" style="margin-bottom:1rem">
@@ -11143,7 +11143,10 @@ async function openTsModal() {
   document.getElementById('tsEmpSearch').value = '';
   document.getElementById('tsEmpDrop').style.display = 'none';
   document.getElementById('tsEmpTags').innerHTML = '';
-  document.getElementById('tsCompany').value = '';
+  // populate company (partners) dropdown
+  const partners = await api('/admin/partners');
+  document.getElementById('tsCompany').innerHTML = '<option value="">无</option>' +
+    partners.filter(p=>p.active).map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
   // populate jobs
   const jobs = await api('/admin/jobs');
   document.getElementById('tsJob').innerHTML = '<option value="">无</option>' +
