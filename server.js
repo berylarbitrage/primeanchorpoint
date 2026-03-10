@@ -4379,7 +4379,7 @@ function diffJob(oldJ, newD) {
 }
 
 app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
-  res.json(db.prepare('SELECT j.*, p.name AS partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id ORDER BY j.created_at DESC').all());
+  res.json(db.prepare('SELECT j.*, p.name AS partner_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters AS site_radius, js.address AS site_address FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id LEFT JOIN job_sites js ON j.site_id = js.id ORDER BY j.created_at DESC').all());
 });
 
 app.get('/api/admin/jobs/:id/history', requireAdmin, blockManager, (req, res) => {

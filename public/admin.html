@@ -7475,7 +7475,7 @@ function applyJobImport() {
   }
 
   if (checked('location') && j.location)
-    parseLocationIntoFields(j.location);
+    parseLocationIntoFields(j.location, { lat: j.site_lat, lng: j.site_lng, radius: j.site_radius });
 
   document.getElementById('aJobImportPanel').style.display = 'none';
 }
@@ -7564,7 +7564,7 @@ function confirmAssignJobImport() {
   const j = _pendingImportJob;
   if (!j) return;
   if (document.getElementById('aImportAddr').checked && j.location) {
-    parseLocationIntoFields(j.location);
+    parseLocationIntoFields(j.location, { lat: j.site_lat, lng: j.site_lng, radius: j.site_radius });
   }
   if (document.getElementById('aImportPayType').checked && j.pay_period) {
     document.getElementById('aPayType').value = j.pay_period;
@@ -7583,7 +7583,7 @@ function confirmAssignJobImport() {
   _pendingImportJob = null;
 }
 
-function parseLocationIntoFields(loc) {
+function parseLocationIntoFields(loc, opts) {
   // Parse "street, city, state zip" or "street, suite, city, state zip" into 5 fields
   const parts = loc.split(',').map(s => s.trim()).filter(Boolean);
   let street = '', city = '', state = '', zip = '';
@@ -7621,7 +7621,22 @@ function parseLocationIntoFields(loc) {
   document.getElementById('aWorkZip').value     = zip;
   document.getElementById('aWorkCountry').value = 'USA';
   document.getElementById('aWorkAddrErr').style.display = 'none';
-  geocodeWorkAddress();
+  // If coords provided (from job_site), use directly; otherwise geocode
+  if (opts && opts.lat && opts.lng) {
+    document.getElementById('aWorkLat').value = parseFloat(opts.lat).toFixed(6);
+    document.getElementById('aWorkLng').value = parseFloat(opts.lng).toFixed(6);
+    if (opts.radius) document.getElementById('aWorkRadius').value = opts.radius;
+    document.getElementById('aWorkLatErr').style.display = 'none';
+    document.getElementById('aWorkLngErr').style.display = 'none';
+    document.getElementById('aWorkGeoStatus').innerHTML = '✅ 已从职位导入坐标';
+    const lat = parseFloat(opts.lat).toFixed(6);
+    const lng = parseFloat(opts.lng).toFixed(6);
+    document.getElementById('aWorkGeoMapAnchor').href = `https://www.google.com/maps?q=${lat},${lng}`;
+    document.getElementById('aWorkGeoMapLink').style.display = 'block';
+    updateAssignWorkMap();
+  } else {
+    geocodeWorkAddress();
+  }
 }
 
 function getWorkAddressString() {
@@ -7639,16 +7654,15 @@ async function geocodeWorkAddress() {
   const statusEl = document.getElementById('aWorkGeoStatus');
   statusEl.textContent = '🔍 正在查找坐标…';
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addr)}&limit=1`, { headers: { 'Accept-Language': 'zh-CN,en' } });
-    const data = await r.json();
-    if (!data.length) { statusEl.textContent = '⚠ 未找到该地址，请检查后重试或手动输入坐标'; return; }
-    const lat = parseFloat(data[0].lat).toFixed(6);
-    const lng = parseFloat(data[0].lon).toFixed(6);
+    const r = await api(`/geocode?q=${encodeURIComponent(addr)}`);
+    if (r.found === false || (!r.lat && !r.lng)) { statusEl.textContent = '⚠ 未找到该地址，请检查后重试或手动输入坐标'; return; }
+    const lat = parseFloat(r.lat).toFixed(6);
+    const lng = parseFloat(r.lng).toFixed(6);
     document.getElementById('aWorkLat').value = lat;
     document.getElementById('aWorkLng').value = lng;
     document.getElementById('aWorkLatErr').style.display = 'none';
     document.getElementById('aWorkLngErr').style.display = 'none';
-    statusEl.innerHTML = `✅ ${data[0].display_name}`;
+    statusEl.innerHTML = `✅ ${r.display || addr} (${r.source || ''})`;
     const mapLink = document.getElementById('aWorkGeoMapLink');
     document.getElementById('aWorkGeoMapAnchor').href = `https://www.google.com/maps?q=${lat},${lng}`;
     mapLink.style.display = 'block';
