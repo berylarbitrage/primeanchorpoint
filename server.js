@@ -9683,7 +9683,8 @@ app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
   const reserved = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
-    WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+    WHERE active=1 AND booked_count < max_bookings
+      AND datetime(replace(slot_datetime, 'T', ' ')) > datetime('now')
       AND reserved_for_worker_account_id=?
     ORDER BY slot_datetime ASC
   `).all(req.workerId);
@@ -9692,7 +9693,8 @@ app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
   const general = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
-    WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+    WHERE active=1 AND booked_count < max_bookings
+      AND datetime(replace(slot_datetime, 'T', ' ')) > datetime('now')
       AND reserved_for_worker_account_id IS NULL
     ORDER BY slot_datetime ASC
   `).all();
@@ -9721,7 +9723,8 @@ app.post('/api/worker/interviews', requireWorker, (req, res) => {
   const slot = db.prepare(`SELECT * FROM interview_slots WHERE id=? AND active=1`).get(slot_id);
   if (!slot) return res.status(404).json({ error: '时间槽不存在' });
   if (slot.booked_count >= slot.max_bookings) return res.status(400).json({ error: '该时间槽已满，请选择其他时间' });
-  if (new Date(slot.slot_datetime) <= new Date()) return res.status(400).json({ error: '该时间槽已过期' });
+  const slotUtc = new Date(slot.slot_datetime.replace(' ', 'T') + (slot.slot_datetime.includes('Z') || slot.slot_datetime.includes('+') ? '' : 'Z'));
+  if (slotUtc <= new Date()) return res.status(400).json({ error: 'This time slot has already passed. Please go back and select another time.' });
 
   try {
     if (existing && existing.status === 'cancelled') {

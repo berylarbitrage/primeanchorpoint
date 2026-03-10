@@ -2652,10 +2652,10 @@ async function confirmBookSlot() {
   if (!r) return;
   if (r.success) {
     closeBookModal();
-    showToast('✅ 面试已预约！请准时携带证件参加');
+    showToast(_t('bookSuccess'));
     loadInterview();
   } else {
-    errEl.textContent = r.error || '预约失败';
+    errEl.textContent = r.error || _t('bookFailed');
     errEl.classList.add('show');
   }
 }
