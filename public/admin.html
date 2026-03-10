@@ -15892,12 +15892,13 @@ async function invpRefreshInvoiceNumber() {
   if (!numEl || numEl.value) return; // don't overwrite if already set
   const today = new Date();
   const state = (window._invpSelectedPartnerState || 'XX').toUpperCase().slice(0,2);
+  const billName = (document.getElementById('invPageBillName').value || '').trim();
+  const companyAbbr = billName.split(/[\s\-&,]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
   const mm = String(today.getMonth()+1).padStart(2,'0');
   const dd = String(today.getDate()).padStart(2,'0');
   const yy = String(today.getFullYear()).slice(2);
   const datePart = mm + dd + yy;
-  const profilePrefix = (getInvpProfile().inv_number_prefix || 'INV').toUpperCase();
-  const prefix = `${profilePrefix}-${state}-${datePart}-`;
+  const prefix = `INV-${state}-${companyAbbr}-${datePart}-`;
   const existing = await api('/admin/invoices').catch(() => []);
   const nums = (Array.isArray(existing) ? existing : [])
     .map(r => r.invoice_number || '')
