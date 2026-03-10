@@ -6,47 +6,76 @@
 <title>Prime Anchorpoint — 员工打卡</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--accent:#F5A623;--green:#2D9D78;--red:#E63946;--white:#fff;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--radius:12px}
+:root{--blue:#0F2B5B;--sky:#4A90D9;--sky-light:#E8F0FE;--green:#2D9D78;--red:#E63946;--orange:#F5A623;--white:#fff;--off:#F7F8FA;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748;--radius:12px}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1rem}
-.wrap{width:100%;max-width:420px}
-.logo-area{text-align:center;margin-bottom:2rem}
-.logo-area img{width:64px;height:auto;margin-bottom:.75rem}
-.logo-area h1{color:#fff;font-size:1.4rem;font-weight:700}
-.logo-area p{color:rgba(255,255,255,.6);font-size:.85rem}
-.card{background:var(--white);border-radius:var(--radius);padding:2rem;box-shadow:0 8px 40px rgba(0,0,0,.25)}
-.card h2{font-size:1rem;color:var(--blue);margin-bottom:1.5rem;font-weight:700}
-.field{margin-bottom:1rem}
-.field label{display:block;font-size:.75rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
-.field input{width:100%;padding:14px 16px;border:2px solid var(--gray-200);border-radius:10px;font-size:1.1rem;outline:none;font-family:inherit;letter-spacing:.1em;transition:border .2s}
+.wrap{width:100%;max-width:440px}
+.logo-area{text-align:center;margin-bottom:1.75rem}
+.logo-area img{width:56px;height:auto;margin-bottom:.6rem}
+.logo-area h1{color:#fff;font-size:1.35rem;font-weight:700}
+.logo-area p{color:rgba(255,255,255,.55);font-size:.82rem;margin-top:.2rem}
+.card{background:var(--white);border-radius:var(--radius);padding:1.75rem;box-shadow:0 8px 40px rgba(0,0,0,.28)}
+.card h2{font-size:.95rem;color:var(--blue);margin-bottom:1.25rem;font-weight:700}
+.field{margin-bottom:.9rem}
+.field label{display:block;font-size:.72rem;font-weight:700;color:var(--gray-600);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.field input{width:100%;padding:13px 15px;border:2px solid var(--gray-200);border-radius:10px;font-size:1rem;outline:none;font-family:inherit;transition:border .2s}
 .field input:focus{border-color:var(--sky)}
-.btn-big{width:100%;padding:16px;border:none;border-radius:10px;font-size:1.1rem;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit;margin-top:.5rem}
-.btn-lookup{background:var(--sky);color:#fff}.btn-lookup:hover{background:var(--blue)}
-.btn-in{background:var(--green);color:#fff;font-size:1.2rem;padding:20px}.btn-in:hover{background:#1e7a5c}
-.btn-out{background:var(--accent);color:#fff;font-size:1.2rem;padding:20px}.btn-out:hover{background:#d9900e}
-.btn-back{background:transparent;border:2px solid var(--gray-200);color:var(--gray-600);margin-top:.75rem;font-size:.9rem;padding:10px}.btn-back:hover{background:var(--off)}
-.msg{padding:12px 16px;border-radius:10px;font-size:.9rem;font-weight:600;margin-bottom:1rem;text-align:center}
+.msg{padding:11px 14px;border-radius:8px;font-size:.88rem;font-weight:600;margin-bottom:.9rem;text-align:center;display:none}
+.msg.show{display:block}
 .msg-err{background:#FFEAEA;color:var(--red);border:1px solid #FFC8C8}
 .msg-ok{background:#E8F5E9;color:var(--green);border:1px solid #A8D5B5}
+.msg-warn{background:#FFF8E1;color:#7B5800;border:1px solid #FFE082}
 .msg-info{background:var(--sky-light);color:var(--blue);border:1px solid #B8D4F8}
-.status-card{background:var(--off);border-radius:10px;padding:1.25rem;margin-bottom:1.5rem}
-.status-card h3{font-size:1.05rem;color:var(--blue);margin-bottom:.75rem}
-.status-row{display:flex;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--gray-200);font-size:.9rem}
+.status-card{background:var(--off);border-radius:10px;padding:1.1rem 1.2rem;margin-bottom:1.25rem}
+.status-card h3{font-size:.85rem;color:var(--blue);margin-bottom:.6rem;font-weight:700}
+.status-row{display:flex;justify-content:space-between;padding:.3rem 0;border-bottom:1px solid var(--gray-200);font-size:.88rem}
 .status-row:last-child{border:none}
 .status-row span:first-child{color:var(--gray-600)}
 .status-row span:last-child{font-weight:700;color:var(--gray-800)}
-.clocked-in-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--green);margin-right:6px;animation:pulse 1.5s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-.clocked-out-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--gray-400);margin-right:6px}
-.hours-big{text-align:center;padding:1rem;background:linear-gradient(135deg,var(--blue),var(--sky));border-radius:10px;color:#fff;margin-bottom:1rem}
-.hours-big h2{font-size:2.5rem;font-weight:700}
-.hours-big p{font-size:.82rem;opacity:.8;margin-top:4px}
-.result-card{text-align:center;padding:1.5rem;background:var(--off);border-radius:10px;margin-bottom:1.5rem}
-.result-card .icon{font-size:3rem;margin-bottom:.5rem}
-.result-card h3{font-size:1.1rem;color:var(--blue);margin-bottom:.5rem}
-.result-card .detail{font-size:.88rem;color:var(--gray-600);line-height:1.6}
-.result-card .ot{color:var(--accent);font-weight:700}
-#clock{text-align:center;font-size:.85rem;color:var(--gray-400);margin-top:.75rem}
+.dot-on{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);margin-right:5px;animation:pulse 1.5s infinite}
+.dot-pause{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--orange);margin-right:5px;animation:pulse 1.5s infinite}
+.dot-off{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--gray-400);margin-right:5px}
+.dot-red{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--red);margin-right:5px}
+.dot-purple{display:inline-block;width:9px;height:9px;border-radius:50%;background:#9B59B6;margin-right:5px;animation:pulse 1.5s infinite}
+.dot-ph{display:inline-block;width:9px;height:9px;margin-right:5px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.gps-bar{display:flex;align-items:center;gap:.5rem;font-size:.8rem;padding:.55rem .85rem;border-radius:8px;margin-bottom:.9rem;font-weight:600}
+.gps-ok{background:#E8F5E9;color:var(--green);border:1px solid #A8D5B5}
+.gps-fail{background:#FFEAEA;color:var(--red);border:1px solid #FFC8C8}
+.gps-pending{background:var(--sky-light);color:var(--blue);border:1px solid #B8D4F8}
+.gps-na{background:var(--off);color:var(--gray-600);border:1px solid var(--gray-200)}
+.punch-grid{display:grid;grid-template-columns:1fr 1fr;gap:.65rem;margin-bottom:.65rem}
+.btn-punch{padding:18px 10px;border:none;border-radius:10px;font-size:.95rem;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:.3rem;line-height:1.2}
+.btn-punch .icon{font-size:1.5rem}
+.btn-punch:disabled{opacity:.4;cursor:not-allowed}
+.btn-in{background:var(--green);color:#fff}.btn-in:hover:not(:disabled){background:#1e7a5c}
+.btn-out{background:var(--red);color:#fff}.btn-out:hover:not(:disabled){background:#c5303c}
+.btn-pause{background:var(--orange);color:#fff}.btn-pause:hover:not(:disabled){background:#d9900e}
+.btn-resume{background:var(--sky);color:#fff}.btn-resume:hover:not(:disabled){background:#357abd}
+.btn-big{width:100%;padding:14px;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer;transition:all .2s;font-family:inherit;margin-top:.4rem}
+.btn-lookup{background:var(--sky);color:#fff}.btn-lookup:hover{background:var(--blue)}
+.btn-back{background:transparent;border:2px solid var(--gray-200);color:var(--gray-600);font-size:.9rem;padding:10px}.btn-back:hover{background:var(--off)}
+.pin-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:100;display:none;align-items:center;justify-content:center;padding:1rem}
+.pin-overlay.show{display:flex}
+.pin-box{background:#fff;border-radius:16px;padding:1.75rem;width:100%;max-width:340px;text-align:center}
+.pin-box h3{font-size:1rem;color:var(--blue);margin-bottom:.3rem;font-weight:700}
+.pin-sub{font-size:.82rem;color:var(--gray-400);margin-bottom:.85rem}
+.pin-action-badge{display:inline-block;padding:.25rem .85rem;border-radius:20px;font-size:.82rem;font-weight:700;margin-bottom:.9rem}
+.pin-warn{background:#FFF8E1;border:1px solid #FFE082;border-radius:7px;padding:.5rem .7rem;font-size:.8rem;color:#7B5800;font-weight:600;margin-bottom:.85rem;text-align:left}
+.pin-box input{width:100%;padding:13px;border:2px solid var(--gray-200);border-radius:10px;font-size:1.3rem;text-align:center;letter-spacing:.3em;outline:none;font-family:inherit;transition:border .2s;margin-bottom:.5rem}
+.pin-box input:focus{border-color:var(--sky)}
+.pin-err{color:var(--red);font-size:.82rem;min-height:1.1em;margin-bottom:.6rem}
+.pin-btns{display:flex;gap:.65rem}
+.pin-btns button{flex:1;padding:12px;border:none;border-radius:10px;font-weight:700;cursor:pointer;font-family:inherit;font-size:.95rem}
+.pin-cancel{background:var(--off);color:var(--gray-600);border:2px solid var(--gray-200)}.pin-cancel:hover{background:var(--gray-200)}
+.pin-confirm{background:var(--blue);color:#fff}.pin-confirm:hover{background:var(--sky)}
+.result-card{text-align:center;padding:1.5rem;background:var(--off);border-radius:10px;margin-bottom:1.25rem}
+.result-card .big-icon{font-size:3rem;margin-bottom:.5rem}
+.result-card h3{font-size:1.05rem;color:var(--blue);margin-bottom:.5rem}
+.result-card .detail{font-size:.88rem;color:var(--gray-600);line-height:1.75}
+.result-card .ot{color:var(--orange);font-weight:700}
+.warn-box{background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:.6rem .85rem;margin-top:.75rem;font-size:.82rem;color:#7B5800;font-weight:600;text-align:left}
+#liveClock{text-align:center;font-size:.8rem;color:rgba(255,255,255,.45);margin-top:.85rem}
 .screen{display:none}.screen.active{display:block}
 </style>
 </head>
@@ -62,195 +91,328 @@ body{font-family:'DM Sans',sans-serif;background:var(--blue);min-height:100vh;di
   <!-- Screen 1: Enter Employee ID -->
   <div class="card screen active" id="screenId">
     <h2>🔍 输入员工编号</h2>
-    <div id="idErr"></div>
+    <div id="idErr" class="msg msg-err"></div>
     <div class="field">
-      <label>员工编号 (如 EMP001)</label>
-      <input type="text" id="empIdInput" placeholder="例：EMEE-MEL-030126-000001" maxlength="40" autocomplete="off"
-        style="text-transform:uppercase;font-size:.95rem;letter-spacing:.05em" onkeydown="if(event.key==='Enter')lookupEmployee()">
+      <label>员工编号</label>
+      <input type="text" id="empIdInput" placeholder="例：EMEE-MEL-030126-000001" maxlength="40"
+        autocomplete="off" style="text-transform:uppercase;font-size:.9rem;letter-spacing:.04em"
+        onkeydown="if(event.key==='Enter')lookupEmployee()">
     </div>
-    <button class="btn-big btn-lookup" onclick="lookupEmployee()">查询状态</button>
-    <div id="clock"></div>
+    <button class="btn-big btn-lookup" id="lookupBtn" onclick="lookupEmployee()">查询状态 →</button>
   </div>
 
-  <!-- Screen 2: Enter PIN + Status -->
-  <div class="card screen" id="screenPin">
-    <h2 id="pinTitle">👋 欢迎，<span id="empNameDisplay"></span></h2>
-    <div id="pinErr"></div>
+  <!-- Screen 2: Punch buttons -->
+  <div class="card screen" id="screenPunch">
+    <h2>👋 欢迎，<span id="empNameDisplay"></span></h2>
 
-    <div class="status-card" id="statusCard">
-      <h3>今日工时状态</h3>
-      <div class="status-row">
-        <span>状态</span>
-        <span id="statusText"></span>
-      </div>
+    <div id="gpsBar" class="gps-bar gps-pending">
+      <span id="gpsIcon">📡</span><span id="gpsText">正在获取位置…</span>
+    </div>
+
+    <div id="geoBlockMsg" class="msg msg-err"></div>
+
+    <div class="status-card">
+      <h3>当前状态</h3>
+      <div class="status-row"><span>状态</span><span id="statusText"></span></div>
       <div class="status-row" id="clockInRow" style="display:none">
-        <span>上班打卡</span>
-        <span id="clockInDisplay"></span>
+        <span>上班打卡</span><span id="clockInDisplay"></span>
       </div>
-      <div class="status-row">
-        <span>今日工时</span>
-        <span id="todayHours"></span>
+      <div class="status-row" id="breakRow" style="display:none">
+        <span>暂停开始</span><span id="breakDisplay"></span>
       </div>
-      <div class="status-row">
-        <span>本周工时</span>
-        <span id="weekHours"></span>
-      </div>
+      <div class="status-row"><span>今日工时</span><span id="todayHours"></span></div>
+      <div class="status-row"><span>本周工时</span><span id="weekHours"></span></div>
     </div>
 
-    <div class="field">
-      <label>输入 PIN 确认打卡</label>
-      <input type="password" id="pinInput" placeholder="••••" maxlength="6" inputmode="numeric"
-        autocomplete="off" onkeydown="if(event.key==='Enter')doPunch()">
+    <div class="punch-grid">
+      <button class="btn-punch btn-in" id="btnIn" onclick="confirmPunch('in')">
+        <span class="icon">▶</span>上班打卡
+      </button>
+      <button class="btn-punch btn-out" id="btnOut" onclick="confirmPunch('out')">
+        <span class="icon">◼</span>下班打卡
+      </button>
+      <button class="btn-punch btn-pause" id="btnPause" onclick="confirmPunch('break_start')">
+        <span class="icon">⏸</span>暂停 Pause
+      </button>
+      <button class="btn-punch btn-resume" id="btnResume" onclick="confirmPunch('break_end')">
+        <span class="icon">▶▶</span>继续 Resume
+      </button>
     </div>
-    <button class="btn-big btn-in" id="punchBtn" onclick="doPunch()">上班打卡 ▶</button>
+
     <button class="btn-big btn-back" onclick="goBack()">← 返回</button>
   </div>
 
-  <!-- Screen 3: Punch Result -->
+  <!-- Screen 3: Result -->
   <div class="card screen" id="screenResult">
     <div class="result-card" id="resultCard"></div>
     <button class="btn-big btn-lookup" onclick="goHome()">完成 ✓</button>
   </div>
 </div>
 
+<!-- PIN modal -->
+<div class="pin-overlay" id="pinOverlay">
+  <div class="pin-box">
+    <h3 id="pinModalTitle">确认打卡</h3>
+    <div class="pin-sub" id="pinModalSub"></div>
+    <div id="pinActionBadge" class="pin-action-badge"></div>
+    <div id="pinWarnMsg" class="pin-warn" style="display:none"></div>
+    <input type="password" id="pinInput" placeholder="••••" maxlength="6" inputmode="numeric"
+      autocomplete="off" onkeydown="if(event.key==='Enter')submitPin()">
+    <div class="pin-err" id="pinErr"></div>
+    <div class="pin-btns">
+      <button class="pin-cancel" onclick="closePinModal()">取消</button>
+      <button class="pin-confirm" id="pinConfirmBtn" onclick="submitPin()">确认打卡</button>
+    </div>
+  </div>
+</div>
+
+<div id="liveClock"></div>
+
 <script>
 const API = '/api';
 let currentEmp = null;
-let isClockedIn = false;
+let currentState = { clocked_in: false, on_break: false };
+let pendingPunchType = null;
+let gps = { lat: null, lng: null, status: 'pending' };
+let geoBlocked = false;
 
 // Live clock
-function updateClock() {
-  const el = document.getElementById('clock');
-  if (el) el.textContent = new Date().toLocaleString('zh-CN', { hour12: false });
-}
-setInterval(updateClock, 1000);
-updateClock();
+(function tick(){
+  const el = document.getElementById('liveClock');
+  const _ltz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (el) el.textContent = new Date().toLocaleString('zh-CN', {hour12:false, weekday:'short', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', timeZone:_ltz, timeZoneName:'short'});
+  setTimeout(tick, 1000);
+})();
+
+function esc(s) { const d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+function fmt(iso) { if (!iso) return '—'; return new Date(iso).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', timeZone:localTz(), timeZoneName:'short'}); }
 
 function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen' + name).classList.add('active');
 }
 
-function showMsg(elId, msg, type) {
-  const el = document.getElementById(elId);
-  el.className = 'msg msg-' + type;
+function showMsg(id, msg, type) {
+  const el = document.getElementById(id);
+  el.className = 'msg msg-' + type + ' show';
   el.textContent = msg;
 }
-function clearMsg(elId) { const el = document.getElementById(elId); el.className=''; el.textContent=''; }
+function hideMsg(id) { const el = document.getElementById(id); el.className = 'msg'; el.textContent = ''; }
 
+// GPS
+function startGps() {
+  gps = { lat: null, lng: null, status: 'pending' };
+  setGpsBar('pending', '📡', '正在获取位置…');
+  if (!navigator.geolocation) { gps.status = 'unavailable'; setGpsBar('na', '🔇', '此设备不支持位置服务'); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => { gps.lat = pos.coords.latitude; gps.lng = pos.coords.longitude; gps.status = 'ok'; setGpsBar('ok', '📍', '位置已获取'); },
+    ()  => { gps.status = 'denied'; setGpsBar('na', '📵', '位置权限未开启（无需位置也可打卡，但距离远时会被拦截）'); },
+    { timeout: 10000, maximumAge: 60000 }
+  );
+}
+
+function setGpsBar(cls, icon, text) {
+  const map = { ok:'gps-ok', fail:'gps-fail', pending:'gps-pending', na:'gps-na' };
+  document.getElementById('gpsBar').className = 'gps-bar ' + (map[cls] || 'gps-na');
+  document.getElementById('gpsIcon').textContent = icon;
+  document.getElementById('gpsText').textContent = text;
+}
+
+// Lookup
 async function lookupEmployee() {
   const raw = document.getElementById('empIdInput').value.trim().toUpperCase();
-  if (!raw) { showMsg('idErr','请输入员工编号','err'); return; }
-  clearMsg('idErr');
+  if (!raw) { showMsg('idErr', '请输入员工编号', 'err'); return; }
+  hideMsg('idErr');
+  const btn = document.getElementById('lookupBtn');
+  btn.disabled = true; btn.textContent = '查询中…';
   try {
     const r = await fetch(`${API}/timeclock/status/${encodeURIComponent(raw)}`);
     const data = await r.json();
     if (!r.ok) { showMsg('idErr', data.error || '未找到员工', 'err'); return; }
     currentEmp = data;
-    isClockedIn = data.clocked_in;
-
-    // Fill status screen
-    document.getElementById('empNameDisplay').textContent = data.employee.name;
-    document.getElementById('statusText').innerHTML = isClockedIn
-      ? '<span class="clocked-in-dot"></span><strong style="color:var(--green)">上班中</strong>'
-      : '<span class="clocked-out-dot"></span>未打卡';
-
-    if (isClockedIn && data.clock_in_time) {
-      document.getElementById('clockInRow').style.display = 'flex';
-      document.getElementById('clockInDisplay').textContent = new Date(data.clock_in_time).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
-    } else {
-      document.getElementById('clockInRow').style.display = 'none';
-    }
-    document.getElementById('todayHours').textContent = (data.today_hours || 0).toFixed(2) + ' h';
-    document.getElementById('weekHours').textContent  = (data.week_hours  || 0).toFixed(2) + ' h';
-
-    const btn = document.getElementById('punchBtn');
-    if (isClockedIn) {
-      btn.textContent = '下班打卡 ◼';
-      btn.className = 'btn-big btn-out';
-    } else {
-      btn.textContent = '上班打卡 ▶';
-      btn.className = 'btn-big btn-in';
-    }
-    document.getElementById('pinInput').value = '';
-    clearMsg('pinErr');
-    showScreen('Pin');
-    setTimeout(() => document.getElementById('pinInput').focus(), 200);
+    currentState = { clocked_in: data.clocked_in, on_break: data.on_break };
+    geoBlocked = false;
+    buildPunchScreen(data);
+    showScreen('Punch');
+    startGps();
   } catch (e) {
     showMsg('idErr', '网络错误，请重试', 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = '查询状态 →';
   }
 }
 
-async function doPunch() {
+function buildPunchScreen(data) {
+  document.getElementById('empNameDisplay').textContent = data.employee.name;
+  hideMsg('geoBlockMsg');
+  document.querySelectorAll('.btn-punch').forEach(b => b.disabled = false);
+
+  // Status — 左: 绿(上班)/橙(暂停)  右: 红(未打卡)/紫(休息结束)  缺状态空着
+  let sHtml;
+  if (!data.clocked_in) sHtml = '<span class="dot-ph"></span><span class="dot-red"></span>未打卡';
+  else if (data.on_break) sHtml = '<span class="dot-pause"></span><span class="dot-ph"></span><strong style="color:var(--orange)">暂停中</strong>';
+  else sHtml = '<span class="dot-on"></span><span class="dot-ph"></span><strong style="color:var(--green)">上班中</strong>';
+  document.getElementById('statusText').innerHTML = sHtml;
+
+  if (data.clocked_in && data.clock_in_time) {
+    document.getElementById('clockInRow').style.display = 'flex';
+    document.getElementById('clockInDisplay').textContent = fmt(data.clock_in_time);
+  } else {
+    document.getElementById('clockInRow').style.display = 'none';
+  }
+
+  const oe = data.open_entry;
+  if (data.on_break && oe && oe.break_start) {
+    document.getElementById('breakRow').style.display = 'flex';
+    document.getElementById('breakDisplay').textContent = fmt(oe.break_start);
+  } else {
+    document.getElementById('breakRow').style.display = 'none';
+  }
+
+  document.getElementById('todayHours').textContent = (data.today_hours || 0).toFixed(2) + ' h';
+  document.getElementById('weekHours').textContent  = (data.week_hours  || 0).toFixed(2) + ' h';
+}
+
+// Build punch warning for modal
+function punchWarning(type) {
+  const { clocked_in, on_break } = currentState;
+  if (type === 'in' && clocked_in) return '您已有上班记录，请确认是否漏打了下班卡';
+  if (type === 'out' && !clocked_in) return '未找到上班记录，可能漏打了上班卡';
+  if (type === 'out' && on_break) return '您正在暂停中，打下班卡将自动结束暂停';
+  if (type === 'break_start' && !clocked_in) return '未找到上班记录，可能漏打了上班卡';
+  if (type === 'break_start' && on_break) return '您已在暂停中';
+  if (type === 'break_end' && !clocked_in) return '未找到上班记录';
+  if (type === 'break_end' && !on_break) return '您当前不在暂停中';
+  return null;
+}
+
+const PUNCH_LABELS = { in:'上班打卡', out:'下班打卡', break_start:'暂停 Pause', break_end:'继续 Resume' };
+const PUNCH_COLORS = { in:'var(--green)', out:'var(--red)', break_start:'var(--orange)', break_end:'var(--sky)' };
+const PUNCH_ICONS  = { in:'✅', out:'👋', break_start:'⏸', break_end:'▶▶' };
+
+function confirmPunch(type) {
+  if (geoBlocked) return;
+  pendingPunchType = type;
+  const label = PUNCH_LABELS[type];
+  const color = PUNCH_COLORS[type];
+  const warn  = punchWarning(type);
+
+  document.getElementById('pinModalTitle').textContent = '确认' + label;
+  document.getElementById('pinModalSub').textContent   = currentEmp.employee.name;
+
+  const badge = document.getElementById('pinActionBadge');
+  badge.textContent = label;
+  badge.style.background = color.replace(')', ',.15)').replace('var(', 'rgba(').replace('#', '');
+  // simpler approach:
+  badge.style.cssText = `background:${color}22;color:${color};display:inline-block;padding:.25rem .85rem;border-radius:20px;font-size:.82rem;font-weight:700;margin-bottom:.9rem`;
+
+  const warnEl = document.getElementById('pinWarnMsg');
+  if (warn) { warnEl.textContent = '⚠ ' + warn; warnEl.style.display = 'block'; }
+  else { warnEl.style.display = 'none'; }
+
+  document.getElementById('pinInput').value = '';
+  document.getElementById('pinErr').textContent = '';
+  const btn = document.getElementById('pinConfirmBtn');
+  btn.disabled = false; btn.textContent = '确认打卡';
+  document.getElementById('pinOverlay').classList.add('show');
+  setTimeout(() => document.getElementById('pinInput').focus(), 150);
+}
+
+function closePinModal() {
+  document.getElementById('pinOverlay').classList.remove('show');
+  pendingPunchType = null;
+}
+
+async function submitPin() {
   const pin = document.getElementById('pinInput').value.trim();
-  if (!pin) { showMsg('pinErr','请输入 PIN','err'); return; }
-  clearMsg('pinErr');
-  const btn = document.getElementById('punchBtn');
-  btn.disabled = true; btn.textContent = '处理中...';
+  if (!pin) { document.getElementById('pinErr').textContent = '请输入 PIN'; return; }
+  document.getElementById('pinErr').textContent = '';
+  const btn = document.getElementById('pinConfirmBtn');
+  btn.disabled = true; btn.textContent = '处理中…';
+
   try {
+    const body = {
+      employee_id: currentEmp.employee.employee_id,
+      pin,
+      punch_type: pendingPunchType
+    };
+    if (gps.status === 'ok') { body.latitude = gps.lat; body.longitude = gps.lng; }
+
     const res = await fetch(`${API}/timeclock/punch`, {
       method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({ employee_id: currentEmp.employee.employee_id, pin })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
     });
     const r = await res.json();
+
     if (!res.ok) {
-      showMsg('pinErr', r.error || 'PIN 错误', 'err');
-      btn.disabled = false;
-      btn.textContent = isClockedIn ? '下班打卡 ◼' : '上班打卡 ▶';
+      if (r.geo_blocked) {
+        closePinModal();
+        showMsg('geoBlockMsg', r.error, 'err');
+        geoBlocked = true;
+        document.querySelectorAll('.btn-punch').forEach(b => b.disabled = true);
+        return;
+      }
+      document.getElementById('pinErr').textContent = r.error || '操作失败';
+      btn.disabled = false; btn.textContent = '确认打卡';
       return;
     }
-    // Show result
-    const rc = document.getElementById('resultCard');
-    if (r.action === 'in') {
-      rc.innerHTML = `
-        <div class="icon">✅</div>
-        <h3>上班打卡成功！</h3>
-        <div class="detail">
-          员工：<strong>${currentEmp.employee.name}</strong><br>
-          打卡时间：<strong>${new Date(r.clock_in).toLocaleString('zh-CN', {hour12:false})}</strong><br>
-          祝工作顺利！
-        </div>`;
-    } else {
-      const totalH = (r.total_hours || 0).toFixed(2);
-      const regH   = (r.regular_hours || 0).toFixed(2);
-      const otH    = (r.overtime_hours || 0).toFixed(2);
-      const otTxt  = parseFloat(otH) > 0 ? `<br>加班工时：<span class="ot">${otH}h ⚡</span>` : '';
-      rc.innerHTML = `
-        <div class="icon">👋</div>
-        <h3>下班打卡成功！辛苦了！</h3>
-        <div class="detail">
-          员工：<strong>${currentEmp.employee.name}</strong><br>
-          上班：${new Date(r.clock_in).toLocaleString('zh-CN', {hour12:false})}<br>
-          下班：${new Date(r.clock_out).toLocaleString('zh-CN', {hour12:false})}<br>
-          <br>
-          正常工时：<strong>${regH}h</strong>${otTxt}<br>
-          本班合计：<strong>${totalH}h</strong>
-        </div>`;
-    }
-    showScreen('Result');
+
+    const ptype = pendingPunchType;
+    closePinModal();
+    renderResult(r, ptype);
   } catch (e) {
-    showMsg('pinErr', '网络错误，请重试', 'err');
-    btn.disabled = false;
+    document.getElementById('pinErr').textContent = '网络错误，请重试';
+    btn.disabled = false; btn.textContent = '确认打卡';
   }
+}
+
+function renderResult(r, ptype) {
+  const icon  = PUNCH_ICONS[ptype]  || '✅';
+  const label = PUNCH_LABELS[ptype] || ptype;
+  let detail  = '';
+
+  if (ptype === 'in') {
+    if (r.already_open) {
+      detail = `已有上班记录（${fmt(r.clock_in)}），无需重复打卡`;
+    } else {
+      detail = `打卡时间：<strong>${fmt(r.clock_in)}</strong><br>祝工作顺利！`;
+    }
+  } else if (ptype === 'out') {
+    const total = (r.total_hours || 0).toFixed(2);
+    const reg   = (r.regular_hours || 0).toFixed(2);
+    const ot    = (r.overtime_hours || 0).toFixed(2);
+    const otTxt = parseFloat(ot) > 0 ? `<br>加班工时：<span class="ot">${ot}h ⚡</span>` : '';
+    detail = r.clock_in
+      ? `上班：${fmt(r.clock_in)}<br>下班：${fmt(r.clock_out)}<br>正常工时：<strong>${reg}h</strong>${otTxt}<br>本班合计：<strong>${total}h</strong>`
+      : `下班打卡时间：<strong>${fmt(r.clock_out)}</strong>`;
+  } else if (ptype === 'break_start') {
+    detail = `暂停记录时间：<strong>${new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</strong>`;
+  } else if (ptype === 'break_end') {
+    const bm = r.break_minutes || 0;
+    detail = `<span class="dot-on"></span><span class="dot-purple"></span> 继续上班，本次暂停：<strong>${bm} 分钟</strong>`;
+  }
+
+  const warnHtml = r.warning ? `<div class="warn-box">⚠ ${esc(r.warning)}</div>` : '';
+  document.getElementById('resultCard').innerHTML = `
+    <div class="big-icon">${icon}</div>
+    <h3>${label}成功</h3>
+    <div class="detail">${detail}</div>
+    ${warnHtml}`;
+  showScreen('Result');
 }
 
 function goBack() {
-  currentEmp = null;
+  currentEmp = null; geoBlocked = false;
+  gps = { lat: null, lng: null, status: 'pending' };
   document.getElementById('empIdInput').value = '';
-  clearMsg('idErr');
+  hideMsg('idErr');
   showScreen('Id');
-  setTimeout(() => document.getElementById('empIdInput').focus(), 200);
+  setTimeout(() => document.getElementById('empIdInput').focus(), 150);
 }
-
-function goHome() {
-  goBack();
-}
-
-// Auto-focus on load
-window.onload = () => {
-  document.getElementById('empIdInput').focus();
-};
+function goHome() { goBack(); }
+window.onload = () => document.getElementById('empIdInput').focus();
 </script>
 </body>
 </html>

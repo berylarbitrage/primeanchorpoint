@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Staff Portal — Prime Anchor Point</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#059669;--green-d:#047857;--green-l:#d1fae5;--green-mid:#6ee7b7;
+  --teal:#0d9488;--teal-l:#ccfbf1;
+  --red:#dc2626;--orange:#f59e0b;--blue:#2563eb;--blue-l:#dbeafe;
+  --gray-50:#f9fafb;--gray-100:#f3f4f6;--gray-200:#e5e7eb;--gray-300:#d1d5db;
+  --gray-400:#9ca3af;--gray-500:#6b7280;--gray-600:#4b5563;--gray-700:#374151;--gray-800:#1f2937;
+  --radius:10px;--shadow:0 2px 12px rgba(0,0,0,.07);
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0fdf4;min-height:100vh;color:var(--gray-800)}
+
+/* ── Login ── */
+#loginWrap{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1.5rem;background:linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%)}
+.login-card{background:#fff;border-radius:20px;box-shadow:0 8px 40px rgba(5,150,105,.15);width:100%;max-width:400px;padding:2.5rem 2rem}
+.login-logo{text-align:center;margin-bottom:.5rem}
+.login-logo img{width:56px;height:auto}
+.login-brand{text-align:center;font-size:1.3rem;font-weight:800;color:var(--green);margin-bottom:.2rem}
+.login-sub{text-align:center;color:var(--gray-400);font-size:.85rem;margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:1px solid var(--gray-200)}
+.login-label{display:block;font-size:.82rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem}
+.login-input{width:100%;padding:10px 14px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:.93rem;outline:none;transition:.2s;margin-bottom:1rem}
+.login-input:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(5,150,105,.1)}
+.login-err{color:var(--red);font-size:.82rem;margin-bottom:.75rem;display:none}
+.btn-login{width:100%;padding:12px;background:var(--green);color:#fff;border:none;border-radius:10px;font-size:1rem;font-weight:700;cursor:pointer;transition:.2s}
+.btn-login:hover{background:var(--green-d)}
+.btn-login:disabled{background:var(--gray-200);color:var(--gray-400);cursor:not-allowed}
+.pass-row{position:relative;margin-bottom:1rem}
+.pass-row .login-input{margin-bottom:0;padding-right:44px}
+.pass-row .eye-btn{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:1rem;padding:4px}
+.pass-row .eye-btn:hover{color:var(--gray-600)}
+
+/* ── App shell ── */
+#appWrap{display:none;min-height:100vh}
+.topbar{background:var(--green);color:#fff;padding:.85rem 1.5rem;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;box-shadow:0 2px 8px rgba(5,150,105,.3)}
+.topbar-brand{font-weight:800;font-size:1.1rem;display:flex;align-items:center;gap:.5rem}
+.topbar-brand img{width:28px;filter:brightness(0) invert(1)}
+.topbar-right{display:flex;align-items:center;gap:.75rem;font-size:.85rem}
+.topbar-user{opacity:.85}
+.btn-logout{padding:5px 14px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;color:#fff;transition:.2s}
+.btn-logout:hover{background:rgba(255,255,255,.25)}
+
+/* ── Sidebar + main layout ── */
+.layout{display:flex;min-height:calc(100vh - 57px)}
+.sidebar{width:210px;background:#fff;border-right:1px solid var(--gray-200);padding:1rem 0;flex-shrink:0;position:sticky;top:57px;height:calc(100vh - 57px);overflow-y:auto}
+.nav-section{margin-bottom:.25rem}
+.nav-section-label{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400);padding:.5rem 1.25rem .25rem;margin-top:.5rem}
+.nav-item{display:flex;align-items:center;gap:.55rem;padding:.6rem 1.25rem;font-size:.84rem;font-weight:500;color:var(--gray-600);cursor:pointer;border-radius:0;transition:.15s;border-left:3px solid transparent}
+.nav-item:hover{background:var(--green-l);color:var(--green-d)}
+.nav-item.active{background:var(--green-l);color:var(--green);font-weight:700;border-left-color:var(--green)}
+.main{flex:1;padding:1.75rem;min-width:0;background:#f0fdf4}
+
+/* ── Cards ── */
+.card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:1.25rem;margin-bottom:1rem}
+.card-title{font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:1rem}
+.page-title{font-size:1.25rem;font-weight:800;color:var(--gray-800);margin-bottom:1.25rem}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;gap:.75rem;flex-wrap:wrap}
+
+/* ── Buttons ── */
+.btn{padding:7px 16px;border:none;border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer;transition:.15s}
+.btn-green{background:var(--green);color:#fff}.btn-green:hover{background:var(--green-d)}
+.btn-teal{background:var(--teal);color:#fff}.btn-teal:hover{background:#0f766e}
+.btn-red{background:var(--red);color:#fff}.btn-red:hover{background:#b91c1c}
+.btn-outline{background:#fff;border:1.5px solid var(--gray-200);color:var(--gray-600)}.btn-outline:hover{border-color:var(--green);color:var(--green)}
+.btn-sm{padding:4px 10px;font-size:.75rem}
+.btn-accent{background:var(--orange);color:#fff}.btn-accent:hover{background:#d97706}
+.btn-blue{background:var(--blue);color:#fff}.btn-blue:hover{background:#1d4ed8}
+
+/* ── Stats row ── */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.25rem}
+.stat-card{background:#fff;border-radius:var(--radius);box-shadow:var(--shadow);padding:1rem 1.25rem;border-left:4px solid var(--green)}
+.stat-label{font-size:.72rem;font-weight:600;text-transform:uppercase;color:var(--gray-400);margin-bottom:.25rem}
+.stat-value{font-size:1.75rem;font-weight:800;color:var(--green)}
+
+/* ── Tables ── */
+.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--gray-200)}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+thead tr{background:var(--gray-50)}
+th{padding:.6rem .85rem;text-align:left;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--gray-500);white-space:nowrap;border-bottom:1px solid var(--gray-200)}
+td{padding:.65rem .85rem;border-top:1px solid var(--gray-100);vertical-align:middle}
+tr:hover td{background:#f0fdf4}
+.empty{text-align:center;padding:3rem;color:var(--gray-400);font-size:.88rem}
+
+/* ── Badges ── */
+.badge{display:inline-block;border-radius:99px;padding:.15rem .65rem;font-size:.72rem;font-weight:700}
+.badge-green{background:var(--green-l);color:var(--green-d)}
+.badge-red{background:#fee2e2;color:#991b1b}
+.badge-yellow{background:#fef9c3;color:#92400e}
+.badge-blue{background:var(--blue-l);color:#1d4ed8}
+.badge-gray{background:var(--gray-100);color:var(--gray-500)}
+.badge-active{background:#d1fae5;color:#065f46}
+.badge-inactive{background:#f3f4f6;color:#6b7280}
+.badge-terminated{background:#fee2e2;color:#991b1b}
+.badge-pending{background:#fef9c3;color:#92400e}
+.badge-confirmed{background:#d1fae5;color:#065f46}
+.badge-disputed{background:#fee2e2;color:#991b1b}
+
+/* ── Filter bar ── */
+.filter-bar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-bottom:1rem}
+.filter-bar input,.filter-bar select{padding:7px 10px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:.85rem;outline:none;background:#fff}
+.filter-bar input:focus,.filter-bar select:focus{border-color:var(--green)}
+
+/* ── Tab pills (inner tabs) ── */
+.tab-pills{display:flex;gap:.35rem;flex-wrap:wrap;margin-bottom:1.25rem}
+.tab-pill{padding:6px 16px;border-radius:99px;font-size:.82rem;font-weight:600;cursor:pointer;border:1.5px solid var(--gray-200);background:#fff;color:var(--gray-600);transition:.15s}
+.tab-pill.active{background:var(--green);color:#fff;border-color:var(--green)}
+.tab-pane{display:none}.tab-pane.active{display:block}
+
+/* ── Employee card ── */
+.emp-name{font-weight:700;color:var(--gray-800)}
+.emp-contact{font-size:.75rem;color:var(--gray-400)}
+.emp-job-tag{display:inline-block;background:var(--green-l);color:var(--green-d);border-radius:4px;padding:1px 6px;font-size:.72rem;font-weight:600;margin:.1rem}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#1f2937;color:#fff;padding:.7rem 1.2rem;border-radius:10px;font-size:.88rem;opacity:0;transition:.3s;pointer-events:none;z-index:9999}
+#toast.show{opacity:1}
+
+/* ── Modal overlay ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000;display:none;align-items:center;justify-content:center;padding:1rem}
+.modal-overlay.show{display:flex}
+.modal-box{background:#fff;border-radius:16px;padding:1.75rem;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;position:relative}
+.modal-title{font-size:1rem;font-weight:800;color:var(--gray-800);margin-bottom:1.25rem}
+.modal-close{position:absolute;top:.75rem;right:1rem;background:none;border:none;font-size:1.3rem;cursor:pointer;color:var(--gray-400)}
+.modal-close:hover{color:var(--gray-700)}
+.form-row{margin-bottom:.85rem}
+.form-label{display:block;font-size:.8rem;font-weight:600;color:var(--gray-600);margin-bottom:.3rem}
+.form-input{width:100%;padding:8px 12px;border:1.5px solid var(--gray-200);border-radius:8px;font-size:.9rem;outline:none}
+.form-input:focus{border-color:var(--green)}
+.form-actions{display:flex;justify-content:flex-end;gap:.6rem;margin-top:1.25rem}
+
+/* ── Responsive ── */
+@media(max-width:768px){
+  .sidebar{display:none}
+  .stats-row{grid-template-columns:repeat(2,1fr)}
+  .main{padding:1rem}
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginWrap">
+  <div class="login-card">
+    <div class="login-logo"><img src="logo.svg" alt="logo" onerror="this.style.display='none'"></div>
+    <div class="login-brand">Prime Anchor Point</div>
+    <div class="login-sub">Staff 员工后台</div>
+    <div class="login-err" id="loginErr"></div>
+    <label class="login-label">用户名 Username</label>
+    <input class="login-input" id="loginUser" type="text" placeholder="staff username" autocomplete="username" onkeydown="if(event.key==='Enter')doLogin()">
+    <label class="login-label">密码 Password</label>
+    <div class="pass-row">
+      <input class="login-input" id="loginPass" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      <button class="eye-btn" onclick="togglePass()" title="显示/隐藏密码">👁</button>
+    </div>
+    <button class="btn-login" id="loginBtn" onclick="doLogin()">登录 Login</button>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appWrap">
+  <div class="topbar">
+    <div class="topbar-brand">
+      <img src="logo.svg" alt="">
+      Staff Portal
+    </div>
+    <div class="topbar-right">
+      <span class="topbar-user" id="topbarUser"></span>
+      <button class="btn-logout" onclick="doLogout()">退出</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="nav-section">
+        <div class="nav-section-label">概览</div>
+        <div class="nav-item active" onclick="showPage('dashboard')" id="nav-dashboard">🏠 仪表盘</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">员工管理</div>
+        <div class="nav-item" onclick="showPage('employees')" id="nav-employees">👥 员工列表</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">工时管理</div>
+        <div class="nav-item" onclick="showPage('ts-verify')" id="nav-ts-verify">📋 工时核对</div>
+        <div class="nav-item" onclick="showPage('ts-payment')" id="nav-ts-payment">💰 待付款</div>
+        <div class="nav-item" onclick="showPage('ts-dividend')" id="nav-ts-dividend">🎯 待分红</div>
+        <div class="nav-item" onclick="showPage('ts-history')" id="nav-ts-history">📚 工时历史</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">问卷</div>
+        <div class="nav-item" onclick="showPage('worker-inquiries')" id="nav-worker-inquiries">👤 员工问卷</div>
+        <div class="nav-item" onclick="showPage('client-inquiries')" id="nav-client-inquiries">🏢 客户问卷</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-section-label">职位</div>
+        <div class="nav-item" onclick="showPage('assignments')" id="nav-assignments">📌 派工管理</div>
+      </div>
+    </div>
+
+    <!-- Main content -->
+    <div class="main" id="mainContent">
+
+      <!-- Dashboard -->
+      <div id="page-dashboard">
+        <div class="page-title">仪表盘</div>
+        <div class="stats-row" id="dashStats">
+          <div class="stat-card"><div class="stat-label">在职员工</div><div class="stat-value" id="ds-active">—</div></div>
+          <div class="stat-card" style="border-left-color:var(--orange)"><div class="stat-label">待审核工时</div><div class="stat-value" style="color:var(--orange)" id="ds-verify">—</div></div>
+          <div class="stat-card" style="border-left-color:var(--blue)"><div class="stat-label">待付款</div><div class="stat-value" style="color:var(--blue)" id="ds-payment">—</div></div>
+          <div class="stat-card" style="border-left-color:var(--teal)"><div class="stat-label">待分红</div><div class="stat-value" style="color:var(--teal)" id="ds-dividend">—</div></div>
+        </div>
+        <div class="card">
+          <div class="card-title">快速导航</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.75rem">
+            <button class="btn btn-outline" style="padding:.85rem;font-size:.88rem" onclick="showPage('employees')">👥 员工列表</button>
+            <button class="btn btn-outline" style="padding:.85rem;font-size:.88rem" onclick="showPage('ts-verify')">📋 工时核对</button>
+            <button class="btn btn-outline" style="padding:.85rem;font-size:.88rem" onclick="showPage('ts-payment')">💰 待付款</button>
+            <button class="btn btn-outline" style="padding:.85rem;font-size:.88rem" onclick="showPage('ts-dividend')">🎯 待分红</button>
+            <button class="btn btn-outline" style="padding:.85rem;font-size:.88rem" onclick="showPage('worker-inquiries')">👤 员工问卷</button>
+            <button class="btn btn-outline" style="padding:.85rem;font-size:.88rem" onclick="showPage('assignments')">📌 派工</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Employees -->
+      <div id="page-employees" style="display:none">
+        <div class="page-header">
+          <div class="page-title">员工列表</div>
+          <button class="btn btn-outline" onclick="loadEmployees()">刷新</button>
+        </div>
+        <div class="filter-bar">
+          <input id="empSearch" placeholder="搜索姓名/ID…" oninput="filterEmployees()" style="width:200px">
+          <select id="empStatus" onchange="filterEmployees()">
+            <option value="">全部状态</option>
+            <option value="active">在职</option>
+            <option value="inactive">未激活</option>
+            <option value="terminated">离职</option>
+          </select>
+          <select id="empCompany" onchange="filterEmployees()"><option value="">全部公司</option></select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>姓名</th><th>职位 / 公司</th><th>薪资</th><th>状态</th><th>入职日期</th><th>操作</th></tr></thead>
+            <tbody id="empTable"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TS Verify -->
+      <div id="page-ts-verify" style="display:none">
+        <div class="page-header">
+          <div class="page-title">工时核对</div>
+          <button class="btn btn-outline" onclick="loadTsVerify()">刷新</button>
+        </div>
+        <!-- 待审核工时：员工已确认/异议 -->
+        <div style="font-size:.82rem;color:var(--gray-400);margin-bottom:.5rem">员工已确认或提出异议的工时单，核对后点击「上报客户」。</div>
+        <div class="table-wrap" style="margin-bottom:1.5rem">
+          <table>
+            <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>小时</th><th>员工状态</th><th>员工备注</th><th>核对备注</th><th>操作</th></tr></thead>
+            <tbody id="tsVerifyTable"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+        <!-- 待员工确认 -->
+        <div class="page-title" style="font-size:.95rem;margin-bottom:.4rem">待员工确认</div>
+        <div style="font-size:.82rem;color:var(--gray-400);margin-bottom:.5rem">尚未收到员工确认/异议的工时单。</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>小时</th><th>状态</th></tr></thead>
+            <tbody id="tsPendingConfirmTable"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TS Payment -->
+      <div id="page-ts-payment" style="display:none">
+        <div class="page-header">
+          <div class="page-title">待付款</div>
+          <button class="btn btn-outline" onclick="loadTsPayment()">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>小时</th><th>上报时间</th><th>客户付款</th><th>劳务付款</th></tr></thead>
+            <tbody id="tsPaymentTable"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TS Dividend -->
+      <div id="page-ts-dividend" style="display:none">
+        <div class="page-header">
+          <div class="page-title">待分红</div>
+          <button class="btn btn-outline" onclick="loadTsDividend()">刷新</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>小时</th><th>无异议</th><th>已分红</th><th>操作</th></tr></thead>
+            <tbody id="tsDividendTable"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- TS History -->
+      <div id="page-ts-history" style="display:none">
+        <div class="page-header">
+          <div class="page-title">工时历史</div>
+          <button class="btn btn-outline" onclick="loadTsHistory()">刷新</button>
+        </div>
+        <div class="filter-bar">
+          <input id="histSearch" type="text" placeholder="搜索姓名…" oninput="filterTsHistory()" style="width:180px">
+          <input id="histFrom" type="date" onchange="filterTsHistory()">
+          <span style="color:var(--gray-400);font-size:.82rem">至</span>
+          <input id="histTo" type="date" onchange="filterTsHistory()">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>小时</th><th>客户付款</th><th>劳务付款</th><th>备注</th></tr></thead>
+            <tbody id="tsHistoryTable"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Worker Inquiries -->
+      <div id="page-worker-inquiries" style="display:none">
+        <div class="page-header">
+          <div class="page-title">员工问卷</div>
+          <button class="btn btn-outline" onclick="loadWorkerInquiries()">刷新</button>
+        </div>
+        <div class="filter-bar">
+          <input id="wiqSearch" placeholder="搜索姓名/邮箱…" oninput="filterWorkerInquiries()" style="width:220px">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>姓名</th><th>联系方式</th><th>职位意向</th><th>状态</th><th>提交时间</th></tr></thead>
+            <tbody id="workerInquiryTable"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Client Inquiries -->
+      <div id="page-client-inquiries" style="display:none">
+        <div class="page-header">
+          <div class="page-title">客户问卷</div>
+          <button class="btn btn-outline" onclick="loadClientInquiries()">刷新</button>
+        </div>
+        <div class="filter-bar">
+          <input id="ciqSearch" placeholder="搜索公司/联系人…" oninput="filterClientInquiries()" style="width:220px">
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>公司</th><th>联系人</th><th>联系方式</th><th>类型</th><th>提交时间</th></tr></thead>
+            <tbody id="clientInquiryTable"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Assignments -->
+      <div id="page-assignments" style="display:none">
+        <div class="page-header">
+          <div class="page-title">派工管理</div>
+          <button class="btn btn-outline" onclick="loadAssignments()">刷新</button>
+        </div>
+        <div class="filter-bar">
+          <input id="asgnSearch" placeholder="搜索员工/公司…" oninput="filterAssignments()" style="width:200px">
+          <select id="asgnStatus" onchange="filterAssignments()">
+            <option value="">全部状态</option>
+            <option value="assigned">已分配</option>
+            <option value="working">工作中</option>
+            <option value="completed">已完成</option>
+            <option value="terminated">已终止</option>
+          </select>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>员工</th><th>职位</th><th>公司</th><th>薪资</th><th>开始日期</th><th>状态</th></tr></thead>
+            <tbody id="assignmentTable"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /layout -->
+</div><!-- /appWrap -->
+
+<!-- Payment modal (add payment to employee) -->
+<div class="modal-overlay" id="payModal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closePayModal()">×</button>
+    <div class="modal-title">添加打款记录</div>
+    <div id="payModalName" style="font-weight:700;color:var(--green);margin-bottom:1rem"></div>
+    <input type="hidden" id="payEmpId">
+    <div class="form-row"><label class="form-label">日期</label><input class="form-input" id="payDate" type="date"></div>
+    <div class="form-row"><label class="form-label">金额 ($)</label><input class="form-input" id="payAmount" type="number" step="0.01" min="0" placeholder="0.00"></div>
+    <div class="form-row"><label class="form-label">付款方式</label>
+      <select class="form-input" id="payMethod">
+        <option value="direct_deposit">直接存款</option>
+        <option value="check">支票</option>
+        <option value="zelle">Zelle</option>
+        <option value="cash">现金</option>
+        <option value="other">其他</option>
+      </select>
+    </div>
+    <div class="form-row"><label class="form-label">周期开始</label><input class="form-input" id="payPeriodStart" type="date"></div>
+    <div class="form-row"><label class="form-label">周期结束</label><input class="form-input" id="payPeriodEnd" type="date"></div>
+    <div class="form-row"><label class="form-label">备注</label><input class="form-input" id="payNotes" placeholder="可选"></div>
+    <div class="form-actions">
+      <button class="btn btn-outline" onclick="closePayModal()">取消</button>
+      <button class="btn btn-green" onclick="submitPayment()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const API = '/api';
+let TOKEN = '';
+let USER_NAME = '';
+let _currentUserId = 0;
+let _allEmployees = [];
+let _allTsHistory = [];
+let _allWorkerInquiries = [];
+let _allClientInquiries = [];
+let _allAssignments = [];
+
+// ── Utilities ──────────────────────────────────────────────────
+function esc(s){ const d=document.createElement('div'); d.textContent=String(s??''); return d.innerHTML; }
+
+function showToast(msg, dur=3000){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), dur);
+}
+
+function fmtDt(s){ if(!s) return '—'; return new Date(s).toLocaleDateString('zh-CN'); }
+
+function fmtPeriod(s,e){
+  if(!s) return '—';
+  const fmt=d=>d?d.slice(0,10):'?';
+  return e ? fmt(s)+' ~ '+fmt(e) : fmt(s);
+}
+
+async function api(path, opts={}){
+  const headers = { 'Content-Type':'application/json', 'Authorization':`Bearer ${TOKEN}` };
+  const r = await fetch(API+path, { headers, ...opts });
+  if (!r.ok) { const e=await r.json().catch(()=>({})); throw new Error(e.error||e.message||r.status); }
+  return r.json();
+}
+
+// ── Auth ───────────────────────────────────────────────────────
+function togglePass(){
+  const inp=document.getElementById('loginPass');
+  const btn=inp.nextElementSibling;
+  inp.type = inp.type==='password' ? 'text' : 'password';
+  btn.textContent = inp.type==='password' ? '👁' : '🙈';
+}
+
+async function doLogin(){
+  const user=document.getElementById('loginUser').value.trim();
+  const pass=document.getElementById('loginPass').value;
+  const errEl=document.getElementById('loginErr');
+  errEl.style.display='none';
+  if(!user||!pass){ errEl.textContent='请输入用户名和密码'; errEl.style.display='block'; return; }
+  const btn=document.getElementById('loginBtn');
+  btn.disabled=true; btn.textContent='登录中…';
+  try {
+    const r = await fetch(API+'/admin/login',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({username:user,password:pass})
+    });
+    const data = await r.json();
+    if(data.success){
+      const role = data.role||'staff';
+      if(role !== 'staff'){
+        errEl.textContent='此页面仅限 Staff 员工账户登录'; errEl.style.display='block';
+        btn.disabled=false; btn.textContent='登录 Login'; return;
+      }
+      TOKEN=data.token;
+      USER_NAME=data.username||'';
+      _currentUserId=data.user_id||0;
+      document.cookie=`pa_token_staff=${TOKEN};path=/staff;max-age=86400;SameSite=Strict`;
+      // Also set shared cookie for API compatibility
+      document.cookie=`pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
+      finishLogin();
+    } else if(data.needs_activation){
+      errEl.textContent='账户需要激活，请联系管理员重置密码'; errEl.style.display='block';
+    } else {
+      errEl.textContent=data.message||data.error||'用户名或密码错误'; errEl.style.display='block';
+    }
+  } catch(e){
+    errEl.textContent='网络错误，请重试'; errEl.style.display='block';
+  } finally {
+    btn.disabled=false; btn.textContent='登录 Login';
+  }
+}
+
+function finishLogin(){
+  document.getElementById('loginWrap').style.display='none';
+  document.getElementById('appWrap').style.display='block';
+  document.getElementById('topbarUser').textContent=USER_NAME;
+  showPage('dashboard');
+  loadDashboard();
+}
+
+function doLogout(){
+  TOKEN=''; USER_NAME='';
+  document.cookie='pa_token=;path=/;max-age=0';
+  document.cookie='pa_token_staff=;path=/staff;max-age=0';
+  document.getElementById('appWrap').style.display='none';
+  document.getElementById('loginWrap').style.display='flex';
+  document.getElementById('loginUser').value='';
+  document.getElementById('loginPass').value='';
+}
+
+// ── Navigation ─────────────────────────────────────────────────
+let _currentPage = 'dashboard';
+const PAGE_LOADERS = {
+  'employees': loadEmployees,
+  'ts-verify': loadTsVerify,
+  'ts-payment': loadTsPayment,
+  'ts-dividend': loadTsDividend,
+  'ts-history': loadTsHistory,
+  'worker-inquiries': loadWorkerInquiries,
+  'client-inquiries': loadClientInquiries,
+  'assignments': loadAssignments,
+};
+
+function showPage(name){
+  document.getElementById('page-'+_currentPage).style.display='none';
+  document.getElementById('nav-'+_currentPage)?.classList.remove('active');
+  _currentPage=name;
+  document.getElementById('page-'+name).style.display='block';
+  document.getElementById('nav-'+name)?.classList.add('active');
+  if(PAGE_LOADERS[name]) PAGE_LOADERS[name]();
+}
+
+// ── Dashboard ──────────────────────────────────────────────────
+async function loadDashboard(){
+  try {
+    const [emps, verify, payment, dividend] = await Promise.all([
+      api('/admin/employees').catch(()=>[]),
+      api('/admin/timesheet-sheets?stage=verify').catch(()=>[]),
+      api('/admin/timesheet-sheets?stage=payment').catch(()=>[]),
+      api('/admin/timesheet-sheets?stage=dividend').catch(()=>[]),
+    ]);
+    document.getElementById('ds-active').textContent = emps.filter(e=>e.status==='active').length;
+    document.getElementById('ds-verify').textContent = verify.length;
+    document.getElementById('ds-payment').textContent = payment.length;
+    document.getElementById('ds-dividend').textContent = dividend.length;
+  } catch(e){}
+}
+
+// ── Employees ──────────────────────────────────────────────────
+const EMP_STATUS_LABEL = { active:'在职', inactive:'未激活', terminated:'离职', pending:'待处理' };
+
+async function loadEmployees(){
+  document.getElementById('empTable').innerHTML='<tr><td colspan="7" class="empty">加载中…</td></tr>';
+  try {
+    _allEmployees = await api('/admin/employees');
+    // Populate company filter
+    const companies = [...new Set(_allEmployees.flatMap(e=>(e.current_jobs||[]).map(j=>j.company_name).filter(Boolean)))].sort();
+    const sel=document.getElementById('empCompany');
+    sel.innerHTML='<option value="">全部公司</option>'+companies.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    renderEmployees(_allEmployees);
+  } catch(e){
+    document.getElementById('empTable').innerHTML=`<tr><td colspan="7" class="empty">加载失败: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function filterEmployees(){
+  const kw=document.getElementById('empSearch').value.toLowerCase();
+  const st=document.getElementById('empStatus').value;
+  const co=document.getElementById('empCompany').value;
+  let f=_allEmployees;
+  if(kw) f=f.filter(e=>`${e.first_name} ${e.last_name} ${e.employee_id||''}`.toLowerCase().includes(kw));
+  if(st) f=f.filter(e=>e.status===st);
+  if(co) f=f.filter(e=>(e.current_jobs||[]).some(j=>j.company_name===co));
+  renderEmployees(f);
+}
+
+function renderEmployees(list){
+  const tbody=document.getElementById('empTable');
+  if(!list.length){ tbody.innerHTML='<tr><td colspan="7" class="empty">暂无员工记录</td></tr>'; return; }
+  tbody.innerHTML=list.map(e=>{
+    const jobs=e.current_jobs||[];
+    const jobNames=jobs.map(j=>j.job_title).filter(Boolean);
+    const companies=[...new Set(jobs.map(j=>j.company_name).filter(Boolean))];
+    const pay=e.pay_rate?'$'+Number(e.pay_rate).toFixed(0)+'/'+(e.pay_type==='hourly'?'hr':'yr'):'—';
+    return `<tr>
+      <td style="font-family:monospace;font-size:.78rem;color:var(--green-d);font-weight:700">${esc(e.employee_id||'—')}</td>
+      <td>
+        <div class="emp-name">${esc(e.first_name)} ${esc(e.last_name)}</div>
+        <div class="emp-contact">${[e.email,e.phone].filter(Boolean).map(v=>esc(v)).join(' · ')||'—'}</div>
+      </td>
+      <td>
+        <div>${jobNames.map(n=>`<span class="emp-job-tag">${esc(n)}</span>`).join('')||'<span style="color:var(--gray-300);font-size:.78rem">未分配</span>'}</div>
+        ${companies.length?`<div style="font-size:.75rem;color:var(--gray-400)">${companies.map(c=>esc(c)).join(' · ')}</div>`:''}
+      </td>
+      <td style="white-space:nowrap">${pay}</td>
+      <td><span class="badge badge-${e.status}">${EMP_STATUS_LABEL[e.status]||e.status}</span></td>
+      <td style="font-size:.8rem;color:var(--gray-500)">${e.hire_date||'—'}</td>
+      <td><button class="btn btn-sm btn-green" onclick='openPayModal(${e.id},"${esc(e.first_name)} ${esc(e.last_name)}")'>+ 打款</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Timesheet: Verify ──────────────────────────────────────────
+async function loadTsVerify(){
+  document.getElementById('tsVerifyTable').innerHTML='<tr><td colspan="8" class="empty">加载中…</td></tr>';
+  document.getElementById('tsPendingConfirmTable').innerHTML='<tr><td colspan="5" class="empty">加载中…</td></tr>';
+  try {
+    const [rows, pendingRows] = await Promise.all([
+      api('/admin/timesheet-sheets?stage=verify'),
+      api('/admin/timesheet-sheets?stage=pending_confirm'),
+    ]);
+
+    // 待审核工时（员工已确认/异议）
+    const tbody=document.getElementById('tsVerifyTable');
+    if(!rows.length){ tbody.innerHTML='<tr><td colspan="8" class="empty">暂无待审核工时单</td></tr>'; }
+    else {
+      tbody.innerHTML=rows.map(r=>{
+        const name=`${esc(r.last_name||'')}${esc(r.first_name||'')} <span style="font-family:monospace;font-size:.7rem;color:var(--green)">${esc(r.emp_code||'')}</span>`;
+        const statusBadge = r.status==='confirmed'?'<span class="badge badge-green">已确认</span>'
+                          : '<span class="badge badge-red">有异议</span>';
+        return `<tr>
+          <td>${name}</td>
+          <td>${esc(r.company_name||'—')}</td>
+          <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+          <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+          <td>${statusBadge}</td>
+          <td style="font-size:.78rem;color:var(--gray-500)">${esc(r.employee_note||'—')}</td>
+          <td><input id="snote-${r.id}" value="${esc(r.staff_note||'')}" placeholder="核对备注" style="width:110px;font-size:.78rem;padding:3px 7px;border-radius:6px;border:1.5px solid var(--gray-200);outline:none"></td>
+          <td><button class="btn btn-sm btn-green" onclick="verifySheet(${r.id})">上报客户</button></td>
+        </tr>`;
+      }).join('');
+    }
+
+    // 待员工确认
+    const pendingTbody=document.getElementById('tsPendingConfirmTable');
+    if(!pendingRows.length){ pendingTbody.innerHTML='<tr><td colspan="5" class="empty">暂无待确认工时单</td></tr>'; }
+    else {
+      pendingTbody.innerHTML=pendingRows.map(r=>{
+        const name=`${esc(r.last_name||'')}${esc(r.first_name||'')} <span style="font-family:monospace;font-size:.7rem;color:var(--green)">${esc(r.emp_code||'')}</span>`;
+        return `<tr>
+          <td>${name}</td>
+          <td>${esc(r.company_name||'—')}</td>
+          <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+          <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+          <td><span class="badge badge-gray">待员工确认</span></td>
+        </tr>`;
+      }).join('');
+    }
+  } catch(e){
+    document.getElementById('tsVerifyTable').innerHTML=`<tr><td colspan="8" class="empty">加载失败</td></tr>`;
+    document.getElementById('tsPendingConfirmTable').innerHTML=`<tr><td colspan="5" class="empty">加载失败</td></tr>`;
+  }
+}
+
+async function verifySheet(id){
+  const note=(document.getElementById('snote-'+id)||{}).value||'';
+  await api(`/admin/timesheet-sheets/${id}/verify`,{method:'PUT',body:JSON.stringify({staff_note:note})});
+  showToast('已上报客户，进入待付款阶段');
+  loadTsVerify();
+}
+
+// ── Timesheet: Payment ─────────────────────────────────────────
+async function loadTsPayment(){
+  document.getElementById('tsPaymentTable').innerHTML='<tr><td colspan="7" class="empty">加载中…</td></tr>';
+  try {
+    const rows=await api('/admin/timesheet-sheets?stage=payment');
+    const tbody=document.getElementById('tsPaymentTable');
+    if(!rows.length){ tbody.innerHTML='<tr><td colspan="7" class="empty">暂无待付款工时单</td></tr>'; return; }
+    tbody.innerHTML=rows.map(r=>{
+      const name=`${esc(r.last_name||'')}${esc(r.first_name||'')} <span style="font-family:monospace;font-size:.7rem;color:var(--green)">${esc(r.emp_code||'')}</span>`;
+      const clientBtn=r.client_paid?`<span class="badge badge-green">已付 ${fmtDt(r.client_paid_at)}</span>`
+        :`<button class="btn btn-sm btn-accent" onclick="markClientPaid(${r.id})">标记客户已付</button>`;
+      const laborBtn=r.labor_paid?`<span class="badge badge-green">已付 ${fmtDt(r.labor_paid_at)}</span>`
+        :`<button class="btn btn-sm btn-blue" onclick="markLaborPaid(${r.id})">标记劳务已付</button>`;
+      return `<tr>
+        <td>${name}</td>
+        <td>${esc(r.company_name||'—')}</td>
+        <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+        <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+        <td style="font-size:.78rem;color:var(--gray-400)">${fmtDt(r.verified_at)}</td>
+        <td>${clientBtn}</td>
+        <td>${laborBtn}</td>
+      </tr>`;
+    }).join('');
+  } catch(e){
+    document.getElementById('tsPaymentTable').innerHTML='<tr><td colspan="7" class="empty">加载失败</td></tr>';
+  }
+}
+
+async function markClientPaid(id){
+  const r=await api(`/admin/timesheet-sheets/${id}/client-paid`,{method:'PUT',body:'{}'});
+  showToast(r.completed?'双方付款完成，已进入待分红':'已标记客户付款');
+  loadTsPayment();
+}
+async function markLaborPaid(id){
+  const r=await api(`/admin/timesheet-sheets/${id}/labor-paid`,{method:'PUT',body:'{}'});
+  showToast(r.completed?'双方付款完成，已进入待分红':'已标记劳务付款');
+  loadTsPayment();
+}
+
+// ── Timesheet: Dividend ────────────────────────────────────────
+async function loadTsDividend(){
+  document.getElementById('tsDividendTable').innerHTML='<tr><td colspan="7" class="empty">加载中…</td></tr>';
+  try {
+    const rows=await api('/admin/timesheet-sheets?stage=dividend');
+    const tbody=document.getElementById('tsDividendTable');
+    if(!rows.length){ tbody.innerHTML='<tr><td colspan="7" class="empty">暂无待分红工时单</td></tr>'; return; }
+    const votesMap={};
+    await Promise.all(rows.map(async r=>{ votesMap[r.id]=await api(`/admin/timesheet-sheets/${r.id}/votes`).catch(()=>({votes:[],staff_count:0})); }));
+    tbody.innerHTML=rows.map(r=>{
+      const name=`${esc(r.last_name||'')}${esc(r.first_name||'')} <span style="font-family:monospace;font-size:.7rem;color:var(--green)">${esc(r.emp_code||'')}</span>`;
+      const vi=votesMap[r.id]||{votes:[],staff_count:0};
+      const approves=vi.votes.filter(v=>v.vote_type==='approve');
+      const dists=vi.votes.filter(v=>v.vote_type==='distributed');
+      const allApproved=approves.length>=vi.staff_count&&vi.staff_count>0;
+      const myApproved=approves.some(v=>v.user_id===_currentUserId);
+      const myDistributed=dists.some(v=>v.user_id===_currentUserId);
+      const approveCell=`<span class="badge ${allApproved?'badge-green':'badge-yellow'}">${approves.length}/${vi.staff_count}</span>`;
+      const distCell=allApproved?`<span class="badge ${dists.length>=vi.staff_count?'badge-green':'badge-yellow'}">${dists.length}/${vi.staff_count}</span>`:'<span style="font-size:.75rem;color:var(--gray-400)">等待全部通过</span>';
+      let actionBtn='';
+      if(!myApproved) actionBtn=`<button class="btn btn-sm btn-green" onclick="voteDividendApprove(${r.id})">无异议</button>`;
+      else if(allApproved&&!myDistributed) actionBtn=`<button class="btn btn-sm btn-accent" onclick="voteDividendDistributed(${r.id})">已分红</button>`;
+      else if(myApproved&&!allApproved) actionBtn='<span class="badge badge-green">已投票</span>';
+      else actionBtn='<span class="badge badge-green">已确认</span>';
+      return `<tr>
+        <td>${name}</td>
+        <td>${esc(r.company_name||'—')}</td>
+        <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+        <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+        <td>${approveCell}</td>
+        <td>${distCell}</td>
+        <td>${actionBtn}</td>
+      </tr>`;
+    }).join('');
+  } catch(e){
+    document.getElementById('tsDividendTable').innerHTML='<tr><td colspan="7" class="empty">加载失败</td></tr>';
+  }
+}
+
+async function voteDividendApprove(id){
+  const r=await api(`/admin/timesheet-sheets/${id}/vote-approve`,{method:'POST',body:'{}'});
+  if(r.error){alert(r.error);return;}
+  showToast(r.all_approved?'全部无异议通过！':`已投无异议 (${r.approve_count}/${r.staff_count})`);
+  loadTsDividend();
+}
+async function voteDividendDistributed(id){
+  const r=await api(`/admin/timesheet-sheets/${id}/vote-distributed`,{method:'POST',body:'{}'});
+  if(r.error){alert(r.error);return;}
+  showToast(r.all_distributed?'全部确认分红，已归档':`已确认分红 (${r.dist_count}/${r.staff_count})`);
+  loadTsDividend();
+}
+
+// ── Timesheet: History ─────────────────────────────────────────
+async function loadTsHistory(){
+  document.getElementById('tsHistoryTable').innerHTML='<tr><td colspan="7" class="empty">加载中…</td></tr>';
+  try {
+    _allTsHistory=await api('/admin/timesheet-sheets?stage=history');
+    renderTsHistory(_allTsHistory);
+  } catch(e){
+    document.getElementById('tsHistoryTable').innerHTML='<tr><td colspan="7" class="empty">加载失败</td></tr>';
+  }
+}
+
+function filterTsHistory(){
+  const kw=document.getElementById('histSearch').value.toLowerCase();
+  const from=document.getElementById('histFrom').value;
+  const to=document.getElementById('histTo').value;
+  let f=_allTsHistory;
+  if(kw) f=f.filter(r=>`${r.first_name||''} ${r.last_name||''}`.toLowerCase().includes(kw));
+  if(from) f=f.filter(r=>(r.period_start||'')>=from);
+  if(to) f=f.filter(r=>(r.period_end||r.period_start||'')<=to);
+  renderTsHistory(f);
+}
+
+function renderTsHistory(rows){
+  const tbody=document.getElementById('tsHistoryTable');
+  if(!rows.length){ tbody.innerHTML='<tr><td colspan="7" class="empty">暂无历史记录</td></tr>'; return; }
+  tbody.innerHTML=rows.map(r=>{
+    const name=`${esc(r.last_name||'')}${esc(r.first_name||'')} <span style="font-family:monospace;font-size:.7rem;color:var(--green)">${esc(r.emp_code||'')}</span>`;
+    return `<tr>
+      <td>${name}</td>
+      <td>${esc(r.company_name||'—')}</td>
+      <td style="white-space:nowrap">${fmtPeriod(r.period_start,r.period_end)}</td>
+      <td style="text-align:right">${(r.total_hours||0).toFixed(1)}h</td>
+      <td style="font-size:.78rem">${fmtDt(r.client_paid_at)}</td>
+      <td style="font-size:.78rem">${fmtDt(r.labor_paid_at)}</td>
+      <td style="font-size:.78rem;color:var(--gray-500)">${esc(r.staff_note||'—')}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Worker Inquiries ───────────────────────────────────────────
+async function loadWorkerInquiries(){
+  document.getElementById('workerInquiryTable').innerHTML='<tr><td colspan="5" class="empty">加载中…</td></tr>';
+  try {
+    _allWorkerInquiries=await api('/admin/inquiries?type=worker');
+    renderWorkerInquiries(_allWorkerInquiries);
+  } catch(e){
+    document.getElementById('workerInquiryTable').innerHTML='<tr><td colspan="5" class="empty">加载失败</td></tr>';
+  }
+}
+
+function filterWorkerInquiries(){
+  const kw=document.getElementById('wiqSearch').value.toLowerCase();
+  renderWorkerInquiries(_allWorkerInquiries.filter(r=>`${r.first_name||''} ${r.last_name||''} ${r.email||''} ${r.phone||''}`.toLowerCase().includes(kw)));
+}
+
+function renderWorkerInquiries(list){
+  const tbody=document.getElementById('workerInquiryTable');
+  if(!list.length){ tbody.innerHTML='<tr><td colspan="5" class="empty">暂无记录</td></tr>'; return; }
+  tbody.innerHTML=list.map(r=>`<tr>
+    <td><div style="font-weight:700">${esc((r.first_name||'')+' '+(r.last_name||''))}</div></td>
+    <td style="font-size:.8rem">${[r.email,r.phone].filter(Boolean).map(v=>esc(v)).join('<br>')||'—'}</td>
+    <td style="font-size:.8rem;color:var(--gray-600)">${esc(r.desired_position||r.job_type||'—')}</td>
+    <td><span class="badge ${r.status==='new'?'badge-yellow':r.status==='contacted'?'badge-blue':'badge-gray'}">${esc(r.status||'new')}</span></td>
+    <td style="font-size:.78rem;color:var(--gray-400)">${fmtDt(r.created_at)}</td>
+  </tr>`).join('');
+}
+
+// ── Client Inquiries ───────────────────────────────────────────
+async function loadClientInquiries(){
+  document.getElementById('clientInquiryTable').innerHTML='<tr><td colspan="5" class="empty">加载中…</td></tr>';
+  try {
+    _allClientInquiries=await api('/admin/inquiries?type=client');
+    renderClientInquiries(_allClientInquiries);
+  } catch(e){
+    document.getElementById('clientInquiryTable').innerHTML='<tr><td colspan="5" class="empty">加载失败</td></tr>';
+  }
+}
+
+function filterClientInquiries(){
+  const kw=document.getElementById('ciqSearch').value.toLowerCase();
+  renderClientInquiries(_allClientInquiries.filter(r=>`${r.company_name||''} ${r.contact_name||''} ${r.email||''}`.toLowerCase().includes(kw)));
+}
+
+function renderClientInquiries(list){
+  const tbody=document.getElementById('clientInquiryTable');
+  if(!list.length){ tbody.innerHTML='<tr><td colspan="5" class="empty">暂无记录</td></tr>'; return; }
+  tbody.innerHTML=list.map(r=>`<tr>
+    <td style="font-weight:700">${esc(r.company_name||'—')}</td>
+    <td>${esc(r.contact_name||r.name||'—')}</td>
+    <td style="font-size:.8rem">${[r.email,r.phone].filter(Boolean).map(v=>esc(v)).join('<br>')||'—'}</td>
+    <td><span class="badge badge-blue">${esc(r.inquiry_type||r.type||'客户')}</span></td>
+    <td style="font-size:.78rem;color:var(--gray-400)">${fmtDt(r.created_at)}</td>
+  </tr>`).join('');
+}
+
+// ── Assignments ────────────────────────────────────────────────
+async function loadAssignments(){
+  document.getElementById('assignmentTable').innerHTML='<tr><td colspan="6" class="empty">加载中…</td></tr>';
+  try {
+    _allAssignments=await api('/admin/assignments');
+    renderAssignments(_allAssignments);
+  } catch(e){
+    document.getElementById('assignmentTable').innerHTML='<tr><td colspan="6" class="empty">加载失败</td></tr>';
+  }
+}
+
+function filterAssignments(){
+  const kw=document.getElementById('asgnSearch').value.toLowerCase();
+  const st=document.getElementById('asgnStatus').value;
+  let f=_allAssignments;
+  if(kw) f=f.filter(r=>`${r.first_name||''} ${r.last_name||''} ${r.company_name||''} ${r.job_title||''}`.toLowerCase().includes(kw));
+  if(st) f=f.filter(r=>r.status===st);
+  renderAssignments(f);
+}
+
+function renderAssignments(list){
+  const tbody=document.getElementById('assignmentTable');
+  if(!list.length){ tbody.innerHTML='<tr><td colspan="6" class="empty">暂无派工记录</td></tr>'; return; }
+  const STATUS={assigned:'已分配',working:'工作中',completed:'已完成',terminated:'已终止',cancelled:'已取消',resigned:'已离职',pending:'待处理',no_show:'未到岗'};
+  const BADGE={assigned:'badge-blue',working:'badge-green',completed:'badge-gray',terminated:'badge-red',cancelled:'badge-red',resigned:'badge-red',pending:'badge-yellow',no_show:'badge-red'};
+  tbody.innerHTML=list.map(r=>`<tr>
+    <td style="font-weight:600">${esc((r.first_name||'')+' '+(r.last_name||''))}</td>
+    <td>${esc(r.job_title||'—')}</td>
+    <td>${esc(r.company_name||'—')}</td>
+    <td style="white-space:nowrap">${r.pay_rate?'$'+Number(r.pay_rate).toFixed(2)+'/'+(r.pay_type==='hourly'?'hr':'yr'):'—'}</td>
+    <td style="font-size:.8rem;color:var(--gray-500)">${r.start_date||'—'}</td>
+    <td><span class="badge ${BADGE[r.status]||'badge-gray'}">${STATUS[r.status]||esc(r.status)}</span></td>
+  </tr>`).join('');
+}
+
+// ── Payment Modal ──────────────────────────────────────────────
+function openPayModal(empId, empName){
+  document.getElementById('payEmpId').value=empId;
+  document.getElementById('payModalName').textContent=empName;
+  document.getElementById('payDate').value=new Date().toISOString().slice(0,10);
+  document.getElementById('payAmount').value='';
+  document.getElementById('payNotes').value='';
+  document.getElementById('payPeriodStart').value='';
+  document.getElementById('payPeriodEnd').value='';
+  document.getElementById('payModal').classList.add('show');
+}
+function closePayModal(){ document.getElementById('payModal').classList.remove('show'); }
+document.getElementById('payModal').addEventListener('click',e=>{ if(e.target===document.getElementById('payModal')) closePayModal(); });
+
+async function submitPayment(){
+  const empId=document.getElementById('payEmpId').value;
+  const body={
+    payment_date:document.getElementById('payDate').value,
+    amount:parseFloat(document.getElementById('payAmount').value)||0,
+    payment_method:document.getElementById('payMethod').value,
+    period_start:document.getElementById('payPeriodStart').value||null,
+    period_end:document.getElementById('payPeriodEnd').value||null,
+    notes:document.getElementById('payNotes').value.trim()||null,
+  };
+  if(!body.amount){ alert('请输入金额'); return; }
+  try {
+    await api(`/admin/worker-accounts/${empId}/payments`,{method:'POST',body:JSON.stringify(body)});
+    showToast('打款记录已保存');
+    closePayModal();
+  } catch(e){ alert('保存失败: '+e.message); }
+}
+
+// ── Auto-login from cookie ─────────────────────────────────────
+(function(){
+  const m=document.cookie.match(/pa_token=([^;]+)/);
+  if(m){
+    TOKEN=m[1];
+    fetch(API+'/admin/me',{headers:{'Authorization':`Bearer ${TOKEN}`}})
+      .then(r=>r.ok?r.json():Promise.reject())
+      .then(u=>{
+        if((u.role||'staff')!=='staff'){ TOKEN=''; document.cookie='pa_token=;path=/;max-age=0'; return; }
+        USER_NAME=u.username||'';
+        _currentUserId=u.id||0;
+        finishLogin();
+      })
+      .catch(()=>{ TOKEN=''; });
+  }
+})();
+</script>
+</body>
+</html>

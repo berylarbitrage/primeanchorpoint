@@ -4,6 +4,7 @@ const Database = require('better-sqlite3');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const PDFDocument = require('pdfkit');
 
 const nodemailer = require('nodemailer');
 
@@ -252,6 +253,35 @@ async function sendEmail(to, subject, text, html) {
   }
 }
 
+// ─── Email with PDF attachment ───
+async function sendEmailWithAttachment(to, subject, text, pdfBuffer, pdfFileName) {
+  if (_sgKey) {
+    try {
+      const r = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${_sgKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: { email: EMAIL_FROM },
+          subject,
+          content: [{ type: 'text/plain', value: text }],
+          attachments: [{ content: pdfBuffer.toString('base64'), filename: pdfFileName, type: 'application/pdf', disposition: 'attachment' }],
+        }),
+      });
+      if (r.status === 202) { console.log(`[EMAIL] Sent attachment to ${to}`); return true; }
+      const body = await r.text();
+      console.error(`[EMAIL-ERR] SendGrid ${r.status}: ${body}`);
+      return false;
+    } catch (e) { console.error(`[EMAIL-ERR] ${e.message}`); return false; }
+  }
+  if (!emailTransporter) { console.log(`[EMAIL-SKIP] No transport. To: ${to}`); return false; }
+  try {
+    await emailTransporter.sendMail({ from: EMAIL_FROM, to, subject, text, attachments: [{ filename: pdfFileName, content: pdfBuffer }] });
+    console.log(`[EMAIL] Sent attachment to ${to}`);
+    return true;
+  } catch (e) { console.error(`[EMAIL-ERR] ${e.message}`); return false; }
+}
+
 // ─── Database Setup ───
 const dataDir = process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data';
 if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
@@ -336,6 +366,7 @@ db.exec(`
     addresses TEXT DEFAULT '[]',
     social_media TEXT DEFAULT '{}',
     links TEXT DEFAULT '{}',
+    company_number TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS partner_files (
@@ -554,6 +585,12 @@ try { db.exec(`ALTER TABLE job_applications ADD COLUMN interview_times_json TEXT
 try { db.exec(`UPDATE jobs SET job_status='open' WHERE active=1 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`UPDATE jobs SET job_status='closed' WHERE active=0 AND (job_status IS NULL OR job_status='')`); } catch(e) {}
 try { db.exec(`ALTER TABLE jobs ADD COLUMN visible INTEGER DEFAULT 1`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN langs TEXT DEFAULT 'en'`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN title_zh TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN title_es TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN desc_zh TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN desc_es TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE jobs ADD COLUMN job_id TEXT DEFAULT ''`); } catch(e) {}
 
 try { db.exec("ALTER TABLE inquiries ADD COLUMN employer_id TEXT DEFAULT ''"); } catch(e) {}
 try { db.exec("ALTER TABLE inquiries ADD COLUMN processed INTEGER DEFAULT 0"); } catch(e) {}
@@ -573,12 +610,33 @@ try { db.exec(`ALTER TABLE assignments ADD COLUMN contract_filename TEXT DEFAULT
 ['role TEXT DEFAULT \'staff\'', 'display_name TEXT DEFAULT \'\'', 'active INTEGER DEFAULT 1', 'created_at DATETIME DEFAULT CURRENT_TIMESTAMP'].forEach(col => {
   try { db.exec(`ALTER TABLE admin_users ADD COLUMN ${col}`); } catch {}
 });
+// Explicit fallback: ensure created_at exists (older SQLite may reject CURRENT_TIMESTAMP default above)
+try { db.exec("ALTER TABLE admin_users ADD COLUMN created_at TEXT DEFAULT ''"); } catch {};
+try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
 
 // Migrate partners table (add new columns if missing)
 const partnerMigrations = ['contacts','addresses','social_media','links'];
 partnerMigrations.forEach(col => {
   try { db.exec(`ALTER TABLE partners ADD COLUMN ${col} TEXT DEFAULT '${col.includes('s')&&!col.includes('_')?'[]':'{}'}'`); } catch {}
 });
+try { db.exec(`ALTER TABLE partners ADD COLUMN company_number TEXT DEFAULT ''`); } catch {}
+
+function generatePartnerNumber(stateAbbr) {
+  const s = (stateAbbr || 'XX').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2).padEnd(2, 'X');
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const yy = String(now.getFullYear()).slice(-2);
+  const prefix = `COMP-${s}-${mm}${dd}${yy}-`;
+  const existing = db.prepare(`SELECT company_number FROM partners WHERE company_number LIKE ? ORDER BY company_number DESC LIMIT 1`).get(prefix + '%');
+  let seq = 1;
+  if (existing) {
+    const parts = existing.company_number.split('-');
+    seq = (parseInt(parts[parts.length - 1], 10) || 0) + 1;
+  }
+  return prefix + String(seq).padStart(4, '0');
+}
 // Migrate jobs table (add new columns if missing)
 const jobMigrations = [
   "ALTER TABLE jobs ADD COLUMN partner_id INTEGER DEFAULT NULL",
@@ -627,11 +685,17 @@ try { db.exec(`ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'z
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_phones TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
+try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
+try { db.exec(`ALTER TABLE time_entries ADD COLUMN clock_in_photo_path TEXT DEFAULT NULL`); } catch(e) {}
 
 // DocuSign columns
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_worker_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE assignments ADD COLUMN ${col}`); } catch {} });
+try { db.exec("ALTER TABLE assignments ADD COLUMN ds_decline_reason TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE assignments ADD COLUMN contract_content TEXT DEFAULT ''"); } catch {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN work_schedule TEXT DEFAULT '{}'`); } catch(e) {}
 try { db.exec(`ALTER TABLE assignments ADD COLUMN category TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN work_address TEXT DEFAULT ''"); } catch(e) {}
@@ -641,6 +705,8 @@ try { db.exec("ALTER TABLE assignments ADD COLUMN work_radius INTEGER DEFAULT 20
 try { db.exec("ALTER TABLE assignments ADD COLUMN worker_response TEXT DEFAULT NULL"); } catch(e) {}
 try { db.exec("ALTER TABLE assignments ADD COLUMN task_requirements TEXT DEFAULT '[]'"); } catch(e) {}
 ['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_partner_signed_at DATETIME','ds_company_signed_at DATETIME'].forEach(col => { try { db.exec(`ALTER TABLE partner_files ADD COLUMN ${col}`); } catch {} });
+try { db.exec("ALTER TABLE partner_files ADD COLUMN ds_decline_reason TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE partner_files ADD COLUMN contract_content TEXT DEFAULT ''"); } catch {}
 
 db.exec(`CREATE TABLE IF NOT EXISTS assignment_status_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -787,6 +853,28 @@ db.exec(`
 `);
 // Migrate: add assigned_partner_ids to admin_users (for manager role)
 try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_partner_ids TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN phone TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN email TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE admin_users ADD COLUMN city TEXT DEFAULT ''"); } catch {}
+// Migrate: add assigned_employee_ids to admin_users (direct employee assignment for managers)
+try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_employee_ids TEXT DEFAULT ''"); } catch {}
+// Migrate: add assigned_job_ids to admin_users (job-based assignment for managers)
+try { db.exec("ALTER TABLE admin_users ADD COLUMN assigned_job_ids TEXT DEFAULT ''"); } catch {}
+// Manager self-punch time tracking
+db.exec(`CREATE TABLE IF NOT EXISTS manager_time_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  manager_id INTEGER NOT NULL,
+  clock_in DATETIME NOT NULL,
+  clock_out DATETIME,
+  break_minutes INTEGER DEFAULT 0,
+  total_hours REAL DEFAULT 0,
+  status TEXT DEFAULT 'open',
+  notes TEXT DEFAULT '',
+  break_records TEXT DEFAULT '[]',
+  on_break INTEGER DEFAULT 0,
+  break_start DATETIME,
+  FOREIGN KEY (manager_id) REFERENCES admin_users(id)
+)`);
 // Migrate: add lang/positions to employee_doc_requests
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN lang TEXT DEFAULT 'zh'"); } catch {}
 try { db.exec("ALTER TABLE employee_doc_requests ADD COLUMN positions TEXT DEFAULT '[]'"); } catch {}
@@ -817,6 +905,7 @@ try { db.exec("ALTER TABLE customer_accounts ADD COLUMN staffing_needs TEXT DEFA
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN approval_status TEXT DEFAULT 'approved'"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_first_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE customer_accounts ADD COLUMN contact_last_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE customer_accounts ADD COLUMN rejection_reason TEXT DEFAULT ''"); } catch {}
 db.exec(`CREATE TABLE IF NOT EXISTS enterprise_verification_codes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_account_id INTEGER NOT NULL REFERENCES customer_accounts(id),
@@ -850,12 +939,77 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_account_history (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// ─── Employee registration invites ───
+db.exec(`CREATE TABLE IF NOT EXISTS employee_registration_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  employee_id INTEGER NOT NULL REFERENCES employees(id),
+  token TEXT UNIQUE NOT NULL,
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS admin_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'manager',
+  notes TEXT DEFAULT '',
+  assigned_partner_ids TEXT DEFAULT '',
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  used_at DATETIME DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec(`ALTER TABLE admin_invites ADD COLUMN created_by INTEGER DEFAULT NULL`); } catch(e) {}
+
+// Manager self-registration invite links
+db.exec(`CREATE TABLE IF NOT EXISTS manager_invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'manager',
+  note TEXT DEFAULT '',
+  expires_at DATETIME NOT NULL,
+  used INTEGER DEFAULT 0,
+  created_by INTEGER DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Temp verification codes for manager registration
+db.exec(`CREATE TABLE IF NOT EXISTS manager_reg_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL,
+  contact TEXT NOT NULL,
+  contact_type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Temp email verification codes for admin invite registration
+db.exec(`CREATE TABLE IF NOT EXISTS admin_reg_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  token TEXT NOT NULL,
+  contact TEXT NOT NULL,
+  contact_type TEXT NOT NULL,
+  code TEXT NOT NULL,
+  expires_at DATETIME NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Backfill: assign worker_code + linked_inquiry_id to existing verified workers
 // (runs once on startup; activateWorkerAccount is idempotent — skips if code already set)
 setTimeout(() => {
   try {
     const unlinked = db.prepare("SELECT id FROM worker_accounts WHERE active=1 AND worker_code IS NULL").all();
     unlinked.forEach(w => { try { activateWorkerAccount(w.id); } catch {} });
+    // Backfill employees.inquiry_id from existing linked worker_accounts
+    db.prepare(`
+      UPDATE employees SET inquiry_id = (
+        SELECT wa.linked_inquiry_id FROM worker_accounts wa
+        WHERE wa.employee_id = employees.id AND wa.linked_inquiry_id IS NOT NULL
+        ORDER BY wa.id DESC LIMIT 1
+      ) WHERE inquiry_id IS NULL
+    `).run();
   } catch {}
 }, 0);
 // Migrate: richer fields on job_applications
@@ -903,29 +1057,53 @@ try { db.exec("ALTER TABLE interview_slots ADD COLUMN location_id INTEGER DEFAUL
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
+// Migrate interview_slots: add reserved worker column for admin-arranged times
+try { db.exec("ALTER TABLE interview_slots ADD COLUMN reserved_for_worker_account_id INTEGER DEFAULT NULL"); } catch {}
+// Migrate interviews: add interview_type
+try { db.exec("ALTER TABLE interviews ADD COLUMN interview_type TEXT DEFAULT 'onboarding'"); } catch {}
 
-const WORKER_POSITIONS = [
-  { key:'warehouse_sorter',   zh:'仓库分拣员',   en:'Warehouse Sorter' },
-  { key:'labeler',            zh:'贴标员',       en:'Labeler' },
-  { key:'packer',             zh:'打包员',       en:'Packer' },
-  { key:'forklift_operator',  zh:'叉车操作员',   en:'Forklift Operator' },
-  { key:'cdl_driver',         zh:'CDL卡车司机',  en:'CDL Truck Driver' },
-  { key:'delivery_driver',    zh:'送货司机',     en:'Delivery Driver' },
-  { key:'shift_supervisor',   zh:'班组长',       en:'Shift Supervisor' },
-  { key:'site_manager',       zh:'现场主管',     en:'Site Manager' },
-  { key:'quality_inspector',  zh:'质检员',       en:'Quality Inspector' },
-  { key:'machine_operator',   zh:'机器操作员',   en:'Machine Operator' },
-  { key:'assembly_line',      zh:'装配线工人',   en:'Assembly Line' },
-  { key:'material_handler',   zh:'物料搬运工',   en:'Material Handler' },
-  { key:'inventory_clerk',    zh:'库存文员',     en:'Inventory Clerk' },
-  { key:'general_labor',      zh:'普工',         en:'General Labor' },
-  { key:'janitorial',         zh:'清洁工',       en:'Janitorial' },
-  { key:'food_processing',    zh:'食品加工',     en:'Food Processing' },
-  { key:'warehouse_lead',     zh:'仓库领班',     en:'Warehouse Lead' },
-  { key:'loading_unloading',  zh:'装卸工',       en:'Loading / Unloading' },
-  { key:'order_picker',       zh:'拣货员',       en:'Order Picker' },
-  { key:'welder',             zh:'焊接工',       en:'Welder' },
-];
+// ─── Worker Positions (managed in DB) ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_positions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT UNIQUE NOT NULL,
+  name_zh TEXT NOT NULL,
+  name_en TEXT NOT NULL,
+  name_es TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM worker_positions LIMIT 1').get()) {
+  const wpSeeds = [
+    { key:'warehouse_sorter',  zh:'仓库分拣员',  en:'Warehouse Sorter',      es:'Clasificador de Almacén' },
+    { key:'labeler',           zh:'贴标员',      en:'Labeler',               es:'Etiquetador' },
+    { key:'packer',            zh:'打包员',      en:'Packer',                es:'Empacador' },
+    { key:'forklift_operator', zh:'叉车操作员',  en:'Forklift Operator',     es:'Operador de Montacargas' },
+    { key:'cdl_driver',        zh:'CDL卡车司机', en:'CDL Truck Driver',      es:'Chofer CDL' },
+    { key:'delivery_driver',   zh:'送货司机',    en:'Delivery Driver',       es:'Repartidor' },
+    { key:'shift_supervisor',  zh:'班组长',      en:'Shift Supervisor',      es:'Supervisor de Turno' },
+    { key:'site_manager',      zh:'现场主管',    en:'Site Manager',          es:'Gerente de Sitio' },
+    { key:'quality_inspector', zh:'质检员',      en:'Quality Inspector',     es:'Inspector de Calidad' },
+    { key:'machine_operator',  zh:'机器操作员',  en:'Machine Operator',      es:'Operador de Máquinas' },
+    { key:'assembly_line',     zh:'装配线工人',  en:'Assembly Line',         es:'Línea de Ensamble' },
+    { key:'material_handler',  zh:'物料搬运工',  en:'Material Handler',      es:'Manejador de Materiales' },
+    { key:'inventory_clerk',   zh:'库存文员',    en:'Inventory Clerk',       es:'Empleado de Inventario' },
+    { key:'general_labor',     zh:'普工',        en:'General Labor',         es:'Trabajo General' },
+    { key:'janitorial',        zh:'清洁工',      en:'Janitorial',            es:'Limpieza' },
+    { key:'food_processing',   zh:'食品加工',    en:'Food Processing',       es:'Procesamiento de Alimentos' },
+    { key:'warehouse_lead',    zh:'仓库领班',    en:'Warehouse Lead',        es:'Líder de Almacén' },
+    { key:'loading_unloading', zh:'装卸工',      en:'Loading / Unloading',   es:'Carga/Descarga' },
+    { key:'order_picker',      zh:'拣货员',      en:'Order Picker',          es:'Surtidor de Pedidos' },
+    { key:'welder',            zh:'焊接工',      en:'Welder',                es:'Soldador' },
+  ];
+  const wpIns = db.prepare('INSERT INTO worker_positions (key, name_zh, name_en, name_es, sort_order) VALUES (?,?,?,?,?)');
+  wpSeeds.forEach((p, i) => wpIns.run(p.key, p.zh, p.en, p.es, i));
+}
+
+function getWorkerPositions() {
+  return db.prepare('SELECT * FROM worker_positions WHERE active=1 ORDER BY sort_order, id').all()
+    .map(r => ({ id: r.id, key: r.key, zh: r.name_zh, en: r.name_en, es: r.name_es, sort_order: r.sort_order }));
+}
 // Add quote_request column to inquiries if not already present (migration)
 try { db.exec('ALTER TABLE inquiries ADD COLUMN quote_request INTEGER DEFAULT 0'); } catch {}
 
@@ -1023,8 +1201,49 @@ if (!db.prepare('SELECT id FROM skill_options LIMIT 1').get()) {
   const ins = db.prepare('INSERT INTO skill_options (name_zh, name_en, sort_order) VALUES (?,?,?)');
   seeds.forEach(([zh, en], i) => ins.run(zh, en, i));
 }
+// Job title options (used as a fixed list in the job creation modal)
+db.exec(`CREATE TABLE IF NOT EXISTS job_title_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_en TEXT NOT NULL,
+  name_zh TEXT DEFAULT '',
+  name_es TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM job_title_options LIMIT 1').get()) {
+  const jSeeds = [
+    'General Laborer','Warehouse Associate','Warehouse Worker','Production Associate',
+    'Material Handler','Order Picker','Order Packer','Fulfillment Associate',
+    'Loading / Unloading Associate','Order Fulfillment Associate','Inventory Associate',
+    'Logistics Assistant','General Labor','Temporary Worker','Contract Worker'
+  ];
+  const jIns = db.prepare('INSERT INTO job_title_options (name_en, sort_order) VALUES (?,?)');
+  jSeeds.forEach((n, i) => jIns.run(n, i));
+}
+
+// Display suffix options (rotate daily in worker portal)
+db.exec(`CREATE TABLE IF NOT EXISTS display_suffix_options (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name_en TEXT NOT NULL,
+  name_zh TEXT DEFAULT '',
+  name_es TEXT DEFAULT '',
+  sort_order INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM display_suffix_options LIMIT 1').get()) {
+  const sSeeds = [
+    'Contract Assignment','Client Assignment','Work Assignment','Temporary Engagement',
+    'Contract Placement','Project Assignment','Client Site Assignment','On-Site Assignment',
+    'Third-Party Assignment','Client Placement','Short-Term Assignment',
+    'Seasonal Assignment','Temporary Project'
+  ];
+  const sIns = db.prepare('INSERT INTO display_suffix_options (name_en, sort_order) VALUES (?,?)');
+  sSeeds.forEach((n, i) => sIns.run(n, i));
+}
+
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN assigned_slot_ids TEXT DEFAULT ''"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -1056,6 +1275,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// ─── Invoice Profiles (presets for sender/bank/contact) ───
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  section TEXT NOT NULL,
+  data TEXT DEFAULT '{}',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // ─── Integration Settings (WorkBright, Checkr, Gusto, Twilio) ───
 db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1081,6 +1309,14 @@ try { db.exec("ALTER TABLE time_entries ADD COLUMN site_id INTEGER DEFAULT NULL"
 try { db.exec("ALTER TABLE time_entries ADD COLUMN geo_verified INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN punch_photo TEXT DEFAULT NULL"); } catch {}
 try { db.exec("ALTER TABLE time_entries ADD COLUMN job_id INTEGER DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN needs_review INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN review_reason TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE manager_time_entries ADD COLUMN needs_review INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE job_sites ADD COLUMN timezone TEXT DEFAULT 'America/Chicago'"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN site_timezone TEXT DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_latitude REAL DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN clock_out_longitude REAL DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE time_entries ADD COLUMN manager_confirmed INTEGER DEFAULT 0"); } catch {}
 
 // Worker payments ledger
 db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
@@ -1204,6 +1440,36 @@ setInterval(() => runBackup('定时备份'), BACKUP_INTERVAL);
 // work_schedule JSON. Skips terminated / resigned / cancelled.
 const _WEEK_DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat'];
 
+// Normalize work_schedule to a {mon:{rest,start,end}, ...} days map.
+// Handles both formats:
+//   New: { type:"estimate", days:{ mon:{rest,start,end}, sat:{...}, ... } }
+//   Legacy: { Mon:{start,end}, Sat:{start,end}, ... }  (flat PascalCase, no rest field)
+// Falls back to jobSchedJson when the assignment schedule has no usable days.
+function _parseSchedDays(schedJson, jobSchedJson) {
+  function _extract(s) {
+    if (!s || typeof s !== 'object') return {};
+    if (s.days && typeof s.days === 'object') return s.days;
+    // Legacy flat format
+    const out = {};
+    _WEEK_DAY_KEYS.forEach(k => {
+      const v = s[k] || s[k.charAt(0).toUpperCase() + k.slice(1)];
+      if (v && (v.start || v.end)) out[k] = { rest: false, start: v.start || '', end: v.end || '' };
+    });
+    return out;
+  }
+  let days = _extract(schedJson);
+  // If assignment has no usable work days, fall back to job schedule
+  const hasWork = Object.values(days).some(d => !d.rest && (d.start || d.end));
+  if (!hasWork && jobSchedJson) {
+    const jobDays = _extract(jobSchedJson);
+    // Merge: use job days for any day not explicitly set in assignment
+    _WEEK_DAY_KEYS.forEach(k => {
+      if (!days[k] && jobDays[k]) days[k] = jobDays[k];
+    });
+  }
+  return days;
+}
+
 async function generateWeeklyShiftConfirmations() {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -1225,7 +1491,7 @@ async function generateWeeklyShiftConfirmations() {
   // Active assignments only (not terminated / resigned / cancelled)
   const assignments = db.prepare(`
     SELECT a.id, a.work_schedule,
-           j.title,
+           j.title, j.work_schedule AS job_work_schedule,
            w.id as worker_id, w.phone, w.first_name, w.name as wname
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
@@ -1240,10 +1506,12 @@ async function generateWeeklyShiftConfirmations() {
   for (const a of assignments) {
     let sched = {};
     try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+    let jobSched = null;
+    try { jobSched = JSON.parse(a.job_work_schedule || 'null'); } catch {}
     const workStart = sched.workStart || null;
     const workEnd = sched.workEnd || null;
     const untilFurther = !!sched.untilFurther;
-    const days = sched.days || {};
+    const days = _parseSchedDays(sched, jobSched);
 
     for (const { date, dayKey } of weekDates) {
       if (workStart && date < workStart) continue;
@@ -1289,10 +1557,12 @@ async function generateWeeklyShiftConfirmations() {
     for (const a of assignments) {
       let sched = {};
       try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+      let jobSched = null;
+      try { jobSched = JSON.parse(a.job_work_schedule || 'null'); } catch {}
       const workStart = sched.workStart || null;
       const workEnd = sched.workEnd || null;
       const untilFurther = !!sched.untilFurther;
-      const days = sched.days || {};
+      const days = _parseSchedDays(sched, jobSched);
       for (const { date, dayKey } of nextWeekDates) {
         if (workStart && date < workStart) continue;
         if (!untilFurther && workEnd && date > workEnd) continue;
@@ -1462,32 +1732,47 @@ function verifyPin(pin, salt, hash) {
   } catch { return false; }
 }
 
-// ─── Auto-generate employee ID: EMEE-CITY-MMDDYY-000001 ───
-function nextEmployeeId(city, hireDate) {
-  const d = hireDate ? new Date(hireDate) : new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  const dateStr = mm + dd + yy;
-  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
-  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'EMEE-%' ORDER BY id DESC LIMIT 1").get();
+// ─── US state → IANA timezone ───
+const STATE_TZ = {
+  AL:'America/Chicago',AK:'America/Anchorage',AZ:'America/Phoenix',AR:'America/Chicago',
+  CA:'America/Los_Angeles',CO:'America/Denver',CT:'America/New_York',DE:'America/New_York',
+  FL:'America/New_York',GA:'America/New_York',HI:'Pacific/Honolulu',ID:'America/Boise',
+  IL:'America/Chicago',IN:'America/Indiana/Indianapolis',IA:'America/Chicago',KS:'America/Chicago',
+  KY:'America/New_York',LA:'America/Chicago',ME:'America/New_York',MD:'America/New_York',
+  MA:'America/New_York',MI:'America/Detroit',MN:'America/Chicago',MS:'America/Chicago',
+  MO:'America/Chicago',MT:'America/Denver',NE:'America/Chicago',NV:'America/Los_Angeles',
+  NH:'America/New_York',NJ:'America/New_York',NM:'America/Denver',NY:'America/New_York',
+  NC:'America/New_York',ND:'America/Chicago',OH:'America/New_York',OK:'America/Chicago',
+  OR:'America/Los_Angeles',PA:'America/New_York',RI:'America/New_York',SC:'America/New_York',
+  SD:'America/Chicago',TN:'America/Chicago',TX:'America/Chicago',UT:'America/Denver',
+  VT:'America/New_York',VA:'America/New_York',WA:'America/Los_Angeles',WV:'America/New_York',
+  WI:'America/Chicago',WY:'America/Denver',DC:'America/New_York',
+};
+function localDateStr(state, dateObj) {
+  const tz = STATE_TZ[(state||'').toUpperCase()] || 'America/Chicago';
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, month:'2-digit', day:'2-digit', year:'numeric' }).formatToParts(dateObj || new Date());
+  const p = Object.fromEntries(parts.map(x => [x.type, x.value]));
+  return p.month + p.day + String(p.year).slice(-2);
+}
+
+// ─── Auto-generate employee ID: STAFF-ST-MMDDYY-0001 ───
+function nextEmployeeId(state, hireDate) {
+  const dateStr = localDateStr(state, hireDate ? new Date(hireDate) : null);
+  const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
+  const last = db.prepare("SELECT employee_id FROM employees WHERE employee_id LIKE 'STAFF-%' ORDER BY id DESC LIMIT 1").get();
   let num = 1;
   if (last) {
     const parts = last.employee_id.split('-');
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `EMEE-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `STAFF-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
-// ─── Auto-generate worker code: PORT-CITY-MMDDYY-000001 ───
-function generateWorkerCode(city, prefix = 'PORT') {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  const dateStr = mm + dd + yy;
-  const cityStr = (city || '').replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase() || 'UNK';
+// ─── Auto-generate worker code: PORT-ST-MMDDYY-0001 ───
+function generateWorkerCode(state, prefix = 'PORT') {
+  const dateStr = localDateStr(state);
+  const stateStr = (state || '').replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() || 'XX';
   const last = db.prepare(`SELECT worker_code FROM worker_accounts WHERE worker_code LIKE ? ORDER BY id DESC LIMIT 1`).get(prefix + '-%');
   let num = 1;
   if (last) {
@@ -1495,7 +1780,7 @@ function generateWorkerCode(city, prefix = 'PORT') {
     const lastNum = parseInt(parts[parts.length - 1], 10);
     if (!isNaN(lastNum)) num = lastNum + 1;
   }
-  return `${prefix}-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
+  return `${prefix}-${stateStr}-${dateStr}-${String(num).padStart(4, '0')}`;
 }
 
 // ─── On verification: assign worker_code + ensure linked inquiry exists ───
@@ -1505,34 +1790,30 @@ function activateWorkerAccount(accountId, prefix) {
   // Generate worker_code if not already set
   if (!acc.worker_code) {
     const codePrefix = prefix || 'PORT';
-    const code = generateWorkerCode(acc.city, codePrefix);
+    const code = generateWorkerCode(acc.state, codePrefix);
     db.prepare('UPDATE worker_accounts SET worker_code=? WHERE id=?').run(code, accountId);
   }
-  // Ensure a linked inquiry exists (by phone → email → name → create)
-  const normPhone = s => (s || '').replace(/\D/g, '').slice(-10);
-  const wPhone = normPhone(acc.phone);
-  const wEmail = (acc.email || '').toLowerCase();
-  const wName  = (acc.name || '').trim();
-  let inqId = null;
-  if (wPhone) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE phone10(phone) = ?').get(wPhone);
-    if (row) inqId = row.id;
+  // Ensure a linked inquiry exists — prefer employee record's stored inquiry_id (survives account deletion/re-creation)
+  if (!acc.linked_inquiry_id) {
+    let inquiryId = null;
+    // If linked to an employee (STAFF-xxx), use that employee's persistent inquiry_id
+    if (acc.employee_id) {
+      const emp = db.prepare('SELECT inquiry_id FROM employees WHERE id=?').get(acc.employee_id);
+      if (emp && emp.inquiry_id) {
+        inquiryId = emp.inquiry_id;
+      }
+    }
+    if (!inquiryId) {
+      // Create a new inquiry and store it on the employee record for future re-registrations
+      const wName = (acc.name || '').trim();
+      const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
+      inquiryId = r.lastInsertRowid;
+      if (acc.employee_id) {
+        db.prepare('UPDATE employees SET inquiry_id=? WHERE id=?').run(inquiryId, acc.employee_id);
+      }
+    }
+    db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inquiryId, accountId);
   }
-  if (!inqId && wEmail) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE lower(email)=?').get(wEmail);
-    if (row) inqId = row.id;
-  }
-  if (!inqId && wName) {
-    const row = db.prepare('SELECT id FROM inquiries WHERE lower(trim(name))=?').get(wName.toLowerCase());
-    if (row) inqId = row.id;
-  }
-  if (!inqId) {
-    // No existing inquiry — create one so dispatch always works
-    const r = db.prepare('INSERT INTO inquiries (name, phone, email, type) VALUES (?,?,?,?)').run(wName, acc.phone || '', acc.email || '', 'worker');
-    inqId = r.lastInsertRowid;
-  }
-  // Persist the link directly on the worker account
-  db.prepare('UPDATE worker_accounts SET linked_inquiry_id=? WHERE id=?').run(inqId, accountId);
 }
 
 // ─── Auto-generate employer ID: EMER-CITY-MMDDYY-000001 ───
@@ -1553,6 +1834,25 @@ function nextEmployerId(city) {
   return `EMER-${cityStr}-${dateStr}-${String(num).padStart(6, '0')}`;
 }
 
+// ─── Auto-generate job ID: JOB-STATE-MMDDYY-0001 ───
+function generateJobId(location) {
+  const stateMatch = (location || '').match(/,\s*([A-Z]{2})\b/);
+  const state = stateMatch ? stateMatch[1] : 'XX';
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yy = String(d.getFullYear()).slice(-2);
+  const prefix = `JOB-${state}-${mm}${dd}${yy}-`;
+  const last = db.prepare(`SELECT job_id FROM jobs WHERE job_id LIKE ? ORDER BY job_id DESC LIMIT 1`).get(prefix + '%');
+  let seq = 1;
+  if (last && last.job_id) {
+    const parts = last.job_id.split('-');
+    const n = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(n)) seq = n + 1;
+  }
+  return prefix + String(seq).padStart(4, '0');
+}
+
 // ─── Haversine distance (GPS geofencing) ───
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371000; // Earth radius in meters
@@ -1562,6 +1862,28 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+// Lookup IANA timezone from lat/lng using free public API (non-blocking, fallback to America/Chicago)
+async function lookupTimezone(lat, lng) {
+  try {
+    const https = require('https');
+    return await new Promise((resolve) => {
+      const url = `https://api.geotimezone.com/public/timezone?latitude=${lat}&longitude=${lng}`;
+      https.get(url, (resp) => {
+        let data = '';
+        resp.on('data', d => data += d);
+        resp.on('end', () => {
+          try {
+            const j = JSON.parse(data);
+            resolve(j.iana_timezone || j.timezone || 'America/Chicago');
+          } catch { resolve('America/Chicago'); }
+        });
+      }).on('error', () => resolve('America/Chicago'));
+      setTimeout(() => resolve('America/Chicago'), 3000);
+    });
+  } catch { return 'America/Chicago'; }
+}
+
 
 // ─── Hours calculation (daily OT > 8h) ───
 function calcHours(clockIn, clockOut, breakMin) {
@@ -1598,10 +1920,14 @@ function dsMakeJWT() {
   const hdr = b64u(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
   const pay = b64u(JSON.stringify({ iss: process.env.DOCUSIGN_INTEGRATION_KEY, sub: process.env.DOCUSIGN_USER_ID, aud, iat: now, exp: now + 3600, scope: 'signature impersonation' }));
   const unsigned = `${hdr}.${pay}`;
-  const pem = (process.env.DOCUSIGN_PRIVATE_KEY || '').replace(/\\n/g, '\n');
+  let pem = (process.env.DOCUSIGN_PRIVATE_KEY || '')
+    .replace(/^["']|["']$/g, '')  // strip surrounding quotes if any
+    .replace(/\\n/g, '\n');       // convert literal \n to real newlines
+  // Use KeyObject for signing - handles PKCS#1 and PKCS#8, OpenSSL 3.x compatible
+  const keyObject = crypto.createPrivateKey({ key: pem, format: 'pem' });
   const signer = crypto.createSign('RSA-SHA256');
   signer.update(unsigned);
-  const sig = signer.sign(pem, 'base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const sig = signer.sign(keyObject, 'base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   return `${unsigned}.${sig}`;
 }
 
@@ -1638,8 +1964,9 @@ async function dsApiCall(method, apiPath, body) {
 }
 
 // Build a signHere tab using anchor string (preferred) with absolute fallback
+// anchorYOffset: '20' pushes the signature box 20pts below the anchor, keeping it clear of label text
 function dsSignTab(anchorStr, fallX, fallY) {
-  return { anchorString: anchorStr, anchorIgnoreIfNotPresent: 'true', anchorXOffset: '0', anchorYOffset: '0', xPosition: String(fallX), yPosition: String(fallY), pageNumber: '1', documentId: '1' };
+  return { anchorString: anchorStr, anchorIgnoreIfNotPresent: 'true', anchorXOffset: '0', anchorYOffset: '5', xPosition: String(fallX), yPosition: String(fallY), pageNumber: '1', documentId: '1' };
 }
 
 async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
@@ -1651,8 +1978,8 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
     documents: [{ documentBase64: docBase64, name: docName, fileExtension: fileExt, documentId: '1' }],
     recipients: {
       signers: [
-        { email: signer1.email, name: signer1.name, recipientId: '1', routingOrder: '1', tabs: { signHereTabs: [dsSignTab('/sig1/', 50, 680)], dateSignedTabs: [{ ...dsSignTab('/date1/', 50, 715), tabLabel: 'date1' }] } },
-        { email: signer2.email, name: signer2.name, recipientId: '2', routingOrder: '2', tabs: { signHereTabs: [dsSignTab('/sig2/', 320, 680)], dateSignedTabs: [{ ...dsSignTab('/date2/', 320, 715), tabLabel: 'date2' }] } }
+        { email: signer1.email, name: signer1.name, recipientId: '1', routingOrder: '1', clientUserId: '1', tabs: { signHereTabs: [dsSignTab('/sig1/', 50, 680)], dateSignedTabs: [{ ...dsSignTab('/date1/', 50, 715), tabLabel: 'date1' }] } },
+        { email: signer2.email, name: signer2.name, recipientId: '2', routingOrder: '1', tabs: { signHereTabs: [dsSignTab('/sig2/', 320, 680)], dateSignedTabs: [{ ...dsSignTab('/date2/', 320, 715), tabLabel: 'date2' }] } }
       ]
     },
     status: 'sent'
@@ -1660,6 +1987,289 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
   const result = await dsApiCall('POST', `/restapi/v2.1/accounts/${accountId}/envelopes`, envelope);
   if (result.status !== 201) throw new Error(`DocuSign ${result.status}: ${JSON.stringify(result.data)}`);
   return result.data;
+}
+
+// Create an embedded signing URL (recipient view) for signer1 (company, clientUserId '1')
+async function dsCreateSignUrl(envelopeId, signerEmail, signerName, returnUrl, frameOrigin) {
+  const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+  const body = { returnUrl, authenticationMethod: 'none', email: signerEmail, userName: signerName, clientUserId: '1' };
+  if (frameOrigin) body.frameOrigin = frameOrigin;
+  const r = await dsApiCall('POST', `/restapi/v2.1/accounts/${accountId}/envelopes/${envelopeId}/views/recipient`, body);
+  if (r.status !== 201) throw new Error(`DocuSign view ${r.status}: ${JSON.stringify(r.data)}`);
+  return r.data.url;
+}
+
+// Download the completed (signed) document PDF from DocuSign and return as Buffer
+async function dsDownloadSignedDoc(envelopeId) {
+  const token = await getDsToken();
+  const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+  const baseUri = (process.env.DOCUSIGN_BASE_URI || 'https://demo.docusign.net').replace(/\/$/, '');
+  const hostname = new URL(baseUri).hostname;
+  const apiPath = `/restapi/v2.1/accounts/${accountId}/envelopes/${envelopeId}/documents/combined`;
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname, path: apiPath, method: 'GET', headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/pdf' } }, (res) => {
+      if (res.statusCode !== 200) { let d = ''; res.on('data', c => d += c); res.on('end', () => reject(new Error(`DocuSign download ${res.statusCode}: ${d}`))); return; }
+      const chunks = []; res.on('data', c => chunks.push(c)); res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+    req.on('error', reject); req.end();
+  });
+}
+
+// Check whether PDF contains DocuSign anchor strings
+function checkDsAnchors(docPath) {
+  try {
+    const t = fs.readFileSync(docPath).toString('binary');
+    return { sig1: t.includes('/sig1/'), sig2: t.includes('/sig2/'), date1: t.includes('/date1/'), date2: t.includes('/date2/') };
+  } catch { return { sig1: false, sig2: false, date1: false, date2: false }; }
+}
+
+// Multi-page PDF builder from plain text (word-wrap + auto-paginate)
+function buildContractPdf(plainText) {
+  const esc = s => String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const pageW = 612, pageH = 792, margin = 60, lineH = 16;
+  const allLines = [];
+  for (const rawLine of (plainText || '').split('\n')) {
+    const t = rawLine.trimEnd();
+    if (!t) { allLines.push({ text: '', size: 11 }); continue; }
+    const isHeading = /^[A-Z][A-Z\s]{3,}$/.test(t.trim()) || /^\d+\.\s/.test(t.trim());
+    const size = isHeading ? 12 : 11;
+    const maxW = isHeading ? 72 : 82;
+    const words = t.split(' ');
+    let cur = '';
+    for (const w of words) {
+      if (!cur) { cur = w; continue; }
+      if ((cur + ' ' + w).length <= maxW) { cur += ' ' + w; }
+      else { allLines.push({ text: cur, size }); cur = w; }
+    }
+    if (cur) allLines.push({ text: cur, size });
+  }
+  const lpp = Math.floor((pageH - 2 * margin) / lineH);
+  const pages = [];
+  for (let i = 0; i < allLines.length; i += lpp) pages.push(allLines.slice(i, i + lpp));
+  if (!pages.length) pages.push([]);
+  const pc = pages.length;
+  // Object IDs: 1=Catalog, 2=Pages, 3=Font, then per page: 4+p*2=PageObj, 5+p*2=Stream
+  const header = '%PDF-1.4\n';
+  const parts = [Buffer.from(header)];
+  let off = header.length;
+  const xr = {};
+  const wo = (id, raw) => { xr[id] = off; const b = Buffer.from(raw, 'latin1'); parts.push(b); off += b.length; };
+  const kids = Array.from({ length: pc }, (_, p) => `${4 + p * 2} 0 R`).join(' ');
+  wo(1, `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`);
+  wo(2, `2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${pc} >>\nendobj\n`);
+  wo(3, `3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`);
+  for (let p = 0; p < pc; p++) {
+    const pid = 4 + p * 2, sid = 5 + p * 2;
+    wo(pid, `${pid} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${sid} 0 R >>\nendobj\n`);
+    const DS_ANCHORS = ['/sig1/', '/sig2/', '/date1/', '/date2/'];
+    let stream = ''; let y = pageH - margin;
+    for (const { text, size } of pages[p]) {
+      if (!text) { y -= lineH; continue; }
+      const anchor = DS_ANCHORS.find(a => text.includes(a));
+      if (anchor) {
+        const idx = text.indexOf(anchor);
+        const before = text.slice(0, idx);
+        const after = text.slice(idx + anchor.length);
+        let s = `BT /F1 ${size} Tf ${margin} ${y} Td `;
+        if (before) s += `(${esc(before)}) Tj `;
+        s += `1 1 1 rg (${esc(anchor)}) Tj 0 0 0 rg`;
+        if (after) s += ` (${esc(after)}) Tj`;
+        s += ` ET\n`;
+        stream += s;
+      } else {
+        stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
+      }
+      y -= lineH;
+    }
+    const sb = Buffer.from(stream, 'latin1');
+    wo(sid, `${sid} 0 obj\n<< /Length ${sb.length} >>\nstream\n${stream}endstream\nendobj\n`);
+  }
+  const maxId = 3 + pc * 2;
+  let xrefStr = `xref\n0 ${maxId + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i <= maxId; i++) xrefStr += (xr[i] !== undefined ? String(xr[i]).padStart(10, '0') : '0000000000') + ' 00000 n \n';
+  xrefStr += `trailer\n<< /Size ${maxId + 1} /Root 1 0 R >>\nstartxref\n${off}\n%%EOF`;
+  parts.push(Buffer.from(xrefStr));
+  return Buffer.concat(parts);
+}
+
+function generatePartnerContractText({ partnerName, companyName, partnerAddress, dateStr }) {
+  const cname = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'PARTNERSHIP SERVICE AGREEMENT', '',
+    `Date: ${dateStr}`, '',
+    'This Partnership Service Agreement ("Agreement") is entered into between:', '',
+    `Company: ${cname}  ("Service Provider")`,
+    `Partner: ${partnerName}`,
+    ...(partnerAddress ? [`Address: ${partnerAddress}`] : []),
+    '("Partner")', '',
+    '1. SCOPE OF SERVICES',
+    'The Partner agrees to provide staffing and workforce services as mutually agreed.',
+    'The Company will refer client engagements based on Partner availability and qualifications.', '',
+    '2. COMPENSATION',
+    'Compensation terms shall be agreed upon for each individual engagement or project.',
+    'Payment shall be made within 30 days of receipt of a valid invoice.', '',
+    '3. TERM',
+    'This Agreement commences on the date above and continues for one (1) year unless',
+    'terminated earlier by either party upon 30 days written notice.', '',
+    '4. CONFIDENTIALITY',
+    'Each party agrees to keep confidential any proprietary information disclosed by the other.', '',
+    '5. INDEPENDENT CONTRACTOR',
+    'Partner is an independent contractor, not an employee of the Company.', '',
+    '6. GOVERNING LAW',
+    'This Agreement shall be governed by the laws of the State of Illinois.', '',
+    '7. ENTIRE AGREEMENT',
+    'This Agreement constitutes the entire understanding between the parties.', '', '',
+    'SIGNATURES', '',
+    `${cname} (Service Provider)`,
+    'Authorized Signature: /sig1/',
+    'Date: /date1/', '',
+    `${partnerName} (Partner)`,
+    'Partner Signature: /sig2/',
+    'Date: /date2/',
+  ].join('\n');
+}
+
+function generateTerminationNoticeText({ partnerName, companyName, dateStr }) {
+  const c = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'NOTICE OF SERVICE TERMINATION', '服务终止通知书', '',
+    `Date / 日期: ${dateStr}`, '',
+    `To / 致: ${partnerName}`, '',
+    `Dear ${partnerName},`, '',
+    `This letter serves as formal written notice that ${c} hereby terminates`,
+    'the Partnership Service Agreement entered into between the parties,',
+    'effective thirty (30) days from the date of this notice.',
+    '',
+    'This termination is made in accordance with the termination clause of the',
+    'Agreement, which permits either party to terminate upon 30 days written',
+    'notice without cause.', '',
+    'During the notice period, all ongoing work and assignments shall be',
+    'completed or transitioned in an orderly manner. Final invoices must be',
+    'submitted within 15 days of the termination effective date.', '',
+    'Any outstanding balances owed by either party shall be settled within',
+    '30 days of the effective termination date.', '',
+    'We appreciate the partnership and wish you success in your future endeavors.', '',
+    'Sincerely,', '', c, '',
+    'Authorized Representative: ________________________', `Date: ${dateStr}`,
+  ].join('\n');
+}
+
+function generateBreachNoticeText({ partnerName, companyName, dateStr }) {
+  const c = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'NOTICE OF TERMINATION FOR BREACH', '违约终止通知书', '',
+    `Date / 日期: ${dateStr}`, '',
+    `To / 致: ${partnerName}`, '',
+    'Re: Termination of Partnership Service Agreement Due to Breach',
+    '事由：因违约终止合作服务协议', '',
+    `Dear ${partnerName},`, '',
+    `This letter constitutes formal notice that ${c} is terminating the`,
+    'Partnership Service Agreement ("Agreement") due to material breach.', '',
+    'THE FOLLOWING BREACH(ES) HAVE BEEN IDENTIFIED / 违约事项：',
+    '[请在此处描述具体违约行为 / DESCRIBE THE SPECIFIC BREACH(ES) HERE]', '',
+    'Despite prior notice and a reasonable opportunity to cure, the breach',
+    'remains unremedied. Accordingly, this Agreement is terminated effective',
+    'immediately upon receipt of this notice.', '',
+    'All outstanding obligations, including final settlements and return of any',
+    'proprietary materials, must be completed within 10 business days.', '',
+    `${c} reserves all rights and remedies available under the Agreement`, 'and applicable law.', '',
+    'Sincerely,', '', c, '',
+    'Authorized Representative: ________________________', `Date: ${dateStr}`,
+  ].join('\n');
+}
+
+function generateAmendmentText({ partnerName, companyName, dateStr }) {
+  const c = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'CONTRACT AMENDMENT AGREEMENT', '合同修改协议', '',
+    `This Amendment is entered into as of ${dateStr}, by and between:`, '',
+    `${c} ("Company")`, 'and', `${partnerName} ("Partner")`, '',
+    'WHEREAS, the parties entered into a Partnership Service Agreement',
+    '(the "Original Agreement");', '',
+    'NOW, THEREFORE, the parties agree to amend the Original Agreement as follows:', '',
+    '1. MODIFICATIONS / 修改内容',
+    '[请在此处详细描述对原合同的修改内容 / DESCRIBE ALL MODIFICATIONS HERE]', '',
+    '2. EFFECTIVE DATE / 生效日期',
+    'This Amendment shall be effective as of the date first written above.', '',
+    '3. CONTINUING EFFECT / 原合同持续效力',
+    'All other terms and conditions of the Original Agreement remain in full',
+    'force and effect.', '', '',
+    'IN WITNESS WHEREOF, the parties have executed this Amendment.', '',
+    `${c} (Company)`,
+    'Authorized Signature: /sig1/', 'Date: /date1/', '',
+    `${partnerName} (Partner)`,
+    'Partner Signature: /sig2/', 'Date: /date2/',
+  ].join('\n');
+}
+
+function generateMutualTerminationText({ partnerName, companyName, dateStr }) {
+  const c = companyName || 'Prime Anchorpoint LLC';
+  return [
+    'MUTUAL TERMINATION AGREEMENT', '协商解除协议', '',
+    `This Mutual Termination Agreement is entered into as of ${dateStr},`,
+    'by and between:', '',
+    `${c} ("Company")`, 'and', `${partnerName} ("Partner")`, '',
+    'The parties previously entered into a Partnership Service Agreement and',
+    'now mutually agree to terminate it on the following terms:', '',
+    '1. TERMINATION DATE / 终止日期',
+    '[请填写终止生效日期 / TERMINATION EFFECTIVE DATE]', '',
+    '2. FINAL SETTLEMENT / 最终结算',
+    '[请在此处约定最终结算事项 / FINAL SETTLEMENT TERMS]', '',
+    '3. MUTUAL RELEASE / 相互免责',
+    'Each party releases the other from all claims and liabilities arising from',
+    'the Partnership Service Agreement, except as provided herein.', '',
+    '4. CONFIDENTIALITY / 保密',
+    "Each party shall maintain confidentiality of the other party's proprietary",
+    'information following termination.', '',
+    '5. NO FURTHER OBLIGATIONS / 无进一步义务',
+    'Following termination, neither party shall have further obligations to the',
+    'other except as set forth in this Agreement.', '', '',
+    'IN WITNESS WHEREOF, the parties have executed this Mutual Termination Agreement.', '',
+    `${c} (Company)`,
+    'Authorized Signature: /sig1/', 'Date: /date1/', '',
+    `${partnerName} (Partner)`,
+    'Partner Signature: /sig2/', 'Date: /date2/',
+  ].join('\n');
+}
+
+function generateAssignmentContractText({ workerName, companyName, jobTitle, payRate, payType, startDate, workLocation, contractType }) {
+  const cname = companyName || 'Prime Anchorpoint LLC';
+  const payLabels = { hourly: 'per hour', salary: 'per month', annual: 'per year', per_piece: 'per piece' };
+  const payLabel = payLabels[payType] || 'per hour';
+  const dateStr = startDate || new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  return [
+    'EMPLOYMENT AGREEMENT', '',
+    `Date: ${dateStr}`, '',
+    'This Employment Agreement is entered into between:', '',
+    `Employer: ${cname}`,
+    `Employee: ${workerName || ''}`, '',
+    '1. POSITION AND DUTIES',
+    `Employee is hired as ${jobTitle || 'Staff Member'} and agrees to perform all duties`,
+    'as assigned by the Employer.', '',
+    '2. COMPENSATION',
+    `Employee will be compensated at ${payRate ? `$${payRate} ${payLabel}` : 'rates as mutually agreed'}.`,
+    `Classification: ${contractType || 'W2'}.`, '',
+    '3. WORK LOCATION',
+    workLocation || 'As assigned by Employer.', '',
+    '4. TERM',
+    `This Agreement begins on ${dateStr} and continues until terminated by either`,
+    'party with two (2) weeks written notice.', '',
+    '5. CONFIDENTIALITY',
+    'Employee shall maintain the confidentiality of all proprietary information',
+    'and trade secrets of the Employer and its clients.', '',
+    '6. AT-WILL EMPLOYMENT',
+    'Employment is at-will and may be terminated by either party at any time,',
+    'with or without cause, subject to applicable law.', '',
+    '7. GOVERNING LAW',
+    'This Agreement is governed by the laws of the State of Illinois.', '', '',
+    'SIGNATURES', '',
+    `${cname} (Employer)`,
+    'Authorized Signature: /sig1/',
+    'Date: /date1/', '',
+    `${workerName || 'Employee'} (Employee)`,
+    'Employee Signature: /sig2/',
+    'Date: /date2/',
+  ].join('\n');
 }
 
 // Seed default admin into admin_users table if empty
@@ -1671,10 +2281,22 @@ async function dsSendEnvelope({ docPath, docName, emailSubject, signer1, signer2
     const salt = crypto.randomBytes(16).toString('hex');
     const hash = hashPassword(defaultPass, salt);
     db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name) VALUES (?, ?, ?, ?, ?)').run(defaultUser, hash, salt, 'admin', 'Administrator');
-    console.log(`[Auth] Seeded default admin user: ${defaultUser}`);
+    console.log(`[Auth] Seeded default admin user: ${defaultUser} / ${defaultPass}`);
   }
   // Ensure the first user (original seeded admin) has admin role
   try { db.prepare("UPDATE admin_users SET role='admin' WHERE id=1 AND (role IS NULL OR role='staff')").run(); } catch {}
+  // Force-reset admin password if RESET_ADMIN_PASS env var is set
+  if (process.env.RESET_ADMIN_PASS) {
+    const targetUser = process.env.ADMIN_USER || 'admin';
+    const newPass = process.env.RESET_ADMIN_PASS;
+    const user = db.prepare('SELECT id FROM admin_users WHERE username = ?').get(targetUser);
+    if (user) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = hashPassword(newPass, salt);
+      db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=1 WHERE id=?').run(hash, salt, user.id);
+      console.log(`[Auth] Reset admin password for user: ${targetUser}`);
+    }
+  }
 }
 
 // DB-backed session store (survives server restarts, tokens expire in 24h)
@@ -1687,6 +2309,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
 )`);
 // Clean up expired sessions on startup
 try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+
+// DB-backed worker session store (survives server restarts)
+db.exec(`CREATE TABLE IF NOT EXISTS worker_sessions (
+  token TEXT PRIMARY KEY,
+  worker_id INTEGER NOT NULL,
+  employee_id TEXT,
+  created_at INTEGER NOT NULL
+)`);
+try { db.prepare('DELETE FROM worker_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+
+// DB-backed customer session store (survives server restarts)
+db.exec(`CREATE TABLE IF NOT EXISTS customer_sessions (
+  token TEXT PRIMARY KEY,
+  customer_id INTEGER NOT NULL,
+  partner_id INTEGER,
+  created_at INTEGER NOT NULL
+)`);
+try { db.prepare('DELETE FROM customer_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
 
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
@@ -1715,8 +2355,10 @@ function requireAdmin(req, res, next) {
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
-  const _u = db.prepare('SELECT assigned_partner_ids FROM admin_users WHERE id=?').get(session.userId);
+  const _u = db.prepare('SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=?').get(session.userId);
   req.assignedPartnerIds = (_u && _u.assigned_partner_ids) || '';
+  req.assignedEmployeeIds = (_u && _u.assigned_employee_ids) || '';
+  req.assignedJobIds = (_u && _u.assigned_job_ids) || '';
   next();
 }
 
@@ -1751,10 +2393,16 @@ function blockManager(req, res, next) {
 function managerPartnerIds(req) {
   return (req.assignedPartnerIds || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
 }
+// Helper: parse manager's directly assigned employee IDs into array of ints
+function managerEmployeeIds(req) {
+  return (req.assignedEmployeeIds || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+}
+// Helper: parse manager's assigned job IDs into array of ints
+function managerJobIds(req) {
+  return (req.assignedJobIds || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+}
 
 // ─── Worker / Customer portal auth ───
-const workerSessions = new Map();
-const customerSessions = new Map();
 const resetCodes = new Map(); // key: "worker:login" or "customer:login", value: { code, expires }
 
 function requireWorker(req, res, next) {
@@ -1765,18 +2413,19 @@ function requireWorker(req, res, next) {
     const m = (req.headers.cookie || '').match(/pa_worker=([^;]+)/);
     if (m) token = m[1];
   }
-  const s = workerSessions.get(token);
-  if (!s || Date.now() - s.created > 24 * 60 * 60 * 1000) {
-    if (token) workerSessions.delete(token);
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const s = db.prepare('SELECT * FROM worker_sessions WHERE token=?').get(token);
+  if (!s || Date.now() - s.created_at > 24 * 60 * 60 * 1000) {
+    if (s) db.prepare('DELETE FROM worker_sessions WHERE token=?').run(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
   // Verify account still exists and is not suspended
-  const w = db.prepare('SELECT id, active, suspended, employee_id FROM worker_accounts WHERE id=?').get(s.workerId);
+  const w = db.prepare('SELECT id, active, suspended, employee_id FROM worker_accounts WHERE id=?').get(s.worker_id);
   if (!w || !w.active || w.suspended) {
-    workerSessions.delete(token);
+    db.prepare('DELETE FROM worker_sessions WHERE token=?').run(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  req.workerId = s.workerId;
+  req.workerId = s.worker_id;
   req.workerEmployeeId = w.employee_id;
   next();
 }
@@ -1789,18 +2438,19 @@ function requireCustomer(req, res, next) {
     const m = (req.headers.cookie || '').match(/pa_customer=([^;]+)/);
     if (m) token = m[1];
   }
-  const s = customerSessions.get(token);
-  if (!s || Date.now() - s.created > 24 * 60 * 60 * 1000) {
-    if (token) customerSessions.delete(token);
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  const s = db.prepare('SELECT * FROM customer_sessions WHERE token=?').get(token);
+  if (!s || Date.now() - s.created_at > 24 * 60 * 60 * 1000) {
+    if (s) db.prepare('DELETE FROM customer_sessions WHERE token=?').run(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
   // Verify account still exists
-  const c = db.prepare('SELECT id, active, partner_id FROM customer_accounts WHERE id=?').get(s.customerId);
+  const c = db.prepare('SELECT id, active, partner_id FROM customer_accounts WHERE id=?').get(s.customer_id);
   if (!c || !c.active) {
-    customerSessions.delete(token);
+    db.prepare('DELETE FROM customer_sessions WHERE token=?').run(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  req.customerId = s.customerId;
+  req.customerId = s.customer_id;
   req.customerPartnerId = c.partner_id;
   next();
 }
@@ -1812,19 +2462,23 @@ app.get('/api/jobs', (req, res) => {
   const lang = req.query.lang;
   const base = `SELECT j.*, p.name as partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id=p.id WHERE j.active=1 AND j.visible=1`;
   const jobs = (lang && lang !== 'all')
-    ? db.prepare(base + ' AND j.lang=? ORDER BY j.created_at DESC').all(lang)
+    ? db.prepare(base + ` AND (j.langs LIKE ? OR (COALESCE(j.langs,'')='' AND j.lang=?)) ORDER BY j.created_at DESC`).all(`%${lang}%`, lang)
     : db.prepare(base + ' ORDER BY j.created_at DESC').all();
   res.json(jobs.map(j => ({
     id: j.id, title: j.title, type: j.type, location: j.location,
-    pay: j.pay, lang: j.lang, lang_name: j.lang_name,
-    desc: j.description, urgent: !!j.urgent, work_auth: j.work_auth || '',
+    pay: j.pay, pay_period: j.pay_period || '', lang: j.lang, lang_name: j.lang_name,
+    langs: j.langs || j.lang || 'en',
+    title_zh: j.title_zh || '', title_es: j.title_es || '',
+    desc: j.description, desc_zh: j.desc_zh || '', desc_es: j.desc_es || '',
+    urgent: !!j.urgent, work_auth: j.work_auth || '',
     partner_name: j.partner_name || '',
     company_name: j.company_name || '', employment_type: j.employment_type || '',
     benefits: j.benefits || '[]', schedule: j.schedule || '',
     schedule_days: j.schedule_days || '[]',
     schedule_start: j.schedule_start || '',
     schedule_end: j.schedule_end || '',
-    work_days: j.work_days || '', work_start: j.work_start || '', work_end: j.work_end || ''
+    work_days: j.work_days || '', work_start: j.work_start || '', work_end: j.work_end || '',
+    job_id: j.job_id || ''
   })));
 });
 
@@ -1896,6 +2550,7 @@ app.post('/api/admin/login', (req, res) => {
   // Password correct but account not yet self-verified — prompt user to set own password
   if (!user.active) return res.json({ needs_activation: true, username });
   const token = createSession(user);
+  res.cookie('pa_token', token, { httpOnly: true, sameSite: 'Lax' });
   res.json({ success: true, token, user_id: user.id, role: user.role || 'staff', username: user.username, display_name: user.display_name || '' });
 });
 
@@ -1920,6 +2575,7 @@ app.post('/api/admin/logout', requireAdmin, (req, res) => {
   if (auth && auth.startsWith('Bearer ')) {
     db.prepare('DELETE FROM admin_sessions WHERE token=?').run(auth.slice(7));
   }
+  res.clearCookie('pa_token');
   res.json({ success: true });
 });
 
@@ -1945,58 +2601,249 @@ app.get('/api/manager/me', requireAdmin, requireRole('manager', 'admin', 'staff'
 // GET /api/manager/my-assignments — assignments for manager's assigned partner companies
 app.get('/api/manager/my-assignments', requireAdmin, (req, res) => {
   const pids = managerPartnerIds(req);
-  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  const jids = managerJobIds(req);
+  const eids = managerEmployeeIds(req);
+  if (req.userRole === 'manager' && !pids.length && !jids.length && !eids.length) return res.json([]);
+  const isManager = req.userRole === 'manager';
   let q = `
     SELECT a.id, a.status, a.start_date, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
-           a.work_address, a.notes, a.assigned_at, a.work_schedule,
+           ${isManager ? "'' AS work_address" : 'a.work_address'}, a.notes, a.assigned_at, a.work_schedule,
            i.name  AS worker_name,
            i.phone AS worker_phone,
            i.email AS worker_email,
+           i.address AS worker_address,
+           i.city    AS worker_city,
+           i.state   AS worker_state,
+           i.zip     AS worker_zip,
            j.title AS job_title,
-           j.location AS job_location,
+           ${isManager ? "'' AS job_location" : 'j.location AS job_location'},
            j.partner_id,
-           p.name  AS company_name
+           p.name    AS company_name,
+           p.address AS company_address
     FROM assignments a
     LEFT JOIN inquiries i ON a.inquiry_id = i.id
     LEFT JOIN jobs j ON a.job_id = j.id
     LEFT JOIN partners p ON j.partner_id = p.id
     WHERE 1=1`;
   const params = [];
-  if (req.userRole === 'manager' && pids.length) {
-    q += ` AND j.partner_id IN (${pids.map(() => '?').join(',')})`;
-    params.push(...pids);
+  if (req.userRole === 'manager') {
+    const conds = [];
+    if (pids.length) {
+      conds.push(`j.partner_id IN (${pids.map(() => '?').join(',')})`);
+      params.push(...pids);
+    }
+    if (jids.length) {
+      conds.push(`a.job_id IN (${jids.map(() => '?').join(',')})`);
+      params.push(...jids);
+    }
+    if (eids.length) {
+      conds.push(`a.inquiry_id IN (SELECT linked_inquiry_id FROM worker_accounts WHERE employee_id IN (${eids.map(() => '?').join(',')}) AND linked_inquiry_id IS NOT NULL)`);
+      params.push(...eids);
+    }
+    if (conds.length) q += ` AND (${conds.join(' OR ')})`;
   }
   q += ' ORDER BY a.assigned_at DESC';
   res.json(db.prepare(q).all(...params));
 });
 
+// GET /api/manager/interviews — interview requests for workers at this manager's partner companies
+app.get('/api/manager/interviews', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  let workerFilter = '';
+  const params = [];
+  if (req.userRole === 'manager' && pids.length) {
+    workerFilter = `AND i.worker_account_id IN (
+      SELECT DISTINCT wa.id FROM worker_accounts wa
+      JOIN employees e ON wa.employee_id = e.id
+      WHERE e.id IN (
+        SELECT DISTINCT t.employee_id FROM time_entries t
+        JOIN jobs j ON t.job_id = j.id
+        WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+      )
+    )`;
+    params.push(...pids);
+  }
+  const rows = db.prepare(`
+    SELECT i.id, i.status, i.admin_notes, i.created_at,
+      s.slot_datetime, s.duration_min, s.location,
+      w.id AS worker_id, w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.work_status, w.identity_status
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+    WHERE 1=1 ${workerFilter}
+    ORDER BY s.slot_datetime DESC
+  `).all(...params);
+  res.json(rows);
+});
+
 // GET /api/manager/workers — employees visible to this manager with contact info
 app.get('/api/manager/workers', requireAdmin, (req, res) => {
   const pids = managerPartnerIds(req);
-  if (req.userRole === 'manager' && !pids.length) return res.json([]);
+  const jids = managerJobIds(req);
+  const eids = managerEmployeeIds(req);
+  if (req.userRole === 'manager' && !pids.length && !jids.length && !eids.length) return res.json([]);
   let q = `
     SELECT DISTINCT e.id, e.first_name, e.last_name, e.employee_id as emp_code,
            e.email, e.phone, e.position, e.status
     FROM employees e`;
   const params = [];
-  if (req.userRole === 'manager' && pids.length) {
-    q += ` WHERE e.id IN (
-      SELECT DISTINCT t.employee_id FROM time_entries t
-      JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
-    )`;
-    params.push(...pids);
+  if (req.userRole === 'manager') {
+    const conds = [];
+    if (pids.length) {
+      // Employees with time entries under partner's jobs
+      conds.push(`e.id IN (SELECT DISTINCT t.employee_id FROM time_entries t JOIN jobs j ON t.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')}))`);
+      params.push(...pids);
+      // Also employees explicitly assigned to jobs under partner companies (even without time entries)
+      conds.push(`e.id IN (SELECT DISTINCT ej.employee_id FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')}))`);
+      params.push(...pids);
+    }
+    if (jids.length) {
+      // Employees assigned to any of the manager's jobs (via employee_jobs, no status filter)
+      conds.push(`e.id IN (SELECT DISTINCT employee_id FROM employee_jobs WHERE job_id IN (${jids.map(() => '?').join(',')}))`);
+      params.push(...jids);
+    }
+    if (eids.length) {
+      conds.push(`e.id IN (${eids.map(() => '?').join(',')})`);
+      params.push(...eids);
+    }
+    if (conds.length) q += ` WHERE (${conds.join(' OR ')})`;
   }
   q += ' ORDER BY e.last_name, e.first_name';
   res.json(db.prepare(q).all(...params));
 });
 
+// GET /api/manager/my-jobs — jobs visible to this manager
+app.get('/api/manager/my-jobs', requireAdmin, (req, res) => {
+  const pids = managerPartnerIds(req);
+  const jids = managerJobIds(req);
+  if (req.userRole === 'manager' && !pids.length && !jids.length) return res.json([]);
+  let q = `SELECT DISTINCT j.id, j.title, p.name AS company_name FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id WHERE j.active = 1`;
+  const params = [];
+  if (req.userRole === 'manager') {
+    const conds = [];
+    if (pids.length) { conds.push(`j.partner_id IN (${pids.map(() => '?').join(',')})`); params.push(...pids); }
+    if (jids.length) { conds.push(`j.id IN (${jids.map(() => '?').join(',')})`); params.push(...jids); }
+    if (conds.length) q += ` AND (${conds.join(' OR ')})`;
+  }
+  q += ' ORDER BY j.title';
+  res.json(db.prepare(q).all(...params));
+});
+
+// ─── Manager Self-Punch APIs ───────────────────────────────────────────────────
+
+// GET /api/manager/self-punch-status — current punch state for the logged-in manager
+app.get('/api/manager/self-punch-status', requireAdmin, requireRole('manager', 'admin', 'staff'), (req, res) => {
+  const open = db.prepare("SELECT * FROM manager_time_entries WHERE manager_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.userId);
+  const today = new Date().toISOString().slice(0, 10);
+  const todayEntries = db.prepare("SELECT * FROM manager_time_entries WHERE manager_id=? AND DATE(clock_in)=?").all(req.userId, today);
+  res.json({
+    clocked_in: !!open,
+    on_break: !!(open && open.on_break),
+    open_entry: open || null,
+    today_entries: todayEntries
+  });
+});
+
+// POST /api/manager/self-punch — manager clocks in/out for themselves
+app.post('/api/manager/self-punch', requireAdmin, requireRole('manager', 'admin', 'staff'), (req, res) => {
+  const { punch_type } = req.body;
+  if (!punch_type || !['in', 'break_start', 'break_end', 'out'].includes(punch_type))
+    return res.status(400).json({ error: '请选择打卡类型' });
+  const now = new Date().toISOString();
+  const open = db.prepare("SELECT * FROM manager_time_entries WHERE manager_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.userId);
+
+  if (punch_type === 'break_start') {
+    if (!open) return res.status(400).json({ error: '尚未上班打卡' });
+    if (open.on_break) return res.status(400).json({ error: '已在休息中' });
+    const breaks = JSON.parse(open.break_records || '[]');
+    breaks.push({ start: now, end: null });
+    db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=1 WHERE id=?').run(JSON.stringify(breaks), open.id);
+    return res.json({ action: 'break_start' });
+  }
+  if (punch_type === 'break_end') {
+    if (!open) return res.status(400).json({ error: '尚未上班打卡' });
+    const breaks = JSON.parse(open.break_records || '[]');
+    const lastIdx = breaks.findIndex(b => !b.end);
+    if (lastIdx >= 0) {
+      breaks[lastIdx].end = now;
+      const breakMins = Math.round(breaks.reduce((s, b) => b.start && b.end ? s + (new Date(b.end) - new Date(b.start)) : s, 0) / 60000);
+      db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
+      return res.json({ action: 'break_end', break_minutes: breakMins });
+    } else {
+      // No open break — record flagged entry with null start for review
+      breaks.push({ start: null, end: now, flagged: true });
+      db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=0 WHERE id=?').run(JSON.stringify(breaks), open.id);
+      return res.json({ action: 'break_end', break_minutes: 0, warning: '未找到休息开始记录，休息结束已记录，请核查' });
+    }
+  }
+  if (punch_type === 'out') {
+    if (!open) return res.status(400).json({ error: '尚未上班打卡' });
+    if (open.on_break) {
+      // Auto-close break
+      const breaks = JSON.parse(open.break_records || '[]');
+      const lastIdx = breaks.findIndex(b => !b.end);
+      if (lastIdx >= 0) breaks[lastIdx].end = now;
+      const breakMins = Math.round(breaks.reduce((s, b) => b.start && b.end ? s + (new Date(b.end) - new Date(b.start)) : s, 0) / 60000);
+      db.prepare('UPDATE manager_time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
+      open.break_minutes = breakMins;
+    }
+    const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
+    db.prepare("UPDATE manager_time_entries SET clock_out=?, total_hours=?, status='closed', needs_review=1 WHERE id=?").run(now, hrs.total, open.id);
+    return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now });
+  }
+  // punch_type === 'in'
+  if (open) {
+    // Auto-close any dangling open entry
+    const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
+    db.prepare("UPDATE manager_time_entries SET clock_out=?, total_hours=?, status='closed', needs_review=1 WHERE id=?").run(now, hrs.total, open.id);
+  }
+  const result = db.prepare("INSERT INTO manager_time_entries (manager_id, clock_in, status, break_records, on_break) VALUES (?, ?, 'open', '[]', 0)").run(req.userId, now);
+  return res.json({ action: 'in', clock_in: now, entry_id: result.lastInsertRowid });
+});
+
+// GET /api/admin/manager-self-punch-history — manager's own punch history (for admin/manager viewing)
+app.get('/api/manager/self-punch-history', requireAdmin, requireRole('manager', 'admin', 'staff'), (req, res) => {
+  const { date_from, date_to } = req.query;
+  let q = 'SELECT * FROM manager_time_entries WHERE manager_id=?';
+  const p = [req.userId];
+  if (date_from) { q += ' AND DATE(clock_in)>=?'; p.push(date_from); }
+  if (date_to)   { q += ' AND DATE(clock_in)<=?'; p.push(date_to); }
+  q += ' ORDER BY clock_in DESC LIMIT 200';
+  res.json(db.prepare(q).all(...p));
+});
+
+// GET /api/admin/managers/:id/self-punch — admin views a specific manager's own punch records
+app.get('/api/admin/managers/:id/self-punch', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { date_from, date_to } = req.query;
+  let q = 'SELECT * FROM manager_time_entries WHERE manager_id=?';
+  const p = [req.params.id];
+  if (date_from) { q += ' AND DATE(clock_in)>=?'; p.push(date_from); }
+  if (date_to)   { q += ' AND DATE(clock_in)<=?'; p.push(date_to); }
+  q += ' ORDER BY clock_in DESC LIMIT 200';
+  res.json(db.prepare(q).all(...p));
+});
+
+// POST /api/admin/manager-self-punch/:id/confirm — admin confirms a manager's self-punch record
+app.post('/api/admin/manager-self-punch/:id/confirm', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  db.prepare('UPDATE manager_time_entries SET needs_review=0 WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// POST /api/manager/self-punch/:id/confirm — admin/staff confirms from manager portal
+app.post('/api/manager/self-punch/:id/confirm', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  db.prepare('UPDATE manager_time_entries SET needs_review=0 WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 // ─── Account Management (admin only) ───
 app.get('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, display_name, active, assigned_partner_ids, created_at FROM admin_users ORDER BY id').all());
+  res.json(db.prepare('SELECT id, username, role, display_name, email, phone, active, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, created_at FROM admin_users ORDER BY id').all());
 });
 
 app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   if (!['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const existing = db.prepare('SELECT id, active FROM admin_users WHERE username = ?').get(username);
@@ -2005,14 +2852,13 @@ app.post('/api/admin/accounts', requireAdmin, requireRole('admin'), (req, res) =
   if (existing && !existing.active) db.prepare('DELETE FROM admin_users WHERE id = ?').run(existing.id);
   const salt = crypto.randomBytes(16).toString('hex');
   const hash = hashPassword(password, salt);
-  // New accounts start inactive (active=0); user must self-verify to activate
-  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active) VALUES (?, ?, ?, ?, ?, ?, 0)')
-    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '');
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)')
+    .run(username, hash, salt, role, display_name || '', assigned_partner_ids || '', assigned_employee_ids || '', assigned_job_ids || '', email || '', phone || '');
   res.json({ success: true, id: result.lastInsertRowid });
 });
 
 app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { username, password, role, display_name, assigned_partner_ids } = req.body;
+  const { username, password, role, display_name, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, email, phone } = req.body;
   if (role && !['admin', 'staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -2022,8 +2868,8 @@ app.put('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, res
     db.prepare('UPDATE admin_users SET password_hash=?, salt=?, active=0 WHERE id=?').run(hash, salt, req.params.id);
   }
   // active field is intentionally excluded — only the user themselves can activate via self-verification
-  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=? WHERE id=?')
-    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), req.params.id);
+  db.prepare('UPDATE admin_users SET username=?, role=?, display_name=?, assigned_partner_ids=?, assigned_employee_ids=?, assigned_job_ids=?, email=?, phone=? WHERE id=?')
+    .run(username || user.username, role || user.role, display_name !== undefined ? display_name : user.display_name, assigned_partner_ids !== undefined ? assigned_partner_ids : (user.assigned_partner_ids || ''), assigned_employee_ids !== undefined ? assigned_employee_ids : (user.assigned_employee_ids || ''), assigned_job_ids !== undefined ? assigned_job_ids : (user.assigned_job_ids || ''), email !== undefined ? email : (user.email || ''), phone !== undefined ? phone : (user.phone || ''), req.params.id);
   res.json({ success: true });
 });
 
@@ -2031,6 +2877,545 @@ app.delete('/api/admin/accounts/:id', requireAdmin, requireRole('admin'), (req, 
   if (parseInt(req.params.id) === req.userId) return res.status(400).json({ error: 'Cannot delete your own account' });
   db.prepare('DELETE FROM admin_users WHERE id = ?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Admin Invite Links ───────────────────────────────────────────
+function inviteUrlPath(role) {
+  if (role === 'staff') return '/staff';
+  if (role === 'manager') return '/manager';
+  return '/admin-invite';
+}
+
+app.get('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare(`SELECT * FROM admin_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC`).all();
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host  = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}${inviteUrlPath(r.role)}?token=${r.token}` })));
+});
+
+app.post('/api/admin/invite-links', requireAdmin, requireRole('admin'), (req, res) => {
+  try {
+    const { role, hours, notes, assigned_partner_ids } = req.body;
+    if (!['staff', 'manager'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+    const h = Math.min(Math.max(parseInt(hours) || 24, 1), 720);
+    const token = crypto.randomBytes(28).toString('hex');
+    const expiresAt = new Date(Date.now() + h * 3600000).toISOString().slice(0, 19).replace('T', ' ');
+    db.prepare('INSERT INTO admin_invites (token, role, notes, assigned_partner_ids, expires_at, created_by) VALUES (?,?,?,?,?,?)')
+      .run(token, role, notes || '', assigned_partner_ids || '', expiresAt, req.userId);
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const host  = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    res.json({ success: true, url: `${proto}://${host}${inviteUrlPath(role)}?token=${token}` });
+  } catch(e) {
+    console.error('invite-links POST error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/admin/invite-links/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM admin_invites WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Public: verify admin invite token
+app.get('/api/admin-invite/verify', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Missing token' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(404).json({ error: '邀请链接已失效或已被使用' });
+  res.json({ role: inv.role, notes: inv.notes, assigned_partner_ids: inv.assigned_partner_ids });
+});
+
+// Public: register admin account via invite token
+app.post('/api/admin-invite/send-code', async (req, res) => {
+  const { token, phone } = req.body;
+  if (!token || !phone) return res.status(400).json({ error: '缺少参数' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  const sent = await sendVerifyCode(phone, 'sms');
+  res.json({ success: true, skipped: !sent });
+});
+
+app.post('/api/admin-invite/send-email-code', async (req, res) => {
+  const { token, email } = req.body;
+  if (!token || !email) return res.status(400).json({ error: '缺少参数' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  const sent = await sendEmail(email, '验证码 / Verification Code — Prime Anchorpoint',
+    `您的邮箱验证码是 ${code}，15分钟内有效。\nYour email verification code is ${code}, valid for 15 minutes.`,
+    verificationCodeHtml(code));
+  if (sent) {
+    db.prepare('DELETE FROM admin_reg_codes WHERE token=? AND contact=?').run(token, email);
+    db.prepare('INSERT INTO admin_reg_codes (token, contact, contact_type, code, expires_at) VALUES (?,?,?,?,?)').run(token, email, 'email', code, expiresAt);
+  }
+  res.json({ success: true, skipped: !sent });
+});
+
+app.post('/api/admin-invite/register', async (req, res) => {
+  const { token, username, display_name, first_name, middle_name, last_name, password, phone, email, city, state, zip, sms_code, email_code } = req.body;
+  if (!token || !username || !password) return res.status(400).json({ error: '缺少必填字段' });
+  if (password.length < 6) return res.status(400).json({ error: '密码至少 6 位' });
+  if (!phone) return res.status(400).json({ error: '请填写手机号' });
+  if (!email) return res.status(400).json({ error: '请填写邮箱' });
+  const inv = db.prepare(`SELECT * FROM admin_invites WHERE token=? AND used=0 AND expires_at > datetime('now')`).get(token);
+  if (!inv) return res.status(400).json({ error: '邀请链接已失效或已被使用' });
+  // Verify SMS code
+  if (twilioClient && TWILIO_VERIFY_SID && sms_code) {
+    const ok = await checkVerifyCode(phone, sms_code);
+    if (!ok) return res.status(400).json({ error: '手机验证码错误或已过期，请重试' });
+  } else if (twilioClient && TWILIO_VERIFY_SID && !sms_code) {
+    return res.status(400).json({ error: '请输入手机验证码' });
+  }
+  // Verify email code (stored in DB via sendEmail)
+  const emailVc = db.prepare("SELECT * FROM admin_reg_codes WHERE token=? AND contact=? AND contact_type='email' AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1").get(token, email);
+  if (emailVc) {
+    if (!email_code) return res.status(400).json({ error: '请输入邮箱验证码' });
+    if (emailVc.code !== String(email_code)) return res.status(400).json({ error: '邮箱验证码错误或已过期，请重试' });
+  }
+  const existing = db.prepare('SELECT id FROM admin_users WHERE username=?').get(username);
+  if (existing) return res.status(400).json({ error: '用户名已存在，请换一个' });
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const fullName = [first_name, middle_name, last_name].filter(Boolean).join(' ') || display_name || username;
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, assigned_partner_ids, active, phone, email, city) VALUES (?,?,?,?,?,?,1,?,?,?)')
+    .run(username, hash, salt, inv.role, fullName, inv.assigned_partner_ids || '', phone || '', email || '', city || '');
+  db.prepare('UPDATE admin_invites SET used=1, used_at=CURRENT_TIMESTAMP WHERE id=?').run(inv.id);
+  db.prepare('DELETE FROM admin_reg_codes WHERE token=?').run(token);
+  const user = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
+  const sessionToken = createSession(user);
+  res.json({ success: true, token: sessionToken, role: user.role, username: user.username, display_name: user.display_name });
+});
+
+// Serve admin invite registration page (shared handler for /admin-invite, /staff, /manager)
+function serveAdminInvitePage(req, res) {
+  res.send(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>账户注册 — Prime Anchorpoint</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
+.card{background:#fff;border-radius:16px;padding:2.5rem 2rem;width:100%;max-width:420px;box-shadow:0 4px 24px rgba(0,0,0,.1)}
+.logo-wrap{text-align:center;margin-bottom:1.25rem}
+.logo-wrap img{width:72px;height:72px;object-fit:contain}
+h1{text-align:center;font-size:1.3rem;font-weight:700;color:#0F2B5B;margin-bottom:.25rem}
+.sub{text-align:center;font-size:.85rem;color:#64748b;margin-bottom:1.5rem;line-height:1.5}
+label{display:block;font-size:.8rem;font-weight:600;color:#475569;margin-bottom:.3rem;margin-top:.85rem}
+input{width:100%;padding:.65rem .85rem;border:1.5px solid #e2e8f0;border-radius:9px;font-size:.95rem;outline:none;transition:border .15s;font-family:inherit}
+input:focus{border-color:#4A90D9;box-shadow:0 0 0 3px rgba(74,144,217,.1)}
+.phone-row{display:flex;gap:.5rem;align-items:flex-end}
+.phone-row input{flex:1}
+.field-row{display:flex;gap:.5rem}
+.field-row input{flex:1;margin-top:0}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:2.4rem}
+.pw-eye{position:absolute;right:.7rem;top:50%;transform:translateY(-50%);cursor:pointer;color:#94a3b8;font-size:1.05rem;user-select:none;line-height:1}
+.send-btn{white-space:nowrap;padding:.65rem 1rem;background:#f0f9ff;color:#0369a1;border:1.5px solid #bae6fd;border-radius:9px;font-size:.82rem;font-weight:700;cursor:pointer;transition:background .15s;flex-shrink:0}
+.send-btn:hover:not(:disabled){background:#e0f2fe}
+.send-btn:disabled{opacity:.5;cursor:default}
+.btn{width:100%;padding:.8rem;background:#1d4ed8;color:#fff;border:none;border-radius:9px;font-size:.97rem;font-weight:700;cursor:pointer;margin-top:1.4rem;transition:background .15s}
+.btn:hover:not(:disabled){background:#1e40af}
+.btn:disabled{opacity:.5;cursor:default}
+.err{color:#dc2626;font-size:.82rem;margin-top:.6rem;padding:.4rem .6rem;background:#fef2f2;border-radius:6px;display:none}
+.role-badge{display:inline-block;padding:.2rem .7rem;border-radius:99px;font-size:.78rem;font-weight:700;background:#dbeafe;color:#1d4ed8}
+.ok{color:#16a34a;font-size:1rem;font-weight:700;margin-top:.5rem;text-align:center}
+.hint{font-size:.76rem;color:#94a3b8;margin-top:.25rem}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo-wrap"><img src="/logo.svg" alt="Prime Anchorpoint" onerror="this.style.display='none'"></div>
+  <h1>账户注册</h1>
+  <div class="sub" id="sub">加载中…</div>
+  <div id="form" style="display:none">
+    <label>用户名 <span style="color:#94a3b8;font-weight:400">(登录用)</span></label>
+    <input id="username" placeholder="设置登录用户名" autocomplete="username">
+    <label>姓名 / Full Name</label>
+    <div class="field-row">
+      <input id="first_name" placeholder="First" autocomplete="given-name">
+      <input id="middle_name" placeholder="Middle" autocomplete="additional-name">
+      <input id="last_name" placeholder="Last" autocomplete="family-name">
+    </div>
+    <label>手机号 / Phone <span style="color:#dc2626">*</span></label>
+    <div class="phone-row">
+      <input id="phone" type="tel" placeholder="10位美国手机号" autocomplete="tel" oninput="resetCode()">
+      <button class="send-btn" id="sendCodeBtn" onclick="sendCode()">发送验证码</button>
+    </div>
+    <div id="codeWrap" style="display:none">
+      <label>验证码 / Code</label>
+      <input id="sms_code" type="text" inputmode="numeric" maxlength="6" placeholder="6位验证码">
+      <div class="hint">验证码已发送至您的手机，15分钟内有效</div>
+    </div>
+    <label>邮箱 / Email <span style="color:#dc2626">*</span></label>
+    <div class="phone-row">
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="email" oninput="resetEmailCode()">
+      <button class="send-btn" id="sendEmailCodeBtn" onclick="sendEmailCode()">发送验证码</button>
+    </div>
+    <div id="emailCodeWrap" style="display:none">
+      <label>邮箱验证码 / Email Code</label>
+      <input id="email_code" type="text" inputmode="numeric" maxlength="6" placeholder="6位验证码">
+      <div class="hint">验证码已发送至您的邮箱，15分钟内有效</div>
+    </div>
+    <label>所在城市 / City</label>
+    <div class="field-row">
+      <input id="city" placeholder="City" style="flex:2" autocomplete="address-level2">
+      <input id="state" placeholder="State" maxlength="2" style="flex:1;text-transform:uppercase" autocomplete="address-level1">
+      <input id="zip" placeholder="Zipcode" maxlength="10" inputmode="numeric" style="flex:1" autocomplete="postal-code">
+    </div>
+    <label>密码</label>
+    <div class="pw-wrap">
+      <input id="password" type="password" placeholder="至少 6 位" autocomplete="new-password">
+      <span class="pw-eye" onclick="togglePw('password',this)">👁</span>
+    </div>
+    <label>确认密码</label>
+    <div class="pw-wrap">
+      <input id="password2" type="password" placeholder="再次输入密码" autocomplete="new-password">
+      <span class="pw-eye" onclick="togglePw('password2',this)">👁</span>
+    </div>
+    <div id="err" class="err"></div>
+    <button class="btn" id="btn" onclick="doRegister()">创建账户</button>
+  </div>
+  <div id="done" style="display:none">
+    <div class="ok">✅ 注册成功！</div>
+    <div style="font-size:.85rem;color:#475569;margin-top:.5rem;text-align:center">账户已创建，正在跳转…</div>
+  </div>
+  <div id="expired" style="display:none">
+    <div style="color:#dc2626;font-weight:700;margin-top:.5rem;text-align:center">❌ 链接已失效</div>
+    <div style="font-size:.83rem;color:#64748b;margin-top:.4rem;text-align:center">此邀请链接已过期或已被使用，请联系管理员重新发送。</div>
+  </div>
+</div>
+<script>
+const token = new URLSearchParams(location.search).get('token') || '';
+const ROLE_LABEL = { admin:'Admin 管理员', staff:'Staff 员工', manager:'Manager 经理' };
+let codeSent = false, codeSkipped = false;
+let emailCodeSent = false, emailCodeSkipped = false;
+async function init() {
+  if (!token) { showExpired(); return; }
+  try {
+    const r = await fetch('/api/admin-invite/verify?token=' + encodeURIComponent(token));
+    const d = await r.json();
+    if (!r.ok) { showExpired(); return; }
+    document.getElementById('sub').innerHTML = \`您被邀请注册为 <span class="role-badge">\${ROLE_LABEL[d.role]||d.role}</span>\${d.notes ? \` — \${d.notes}\` : ''}\`;
+    document.getElementById('form').style.display = '';
+  } catch { showExpired(); }
+}
+function showExpired() {
+  document.getElementById('sub').style.display='none';
+  document.getElementById('expired').style.display='';
+}
+function showErr(msg) {
+  const el = document.getElementById('err');
+  el.textContent = msg; el.style.display = msg ? 'block' : 'none';
+}
+function resetCode() { codeSent = false; codeSkipped = false; document.getElementById('codeWrap').style.display='none'; }
+function resetEmailCode() { emailCodeSent = false; emailCodeSkipped = false; document.getElementById('emailCodeWrap').style.display='none'; }
+async function sendCode() {
+  const phone = document.getElementById('phone').value.trim().replace(/\D/g,'');
+  if (phone.length < 10) { showErr('请填写有效的10位手机号'); return; }
+  const btn = document.getElementById('sendCodeBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  showErr('');
+  try {
+    const r = await fetch('/api/admin-invite/send-code', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, phone }) });
+    const d = await r.json();
+    if (!r.ok) { showErr(d.error || '发送失败'); btn.disabled=false; btn.textContent='发送验证码'; return; }
+    codeSent = true; codeSkipped = d.skipped || false;
+    if (!codeSkipped) {
+      document.getElementById('codeWrap').style.display = '';
+      btn.textContent = '重新发送'; btn.disabled = false;
+    } else {
+      btn.textContent = '已跳过';
+    }
+  } catch { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='发送验证码'; }
+}
+async function sendEmailCode() {
+  const email = document.getElementById('email').value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
+  const btn = document.getElementById('sendEmailCodeBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  showErr('');
+  try {
+    const r = await fetch('/api/admin-invite/send-email-code', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, email }) });
+    const d = await r.json();
+    if (!r.ok) { showErr(d.error || '发送失败'); btn.disabled=false; btn.textContent='发送验证码'; return; }
+    emailCodeSent = true; emailCodeSkipped = d.skipped || false;
+    if (!emailCodeSkipped) {
+      document.getElementById('emailCodeWrap').style.display = '';
+      btn.textContent = '重新发送'; btn.disabled = false;
+    } else {
+      btn.textContent = '已跳过';
+    }
+  } catch { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='发送验证码'; }
+}
+function togglePw(id, el) {
+  const inp = document.getElementById(id);
+  if (inp.type === 'password') { inp.type = 'text'; el.style.opacity = '1'; }
+  else { inp.type = 'password'; el.style.opacity = '.5'; }
+}
+async function doRegister() {
+  const btn = document.getElementById('btn');
+  showErr('');
+  const username = document.getElementById('username').value.trim();
+  const first_name = document.getElementById('first_name').value.trim();
+  const middle_name = document.getElementById('middle_name').value.trim();
+  const last_name = document.getElementById('last_name').value.trim();
+  const display_name = [first_name, middle_name, last_name].filter(Boolean).join(' ');
+  const phone = document.getElementById('phone').value.trim().replace(/\D/g,'');
+  const email = document.getElementById('email').value.trim();
+  const city = document.getElementById('city').value.trim();
+  const state = document.getElementById('state').value.trim();
+  const zip = document.getElementById('zip').value.trim();
+  const sms_code = document.getElementById('sms_code').value.trim();
+  const email_code = document.getElementById('email_code').value.trim();
+  const password = document.getElementById('password').value;
+  const password2 = document.getElementById('password2').value;
+  if (!username) { showErr('请填写用户名'); return; }
+  if (!first_name || !last_name) { showErr('请填写名字（First Name 和 Last Name）'); return; }
+  if (!phone || phone.length < 10) { showErr('请填写有效的手机号'); return; }
+  if (!codeSent && !codeSkipped) { showErr('请先发送手机验证码并填写验证码'); return; }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { showErr('请填写有效的邮箱地址'); return; }
+  if (!emailCodeSent && !emailCodeSkipped) { showErr('请先发送邮箱验证码并填写验证码'); return; }
+  if (password.length < 6) { showErr('密码至少 6 位'); return; }
+  if (password !== password2) { showErr('两次密码不一致'); return; }
+  btn.disabled = true; btn.textContent = '注册中…';
+  try {
+    const r = await fetch('/api/admin-invite/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, username, display_name, first_name, middle_name, last_name, phone, email, city, state, zip, sms_code, email_code, password }) });
+    const d = await r.json();
+    if (!r.ok) { showErr(d.error || '注册失败'); btn.disabled=false; btn.textContent='创建账户'; return; }
+    localStorage.setItem('adminToken', d.token);
+    document.getElementById('form').style.display = 'none';
+    document.getElementById('done').style.display = '';
+    // Store token in the key each portal reads
+    if (d.role === 'manager') {
+      localStorage.setItem('mgr_token', d.token);
+    } else if (d.role === 'staff') {
+      document.cookie = 'pa_token=' + d.token + ';path=/;max-age=86400;SameSite=Strict';
+    } else {
+      localStorage.setItem('adminToken', d.token);
+    }
+    const dest = { admin: '/admin', staff: '/staff', manager: '/manager' }[d.role] || '/admin';
+    setTimeout(() => { location.href = dest; }, 1500);
+  } catch(e) { showErr('网络错误，请重试'); btn.disabled=false; btn.textContent='创建账户'; }
+}
+init();
+</script>
+</body>
+</html>`);
+}
+
+app.get('/admin-invite', serveAdminInvitePage);
+// /staff and /manager: serve invite page if token present, otherwise portal
+app.get('/staff', (req, res) => {
+  if (req.query.token) return serveAdminInvitePage(req, res);
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(require('path').join(__dirname, 'public', 'staff.html'));
+});
+app.get('/manager', (req, res) => {
+  if (req.query.token) return serveAdminInvitePage(req, res);
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(require('path').join(__dirname, 'public', 'manager.html'));
+});
+
+// ─── Manager Invite Links ───
+// Admin: list active invites
+app.get('/api/admin/manager-invites', requireAdmin, requireRole('admin'), (req, res) => {
+  const rows = db.prepare("SELECT * FROM manager_invites WHERE used=0 AND expires_at > datetime('now') ORDER BY id DESC").all();
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json(rows.map(r => ({ ...r, url: `${proto}://${host}/manager-register?token=${r.token}` })));
+});
+
+// Admin: create invite link
+app.post('/api/admin/manager-invites', requireAdmin, requireRole('admin'), (req, res) => {
+  const { note, role, expires_hours } = req.body;
+  const r = ['admin', 'staff', 'manager'].includes(role) ? role : 'manager';
+  const hours = Math.min(Math.max(parseInt(expires_hours) || 72, 1), 720);
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + hours * 3600 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  db.prepare('INSERT INTO manager_invites (token, role, note, expires_at, created_by) VALUES (?,?,?,?,?)')
+    .run(token, r, note || '', expiresAt, req.userId);
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  res.json({ success: true, token, url: `${proto}://${host}/manager-register?token=${token}` });
+});
+
+// Admin: revoke invite
+app.delete('/api/admin/manager-invites/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM manager_invites WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── Admin: Manager Management APIs ───────────────────────────────────────────
+
+// GET /api/admin/managers-list — all manager accounts with partner, job, and employee names
+app.get('/api/admin/managers-list', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const managers = db.prepare("SELECT id, username, display_name, active, assigned_partner_ids, assigned_employee_ids, assigned_job_ids, phone, email, city, created_at FROM admin_users WHERE role='manager' ORDER BY id").all();
+  const allPartners = db.prepare('SELECT id, name FROM partners').all();
+  const partnerMap = Object.fromEntries(allPartners.map(p => [p.id, p.name]));
+  const allJobs = db.prepare('SELECT id, title, company_name FROM jobs').all();
+  const jobMap = Object.fromEntries(allJobs.map(j => [j.id, j.title + (j.company_name ? ' ('+j.company_name+')' : '')]));
+  res.json(managers.map(m => {
+    const pids = (m.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+    const jids = (m.assigned_job_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+    return { ...m, partner_names: pids.map(id => partnerMap[id] || `#${id}`).join(', ') || '未指定', job_names: jids.map(id => jobMap[id] || `#${id}`).join(', ') || '' };
+  }));
+});
+
+// GET /api/admin/managers/:id/assignments — assignments under a specific manager's partners
+app.get('/api/admin/managers/:id/assignments', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+  const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  if (!pids.length) return res.json([]);
+  const rows = db.prepare(`
+    SELECT a.id, a.status, a.start_date, a.pay_rate, a.pay_type,
+           a.work_address, a.assigned_at,
+           i.name AS worker_name, i.phone AS worker_phone,
+           j.title AS job_title, j.location AS job_location,
+           p.name AS company_name
+    FROM assignments a
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN partners p ON j.partner_id = p.id
+    WHERE j.partner_id IN (${pids.map(() => '?').join(',')})
+    ORDER BY a.assigned_at DESC
+  `).all(...pids);
+  res.json(rows);
+});
+
+// GET /api/admin/managers/:id/workers — employees visible to a specific manager
+app.get('/api/admin/managers/:id/workers', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const mgr = db.prepare("SELECT assigned_partner_ids, assigned_employee_ids, assigned_job_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+
+  const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  const eids = (mgr.assigned_employee_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  const jids = (mgr.assigned_job_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+
+  const allEmpIds = new Set(eids);
+
+  // Employees who have time_entries under the manager's assigned partners
+  if (pids.length) {
+    db.prepare(`SELECT DISTINCT t.employee_id FROM time_entries t JOIN jobs j ON t.job_id = j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`).all(...pids)
+      .forEach(r => allEmpIds.add(r.employee_id));
+    // Also employees explicitly assigned to jobs under partner companies (even without time entries)
+    db.prepare(`SELECT DISTINCT ej.employee_id FROM employee_jobs ej JOIN jobs j ON ej.job_id = j.id WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`).all(...pids)
+      .forEach(r => allEmpIds.add(r.employee_id));
+  }
+
+  // Employees assigned to the manager's assigned jobs via employee_jobs
+  if (jids.length) {
+    db.prepare(`SELECT DISTINCT employee_id FROM employee_jobs WHERE job_id IN (${jids.map(() => '?').join(',')})`).all(...jids)
+      .forEach(r => allEmpIds.add(r.employee_id));
+  }
+
+  if (!allEmpIds.size) return res.json([]);
+
+  const ids = [...allEmpIds];
+  const rows = db.prepare(`
+    SELECT id, first_name, last_name, employee_id as emp_code,
+           email, phone, position, status
+    FROM employees
+    WHERE id IN (${ids.map(() => '?').join(',')})
+    ORDER BY last_name, first_name
+  `).all(...ids);
+  res.json(rows);
+});
+
+// GET /api/admin/managers/:id/punch — recent punch records for a specific manager's employees
+app.get('/api/admin/managers/:id/punch', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const mgr = db.prepare("SELECT assigned_partner_ids FROM admin_users WHERE id=? AND role='manager'").get(req.params.id);
+  if (!mgr) return res.status(404).json({ error: 'Manager not found' });
+  const pids = (mgr.assigned_partner_ids || '').split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean);
+  if (!pids.length) return res.json([]);
+  const { date_from, date_to } = req.query;
+  let q = `SELECT t.id, t.clock_in, t.clock_out, t.total_hours, t.status, t.company_name,
+             e.first_name, e.last_name, e.employee_id as emp_code,
+             p.name AS partner_name,
+             COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+           FROM time_entries t
+           LEFT JOIN employees e ON t.employee_id = e.id
+           LEFT JOIN jobs j ON t.job_id = j.id
+           LEFT JOIN job_sites js ON j.site_id = js.id
+           LEFT JOIN partners p ON j.partner_id = p.id
+           WHERE j.partner_id IN (${pids.map(() => '?').join(',')})`;
+  const params = [...pids];
+  if (date_from) { q += ' AND DATE(t.clock_in) >= ?'; params.push(date_from); }
+  if (date_to)   { q += ' AND DATE(t.clock_in) <= ?'; params.push(date_to); }
+  q += ' ORDER BY t.clock_in DESC LIMIT 500';
+  res.json(db.prepare(q).all(...params));
+});
+
+// ── Public: validate invite token ──
+app.get('/api/public/manager-invite/:token', (req, res) => {
+  const inv = db.prepare("SELECT id, role, note FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(req.params.token);
+  if (!inv) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  res.json({ valid: true, role: inv.role, note: inv.note });
+});
+
+// ── Public: send verification code for manager registration ──
+app.post('/api/public/manager-register/send-code', async (req, res) => {
+  const { token, contact, contact_type } = req.body; // contact_type: 'phone' or 'email'
+  if (!token || !contact || !contact_type) return res.status(400).json({ error: 'Missing fields' });
+  const inv = db.prepare("SELECT * FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
+  if (!inv) return res.status(400).json({ error: 'Invalid or expired invite link' });
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString().replace('T', ' ').slice(0, 19);
+  // Clean old codes for same token+contact
+  db.prepare('DELETE FROM manager_reg_codes WHERE token=? AND contact=?').run(token, contact);
+  db.prepare('INSERT INTO manager_reg_codes (token, contact, contact_type, code, expires_at) VALUES (?,?,?,?,?)')
+    .run(token, contact, contact_type, code, expiresAt);
+
+  let delivered = false;
+  if (contact_type === 'phone') {
+    delivered = await sendSMS(contact, `您的 Prime Anchorpoint 验证码是 ${code}，10分钟内有效。Your verification code is ${code}.`);
+  } else {
+    delivered = await sendEmail(contact, '验证码 / Verification Code — Prime Anchorpoint',
+      `您的验证码是 ${code}，10分钟内有效。\nYour verification code is ${code}.`,
+      verificationCodeHtml(code));
+  }
+  // If delivery failed (not configured), remove the code record so verification is skipped
+  if (!delivered) {
+    db.prepare('DELETE FROM manager_reg_codes WHERE token=? AND contact=?').run(token, contact);
+    return res.json({ success: true, skipped: true });
+  }
+  res.json({ success: true, skipped: false });
+});
+
+// ── Public: complete manager registration ──
+app.post('/api/public/manager-register/complete', async (req, res) => {
+  const { token, username, display_name, password, contact, contact_type, code } = req.body;
+  if (!token || !username || !password || !contact || !contact_type || !code)
+    return res.status(400).json({ error: 'Missing required fields' });
+  if (password.length < 6) return res.status(400).json({ error: '密码至少6位 / Password must be at least 6 characters' });
+
+  // Validate invite
+  const inv = db.prepare("SELECT * FROM manager_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
+  if (!inv) return res.status(400).json({ error: 'Invalid or expired invite link' });
+
+  // Validate verification code (skip if delivery was not possible, i.e. no record exists)
+  const vc = db.prepare("SELECT * FROM manager_reg_codes WHERE token=? AND contact=? AND expires_at > datetime('now') ORDER BY id DESC LIMIT 1").get(token, contact);
+  if (vc && vc.code !== String(code || '')) return res.status(400).json({ error: '验证码错误或已过期 / Invalid or expired code' });
+
+  // Check username not taken
+  const existing = db.prepare('SELECT id FROM admin_users WHERE username=? AND active=1').get(username);
+  if (existing) return res.status(400).json({ error: '用户名已被占用 / Username already taken' });
+
+  // Create account (active=1, since they verified contact)
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt);
+  const result = db.prepare('INSERT INTO admin_users (username, password_hash, salt, role, display_name, active) VALUES (?,?,?,?,?,1)')
+    .run(username, hash, salt, inv.role, display_name || username);
+
+  // Mark invite used + clean up code
+  db.prepare('UPDATE manager_invites SET used=1 WHERE id=?').run(inv.id);
+  db.prepare('DELETE FROM manager_reg_codes WHERE token=?').run(token);
+
+  const newUser = db.prepare('SELECT * FROM admin_users WHERE id=?').get(result.lastInsertRowid);
+  const sessionToken = createSession(newUser);
+  res.json({ success: true, token: sessionToken, role: newUser.role, username: newUser.username, display_name: newUser.display_name });
 });
 
 // ─── Worker Accounts (admin manages) ───
@@ -2048,6 +3433,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN expected_salary TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN has_ssn INTEGER DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -2100,7 +3487,7 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status, has_ssn, position_interests } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -2120,17 +3507,30 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   const newExpectedSalary = expected_salary !== undefined ? expected_salary : w.expected_salary;
   const newOurRating = our_salary_rating !== undefined ? our_salary_rating : w.our_salary_rating;
   const newPaymentMethod = payment_method !== undefined ? payment_method : w.payment_method;
+  const newHasSsn = has_ssn !== undefined ? (has_ssn ? 1 : 0) : (w.has_ssn || 0);
+  const newPositionInterests = position_interests !== undefined ? JSON.stringify(position_interests) : (w.position_interests || '[]');
   logChange('active', w.active, newActive);
   logChange('suspended', w.suspended||0, newSuspended);
   logChange('work_status', w.work_status, newWorkStatus);
   logChange('expected_salary', w.expected_salary, newExpectedSalary);
   logChange('our_salary_rating', w.our_salary_rating, newOurRating);
   logChange('payment_method', w.payment_method, newPaymentMethod);
+  logChange('has_ssn', w.has_ssn||0, newHasSsn);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
+  // When reactivating a deactivated account (active 0→1), clear old interview
+  // and onboarding records so the worker starts fresh
+  if (!w.active && newActive) {
+    const wid = parseInt(req.params.id);
+    db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(wid);
+    db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(wid);
+    db.prepare(`UPDATE worker_accounts SET onboarded=0, dispatch_ready=0, identity_status='', bgcheck_status='' WHERE id=?`).run(wid);
+    // Clear reserved interview slots for this worker (don't delete the slot rows)
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(wid);
+  }
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
     payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
-    work_status=COALESCE(?,work_status) WHERE id=?`)
+    work_status=COALESCE(?,work_status), has_ssn=?, position_interests=? WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
       newActive, newSuspended,
@@ -2139,14 +3539,45 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       payment_method !== undefined ? payment_method : null,
       assigned_tasks !== undefined ? JSON.stringify(assigned_tasks) : null,
       work_status !== undefined ? work_status : null,
+      newHasSsn, newPositionInterests,
       req.params.id
     );
   res.json({ success: true });
 });
 
+app.get('/api/admin/worker-accounts/:id/assignments', requireAdmin, (req, res) => {
+  const w = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w || !w.linked_inquiry_id) return res.json([]);
+  const rows = db.prepare(`
+    SELECT a.id, a.status, a.start_date, a.assigned_at, a.pay_rate, a.pay_type, a.contract_type,
+           a.category, a.worker_response,
+           j.title AS job_title, j.location AS job_location,
+           i.name AS company_name
+    FROM assignments a
+    LEFT JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN inquiries i ON a.inquiry_id = i.id
+    WHERE a.inquiry_id = ?
+    ORDER BY a.assigned_at DESC
+  `).all(w.linked_inquiry_id);
+  res.json(rows);
+});
+
 app.get('/api/admin/worker-accounts/:id/history', requireAdmin, (req, res) => {
   const rows = db.prepare('SELECT * FROM worker_account_history WHERE worker_account_id=? ORDER BY created_at DESC LIMIT 100').all(req.params.id);
   res.json(rows);
+});
+
+// Admin: get worker's most recent interview with slot info
+app.get('/api/admin/worker-accounts/:id/interview-info', requireAdmin, (req, res) => {
+  const row = db.prepare(`
+    SELECT i.id, i.status, i.admin_notes, i.created_at,
+      s.slot_datetime, s.duration_min, s.location
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    WHERE i.worker_account_id = ?
+    ORDER BY i.id DESC LIMIT 1
+  `).get(req.params.id);
+  res.json(row || null);
 });
 
 // ── Worker Onboarding ──
@@ -2251,6 +3682,9 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
   const valid = ['pending','submitted','completed','waived'];
   if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status' });
   const completedAt = ['completed','waived'].includes(status) ? new Date().toISOString() : null;
+  if (req.params.key === 'interview' && status === 'pending') {
+    db.prepare(`UPDATE interviews SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND status='scheduled'`).run(req.params.id);
+  }
   db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
     VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
     ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,
@@ -2268,10 +3702,26 @@ app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res
 
 // Admin: toggle task visibility on worker portal
 app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmin, (req, res) => {
-  const { visible } = req.body;
+  const { visible, slot_ids } = req.body;
+  const workerId = parseInt(req.params.id);
   db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
-    .run(visible ? 1 : 0, req.params.id, req.params.key);
-  res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
+    .run(visible ? 1 : 0, workerId, req.params.key);
+
+  // When assigning interview slots to a worker, store the assigned slot IDs
+  if (req.params.key === 'interview' && Array.isArray(slot_ids) && slot_ids.length) {
+    // Save assigned slot IDs directly on the onboarding record (primary source of truth)
+    const slotIdsJson = JSON.stringify(slot_ids.map(Number));
+    db.prepare(`UPDATE worker_onboarding SET assigned_slot_ids=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview'`)
+      .run(slotIdsJson, workerId);
+    console.log(`[INTERVIEW-RESERVE] workerId=${workerId}, assigned_slot_ids=${slotIdsJson}`);
+
+    // Also mark slots as reserved (secondary, for reference)
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=?`).run(workerId);
+    const stmt = db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=? WHERE id=?`);
+    for (const sid of slot_ids) stmt.run(workerId, sid);
+  }
+
+  res.json({ success: true, tasks: getOnboardingTasks(workerId) });
 });
 
 // Admin: send Persona identity verification from onboarding modal
@@ -2512,9 +3962,9 @@ app.post('/api/worker/onboarding/:key/submit', requireWorker, (req, res) => {
 app.get('/api/admin/inquiries/:id/worker-status', requireAdmin, (req, res) => {
   const inq = db.prepare('SELECT phone, email FROM inquiries WHERE id=?').get(req.params.id);
   if (!inq) return res.status(404).json({ error: 'Not found' });
-  const w = db.prepare('SELECT id, active, dispatch_ready, suspended FROM worker_accounts WHERE phone=? OR (? != \'\' AND email=?)').get(inq.phone||'', inq.email||'', inq.email||'');
-  if (!w) return res.json({ has_account: false, dispatch_ready: false });
-  res.json({ has_account: true, dispatch_ready: !!w.dispatch_ready, active: !!w.active, suspended: !!w.suspended, worker_id: w.id });
+  const w = db.prepare('SELECT id, active, dispatch_ready, suspended, preferred_lang FROM worker_accounts WHERE phone=? OR (? != \'\' AND email=?)').get(inq.phone||'', inq.email||'', inq.email||'');
+  if (!w) return res.json({ has_account: false, dispatch_ready: false, preferred_lang: inq.languages || '' });
+  res.json({ has_account: true, dispatch_ready: !!w.dispatch_ready, active: !!w.active, suspended: !!w.suspended, worker_id: w.id, preferred_lang: w.preferred_lang || inq.languages || '' });
 });
 
 // Admin: update worker skills
@@ -2588,15 +4038,14 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
   try {
     const id = req.params.id;
     // Invalidate all active sessions for this worker
-    for (const [token, session] of workerSessions.entries()) {
-      if (String(session.workerId) === String(id)) workerSessions.delete(token);
-    }
+    db.prepare('DELETE FROM worker_sessions WHERE worker_id=?').run(id);
     db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(id);
+    db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(id);
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(id); } catch(_) {}
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(id);
     res.json({ success: true });
@@ -2784,9 +4233,7 @@ app.put('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), 
 app.delete('/api/admin/customer-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
   const id = req.params.id;
   // Invalidate all active sessions for this customer
-  for (const [token, session] of customerSessions.entries()) {
-    if (String(session.customerId) === String(id)) customerSessions.delete(token);
-  }
+  db.prepare('DELETE FROM customer_sessions WHERE customer_id=?').run(id);
   db.prepare('DELETE FROM customer_accounts WHERE id=?').run(id);
   res.json({ success: true });
 });
@@ -2796,8 +4243,8 @@ app.post('/api/admin/clear-test-data', requireAdmin, requireRole('admin'), (req,
   const { confirm_text } = req.body;
   if (confirm_text !== 'I confirm') return res.status(400).json({ error: 'Please type "I confirm" to proceed' });
   // Invalidate all worker and customer sessions
-  workerSessions.clear();
-  customerSessions.clear();
+  db.prepare('DELETE FROM worker_sessions').run();
+  db.prepare('DELETE FROM customer_sessions').run();
   const wDel = db.prepare('DELETE FROM worker_accounts').run();
   const cDel = db.prepare('DELETE FROM customer_accounts').run();
   db.prepare('DELETE FROM verification_codes').run();
@@ -2900,7 +4347,26 @@ app.post('/api/admin/pending-actions/:id/approve', requireAdmin, requireRole('ad
   const params = payload._params || {};
   try {
     if (action.action_type === 'delete') {
-      db.prepare(`DELETE FROM ${action.target_table} WHERE id = ?`).run(action.target_id);
+      if (action.target_table === 'jobs') {
+        const jobToDelete = db.prepare('SELECT job_status FROM jobs WHERE id=?').get(action.target_id);
+        if (!jobToDelete || jobToDelete.job_status !== 'cancelled') {
+          return res.status(409).json({ error: '只有已取消的职位才能删除。 / Only cancelled jobs can be deleted.' });
+        }
+        // Cascade delete child records to satisfy FK constraints
+        const assignmentIds = db.prepare('SELECT id FROM assignments WHERE job_id=?').all(action.target_id).map(r => r.id);
+        db.transaction(() => {
+          for (const aId of assignmentIds) {
+            db.prepare('DELETE FROM assignment_status_history WHERE assignment_id=?').run(aId);
+            db.prepare('DELETE FROM shift_confirmations WHERE assignment_id=?').run(aId);
+          }
+          db.prepare('DELETE FROM assignments WHERE job_id=?').run(action.target_id);
+          db.prepare('DELETE FROM employee_jobs WHERE job_id=?').run(action.target_id);
+          db.prepare('DELETE FROM job_applications WHERE job_id=?').run(action.target_id);
+          db.prepare(`DELETE FROM jobs WHERE id = ?`).run(action.target_id);
+        })();
+      } else {
+        db.prepare(`DELETE FROM ${action.target_table} WHERE id = ?`).run(action.target_id);
+      }
     } else if (action.action_type === 'update') {
       delete payload._params;
       const cols = Object.keys(payload).filter(k => k !== '_params');
@@ -2937,7 +4403,7 @@ function diffJob(oldJ, newD) {
 }
 
 app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
-  res.json(db.prepare('SELECT j.*, p.name AS partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id ORDER BY j.created_at DESC').all());
+  res.json(db.prepare('SELECT j.*, p.name AS partner_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters AS site_radius, js.address AS site_address FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id LEFT JOIN job_sites js ON j.site_id = js.id ORDER BY j.created_at DESC').all());
 });
 
 app.get('/api/admin/jobs/:id/history', requireAdmin, blockManager, (req, res) => {
@@ -2951,18 +4417,22 @@ app.post('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
     (partner_id, title, type, category, location, pay, pay_period, lang, lang_name, description, urgent,
      work_auth, benefits, schedule, company_id, company_name, employment_type,
      work_days, work_start, work_end, work_schedule, schedule_days, schedule_start, schedule_end,
-     job_status, active, close_reason, close_note, headcount)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+     job_status, active, close_reason, close_note, headcount,
+     langs, title_zh, title_es, desc_zh, desc_es)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const r = stmt.run(
     d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
     d.description||'', d.urgent?1:0, d.work_auth||'', d.benefits||'', d.schedule||'',
     d.company_id||null, d.company_name||'', d.employment_type||'',
     d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
     d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
-    jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1
+    jobStatus, jobStatus==='open'?1:0, d.close_reason||'', d.close_note||'', d.headcount||1,
+    d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||''
   );
-  logJobAudit.run(r.lastInsertRowid, 'created', JSON.stringify({ title: d.title, company_name: d.company_name||'' }), req.userName);
-  res.json({ success: true, id: r.lastInsertRowid });
+  const jobId = generateJobId(d.location || '');
+  db.prepare('UPDATE jobs SET job_id=? WHERE id=?').run(jobId, r.lastInsertRowid);
+  logJobAudit.run(r.lastInsertRowid, 'created', JSON.stringify({ title: d.title, company_name: d.company_name||'', job_id: jobId }), req.userName);
+  res.json({ success: true, id: r.lastInsertRowid, job_id: jobId });
 });
 
 app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 'jobs'), (req, res) => {
@@ -2973,7 +4443,8 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
     description=?, urgent=?, active=?, work_auth=?, benefits=?, schedule=?,
     company_id=?, company_name=?, employment_type=?, work_days=?, work_start=?, work_end=?, work_schedule=?,
     schedule_days=?, schedule_start=?, schedule_end=?,
-    job_status=?, close_reason=?, close_note=?, headcount=? WHERE id=?`)
+    job_status=?, close_reason=?, close_note=?, headcount=?,
+    langs=?, title_zh=?, title_es=?, desc_zh=?, desc_es=? WHERE id=?`)
     .run(
       d.partner_id||null, d.title, d.type||'', d.category||'', d.location||'', d.pay||'', d.pay_period||'', d.lang||'en', d.lang_name||'English',
       d.description||'', d.urgent?1:0, jobStatus==='open'?1:0,
@@ -2982,6 +4453,7 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
       d.work_days||'', d.work_start||'', d.work_end||'', d.work_schedule||'{}',
       d.schedule_days||'[]', d.schedule_start||'', d.schedule_end||'',
       jobStatus, d.close_reason||'', d.close_note||'', d.headcount||1,
+      d.langs||'en', d.title_zh||'', d.title_es||'', d.desc_zh||'', d.desc_es||'',
       req.params.id
     );
   // Determine action type
@@ -2994,8 +4466,24 @@ app.put('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('update', 
 });
 
 app.delete('/api/admin/jobs/:id', requireAdmin, blockManager, staffGuard('delete', 'jobs'), (req, res) => {
-  const old = db.prepare('SELECT title, company_name FROM jobs WHERE id=?').get(req.params.id);
-  db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
+  const old = db.prepare('SELECT title, company_name, close_reason FROM jobs WHERE id=?').get(req.params.id);
+  if (!old) return res.status(404).json({ error: '职位不存在 / Job not found' });
+  if (old.close_reason !== 'test') {
+    return res.status(403).json({ error: '非测试单职位不允许删除。如需下架请将职位状态改为已取消。' });
+  }
+  // Cascade delete all related records before deleting the job
+  db.transaction(() => {
+    const assignmentIds = db.prepare('SELECT id FROM assignments WHERE job_id=?').all(req.params.id).map(r => r.id);
+    for (const aId of assignmentIds) {
+      db.prepare('DELETE FROM assignment_status_history WHERE assignment_id=?').run(aId);
+      db.prepare('DELETE FROM shift_confirmations WHERE assignment_id=?').run(aId);
+    }
+    db.prepare('DELETE FROM assignments WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM employee_jobs WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM job_applications WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM job_audit_log WHERE job_id=?').run(req.params.id);
+    db.prepare('DELETE FROM jobs WHERE id=?').run(req.params.id);
+  })();
   logJobAudit.run(req.params.id, 'deleted', JSON.stringify(old || {}), req.userName);
   res.json({ success: true });
 });
@@ -3037,17 +4525,53 @@ app.delete('/api/admin/inquiries/:id', requireAdmin, blockManager, staffGuard('d
   res.json({ success: true });
 });
 
-// Worker positions list
-app.get('/api/admin/worker-positions', requireAdmin, (req, res) => {
-  res.json(WORKER_POSITIONS);
+// Worker positions list (public - used by register page)
+app.get('/api/positions', (req, res) => {
+  res.json(getWorkerPositions());
 });
 
-// Inquiry × Worker Position ratings (static list from website)
+// Worker positions CRUD (admin)
+app.get('/api/admin/worker-positions', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM worker_positions ORDER BY sort_order, id').all();
+  res.json(rows.map(r => ({ id: r.id, key: r.key, zh: r.name_zh, en: r.name_en, es: r.name_es, sort_order: r.sort_order, active: r.active })));
+});
+
+app.post('/api/admin/worker-positions', requireAdmin, (req, res) => {
+  const { key, zh, en, es, sort_order } = req.body;
+  if (!key || !zh || !en) return res.status(400).json({ error: '缺少必填字段 (key, zh, en)' });
+  if (!/^[a-z0-9_]+$/.test(key)) return res.status(400).json({ error: 'key 只能包含小写字母、数字和下划线' });
+  try {
+    const info = db.prepare('INSERT INTO worker_positions (key, name_zh, name_en, name_es, sort_order) VALUES (?,?,?,?,?)')
+      .run(key, zh, en, es || '', sort_order ?? 0);
+    res.json({ id: info.lastInsertRowid, key, zh, en, es: es || '', sort_order: sort_order ?? 0, active: 1 });
+  } catch (e) {
+    if (e.message.includes('UNIQUE')) return res.status(400).json({ error: '该 key 已存在' });
+    throw e;
+  }
+});
+
+app.put('/api/admin/worker-positions/:id', requireAdmin, (req, res) => {
+  const { zh, en, es, sort_order, active } = req.body;
+  const row = db.prepare('SELECT id FROM worker_positions WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: '职位不存在' });
+  db.prepare('UPDATE worker_positions SET name_zh=COALESCE(?,name_zh), name_en=COALESCE(?,name_en), name_es=COALESCE(?,name_es), sort_order=COALESCE(?,sort_order), active=COALESCE(?,active) WHERE id=?')
+    .run(zh ?? null, en ?? null, es ?? null, sort_order ?? null, active ?? null, req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/worker-positions/:id', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT id FROM worker_positions WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: '职位不存在' });
+  db.prepare('DELETE FROM worker_positions WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Inquiry × Worker Position ratings
 app.get('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
   const saved = db.prepare('SELECT * FROM inquiry_position_ratings WHERE inquiry_id=?').all(req.params.id);
   const rMap = {};
   saved.forEach(r => { rMap[r.position_key] = r; });
-  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
+  res.json(getWorkerPositions().map(p => ({ ...p, rating: rMap[p.key] || null })));
 });
 
 app.put('/api/admin/inquiries/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
@@ -3065,7 +4589,7 @@ app.get('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager,
   const saved = db.prepare('SELECT * FROM employee_position_ratings WHERE employee_id=?').all(req.params.id);
   const rMap = {};
   saved.forEach(r => { rMap[r.position_key] = r; });
-  res.json(WORKER_POSITIONS.map(p => ({ ...p, rating: rMap[p.key] || null })));
+  res.json(getWorkerPositions().map(p => ({ ...p, rating: rMap[p.key] || null })));
 });
 
 app.put('/api/admin/employees/:id/position-ratings', requireAdmin, blockManager, (req, res) => {
@@ -3183,19 +4707,26 @@ app.delete('/api/admin/quotes/:id', requireAdmin, blockManager, staffGuard('dele
 
 // Partners CRUD
 app.get('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
-  const rows = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id) as file_count FROM partners p ORDER BY p.created_at DESC`).all();
+  const rows = db.prepare(`SELECT p.*, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id) as file_count, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id AND f.ds_status='completed') as signed_contract_count, (SELECT COUNT(*) FROM partner_files f WHERE f.partner_id=p.id AND f.file_type IN ('contract','agreement')) as contract_file_count FROM partners p ORDER BY p.created_at DESC`).all();
   res.json(rows);
 });
 
 app.post('/api/admin/partners', requireAdmin, blockManager, (req, res) => {
   const d = req.body;
   if (!d.name) return res.status(400).json({ error: 'Name required' });
-  const r = db.prepare(`INSERT INTO partners (name,contact_person,phone,email,address,industry,services,notes,active,contacts,addresses,social_media,links)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+  // Extract state from first address for company number
+  let stateAbbr = 'XX';
+  try {
+    const addrs = typeof d.addresses === 'string' ? JSON.parse(d.addresses) : (d.addresses || []);
+    if (addrs.length && addrs[0].state) stateAbbr = addrs[0].state;
+  } catch {}
+  const companyNumber = generatePartnerNumber(stateAbbr);
+  const r = db.prepare(`INSERT INTO partners (name,contact_person,phone,email,address,industry,services,notes,active,contacts,addresses,social_media,links,company_number)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     d.name, d.contact_person||'', d.phone||'', d.email||'', d.address||'',
-    d.industry||'', d.services||'', d.notes||'', d.active!==false?1:0,
-    d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}');
-  res.json({ success: true, id: r.lastInsertRowid });
+    d.industry||'', d.services||'', d.notes||'', 0,
+    d.contacts||'[]', d.addresses||'[]', d.social_media||'{}', d.links||'{}', companyNumber);
+  res.json({ success: true, id: r.lastInsertRowid, company_number: companyNumber });
 });
 
 app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('update', 'partners'), (req, res) => {
@@ -3207,13 +4738,273 @@ app.put('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('updat
   res.json({ success: true });
 });
 
-app.delete('/api/admin/partners/:id', requireAdmin, blockManager, staffGuard('delete', 'partners'), (req, res) => {
+app.delete('/api/admin/partners/:id', requireAdmin, requireRole('admin'), (req, res) => {
   // Delete associated files
   const files = db.prepare('SELECT * FROM partner_files WHERE partner_id=?').all(req.params.id);
   files.forEach(f => { if (f.file_path) { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); } });
   db.prepare('DELETE FROM partner_files WHERE partner_id=?').run(req.params.id);
   db.prepare('DELETE FROM partners WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Minimal PDF builder (no external deps) ───────────────────────────────────
+function buildMinimalPdf(pageLines) {
+  // pageLines: array of { text, size, bold }
+  // Returns a Buffer containing a valid single-page PDF
+  const esc = s => String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+  const pageW = 612, pageH = 792, margin = 60;
+  let stream = '';
+  let y = pageH - margin;
+  for (const { text, size = 11 } of pageLines) {
+    if (!text) { y -= 14; continue; }
+    const lh = size + 4;
+    if (y < margin) break;
+    stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
+    y -= lh;
+  }
+  const streamBytes = Buffer.from(stream, 'latin1');
+  const objs = [];
+  objs.push(`1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj`);
+  objs.push(`2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj`);
+  objs.push(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}]\n   /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj`);
+  objs.push(`4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj`);
+  objs.push(`5 0 obj\n<< /Length ${streamBytes.length} >>\nstream\n${stream}endstream\nendobj`);
+  const header = '%PDF-1.4\n';
+  const parts = [Buffer.from(header)];
+  const offsets = [];
+  let offset = header.length;
+  for (const obj of objs) {
+    offsets.push(offset);
+    const buf = Buffer.from(obj + '\n', 'latin1');
+    parts.push(buf);
+    offset += buf.length;
+  }
+  const xref = `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n` +
+    offsets.map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('') +
+    `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${offset}\n%%EOF`;
+  parts.push(Buffer.from(xref));
+  return Buffer.concat(parts);
+}
+
+function generatePartnerContractLines({ partnerName, companyName, partnerAddress, dateStr }) {
+  const cname = companyName || 'Prime Anchorpoint LLC';
+  return [
+    { text: 'PARTNERSHIP SERVICE AGREEMENT', size: 15 },
+    { text: '' },
+    { text: `Date: ${dateStr}`, size: 11 },
+    { text: '' },
+    { text: 'This Partnership Service Agreement ("Agreement") is entered into between:', size: 11 },
+    { text: '' },
+    { text: `Company: ${cname}  ("Service Provider")`, size: 11 },
+    { text: '' },
+    { text: `Partner: ${partnerName}`, size: 11 },
+    { text: partnerAddress ? `Address: ${partnerAddress}` : '', size: 11 },
+    { text: '("Partner")', size: 11 },
+    { text: '' },
+    { text: '1. SCOPE OF SERVICES', size: 11 },
+    { text: 'The Partner agrees to provide staffing and workforce services as mutually agreed.', size: 11 },
+    { text: 'The Company will refer client engagements based on Partner availability and qualifications.', size: 11 },
+    { text: '' },
+    { text: '2. COMPENSATION', size: 11 },
+    { text: 'Compensation terms shall be agreed upon for each individual engagement or project.', size: 11 },
+    { text: 'Payment shall be made within 30 days of receipt of a valid invoice.', size: 11 },
+    { text: '' },
+    { text: '3. TERM', size: 11 },
+    { text: 'This Agreement commences on the date above and continues for one (1) year unless', size: 11 },
+    { text: 'terminated earlier by either party upon 30 days written notice.', size: 11 },
+    { text: '' },
+    { text: '4. CONFIDENTIALITY', size: 11 },
+    { text: 'Each party agrees to keep confidential any proprietary information disclosed by the other.', size: 11 },
+    { text: '' },
+    { text: '5. INDEPENDENT CONTRACTOR', size: 11 },
+    { text: 'Partner is an independent contractor, not an employee of the Company.', size: 11 },
+    { text: '' },
+    { text: '6. GOVERNING LAW', size: 11 },
+    { text: 'This Agreement shall be governed by the laws of the State of Illinois.', size: 11 },
+    { text: '' },
+    { text: '7. ENTIRE AGREEMENT', size: 11 },
+    { text: 'This Agreement constitutes the entire understanding between the parties.', size: 11 },
+    { text: '' },
+    { text: '' },
+    { text: 'SIGNATURES', size: 12 },
+    { text: '' },
+    { text: `${cname.padEnd(38)}${partnerName}`, size: 11 },
+    { text: 'By: ____________________________    By: ____________________________', size: 11 },
+    { text: 'Name: __________________________    Name: __________________________', size: 11 },
+    { text: 'Title: _________________________    Title: _________________________', size: 11 },
+    { text: 'Date: __________________________    Date: __________________________', size: 11 },
+  ];
+}
+
+// POST /api/admin/partners/:id/reset-contract
+// Voids any active DocuSign envelopes, deletes all existing contract/agreement files for this partner,
+// then generates a fresh default contract PDF ready for editing or sending.
+app.post('/api/admin/partners/:id/reset-contract', requireAdmin, blockManager, async (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const existingFiles = db.prepare("SELECT * FROM partner_files WHERE partner_id=? AND file_type IN ('contract','agreement')").all(req.params.id);
+  // Void active envelopes
+  for (const f of existingFiles) {
+    if (f.ds_envelope_id && dsEnabled() && f.ds_status && !['completed','voided','declined'].includes(f.ds_status)) {
+      try {
+        const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+        await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`, { status: 'voided', voidedReason: '管理员重新生成合同' });
+      } catch (e) { console.error('[reset-contract] void envelope error:', e.message); }
+    }
+    // Delete local file
+    if (f.file_path) { try { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {} }
+    db.prepare('DELETE FROM partner_files WHERE id=?').run(f.id);
+  }
+  // Generate new default contract
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const content = generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
+  const pdfBuf = buildContractPdf(content);
+  const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filename), pdfBuf);
+  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes, contract_content) VALUES (?, 'contract', '合作协议 Partnership Agreement', ?, ?, '重新生成的默认合同模板', ?)`)
+    .run(req.params.id, filename, `Partnership Agreement - ${p.name}.pdf`, content);
+  res.json({ success: true, id: r.lastInsertRowid, file_name: `Partnership Agreement - ${p.name}.pdf` });
+});
+
+// POST /api/admin/partners/:id/generate-default-contract
+app.post('/api/admin/partners/:id/generate-default-contract', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const content = generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr });
+  const pdfBuf = buildContractPdf(content);
+  const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filename), pdfBuf);
+  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes, contract_content) VALUES (?, 'contract', '合作协议 Partnership Agreement', ?, ?, '自动生成的默认合同模板', ?)`)
+    .run(req.params.id, filename, `Partnership Agreement - ${p.name}.pdf`, content);
+  res.json({ success: true, id: r.lastInsertRowid, file_name: `Partnership Agreement - ${p.name}.pdf` });
+});
+
+// GET /api/admin/partners/:id/contract-template — return default contract text (no file created)
+app.get('/api/admin/partners/:id/contract-template', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  res.json({ content: generatePartnerContractText({ partnerName: p.name, companyName, partnerAddress: p.address, dateStr }) });
+});
+
+// POST /api/admin/partners/:id/save-contract-from-editor — create new partner file from edited content
+app.post('/api/admin/partners/:id/save-contract-from-editor', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const content = req.body?.content || '';
+  if (!content.trim()) return res.status(400).json({ error: '合同内容不能为空' });
+  const pdfBuf = buildContractPdf(content);
+  const filename = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  const displayName = `Partnership Agreement - ${p.name}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filename), pdfBuf);
+  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, contract_content) VALUES (?, 'contract', '合作协议', ?, ?, ?)`)
+    .run(req.params.id, filename, displayName, content);
+  res.json({ success: true, id: r.lastInsertRowid, fileName: displayName });
+});
+
+// GET /api/admin/partner-files/:id/contract-content — return stored contract content
+app.get('/api/admin/partner-files/:id/contract-content', requireAdmin, blockManager, (req, res) => {
+  const f = db.prepare('SELECT pf.*, p.name as partner_name, p.address as partner_address FROM partner_files pf LEFT JOIN partners p ON pf.partner_id=p.id WHERE pf.id=?').get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  if (f.contract_content) return res.json({ content: f.contract_content });
+  // Generate default content from partner data
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  res.json({ content: generatePartnerContractText({ partnerName: f.partner_name || '', companyName, partnerAddress: f.partner_address || '', dateStr }) });
+});
+
+// POST /api/admin/partner-files/:id/save-contract-from-editor — update content + regenerate PDF
+app.post('/api/admin/partner-files/:id/save-contract-from-editor', requireAdmin, blockManager, (req, res) => {
+  const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  const content = req.body?.content || '';
+  if (!content.trim()) return res.status(400).json({ error: '合同内容不能为空' });
+  const pdfBuf = buildContractPdf(content);
+  // Reuse existing file_path or create new
+  let filePath = f.file_path;
+  if (!filePath) { filePath = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`; }
+  fs.writeFileSync(path.join(docsDir, filePath), pdfBuf);
+  db.prepare("UPDATE partner_files SET contract_content=?, file_path=?, ds_status='', ds_envelope_id='' WHERE id=?").run(content, filePath, f.id);
+  res.json({ success: true, fileName: f.file_name || filePath });
+});
+
+// GET /api/admin/partners/:id/legal-template?type=termination|breach|amendment|mutual
+app.get('/api/admin/partners/:id/legal-template', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const type = req.query.type || 'termination';
+  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const args = { partnerName: p.name, companyName, dateStr };
+  let content = '';
+  if (type === 'termination') content = generateTerminationNoticeText(args);
+  else if (type === 'breach') content = generateBreachNoticeText(args);
+  else if (type === 'amendment') content = generateAmendmentText(args);
+  else if (type === 'mutual') content = generateMutualTerminationText(args);
+  else return res.status(400).json({ error: 'Invalid type' });
+  res.json({ content });
+});
+
+// POST /api/admin/partners/:id/save-legal-doc
+// Body: { content, type, setInactive }
+app.post('/api/admin/partners/:id/save-legal-doc', requireAdmin, blockManager, (req, res) => {
+  const p = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'Partner not found' });
+  const { content, type, setInactive } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: '文件内容不能为空' });
+  const typeMap = {
+    termination: { file_type: 'termination_notice', label: '终止通知书', prefix: 'termination' },
+    breach:      { file_type: 'breach_notice',       label: '违约终止通知书', prefix: 'breach' },
+    amendment:   { file_type: 'amendment',           label: '合同修改协议', prefix: 'amendment' },
+    mutual:      { file_type: 'mutual_termination',  label: '协商解除协议', prefix: 'mutual' },
+  };
+  const meta = typeMap[type];
+  if (!meta) return res.status(400).json({ error: 'Invalid type' });
+  const pdfBuf = buildContractPdf(content);
+  const filename = `${meta.prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  const displayName = `${meta.label} - ${p.name}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filename), pdfBuf);
+  const r = db.prepare(`INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, contract_content) VALUES (?, ?, ?, ?, ?, ?)`)
+    .run(req.params.id, meta.file_type, meta.label, filename, displayName, content);
+  if (setInactive) db.prepare('UPDATE partners SET active=0 WHERE id=?').run(req.params.id);
+  res.json({ success: true, id: r.lastInsertRowid, fileName: displayName, filePath: filename });
+});
+
+// POST /api/admin/partner-files/:id/send-notice-email
+// Sends the saved PDF as an email attachment to the partner's contact
+app.post('/api/admin/partner-files/:id/send-notice-email', requireAdmin, blockManager, async (req, res) => {
+  const f = db.prepare(`SELECT pf.*, p.name as partner_name, p.email as partner_email, p.contacts as partner_contacts
+    FROM partner_files pf LEFT JOIN partners p ON pf.partner_id=p.id WHERE pf.id=?`).get(req.params.id);
+  if (!f) return res.status(404).json({ error: 'Not found' });
+  let toEmail = req.body.email || f.partner_email || '';
+  let toName = f.partner_name || '';
+  if (!toEmail) {
+    try {
+      const contacts = JSON.parse(f.partner_contacts || '[]');
+      const c = contacts.find(c => c.email);
+      if (c) { toEmail = c.email; toName = [c.first_name, c.last_name].filter(Boolean).join(' ') || toName; }
+    } catch {}
+  }
+  if (!toEmail) return res.status(400).json({ error: '未找到合作方邮箱，请手动填写收件邮箱' });
+  const filePath = path.join(docsDir, f.file_path);
+  if (!fs.existsSync(filePath)) return res.status(404).json({ error: '文件不存在，请先生成PDF' });
+  const pdfBuffer = fs.readFileSync(filePath);
+  const typeSubjects = {
+    termination_notice: 'Notice of Service Termination — 服务终止通知书',
+    breach_notice:      'Notice of Termination for Breach — 违约终止通知书',
+    amendment:          'Contract Amendment Agreement — 合同修改协议',
+    mutual_termination: 'Mutual Termination Agreement — 协商解除协议',
+  };
+  const subject = typeSubjects[f.file_type] || `Legal Notice — ${f.file_name}`;
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const text = `Dear ${toName || 'Partner'},\n\nPlease find attached the following document: ${f.file_name}.\n\nThis document requires your attention. Please review and respond accordingly.\n\nBest regards,\n${companyName}`;
+  const ok = await sendEmailWithAttachment(toEmail, subject, text, pdfBuffer, f.file_name || 'notice.pdf');
+  if (ok) res.json({ success: true, sentTo: toEmail });
+  else res.status(500).json({ error: '邮件发送失败，请检查邮件配置' });
 });
 
 // Partner files
@@ -3228,6 +5019,248 @@ app.post('/api/admin/partners/:id/files', requireAdmin, blockManager, docUpload.
     req.params.id, req.body.file_type||'other', req.body.file_label||'',
     req.file?req.file.filename:'', req.file?req.file.originalname:'', req.body.notes||'');
   res.json({ success: true, id: r.lastInsertRowid });
+});
+
+// POST /api/admin/partners/:id/generate-agreement — generate a clean Partnership Agreement PDF template
+// The PDF uses 1pt white anchor strings (/sig1/ /date1/ /sig2/ /date2/) so DocuSign can position tabs
+// while the anchor text stays invisible in the document.
+app.post('/api/admin/partners/:id/generate-agreement', requireAdmin, blockManager, async (req, res) => {
+  const partner = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!partner) return res.status(404).json({ error: 'Partner not found' });
+
+  const partnerName = partner.name || 'Partner Company';
+  const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const fileName = `Partnership_Agreement_${partnerName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
+  const filePath = path.join(docsDir, fileName);
+
+  try {
+    await new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'LETTER', margins: { top: 72, bottom: 72, left: 72, right: 72 } });
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+
+      const W = doc.page.width - 144; // usable width
+      const L = 72; // left margin
+
+      // ── Title ───────────────────────────────────────────────
+      doc.fontSize(18).font('Helvetica-Bold').fillColor('black')
+        .text('PARTNERSHIP AGREEMENT', { align: 'center' });
+      doc.moveDown(0.4);
+      doc.fontSize(11).font('Helvetica').fillColor('#444')
+        .text(`This Partnership Agreement ("Agreement") is entered into as of ${today}, by and between:`, { align: 'left' });
+      doc.moveDown(1);
+
+      // ── Parties ──────────────────────────────────────────────
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('black').text('Service Provider:');
+      doc.font('Helvetica').fillColor('#333').text('Prime Anchorpoint LLC, a staffing and workforce solutions company ("Service Provider").');
+      doc.moveDown(0.8);
+      doc.font('Helvetica-Bold').fillColor('black').text('Partner:');
+      doc.font('Helvetica').fillColor('#333').text(`${partnerName} ("Partner").`);
+      doc.moveDown(1.2);
+
+      // ── Recitals ─────────────────────────────────────────────
+      doc.fontSize(13).font('Helvetica-Bold').fillColor('black').text('RECITALS');
+      doc.moveDown(0.4);
+      doc.fontSize(10).font('Helvetica').fillColor('#333').text(
+        'WHEREAS, Service Provider is in the business of providing staffing, recruitment, and workforce management services; and\n\n' +
+        'WHEREAS, Partner desires to engage Service Provider to provide such services in accordance with the terms and conditions set forth herein;\n\n' +
+        'NOW, THEREFORE, in consideration of the mutual covenants and agreements contained herein, and for other good and valuable consideration, the receipt and sufficiency of which are hereby acknowledged, the parties agree as follows:'
+      );
+      doc.moveDown(1.2);
+
+      // ── Terms ────────────────────────────────────────────────
+      const sections = [
+        ['1. SERVICES', 'Service Provider agrees to provide staffing, recruitment, and workforce management services as mutually agreed upon by the parties in writing from time to time ("Services"). The specific scope, timeline, and deliverables for each engagement shall be set forth in separate statements of work or work orders executed by both parties.'],
+        ['2. COMPENSATION', 'Partner agrees to compensate Service Provider at rates mutually agreed upon prior to the commencement of each engagement. Invoices shall be submitted by Service Provider on a bi-weekly basis and shall be due and payable within thirty (30) days of receipt.'],
+        ['3. CONFIDENTIALITY', 'Each party agrees to keep confidential all non-public information received from the other party in connection with this Agreement, and shall not disclose such information to any third party without the prior written consent of the disclosing party, except as required by law.'],
+        ['4. TERM AND TERMINATION', 'This Agreement shall commence on the date first written above and shall continue for a period of one (1) year, unless earlier terminated. Either party may terminate this Agreement upon thirty (30) days\' prior written notice to the other party.'],
+        ['5. INDEMNIFICATION', 'Each party shall indemnify, defend, and hold harmless the other party and its officers, directors, employees, and agents from and against any claims, damages, losses, and expenses arising out of or resulting from the indemnifying party\'s negligence or willful misconduct.'],
+        ['6. GOVERNING LAW', 'This Agreement shall be governed by and construed in accordance with the laws of the State in which Service Provider maintains its principal place of business, without regard to its conflict of law provisions.'],
+        ['7. ENTIRE AGREEMENT', 'This Agreement constitutes the entire agreement between the parties with respect to its subject matter and supersedes all prior negotiations, representations, warranties, and understandings of the parties.'],
+      ];
+
+      for (const [title, body] of sections) {
+        if (doc.y > doc.page.height - 200) doc.addPage();
+        doc.fontSize(11).font('Helvetica-Bold').fillColor('black').text(title);
+        doc.moveDown(0.2);
+        doc.fontSize(10).font('Helvetica').fillColor('#333').text(body);
+        doc.moveDown(0.8);
+      }
+
+      // ── Signature Page ───────────────────────────────────────
+      doc.addPage();
+      doc.fontSize(14).font('Helvetica-Bold').fillColor('black').text('SIGNATURES', { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(10).font('Helvetica').fillColor('#444')
+        .text('IN WITNESS WHEREOF, the parties have executed this Agreement as of the date first written above.', { align: 'center' });
+      doc.moveDown(2);
+
+      // Two-column signature blocks
+      const col1X = L;
+      const col2X = L + W / 2 + 20;
+      const colW = W / 2 - 30;
+      const startY = doc.y;
+
+      // ── Column 1: Service Provider ──────────────────────────
+      let y1 = startY;
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('black')
+        .text('Prime Anchorpoint LLC', col1X, y1, { width: colW });
+      y1 += 16;
+      doc.fontSize(10).font('Helvetica').fillColor('#555')
+        .text('(Service Provider)', col1X, y1, { width: colW });
+      y1 += 32;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Authorized Signature:', col1X, y1, { width: colW });
+      y1 += 14;
+      doc.moveTo(col1X, y1 + 18).lineTo(col1X + colW, y1 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      // Invisible DocuSign anchor for sig1 — placed on the signature line
+      doc.fontSize(1).fillColor('white').text('/sig1/', col1X, y1 + 10, { lineBreak: false, width: colW });
+      y1 += 36;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Print Name:', col1X, y1, { width: colW });
+      y1 += 14;
+      doc.moveTo(col1X, y1 + 18).lineTo(col1X + colW, y1 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      y1 += 36;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Date:', col1X, y1, { width: colW });
+      y1 += 14;
+      doc.moveTo(col1X, y1 + 18).lineTo(col1X + colW, y1 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      // Invisible DocuSign anchor for date1
+      doc.fontSize(1).fillColor('white').text('/date1/', col1X, y1 + 10, { lineBreak: false, width: colW });
+
+      // ── Column 2: Partner ────────────────────────────────────
+      let y2 = startY;
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('black')
+        .text(partnerName, col2X, y2, { width: colW });
+      y2 += 16;
+      doc.fontSize(10).font('Helvetica').fillColor('#555')
+        .text('(Partner)', col2X, y2, { width: colW });
+      y2 += 32;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Authorized Signature:', col2X, y2, { width: colW });
+      y2 += 14;
+      doc.moveTo(col2X, y2 + 18).lineTo(col2X + colW, y2 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      // Invisible DocuSign anchor for sig2
+      doc.fontSize(1).fillColor('white').text('/sig2/', col2X, y2 + 10, { lineBreak: false, width: colW });
+      y2 += 36;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Print Name:', col2X, y2, { width: colW });
+      y2 += 14;
+      doc.moveTo(col2X, y2 + 18).lineTo(col2X + colW, y2 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      y2 += 36;
+
+      doc.fontSize(9).font('Helvetica').fillColor('#333')
+        .text('Date:', col2X, y2, { width: colW });
+      y2 += 14;
+      doc.moveTo(col2X, y2 + 18).lineTo(col2X + colW, y2 + 18).lineWidth(0.8).strokeColor('#333').stroke();
+      // Invisible DocuSign anchor for date2
+      doc.fontSize(1).fillColor('white').text('/date2/', col2X, y2 + 10, { lineBreak: false, width: colW });
+
+      doc.end();
+    });
+
+    // Save as a partner_file record
+    const r = db.prepare(
+      `INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes) VALUES (?,?,?,?,?,?)`
+    ).run(req.params.id, 'contract', 'Partnership Agreement', fileName, fileName, 'Auto-generated template');
+
+    res.json({ success: true, id: r.lastInsertRowid, file_name: fileName });
+  } catch (e) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    console.error('[GenerateAgreement]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/partners/:id/generate-custom-agreement — generate PDF from user-supplied contract text
+// Anchor strings (/sig1/ /date1/ /sig2/ /date2/) are rendered as 1pt white (invisible) text
+// so DocuSign can anchor tabs while keeping the document visually clean.
+app.post('/api/admin/partners/:id/generate-custom-agreement', requireAdmin, blockManager, async (req, res) => {
+  const partner = db.prepare('SELECT * FROM partners WHERE id=?').get(req.params.id);
+  if (!partner) return res.status(404).json({ error: 'Partner not found' });
+  const content = (req.body.content || '').trim();
+  if (!content) return res.status(400).json({ error: '合同内容不能为空' });
+
+  const partnerName = partner.name || 'Partner';
+  const fileName = `Contract_${partnerName.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
+  const filePath = path.join(docsDir, fileName);
+
+  try {
+    await new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ size: 'LETTER', margins: { top: 72, bottom: 72, left: 72, right: 72 } });
+      const stream = fs.createWriteStream(filePath);
+      doc.pipe(stream);
+      stream.on('finish', resolve);
+      stream.on('error', reject);
+
+      const ANCHORS = ['/sig1/', '/sig2/', '/date1/', '/date2/'];
+      const L = 72;
+      const pageW = doc.page.width - 144;
+
+      const lines = content.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        // Ensure we have space for this line
+        if (doc.y > doc.page.height - doc.page.margins.bottom - 40) doc.addPage();
+
+        // Check if line contains anchor strings — render visible portion + invisible anchors
+        const hasAnchor = ANCHORS.some(a => line.includes(a));
+        if (hasAnchor) {
+          // Split the line into parts: text and anchors
+          // Render all visible text (anchors stripped out) then add invisible anchors
+          const visibleText = line.replace(/\/(sig1|sig2|date1|date2)\//g, '').trimEnd();
+          const curY = doc.y;
+          if (visibleText) {
+            doc.fontSize(10).font('Helvetica').fillColor('black').text(visibleText, { lineBreak: false });
+          }
+          // Write each anchor string at the same Y position as invisible text
+          ANCHORS.forEach(anchor => {
+            if (line.includes(anchor)) {
+              doc.fontSize(1).fillColor('white').text(anchor, L, curY, { lineBreak: false });
+            }
+          });
+          doc.moveDown(0.6);
+        } else {
+          const trimmed = line.trim();
+          if (trimmed === '') {
+            doc.moveDown(0.4);
+          } else if (trimmed === 'SIGNATURES' || /^[A-Z][A-Z\s]{3,}$/.test(trimmed)) {
+            // All-caps section title
+            if (doc.y > doc.page.height - doc.page.margins.bottom - 80) doc.addPage();
+            doc.moveDown(0.3);
+            doc.fontSize(13).font('Helvetica-Bold').fillColor('black').text(trimmed, { width: pageW });
+            doc.moveDown(0.3);
+          } else if (/^\d+\.\s+[A-Z]/.test(trimmed)) {
+            // Numbered section heading
+            doc.moveDown(0.2);
+            doc.fontSize(11).font('Helvetica-Bold').fillColor('black').text(trimmed, { width: pageW });
+            doc.moveDown(0.1);
+          } else {
+            doc.fontSize(10).font('Helvetica').fillColor('#222').text(trimmed, { width: pageW });
+          }
+        }
+      }
+
+      doc.end();
+    });
+
+    const r = db.prepare(
+      `INSERT INTO partner_files (partner_id, file_type, file_label, file_path, file_name, notes) VALUES (?,?,?,?,?,?)`
+    ).run(req.params.id, 'contract', 'Partnership Agreement', fileName, fileName, 'Generated from contract editor');
+
+    res.json({ success: true, id: r.lastInsertRowid, file_name: fileName });
+  } catch (e) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    console.error('[GenerateCustomAgreement]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.delete('/api/admin/partner-files/:id', requireAdmin, blockManager, staffGuard('delete', 'partner_files'), (req, res) => {
@@ -3272,20 +5305,66 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, f.file_path);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
-    const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: partnerEmail, name: partnerName }, signer2: { email: companyEmail, name: companyName } });
-    db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent' WHERE id=?").run(result.envelopeId, f.id);
-    res.json({ success: true, envelopeId: result.envelopeId });
+    const anchors = checkDsAnchors(docPath);
+    const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: companyEmail, name: companyName }, signer2: { email: partnerEmail, name: partnerName } });
+    db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, f.id);
+    const _proto1 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const _host1 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const returnUrl = `${_proto1}://${_host1}/docusign-return`;
+    const frameOrigin = `${_proto1}://${_host1}`;
+    let signUrl = null;
+    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl, frameOrigin); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
+    res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
   } catch (e) {
     console.error('[DocuSign PartnerFile]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
+// GET /docusign-return — served inside the signing iframe; postMessages result to parent so modal can close
+app.get('/docusign-return', (req, res) => {
+  const event = req.query.event || '';
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><script>
+    try { window.parent.postMessage({ type: 'docusign_return', event: ${JSON.stringify(event)} }, '*'); } catch(e) {}
+  </script></body></html>`);
+});
+
+// GET /api/admin/partner-files/:id/docusign-sign-url — get embedded signing URL for company (signer1)
+app.get('/api/admin/partner-files/:id/docusign-sign-url', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const f = db.prepare("SELECT id, ds_envelope_id, ds_status FROM partner_files WHERE id=?").get(req.params.id);
+    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const _proto2 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const _host2 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const returnUrl = `${_proto2}://${_host2}/docusign-return`;
+    const frameOrigin = `${_proto2}://${_host2}`;
+    const signUrl = await dsCreateSignUrl(f.ds_envelope_id, companyEmail, companyName, returnUrl, frameOrigin);
+    res.json({ signUrl });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/partner-files/:id/docusign-void — void the active envelope
+app.post('/api/admin/partner-files/:id/docusign-void', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const f = db.prepare("SELECT id, ds_envelope_id, ds_status FROM partner_files WHERE id=?").get(req.params.id);
+    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+    await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`, { status: 'voided', voidedReason: req.body?.reason || '管理员撤销' });
+    db.prepare("UPDATE partner_files SET ds_status='voided', ds_envelope_id='', ds_decline_reason='' WHERE id=?").run(f.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/partner-files/:id/docusign-status — refresh signing status from DocuSign
 app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManager, async (req, res) => {
-  const f = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_partner_signed_at, ds_company_signed_at FROM partner_files WHERE id=?").get(req.params.id);
+  const f = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_partner_signed_at, ds_company_signed_at, ds_decline_reason FROM partner_files WHERE id=?").get(req.params.id);
   if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-  if (!dsEnabled()) return res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at });
+  if (!dsEnabled()) return res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason });
   try {
     const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
     const [envRes, rcpRes] = await Promise.all([
@@ -3296,13 +5375,117 @@ app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManag
     let partnerSigned = f.ds_partner_signed_at, companySigned = f.ds_company_signed_at;
     for (const s of (rcpRes.data?.signers || [])) {
       if (s.status === 'completed' && s.signedDateTime) {
-        if (s.recipientId === '1') partnerSigned = s.signedDateTime;
-        if (s.recipientId === '2') companySigned = s.signedDateTime;
+        if (s.recipientId === '1') companySigned = s.signedDateTime;
+        if (s.recipientId === '2') partnerSigned = s.signedDateTime;
       }
     }
-    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=? WHERE id=?").run(status, partnerSigned, companySigned, f.id);
-    res.json({ status, partnerSigned, companySigned });
-  } catch (e) { res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, error: e.message }); }
+    let declineReason = f.ds_decline_reason || '';
+    for (const s of (rcpRes.data?.signers || [])) {
+      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
+    }
+    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, partnerSigned, companySigned, declineReason, f.id);
+    // If completed, download and overwrite local file with signed PDF (fallback if webhook missed)
+    if (status === 'completed') {
+      // Auto-activate partner (fallback if webhook missed)
+      db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(f.id);
+      try {
+        const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(f.id);
+        if (pfRecord && pfRecord.file_path) {
+          const signedBuf = await dsDownloadSignedDoc(f.ds_envelope_id);
+          fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
+          console.log(`[DocuSign] Saved signed partner contract for file id=${f.id}`);
+        }
+      } catch (dlErr) { console.error('[DocuSign] Failed to download signed partner doc on status refresh:', dlErr.message); }
+    }
+    res.json({ status, partnerSigned, companySigned, declineReason });
+  } catch (e) { res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason, error: e.message }); }
+});
+
+// GET /api/admin/partner-files/:id/force-download-signed — force download signed PDF from DocuSign and save
+app.post('/api/admin/partner-files/:id/force-download-signed', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const f = db.prepare('SELECT id, ds_envelope_id, ds_status, file_path, file_name FROM partner_files WHERE id=?').get(req.params.id);
+    if (!f) return res.status(404).json({ error: '文件不存在' });
+    if (!f.ds_envelope_id) return res.status(400).json({ error: '该文件没有关联的 DocuSign 信封' });
+    // First refresh status from DocuSign
+    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+    const [envRes, rcpRes] = await Promise.all([
+      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
+      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
+    ]);
+    const status = envRes.data?.status || f.ds_status;
+    let partnerSigned = null, companySigned = null, declineReason = '';
+    for (const s of (rcpRes.data?.signers || [])) {
+      if (s.status === 'completed' && s.signedDateTime) {
+        if (s.recipientId === '1') companySigned = s.signedDateTime;
+        if (s.recipientId === '2') partnerSigned = s.signedDateTime;
+      }
+      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
+    }
+    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?")
+      .run(status, partnerSigned, companySigned, declineReason, f.id);
+    if (status !== 'completed') {
+      return res.json({ success: false, status, message: `当前签署状态为 "${status}"，只有双方都签署后才能下载已签版本。`, partnerSigned, companySigned });
+    }
+    // Auto-activate partner (fallback if webhook missed)
+    db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(f.id);
+    // Download signed PDF
+    const signedBuf = await dsDownloadSignedDoc(f.ds_envelope_id);
+    if (f.file_path) {
+      fs.writeFileSync(path.join(docsDir, f.file_path), signedBuf);
+      console.log(`[DocuSign] Force-saved signed partner contract for file id=${f.id}`);
+    }
+    res.json({ success: true, status, partnerSigned, companySigned, fileSize: signedBuf.length, message: '已签版本已下载并保存，请重新下载文件查看。' });
+  } catch (e) {
+    console.error('[DocuSign ForceDownload]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/partner-files/:id/docusign-debug — detailed diagnostic info
+app.get('/api/admin/partner-files/:id/docusign-debug', requireAdmin, blockManager, async (req, res) => {
+  try {
+    const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
+    if (!f) return res.status(404).json({ error: '文件不存在' });
+    const localFilePath = f.file_path ? path.join(docsDir, f.file_path) : null;
+    const localFileExists = localFilePath ? fs.existsSync(localFilePath) : false;
+    const localFileSize = localFileExists ? fs.statSync(localFilePath).size : 0;
+    const debug = {
+      db: {
+        id: f.id, file_name: f.file_name, file_path: f.file_path,
+        ds_envelope_id: f.ds_envelope_id, ds_status: f.ds_status,
+        ds_partner_signed_at: f.ds_partner_signed_at, ds_company_signed_at: f.ds_company_signed_at,
+        ds_decline_reason: f.ds_decline_reason
+      },
+      local_file: { path: f.file_path, exists: localFileExists, size_bytes: localFileSize },
+      docusign_configured: dsEnabled(),
+      webhook_url: `${(req.headers['x-forwarded-proto'] || req.protocol)}://${(req.headers['x-forwarded-host'] || req.headers.host)}/api/docusign/webhook`,
+      hmac_configured: !!process.env.DOCUSIGN_WEBHOOK_HMAC
+    };
+    if (dsEnabled() && f.ds_envelope_id) {
+      try {
+        const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+        const [envRes, rcpRes] = await Promise.all([
+          dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
+          dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
+        ]);
+        debug.docusign_live = {
+          status: envRes.data?.status,
+          sent_date: envRes.data?.sentDateTime,
+          completed_date: envRes.data?.completedDateTime,
+          signers: (rcpRes.data?.signers || []).map(s => ({
+            name: s.name, email: s.email, recipientId: s.recipientId,
+            status: s.status, signedDateTime: s.signedDateTime, declinedReason: s.declinedReason
+          }))
+        };
+        debug.status_mismatch = (envRes.data?.status !== f.ds_status);
+      } catch (apiErr) {
+        debug.docusign_live_error = apiErr.message;
+      }
+    }
+    res.json(debug);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Assignments CRUD
@@ -3403,20 +5586,57 @@ app.post('/api/admin/assignments/:id/send-docusign', requireAdmin, blockManager,
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, a.contract_file);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '合同文件不存在' });
-    const result = await dsSendEnvelope({ docPath, docName: a.contract_filename || a.contract_file, emailSubject: `请签署雇用合同 - ${a.inquiry_name || ''}`, signer1: { email: workerEmail, name: workerName }, signer2: { email: companyEmail, name: companyName } });
-    db.prepare("UPDATE assignments SET ds_envelope_id=?, ds_status='sent' WHERE id=?").run(result.envelopeId, a.id);
-    res.json({ success: true, envelopeId: result.envelopeId });
+    const anchors = checkDsAnchors(docPath);
+    const result = await dsSendEnvelope({ docPath, docName: a.contract_filename || a.contract_file, emailSubject: `请签署雇用合同 - ${a.inquiry_name || ''}`, signer1: { email: companyEmail, name: companyName }, signer2: { email: workerEmail, name: workerName } });
+    db.prepare("UPDATE assignments SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, a.id);
+    const _proto3 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const _host3 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const returnUrl = `${_proto3}://${_host3}/docusign-return`;
+    const frameOrigin = `${_proto3}://${_host3}`;
+    let signUrl = null;
+    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl, frameOrigin); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
+    res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
   } catch (e) {
     console.error('[DocuSign Assignment]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
+// GET /api/admin/assignments/:id/docusign-sign-url — get embedded signing URL for company (signer1)
+app.get('/api/admin/assignments/:id/docusign-sign-url', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const a = db.prepare("SELECT id, ds_envelope_id FROM assignments WHERE id=?").get(req.params.id);
+    if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+    const _proto4 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+    const _host4 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    const returnUrl = `${_proto4}://${_host4}/docusign-return`;
+    const frameOrigin = `${_proto4}://${_host4}`;
+    const signUrl = await dsCreateSignUrl(a.ds_envelope_id, companyEmail, companyName, returnUrl, frameOrigin);
+    res.json({ signUrl });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/admin/assignments/:id/docusign-void — void the active envelope
+app.post('/api/admin/assignments/:id/docusign-void', requireAdmin, blockManager, async (req, res) => {
+  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  try {
+    const a = db.prepare("SELECT id, ds_envelope_id, ds_status FROM assignments WHERE id=?").get(req.params.id);
+    if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
+    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
+    await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${a.ds_envelope_id}`, { status: 'voided', voidedReason: req.body?.reason || '管理员撤销' });
+    db.prepare("UPDATE assignments SET ds_status='voided', ds_envelope_id='', ds_decline_reason='' WHERE id=?").run(a.id);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/admin/assignments/:id/docusign-status — refresh signing status from DocuSign
 app.get('/api/admin/assignments/:id/docusign-status', requireAdmin, blockManager, async (req, res) => {
-  const a = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_worker_signed_at, ds_company_signed_at FROM assignments WHERE id=?").get(req.params.id);
+  const a = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_worker_signed_at, ds_company_signed_at, ds_decline_reason FROM assignments WHERE id=?").get(req.params.id);
   if (!a || !a.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-  if (!dsEnabled()) return res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at });
+  if (!dsEnabled()) return res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at, declineReason: a.ds_decline_reason });
   try {
     const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
     const [envRes, rcpRes] = await Promise.all([
@@ -3427,13 +5647,46 @@ app.get('/api/admin/assignments/:id/docusign-status', requireAdmin, blockManager
     let workerSigned = a.ds_worker_signed_at, companySigned = a.ds_company_signed_at;
     for (const s of (rcpRes.data?.signers || [])) {
       if (s.status === 'completed' && s.signedDateTime) {
-        if (s.recipientId === '1') workerSigned = s.signedDateTime;
-        if (s.recipientId === '2') companySigned = s.signedDateTime;
+        if (s.recipientId === '1') companySigned = s.signedDateTime;
+        if (s.recipientId === '2') workerSigned = s.signedDateTime;
       }
     }
-    db.prepare("UPDATE assignments SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=? WHERE id=?").run(status, workerSigned, companySigned, a.id);
-    res.json({ status, workerSigned, companySigned });
-  } catch (e) { res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at, error: e.message }); }
+    let declineReason = a.ds_decline_reason || '';
+    for (const s of (rcpRes.data?.signers || [])) {
+      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
+    }
+    db.prepare("UPDATE assignments SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, workerSigned, companySigned, declineReason, a.id);
+    res.json({ status, workerSigned, companySigned, declineReason });
+  } catch (e) { res.json({ status: a.ds_status, workerSigned: a.ds_worker_signed_at, companySigned: a.ds_company_signed_at, declineReason: a.ds_decline_reason, error: e.message }); }
+});
+
+// GET /api/admin/assignments/:id/contract-template — return default employment contract text
+app.get('/api/admin/assignments/:id/contract-template', requireAdmin, blockManager, (req, res) => {
+  const a = db.prepare(`SELECT a.*, i.name as inquiry_name, i.email as inquiry_email FROM assignments a LEFT JOIN inquiries i ON a.inquiry_id=i.id WHERE a.id=?`).get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  if (a.contract_content) return res.json({ content: a.contract_content });
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const content = generateAssignmentContractText({
+    workerName: a.inquiry_name || '', companyName,
+    jobTitle: a.category || '', payRate: a.pay_rate || '', payType: a.pay_type || 'hourly',
+    startDate: a.start_date || '', workLocation: a.work_address || '', contractType: a.contract_type || 'W2'
+  });
+  res.json({ content });
+});
+
+// POST /api/admin/assignments/:id/save-contract-from-editor — save content + generate PDF + set contract_file
+app.post('/api/admin/assignments/:id/save-contract-from-editor', requireAdmin, blockManager, (req, res) => {
+  const a = db.prepare(`SELECT a.*, i.name as inquiry_name FROM assignments a LEFT JOIN inquiries i ON a.inquiry_id=i.id WHERE a.id=?`).get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Not found' });
+  const content = req.body?.content || '';
+  if (!content.trim()) return res.status(400).json({ error: '合同内容不能为空' });
+  const pdfBuf = buildContractPdf(content);
+  let filePath = a.contract_file;
+  if (!filePath) filePath = `contract-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.pdf`;
+  const displayName = `Employment Agreement - ${a.inquiry_name || 'Worker'}.pdf`;
+  fs.writeFileSync(path.join(docsDir, filePath), pdfBuf);
+  db.prepare("UPDATE assignments SET contract_file=?, contract_filename=?, contract_content=?, ds_status='', ds_envelope_id='' WHERE id=?").run(filePath, displayName, content, a.id);
+  res.json({ success: true, fileName: displayName });
 });
 
 // ─── Employee Doc Requests (私密材料链接) ───
@@ -3460,6 +5713,80 @@ app.post('/api/admin/employees/:id/doc-request', requireAdmin, (req, res) => {
 
 app.get('/api/admin/employees/:id/doc-requests', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM employee_doc_requests WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id));
+});
+
+// ─── Employee Registration Invites ───
+
+// Admin: send registration invite link to employee (via SMS/email)
+app.post('/api/admin/employees/:id/send-registration-link', requireAdmin, async (req, res) => {
+  try {
+    const emp = db.prepare('SELECT * FROM employees WHERE id=?').get(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+
+    // Invalidate old pending invites
+    db.prepare("DELETE FROM employee_registration_invites WHERE employee_id=? AND used=0").run(emp.id);
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+    db.prepare('INSERT INTO employee_registration_invites (employee_id, token, expires_at) VALUES (?,?,?)')
+      .run(emp.id, token, expiresAt);
+
+    const host = req.get('host');
+    const proto = req.protocol;
+    const inviteUrl = `${proto}://${host}/register?invite=${token}`;
+
+    const name = `${emp.first_name||''} ${emp.last_name||''}`.trim();
+    let smsSent = false, emailSent = false;
+    const errs = [];
+
+    // SMS
+    const phone = (req.body.phone || emp.phone || '').replace(/\D/g,'').slice(-10);
+    if (phone) {
+      smsSent = await sendSMS('+1'+phone,
+        `[Prime Anchorpoint] 您好 ${name}，请点击以下链接完成账户注册（7天内有效）:\n${inviteUrl}\nHi ${name}, click to register your account (valid 7 days).`
+      );
+      if (!smsSent) errs.push('SMS failed');
+    }
+
+    // Email
+    const email = req.body.email || emp.email || '';
+    if (email) {
+      const html = `<div style="font-family:sans-serif;max-width:480px;margin:0 auto">
+        <h2 style="color:#0F2B5B">Prime Anchor Point — 账户注册邀请</h2>
+        <p>您好 <strong>${name}</strong>，</p>
+        <p>请点击下方按钮完成您的账户注册，验证手机号和邮箱。链接 <strong>7天内有效</strong>。</p>
+        <p><a href="${inviteUrl}" style="display:inline-block;padding:12px 28px;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">注册账户 / Register Account</a></p>
+        <p style="color:#64748b;font-size:.85rem">或复制此链接：<br>${inviteUrl}</p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:1.5rem 0">
+        <p style="color:#94a3b8;font-size:.75rem">Prime Anchor Point Staffing &mdash; 如非本人请忽略此邮件</p>
+      </div>`;
+      emailSent = await sendEmail(email, 'Prime Anchor Point — 账户注册邀请 / Registration Invite', null, html);
+      if (!emailSent) errs.push('Email failed');
+    }
+
+    res.json({ success: true, invite_url: inviteUrl, sms_sent: smsSent, email_sent: emailSent, warnings: errs });
+  } catch (e) {
+    console.error('[Send Reg Link]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Public: validate invite token (used by register.html)
+app.get('/api/register/invite-info', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Missing token' });
+  const inv = db.prepare("SELECT * FROM employee_registration_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(token);
+  if (!inv) return res.status(404).json({ error: 'Invalid or expired invite link' });
+  const emp = db.prepare('SELECT id, first_name, last_name, email, phone FROM employees WHERE id=?').get(inv.employee_id);
+  if (!emp) return res.status(404).json({ error: 'Employee not found' });
+  res.json({
+    valid: true,
+    first_name: emp.first_name || '',
+    last_name: emp.last_name || '',
+    email: emp.email || '',
+    phone: emp.phone ? emp.phone.replace(/\D/g,'').slice(-10) : '',
+    employee_id: emp.id
+  });
 });
 
 app.delete('/api/admin/employee-doc-requests/:id', requireAdmin, (req, res) => {
@@ -3649,7 +5976,7 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
   }
   sql += ' ORDER BY e.last_name, e.first_name';
   const rows = db.prepare(sql).all(...params);
-  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets)
+  // Fetch current job assignments: explicit (employee_jobs) + inferred (timesheet_sheets) + assignments
   const explicitJobs = db.prepare(`
     SELECT ej.employee_id, ej.job_id, ej.company_name, ej.job_title
     FROM employee_jobs ej WHERE ej.status='active'
@@ -3663,12 +5990,26 @@ app.get('/api/admin/employees', requireAdmin, (req, res) => {
     )
     ORDER BY s.period_end DESC
   `).all();
+  const assignJobs = db.prepare(`
+    SELECT wa.employee_id, a.job_id, j.title AS job_title, COALESCE(j.company_name,'') AS company_name
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    JOIN worker_accounts wa ON wa.linked_inquiry_id = a.inquiry_id
+    WHERE a.status NOT IN ('cancelled') AND wa.employee_id IS NOT NULL
+  `).all();
   const jobMap = {};
   for (const j of explicitJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     jobMap[j.employee_id].push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
   }
   for (const j of tsJobs) {
+    if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
+    const existing = jobMap[j.employee_id];
+    if (!existing.some(e => e.job_id === j.job_id)) {
+      existing.push({ job_id: j.job_id, job_title: j.job_title || '', company_name: j.company_name || '' });
+    }
+  }
+  for (const j of assignJobs) {
     if (!jobMap[j.employee_id]) jobMap[j.employee_id] = [];
     const existing = jobMap[j.employee_id];
     if (!existing.some(e => e.job_id === j.job_id)) {
@@ -3703,7 +6044,9 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
   if (!emp) return res.status(404).json({ error: 'Not found' });
   const docs = db.prepare('SELECT * FROM employee_documents WHERE employee_id=? ORDER BY uploaded_at DESC').all(req.params.id);
   const bgChecks = db.prepare('SELECT * FROM background_checks WHERE employee_id=? ORDER BY created_at DESC').all(req.params.id);
-  const recentTime = db.prepare('SELECT * FROM time_entries WHERE employee_id=? ORDER BY clock_in DESC LIMIT 20').all(req.params.id);
+  const recentTime = db.prepare(`SELECT t.*, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    FROM time_entries t LEFT JOIN jobs j ON t.job_id=j.id LEFT JOIN job_sites js ON j.site_id=js.id
+    WHERE t.employee_id=? ORDER BY t.clock_in DESC LIMIT 20`).all(req.params.id);
   // Job history: distinct jobs from timesheet_sheets with summary
   const jobHistory = db.prepare(`
     SELECT s.job_id, s.company_name, j.title AS job_title,
@@ -3719,8 +6062,17 @@ app.get('/api/admin/employees/:id', requireAdmin, blockManager, (req, res) => {
     GROUP BY COALESCE(s.job_id, s.company_name)
     ORDER BY MAX(s.period_end) DESC
   `).all(req.params.id);
+  const currentJobs = db.prepare(`
+    SELECT ej.id, ej.job_id, ej.job_title, ej.company_name, ej.status, ej.start_date, ej.end_date,
+           ej.emp_hourly_rate, j.location
+    FROM employee_jobs ej
+    LEFT JOIN jobs j ON ej.job_id = j.id
+    WHERE ej.employee_id = ?
+    ORDER BY CASE ej.status WHEN 'active' THEN 0 ELSE 1 END, ej.start_date DESC, ej.assigned_at DESC
+    LIMIT 10
+  `).all(req.params.id);
   const ssn_full = emp.ssn_encrypted && emp.ssn_iv ? decryptSSN(emp.ssn_encrypted, emp.ssn_iv) : null;
-  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory });
+  res.json({ ...safeEmp(emp), ssn_full, documents: docs, background_checks: bgChecks, recent_time: recentTime, job_history: jobHistory, current_jobs: currentJobs });
 });
 
 app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
@@ -3736,7 +6088,7 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
       if (dup) return res.json({ duplicate: true, field: 'email', existing: dup });
     }
   }
-  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.city, d.hire_date);
+  const empId = (d.employee_id || '').trim() || nextEmployeeId(d.state, d.hire_date);
   let ssn_encrypted = '', ssn_iv = '', ssn_last4 = '';
   if (d.ssn) {
     const digits = d.ssn.replace(/\D/g, '');
@@ -3750,16 +6102,19 @@ app.post('/api/admin/employees', requireAdmin, blockManager, (req, res) => {
   if (d.pin) { pin_salt = crypto.randomBytes(16).toString('hex'); pin_hash = hashPin(d.pin, pin_salt); }
   try {
     const r = db.prepare(`INSERT INTO employees
-      (employee_id,first_name,last_name,email,phone,address,street2,city,state,zip,dob,
+      (employee_id,first_name,middle_name,last_name,email,phone,extra_phones,extra_emails,address,street2,city,state,zip,dob,
        emergency_name,emergency_phone,emergency_relation,hire_date,position,department,
-       pay_rate,pay_type,status,pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,notes)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      empId,d.first_name,d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
+       pay_rate,pay_type,status,pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,notes,social_media)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      empId,d.first_name,d.middle_name||'',d.last_name,d.email||'',d.phone||'',
+      JSON.stringify(d.extra_phones||[]),JSON.stringify(d.extra_emails||[]),
+      d.address||'',d.street2||'',
       d.city||'',d.state||'',d.zip||'',d.dob||'',
       d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
       d.hire_date||'',d.position||'',d.department||'',
       parseFloat(d.pay_rate)||0,d.pay_type||'hourly',d.status||'active',
-      pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'');
+      pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
+      JSON.stringify(d.social_media||{}));
     const newId = r.lastInsertRowid;
     if (d.force) {
       if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), newId);
@@ -3800,12 +6155,12 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     pin_hash = hashPin(d.pin, pin_salt);
   }
   db.prepare(`UPDATE employees SET
-    employee_id=?,first_name=?,last_name=?,email=?,phone=?,address=?,street2=?,city=?,state=?,zip=?,dob=?,
+    employee_id=?,first_name=?,middle_name=?,last_name=?,email=?,phone=?,address=?,street2=?,city=?,state=?,zip=?,dob=?,
     emergency_name=?,emergency_phone=?,emergency_relation=?,hire_date=?,position=?,department=?,
     pay_rate=?,pay_type=?,status=?,pin_hash=?,pin_salt=?,ssn_encrypted=?,ssn_iv=?,ssn_last4=?,notes=?,
-    extra_phones=?,extra_emails=?
+    extra_phones=?,extra_emails=?,social_media=?
     WHERE id=?`).run(
-    d.employee_id||emp.employee_id,d.first_name,d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
+    d.employee_id||emp.employee_id,d.first_name,d.middle_name||emp.middle_name||'',d.last_name,d.email||'',d.phone||'',d.address||'',d.street2||'',
     d.city||'',d.state||'',d.zip||'',d.dob||'',
     d.emergency_name||'',d.emergency_phone||'',d.emergency_relation||'',
     d.hire_date||'',d.position||'',d.department||'',
@@ -3813,6 +6168,7 @@ app.put('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('upda
     pin_hash,pin_salt,ssn_encrypted,ssn_iv,ssn_last4,d.notes||'',
     JSON.stringify(d.extra_phones || JSON.parse(emp.extra_phones || '[]')),
     JSON.stringify(d.extra_emails || JSON.parse(emp.extra_emails || '[]')),
+    JSON.stringify(d.social_media || JSON.parse(emp.social_media || '{}')),
     req.params.id);
   if (d.force) {
     if (d.phone && d.phone.trim()) db.prepare('UPDATE employees SET phone=? WHERE phone=? AND id!=?').run('', d.phone.trim(), req.params.id);
@@ -3905,6 +6261,27 @@ app.delete('/api/admin/employees/:id', requireAdmin, blockManager, staffGuard('d
   res.json({ success: true });
 });
 
+app.delete('/api/admin/employees/:id/hard-delete', requireAdmin, requireRole('admin'), (req, res) => {
+  const id = req.params.id;
+  const emp = db.prepare('SELECT id FROM employees WHERE id=?').get(id);
+  if (!emp) return res.status(404).json({ error: '员工不存在' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM employee_documents WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_ratings WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_doc_requests WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_registration_invites WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_jobs WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM background_checks WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM time_entries WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM timesheet_sheets WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employee_position_ratings WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM worker_payments WHERE employee_id=?').run(id);
+    db.prepare('UPDATE worker_accounts SET employee_id=NULL WHERE employee_id=?').run(id);
+    db.prepare('DELETE FROM employees WHERE id=?').run(id);
+  })();
+  res.json({ success: true });
+});
+
 // ─── DOCUMENT ROUTES ───
 
 app.get('/api/admin/employees/:id/documents', requireAdmin, blockManager, (req, res) => {
@@ -3946,20 +6323,38 @@ app.get('/api/admin/documents/:id/file', (req, res, next) => {
 // ─── TIME ENTRY ROUTES ───
 
 app.get('/api/admin/time-entries', requireAdmin, (req, res) => {
-  const { employee_id, date_from, date_to, status } = req.query;
-  let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code
-    FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id WHERE 1=1`;
+  const { employee_id, date_from, date_to, status, needs_review } = req.query;
+  let q = `SELECT t.*, e.first_name, e.last_name, e.employee_id as emp_code,
+    COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    FROM time_entries t LEFT JOIN employees e ON t.employee_id=e.id
+    LEFT JOIN jobs j2 ON t.job_id=j2.id LEFT JOIN job_sites js ON j2.site_id=js.id WHERE 1=1`;
   const p = [];
   if (employee_id) { q += ' AND t.employee_id=?'; p.push(employee_id); }
   if (date_from)   { q += ' AND DATE(t.clock_in)>=?'; p.push(date_from); }
   if (date_to)     { q += ' AND DATE(t.clock_in)<=?'; p.push(date_to); }
   if (status)      { q += ' AND t.status=?'; p.push(status); }
-  // Manager: only see time entries for their assigned partners
+  if (needs_review === '1') { q += ' AND t.manager_confirmed=1 AND t.needs_review=1'; }
+  // Manager: only see time entries for their assigned partners / jobs / directly assigned employees
   const pids = managerPartnerIds(req);
-  if (req.userRole === 'manager' && pids.length) {
-    q += ` AND (t.job_id IN (SELECT id FROM jobs WHERE partner_id IN (${pids.map(()=>'?').join(',')}))
-           OR t.company_name IN (SELECT name FROM partners WHERE id IN (${pids.map(()=>'?').join(',')})))`;
-    p.push(...pids, ...pids);
+  const jids = managerJobIds(req);
+  const eids = managerEmployeeIds(req);
+  if (req.userRole === 'manager' && (pids.length || jids.length || eids.length)) {
+    const conds = [];
+    if (pids.length) {
+      conds.push(`(t.job_id IN (SELECT id FROM jobs WHERE partner_id IN (${pids.map(()=>'?').join(',')})) OR t.company_name IN (SELECT name FROM partners WHERE id IN (${pids.map(()=>'?').join(',')})))`);
+      p.push(...pids, ...pids);
+    }
+    if (jids.length) {
+      conds.push(`t.job_id IN (${jids.map(()=>'?').join(',')})`);
+      p.push(...jids);
+    }
+    if (eids.length) {
+      conds.push(`t.employee_id IN (${eids.map(()=>'?').join(',')})`);
+      p.push(...eids);
+    }
+    q += ` AND (${conds.join(' OR ')})`;
+  } else if (req.userRole === 'manager') {
+    q += ' AND 1=0'; // no assignments, return nothing
   }
   q += ' ORDER BY t.clock_in DESC LIMIT 1000';
   res.json(db.prepare(q).all(...p));
@@ -4037,6 +6432,15 @@ app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res)
   const { employee_id, entries, job_id, company_name, period_start, period_end } = req.body;
   if (!employee_id || !entries || !entries.length) return res.status(400).json({ error: 'employee_id and entries required' });
 
+  function breaksMin(breaks) {
+    if (!Array.isArray(breaks) || !breaks.length) return 0;
+    return breaks.reduce((sum, b) => {
+      if (!b.start || !b.end) return sum;
+      const [sh,sm] = b.start.split(':').map(Number);
+      const [eh,em] = b.end.split(':').map(Number);
+      return sum + Math.max(0, (eh*60+em) - (sh*60+sm));
+    }, 0);
+  }
   function lunchMin(start, end) {
     if (!start || !end) return 0;
     const [sh,sm] = start.split(':').map(Number);
@@ -4046,8 +6450,8 @@ app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res)
 
   const stmtEntry = db.prepare(`INSERT INTO time_entries
     (employee_id,clock_in,clock_out,break_minutes,lunch_start,lunch_end,company_name,
-     total_hours,regular_hours,overtime_hours,job_id,notes,status,sheet_id)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+     total_hours,regular_hours,overtime_hours,job_id,notes,status,sheet_id,break_records)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const stmtSheet = db.prepare(`INSERT INTO timesheet_sheets
     (employee_id,company_name,period_start,period_end,job_id,
      total_hours,regular_hours,overtime_hours,status,confirm_token)
@@ -4060,7 +6464,9 @@ app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res)
     const prepared = [];
     for (const e of rows) {
       if (!e.clock_in || !e.clock_out) continue;
-      const bMin = lunchMin(e.lunch_start, e.lunch_end) || parseInt(e.break_minutes)||0;
+      const bMin = (Array.isArray(e.breaks) && e.breaks.length)
+        ? breaksMin(e.breaks)
+        : (lunchMin(e.lunch_start, e.lunch_end) || parseInt(e.break_minutes)||0);
       const hrs = calcHours(e.clock_in, e.clock_out, bMin);
       if (hrs.total <= 0) continue;
       totTotal += hrs.total; totReg += hrs.regular; totOT += hrs.overtime;
@@ -4077,9 +6483,15 @@ app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res)
     const sheetId = sheetRow.lastInsertRowid;
     // insert entries linked to sheet
     for (const { e, bMin, hrs } of prepared) {
+      const dateStr = e.clock_in.slice(0,10);
+      const breaks = Array.isArray(e.breaks) ? e.breaks.filter(b=>b.start&&b.end) : [];
+      const breakRecords = breaks.map(b => ({ start: dateStr+'T'+b.start, end: dateStr+'T'+b.end }));
+      const ls = breaks[0]?.start || e.lunch_start || '';
+      const le = breaks[0]?.end   || e.lunch_end   || '';
       const r = stmtEntry.run(employee_id, e.clock_in, e.clock_out, bMin,
-        e.lunch_start||'', e.lunch_end||'', company_name||'',
-        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed', sheetId);
+        ls, le, company_name||'',
+        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed', sheetId,
+        JSON.stringify(breakRecords));
       stmtLink.run(sheetId, r.lastInsertRowid);
     }
     return { count: prepared.length, token, sheet_id: sheetId };
@@ -4110,14 +6522,92 @@ app.delete('/api/admin/time-entries/:id', requireAdmin, blockManager, staffGuard
   res.json({ success: true });
 });
 
+// ── Manager time-entry management (no blockManager restriction) ──
+app.put('/api/manager/time-entries/:id', requireAdmin, (req, res) => {
+  const d = req.body;
+  let breakMins = 0, breakRecords = '[]';
+  if (d.break_records) {
+    try {
+      const recs = JSON.parse(d.break_records);
+      breakMins = Math.round(recs.reduce((sum, b) => {
+        if (b.start && b.end) sum += new Date(b.end) - new Date(b.start);
+        return sum;
+      }, 0) / 60000);
+      breakRecords = JSON.stringify(recs);
+    } catch {}
+  }
+  const hrs = calcHours(d.clock_in, d.clock_out, breakMins);
+  const status = d.clock_out ? 'closed' : 'open';
+  db.prepare(`UPDATE time_entries SET
+    clock_in=?,clock_out=?,break_minutes=?,break_records=?,
+    total_hours=?,regular_hours=?,overtime_hours=?,
+    notes=?,status=?,manager_confirmed=0,needs_review=1,review_reason='' WHERE id=?`).run(
+    d.clock_in||null, d.clock_out||null, breakMins, breakRecords,
+    hrs.total, hrs.regular, hrs.overtime,
+    d.notes||'', status, req.params.id);
+  res.json({ success: true, ...hrs, break_minutes: breakMins, status });
+});
+
+// PATCH /api/manager/time-entries/:id/correct-time — correct clock_in or clock_out for a punch
+app.patch('/api/manager/time-entries/:id/correct-time', requireAdmin, (req, res) => {
+  const { field, new_time } = req.body;
+  if (!['clock_in', 'clock_out'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const t = new Date(new_time);
+  if (isNaN(t.getTime())) return res.status(400).json({ error: 'Invalid time' });
+  db.prepare(`UPDATE time_entries SET ${field}=? WHERE id=?`).run(t.toISOString(), req.params.id);
+  const entry = db.prepare('SELECT * FROM time_entries WHERE id=?').get(req.params.id);
+  if (entry && entry.clock_in && entry.clock_out) {
+    const hrs = calcHours(entry.clock_in, entry.clock_out, entry.break_minutes || 0);
+    db.prepare('UPDATE time_entries SET total_hours=?,regular_hours=?,overtime_hours=? WHERE id=?')
+      .run(hrs.total, hrs.regular, hrs.overtime, req.params.id);
+  }
+  res.json({ success: true });
+});
+
+app.post('/api/manager/time-entries/:id/confirm', requireAdmin, (req, res) => {
+  db.prepare("UPDATE time_entries SET manager_confirmed=1,needs_review=1 WHERE id=?").run(req.params.id);
+  res.json({ success: true });
+});
+
+app.post('/api/manager/time-entries/batch', requireAdmin, (req, res) => {
+  const { ids, action, regular_hours, overtime_hours, clock_in_delta_minutes, clock_out_delta_minutes } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: '未选择记录' });
+  if (action === 'confirm') {
+    const stmt = db.prepare("UPDATE time_entries SET manager_confirmed=1,needs_review=1 WHERE id=?");
+    db.transaction(() => { for (const id of ids) stmt.run(id); })();
+  } else if (action === 'set_hours') {
+    const reg = Math.max(0, parseFloat(regular_hours) || 0);
+    const ot = Math.max(0, parseFloat(overtime_hours) || 0);
+    const stmt = db.prepare("UPDATE time_entries SET regular_hours=?,overtime_hours=?,total_hours=? WHERE id=?");
+    db.transaction(() => { for (const id of ids) stmt.run(reg, ot, reg + ot, id); })();
+  } else if (action === 'adjust_time') {
+    const ciDelta = parseInt(clock_in_delta_minutes) || 0;
+    const coDelta = parseInt(clock_out_delta_minutes) || 0;
+    db.transaction(() => {
+      for (const id of ids) {
+        if (ciDelta) db.prepare("UPDATE time_entries SET clock_in=datetime(clock_in,?||' minutes') WHERE id=?").run(String(ciDelta), id);
+        if (coDelta) db.prepare("UPDATE time_entries SET clock_out=datetime(clock_out,?||' minutes') WHERE clock_out IS NOT NULL AND id=?").run(String(coDelta), id);
+      }
+    })();
+  }
+  res.json({ success: true });
+});
+
+// Admin confirms a manager-confirmed time entry (final approval)
+app.post('/api/admin/time-entries/:id/confirm', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  db.prepare("UPDATE time_entries SET needs_review=0,review_reason='' WHERE id=?").run(req.params.id);
+  res.json({ success: true });
+});
+
 // List timesheet sheets (admin)
 app.get('/api/admin/timesheet-sheets', requireAdmin, (req, res) => {
-  const { stage } = req.query; // 'verify' | 'payment' | 'history'
+  const { stage } = req.query; // 'verify' | 'pending_confirm' | 'payment' | 'history'
   let where = '';
-  if (stage === 'verify')   where = `WHERE ts.status IN ('pending','confirmed','disputed')`;
-  if (stage === 'payment')  where = `WHERE ts.status = 'verified'`;
-  if (stage === 'dividend') where = `WHERE ts.status = 'dividend_pending'`;
-  if (stage === 'history')  where = `WHERE ts.status = 'completed'`;
+  if (stage === 'verify')          where = `WHERE ts.status IN ('confirmed','disputed')`;
+  if (stage === 'pending_confirm') where = `WHERE ts.status = 'pending'`;
+  if (stage === 'payment')         where = `WHERE ts.status = 'verified'`;
+  if (stage === 'dividend')        where = `WHERE ts.status = 'dividend_pending'`;
+  if (stage === 'history')         where = `WHERE ts.status = 'completed'`;
   const rows = db.prepare(`
     SELECT ts.*, e.first_name, e.last_name, e.employee_id as emp_code, e.email, e.phone
     FROM timesheet_sheets ts LEFT JOIN employees e ON ts.employee_id=e.id
@@ -4206,6 +6696,149 @@ app.post('/api/admin/timesheet-sheets/:id/vote-distributed', requireAdmin, (req,
     db.prepare(`UPDATE timesheet_sheets SET status='completed' WHERE id=?`).run(req.params.id);
   }
   res.json({ success: true, all_distributed: allDistributed, dist_count: distCount, staff_count: staffCount });
+});
+
+// ─── INVOICE PROFILES (presets) ───
+
+app.get('/api/admin/invoice-profiles', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM invoice_profiles ORDER BY section, name').all());
+});
+
+app.post('/api/admin/invoice-profiles', requireAdmin, (req, res) => {
+  const { name, section, data } = req.body;
+  if (!name || !section) return res.status(400).json({ error: 'name and section required' });
+  const r = db.prepare('INSERT INTO invoice_profiles (name, section, data) VALUES (?,?,?)').run(name, section, JSON.stringify(data || {}));
+  res.json({ id: r.lastInsertRowid, success: true });
+});
+
+app.put('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
+  const { name, data } = req.body;
+  if (name !== undefined) db.prepare('UPDATE invoice_profiles SET name=? WHERE id=?').run(name, req.params.id);
+  if (data !== undefined) db.prepare('UPDATE invoice_profiles SET data=? WHERE id=?').run(JSON.stringify(data), req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM invoice_profiles WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── INVOICE STORAGE ───
+db.exec(`CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_number TEXT NOT NULL,
+  invoice_date TEXT,
+  company_name TEXT,
+  bill_to_addr TEXT,
+  period_start TEXT,
+  period_end TEXT,
+  for_label TEXT,
+  subtotal REAL DEFAULT 0,
+  items_json TEXT,
+  profile_json TEXT,
+  status TEXT DEFAULT 'draft',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+
+// List invoices
+app.get('/api/admin/invoices', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, created_at FROM invoices ORDER BY created_at DESC`).all();
+  res.json(rows);
+});
+
+// Save invoice
+app.post('/api/admin/invoices', requireAdmin, (req, res) => {
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile } = req.body;
+  if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
+  const result = db.prepare(`
+    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}));
+  res.json({ id: result.lastInsertRowid });
+});
+
+// Delete invoice
+app.delete('/api/admin/invoices/:id', requireAdmin, (req, res) => {
+  db.prepare(`DELETE FROM invoices WHERE id=?`).run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── INVOICE GENERATION ───
+
+// Get employees (and their hours) for a given company + period (for invoice builder)
+app.get('/api/admin/invoice/employees', requireAdmin, (req, res) => {
+  const { company_name, period_start, period_end } = req.query;
+  const conds = ['te.status != ?'];
+  const params = ['open'];
+  if (company_name) { conds.push('te.company_name=?'); params.push(company_name); }
+  if (period_start) { conds.push("date(te.clock_in) >= ?"); params.push(period_start); }
+  if (period_end)   { conds.push("date(te.clock_in) <= ?"); params.push(period_end); }
+
+  const rows = db.prepare(`
+    SELECT e.id as employee_id, e.first_name, e.last_name, e.employee_id as emp_code, e.position,
+      ROUND(SUM(COALESCE(te.regular_hours,0)),2) as regular_hours,
+      ROUND(SUM(COALESCE(te.overtime_hours,0)),2) as overtime_hours,
+      ROUND(SUM(COALESCE(te.total_hours,0)),2) as total_hours,
+      COALESCE(MAX(ej.client_hourly_rate),0) as client_hourly_rate
+    FROM time_entries te
+    JOIN employees e ON te.employee_id = e.id
+    LEFT JOIN employee_jobs ej ON ej.employee_id = e.id AND ej.status='active'
+    WHERE ${conds.join(' AND ')}
+    GROUP BY e.id
+    ORDER BY e.last_name, e.first_name
+  `).all(...params);
+  res.json(rows);
+});
+
+// Generate invoice JSON for a company + period
+app.post('/api/admin/invoice/generate', requireAdmin, (req, res) => {
+  const { company_name, period_start, period_end, employee_ids, bill_rates } = req.body;
+  if (!company_name || !period_start || !period_end)
+    return res.status(400).json({ error: '请填写公司名称和周期' });
+
+  const ids = Array.isArray(employee_ids) && employee_ids.length > 0 ? employee_ids : null;
+  const conds = ["te.status != 'open'", 'te.company_name=?', "date(te.clock_in) >= ?", "date(te.clock_in) <= ?"];
+  const params = [company_name, period_start, period_end];
+  if (ids) { conds.push(`te.employee_id IN (${ids.map(() => '?').join(',')})`); params.push(...ids); }
+
+  const rows = db.prepare(`
+    SELECT e.id as employee_id, e.first_name, e.last_name, e.employee_id as emp_code, e.position,
+      ROUND(SUM(COALESCE(te.regular_hours,0)),2) as regular_hours,
+      ROUND(SUM(COALESCE(te.overtime_hours,0)),2) as overtime_hours,
+      ROUND(SUM(COALESCE(te.total_hours,0)),2) as total_hours,
+      COALESCE(MAX(ej.client_hourly_rate),0) as client_hourly_rate
+    FROM time_entries te
+    JOIN employees e ON te.employee_id = e.id
+    LEFT JOIN employee_jobs ej ON ej.employee_id = e.id AND ej.status='active'
+    WHERE ${conds.join(' AND ')}
+    GROUP BY e.id ORDER BY e.last_name, e.first_name
+  `).all(...params);
+
+  const partner = db.prepare('SELECT * FROM partners WHERE name=? LIMIT 1').get(company_name);
+
+  const items = rows.map(r => {
+    const rate = (bill_rates && bill_rates[String(r.employee_id)] != null)
+      ? parseFloat(bill_rates[String(r.employee_id)]) : (r.client_hourly_rate || 0);
+    const regAmt  = Math.round((r.regular_hours  || 0) * rate * 100) / 100;
+    const otAmt   = Math.round((r.overtime_hours || 0) * rate * 1.5 * 100) / 100;
+    return {
+      employee_id: r.employee_id, name: `${r.first_name} ${r.last_name}`,
+      emp_code: r.emp_code, position: r.position || '',
+      regular_hours: r.regular_hours || 0, overtime_hours: r.overtime_hours || 0,
+      total_hours: r.total_hours || 0, rate,
+      regular_amount: regAmt, overtime_amount: otAmt,
+      total_amount: Math.round((regAmt + otAmt) * 100) / 100
+    };
+  });
+
+  const subtotal = Math.round(items.reduce((s, i) => s + i.total_amount, 0) * 100) / 100;
+  const invoiceNum = 'INV-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.random().toString(36).slice(2,6).toUpperCase();
+  res.json({
+    invoice_number: invoiceNum, company_name, partner,
+    period_start, period_end,
+    generated_at: new Date().toISOString(),
+    items, subtotal
+  });
 });
 
 // ─── PUBLIC TIMESHEET CONFIRMATION ───
@@ -4311,34 +6944,179 @@ app.get('/api/timeclock/status/:empCode', (req, res) => {
   const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - (weekAgo.getDay() || 7) + 1);
   const weekEntries = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND clock_in>=? AND status='closed'").all(emp.id, weekAgo.toISOString());
   const weekHours = weekEntries.reduce((s,e) => s + (e.total_hours||0), 0);
+  // Fetch configured work sites for this employee (via active assignments)
+  const sites = db.prepare(`
+    SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    JOIN job_sites js ON j.site_id = js.id
+    JOIN inquiries i ON a.inquiry_id = i.id
+    JOIN employees e ON (e.employee_id = i.worker_code OR i.id = (
+      SELECT linked_inquiry_id FROM worker_accounts WHERE linked_inquiry_id IS NOT NULL
+      AND id IN (SELECT id FROM worker_accounts WHERE 1=0)
+    ))
+    WHERE e.id = ? AND a.status IN ('assigned','working') AND js.latitude IS NOT NULL
+    LIMIT 10
+  `).all(emp.id);
+  // Also check employee_jobs table
+  const sites2 = db.prepare(`
+    SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+    FROM employee_jobs ej
+    JOIN jobs j ON ej.job_id = j.id
+    JOIN job_sites js ON j.site_id = js.id
+    WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL
+    LIMIT 10
+  `).all(emp.id);
+  const allSites = [...sites, ...sites2].filter((s,i,arr) => arr.findIndex(x=>x.id===s.id)===i);
   res.json({
     employee: { id: emp.id, name: `${emp.first_name} ${emp.last_name}`, employee_id: emp.employee_id, position: emp.position||'' },
     clocked_in: !!open,
+    on_break: open ? !!(open.on_break) : false,
     open_entry: open || null,
     today_hours: Math.round(todayHours*100)/100,
     week_hours: Math.round(weekHours*100)/100,
-    clock_in_time: open ? open.clock_in : null
+    clock_in_time: open ? open.clock_in : null,
+    work_sites: allSites
   });
 });
 
 app.post('/api/timeclock/punch', (req, res) => {
-  const { employee_id, pin } = req.body;
+  const { employee_id, pin, punch_type, latitude, longitude } = req.body;
   if (!employee_id || !pin) return res.status(400).json({ error: '请输入员工编号和 PIN' });
+  const ptype = punch_type || 'toggle'; // legacy: no punch_type = auto toggle
   const emp = db.prepare("SELECT * FROM employees WHERE employee_id=? AND status='active'").get(employee_id.toUpperCase());
   if (!emp) return res.status(401).json({ error: '未找到员工或员工已离职' });
   if (!emp.pin_hash) return res.status(401).json({ error: 'PIN 未设置，请联系管理员' });
   if (!verifyPin(pin, emp.pin_salt, emp.pin_hash)) return res.status(401).json({ error: 'PIN 错误' });
-  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
+
   const now = new Date().toISOString();
-  if (open) {
-    const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
-    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
-      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
-  } else {
-    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status) VALUES(?,?,'open')").run(emp.id, now);
-    res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+  const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
+
+  // ── Geofencing: required for clock-in; all punch types must verify location ──
+  const empSites = db.prepare(`
+    SELECT DISTINCT js.id, js.name, js.latitude, js.longitude, js.radius_meters
+    FROM employee_jobs ej
+    JOIN jobs j ON ej.job_id = j.id
+    JOIN job_sites js ON j.site_id = js.id
+    WHERE ej.employee_id = ? AND ej.status = 'active' AND js.latitude IS NOT NULL AND js.longitude IS NOT NULL
+  `).all(emp.id);
+
+  if (empSites.length > 0) {
+    // Employee has configured job sites — location verification is mandatory
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: '打卡需要开启位置权限，请在浏览器设置中允许定位后再试。\nLocation permission required to clock in.', need_gps: true });
+    }
+    let insideAny = false;
+    let closestDist = Infinity, closestSite = null;
+    for (const site of empSites) {
+      const dist = haversineDistance(latitude, longitude, site.latitude, site.longitude);
+      if (dist <= site.radius_meters) { insideAny = true; break; }
+      if (dist < closestDist) { closestDist = dist; closestSite = site; }
+    }
+    if (!insideAny) {
+      const distStr = closestSite
+        ? (closestDist >= 1000 ? (closestDist/1000).toFixed(1)+' km' : Math.round(closestDist)+' m')
+        : '未知';
+      const siteName = closestSite ? closestSite.name : '';
+      return res.status(400).json({ error: `您的位置不在工作地点范围内（距"${siteName}"约 ${distStr}，允许范围 ${closestSite?.radius_meters||200}m）。\n请到达工作地点后再打卡。`, geo_blocked: true });
+    }
+  } else if (ptype === 'in' || ptype === 'toggle') {
+    // No configured job sites — block clock-in to prevent unverified punches
+    if (!latitude || !longitude) {
+      return res.status(400).json({ error: '打卡需要开启位置权限。\nLocation permission required.', need_gps: true });
+    }
+    return res.status(400).json({ error: '该员工暂无已配置工作地点的工作，无法验证位置，请联系HR。\nNo configured job site found, please contact HR.', no_site: true });
   }
+
+  let warning = null; // warning message (not blocking)
+
+  // ── Legacy toggle (no punch_type) ──
+  if (ptype === 'toggle') {
+    if (open) {
+      const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
+      db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed' WHERE id=?")
+        .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+      return res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
+    } else {
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break) VALUES(?,?,'open','[]',0)").run(emp.id, now);
+      return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid });
+    }
+  }
+
+  // ── Clock In ──
+  if (ptype === 'in') {
+    if (open) {
+      // Flag the unclosed entry for admin review and allow the new clock-in
+      const missedDate = open.clock_in ? open.clock_in.slice(0,10) : '?';
+      db.prepare("UPDATE time_entries SET status='closed',needs_review=1,review_reason=? WHERE id=?")
+        .run(`漏打下班卡（${missedDate}），由新上班打卡触发`, open.id);
+      warning = `提示：${missedDate} 忘记打下班卡，该记录已标记给管理员审核`;
+    }
+    const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,break_records,on_break,punch_type) VALUES(?,?,'open','[]',0,'in')").run(emp.id, now);
+    return res.json({ action: 'in', clock_in: now, entry_id: r.lastInsertRowid, warning });
+  }
+
+  // ── Clock Out ──
+  if (ptype === 'out') {
+    if (!open) {
+      warning = '提示：未找到对应上班记录，可能漏打上班卡，已记录下班时间，标记管理员审核';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(emp.id, now);
+      return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning, entry_id: r.lastInsertRowid });
+    }
+    if (open.on_break) warning = '提示：您处于暂停中，已自动结束暂停并打下班卡';
+    const hrs = calcHours(open.clock_in, now, open.break_minutes||0);
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out' WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
+    return res.json({ action: 'out', clock_in: open.clock_in, clock_out: now, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime, warning });
+  }
+
+  // ── Break Start (Pause) ──
+  if (ptype === 'break_start') {
+    if (!open) {
+      warning = '提示：未找到上班记录，可能漏打上班卡，已记录休息开始，标记管理员审核';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,'open',?,1,'break_start_only',1,'漏打上班卡，由break_start触发')").run(emp.id, JSON.stringify([{start:now,end:null}]));
+      return res.json({ action: 'break_start', warning, entry_id: r.lastInsertRowid });
+    }
+    const breaks = JSON.parse(open.break_records||'[]');
+    if (open.on_break) {
+      warning = '提示：您已在暂停中，已重新记录暂停开始时间';
+      const lastOpen = breaks.findIndex(b=>!b.end);
+      if (lastOpen>=0) breaks[lastOpen].start = now;
+    } else {
+      breaks.push({start:now,end:null});
+    }
+    db.prepare('UPDATE time_entries SET break_records=?,on_break=1,break_start=? WHERE id=?').run(JSON.stringify(breaks), now, open.id);
+    return res.json({ action: 'break_start', entry_id: open.id, warning });
+  }
+
+  // ── Break End (Resume) ──
+  if (ptype === 'break_end') {
+    if (!open) {
+      warning = '提示：未找到上班记录，可能漏打上班卡及休息开始，已记录休息结束，标记管理员审核';
+      const r = db.prepare("INSERT INTO time_entries (employee_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,'open',?,0,'break_end_only',1,'漏打上班卡及休息开始，仅有休息结束记录')").run(emp.id, JSON.stringify([{start:null,end:now}]));
+      return res.json({ action: 'break_end', break_minutes: 0, warning, entry_id: r.lastInsertRowid });
+    }
+    const breaks = JSON.parse(open.break_records||'[]');
+    const lastIdx = breaks.findIndex(b=>!b.end);
+    if (lastIdx>=0) {
+      breaks[lastIdx].end = now;
+    } else {
+      // No open break found — record a flagged entry with null start for admin review
+      warning = '提示：未找到休息开始记录，休息结束已记录，标记管理员审核';
+      breaks.push({start:null, end:now, flagged:true});
+      db.prepare('UPDATE time_entries SET break_records=?,on_break=0,needs_review=1,review_reason=COALESCE(NULLIF(review_reason,\'\'),\'漏打休息开始，仅有休息结束记录\') WHERE id=?').run(JSON.stringify(breaks),open.id);
+      return res.json({ action: 'break_end', break_minutes: 0, warning });
+    }
+    if (!open.on_break) {
+      warning = '提示：您当前不在暂停中，此操作已记录';
+    }
+    const totalBreakMs = breaks.reduce((sum,b)=>{if(b.start&&b.end)sum+=new Date(b.end)-new Date(b.start);return sum;},0);
+    const breakMins = Math.round(totalBreakMs/60000);
+    db.prepare('UPDATE time_entries SET break_records=?,on_break=0,break_minutes=? WHERE id=?').run(JSON.stringify(breaks),breakMins,open.id);
+    return res.json({ action: 'break_end', break_minutes: breakMins, warning });
+  }
+
+  return res.status(400).json({ error: '无效的打卡类型' });
 });
 
 // Serve timeclock page
@@ -4374,15 +7152,45 @@ app.post('/api/worker/login', (req, res) => {
   if (w.suspended)
     return res.status(403).json({ error: '账号已被暂停，请联系管理员 / Account suspended. Please contact admin.' });
   const token = crypto.randomBytes(32).toString('hex');
-  workerSessions.set(token, { created: Date.now(), workerId: w.id, employeeId: w.employee_id });
+  db.prepare('INSERT INTO worker_sessions (token, worker_id, employee_id, created_at) VALUES (?,?,?,?)').run(token, w.id, w.employee_id, Date.now());
   res.json({ token, employee_id: w.employee_id });
 });
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
   const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
-  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
+  const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
   res.json({ account: w, employee: emp, compliance_docs: docs });
+});
+
+// ─── Worker Profile: Address & Emergency Contact ───
+app.get('/api/worker/maps-key', requireWorker, (req, res) => {
+  const key = process.env.GOOGLE_MAPS_API_KEY || '';
+  res.json({ key });
+});
+
+app.put('/api/worker/profile/address', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '未关联员工档案' });
+  const { address, street2, city, state, zip } = req.body || {};
+  if (!address || !address.trim()) return res.status(400).json({ error: '请填写街道地址' });
+  db.prepare('UPDATE employees SET address=?, street2=?, city=?, state=?, zip=? WHERE id=?')
+    .run((address||'').trim(), (street2||'').trim(), (city||'').trim(), (state||'').trim(), (zip||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
+});
+
+app.put('/api/worker/profile/emergency', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.status(400).json({ error: '未关联员工档案' });
+  const { emergency_name, emergency_phone, emergency_relation } = req.body || {};
+  db.prepare('UPDATE employees SET emergency_name=?, emergency_phone=?, emergency_relation=? WHERE id=?')
+    .run((emergency_name||'').trim(), (emergency_phone||'').trim(), (emergency_relation||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
+});
+
+app.put('/api/worker/profile/language', requireWorker, (req, res) => {
+  const { lang } = req.body || {};
+  if (!lang) return res.status(400).json({ error: 'lang required' });
+  db.prepare('UPDATE worker_accounts SET preferred_lang=? WHERE id=?').run(lang, req.workerId);
+  res.json({ success: true });
 });
 
 // ─── Contact Change (phone / email) with dual verification ───
@@ -4441,6 +7249,84 @@ app.post('/api/worker/contact/confirm-change', requireWorker, async (req, res) =
   if (field === 'phone') db.prepare('UPDATE worker_accounts SET phone=? WHERE id=?').run(pending.new_value, req.workerId);
   else db.prepare('UPDATE worker_accounts SET email=? WHERE id=?').run(pending.new_value, req.workerId);
   _pendingContactChange.delete(key);
+  res.json({ success: true });
+});
+
+// ── Sequential contact-change flow ──────────────────────────────────
+// Step 1: Send verification code to the OLD contact
+app.post('/api/worker/contact/send-old-code', requireWorker, async (req, res) => {
+  const { field } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const w = db.prepare('SELECT phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const oldVal = w[field];
+  if (!oldVal) {
+    // No old contact on file – skip old verification
+    _pendingContactChange.set(`${req.workerId}_${field}_s1`, { old_verified: true, expires: Date.now() + 15*60*1000 });
+    return res.json({ success: true, old_sent: false, no_old: true });
+  }
+  const code = String(Math.floor(100000 + Math.random()*900000));
+  const expires = Date.now() + 15*60*1000;
+  _pendingContactChange.set(`${req.workerId}_${field}_s1`, { old_code: code, expires });
+  let sent = false;
+  if (field === 'phone') {
+    if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(oldVal); sent = true; }
+    else if (twilioClient && TWILIO_FROM) { sent = await sendSMS(oldVal, `[Prime Anchorpoint] Your verification code: ${code} (valid 15 min)`); }
+  } else {
+    sent = await sendEmail(oldVal, 'Prime Anchorpoint Verification Code', `Your verification code: ${code}\nValid for 15 minutes.`);
+  }
+  console.log(`[CC-S1] Worker ${req.workerId} field=${field} old_code=${code}`);
+  res.json({ success: true, old_sent: sent });
+});
+
+// Step 2: Verify old code, then send code to the NEW contact
+app.post('/api/worker/contact/verify-old-send-new', requireWorker, async (req, res) => {
+  const { field, old_code, new_value } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  if (!new_value || !new_value.trim()) return res.status(400).json({ error: field==='phone' ? 'Please enter new phone number' : 'Please enter new email' });
+  const val = new_value.trim();
+  const taken = field === 'phone'
+    ? db.prepare('SELECT id FROM worker_accounts WHERE phone=? AND id!=?').get(val, req.workerId)
+    : db.prepare('SELECT id FROM worker_accounts WHERE email=? AND id!=?').get(val, req.workerId);
+  if (taken) return res.status(400).json({ error: field==='phone' ? '该手机号已被其他账号使用' : '该邮箱已被其他账号注册' });
+  const w = db.prepare('SELECT phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const s1 = _pendingContactChange.get(`${req.workerId}_${field}_s1`);
+  if (w[field]) {
+    if (!s1 || Date.now() > s1.expires) return res.status(400).json({ error: '验证码已过期，请重新发送' });
+    let oldOk = false;
+    if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID) {
+      oldOk = await checkVerifyCode(w.phone, old_code);
+    } else { oldOk = (old_code && old_code.trim() === s1.old_code); }
+    if (!oldOk) return res.status(400).json({ error: field==='phone' ? '旧手机号验证码不正确' : '旧邮箱验证码不正确' });
+  }
+  _pendingContactChange.delete(`${req.workerId}_${field}_s1`);
+  const newCode = String(Math.floor(100000 + Math.random()*900000));
+  const expires = Date.now() + 15*60*1000;
+  _pendingContactChange.set(`${req.workerId}_${field}_s2`, { new_value: val, new_code: newCode, expires });
+  let newSent = false;
+  if (field === 'phone') {
+    if (twilioClient && TWILIO_VERIFY_SID) { await sendVerifyCode(val); newSent = true; }
+    else if (twilioClient && TWILIO_FROM) { newSent = await sendSMS(val, `[Prime Anchorpoint] Your new phone verification code: ${newCode} (valid 15 min)`); }
+  } else {
+    newSent = await sendEmail(val, 'Prime Anchorpoint New Email Verification', `Your verification code: ${newCode}\nValid for 15 minutes.`);
+  }
+  console.log(`[CC-S2] Worker ${req.workerId} field=${field} new_code=${newCode}`);
+  res.json({ success: true, new_sent: newSent });
+});
+
+// Step 3: Verify new code and update DB
+app.post('/api/worker/contact/confirm-new', requireWorker, async (req, res) => {
+  const { field, new_code } = req.body;
+  if (!['phone','email'].includes(field)) return res.status(400).json({ error: 'Invalid field' });
+  const s2 = _pendingContactChange.get(`${req.workerId}_${field}_s2`);
+  if (!s2 || Date.now() > s2.expires) return res.status(400).json({ error: '验证码已过期，请重新发送' });
+  let newOk = false;
+  if (field === 'phone' && twilioClient && TWILIO_VERIFY_SID) {
+    newOk = await checkVerifyCode(s2.new_value, new_code);
+  } else { newOk = (new_code && new_code.trim() === s2.new_code); }
+  if (!newOk) return res.status(400).json({ error: field==='phone' ? '新手机号验证码不正确' : '新邮箱验证码不正确' });
+  if (field === 'phone') db.prepare('UPDATE worker_accounts SET phone=? WHERE id=?').run(s2.new_value, req.workerId);
+  else db.prepare('UPDATE worker_accounts SET email=? WHERE id=?').run(s2.new_value, req.workerId);
+  _pendingContactChange.delete(`${req.workerId}_${field}_s2`);
   res.json({ success: true });
 });
 
@@ -4542,14 +7428,18 @@ app.post('/api/worker/me/verify-change', requireWorker, (req, res) => {
 });
 
 app.get('/api/worker/jobs', requireWorker, (req, res) => {
-  const jobs = db.prepare(`
+  const lang = req.query.lang;
+  const base = `
     SELECT j.id, j.title, j.type, j.location, j.pay, j.pay_period,
            j.work_auth, j.benefits, j.work_days, j.work_start, j.work_end,
-           j.employment_type, j.description, j.urgent,
+           j.employment_type, j.description, j.urgent, j.lang, j.langs,
+           j.title_zh, j.title_es, j.desc_zh, j.desc_es,
            COALESCE(NULLIF(j.company_name,''), p.name, '') AS company_name
     FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id
-    WHERE j.active=1 ORDER BY j.created_at DESC
-  `).all();
+    WHERE j.active=1`;
+  const jobs = (lang && lang !== 'all')
+    ? db.prepare(base + ` AND (j.langs IS NULL OR j.langs='' OR instr(','||j.langs||',', ','||?||',')>0) ORDER BY j.created_at DESC`).all(lang)
+    : db.prepare(base + ' ORDER BY j.created_at DESC').all();
   const applied = db.prepare('SELECT job_id FROM job_applications WHERE worker_account_id=?').all(req.workerId).map(r => r.job_id);
   res.json(jobs.map(j => ({ ...j, applied: applied.includes(j.id) })));
 });
@@ -4570,11 +7460,28 @@ app.post('/api/worker/apply/:jobId', requireWorker, (req, res) => {
 
 app.get('/api/worker/timeclock', requireWorker, (req, res) => {
   if (!req.workerEmployeeId) return res.json([]);
+  const y = parseInt(req.query.year)  || new Date().getFullYear();
+  const m = parseInt(req.query.month) || new Date().getMonth() + 1;
+  const from = `${y}-${String(m).padStart(2,'0')}-01`;
+  const to   = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y,m,0).getDate()).padStart(2,'0')}`;
+  // Use client timezone offset so entries appear on the correct local calendar day
+  const tzOffsetMinutes = parseInt(req.query.tz_offset) || 0;
+  const localOffsetMinutes = -tzOffsetMinutes;
+  const tzSign = localOffsetMinutes >= 0 ? '+' : '-';
+  const tzAbsMins = Math.abs(localOffsetMinutes);
+  const tzModifier = `${tzSign}${tzAbsMins} minutes`;
   const entries = db.prepare(`
-    SELECT t.*, j.title AS job_title, j.company_name AS job_company
-    FROM time_entries t LEFT JOIN jobs j ON t.job_id = j.id
-    WHERE t.employee_id = ? ORDER BY t.clock_in DESC LIMIT 200
-  `).all(req.workerEmployeeId);
+    SELECT t.*, j.title AS job_title, j.company_name AS job_company,
+           COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+    FROM time_entries t
+    LEFT JOIN jobs j ON t.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    WHERE t.employee_id = ?
+      AND t.clock_in IS NOT NULL
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
+    ORDER BY t.clock_in DESC LIMIT 500
+  `).all(req.workerEmployeeId, from, to);
   res.json(entries);
 });
 
@@ -4591,22 +7498,83 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   // ── Break start ──────────────────────────────────────────────────
   if (punch_type === 'break_start') {
-    if (!open) return res.status(400).json({ error: '尚未上班打卡，无法开始休息。' });
-    if (open.on_break) return res.status(400).json({ error: '您已在休息中，请先打卡休息结束。' });
+    let bsWarning = null;
+    if (!open) bsWarning = '提示：未找到上班打卡记录，可能漏打了上班卡';
+    else if (open.on_break) bsWarning = '提示：您已在休息中，已重新记录暂停开始时间';
+    if (!open) {
+      // No open entry — record break_start with clock_in left NULL for admin review
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,job_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'open',?,1,'break_start_only',1,'漏打上班卡，由break_start触发')").run(req.workerEmployeeId, job_id || null, JSON.stringify([{start:now,end:null}]));
+      return res.json({ action: 'break_start', warning: bsWarning, entry_id: r2.lastInsertRowid });
+    }
+
+    // GPS + geo-fence verification (same rules as clock-in)
+    let bsGeoVerified = 0;
+    if (latitude && longitude && open.job_id) {
+      const bsJob = db.prepare(`
+        SELECT js.id AS js_id, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters, js.name AS site_name
+        FROM jobs j LEFT JOIN job_sites js ON j.site_id = js.id
+        WHERE j.id = ?
+      `).get(open.job_id);
+      if (bsJob && bsJob.js_id) {
+        const dist = haversineDistance(latitude, longitude, bsJob.site_lat, bsJob.site_lng);
+        if (dist <= bsJob.radius_meters) {
+          bsGeoVerified = 1;
+        } else {
+          const distKm = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : Math.round(dist) + ' m';
+          return res.status(400).json({ error: `您的位置不在工作地点范围内（距"${bsJob.site_name}"约 ${distKm}，允许范围 ${bsJob.radius_meters}m）。\n请到达工作地点后再暂停打卡。`, geo_blocked: true });
+        }
+      }
+      if (!bsGeoVerified) {
+        const assignSite2 = db.prepare(`
+          SELECT a.work_lat, a.work_lng, a.work_radius
+          FROM assignments a JOIN worker_accounts w ON a.inquiry_id = w.linked_inquiry_id
+          WHERE w.id = ? AND a.job_id = ? AND a.status IN ('assigned','working') AND a.work_lat IS NOT NULL
+          ORDER BY a.assigned_at DESC LIMIT 1
+        `).get(req.workerId, open.job_id);
+        if (assignSite2) {
+          const dist2 = haversineDistance(latitude, longitude, assignSite2.work_lat, assignSite2.work_lng);
+          if (dist2 <= (assignSite2.work_radius || 200)) {
+            bsGeoVerified = 1;
+          } else {
+            const distKm2 = dist2 >= 1000 ? (dist2 / 1000).toFixed(1) + ' km' : Math.round(dist2) + ' m';
+            return res.status(400).json({ error: `您的位置不在工作地点范围内（距指定地址约 ${distKm2}）。\n请到达工作地点后再暂停打卡。`, geo_blocked: true });
+          }
+        }
+      }
+      if (!bsGeoVerified) return res.status(400).json({ error: '该工作暂未配置工作地点，无法验证位置，请联系HR。', no_site: true });
+    } else if (!latitude || !longitude) {
+      return res.status(400).json({ error: '暂停打卡需要开启位置权限，请允许浏览器获取您的位置后重试。', need_gps: true });
+    }
+
+    // Photo is uploaded separately via /api/worker/punch/:entryId/photo (FormData)
     const breaks = JSON.parse(open.break_records || '[]');
-    breaks.push({ start: now, end: null });
+    breaks.push({ start: now, end: null, latitude: latitude || null, longitude: longitude || null, geo_verified: bsGeoVerified });
     db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?')
       .run(JSON.stringify(breaks), open.id);
-    return res.json({ action: 'break_start', break_index: breaks.length - 1 });
+    return res.json({ action: 'break_start', break_index: breaks.length - 1, entry_id: open.id, geo_verified: bsGeoVerified });
   }
 
   // ── Break end ────────────────────────────────────────────────────
   if (punch_type === 'break_end') {
-    if (!open) return res.status(400).json({ error: '尚未上班打卡。' });
-    if (!open.on_break) return res.status(400).json({ error: '当前不在休息中。' });
+    let beWarning = null;
+    if (!open) beWarning = '提示：未找到上班打卡记录，可能漏打上班卡及休息开始，已记录休息结束，标记管理员审核';
+    else if (!open.on_break) beWarning = '提示：您当前不在休息中';
+    if (!open) {
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,job_id,status,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,'open',?,0,'break_end_only',1,'漏打上班卡及休息开始，仅有休息结束记录')").run(req.workerEmployeeId, job_id || null, JSON.stringify([{start:null,end:now}]));
+      return res.json({ action: 'break_end', break_minutes: 0, warning: beWarning, entry_id: r2.lastInsertRowid });
+    }
     const breaks = JSON.parse(open.break_records || '[]');
     const lastIdx = breaks.findIndex(b => !b.end);
-    if (lastIdx >= 0) breaks[lastIdx].end = now;
+    if (lastIdx >= 0) {
+      breaks[lastIdx].end = now;
+    } else {
+      // No open break — flag for admin review with null start
+      beWarning = '提示：未找到休息开始记录，休息结束已记录，标记管理员审核';
+      breaks.push({ start: null, end: now, flagged: true });
+      db.prepare("UPDATE time_entries SET break_records=?, on_break=0, needs_review=1, review_reason=COALESCE(NULLIF(review_reason,''),'漏打休息开始，仅有休息结束记录') WHERE id=?")
+        .run(JSON.stringify(breaks), open.id);
+      return res.json({ action: 'break_end', break_minutes: 0, warning: beWarning, entry_id: open.id });
+    }
     const totalBreakMs = breaks.reduce((sum, b) => {
       if (b.start && b.end) sum += new Date(b.end) - new Date(b.start);
       return sum;
@@ -4614,21 +7582,34 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     const breakMins = Math.round(totalBreakMs / 60000);
     db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?')
       .run(JSON.stringify(breaks), breakMins, open.id);
-    return res.json({ action: 'break_end', break_minutes: breakMins });
+    return res.json({ action: 'break_end', break_minutes: breakMins, warning: beWarning, entry_id: open.id });
   }
 
   // ── Clock out ────────────────────────────────────────────────────
   if (punch_type === 'out') {
-    if (!open) return res.status(400).json({ error: '尚未上班打卡，无法下班打卡。' });
-    if (open.on_break) return res.status(400).json({ error: '请先打卡休息结束，再下班打卡。' });
+    let outWarning = null;
+    if (!open) outWarning = '提示：未找到上班打卡记录，可能漏打了上班卡';
+    else if (open.on_break) outWarning = '提示：您处于休息中，休息记录未关闭，已标记给管理员审核';
+    if (!open) {
+      // Record a standalone clock-out for manager review, do NOT auto-fill clock_in
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,job_id,clock_out,status,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,?,'closed',0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(req.workerEmployeeId, job_id || null, now);
+      return res.json({ action: 'out', clock_in: null, clock_out: now, total_hours: 0, warning: outWarning, entry_id: r2.lastInsertRowid });
+    }
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
-    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out',punch_photo=COALESCE(?,punch_photo) WHERE id=?")
-      .run(now, hrs.total, hrs.regular, hrs.overtime, photo_data || null, open.id);
-    return res.json({ action: 'out', punch_type: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime });
+    db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out',punch_photo=COALESCE(?,punch_photo),clock_out_latitude=?,clock_out_longitude=? WHERE id=?")
+      .run(now, hrs.total, hrs.regular, hrs.overtime, photo_data || null, latitude || null, longitude || null, open.id);
+    return res.json({ action: 'out', punch_type: 'out', clock_in: open.clock_in, clock_out: now, geo_verified: geoVerified, total_hours: hrs.total, regular_hours: hrs.regular, overtime_hours: hrs.overtime, entry_id: open.id });
   }
 
   // ── Clock in ─────────────────────────────────────────────────────
-  if (open) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  let clockInWarning = null;
+  if (open) {
+    // Close the dangling open entry and flag for manager review, but do NOT auto-fill clock_out
+    const missedDate = open.clock_in ? open.clock_in.slice(0,10) : '?';
+    db.prepare("UPDATE time_entries SET status='closed',needs_review=1,review_reason=? WHERE id=?")
+      .run(`漏打下班卡（${missedDate}），由新上班打卡触发`, open.id);
+    clockInWarning = `提示：${missedDate} 忘记打下班卡，该记录已标记给管理员审核`;
+  }
   if (!latitude || !longitude) return res.status(400).json({ error: '打卡需要开启位置权限，请允许浏览器获取您的位置后重试。/ Location permission required to clock in.', need_gps: true });
   if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作 / Please select a job to clock in for.' });
   let activeJob = db.prepare(`
@@ -4640,25 +7621,19 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
     WHERE ej.employee_id = ? AND ej.job_id = ? AND ej.status = 'active'
   `).get(req.workerEmployeeId, job_id);
   if (!activeJob) {
-    const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+    const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
     const linkedInqId = wa?.linked_inquiry_id || null;
-    const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-    const wEmail = (wa?.email || '').toLowerCase();
-    activeJob = db.prepare(`
-      SELECT a.id, a.job_id, j.title, j.site_id,
-             js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.job_id = ? AND a.status != 'cancelled'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC LIMIT 1
-    `).get(job_id, linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+    if (linkedInqId) {
+      activeJob = db.prepare(`
+        SELECT a.id, a.job_id, j.title, j.site_id,
+               js.id AS js_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+        FROM assignments a
+        JOIN jobs j ON a.job_id = j.id
+        LEFT JOIN job_sites js ON j.site_id = js.id
+        WHERE a.job_id = ? AND a.status != 'cancelled' AND a.inquiry_id = ?
+        ORDER BY a.assigned_at DESC LIMIT 1
+      `).get(job_id, linkedInqId);
+    }
   }
   if (!activeJob) return res.status(400).json({ error: '该工作未在您的派遣列表中，无法打卡。/ Job not in your active assignments.' });
 
@@ -4701,34 +7676,63 @@ app.post('/api/worker/punch', requireWorker, (req, res) => {
 
   if (!geoVerified) return res.status(400).json({ error: '该工作暂未配置工作地点，无法验证位置，请联系HR。/ Work site not configured for this job, please contact HR.', no_site: true });
 
-  if (!photo_data) return res.status(400).json({ error: '上班打卡需要上传照片 / Photo is required for clock-in.', photo_required: true });
+  // Get site timezone for this job
+  const siteTzRow = matchedSiteId
+    ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(matchedSiteId)
+    : (activeJob.js_id ? db.prepare("SELECT timezone FROM job_sites WHERE id=?").get(activeJob.js_id) : null);
+  const siteTimezone = siteTzRow?.timezone || 'America/Chicago';
 
-  const doClockIn = db.transaction(() => {
-    const existingOpen = db.prepare("SELECT id FROM time_entries WHERE employee_id=? AND status='open' LIMIT 1").get(req.workerEmployeeId);
-    if (existingOpen) return null;
-    return db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,punch_photo) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
-      .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, photo_data || null);
-  });
-  const r = doClockIn();
-  if (!r) return res.status(400).json({ error: '您已在班，请先下班打卡。' });
+  const r = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,latitude,longitude,site_id,geo_verified,job_id,punch_type,break_records,on_break,site_timezone) VALUES(?,?,'open',?,?,?,?,?,'in','[]',0,?)")
+    .run(req.workerEmployeeId, now, latitude || null, longitude || null, matchedSiteId, geoVerified, activeJob.job_id, siteTimezone);
   res.json({ action: 'in', punch_type: 'in', clock_in: now, entry_id: r.lastInsertRowid, geo_verified: geoVerified,
-    site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title });
+    site_name: activeJob.site_name || (assignSite ? assignSite.work_address : null) || null, job_title: activeJob.title,
+    site_timezone: siteTimezone, warning: clockInWarning });
 });
 
 // Upload punch photo for a time entry (must belong to this worker)
+// ?punch_type=in|out|break_start|break_end  (default: out)
 app.post('/api/worker/punch/:entryId/photo', requireWorker, punchPhotoUpload.single('photo'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
-  const entry = db.prepare('SELECT id, employee_id FROM time_entries WHERE id=?').get(req.params.entryId);
+  const entry = db.prepare('SELECT id, employee_id, break_records FROM time_entries WHERE id=?').get(req.params.entryId);
   if (!entry || entry.employee_id !== req.workerEmployeeId) {
     fs.unlink(req.file.path, ()=>{});
     return res.status(403).json({ error: 'Forbidden' });
   }
-  db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  const punchType = req.query.punch_type || 'out';
+  if (punchType === 'in') {
+    db.prepare('UPDATE time_entries SET clock_in_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  } else if (punchType === 'break_start' || punchType === 'break_end') {
+    // Store photo in the most recent matching break record
+    const breaks = JSON.parse(entry.break_records || '[]');
+    if (punchType === 'break_start') {
+      // Find the last break that has no end (most recent break_start)
+      const idx = breaks.map((b,i)=>i).reverse().find(i => !breaks[i].end);
+      if (idx !== undefined) breaks[idx].start_photo = req.file.filename;
+    } else {
+      // Find the last break that has an end
+      const idx = breaks.map((b,i)=>i).reverse().find(i => breaks[i].end);
+      if (idx !== undefined) breaks[idx].end_photo = req.file.filename;
+    }
+    db.prepare('UPDATE time_entries SET break_records=? WHERE id=?').run(JSON.stringify(breaks), entry.id);
+  } else {
+    // 'out' or default
+    db.prepare('UPDATE time_entries SET punch_photo_path=? WHERE id=?').run(req.file.filename, entry.id);
+  }
   res.json({ success: true });
 });
 
-// Serve punch photos (admin only)
-app.get('/api/admin/punch-photo/:filename', requireAdmin, (req, res) => {
+// Serve punch photos — accepts Bearer header, pa_token cookie, or ?token= query param
+// (img tags can't send Authorization headers, so query-param auth is needed)
+app.get('/api/admin/punch-photo/:filename', (req, res) => {
+  const auth = req.headers.authorization;
+  let session = null;
+  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  if (!session) {
+    const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
+    if (cookieMatch) session = getSession(cookieMatch[1]);
+  }
+  if (!session && req.query.token) session = getSession(req.query.token);
+  if (!session) return res.status(401).json({ error: 'Unauthorized' });
   const fp = path.join(punchPhotosDir, path.basename(req.params.filename));
   if (!fs.existsSync(fp)) return res.status(404).send('Not found');
   res.sendFile(fp);
@@ -4736,16 +7740,18 @@ app.get('/api/admin/punch-photo/:filename', requireAdmin, (req, res) => {
 
 // ─── Worker task (my-tasks) endpoints ────────────────────────────
 app.get('/api/worker/my-tasks', requireWorker, (req, res) => {
+  if (!req.workerEmployeeId) return res.json([]);
   const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!wa || !wa.linked_inquiry_id) return res.json([]);
   const tasks = db.prepare(`
     SELECT a.id, a.status, a.notes, a.pay_rate, a.pay_type, a.contract_type, a.benefits,
            a.start_date, a.work_schedule, a.work_address, a.assigned_at, a.worker_response,
+           a.task_requirements,
            j.title, j.location, j.pay, j.company_name, j.employment_type,
            j.work_days, j.work_start, j.work_end, j.description
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
-    WHERE a.inquiry_id = ? AND a.status != 'cancelled'
+    WHERE a.inquiry_id = ? AND (a.status != 'cancelled' OR a.worker_response = 'rejected')
     ORDER BY a.assigned_at DESC
   `).all(wa.linked_inquiry_id);
   res.json(tasks);
@@ -4768,30 +7774,59 @@ app.post('/api/worker/my-tasks/:id/respond', requireWorker, (req, res) => {
 });
 
 // ─── Work calendar endpoint ───────────────────────────────────────
-// Returns shift_confirmations + active assignments for a given month
+// Returns shift_confirmations + active assignments + punch records for a given month
 app.get('/api/worker/work-calendar', requireWorker, (req, res) => {
+  // Require employee link — unlinked portal accounts have no work schedule to show
+  if (!req.workerEmployeeId) return res.json({ confirmations: [], assignments: [], punchDates: [] });
   const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
-  if (!wa || !wa.linked_inquiry_id) return res.json({ confirmations: [], assignments: [] });
+  const linkedInqId = wa?.linked_inquiry_id || null;
   const y = parseInt(req.query.year) || new Date().getFullYear();
   const m = parseInt(req.query.month) || new Date().getMonth() + 1;
   const fromStr = `${y}-${String(m).padStart(2,'0')}-01`;
   const lastDay = new Date(y, m, 0).getDate();
   const toStr = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
-  const confirmations = db.prepare(`
-    SELECT sc.date, sc.status, sc.shift_start, sc.shift_end, j.title
+  // tz_offset is browser's getTimezoneOffset() — negate it to get UTC→local offset in minutes
+  const tzOffsetMinutes = parseInt(req.query.tz_offset) || 0;
+  const localOffsetMinutes = -tzOffsetMinutes;
+  const tzSign = localOffsetMinutes >= 0 ? '+' : '-';
+  const tzAbsMins = Math.abs(localOffsetMinutes);
+  const tzModifier = `${tzSign}${tzAbsMins} minutes`;
+  const confirmations = linkedInqId ? db.prepare(`
+    SELECT sc.id, sc.date, sc.status, sc.shift_start, sc.shift_end,
+           j.title, j.location AS job_location, j.description AS job_description,
+           j.pay AS job_pay, j.company_name,
+           a.work_address, a.pay_rate, a.pay_type
     FROM shift_confirmations sc
     JOIN assignments a ON sc.assignment_id = a.id
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND sc.date >= ? AND sc.date <= ?
     ORDER BY sc.date ASC
-  `).all(wa.linked_inquiry_id, fromStr, toStr);
-  const assignments = db.prepare(`
-    SELECT a.id, a.work_schedule, a.start_date, j.title
+  `).all(linkedInqId, fromStr, toStr) : [];
+  const assignments = linkedInqId ? db.prepare(`
+    SELECT a.id, a.work_schedule, a.start_date, j.title, j.location AS job_location,
+           j.description AS job_description, j.pay AS job_pay, j.company_name,
+           a.work_address, a.pay_rate, a.pay_type,
+           j.work_schedule AS job_work_schedule
     FROM assignments a
     LEFT JOIN jobs j ON a.job_id = j.id
     WHERE a.inquiry_id = ? AND a.status NOT IN ('terminated','resigned','cancelled')
-  `).all(wa.linked_inquiry_id);
-  res.json({ confirmations, assignments });
+  `).all(linkedInqId) : [];
+  // Include actual punch records so weekend work (outside recurring schedule) is visible
+  // Use client's timezone offset so punches appear on the correct local calendar day
+  const punchDates = req.workerEmployeeId ? db.prepare(`
+    SELECT DISTINCT strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) AS date
+    FROM time_entries
+    WHERE employee_id = ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) >= ?
+      AND strftime('%Y-%m-%d', datetime(clock_in, '${tzModifier}')) <= ?
+  `).all(req.workerEmployeeId, fromStr, toStr).map(r => r.date) : [];
+  // Debug: log assignment schedules to diagnose missing Sunday
+  assignments.forEach(a => {
+    let ws = {}; try { ws = JSON.parse(a.work_schedule || '{}'); } catch {}
+    const days = ws.days || ws;
+    console.log(`[work-calendar debug] assignment ${a.id}: sun=${JSON.stringify(days.sun || days.Sun)}, sat=${JSON.stringify(days.sat || days.Sat)}, workStart=${ws.workStart||a.start_date}, workEnd=${ws.workEnd}`);
+  });
+  res.json({ confirmations, assignments, punchDates });
 });
 
 // ─── Shift confirmation endpoints ────────────────────────────────
@@ -4841,6 +7876,38 @@ app.post('/api/worker/shift-confirmations/:id/respond', requireWorker, (req, res
   `).get(req.params.id, wa.linked_inquiry_id);
   if (!sc) return res.status(404).json({ error: '未找到' });
   db.prepare('UPDATE shift_confirmations SET status=?, responded_at=CURRENT_TIMESTAMP WHERE id=?').run(response, sc.id);
+  res.json({ success: true });
+});
+
+// Pre-confirm a scheduled (排班中) shift that has no confirmation record yet
+app.post('/api/worker/shift-confirmations/preconfirm', requireWorker, (req, res) => {
+  const { assignment_id, date, response } = req.body;
+  if (!['confirmed', 'declined'].includes(response))
+    return res.status(400).json({ error: 'Invalid response' });
+  if (!assignment_id || !date)
+    return res.status(400).json({ error: 'Missing assignment_id or date' });
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!wa || !wa.linked_inquiry_id) return res.status(403).json({ error: '账号未关联' });
+  // Verify the assignment belongs to this worker
+  const a = db.prepare(`
+    SELECT a.id, a.work_schedule FROM assignments a
+    WHERE a.id=? AND a.inquiry_id=? AND a.status NOT IN ('terminated','resigned','cancelled')
+  `).get(assignment_id, wa.linked_inquiry_id);
+  if (!a) return res.status(404).json({ error: '未找到排班' });
+  // Parse work_schedule to get shift times for this day
+  let sched = {};
+  try { sched = JSON.parse(a.work_schedule || '{}'); } catch {}
+  const _DOW = ['sun','mon','tue','wed','thu','fri','sat'];
+  const dow = _DOW[new Date(date + 'T00:00:00').getDay()];
+  const dayInfo = (sched.days || {})[dow] || {};
+  const shiftStart = dayInfo.start || '';
+  const shiftEnd = dayInfo.end || '';
+  // Insert or update the confirmation record
+  db.prepare(`
+    INSERT INTO shift_confirmations (assignment_id, date, status, shift_start, shift_end, responded_at)
+    VALUES (?,?,?,?,?,CURRENT_TIMESTAMP)
+    ON CONFLICT(assignment_id, date) DO UPDATE SET status=excluded.status, responded_at=CURRENT_TIMESTAMP
+  `).run(a.id, date, response, shiftStart, shiftEnd);
   res.json({ success: true });
 });
 
@@ -4911,6 +7978,59 @@ app.delete('/api/admin/skill-options/:id', requireAdmin, requireRole('admin'), (
   res.json({ success: true });
 });
 
+// Admin: job title options CRUD
+app.get('/api/admin/job-title-options', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM job_title_options ORDER BY sort_order, id').all());
+});
+app.post('/api/admin/job-title-options', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '职位名称不能为空' });
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM job_title_options').get().m;
+  const r = db.prepare('INSERT INTO job_title_options (name_en, name_zh, name_es, sort_order) VALUES (?,?,?,?)')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), maxOrder+1);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/job-title-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es, sort_order } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '职位名称不能为空' });
+  db.prepare('UPDATE job_title_options SET name_en=?, name_zh=?, name_es=?, sort_order=? WHERE id=?')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), sort_order ?? 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/job-title-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM job_title_options WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Admin: display suffix options CRUD
+app.get('/api/admin/display-suffix-options', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM display_suffix_options ORDER BY sort_order, id').all());
+});
+app.post('/api/admin/display-suffix-options', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '后缀词不能为空' });
+  const maxOrder = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM display_suffix_options').get().m;
+  const r = db.prepare('INSERT INTO display_suffix_options (name_en, name_zh, name_es, sort_order) VALUES (?,?,?,?)')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), maxOrder+1);
+  res.json({ success: true, id: r.lastInsertRowid });
+});
+app.put('/api/admin/display-suffix-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { name_en, name_zh, name_es, sort_order } = req.body;
+  if (!name_en || !name_en.trim()) return res.status(400).json({ error: '后缀词不能为空' });
+  db.prepare('UPDATE display_suffix_options SET name_en=?, name_zh=?, name_es=?, sort_order=? WHERE id=?')
+    .run(name_en.trim(), (name_zh||'').trim(), (name_es||'').trim(), sort_order ?? 0, req.params.id);
+  res.json({ success: true });
+});
+app.delete('/api/admin/display-suffix-options/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM display_suffix_options WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// Worker: get display suffixes (for daily rotation in portal)
+app.get('/api/worker/display-suffixes', requireWorker, (req, res) => {
+  res.json(db.prepare('SELECT id, name_en, name_zh, name_es FROM display_suffix_options ORDER BY sort_order, id').all());
+});
+
 // Admin: list ALL referral records across all workers
 app.get('/api/admin/all-referrals', requireAdmin, (req, res) => {
   const config = db.prepare('SELECT bonus_per_referral, min_hours_to_qualify FROM referral_bonus_config WHERE id=1').get()
@@ -4938,60 +8058,64 @@ app.get('/api/admin/all-referrals', requireAdmin, (req, res) => {
 });
 
 app.get('/api/worker/punch/status', requireWorker, (req, res) => {
-  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-  const wEmail = (wa?.email || '').toLowerCase();
 
   const open = req.workerEmployeeId
-    ? db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(req.workerEmployeeId)
+    ? db.prepare(`SELECT t.*, COALESCE(t.site_timezone, js.timezone, 'America/Chicago') AS display_timezone
+       FROM time_entries t LEFT JOIN jobs j ON t.job_id=j.id LEFT JOIN job_sites js ON j.site_id=js.id
+       WHERE t.employee_id=? AND t.status='open' ORDER BY t.clock_in DESC LIMIT 1`).get(req.workerEmployeeId)
     : null;
 
+  const seenActiveJobIds = new Set();
   let activeJobs = [];
   if (req.workerEmployeeId) {
-    activeJobs = db.prepare(`
+    const ejJobs = db.prepare(`
       SELECT ej.id, ej.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
              COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
              j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
-             a.work_schedule
+             a.work_schedule, a.work_lat, a.work_lng, a.work_radius
       FROM employee_jobs ej
       JOIN jobs j ON ej.job_id = j.id
       LEFT JOIN job_sites js ON j.site_id = js.id
       LEFT JOIN assignments a ON a.job_id = ej.job_id AND a.inquiry_id = ?
       WHERE ej.employee_id = ? AND ej.status = 'active'
     `).all(linkedInqId, req.workerEmployeeId);
+    for (const j of ejJobs) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
   }
 
-  // Fall back to assignments table: match by linked_inquiry_id, phone, or email
+  // Also check assignments table — add jobs not already covered by employee_jobs
   // Only include accepted assignments (worker_response = 'accepted')
-  if (!activeJobs.length) {
-    activeJobs = db.prepare(`
-      SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
-             COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
-             j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
-             a.work_schedule
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled' AND a.worker_response = 'accepted'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC
-    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
-    // Also update linked_inquiry_id if we found a match and it wasn't set
-    if (activeJobs.length && !linkedInqId) {
-      try { activateWorkerAccount(req.workerId); } catch {}
-    }
+  const aJobs = linkedInqId ? db.prepare(`
+    SELECT a.id, a.job_id, j.title, j.company_name, j.work_days, j.work_start, j.work_end,
+           COALESCE(NULLIF(a.work_address,''), j.location) AS location, j.pay,
+           j.site_id, js.name AS site_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters,
+           a.work_schedule, a.work_lat, a.work_lng, a.work_radius
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    WHERE a.status != 'cancelled' AND a.worker_response = 'accepted' AND a.inquiry_id = ?
+    ORDER BY a.assigned_at DESC
+  `).all(linkedInqId) : [];
+  for (const j of aJobs) {
+    if (!seenActiveJobIds.has(j.job_id)) { seenActiveJobIds.add(j.job_id); activeJobs.push(j); }
   }
 
   // Count pending (unaccepted) tasks
   const pendingTasksCount = linkedInqId
     ? (db.prepare(`SELECT COUNT(*) AS cnt FROM assignments WHERE inquiry_id=? AND status != 'cancelled' AND (worker_response IS NULL OR worker_response = '')`).get(linkedInqId)?.cnt || 0)
     : 0;
+
+  // Detect if open entry is from a previous calendar day (worker forgot to clock out)
+  let missed_checkout = false;
+  let missed_date = null;
+  if (open) {
+    const nowLocal = new Date();
+    const todayStr = `${nowLocal.getFullYear()}-${String(nowLocal.getMonth()+1).padStart(2,'0')}-${String(nowLocal.getDate()).padStart(2,'0')}`;
+    const entryLocal = new Date(open.clock_in);
+    const entryStr = `${entryLocal.getFullYear()}-${String(entryLocal.getMonth()+1).padStart(2,'0')}-${String(entryLocal.getDate()).padStart(2,'0')}`;
+    if (entryStr < todayStr) { missed_checkout = true; missed_date = entryStr; }
+  }
 
   res.json({
     clocked_in: !!open,
@@ -5001,7 +8125,9 @@ app.get('/api/worker/punch/status', requireWorker, (req, res) => {
     has_active_job: activeJobs.length > 0,
     pending_tasks_count: pendingTasksCount,
     active_jobs: activeJobs,
-    active_job: activeJobs[0] || null
+    active_job: activeJobs[0] || null,
+    missed_checkout,
+    missed_date
   });
 });
 
@@ -5020,14 +8146,15 @@ app.get('/api/worker/assignments', requireWorker, (req, res) => {
 
 // Worker: get currently dispatched (active) jobs with site info
 app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
-  const wa = db.prepare('SELECT linked_inquiry_id, phone, email FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!req.workerEmployeeId) return res.json([]);
+  const wa = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   const linkedInqId = wa?.linked_inquiry_id || null;
-  const wPhone = (wa?.phone || '').replace(/\D/g, '').slice(-10);
-  const wEmail = (wa?.email || '').toLowerCase();
 
+  const seenJobIds = new Set();
   let jobs = [];
+
   if (req.workerEmployeeId) {
-    jobs = db.prepare(`
+    const ejJobs = db.prepare(`
       SELECT ej.id, ej.job_id, ej.status, ej.start_date, ej.end_date, ej.emp_hourly_rate,
              j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
              j.pay, j.pay_period, j.company_name, j.site_id,
@@ -5040,28 +8167,24 @@ app.get('/api/worker/my-jobs', requireWorker, (req, res) => {
       WHERE ej.employee_id = ? AND ej.status = 'active'
       ORDER BY ej.assigned_at DESC
     `).all(linkedInqId, req.workerEmployeeId);
+    for (const j of ejJobs) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
-  // Fallback: check assignments table (same as punch/status)
-  if (!jobs.length) {
-    jobs = db.prepare(`
-      SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
-             j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
-             j.pay, j.pay_period, j.company_name, j.site_id,
-             js.name AS site_name, js.address AS site_address,
-             js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
-      FROM assignments a
-      JOIN jobs j ON a.job_id = j.id
-      LEFT JOIN job_sites js ON j.site_id = js.id
-      JOIN inquiries i ON a.inquiry_id = i.id
-      WHERE a.status != 'cancelled'
-        AND (
-          (? IS NOT NULL AND a.inquiry_id = ?)
-          OR (? != '' AND phone10(i.phone) = ?)
-          OR (? != '' AND lower(i.email) = ?)
-        )
-      ORDER BY a.assigned_at DESC
-    `).all(linkedInqId, linkedInqId, wPhone, wPhone, wEmail, wEmail);
+  // Also include assignments — add any job_ids not already covered above
+  const aJobs = linkedInqId ? db.prepare(`
+    SELECT a.id, a.job_id, 'active' AS status, '' AS start_date, '' AS end_date, '' AS emp_hourly_rate,
+           j.title, COALESCE(NULLIF(a.work_address,''), j.location) AS location,
+           j.pay, j.pay_period, j.company_name, j.site_id,
+           js.name AS site_name, js.address AS site_address,
+           js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters
+    FROM assignments a
+    JOIN jobs j ON a.job_id = j.id
+    LEFT JOIN job_sites js ON j.site_id = js.id
+    WHERE a.status != 'cancelled' AND a.inquiry_id = ?
+    ORDER BY a.assigned_at DESC
+  `).all(linkedInqId) : [];
+  for (const j of aJobs) {
+    if (!seenJobIds.has(j.job_id)) { seenJobIds.add(j.job_id); jobs.push(j); }
   }
 
   res.json(jobs);
@@ -5125,8 +8248,13 @@ app.post('/api/worker/reset-password', async (req, res) => {
     if (entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
   }
 
-  const { hash, salt } = hashPassword(new_password);
-  db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  const account = db.prepare('SELECT salt, password_hash FROM worker_accounts WHERE id=?').get(entry.accountId);
+  if (account && verifyPassword(new_password, account.salt, account.password_hash)) {
+    return res.status(400).json({ error_code: 'SAME_PASSWORD' });
+  }
+  const newSalt = crypto.randomBytes(16).toString('hex');
+  const newHash = hashPassword(new_password, newSalt);
+  db.prepare('UPDATE worker_accounts SET password_hash=?, salt=? WHERE id=?').run(newHash, newSalt, entry.accountId);
   resetCodes.delete('worker:' + login);
   res.json({ success: true });
 });
@@ -5658,18 +8786,22 @@ app.get('/api/admin/job-sites', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM job_sites ORDER BY id DESC').all());
 });
 
-app.post('/api/admin/job-sites', requireAdmin, blockManager, (req, res) => {
-  const { name, address, latitude, longitude, radius_meters, partner_id } = req.body;
+app.post('/api/admin/job-sites', requireAdmin, blockManager, async (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, partner_id, timezone } = req.body;
   if (!name || !latitude || !longitude) return res.status(400).json({ error: 'Name, latitude, longitude required' });
-  const r = db.prepare('INSERT INTO job_sites (name, address, latitude, longitude, radius_meters, partner_id) VALUES (?,?,?,?,?,?)')
-    .run(name, address || '', latitude, longitude, radius_meters || 200, partner_id || null);
-  res.json({ success: true, id: r.lastInsertRowid });
+  const tz = timezone || await lookupTimezone(latitude, longitude);
+  const r = db.prepare('INSERT INTO job_sites (name, address, latitude, longitude, radius_meters, partner_id, timezone) VALUES (?,?,?,?,?,?,?)')
+    .run(name, address || '', latitude, longitude, radius_meters || 200, partner_id || null, tz);
+  res.json({ success: true, id: r.lastInsertRowid, timezone: tz });
 });
 
-app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, (req, res) => {
-  const { name, address, latitude, longitude, radius_meters, active } = req.body;
-  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active) WHERE id=?')
-    .run(name, address, latitude, longitude, radius_meters, active, req.params.id);
+app.put('/api/admin/job-sites/:id', requireAdmin, blockManager, async (req, res) => {
+  const { name, address, latitude, longitude, radius_meters, active, timezone } = req.body;
+  // If lat/lng changed and no explicit timezone, re-detect
+  let tz = timezone || null;
+  if (!tz && latitude && longitude) tz = await lookupTimezone(latitude, longitude);
+  db.prepare('UPDATE job_sites SET name=COALESCE(?,name), address=COALESCE(?,address), latitude=COALESCE(?,latitude), longitude=COALESCE(?,longitude), radius_meters=COALESCE(?,radius_meters), active=COALESCE(?,active), timezone=COALESCE(?,timezone) WHERE id=?')
+    .run(name, address, latitude, longitude, radius_meters, active, tz, req.params.id);
   res.json({ success: true });
 });
 
@@ -5741,7 +8873,7 @@ app.post('/api/customer/login', (req, res) => {
   if (!c)
     return res.status(401).json({ error: '邮箱/电话或密码错误 / Invalid email/phone or password' });
   const token = crypto.randomBytes(32).toString('hex');
-  customerSessions.set(token, { created: Date.now(), customerId: c.id, partnerId: c.partner_id });
+  db.prepare('INSERT INTO customer_sessions (token, customer_id, partner_id, created_at) VALUES (?,?,?,?)').run(token, c.id, c.partner_id, Date.now());
   res.json({ token, company_name: c.company_name });
 });
 
@@ -5797,8 +8929,13 @@ app.post('/api/customer/reset-password', (req, res) => {
   const entry = resetCodes.get('customer:' + login);
   if (!entry || entry.code !== code) return res.status(400).json({ error: '验证码错误 / Invalid code' });
   if (Date.now() > entry.expires) { resetCodes.delete('customer:' + login); return res.status(400).json({ error: '验证码已过期 / Code expired' }); }
-  const { hash, salt } = hashPassword(new_password);
-  db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(hash, salt, entry.accountId);
+  const account = db.prepare('SELECT salt, password_hash FROM customer_accounts WHERE id=?').get(entry.accountId);
+  if (account && verifyPassword(new_password, account.salt, account.password_hash)) {
+    return res.status(400).json({ error_code: 'SAME_PASSWORD' });
+  }
+  const newSalt = crypto.randomBytes(16).toString('hex');
+  const newHash = hashPassword(new_password, newSalt);
+  db.prepare('UPDATE customer_accounts SET password_hash=?, salt=? WHERE id=?').run(newHash, newSalt, entry.accountId);
   resetCodes.delete('customer:' + login);
   res.json({ success: true });
 });
@@ -5822,7 +8959,7 @@ app.get('/api/register/check', (req, res) => {
 
 app.post('/api/register/worker', async (req, res) => {
   try {
-  const { first_name, middle_name, last_name, phone: phoneRaw, email, dob, work_status, position_interests, password, city, state, ref_code } = req.body;
+  const { first_name, middle_name, last_name, phone: phoneRaw, email, dob, work_status, position_interests, password, city, state, ref_code, invite_token } = req.body;
   const phone = phoneRaw ? phoneRaw.replace(/\D/g, '').slice(-10) : ''; // store last 10 digits only
   const nameParts = [first_name, middle_name, last_name].filter(Boolean);
   if (!first_name || !last_name || !phone || !email || !password)
@@ -5857,9 +8994,17 @@ app.post('/api/register/worker', async (req, res) => {
       };
       return res.status(400).json(pendingResp);
     }
-    // All codes expired — clean up and allow fresh registration
+    // All codes expired — clean up all related records and allow fresh registration
     db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(existing.id);
+    try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(existing.id); } catch(_) {}
+    db.prepare('DELETE FROM worker_sessions WHERE worker_id=?').run(existing.id);
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(existing.id);
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(existing.id);
   }
   const salt = crypto.randomBytes(16).toString('hex');
@@ -5878,16 +9023,29 @@ app.post('/api/register/worker', async (req, res) => {
     const referrer = db.prepare('SELECT id FROM worker_accounts WHERE worker_code=? AND active=1').get(ref_code);
     if (referrer) referredBy = referrer.id;
   }
-  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active, source, referred_by)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, 'online', referredBy);
+  // Validate invite token if provided
+  let inviteEmployeeId = null;
+  if (invite_token) {
+    const inv = db.prepare("SELECT * FROM employee_registration_invites WHERE token=? AND used=0 AND expires_at > datetime('now')").get(invite_token);
+    if (inv) inviteEmployeeId = inv.employee_id;
+  }
+
+  const registrationSource = inviteEmployeeId ? 'invite' : 'online';
+  const r = db.prepare(`INSERT INTO worker_accounts (username, password_hash, salt, name, first_name, middle_name, last_name, phone, email, dob, work_status, position_interests, city, state, active, source, referred_by, employee_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, registrationSource, referredBy, inviteEmployeeId);
   const accountId = r.lastInsertRowid;
+
+  // Mark invite as used
+  if (invite_token && inviteEmployeeId) {
+    db.prepare('UPDATE employee_registration_invites SET used=1 WHERE token=?').run(invite_token);
+  }
 
   if (!needsVerification) {
     // No verification channels configured — activate immediately and auto-login
     activateWorkerAccount(accountId);
     const token = crypto.randomBytes(32).toString('hex');
-    workerSessions.set(token, { created: Date.now(), workerId: accountId, employeeId: null });
+    db.prepare('INSERT INTO worker_sessions (token, worker_id, employee_id, created_at) VALUES (?,?,?,?)').run(token, accountId, null, Date.now());
     console.log(`[Register] Worker #${accountId} activated immediately (no verification channels configured)`);
     return res.json({ success: true, account_id: accountId, needs_verification: false, token });
   }
@@ -5998,7 +9156,7 @@ app.post('/api/register/verify', async (req, res) => {
   activateWorkerAccount(account_id);
   // Auto-login
   const token = crypto.randomBytes(32).toString('hex');
-  workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+  db.prepare('INSERT INTO worker_sessions (token, worker_id, employee_id, created_at) VALUES (?,?,?,?)').run(token, acc.id, acc.employee_id, Date.now());
   res.json({ success: true, token, message: 'Verification successful' });
 });
 
@@ -6038,7 +9196,7 @@ app.post('/api/register/verify-step', async (req, res) => {
     db.prepare('UPDATE worker_accounts SET active=1 WHERE id=?').run(account_id);
     activateWorkerAccount(account_id);
     const token = crypto.randomBytes(32).toString('hex');
-    workerSessions.set(token, { created: Date.now(), workerId: acc.id, employeeId: acc.employee_id });
+    db.prepare('INSERT INTO worker_sessions (token, worker_id, employee_id, created_at) VALUES (?,?,?,?)').run(token, acc.id, acc.employee_id, Date.now());
     return res.json({ success: true, all_done: true, token });
   }
   return res.json({ success: true, all_done: false, next_steps: remaining.map(r => r.type) });
@@ -6077,7 +9235,7 @@ app.post('/api/register/enterprise', async (req, res) => {
   // Send email code
   const emailCode = String(Math.floor(100000+Math.random()*900000));
   db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(accountId,'email',emailCode,expires);
-  sendEmail({ to: email, subject:'Prime Anchorpoint — Enterprise Registration Verification', text:`Your verification code is: ${emailCode}\nValid for 15 minutes.` }).catch(()=>{});
+  sendEmail(email, 'Prime Anchorpoint — Enterprise Registration Verification', `Your verification code is: ${emailCode}\nValid for 15 minutes.`, verificationCodeHtml(emailCode)).catch(()=>{});
   res.json({ success: true, account_id: accountId, needs_phone: true, needs_email: true });
 });
 
@@ -6129,14 +9287,14 @@ app.post('/api/register/enterprise-resend', async (req, res) => {
   } else {
     const code = String(Math.floor(100000+Math.random()*900000));
     db.prepare('INSERT INTO enterprise_verification_codes (customer_account_id, type, code, expires_at) VALUES (?,?,?,?)').run(account_id,'email',code,expires);
-    sendEmail({ to: acct.email, subject:'Prime Anchorpoint — Verification Code', text:`Your verification code is: ${code}\nValid for 15 minutes.` }).catch(()=>{});
+    sendEmail(acct.email, 'Prime Anchorpoint — Verification Code', `Your verification code is: ${code}\nValid for 15 minutes.`, verificationCodeHtml(code)).catch(()=>{});
   }
   res.json({ success: true });
 });
 
 // Admin: pending enterprise approvals
 app.get('/api/admin/pending-enterprises', requireAdmin, (req, res) => {
-  const list = db.prepare("SELECT id, company_name, contact_name, email, phone, ein, staffing_needs, created_at FROM customer_accounts WHERE approval_status='pending' ORDER BY created_at DESC").all();
+  const list = db.prepare("SELECT id, company_name, contact_name, email, phone, ein, staffing_needs, created_at FROM customer_accounts WHERE approval_status='pending' AND active=1 ORDER BY created_at DESC").all();
   res.json(list);
 });
 
@@ -6148,7 +9306,8 @@ app.put('/api/admin/approve-enterprise/:id', requireAdmin, (req, res) => {
 });
 
 app.put('/api/admin/reject-enterprise/:id', requireAdmin, (req, res) => {
-  db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected' WHERE id=?").run(req.params.id);
+  const { reason } = req.body || {};
+  db.prepare("UPDATE customer_accounts SET active=0, approval_status='rejected', rejection_reason=? WHERE id=?").run(reason||'', req.params.id);
   res.json({ success: true });
 });
 
@@ -6167,6 +9326,9 @@ app.get('/customer', (req, res) => {
 app.get('/register', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'register.html'));
 });
+app.get('/manager-register', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'manager-register.html'));
+});
 
 // ─── Legal pages ───
 app.get('/privacy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy.html')));
@@ -6177,18 +9339,23 @@ app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'publi
 app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
 
 // POST /api/docusign/webhook — DocuSign Connect event notifications
-app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
+app.post('/api/docusign/webhook', express.raw({ type: '*/*' }), async (req, res) => {
+  console.log(`[DocuSign Webhook] Received request from ${req.ip} at ${new Date().toISOString()}`);
   try {
+    const rawBody = req.body.toString('utf8');
     const hmacSecret = process.env.DOCUSIGN_WEBHOOK_HMAC;
     if (hmacSecret) {
       const sig = req.headers['x-docusign-signature-1'] || '';
-      const rawBody = JSON.stringify(req.body);
       const expected = crypto.createHmac('sha256', hmacSecret).update(rawBody).digest('base64');
-      if (sig !== expected) return res.status(401).json({ error: 'Invalid signature' });
+      if (sig !== expected) {
+        console.error(`[DocuSign Webhook] HMAC signature mismatch — received: ${sig.substring(0,20)}...`);
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
     }
-    const event = req.body;
+    const event = JSON.parse(rawBody);
     const envelopeId = event?.data?.envelopeId || event?.envelopeId;
     const status = event?.data?.envelopeSummary?.status || event?.status;
+    console.log(`[DocuSign Webhook] envelopeId=${envelopeId} status=${status}`);
     if (envelopeId && status) {
       const asgn = db.prepare("SELECT id FROM assignments WHERE ds_envelope_id=?").get(envelopeId);
       if (asgn) db.prepare("UPDATE assignments SET ds_status=? WHERE id=?").run(status, asgn.id);
@@ -6197,14 +9364,42 @@ app.post('/api/docusign/webhook', express.json({ type: '*/*' }), (req, res) => {
       for (const s of (event?.data?.envelopeSummary?.recipients?.signers || [])) {
         if (s.status === 'completed' && s.signedDateTime) {
           if (asgn) {
-            if (s.recipientId === '1') db.prepare("UPDATE assignments SET ds_worker_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
-            if (s.recipientId === '2') db.prepare("UPDATE assignments SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
+            if (s.recipientId === '1') db.prepare("UPDATE assignments SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
+            if (s.recipientId === '2') db.prepare("UPDATE assignments SET ds_worker_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
           }
           if (pf) {
-            if (s.recipientId === '1') db.prepare("UPDATE partner_files SET ds_partner_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
-            if (s.recipientId === '2') db.prepare("UPDATE partner_files SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
+            if (s.recipientId === '1') db.prepare("UPDATE partner_files SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
+            if (s.recipientId === '2') db.prepare("UPDATE partner_files SET ds_partner_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
           }
         }
+        if (s.status === 'declined' && s.declinedReason) {
+          if (asgn) db.prepare("UPDATE assignments SET ds_decline_reason=? WHERE id=?").run(s.declinedReason, asgn.id);
+          if (pf) db.prepare("UPDATE partner_files SET ds_decline_reason=? WHERE id=?").run(s.declinedReason, pf.id);
+        }
+      }
+      // Auto-activate partner when contract envelope is fully completed (both parties signed)
+      if (pf && status === 'completed') {
+        db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
+        // Download the signed PDF from DocuSign and overwrite the local file
+        try {
+          const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
+          if (pfRecord && pfRecord.file_path) {
+            const signedBuf = await dsDownloadSignedDoc(envelopeId);
+            fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
+            console.log(`[DocuSign] Saved signed partner contract for file id=${pf.id}`);
+          }
+        } catch (dlErr) { console.error('[DocuSign] Failed to download signed partner doc:', dlErr.message); }
+      }
+      if (asgn && status === 'completed') {
+        // Download the signed PDF from DocuSign and overwrite the local contract file
+        try {
+          const asgnRecord = db.prepare("SELECT contract_file FROM assignments WHERE id=?").get(asgn.id);
+          if (asgnRecord && asgnRecord.contract_file) {
+            const signedBuf = await dsDownloadSignedDoc(envelopeId);
+            fs.writeFileSync(path.join(docsDir, asgnRecord.contract_file), signedBuf);
+            console.log(`[DocuSign] Saved signed assignment contract for assignment id=${asgn.id}`);
+          }
+        } catch (dlErr) { console.error('[DocuSign] Failed to download signed assignment doc:', dlErr.message); }
       }
     }
     res.json({ received: true });
@@ -6231,24 +9426,7 @@ app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM interview_locations WHERE active=1 ORDER BY name').all());
 });
 
-// Admin: create interview location
-app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
-  const { name, address, contact_name, contact_phone, instructions } = req.body;
-  if (!name || !address) return res.status(400).json({ error: 'name and address required' });
-  const r = db.prepare('INSERT INTO interview_locations (name, address, contact_name, contact_phone, instructions) VALUES (?,?,?,?,?)')
-    .run(name, address, contact_name || '', contact_phone || '', instructions || '');
-  res.json({ success: true, id: r.lastInsertRowid });
-});
-
-// Admin: update interview location
-app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
-  const loc = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(req.params.id);
-  if (!loc) return res.status(404).json({ error: 'Not found' });
-  const { name, address, contact_name, contact_phone, instructions } = req.body;
-  db.prepare('UPDATE interview_locations SET name=?, address=?, contact_name=?, contact_phone=?, instructions=? WHERE id=?')
-    .run(name ?? loc.name, address ?? loc.address, contact_name ?? loc.contact_name, contact_phone ?? loc.contact_phone, instructions ?? loc.instructions, req.params.id);
-  res.json({ success: true });
-});
+// Admin: create interview location (legacy handler - see below for active handler)
 
 // Admin: delete interview location
 app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
@@ -6274,18 +9452,25 @@ app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
   res.json(db.prepare('SELECT * FROM interview_locations WHERE active=1 ORDER BY name').all());
 });
 app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
-  const { name, address, contact_name, contact_phone, instructions } = req.body;
+  const { name, address, address1, address2, city, state, zip, contact_name, contact_phone, instructions } = req.body;
   if (!name) return res.status(400).json({ error: '地点名称必填 / name required' });
-  const r = db.prepare('INSERT INTO interview_locations (name,address,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?)')
-    .run(name, address||'', contact_name||'', contact_phone||'', instructions||'');
+  const addrDisplay = address || [address1, address2, city && state ? `${city}, ${state}${zip ? ' ' + zip : ''}` : city].filter(Boolean).join(', ') || '';
+  const r = db.prepare('INSERT INTO interview_locations (name,address,address1,address2,city,state,zip,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(name, addrDisplay, address1||'', address2||'', city||'', state||'', zip||'', contact_name||'', contact_phone||'', instructions||'');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 app.put('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
   const loc = db.prepare('SELECT * FROM interview_locations WHERE id=?').get(req.params.id);
   if (!loc) return res.status(404).json({ error: 'Not found' });
-  const { name, address, contact_name, contact_phone, instructions, active } = req.body;
-  db.prepare('UPDATE interview_locations SET name=?,address=?,contact_name=?,contact_phone=?,instructions=?,active=? WHERE id=?')
-    .run(name??loc.name, address??loc.address, contact_name??loc.contact_name, contact_phone??loc.contact_phone, instructions??loc.instructions, active??loc.active, req.params.id);
+  const { name, address, address1, address2, city, state, zip, contact_name, contact_phone, instructions, active } = req.body;
+  const a1 = address1 ?? loc.address1 ?? '';
+  const a2 = address2 ?? loc.address2 ?? '';
+  const ct = city ?? loc.city ?? '';
+  const st = state ?? loc.state ?? '';
+  const zp = zip ?? loc.zip ?? '';
+  const addrDisplay = (address ?? [a1, a2, ct && st ? `${ct}, ${st}${zp ? ' ' + zp : ''}` : ct].filter(Boolean).join(', ')) || loc.address;
+  db.prepare('UPDATE interview_locations SET name=?,address=?,address1=?,address2=?,city=?,state=?,zip=?,contact_name=?,contact_phone=?,instructions=?,active=? WHERE id=?')
+    .run(name??loc.name, addrDisplay, a1, a2, ct, st, zp, contact_name??loc.contact_name, contact_phone??loc.contact_phone, instructions??loc.instructions, active??loc.active, req.params.id);
   res.json({ success: true });
 });
 app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
@@ -6297,6 +9482,13 @@ app.delete('/api/admin/interview-locations/:id', requireAdmin, (req, res) => {
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_name TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN contact_phone TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE interview_slots ADD COLUMN instructions TEXT DEFAULT ''"); } catch {}
+
+// Add structured address columns to interview_locations if missing
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN address1 TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN address2 TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN city TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN state TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE interview_locations ADD COLUMN zip TEXT DEFAULT ''"); } catch {}
 
 app.get('/api/admin/interview-slots', requireAdmin, (req, res) => {
   const slots = db.prepare(`
@@ -6357,7 +9549,10 @@ app.delete('/api/admin/interview-slots/:id', requireAdmin, (req, res) => {
 // Admin: list all interviews
 app.get('/api/admin/interviews', requireAdmin, (req, res) => {
   const rows = db.prepare(`
-    SELECT i.*, s.slot_datetime, s.duration_min, s.location,
+    SELECT i.id, i.worker_account_id, i.slot_id, i.status, i.admin_notes,
+      i.doc_request_token, i.created_at, i.updated_at,
+      COALESCE(i.interview_type,'onboarding') AS interview_type,
+      s.slot_datetime, s.duration_min, s.location,
       w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
       w.work_status, w.position_interests,
       w.identity_status, w.persona_inquiry_id, w.identity_sent_at,
@@ -6445,16 +9640,16 @@ app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
 
 // Admin: update interview status / notes
 app.put('/api/admin/interviews/:id', requireAdmin, (req, res) => {
-  const { status, admin_notes, identity_status, payment_method } = req.body;
+  const { status, admin_notes, identity_status, payment_method, interview_type } = req.body;
   const row = db.prepare('SELECT * FROM interviews WHERE id=?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  db.prepare(`UPDATE interviews SET status=?, admin_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(status ?? row.status, admin_notes ?? row.admin_notes, req.params.id);
+  db.prepare(`UPDATE interviews SET status=?, admin_notes=?, interview_type=COALESCE(?,interview_type,'onboarding'), updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(status ?? row.status, admin_notes ?? row.admin_notes, interview_type ?? null, req.params.id);
   if (status === 'cancelled' && row.status !== 'cancelled') {
     db.prepare(`UPDATE interview_slots SET booked_count = MAX(0, booked_count-1) WHERE id=?`).run(row.slot_id);
   }
   // Sync to onboarding task
-  if (status === 'passed' && row.worker_account_id) {
+  if ((status === 'passed' || status === 'completed') && row.worker_account_id) {
     db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview' AND status NOT IN ('completed')`).run(row.worker_account_id);
     syncOnboardedStatus(row.worker_account_id);
   }
@@ -6585,13 +9780,47 @@ app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
 
 // Worker: list available slots
 app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
-  const slots = db.prepare(`
+  // Check if admin has assigned specific slot IDs for this worker (stored on onboarding record)
+  const obRecord = db.prepare(`SELECT assigned_slot_ids FROM worker_onboarding WHERE worker_account_id=? AND task_key='interview'`).get(req.workerId);
+  let assignedIds = [];
+  try { assignedIds = JSON.parse(obRecord?.assigned_slot_ids || '[]'); } catch {}
+  console.log(`[INTERVIEW-SLOTS] workerId=${req.workerId}, assignedIds=${JSON.stringify(assignedIds)}`);
+
+  // Use EST/CDT offset for datetime comparison (slots stored in local time, server runs in UTC)
+  const nowExpr = `datetime('now', '-5 hours')`;
+
+  if (assignedIds.length) {
+    // Admin assigned specific slots — show only those
+    const placeholders = assignedIds.map(() => '?').join(',');
+    const assigned = db.prepare(`
+      SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
+      FROM interview_slots
+      WHERE id IN (${placeholders}) AND active=1 AND booked_count < max_bookings AND datetime(slot_datetime) > ${nowExpr}
+      ORDER BY slot_datetime ASC
+    `).all(...assignedIds);
+    console.log(`[INTERVIEW-SLOTS] Returning ${assigned.length} assigned slots`);
+    return res.json(assigned);
+  }
+
+  // Fallback: check reserved_for_worker_account_id (legacy)
+  const reserved = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
-    WHERE active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+    WHERE active=1 AND booked_count < max_bookings AND datetime(slot_datetime) > ${nowExpr}
+      AND reserved_for_worker_account_id=?
+    ORDER BY slot_datetime ASC
+  `).all(req.workerId);
+  if (reserved.length) return res.json(reserved);
+
+  // No specific assignment — show all general (unreserved) open slots
+  const general = db.prepare(`
+    SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
+    FROM interview_slots
+    WHERE active=1 AND booked_count < max_bookings AND datetime(slot_datetime) > ${nowExpr}
+      AND reserved_for_worker_account_id IS NULL
     ORDER BY slot_datetime ASC
   `).all();
-  res.json(slots);
+  res.json(general);
 });
 
 // Worker: get my interview
@@ -6616,7 +9845,11 @@ app.post('/api/worker/interviews', requireWorker, (req, res) => {
   const slot = db.prepare(`SELECT * FROM interview_slots WHERE id=? AND active=1`).get(slot_id);
   if (!slot) return res.status(404).json({ error: '时间槽不存在' });
   if (slot.booked_count >= slot.max_bookings) return res.status(400).json({ error: '该时间槽已满，请选择其他时间' });
-  if (new Date(slot.slot_datetime) <= new Date()) return res.status(400).json({ error: '该时间槽已过期' });
+  // Compare slot_datetime string directly (both stored as naive local time)
+  // Normalize T-separator to space for consistent comparison with strftime
+  const slotDt = (slot.slot_datetime || '').replace('T', ' ');
+  const nowLocal = db.prepare(`SELECT strftime('%Y-%m-%d %H:%M:%S', 'now', '-5 hours') as t`).get().t;
+  if (slotDt <= nowLocal) return res.status(400).json({ error: '该面试时间已过期，请返回选择其他时间' });
 
   try {
     if (existing && existing.status === 'cancelled') {
@@ -6643,6 +9876,44 @@ app.post('/api/worker/interview/cancel', requireWorker, (req, res) => {
   // Reset onboarding interview task back to pending
   db.prepare(`UPDATE worker_onboarding SET status='pending', completed_at=NULL WHERE worker_account_id=? AND task_key='interview' AND status IN ('submitted','completed')`).run(req.workerId);
   res.json({ success: true });
+});
+
+// ─── Geocode proxy: Google Maps → Nominatim fallback ───
+app.get('/api/geocode', async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'q required' });
+  const https = require('https');
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  // Try Google Geocoding API first if key is available
+  if (apiKey) {
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(q)}&key=${apiKey}`;
+      const data = await new Promise((resolve, reject) => {
+        https.get(url, resp => {
+          let d = ''; resp.on('data', c => d += c); resp.on('end', () => resolve(JSON.parse(d)));
+        }).on('error', reject);
+      });
+      if (data.status === 'OK' && data.results.length) {
+        const r = data.results[0];
+        return res.json({ lat: r.geometry.location.lat, lng: r.geometry.location.lng, display: r.formatted_address, source: 'google' });
+      }
+    } catch (e) { /* fall through to Nominatim */ }
+  }
+  // Nominatim fallback
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1&countrycodes=us`;
+    const data = await new Promise((resolve, reject) => {
+      https.get(url, { headers: { 'User-Agent': 'PrimeAnchorpoint/1.0' } }, resp => {
+        let d = ''; resp.on('data', c => d += c); resp.on('end', () => resolve(JSON.parse(d)));
+      }).on('error', reject);
+    });
+    if (data.length) {
+      return res.json({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), display: data[0].display_name, source: 'nominatim' });
+    }
+    return res.json({ found: false });
+  } catch (e) {
+    return res.status(500).json({ error: 'geocode failed' });
+  }
 });
 
 // ─── Google Address Validation ───
@@ -6765,47 +10036,75 @@ app.get('/api/admin/manager-punch-status/:empCode', requireAdmin, (req, res) => 
 
 // POST /api/admin/manager-punch — manager clocks in/out employee by emp_code (no GPS required)
 app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
-  const { emp_code, punch_type, job_id } = req.body;
+  const { emp_code, punch_type, job_id, punch_time } = req.body;
   if (!emp_code) return res.status(400).json({ error: 'emp_code required' });
   if (!punch_type || !['in','break_start','break_end','out'].includes(punch_type))
     return res.status(400).json({ error: '请选择打卡类型' });
   const emp = db.prepare("SELECT id, first_name, last_name, employee_id FROM employees WHERE employee_id=? AND status='active'").get(emp_code);
   if (!emp) return res.status(404).json({ error: '找不到该员工 / Employee not found' });
-  const now = new Date().toISOString();
+  // Allow manager to specify a custom punch time (must be a valid ISO string within last 24h)
+  let now = new Date().toISOString();
+  if (punch_time) {
+    const pt = new Date(punch_time);
+    const diff = Date.now() - pt.getTime();
+    if (!isNaN(pt.getTime()) && diff >= 0 && diff <= 86400000) now = pt.toISOString();
+  }
   const open = db.prepare("SELECT * FROM time_entries WHERE employee_id=? AND status='open' ORDER BY clock_in DESC LIMIT 1").get(emp.id);
 
   if (punch_type === 'break_start') {
-    if (!open) return res.status(400).json({ error: '该员工尚未上班打卡' });
-    if (open.on_break) return res.status(400).json({ error: '该员工已在休息中' });
+    if (!open) {
+      // Create a flagged open entry
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,job_id,punch_type,break_records,on_break,geo_verified,needs_review,review_reason) VALUES(?,?,'open',?,'in',?,1,0,1,'漏打上班卡，由manager break_start触发')").run(emp.id, now, job_id||null, JSON.stringify([{start:now,end:null}]));
+      return res.json({ action: 'break_start', warning: '未找到上班记录，已创建并标记审核', entry_id: r2.lastInsertRowid, punch_time: now });
+    }
     const breaks = JSON.parse(open.break_records || '[]');
     breaks.push({ start: now, end: null });
     db.prepare('UPDATE time_entries SET break_records=?, on_break=1 WHERE id=?').run(JSON.stringify(breaks), open.id);
-    return res.json({ action: 'break_start' });
+    return res.json({ action: 'break_start', entry_id: open.id, punch_time: now });
   }
   if (punch_type === 'break_end') {
-    if (!open) return res.status(400).json({ error: '该员工尚未上班打卡' });
-    if (!open.on_break) return res.status(400).json({ error: '该员工当前不在休息中' });
+    if (!open) return res.json({ action: 'break_end', warning: '未找到上班打卡记录' });
+    if (!open.on_break) {
+      return res.json({ action: 'break_end', warning: '该员工当前不在休息中', break_minutes: 0 });
+    }
     const breaks = JSON.parse(open.break_records || '[]');
     const lastIdx = breaks.findIndex(b => !b.end);
     if (lastIdx >= 0) breaks[lastIdx].end = now;
     const breakMins = Math.round(breaks.reduce((s,b) => b.start&&b.end ? s+(new Date(b.end)-new Date(b.start)):s, 0) / 60000);
     db.prepare('UPDATE time_entries SET break_records=?, on_break=0, break_minutes=? WHERE id=?').run(JSON.stringify(breaks), breakMins, open.id);
-    return res.json({ action: 'break_end', break_minutes: breakMins });
+    return res.json({ action: 'break_end', break_minutes: breakMins, entry_id: open.id, punch_time: now });
   }
   if (punch_type === 'out') {
-    if (!open) return res.status(400).json({ error: '该员工尚未上班打卡' });
-    if (open.on_break) return res.status(400).json({ error: '请先结束休息再下班打卡' });
+    if (!open) {
+      const r2 = db.prepare("INSERT INTO time_entries (employee_id,clock_in,clock_out,status,job_id,total_hours,break_records,on_break,punch_type,needs_review,review_reason) VALUES(?,?,?,'closed',?,0,'[]',0,'out_only',1,'漏打上班卡，仅有下班记录')").run(emp.id, now, now, job_id||null);
+      return res.json({ action: 'out', total_hours: 0, warning: '未找到上班记录，已记录下班并标记审核', entry_id: r2.lastInsertRowid, clock_out: now });
+    }
+    if (open.on_break) {
+      // Auto-close break then clock out
+      const breaks = JSON.parse(open.break_records || '[]');
+      const lastIdx = breaks.findIndex(b => !b.end);
+      if (lastIdx >= 0) breaks[lastIdx].end = now;
+      const breakMins = Math.round(breaks.reduce((s,b)=>b.start&&b.end?s+(new Date(b.end)-new Date(b.start)):s,0)/60000);
+      db.prepare('UPDATE time_entries SET break_records=?,on_break=0,break_minutes=? WHERE id=?').run(JSON.stringify(breaks),breakMins,open.id);
+      open.break_minutes = breakMins; open.on_break = 0;
+    }
     const hrs = calcHours(open.clock_in, now, open.break_minutes || 0);
     db.prepare("UPDATE time_entries SET clock_out=?,total_hours=?,regular_hours=?,overtime_hours=?,status='closed',punch_type='out' WHERE id=?")
       .run(now, hrs.total, hrs.regular, hrs.overtime, open.id);
-    return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now });
+    return res.json({ action: 'out', total_hours: hrs.total, clock_in: open.clock_in, clock_out: now, entry_id: open.id });
   }
-  // Clock in
-  if (open) return res.status(400).json({ error: '该员工已在班中，请先下班打卡' });
+  // Clock in — auto-close dangling open entry
+  let ciWarning = null;
+  if (open) {
+    const missedDate = open.clock_in ? open.clock_in.slice(0,10) : '?';
+    db.prepare("UPDATE time_entries SET status='closed',clock_out=?,needs_review=1,review_reason=? WHERE id=?")
+      .run(now, `漏打下班卡(${missedDate})，manager重新上班打卡时自动关闭`, open.id);
+    ciWarning = `${missedDate} 未打下班卡，旧记录已标记审核`;
+  }
   if (!job_id) return res.status(400).json({ error: '请选择要打卡的工作' });
   const result = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,job_id,punch_type,break_records,on_break,geo_verified) VALUES(?,?,'open',?,'in','[]',0,0)")
     .run(emp.id, now, job_id);
-  return res.json({ action: 'in', clock_in: now, entry_id: result.lastInsertRowid });
+  return res.json({ action: 'in', clock_in: now, entry_id: result.lastInsertRowid, warning: ciWarning });
 });
 
 // ─── Invoice Management ───
@@ -6848,6 +10147,5 @@ app.listen(PORT, () => {
   // Initial checkpoint on startup to flush any pending WAL data
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch(e) {}
   console.log(`Prime Anchorpoint running on port ${PORT}`);
-  console.log(`[Address Validation] GOOGLE_MAPS_API_KEY: ${process.env.GOOGLE_MAPS_API_KEY ? 'SET (' + process.env.GOOGLE_MAPS_API_KEY.substring(0, 8) + '...)' : 'NOT SET — address validation will be skipped'}`);
 
 });
