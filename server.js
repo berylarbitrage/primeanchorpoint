@@ -687,6 +687,9 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
@@ -6742,7 +6745,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
 
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, created_at FROM invoices ORDER BY created_at DESC`).all();
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, created_at FROM invoices ORDER BY created_at DESC`).all();
   res.json(rows);
 });
 
@@ -6760,6 +6763,49 @@ app.post('/api/admin/invoices', requireAdmin, (req, res) => {
 // Delete invoice
 app.delete('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   db.prepare(`DELETE FROM invoices WHERE id=?`).run(req.params.id);
+  res.json({ success: true });
+});
+
+// Upload payment receipt and mark invoice as paid
+const receiptUpload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `receipt-${req.params.id}-${Date.now()}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(pdf|jpg|jpeg|png|gif|webp)$/i.test(path.extname(file.originalname));
+    cb(null, ok);
+  }
+});
+
+app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single('receipt'), (req, res) => {
+  const inv = db.prepare('SELECT id, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  // Delete old receipt file if exists
+  if (inv.payment_receipt_path) {
+    const oldPath = path.join(uploadsDir, path.basename(inv.payment_receipt_path));
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
+  db.prepare(`UPDATE invoices SET payment_status='paid', payment_receipt_path=?, paid_at=datetime('now') WHERE id=?`)
+    .run(receiptPath, req.params.id);
+  res.json({ success: true, receipt_path: receiptPath });
+});
+
+// Mark invoice as unpaid (remove receipt)
+app.post('/api/admin/invoices/:id/mark-unpaid', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT id, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  if (inv.payment_receipt_path) {
+    const oldPath = path.join(uploadsDir, path.basename(inv.payment_receipt_path));
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  db.prepare(`UPDATE invoices SET payment_status='unpaid', payment_receipt_path=NULL, paid_at=NULL WHERE id=?`)
+    .run(req.params.id);
   res.json({ success: true });
 });
 

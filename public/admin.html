@@ -1215,6 +1215,28 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- ════════════════════ PAYMENT RECEIPT MODAL ════════════════════ -->
+<div class="modal-bg" id="invpReceiptModal" style="display:none" onclick="if(event.target===this)closeInvpReceiptModal()">
+  <div class="modal" style="max-width:480px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2 style="margin:0" id="invpReceiptModalTitle">标记已付款</h2>
+      <button class="btn btn-outline" onclick="closeInvpReceiptModal()">✕ 关闭</button>
+    </div>
+    <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">上传付款回执（Payment Receipt），支持 PDF / 图片格式，最大 20MB。</p>
+    <div id="invpReceiptCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
+      当前回执：<a id="invpReceiptCurrentLink" href="#" target="_blank" style="color:var(--green)">查看文件</a>
+    </div>
+    <div style="margin-bottom:1rem">
+      <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.4rem">选择文件</label>
+      <input type="file" id="invpReceiptFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;cursor:pointer">
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeInvpReceiptModal()">取消</button>
+      <button class="btn btn-green" id="invpReceiptSubmitBtn" onclick="submitInvpReceipt()">确认付款</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════ INVOICE BUILDER MODAL ════════════════════ -->
 <div class="modal-bg" id="invpBuilderModal" style="display:none" onclick="if(event.target===this)closeInvpBuilderModal()">
   <div class="modal" style="max-width:1100px;width:95vw;max-height:94vh;overflow-y:auto">
@@ -15851,16 +15873,26 @@ async function loadInvpList() {
         <th style="padding:8px 10px;text-align:center">操作</th>
       </tr></thead>
       <tbody>
-        ${rows.map(r => `<tr style="border-top:1px solid var(--gray-100)">
+        ${rows.map(r => {
+          const isPaid = r.payment_status === 'paid';
+          const paidBadge = isPaid
+            ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;margin-right:4px">&#10003; 已付款</span>`
+            : '';
+          const receiptLink = isPaid && r.payment_receipt_path
+            ? `<a href="${r.payment_receipt_path}" target="_blank" style="font-size:.75rem;color:var(--green);text-decoration:underline;margin-right:6px">查看回执</a>`
+            : '';
+          const paidBtn = isPaid
+            ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, true)">更新回执</button>`
+            : `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, false)">Paid</button>`;
+          return `<tr style="border-top:1px solid var(--gray-100)">
           <td style="padding:8px 10px;font-weight:600">${esc(r.invoice_number)}</td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
           <td style="padding:8px 10px;text-align:right;font-weight:600">$${(r.subtotal||0).toFixed(2)}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
-          <td style="padding:8px 10px;text-align:center">
-            <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button>
-          </td>
-        </tr>`).join('')}
+          <td style="padding:8px 10px;text-align:center">${paidBadge}${receiptLink}${paidBtn}<button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button></td>
+        </tr>`;
+        }).join('')}
       </tbody>
     </table>`;
 }
@@ -15869,6 +15901,60 @@ async function deleteInvpRecord(id) {
   if (!confirm('确定删除此 Invoice 记录？')) return;
   await api('/admin/invoices/' + id, { method: 'DELETE' });
   loadInvpList();
+}
+
+let _invpReceiptInvoiceId = null;
+
+function openInvpReceiptModal(invoiceId, isUpdate) {
+  _invpReceiptInvoiceId = invoiceId;
+  document.getElementById('invpReceiptModalTitle').textContent = isUpdate ? '更新付款回执' : '标记已付款';
+  document.getElementById('invpReceiptSubmitBtn').textContent = isUpdate ? '更新回执' : '确认付款';
+  document.getElementById('invpReceiptFile').value = '';
+  // Show current receipt link if updating
+  const currentWrap = document.getElementById('invpReceiptCurrentWrap');
+  const currentLink = document.getElementById('invpReceiptCurrentLink');
+  if (isUpdate) {
+    // Try to find receipt path from cached row data
+    currentWrap.style.display = 'block';
+    currentLink.href = '#';
+    currentLink.textContent = '查看文件';
+  } else {
+    currentWrap.style.display = 'none';
+  }
+  document.getElementById('invpReceiptModal').style.display = 'flex';
+}
+
+function closeInvpReceiptModal() {
+  document.getElementById('invpReceiptModal').style.display = 'none';
+  _invpReceiptInvoiceId = null;
+}
+
+async function submitInvpReceipt() {
+  if (!_invpReceiptInvoiceId) return;
+  const fileInput = document.getElementById('invpReceiptFile');
+  if (!fileInput.files.length) {
+    alert('请选择付款回执文件');
+    return;
+  }
+  const btn = document.getElementById('invpReceiptSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '上传中…';
+  try {
+    const formData = new FormData();
+    formData.append('receipt', fileInput.files[0]);
+    const resp = await fetch('/api/admin/invoices/' + _invpReceiptInvoiceId + '/mark-paid', {
+      method: 'POST',
+      body: formData
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    closeInvpReceiptModal();
+    loadInvpList();
+  } catch(e) {
+    alert('上传失败：' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '确认付款';
+  }
 }
 
 async function showInvpBuilder() {
