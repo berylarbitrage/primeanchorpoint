@@ -1269,6 +1269,28 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- ════════════════════ PAYMENT RECEIPT MODAL ════════════════════ -->
+<div class="modal-bg" id="invpReceiptModal" style="display:none" onclick="if(event.target===this)closeInvpReceiptModal()">
+  <div class="modal" style="max-width:480px;width:95vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2 style="margin:0" id="invpReceiptModalTitle">标记已付款</h2>
+      <button class="btn btn-outline" onclick="closeInvpReceiptModal()">✕ 关闭</button>
+    </div>
+    <p style="color:var(--gray-500);font-size:.88rem;margin:0 0 1rem">上传付款回执（Payment Receipt），支持 PDF / 图片格式，最大 20MB。</p>
+    <div id="invpReceiptCurrentWrap" style="display:none;margin-bottom:1rem;padding:.75rem;background:var(--gray-50);border-radius:8px;font-size:.85rem">
+      当前回执：<a id="invpReceiptCurrentLink" href="#" target="_blank" style="color:var(--green)">查看文件</a>
+    </div>
+    <div style="margin-bottom:1rem">
+      <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.4rem">选择文件</label>
+      <input type="file" id="invpReceiptFile" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;cursor:pointer">
+    </div>
+    <div style="display:flex;gap:.5rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeInvpReceiptModal()">取消</button>
+      <button class="btn btn-green" id="invpReceiptSubmitBtn" onclick="submitInvpReceipt()">确认付款</button>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════ INVOICE BUILDER MODAL ════════════════════ -->
 <div class="modal-bg" id="invpBuilderModal" style="display:none" onclick="if(event.target===this)closeInvpBuilderModal()">
   <div class="modal" style="max-width:900px;width:95vw;max-height:94vh;overflow-y:auto">
@@ -15972,6 +15994,7 @@ function openInvpBuilderModal() {
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
   const ii = document.getElementById('invpEmpImportInput'); if (ii) ii.value = '';
   document.getElementById('invpBuilderTitle').textContent = '+ 新建 Invoice';
+  loadInvpCompanies();
 
   document.getElementById('invpBuilderModal').style.display = 'flex';
   renderInvpProfilePreview();
@@ -16059,7 +16082,18 @@ async function loadInvpList() {
         <th style="padding:8px 10px;text-align:center">操作</th>
       </tr></thead>
       <tbody>
-        ${rows.map(r => `<tr style="border-top:1px solid var(--gray-100)">
+        ${rows.map(r => {
+          const isPaid = r.payment_status === 'paid';
+          const paidBadge = isPaid
+            ? `<span style="display:inline-flex;align-items:center;gap:4px;background:#d1fae5;color:#065f46;font-size:.72rem;font-weight:600;padding:2px 8px;border-radius:999px;margin-right:4px">&#10003; 已付款</span>`
+            : '';
+          const receiptLink = isPaid && r.payment_receipt_path
+            ? `<a href="${r.payment_receipt_path}" target="_blank" style="font-size:.75rem;color:var(--green);text-decoration:underline;margin-right:6px">查看回执</a>`
+            : '';
+          const paidBtn = isPaid
+            ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, true)">更新回执</button>`
+            : `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, false)">Paid</button>`;
+          return `<tr style="border-top:1px solid var(--gray-100)">
           <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
@@ -16067,12 +16101,14 @@ async function loadInvpList() {
           <td style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
           <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
           <td style="padding:8px 10px;text-align:center">
-            <div style="display:flex;gap:.4rem;justify-content:center">
+            <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap">
               <button class="btn btn-sm btn-outline" onclick="openInvpForEdit(${r.id})">查看/编辑</button>
+              ${paidBadge}${receiptLink}${paidBtn}
               <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button>
             </div>
           </td>
-        </tr>`).join('')}
+        </tr>`;
+        }).join('')}
       </tbody>
     </table>`;
 }
@@ -16081,6 +16117,60 @@ async function deleteInvpRecord(id) {
   if (!await showConfirm('确定删除此 Invoice 记录？', { danger: true })) return;
   await api('/admin/invoices/' + id, { method: 'DELETE' });
   loadInvpList();
+}
+
+let _invpReceiptInvoiceId = null;
+
+function openInvpReceiptModal(invoiceId, isUpdate) {
+  _invpReceiptInvoiceId = invoiceId;
+  document.getElementById('invpReceiptModalTitle').textContent = isUpdate ? '更新付款回执' : '标记已付款';
+  document.getElementById('invpReceiptSubmitBtn').textContent = isUpdate ? '更新回执' : '确认付款';
+  document.getElementById('invpReceiptFile').value = '';
+  // Show current receipt link if updating
+  const currentWrap = document.getElementById('invpReceiptCurrentWrap');
+  const currentLink = document.getElementById('invpReceiptCurrentLink');
+  if (isUpdate) {
+    // Try to find receipt path from cached row data
+    currentWrap.style.display = 'block';
+    currentLink.href = '#';
+    currentLink.textContent = '查看文件';
+  } else {
+    currentWrap.style.display = 'none';
+  }
+  document.getElementById('invpReceiptModal').style.display = 'flex';
+}
+
+function closeInvpReceiptModal() {
+  document.getElementById('invpReceiptModal').style.display = 'none';
+  _invpReceiptInvoiceId = null;
+}
+
+async function submitInvpReceipt() {
+  if (!_invpReceiptInvoiceId) return;
+  const fileInput = document.getElementById('invpReceiptFile');
+  if (!fileInput.files.length) {
+    alert('请选择付款回执文件');
+    return;
+  }
+  const btn = document.getElementById('invpReceiptSubmitBtn');
+  btn.disabled = true;
+  btn.textContent = '上传中…';
+  try {
+    const formData = new FormData();
+    formData.append('receipt', fileInput.files[0]);
+    const resp = await fetch('/api/admin/invoices/' + _invpReceiptInvoiceId + '/mark-paid', {
+      method: 'POST',
+      body: formData
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    closeInvpReceiptModal();
+    loadInvpList();
+  } catch(e) {
+    alert('上传失败：' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '确认付款';
+  }
 }
 
 async function showInvpBuilder() {
@@ -16273,6 +16363,7 @@ function _invpSaveTableState() {
     const emp = window._invpManualEmps.find(e => String(e.uid) === uid);
     if (!emp) return;
     emp.name = row.querySelector('.invp-man-name').value;
+    emp.category = row.querySelector('.invp-man-cat') ? row.querySelector('.invp-man-cat').value : (emp.category || '');
     emp.rate = row.querySelector('.invp-man-rate').value;
     emp.days = emp.days || {};
     row.querySelectorAll('.invp-man-day').forEach(inp => {
@@ -16298,11 +16389,34 @@ function renderInvpManualTable() {
   const dayTh = dates.map(d => `<th style="padding:5px 6px;text-align:center;white-space:nowrap;font-size:.78rem">${fmtCol(d)}</th>`).join('');
 
   const rowsHtml = window._invpManualEmps.map(emp => {
+    const catOptsHtml = [
+      ['', '-- 工种 --'],
+      ['warehouse_sorter', '仓库分拣员 / Warehouse Sorter'],
+      ['labeler', '贴标员 / Labeler'],
+      ['packer', '打包员 / Packer'],
+      ['forklift_operator', '叉车操作员 / Forklift Operator'],
+      ['cdl_driver', 'CDL卡车司机 / CDL Truck Driver'],
+      ['delivery_driver', '送货司机 / Delivery Driver'],
+      ['shift_supervisor', '班组长 / Shift Supervisor'],
+      ['site_manager', '现场主管 / Site Manager'],
+      ['quality_inspector', '质检员 / Quality Inspector'],
+      ['machine_operator', '机器操作员 / Machine Operator'],
+      ['assembly_line', '装配线工人 / Assembly Line'],
+      ['material_handler', '物料搬运工 / Material Handler'],
+      ['inventory_clerk', '库存文员 / Inventory Clerk'],
+      ['general_labor', '普工 / General Labor'],
+      ['janitorial', '清洁工 / Janitorial'],
+      ['food_processing', '食品加工 / Food Processing'],
+      ['warehouse_lead', '仓库领班 / Warehouse Lead'],
+      ['loading_unloading', '装卸工 / Loading / Unloading'],
+      ['order_picker', '拣货员 / Order Picker'],
+      ['welder', '焊接工 / Welder'],
+    ].map(([v, t]) => `<option value="${v}"${emp.category === v ? ' selected' : ''}>${t}</option>`).join('');
     const dayInputs = dates.map(d => {
       const val = (emp.days && emp.days[d]) ? emp.days[d] : '';
       return `<td style="padding:3px 4px;text-align:center">
         <input type="number" class="invp-man-day" data-uid="${emp.uid}" data-date="${d}"
-          value="${esc(String(val))}" min="0" step="0.5" placeholder="0"
+          value="${esc(String(val))}" min="0" step="any" placeholder="0"
           style="width:52px;text-align:center;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.83rem"
           oninput="invpUpdateRowTotal(this.closest('tr'))">
       </td>`;
@@ -16313,6 +16427,13 @@ function renderInvpManualTable() {
       <td style="padding:3px 6px">
         <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
           placeholder="员工姓名" style="width:100px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
+      </td>
+      <td style="padding:3px 4px">
+        <select class="invp-man-cat" data-uid="${emp.uid}"
+          style="border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.78rem;max-width:140px"
+          onchange="_invpSaveTableState()">
+          ${catOptsHtml}
+        </select>
       </td>
       ${dayInputs}
       <td style="padding:3px 4px;text-align:right">
@@ -16334,6 +16455,7 @@ function renderInvpManualTable() {
     <table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
       <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">员工姓名</th>
+        <th style="padding:5px 6px;text-align:left;white-space:nowrap">工种类别</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">时薪($/h)</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">合计工时</th>
@@ -16356,7 +16478,7 @@ function invpUpdateRowTotal(row) {
 
 function invpAddEmp() {
   _invpSaveTableState();
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', rate: '', days: {} });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', rate: '', days: {} });
   renderInvpManualTable();
   // Focus the new name input
   const rows = document.querySelectorAll('.invp-manual-row');
@@ -16412,7 +16534,7 @@ function invpImportEmpById(id, fullName) {
   _invpSaveTableState();
   const already = (window._invpManualEmps||[]).some(e => e.name.trim().toLowerCase() === fullName.trim().toLowerCase());
   if (already) return;
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, rate: '', days: {} });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', rate: '', days: {} });
   renderInvpManualTable();
   const inp = document.getElementById('invpEmpImportInput');
   if (inp) { inp.value = ''; }
@@ -16438,7 +16560,7 @@ function getInvpManualItems() {
       const rate = parseFloat(emp.rate) || 0;
       const dates = _invpGetDates();
       const totalHours = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
-      return { name, hours: totalHours, rate, total: totalHours * rate };
+      return { name, category: emp.category || '', hours: totalHours, rate, total: totalHours * rate };
     })
     .filter(Boolean);
 }
@@ -16475,10 +16597,12 @@ async function generateInvpPreview() {
   const totalHours  = items.reduce((s,i) => s+i.hours, 0);
   const totalAmt    = items.reduce((s,i) => s+i.total, 0);
 
+  const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
   const tableRows = items.map(i => `
     <tr style="background:#fff">
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${i.rate.toFixed(1)}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.hours.toFixed(2)}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.total.toFixed(2)}</td>
@@ -16532,6 +16656,7 @@ async function generateInvpPreview() {
           <tr style="background:#4472c4;color:#fff">
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Date</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Name</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Position</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Price per hour</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Hours</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Total Price</th>
@@ -16540,7 +16665,7 @@ async function generateInvpPreview() {
         <tbody>
           ${tableRows}
           <tr style="background:#f6c26b;font-weight:700">
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="2">Total</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Total</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${totalHours.toFixed(1)}h</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${totalAmt.toFixed(2)}</td>
