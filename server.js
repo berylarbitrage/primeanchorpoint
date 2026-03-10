@@ -9572,6 +9572,10 @@ app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
 app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
   const { name, address, address1, address2, city, state, zip, contact_name, contact_phone, instructions } = req.body;
   if (!name) return res.status(400).json({ error: '地点名称必填 / name required' });
+  if (!address1) return res.status(400).json({ error: '街道地址必填 / address1 required' });
+  if (!city) return res.status(400).json({ error: '城市必填 / city required' });
+  if (!state) return res.status(400).json({ error: '请选择州 / state required' });
+  if (zip && !/^\d{5}(-\d{4})?$/.test(zip)) return res.status(400).json({ error: '邮编格式不正确 / invalid ZIP format' });
   const addrDisplay = address || [address1, address2, city && state ? `${city}, ${state}${zip ? ' ' + zip : ''}` : city].filter(Boolean).join(', ') || '';
   const r = db.prepare('INSERT INTO interview_locations (name,address,address1,address2,city,state,zip,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?,?,?,?,?,?)')
     .run(name, addrDisplay, address1||'', address2||'', city||'', state||'', zip||'', contact_name||'', contact_phone||'', instructions||'');

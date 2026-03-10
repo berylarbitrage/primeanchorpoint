@@ -13821,6 +13821,10 @@ async function saveLocation() {
     instructions:  document.getElementById('ivLocInstructions').value.trim()
   };
   if (!data.name) return showToast('❌ 地点名称必填', 'error');
+  if (!address1) return showToast('❌ 街道地址必填', 'error');
+  if (!city) return showToast('❌ 城市必填', 'error');
+  if (!state) return showToast('❌ 请选择州', 'error');
+  if (zip && !/^\d{5}(-\d{4})?$/.test(zip)) return showToast('❌ 邮编格式不正确（应为5位数字，如60601）', 'error');
   const r = await api(id ? `/admin/interview-locations/${id}` : '/admin/interview-locations', {
     method: id ? 'PUT' : 'POST',
     body: JSON.stringify(data)
