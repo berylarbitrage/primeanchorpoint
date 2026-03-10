@@ -3499,8 +3499,8 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(wid);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(wid);
     db.prepare(`UPDATE worker_accounts SET onboarded=0, dispatch_ready=0, identity_status='', bgcheck_status='' WHERE id=?`).run(wid);
-    // Clear reserved interview slots for this worker
-    db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(wid);
+    // Clear reserved interview slots for this worker (don't delete the slot rows)
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(wid);
   }
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
@@ -3685,7 +3685,7 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmi
   // When assigning interview slots to a worker, reserve those specific slots for them
   if (req.params.key === 'interview' && Array.isArray(slot_ids) && slot_ids.length) {
     // Clear previous unbooked reserved slots for this worker
-    db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(workerId);
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(workerId);
     // Mark selected slots as reserved for this worker
     const stmt = db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=? WHERE id=? AND booked_count=0`);
     for (const sid of slot_ids) stmt.run(workerId, sid);
@@ -8902,7 +8902,7 @@ app.post('/api/register/worker', async (req, res) => {
     db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(existing.id);
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(existing.id); } catch(_) {}
     db.prepare('DELETE FROM worker_sessions WHERE worker_id=?').run(existing.id);
-    db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(existing.id);
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(existing.id);
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(existing.id);
   }
   const salt = crypto.randomBytes(16).toString('hex');
