@@ -3172,6 +3172,7 @@ tr:hover td{background:var(--sky-light)}
     <div id="aInquiryErr" style="display:none;color:#dc2626;font-size:.78rem;margin-top:.2rem">⚠ 请搜索并选择人员</div>
   </div>
   <div id="aDispatchWarn" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:.5rem .75rem;font-size:.83rem;color:#92400e;margin-top:-.25rem;margin-bottom:.5rem"></div>
+  <div id="aLangHint" style="display:none;background:#eff6ff;border:1px solid #93c5fd;border-radius:6px;padding:.5rem .75rem;font-size:.83rem;color:#1e40af;margin-top:-.25rem;margin-bottom:.5rem"></div>
 
   <div class="field" style="position:relative">
     <label>分配职位 *</label>
@@ -6959,6 +6960,7 @@ async function openAssignModal(assignment) {
     document.getElementById('aJobId').value    = '';
   }
   document.getElementById('aDispatchWarn').style.display = 'none';
+  document.getElementById('aLangHint').style.display = 'none';
   closeAssignDropdowns();
 
   const [inqs, jobs] = await Promise.all([api('/admin/inquiries?all=1'), api('/admin/jobs')]);
@@ -7501,7 +7503,9 @@ function applyJobImport() {
 
 async function checkInquiryDispatchStatus(inquiryId) {
   const warn = document.getElementById('aDispatchWarn');
+  const langHint = document.getElementById('aLangHint');
   warn.style.display = 'none';
+  langHint.style.display = 'none';
   if (!inquiryId) return;
   const r = await api(`/admin/inquiries/${inquiryId}/worker-status`);
   if (!r) return;
@@ -7511,6 +7515,14 @@ async function checkInquiryDispatchStatus(inquiryId) {
   } else if (!r.dispatch_ready) {
     warn.innerHTML = `⚠️ 该工人入职流程尚未完成，未标记"可派工"。<button class="btn btn-sm" style="margin-left:.5rem;background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe" onclick="openOnboardingModalById(${r.worker_id})">查看入职进度</button>`;
     warn.style.display = '';
+  }
+  // Show language preference reminder
+  const lang = r.preferred_lang || '';
+  if (lang) {
+    const langMap = { zh: '🇨🇳 中文', en: '🇺🇸 English', es: '🇲🇽 Español', '中文': '🇨🇳 中文', 'English': '🇺🇸 English', 'Spanish': '🇲🇽 Español' };
+    const langDisplay = langMap[lang] || lang;
+    langHint.innerHTML = `🌐 该员工语言偏好：<strong>${esc(langDisplay)}</strong>，请使用对应语言填写工作内容`;
+    langHint.style.display = '';
   }
 }
 

@@ -1747,6 +1747,8 @@ function setPortalLang(lang) {
   localStorage.setItem('pa_portal_lang', lang);
   applyPortalLang();
   if (!WORKER_TOKEN) return;
+  // Save language preference to server
+  fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang }) }).catch(() => {});
   if (_activeTab === 'profile') loadProfile();
   else if (_activeTab === 'payments') loadPayments();
   else if (_activeTab === 'todos') loadOnboarding();
@@ -1885,6 +1887,8 @@ async function workerLogin() {
   const data = await r.json();
   WORKER_TOKEN = data.token;
   localStorage.setItem('pa_worker_token', WORKER_TOKEN);
+  // Save current language preference to server on login
+  fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang: _portalLang }) }).catch(() => {});
   showApp();
 }
 

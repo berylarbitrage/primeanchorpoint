@@ -3411,6 +3411,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN has_ssn INTEGER DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -3938,9 +3939,9 @@ app.post('/api/worker/onboarding/:key/submit', requireWorker, (req, res) => {
 app.get('/api/admin/inquiries/:id/worker-status', requireAdmin, (req, res) => {
   const inq = db.prepare('SELECT phone, email FROM inquiries WHERE id=?').get(req.params.id);
   if (!inq) return res.status(404).json({ error: 'Not found' });
-  const w = db.prepare('SELECT id, active, dispatch_ready, suspended FROM worker_accounts WHERE phone=? OR (? != \'\' AND email=?)').get(inq.phone||'', inq.email||'', inq.email||'');
-  if (!w) return res.json({ has_account: false, dispatch_ready: false });
-  res.json({ has_account: true, dispatch_ready: !!w.dispatch_ready, active: !!w.active, suspended: !!w.suspended, worker_id: w.id });
+  const w = db.prepare('SELECT id, active, dispatch_ready, suspended, preferred_lang FROM worker_accounts WHERE phone=? OR (? != \'\' AND email=?)').get(inq.phone||'', inq.email||'', inq.email||'');
+  if (!w) return res.json({ has_account: false, dispatch_ready: false, preferred_lang: inq.languages || '' });
+  res.json({ has_account: true, dispatch_ready: !!w.dispatch_ready, active: !!w.active, suspended: !!w.suspended, worker_id: w.id, preferred_lang: w.preferred_lang || inq.languages || '' });
 });
 
 // Admin: update worker skills
@@ -7134,6 +7135,13 @@ app.put('/api/worker/profile/emergency', requireWorker, (req, res) => {
   const { emergency_name, emergency_phone, emergency_relation } = req.body || {};
   db.prepare('UPDATE employees SET emergency_name=?, emergency_phone=?, emergency_relation=? WHERE id=?')
     .run((emergency_name||'').trim(), (emergency_phone||'').trim(), (emergency_relation||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
+});
+
+app.put('/api/worker/profile/language', requireWorker, (req, res) => {
+  const { lang } = req.body || {};
+  if (!lang) return res.status(400).json({ error: 'lang required' });
+  db.prepare('UPDATE worker_accounts SET preferred_lang=? WHERE id=?').run(lang, req.workerId);
   res.json({ success: true });
 });
 
