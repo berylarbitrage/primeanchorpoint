@@ -16228,7 +16228,7 @@ function getInvpManualItems() {
     .filter(Boolean);
 }
 
-function generateInvpPreview() {
+async function generateInvpPreview() {
   const invDate = document.getElementById('invPageDate').value;
   const ps      = document.getElementById('invPageStart').value;
   const pe      = document.getElementById('invPageEnd').value;
