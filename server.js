@@ -1065,6 +1065,54 @@ try { db.exec("ALTER TABLE interview_slots ADD COLUMN reserved_for_worker_accoun
 // Migrate interviews: add interview_type
 try { db.exec("ALTER TABLE interviews ADD COLUMN interview_type TEXT DEFAULT 'onboarding'"); } catch {}
 
+// ─── Interview History (archives every interview record) ───
+db.exec(`CREATE TABLE IF NOT EXISTS interview_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  original_interview_id INTEGER,
+  worker_account_id INTEGER NOT NULL,
+  worker_name TEXT DEFAULT '',
+  worker_phone TEXT DEFAULT '',
+  worker_email TEXT DEFAULT '',
+  slot_id INTEGER,
+  slot_datetime TEXT DEFAULT '',
+  duration_min INTEGER DEFAULT 30,
+  location TEXT DEFAULT '',
+  interview_type TEXT DEFAULT 'onboarding',
+  status TEXT DEFAULT 'scheduled',
+  admin_notes TEXT DEFAULT '',
+  position_interests TEXT DEFAULT '',
+  expected_pay TEXT DEFAULT '',
+  skills TEXT DEFAULT '',
+  archived_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  original_created_at DATETIME DEFAULT '',
+  original_updated_at DATETIME DEFAULT ''
+)`);
+
+function archiveInterviews(workerAccountId) {
+  const rows = db.prepare(`
+    SELECT i.*, s.slot_datetime, s.duration_min, s.location,
+           w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+           w.position_interests
+    FROM interviews i
+    LEFT JOIN interview_slots s ON i.slot_id = s.id
+    LEFT JOIN worker_accounts w ON i.worker_account_id = w.id
+    WHERE i.worker_account_id = ?
+  `).all(workerAccountId);
+  for (const r of rows) {
+    db.prepare(`INSERT INTO interview_history
+      (original_interview_id, worker_account_id, worker_name, worker_phone, worker_email,
+       slot_id, slot_datetime, duration_min, location, interview_type, status,
+       admin_notes, position_interests, expected_pay, skills,
+       original_created_at, original_updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(r.id, r.worker_account_id, r.worker_name||'', r.worker_phone||'', r.worker_email||'',
+           r.slot_id, r.slot_datetime||'', r.duration_min||30, r.location||'',
+           r.interview_type||'onboarding', r.status||'scheduled',
+           r.admin_notes||'', r.position_interests||'', r.expected_pay||'', r.skills||'',
+           r.created_at||'', r.updated_at||'');
+  }
+}
+
 // ─── Worker Positions (managed in DB) ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_positions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3524,6 +3572,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   // and onboarding records so the worker starts fresh
   if (!w.active && newActive) {
     const wid = parseInt(req.params.id);
+    archiveInterviews(wid);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(wid);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(wid);
     db.prepare(`UPDATE worker_accounts SET onboarded=0, dispatch_ready=0, identity_status='', bgcheck_status='' WHERE id=?`).run(wid);
@@ -4047,6 +4096,7 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
     db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(id);
+    archiveInterviews(id);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(id);
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(id); } catch(_) {}
@@ -9067,6 +9117,7 @@ app.post('/api/register/worker', async (req, res) => {
     db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(existing.id);
+    archiveInterviews(existing.id);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(existing.id);
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(existing.id); } catch(_) {}
@@ -9630,6 +9681,35 @@ app.get('/api/admin/interviews', requireAdmin, (req, res) => {
     ORDER BY s.slot_datetime DESC
   `).all();
   res.json(rows);
+});
+
+// Admin: get all interview history (current + archived)
+app.get('/api/admin/interview-history', requireAdmin, (req, res) => {
+  const current = db.prepare(`
+    SELECT i.id, i.worker_account_id, i.status, i.admin_notes,
+      COALESCE(i.interview_type,'onboarding') AS interview_type,
+      i.created_at, i.updated_at,
+      s.slot_datetime, s.duration_min, s.location,
+      w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.position_interests, 'current' AS source
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+  `).all();
+  const archived = db.prepare(`
+    SELECT id, worker_account_id, status, admin_notes, interview_type,
+      original_created_at AS created_at, original_updated_at AS updated_at,
+      slot_datetime, duration_min, location,
+      worker_name, worker_phone, worker_email,
+      position_interests, 'archived' AS source, archived_at
+    FROM interview_history
+  `).all();
+  const all = [...current, ...archived].sort((a, b) => {
+    const da = a.slot_datetime || a.created_at || '';
+    const db2 = b.slot_datetime || b.created_at || '';
+    return db2.localeCompare(da);
+  });
+  res.json(all);
 });
 
 // Admin: send Persona identity verification to worker via interview

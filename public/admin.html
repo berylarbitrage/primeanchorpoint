@@ -1488,6 +1488,10 @@ tr:hover td{background:var(--sky-light)}
       style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
       📍 面试地点管理
     </button>
+    <button id="ivTabHistory" onclick="switchIvTab('history')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
+      📜 历史记录
+    </button>
   </div>
 
   <!-- Slots pane -->
@@ -1691,6 +1695,36 @@ tr:hover td{background:var(--sky-light)}
       <table><thead><tr><th>名称</th><th>地址</th><th>联系人</th><th>电话</th><th style="min-width:200px">到达指引</th><th>操作</th></tr></thead>
       <tbody id="ivLocationsTable"></tbody></table>
     </div>
+  </div>
+
+  <!-- History pane -->
+  <div id="ivPaneHistory" style="display:none">
+    <div class="card" style="margin-bottom:1rem">
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+        <input type="text" id="ivHistSearch" placeholder="搜索姓名、电话..." oninput="filterIvHistory()" style="flex:1;min-width:180px;padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <select id="ivHistTypeFilter" onchange="filterIvHistory()" style="padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <option value="">全部类型</option>
+          <option value="onboarding">入职面试</option>
+          <option value="job">工作面试</option>
+          <option value="other">其他</option>
+        </select>
+        <select id="ivHistStatusFilter" onchange="filterIvHistory()" style="padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <option value="">全部状态</option>
+          <option value="scheduled">已预约</option>
+          <option value="completed">面试完成</option>
+          <option value="passed">已通过</option>
+          <option value="failed">未通过</option>
+          <option value="cancelled">已取消</option>
+        </select>
+        <select id="ivHistSourceFilter" onchange="filterIvHistory()" style="padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <option value="">全部来源</option>
+          <option value="current">当前</option>
+          <option value="archived">已归档</option>
+        </select>
+      </div>
+    </div>
+    <div id="ivHistoryCount" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.5rem"></div>
+    <div id="ivHistoryTable"></div>
   </div>
 </div>
 
@@ -13708,7 +13742,7 @@ let _allInterviews = [];
 let _ivLocations = [];
 
 function switchIvTab(tab) {
-  ['slots','list','locations'].forEach(t => {
+  ['slots','list','locations','history'].forEach(t => {
     const paneId = 'ivPane' + t.charAt(0).toUpperCase() + t.slice(1);
     const btnId  = 'ivTab'  + t.charAt(0).toUpperCase() + t.slice(1);
     document.getElementById(paneId).style.display = tab === t ? '' : 'none';
@@ -13718,6 +13752,7 @@ function switchIvTab(tab) {
   });
   if (tab === 'list') filterInterviews();
   if (tab === 'locations') loadInterviewLocations();
+  if (tab === 'history') loadIvHistory();
 }
 
 // ── Interview Location Presets ──
@@ -14217,6 +14252,63 @@ function renderInterviews(rows) {
 
 async function setIvField(id, field, value) {
   await api(`/admin/interviews/${id}`, { method:'PUT', body: JSON.stringify({ [field]: value }) });
+}
+
+// ── Interview History ──
+let _allIvHistory = [];
+async function loadIvHistory() {
+  _allIvHistory = await api('/admin/interview-history') || [];
+  filterIvHistory();
+}
+function filterIvHistory() {
+  const q = (document.getElementById('ivHistSearch')?.value || '').toLowerCase();
+  const typeF = document.getElementById('ivHistTypeFilter')?.value || '';
+  const statusF = document.getElementById('ivHistStatusFilter')?.value || '';
+  const sourceF = document.getElementById('ivHistSourceFilter')?.value || '';
+  let rows = _allIvHistory;
+  if (q) rows = rows.filter(r => (r.worker_name||'').toLowerCase().includes(q) || (r.worker_phone||'').includes(q) || (r.worker_email||'').toLowerCase().includes(q));
+  if (typeF) rows = rows.filter(r => r.interview_type === typeF);
+  if (statusF) rows = rows.filter(r => r.status === statusF);
+  if (sourceF) rows = rows.filter(r => r.source === sourceF);
+  const countEl = document.getElementById('ivHistoryCount');
+  if (countEl) countEl.textContent = `共 ${rows.length} 条记录` + (rows.length !== _allIvHistory.length ? `（筛选自 ${_allIvHistory.length} 条）` : '');
+  renderIvHistory(rows);
+}
+function renderIvHistory(rows) {
+  const wrap = document.getElementById('ivHistoryTable');
+  if (!rows.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:2.5rem;color:var(--gray-400);background:#fff;border-radius:10px;border:1px solid var(--gray-200)">暂无面试历史记录</div>';
+    return;
+  }
+  const IV_TYPE_LABEL_H = { onboarding:'入职面试', job:'工作面试', other:'其他' };
+  wrap.innerHTML = `<div style="overflow-x:auto"><table>
+    <thead><tr>
+      <th>姓名</th><th>联系方式</th><th>面试时间</th><th>时长</th><th>地点</th>
+      <th>类型</th><th>状态</th><th>岗位意向</th><th>备注</th><th>来源</th>
+    </tr></thead>
+    <tbody>${rows.map(r => {
+      const dt = r.slot_datetime ? new Date(r.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz()}) : '—';
+      const typ = r.interview_type || 'onboarding';
+      const typBadge = `<span style="padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700;${IV_TYPE_COLOR[typ]||IV_TYPE_COLOR.other}">${IV_TYPE_LABEL_H[typ]||typ}</span>`;
+      const stBadge = `<span style="padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700;${IV_STATUS_STYLE[r.status]||'background:#f3f4f6;color:#374151'}">${IV_STATUS_LABEL[r.status]||r.status}</span>`;
+      const srcBadge = r.source === 'archived'
+        ? '<span style="font-size:.72rem;background:#f3e8ff;color:#7c3aed;padding:.1rem .45rem;border-radius:10px;font-weight:600">已归档</span>'
+        : '<span style="font-size:.72rem;background:#dcfce7;color:#15803d;padding:.1rem .45rem;border-radius:10px;font-weight:600">当前</span>';
+      const contact = [r.worker_phone, r.worker_email].filter(Boolean).join('<br>');
+      return `<tr>
+        <td style="font-weight:600">${esc(r.worker_name||'—')}</td>
+        <td style="font-size:.82rem;color:var(--gray-500)">${contact||'—'}</td>
+        <td style="font-size:.84rem;white-space:nowrap">${dt}</td>
+        <td style="font-size:.84rem">${r.duration_min ? r.duration_min+'min' : '—'}</td>
+        <td style="font-size:.82rem;max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(r.location||'—')}</td>
+        <td>${typBadge}</td>
+        <td>${stBadge}</td>
+        <td style="font-size:.82rem;max-width:140px;overflow:hidden;text-overflow:ellipsis">${esc(r.position_interests||'—')}</td>
+        <td style="font-size:.82rem;max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(r.admin_notes||'—')}</td>
+        <td>${srcBadge}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
 }
 
 async function sendIdentityVerify(interviewId, workerName) {
