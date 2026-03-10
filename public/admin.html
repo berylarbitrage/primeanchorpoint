@@ -1202,9 +1202,9 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="invpPageModal" style="display:none" onclick="if(event.target===this)closeInvpPageModal()">
   <div class="modal" style="max-width:1100px;width:95vw;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
-      <h2 style="margin:0">🧾 Invoice 生成</h2>
+      <h2 style="margin:0">🧾 Invoice 管理</h2>
       <div style="display:flex;gap:.6rem;flex-wrap:wrap">
-        <button class="btn btn-green" onclick="showInvpBuilder()">+ 生成新 Invoice</button>
+        <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
         <button class="btn btn-outline" onclick="openInvpProfileModal()">⚙️ 发票配置（我方信息）</button>
         <button class="btn btn-outline" onclick="closeInvpPageModal()">✕ 关闭</button>
       </div>
@@ -1212,14 +1212,21 @@ tr:hover td{background:var(--sky-light)}
 
     <!-- Invoice List -->
     <div class="card" style="margin-bottom:1.25rem">
-      <h3 style="margin:0 0 .75rem">Invoice 列表</h3>
       <div id="invpListWrap">
         <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
       </div>
     </div>
+  </div>
+</div>
 
-    <!-- Invoice Builder (hidden by default) -->
-    <div id="invpBuilderSection" style="display:none">
+<!-- ════════════════════ INVOICE BUILDER MODAL ════════════════════ -->
+<div class="modal-bg" id="invpBuilderModal" style="display:none" onclick="if(event.target===this)closeInvpBuilderModal()">
+  <div class="modal" style="max-width:1100px;width:95vw;max-height:94vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2 style="margin:0">+ 新建 Invoice</h2>
+      <button class="btn btn-outline" onclick="closeInvpBuilderModal()">✕ 关闭</button>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 320px;gap:1.25rem;align-items:start">
 
       <!-- LEFT: Invoice Builder -->
@@ -1249,15 +1256,18 @@ tr:hover td{background:var(--sky-light)}
         <!-- Bill To -->
         <h3 style="margin:0 0 .75rem">账单发往（Bill To）</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-          <div class="field" style="grid-column:1/-1">
-            <label>快速选择客户公司</label>
-            <select id="invPageCompany" onchange="onInvPageCompanyChange()" style="width:100%">
-              <option value="">— 从合作公司中选择 —</option>
-            </select>
+          <div class="field" style="grid-column:1/-1;position:relative">
+            <label>搜索客户公司</label>
+            <input type="text" id="invPageCompanySearch" placeholder="输入公司名搜索..." autocomplete="off"
+              style="width:100%"
+              oninput="onInvPageCompanySearch(this.value)"
+              onfocus="onInvPageCompanySearch(this.value)"
+              onblur="setTimeout(()=>{const d=document.getElementById('invCompanySuggestions');if(d)d.style.display='none'},200)">
+            <div id="invCompanySuggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:220px;overflow-y:auto"></div>
           </div>
           <div class="field">
             <label>公司名称 <span style="color:var(--red)">*</span></label>
-            <input type="text" id="invPageBillName" placeholder="客户公司名称">
+            <input type="text" id="invPageBillName" placeholder="客户公司名称" oninput="onInvBillNameInput()">
           </div>
           <div class="field">
             <label>地址</label>
@@ -1274,11 +1284,23 @@ tr:hover td{background:var(--sky-light)}
             <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
           </div>
         </div>
-        <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:1rem;overflow-x:auto">
+        <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
           <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先设置服务周期开始和结束日期</div>
         </div>
+        <!-- Employee import search (hidden by default) -->
+        <div id="invpEmpImportWrap" style="display:none;position:relative;margin-bottom:.5rem">
+          <input type="text" id="invpEmpImportInput" placeholder="搜索系统员工姓名..." autocomplete="off"
+            style="width:100%;border:1px solid var(--sky);border-radius:6px;padding:5px 10px;font-size:.85rem"
+            oninput="onInvpEmpImportSearch(this.value)"
+            onblur="setTimeout(()=>{const d=document.getElementById('invpEmpImportSugg');if(d)d.style.display='none'},200)">
+          <div id="invpEmpImportSugg" style="display:none;position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--gray-200);border-radius:0 0 6px 6px;box-shadow:0 4px 12px rgba(0,0,0,.12);z-index:200;max-height:200px;overflow-y:auto"></div>
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 手动添加员工</button>
+          <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpToggleEmpImport()">📥 从系统导入员工</button>
+        </div>
 
-        <div style="display:flex;gap:.75rem;justify-content:flex-end">
+        <div style="display:flex;gap:.75rem;justify-content:flex-end;margin-top:1rem">
           <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
         </div>
       </div>
@@ -1309,7 +1331,6 @@ tr:hover td{background:var(--sky-light)}
       </div>
 
     </div>
-    </div><!-- /invpBuilderSection -->
   </div>
 </div>
 
@@ -15597,8 +15618,26 @@ function openInvpPageModal() {
 
 function closeInvpPageModal() {
   document.getElementById('invpPageModal').style.display = 'none';
-  const sec = document.getElementById('invpBuilderSection');
-  if (sec) sec.style.display = 'none';
+}
+
+function openInvpBuilderModal() {
+  // Reset form state
+  window._invpManualEmps = [];
+  _invpManualUidSeq = 1;
+  window._invpSelectedPartnerState = null;
+  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate'];
+  fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
+  const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
+  const ii = document.getElementById('invpEmpImportInput'); if (ii) ii.value = '';
+
+  document.getElementById('invpBuilderModal').style.display = 'flex';
+  renderInvpProfilePreview();
+  showInvpBuilder();
+}
+
+function closeInvpBuilderModal() {
+  document.getElementById('invpBuilderModal').style.display = 'none';
 }
 
 async function loadInvpList() {
@@ -15641,41 +15680,40 @@ async function deleteInvpRecord(id) {
 }
 
 async function showInvpBuilder() {
-  const sec = document.getElementById('invpBuilderSection');
-  sec.style.display = sec.style.display === 'none' ? '' : 'none';
-  if (sec.style.display !== 'none') {
-    const today = new Date();
-    const dow = today.getDay() || 7;
-    const mon = new Date(today); mon.setDate(today.getDate() - dow - 6);
-    const sun = new Date(today); sun.setDate(today.getDate() - dow);
-    const toLocalDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const today = new Date();
+  const dow = today.getDay() || 7;
+  const mon = new Date(today); mon.setDate(today.getDate() - dow - 6);
+  const sun = new Date(today); sun.setDate(today.getDate() - dow);
+  const toLocalDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
-    const startEl = document.getElementById('invPageStart');
-    const endEl   = document.getElementById('invPageEnd');
-    const dateEl  = document.getElementById('invPageDate');
-    const numEl   = document.getElementById('invPageNumber');
+  const startEl = document.getElementById('invPageStart');
+  const endEl   = document.getElementById('invPageEnd');
+  const dateEl  = document.getElementById('invPageDate');
 
-    if (startEl && !startEl.value) { startEl.value = toLocalDate(mon); renderInvpManualTable(); }
-    if (endEl   && !endEl.value)   { endEl.value   = toLocalDate(sun); renderInvpManualTable(); }
-    if (dateEl  && !dateEl.value)  dateEl.value  = toLocalDate(today);
-    if (numEl   && !numEl.value) {
-      const profile = getInvpProfile();
-      const state = (profile.sender_state || 'XX').toUpperCase().slice(0,2);
-      const mm = String(today.getMonth()+1).padStart(2,'0');
-      const dd = String(today.getDate()).padStart(2,'0');
-      const yy = String(today.getFullYear()).slice(2);
-      const datePart = mm + dd + yy;
-      const prefix = `INV-${state}-${datePart}-`;
-      const existing = await api('/admin/invoices').catch(() => []);
-      const nums = (Array.isArray(existing) ? existing : [])
-        .map(r => r.invoice_number || '')
-        .filter(n => n.startsWith(prefix))
-        .map(n => parseInt(n.slice(prefix.length)) || 0);
-      const nextSeq = nums.length ? Math.max(...nums) + 1 : 1;
-      numEl.value = prefix + String(nextSeq).padStart(4, '0');
-    }
-    sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
+  if (startEl && !startEl.value) { startEl.value = toLocalDate(mon); renderInvpManualTable(); }
+  if (endEl   && !endEl.value)   { endEl.value   = toLocalDate(sun); renderInvpManualTable(); }
+  if (dateEl  && !dateEl.value)  dateEl.value  = toLocalDate(today);
+  // Invoice number will be generated when company is selected (uses customer state)
+  await invpRefreshInvoiceNumber();
+}
+
+async function invpRefreshInvoiceNumber() {
+  const numEl = document.getElementById('invPageNumber');
+  if (!numEl || numEl.value) return; // don't overwrite if already set
+  const today = new Date();
+  const state = (window._invpSelectedPartnerState || 'XX').toUpperCase().slice(0,2);
+  const mm = String(today.getMonth()+1).padStart(2,'0');
+  const dd = String(today.getDate()).padStart(2,'0');
+  const yy = String(today.getFullYear()).slice(2);
+  const datePart = mm + dd + yy;
+  const prefix = `INV-${state}-${datePart}-`;
+  const existing = await api('/admin/invoices').catch(() => []);
+  const nums = (Array.isArray(existing) ? existing : [])
+    .map(r => r.invoice_number || '')
+    .filter(n => n.startsWith(prefix))
+    .map(n => parseInt(n.slice(prefix.length)) || 0);
+  const nextSeq = nums.length ? Math.max(...nums) + 1 : 1;
+  numEl.value = prefix + String(nextSeq).padStart(4, '0');
 }
 
 async function saveInvpInvoice() {
@@ -15708,20 +15746,65 @@ async function loadInvpCompanies() {
   const res = await api('/admin/partners').catch(() => []);
   const list = Array.isArray(res) ? res.filter(p => p.active) : (res?.partners || []).filter(p => p.active);
   window._invpPartners = list;
-  const sel = document.getElementById('invPageCompany');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— 从合作公司中选择 —</option>'
-    + list.map(p => `<option value="${esc(p.name)}" data-addr="${esc(p.address||'')}">${esc(p.name)}</option>`).join('');
 }
 
-function onInvPageCompanyChange() {
-  const sel  = document.getElementById('invPageCompany');
-  const name = sel.value;
-  if (!name) return;
-  document.getElementById('invPageBillName').value = name;
-  const partner = (window._invpPartners||[]).find(p => p.name === name);
-  if (partner) {
-    document.getElementById('invPageBillAddr').value = partner.address || '';
+function onInvPageCompanySearch(val) {
+  const sugg = document.getElementById('invCompanySuggestions');
+  if (!sugg) return;
+  const partners = window._invpPartners || [];
+  const q = val.trim().toLowerCase();
+  const matches = q ? partners.filter(p => p.name.toLowerCase().includes(q)) : partners.slice(0, 10);
+  if (!matches.length) { sugg.style.display = 'none'; return; }
+  sugg.style.display = 'block';
+  sugg.innerHTML = matches.map(p => {
+    let addrLine = p.address || '';
+    try {
+      const addrs = JSON.parse(p.addresses || '[]');
+      if (addrs.length && addrs[0].street) {
+        addrLine = [addrs[0].street, addrs[0].city, addrs[0].state].filter(Boolean).join(', ');
+      }
+    } catch {}
+    return `<div style="padding:7px 12px;cursor:pointer;border-bottom:1px solid var(--gray-100);font-size:.88rem"
+      onmousedown="selectInvPartner(${p.id})"
+      onmouseover="this.style.background='var(--gray-50)'" onmouseout="this.style.background=''">
+      <div style="font-weight:600">${esc(p.name)}</div>
+      ${addrLine ? `<div style="font-size:.78rem;color:var(--gray-500)">${esc(addrLine)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function selectInvPartner(id) {
+  const partner = (window._invpPartners || []).find(p => p.id === id);
+  if (!partner) return;
+  const sr = document.getElementById('invPageCompanySearch');
+  if (sr) sr.value = partner.name;
+  document.getElementById('invPageBillName').value = partner.name;
+  // Extract address and state
+  let addrLine = partner.address || '';
+  let stateAbbr = null;
+  try {
+    const addrs = JSON.parse(partner.addresses || '[]');
+    if (addrs.length) {
+      if (addrs[0].state) stateAbbr = addrs[0].state.toUpperCase().slice(0,2);
+      if (addrs[0].street) addrLine = [addrs[0].street, addrs[0].city, addrs[0].state, addrs[0].zip].filter(Boolean).join(', ');
+    }
+  } catch {}
+  document.getElementById('invPageBillAddr').value = addrLine;
+  const sugg = document.getElementById('invCompanySuggestions');
+  if (sugg) sugg.style.display = 'none';
+  // Update invoice number with customer state
+  window._invpSelectedPartnerState = stateAbbr || 'XX';
+  const numEl = document.getElementById('invPageNumber');
+  if (numEl) { numEl.value = ''; invpRefreshInvoiceNumber(); }
+}
+
+function onInvBillNameInput() {
+  // If user manually types company name, clear partner state selection
+  const sr = document.getElementById('invPageCompanySearch');
+  const billName = document.getElementById('invPageBillName').value.trim();
+  const selectedName = sr ? sr.value.trim() : '';
+  if (billName !== selectedName) {
+    window._invpSelectedPartnerState = null;
   }
 }
 
@@ -15845,6 +15928,57 @@ function invpRemoveEmp(uid) {
   _invpSaveTableState();
   window._invpManualEmps = window._invpManualEmps.filter(e => e.uid !== uid);
   renderInvpManualTable();
+}
+
+function invpToggleEmpImport() {
+  const wrap = document.getElementById('invpEmpImportWrap');
+  if (!wrap) return;
+  const showing = wrap.style.display !== 'none';
+  wrap.style.display = showing ? 'none' : 'block';
+  if (!showing) {
+    const inp = document.getElementById('invpEmpImportInput');
+    if (inp) { inp.value = ''; inp.focus(); }
+    onInvpEmpImportSearch('');
+  }
+}
+
+async function onInvpEmpImportSearch(val) {
+  const sugg = document.getElementById('invpEmpImportSugg');
+  if (!sugg) return;
+  if (!window._invpSysEmps) {
+    const res = await api('/admin/employees').catch(() => []);
+    window._invpSysEmps = Array.isArray(res) ? res : (res?.employees || []);
+  }
+  const q = val.trim().toLowerCase();
+  const matches = q
+    ? window._invpSysEmps.filter(e => (`${e.first_name} ${e.last_name}`).toLowerCase().includes(q) || (e.last_name||'').toLowerCase().includes(q))
+    : window._invpSysEmps.slice(0, 15);
+  if (!matches.length) { sugg.style.display = 'none'; return; }
+  sugg.style.display = 'block';
+  // Already-added employee names
+  const addedNames = new Set((window._invpManualEmps||[]).map(e => e.name.trim().toLowerCase()));
+  sugg.innerHTML = matches.map(e => {
+    const fullName = `${e.first_name||''} ${e.last_name||''}`.trim();
+    const already = addedNames.has(fullName.toLowerCase());
+    return `<div style="padding:7px 12px;cursor:${already?'default':'pointer'};border-bottom:1px solid var(--gray-100);font-size:.88rem;opacity:${already?'.5':'1'}"
+      ${already?'':'onmousedown="invpImportEmpById('+e.id+',\''+fullName.replace(/'/g,"\\'")+'\')"'}
+      onmouseover="if(!${already})this.style.background='var(--gray-50)'" onmouseout="this.style.background=''">
+      <span style="font-weight:600">${esc(fullName)}</span>
+      ${already ? ' <span style="font-size:.75rem;color:var(--gray-400)">(已添加)</span>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function invpImportEmpById(id, fullName) {
+  _invpSaveTableState();
+  const already = (window._invpManualEmps||[]).some(e => e.name.trim().toLowerCase() === fullName.trim().toLowerCase());
+  if (already) return;
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, rate: '', days: {} });
+  renderInvpManualTable();
+  const inp = document.getElementById('invpEmpImportInput');
+  if (inp) { inp.value = ''; }
+  const sugg = document.getElementById('invpEmpImportSugg');
+  if (sugg) sugg.style.display = 'none';
 }
 
 function applyInvUniformRate(val) {
