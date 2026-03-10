@@ -1214,11 +1214,8 @@ tr:hover td{background:var(--sky-light)}
       <h3 style="margin:0 0 1rem">发票信息</h3>
 
       <!-- Meta info -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-        <div class="field">
-          <label>Invoice 编号</label>
-          <input type="text" id="invPageNumber" placeholder="e.g. JCSL20260234">
-        </div>
+      <input type="hidden" id="invPageNumber">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
         <div class="field">
           <label>Invoice 日期</label>
           <input type="date" id="invPageDate">
@@ -15784,17 +15781,10 @@ function initInvoicePage() {
   const startEl = document.getElementById('invPageStart');
   const endEl   = document.getElementById('invPageEnd');
   const dateEl  = document.getElementById('invPageDate');
-  const numEl   = document.getElementById('invPageNumber');
 
   if (startEl && !startEl.value) startEl.value = mon.toISOString().slice(0,10);
   if (endEl   && !endEl.value)   endEl.value   = sun.toISOString().slice(0,10);
   if (dateEl  && !dateEl.value)  dateEl.value  = today.toISOString().slice(0,10);
-  if (numEl   && !numEl.value) {
-    const yy = String(today.getFullYear()).slice(2);
-    const mm = String(today.getMonth()+1).padStart(2,'0');
-    const seq = String(Math.floor(Math.random()*900)+100);
-    numEl.value = 'INV' + yy + mm + seq;
-  }
 
   loadInvpCompanies();
   loadInvpPresets().then(() => renderInvpProfilePreview());
@@ -15891,7 +15881,6 @@ function updateInvpSub(inp) {
 }
 
 function generateInvpPreview() {
-  const invNum  = document.getElementById('invPageNumber').value.trim();
   const invDate = document.getElementById('invPageDate').value;
   const ps      = document.getElementById('invPageStart').value;
   const pe      = document.getElementById('invPageEnd').value;
@@ -15901,6 +15890,13 @@ function generateInvpPreview() {
 
   if (!billName)    { alert('请填写账单发往公司名称'); return; }
   if (!ps || !pe)   { alert('请填写服务周期'); return; }
+
+  // Auto-generate invoice number: INV-CompanyInitials-YYMMDD-XXXX
+  const companyInitials = billName.split(/[\s\-&,]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
+  const dateStr = (invDate || new Date().toISOString().slice(0,10)).replace(/-/g,'').slice(2);
+  const seq = String(Math.floor(Math.random()*9000)+1000);
+  const invNum = `INV-${companyInitials}-${dateStr}-${seq}`;
+  document.getElementById('invPageNumber').value = invNum;
   if (!window._invpEmps || !window._invpEmps.length) { alert('请先加载员工工时'); return; }
 
   const selectedIds = new Set([...document.querySelectorAll('.invp-emp-chk:checked')].map(c => c.value));
@@ -16014,6 +16010,11 @@ function generateInvpPreview() {
 
   document.getElementById('invpPreviewContent').innerHTML = html;
   document.getElementById('invpPreviewModal').style.display = 'flex';
+
+  // Show invoice number confirmation
+  setTimeout(() => {
+    showToast(`发票编号已生成：${invNum}`, 'success', 5000);
+  }, 300);
 }
 
 function closeInvpPreview() { document.getElementById('invpPreviewModal').style.display = 'none'; }
