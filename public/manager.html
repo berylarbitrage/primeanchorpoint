@@ -614,16 +614,17 @@ function fmtDate(s) {
   if (!m) return s;
   return `${m[2]}/${m[3]}/${m[1]}`;
 }
+const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 function fmtDT(s, tz) {
   if (!s) return '—';
   const d = new Date(s);
   if (isNaN(d)) return s;
-  const opts = { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false };
-  if (tz) opts.timeZone = tz;
+  const opts = { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false, timeZoneName:'short' };
+  opts.timeZone = tz || localTz();
   const parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(d);
   const p = {};
   parts.forEach(x => p[x.type] = x.value);
-  return `${p.month}/${p.day} ${p.hour}:${p.minute}`;
+  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.timeZoneName}`;
 }
 function fmtH(h) { return (!h && h !== 0) ? '—' : Number(h).toFixed(2) + 'h'; }
 function renderBreaks(t) {
@@ -1059,7 +1060,7 @@ function updateTimePreview() {
   if (!custom) { el.textContent = ''; return; }
   const v = document.getElementById('qrCustomTime').value;
   const d = v ? new Date(v) : null;
-  el.textContent = (d && !isNaN(d)) ? '打卡时间：' + d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+  el.textContent = (d && !isNaN(d)) ? '打卡时间：' + d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'}) : '';
 }
 function getPunchTime() {
   const custom = document.querySelector('input[name=qrTimeOpt][value=custom]').checked;
@@ -1197,8 +1198,8 @@ async function doManagerPunch() {
   const r = await res.json();
   const typeLabels = {in:'上班',out:'下班',break_start:'暂停',break_end:'继续'};
   const timeDisplay = punchTime
-    ? new Date(punchTime).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})
-    : new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
+    ? new Date(punchTime).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})
+    : new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
   if (!res.ok) {
     msgEl.className = 'scan-msg scan-msg-err show';
     msgEl.textContent = r.error || '打卡失败';
@@ -1263,7 +1264,7 @@ async function saveScanTime(idx, newVal) {
   const newDate = new Date(origDate);
   newDate.setHours(hh, mm, 0, 0);
   const newIso = newDate.toISOString();
-  const newDisplay = newDate.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
+  const newDisplay = newDate.toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short'});
   _scanLog[idx].time = newDisplay;
   _scanLog[idx].isoTime = newIso;
   renderScanLog();

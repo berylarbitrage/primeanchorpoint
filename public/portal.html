@@ -1689,6 +1689,7 @@ const PORTAL_I18N = {
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
 let _activeTab = 'jobs';
 function _t(key) { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh)[key] || key; }
+const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 // ── Auto-translate job info via Google Translate (unofficial, no key needed) ──
 const _txCache = {};
@@ -2586,7 +2587,7 @@ function openBookModal(slotId, slot) {
   if (slot) {
     const dt = new Date(slot.slot_datetime);
     const dateStr = dt.toLocaleDateString(_t('bookDateLocale'), { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-    const timeStr = dt.toLocaleTimeString(_t('bookTimeLocale'), { hour:'2-digit', minute:'2-digit' });
+    const timeStr = dt.toLocaleTimeString(_t('bookTimeLocale'), { hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
     details.innerHTML = `
       <div style="display:flex;flex-wrap:wrap;gap:.4rem 1.5rem">
         <span>🕐 <strong>${dateStr} ${timeStr}</strong></span>
@@ -2933,7 +2934,7 @@ function openAppDetail(idx) {
         let times = [];
         if (a.interview_times_json) { try { times = JSON.parse(a.interview_times_json); } catch(e) {} }
         if (!times.length && a.interview_datetime) times = [a.interview_datetime];
-        const fmtDt = dt => new Date(dt).toLocaleString(dtLocale,{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit'});
+        const fmtDt = dt => new Date(dt).toLocaleString(dtLocale,{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
         const multiTime = times.length > 1;
         return `<div style="border-radius:8px;padding:.9rem;border:2px solid #2563eb40;background:#eff6ff;display:grid;gap:.5rem;font-size:.88rem">
           <div style="font-weight:700;color:#1d4ed8;font-size:.95rem">${_t('appInterviewNotice')}</div>
@@ -3089,7 +3090,7 @@ async function loadPunchStatus() {
   if (s.clocked_in && s.missed_checkout) {
     // Previous day's clock-out was forgotten — still allow clock-in with confirmation
     statusEl.innerHTML = `<span style="color:#f59e0b;font-weight:600">${_t('tcMissedCheckout')}</span>`;
-    timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
+    timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
     subEl.innerHTML = `<span style="color:#dc2626;font-size:.82rem">${s.missed_date || ''} ${_t('tcMissedCheckoutHint')}</span>`;
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
@@ -3099,7 +3100,7 @@ async function loadPunchStatus() {
     selectorWrap.style.display = jobs.length > 0 ? '' : 'none';
   } else if (s.clocked_in && s.on_break) {
     statusEl.innerHTML = `<span style="color:#7c3aed;font-weight:600">${_t('tcStatusOnBreak')}</span>`;
-    timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:'America/Chicago'});
+    timeEl.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
     const jobs = s.active_jobs || [];
     if (jobs.length > 1) {
       subEl.textContent = _t('tcStatusOnBreakSub');
@@ -3116,7 +3117,7 @@ async function loadPunchStatus() {
     const tz = s.open_entry.display_timezone || 'America/Chicago';
     const ci = s.open_entry.clock_in;
     statusEl.innerHTML = `<span style="color:var(--green);font-weight:600">${_t('tcStatusCheckedIn')}</span>`;
-    timeEl.textContent = new Date(ci).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz});
+    timeEl.textContent = new Date(ci).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz,timeZoneName:'short'});
     subEl.textContent = _t('tcCheckInAt') + new Date(ci).toLocaleDateString('en-US', {month:'numeric',day:'numeric',year:'numeric',timeZone:tz});
     const jobs = s.active_jobs || [];
     if (jobs.length > 1) {
@@ -3130,7 +3131,7 @@ async function loadPunchStatus() {
     }
   } else if (!s.has_active_job) {
     statusEl.innerHTML = `<span style="color:var(--orange)">${_t('tcStatusNotCheckedIn')}</span>`;
-    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
     selectorWrap.style.display = 'none';
     if (s.pending_tasks_count > 0) {
       subEl.innerHTML = `${_t('tcPendingTasks').replace('{count}', s.pending_tasks_count)}
@@ -3143,7 +3144,7 @@ async function loadPunchStatus() {
     return;
   } else {
     statusEl.innerHTML = `<span style="color:var(--gray-400)">${_t('tcStatusNotCheckedIn')}</span>`;
-    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    timeEl.textContent = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
     subEl.textContent = _t('tcSelectFirst');
     const jobs = s.active_jobs || [];
     selector.innerHTML = jobs.map(j =>
@@ -3299,7 +3300,7 @@ function startPunchFlow(type) {
   const tick = () => {
     const el = document.getElementById('punchConfirmClock');
     const tz = (_punchStatus?.open_entry?.display_timezone) || (_punchStatus?.active_job?.site_tz) || 'America/Chicago';
-    if (el) el.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:tz});
+    if (el) el.textContent = new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:tz,timeZoneName:'short'});
   };
   tick();
   _confirmClockTimer = setInterval(tick, 1000);
@@ -3454,8 +3455,8 @@ async function loadTimeclock(year, month) {
     const tz = t.display_timezone || 'America/Chicago';
     const fmtTime = d => {
       if (!d) return '—';
-      try { return new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz}); }
-      catch(e) { return new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'}); }
+      try { return new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:tz,timeZoneName:'short'}); }
+      catch(e) { return new Date(d).toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'}); }
     };
     const fmtDate = d => {
       if (!d) return '—';
@@ -3605,7 +3606,7 @@ function openPunchDayModal(dateStr) {
 
   const fmt12 = ts => {
     if (!ts) return '—';
-    return new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone: tz });
+    return new Date(ts).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', timeZone: tz, timeZoneName: 'short' });
   };
   const statusLabel = s => s === 'closed' ? `<span style="color:#16a34a;font-weight:600">✓ ${_t('tcStatusCompleted')}</span>`
     : `<span style="color:#f59e0b;font-weight:600">⏳ ${_t('tcStatusWorking')}</span>`;
@@ -4882,7 +4883,7 @@ async function loadOnboarding() {
     if (t.key === 'interview') {
       if (interview && interview.status !== 'cancelled') {
         const dt = new Date(interview.slot_datetime);
-        const dtStr = dt.toLocaleString(_t('bookDateLocale'), { year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit' });
+        const dtStr = dt.toLocaleString(_t('bookDateLocale'), { year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
         actionHtml = `<div style="margin-top:.55rem;padding:.65rem .85rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem">
           <div style="font-weight:600;color:#0369a1;margin-bottom:.35rem">📅 ${_t('obInterviewBooked')}</div>
           <div>${_t('bookTimeLabel')}<strong>${dtStr}</strong></div>
@@ -5005,7 +5006,7 @@ async function loadInterviewModalSlots() {
   if (interview && interview.status !== 'cancelled') {
     statusDiv.style.display = '';
     const dt = new Date(interview.slot_datetime);
-    const dtStr = dt.toLocaleString(_t('bookDateLocale'), { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const dtStr = dt.toLocaleString(_t('bookDateLocale'), { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
     const statusMap = {
       scheduled: `<span style="color:#d97706;font-weight:700">${_t('bookStatusScheduled')}</span>`,
       completed: `<span style="color:#6366f1;font-weight:700">${_t('bookStatusCompleted')}</span>`,
@@ -5063,7 +5064,7 @@ async function loadInterviewModalSlots() {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">`;
     group.slots.forEach(s => {
       const sdt = new Date(s.slot_datetime);
-      const timeStr = sdt.toLocaleTimeString(_t('bookTimeLocale'), { hour:'2-digit', minute:'2-digit' });
+      const timeStr = sdt.toLocaleTimeString(_t('bookTimeLocale'), { hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
       const remaining = s.max_bookings - s.booked_count;
       const full = remaining <= 0;
       html += `<button onclick="${full ? '' : `modalBookSlot(${s.id})`}" ${full ? 'disabled' : ''}
