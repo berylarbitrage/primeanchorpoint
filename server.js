@@ -1334,6 +1334,20 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
   FOREIGN KEY (employee_id) REFERENCES employees(id)
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_number TEXT NOT NULL,
+  invoice_date TEXT DEFAULT '',
+  company_name TEXT DEFAULT '',
+  bill_to_addr TEXT DEFAULT '',
+  period_start TEXT DEFAULT '',
+  period_end TEXT DEFAULT '',
+  subtotal REAL DEFAULT 0,
+  items TEXT DEFAULT '[]',
+  profile TEXT DEFAULT '{}',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
   .split(',').map(d => d.trim()).filter(Boolean);
@@ -10091,6 +10105,29 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
   const result = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,job_id,punch_type,break_records,on_break,geo_verified) VALUES(?,?,'open',?,'in','[]',0,0)")
     .run(emp.id, now, job_id);
   return res.json({ action: 'in', clock_in: now, entry_id: result.lastInsertRowid, warning: ciWarning });
+});
+
+// ─── Invoice Management ───
+app.get('/api/admin/invoices', requireAdmin, blockManager, (req, res) => {
+  const rows = db.prepare('SELECT * FROM invoices ORDER BY created_at DESC').all();
+  res.json(rows);
+});
+
+app.post('/api/admin/invoices', requireAdmin, blockManager, (req, res) => {
+  const d = req.body;
+  if (!d.invoice_number || !d.company_name) return res.status(400).json({ error: 'Invoice number and company name required' });
+  const r = db.prepare(`INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, items, profile)
+    VALUES (?,?,?,?,?,?,?,?,?)`).run(
+    d.invoice_number, d.invoice_date || '', d.company_name, d.bill_to_addr || '',
+    d.period_start || '', d.period_end || '', d.subtotal || 0,
+    JSON.stringify(d.items || []), JSON.stringify(d.profile || {})
+  );
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.delete('/api/admin/invoices/:id', requireAdmin, blockManager, (req, res) => {
+  db.prepare('DELETE FROM invoices WHERE id=?').run(req.params.id);
+  res.json({ success: true });
 });
 
 // Graceful shutdown: checkpoint WAL and close database

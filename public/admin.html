@@ -15821,6 +15821,7 @@ function openInvpBuilderModal() {
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
   const ii = document.getElementById('invpEmpImportInput'); if (ii) ii.value = '';
+  loadInvpCompanies();
 
   document.getElementById('invpBuilderModal').style.display = 'flex';
   renderInvpProfilePreview();
@@ -16026,6 +16027,7 @@ function _invpSaveTableState() {
     const emp = window._invpManualEmps.find(e => String(e.uid) === uid);
     if (!emp) return;
     emp.name = row.querySelector('.invp-man-name').value;
+    emp.category = row.querySelector('.invp-man-cat') ? row.querySelector('.invp-man-cat').value : (emp.category || '');
     emp.rate = row.querySelector('.invp-man-rate').value;
     emp.days = emp.days || {};
     row.querySelectorAll('.invp-man-day').forEach(inp => {
@@ -16051,6 +16053,29 @@ function renderInvpManualTable() {
   const dayTh = dates.map(d => `<th style="padding:5px 6px;text-align:center;white-space:nowrap;font-size:.78rem">${fmtCol(d)}</th>`).join('');
 
   const rowsHtml = window._invpManualEmps.map(emp => {
+    const catOptsHtml = [
+      ['', '-- 工种 --'],
+      ['warehouse_sorter', '仓库分拣员 / Warehouse Sorter'],
+      ['labeler', '贴标员 / Labeler'],
+      ['packer', '打包员 / Packer'],
+      ['forklift_operator', '叉车操作员 / Forklift Operator'],
+      ['cdl_driver', 'CDL卡车司机 / CDL Truck Driver'],
+      ['delivery_driver', '送货司机 / Delivery Driver'],
+      ['shift_supervisor', '班组长 / Shift Supervisor'],
+      ['site_manager', '现场主管 / Site Manager'],
+      ['quality_inspector', '质检员 / Quality Inspector'],
+      ['machine_operator', '机器操作员 / Machine Operator'],
+      ['assembly_line', '装配线工人 / Assembly Line'],
+      ['material_handler', '物料搬运工 / Material Handler'],
+      ['inventory_clerk', '库存文员 / Inventory Clerk'],
+      ['general_labor', '普工 / General Labor'],
+      ['janitorial', '清洁工 / Janitorial'],
+      ['food_processing', '食品加工 / Food Processing'],
+      ['warehouse_lead', '仓库领班 / Warehouse Lead'],
+      ['loading_unloading', '装卸工 / Loading / Unloading'],
+      ['order_picker', '拣货员 / Order Picker'],
+      ['welder', '焊接工 / Welder'],
+    ].map(([v, t]) => `<option value="${v}"${emp.category === v ? ' selected' : ''}>${t}</option>`).join('');
     const dayInputs = dates.map(d => {
       const val = (emp.days && emp.days[d]) ? emp.days[d] : '';
       return `<td style="padding:3px 4px;text-align:center">
@@ -16066,6 +16091,12 @@ function renderInvpManualTable() {
       <td style="padding:3px 6px">
         <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
           placeholder="员工姓名" style="width:100px;border:1px solid var(--gray-200);border-radius:4px;padding:3px 6px;font-size:.84rem">
+      </td>
+      <td style="padding:3px 4px">
+        <select class="invp-man-cat" data-uid="${emp.uid}"
+          style="border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.78rem;max-width:140px">
+          ${catOptsHtml}
+        </select>
       </td>
       ${dayInputs}
       <td style="padding:3px 4px;text-align:right">
@@ -16087,6 +16118,7 @@ function renderInvpManualTable() {
     <table style="border-collapse:collapse;font-size:.85rem;min-width:100%">
       <thead><tr style="background:var(--gray-50);color:var(--gray-600)">
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">员工姓名</th>
+        <th style="padding:5px 6px;text-align:left;white-space:nowrap">工种类别</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">时薪($/h)</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">合计工时</th>
@@ -16109,7 +16141,7 @@ function invpUpdateRowTotal(row) {
 
 function invpAddEmp() {
   _invpSaveTableState();
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', rate: '', days: {} });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: '', category: '', rate: '', days: {} });
   renderInvpManualTable();
   // Focus the new name input
   const rows = document.querySelectorAll('.invp-manual-row');
@@ -16165,7 +16197,7 @@ function invpImportEmpById(id, fullName) {
   _invpSaveTableState();
   const already = (window._invpManualEmps||[]).some(e => e.name.trim().toLowerCase() === fullName.trim().toLowerCase());
   if (already) return;
-  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, rate: '', days: {} });
+  window._invpManualEmps.push({ uid: _invpManualUidSeq++, name: fullName, category: '', rate: '', days: {} });
   renderInvpManualTable();
   const inp = document.getElementById('invpEmpImportInput');
   if (inp) { inp.value = ''; }
@@ -16191,7 +16223,7 @@ function getInvpManualItems() {
       const rate = parseFloat(emp.rate) || 0;
       const dates = _invpGetDates();
       const totalHours = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
-      return { name, hours: totalHours, rate, total: totalHours * rate };
+      return { name, category: emp.category || '', hours: totalHours, rate, total: totalHours * rate };
     })
     .filter(Boolean);
 }
@@ -16228,10 +16260,12 @@ function generateInvpPreview() {
   const totalHours  = items.reduce((s,i) => s+i.hours, 0);
   const totalAmt    = items.reduce((s,i) => s+i.total, 0);
 
+  const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
   const tableRows = items.map(i => `
     <tr style="background:#fff">
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${i.rate.toFixed(1)}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.hours.toFixed(2)}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.total.toFixed(2)}</td>
@@ -16285,6 +16319,7 @@ function generateInvpPreview() {
           <tr style="background:#4472c4;color:#fff">
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Date</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Name</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Position</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Price per hour</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Hours</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Total Price</th>
@@ -16293,7 +16328,7 @@ function generateInvpPreview() {
         <tbody>
           ${tableRows}
           <tr style="background:#f6c26b;font-weight:700">
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="2">Total</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Total</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${totalHours.toFixed(1)}h</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${totalAmt.toFixed(2)}</td>
