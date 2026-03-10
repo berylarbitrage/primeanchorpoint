@@ -6709,6 +6709,46 @@ app.delete('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// ─── INVOICE STORAGE ───
+db.exec(`CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_number TEXT NOT NULL,
+  invoice_date TEXT,
+  company_name TEXT,
+  bill_to_addr TEXT,
+  period_start TEXT,
+  period_end TEXT,
+  for_label TEXT,
+  subtotal REAL DEFAULT 0,
+  items_json TEXT,
+  profile_json TEXT,
+  status TEXT DEFAULT 'draft',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+
+// List invoices
+app.get('/api/admin/invoices', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, created_at FROM invoices ORDER BY created_at DESC`).all();
+  res.json(rows);
+});
+
+// Save invoice
+app.post('/api/admin/invoices', requireAdmin, (req, res) => {
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile } = req.body;
+  if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
+  const result = db.prepare(`
+    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}));
+  res.json({ id: result.lastInsertRowid });
+});
+
+// Delete invoice
+app.delete('/api/admin/invoices/:id', requireAdmin, (req, res) => {
+  db.prepare(`DELETE FROM invoices WHERE id=?`).run(req.params.id);
+  res.json({ success: true });
+});
+
 // ─── INVOICE GENERATION ───
 
 // Get employees (and their hours) for a given company + period (for invoice builder)
