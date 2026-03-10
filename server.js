@@ -3492,6 +3492,16 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   logChange('payment_method', w.payment_method, newPaymentMethod);
   logChange('has_ssn', w.has_ssn||0, newHasSsn);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
+  // When reactivating a deactivated account (active 0→1), clear old interview
+  // and onboarding records so the worker starts fresh
+  if (!w.active && newActive) {
+    const wid = parseInt(req.params.id);
+    db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(wid);
+    db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(wid);
+    db.prepare(`UPDATE worker_accounts SET onboarded=0, dispatch_ready=0, identity_status='', bgcheck_status='' WHERE id=?`).run(wid);
+    // Clear reserved interview slots for this worker
+    db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(wid);
+  }
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
     payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
@@ -8787,9 +8797,17 @@ app.post('/api/register/worker', async (req, res) => {
       };
       return res.status(400).json(pendingResp);
     }
-    // All codes expired — clean up and allow fresh registration
+    // All codes expired — clean up all related records and allow fresh registration
     db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(existing.id);
+    try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(existing.id); } catch(_) {}
+    db.prepare('DELETE FROM worker_sessions WHERE worker_id=?').run(existing.id);
+    db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(existing.id);
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(existing.id);
   }
   const salt = crypto.randomBytes(16).toString('hex');
