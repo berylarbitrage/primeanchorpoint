@@ -6751,13 +6751,34 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
 
 // Save invoice
 app.post('/api/admin/invoices', requireAdmin, (req, res) => {
-  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile } = req.body;
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
   const result = db.prepare(`
-    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}));
+    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved');
   res.json({ id: result.lastInsertRowid });
+});
+
+// Get single invoice (with full details)
+app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
+  const row = db.prepare(`SELECT * FROM invoices WHERE id=?`).get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  row.items = row.items_json ? JSON.parse(row.items_json) : [];
+  row.profile = row.profile_json ? JSON.parse(row.profile_json) : {};
+  delete row.items_json; delete row.profile_json;
+  res.json(row);
+});
+
+// Update invoice
+app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status } = req.body;
+  if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
+  db.prepare(`
+    UPDATE invoices SET invoice_number=?, invoice_date=?, company_name=?, bill_to_addr=?, period_start=?, period_end=?, for_label=?, subtotal=?, items_json=?, profile_json=?, status=?
+    WHERE id=?
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', req.params.id);
+  res.json({ success: true });
 });
 
 // Delete invoice

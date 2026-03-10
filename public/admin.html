@@ -1295,7 +1295,7 @@ tr:hover td{background:var(--sky-light)}
 <div class="modal-bg" id="invpBuilderModal" style="display:none" onclick="if(event.target===this)closeInvpBuilderModal()">
   <div class="modal" style="max-width:900px;width:95vw;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
-      <h2 style="margin:0">+ 新建 Invoice</h2>
+      <h2 style="margin:0" id="invpBuilderTitle">+ 新建 Invoice</h2>
       <button class="btn btn-outline" onclick="closeInvpBuilderModal()">✕ 关闭</button>
     </div>
 
@@ -1304,6 +1304,7 @@ tr:hover td{background:var(--sky-light)}
 
       <!-- Meta info -->
       <input type="hidden" id="invPageNumber">
+      <input type="hidden" id="invPageEditId">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
         <div class="field">
           <label>Invoice 日期</label>
@@ -15987,16 +15988,70 @@ function openInvpBuilderModal() {
   window._invpManualEmps = [];
   _invpManualUidSeq = 1;
   window._invpSelectedPartnerState = null;
-  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate'];
+  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
   const ii = document.getElementById('invpEmpImportInput'); if (ii) ii.value = '';
+  document.getElementById('invpBuilderTitle').textContent = '+ 新建 Invoice';
   loadInvpCompanies();
 
   document.getElementById('invpBuilderModal').style.display = 'flex';
   renderInvpProfilePreview();
   showInvpBuilder();
+}
+
+async function openInvpForEdit(id) {
+  const inv = await api('/admin/invoices/' + id).catch(() => null);
+  if (!inv) { showToast('加载失败', 'error'); return; }
+
+  // Reset and populate builder
+  window._invpManualEmps = [];
+  _invpManualUidSeq = 1;
+  window._invpSelectedPartnerState = null;
+
+  document.getElementById('invPageEditId').value = inv.id;
+  document.getElementById('invPageNumber').value = inv.invoice_number || '';
+  document.getElementById('invPageDate').value = inv.invoice_date || '';
+  document.getElementById('invPageStart').value = inv.period_start || '';
+  document.getElementById('invPageEnd').value = inv.period_end || '';
+  document.getElementById('invPageBillName').value = inv.company_name || '';
+  document.getElementById('invPageBillAddr').value = inv.bill_to_addr || '';
+  document.getElementById('invPageUniformRate').value = '';
+  const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
+  const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
+
+  // Restore profile from saved invoice
+  if (inv.profile && Object.keys(inv.profile).length) {
+    saveInvpProfileData(inv.profile);
+  }
+
+  // Restore employee items into manual table
+  const dates = [];
+  if (inv.period_start && inv.period_end) {
+    const cur = new Date(inv.period_start + 'T00:00:00');
+    const end = new Date(inv.period_end + 'T00:00:00');
+    while (cur <= end) { dates.push(cur.toISOString().slice(0,10)); cur.setDate(cur.getDate()+1); }
+  }
+  if (inv.items && inv.items.length) {
+    window._invpManualEmps = inv.items.map(item => {
+      const emp = { uid: _invpManualUidSeq++, name: item.name || '', rate: String(item.rate || ''), days: {} };
+      // Distribute hours evenly across dates for display (exact total preserved)
+      if (dates.length && item.hours) {
+        const perDay = item.hours / dates.length;
+        dates.forEach(d => { emp.days[d] = perDay.toFixed(2); });
+      }
+      return emp;
+    });
+  }
+
+  const statusLabel = inv.status === 'saved' ? '查看/编辑' : '编辑草稿';
+  document.getElementById('invpBuilderTitle').textContent = statusLabel + ' - ' + (inv.invoice_number || '');
+
+  document.getElementById('invpBuilderModal').style.display = 'flex';
+  await loadInvpPresets();
+  renderInvpProfilePreview();
+  renderInvpManualTable();
 }
 
 function closeInvpBuilderModal() {
@@ -16011,6 +16066,10 @@ async function loadInvpList() {
     wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">暂无 Invoice 记录，点击「生成新 Invoice」创建。</div>';
     return;
   }
+  const statusBadge = s => {
+    if (s === 'saved') return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#dcfce7;color:#166534">已保存</span>';
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fef3c7;color:#92400e">草稿</span>';
+  };
   wrap.innerHTML = `
     <table style="width:100%;border-collapse:collapse;font-size:.88rem">
       <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
@@ -16019,6 +16078,7 @@ async function loadInvpList() {
         <th style="padding:8px 10px;text-align:left">服务周期</th>
         <th style="padding:8px 10px;text-align:right">金额</th>
         <th style="padding:8px 10px;text-align:left">Invoice 日期</th>
+        <th style="padding:8px 10px;text-align:center">状态</th>
         <th style="padding:8px 10px;text-align:center">操作</th>
       </tr></thead>
       <tbody>
@@ -16034,12 +16094,19 @@ async function loadInvpList() {
             ? `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, true)">更新回执</button>`
             : `<button class="btn btn-sm btn-outline" style="color:var(--green);border-color:var(--green);margin-right:4px" onclick="openInvpReceiptModal(${r.id}, false)">Paid</button>`;
           return `<tr style="border-top:1px solid var(--gray-100)">
-          <td style="padding:8px 10px;font-weight:600">${esc(r.invoice_number)}</td>
+          <td style="padding:8px 10px;font-weight:600"><a href="javascript:void(0)" onclick="openInvpForEdit(${r.id})" style="color:var(--sky);text-decoration:underline;cursor:pointer">${esc(r.invoice_number)}</a></td>
           <td style="padding:8px 10px">${esc(r.company_name||'')}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.period_start||''} ~ ${r.period_end||''}</td>
           <td style="padding:8px 10px;text-align:right;font-weight:600">$${(r.subtotal||0).toFixed(2)}</td>
           <td style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
-          <td style="padding:8px 10px;text-align:center">${paidBadge}${receiptLink}${paidBtn}<button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button></td>
+          <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
+          <td style="padding:8px 10px;text-align:center">
+            <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap">
+              <button class="btn btn-sm btn-outline" onclick="openInvpForEdit(${r.id})">查看/编辑</button>
+              ${paidBadge}${receiptLink}${paidBtn}
+              <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button>
+            </div>
+          </td>
         </tr>`;
         }).join('')}
       </tbody>
@@ -16047,7 +16114,7 @@ async function loadInvpList() {
 }
 
 async function deleteInvpRecord(id) {
-  if (!confirm('确定删除此 Invoice 记录？')) return;
+  if (!await showConfirm('确定删除此 Invoice 记录？', { danger: true })) return;
   await api('/admin/invoices/' + id, { method: 'DELETE' });
   loadInvpList();
 }
@@ -16144,30 +16211,64 @@ async function invpRefreshInvoiceNumber() {
   numEl.value = prefix + String(nextSeq).padStart(4, '0');
 }
 
-async function saveInvpInvoice() {
+// Track whether current preview invoice has been saved
+window._invpPreviewSaved = false;
+
+function updateInvpPreviewBtns() {
+  const wrap = document.getElementById('invpPreviewBtns');
+  if (!wrap) return;
+  const editId = document.getElementById('invPageEditId').value;
+  const isSaved = window._invpPreviewSaved || !!editId;
+  wrap.innerHTML = `
+    <button class="btn btn-green" onclick="saveInvpInvoice('saved')">${isSaved ? '💾 更新保存' : '💾 保存 Invoice'}</button>
+    <button class="btn btn-outline" style="${isSaved ? '' : 'opacity:.45;pointer-events:none;'}" onclick="printInvpInvoice()" ${isSaved ? '' : 'disabled'}>🖨️ 打印 / 另存为 PDF</button>
+    <button class="btn btn-outline" onclick="saveInvpInvoice('draft')" style="color:#92400e;border-color:#d97706">📝 保存草稿</button>
+    <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
+  `;
+}
+
+async function saveInvpInvoice(status) {
+  status = status || 'saved';
   const invNum  = document.getElementById('invPageNumber').value.trim();
   const invDate = document.getElementById('invPageDate').value;
   const ps      = document.getElementById('invPageStart').value;
   const pe      = document.getElementById('invPageEnd').value;
   const billName= document.getElementById('invPageBillName').value.trim();
   const billAddr= document.getElementById('invPageBillAddr').value.trim();
+  const editId  = document.getElementById('invPageEditId').value;
   if (!invNum || !billName) { alert('请填写 Invoice 编号和客户公司名称'); return; }
 
   const items = getInvpManualItems();
   const subtotal = items.reduce((s,i) => s+i.total, 0);
-
-  const res = await api('/admin/invoices', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+  const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
-    period_start: ps, period_end: pe, subtotal, items, profile: getInvpProfile()
-  })}).catch(e => ({ error: e.message }));
+    period_start: ps, period_end: pe, subtotal, items, profile: getInvpProfile(), status
+  };
 
-  if (res && res.id) {
-    showToast(`发票编号已生成：${invNum}`, 'success', 5000);
-    document.getElementById('invpPreviewModal').style.display = 'none';
-    loadInvpList();
+  let res;
+  if (editId) {
+    // Update existing
+    res = await api('/admin/invoices/' + editId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(e => ({ error: e.message }));
+    if (res && res.success) {
+      window._invpPreviewSaved = (status === 'saved');
+      updateInvpPreviewBtns();
+      showToast(status === 'draft' ? '草稿已保存' : `Invoice 已更新：${invNum}`, 'success', 4000);
+      loadInvpList();
+      return;
+    }
   } else {
-    alert('保存失败，请重试');
+    // Create new
+    res = await api('/admin/invoices', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(e => ({ error: e.message }));
+    if (res && res.id) {
+      document.getElementById('invPageEditId').value = res.id; // now in edit mode
+      window._invpPreviewSaved = (status === 'saved');
+      updateInvpPreviewBtns();
+      showToast(status === 'draft' ? '草稿已保存' : `Invoice 已保存：${invNum}`, 'success', 4000);
+      loadInvpList();
+      return;
+    }
   }
+  alert('保存失败，请重试');
 }
 
 async function loadInvpCompanies() {
@@ -16577,12 +16678,18 @@ async function generateInvpPreview() {
     </div>`;
 
   document.getElementById('invpPreviewContent').innerHTML = html;
+  // Reset saved state for new previews (unless editing existing)
+  const editId = document.getElementById('invPageEditId').value;
+  window._invpPreviewSaved = !!editId;
   document.getElementById('invpPreviewModal').style.display = 'flex';
+  updateInvpPreviewBtns();
 
   // Show invoice number confirmation
-  setTimeout(() => {
-    showToast(`发票编号已生成：${invNum}`, 'success', 5000);
-  }, 300);
+  if (!editId) {
+    setTimeout(() => {
+      showToast(`发票编号已生成：${invNum}`, 'success', 5000);
+    }, 300);
+  }
 }
 
 function closeInvpPreview() { document.getElementById('invpPreviewModal').style.display = 'none'; }
@@ -16904,10 +17011,8 @@ function printInvoice() {
   <div class="modal" style="max-width:900px;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
       <h2 style="margin:0">Invoice 预览</h2>
-      <div style="display:flex;gap:.6rem">
-        <button class="btn btn-green" onclick="saveInvpInvoice()">💾 保存 Invoice</button>
-        <button class="btn btn-outline" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
-        <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
+      <div id="invpPreviewBtns" style="display:flex;gap:.6rem">
+        <!-- buttons rendered dynamically by updateInvpPreviewBtns() -->
       </div>
     </div>
     <div id="invpPreviewContent" style="background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:2.5rem"></div>
