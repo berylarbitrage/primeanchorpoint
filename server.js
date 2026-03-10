@@ -9703,7 +9703,7 @@ app.post('/api/worker/interviews', requireWorker, (req, res) => {
   const slot = db.prepare(`SELECT * FROM interview_slots WHERE id=? AND active=1`).get(slot_id);
   if (!slot) return res.status(404).json({ error: '时间槽不存在' });
   if (slot.booked_count >= slot.max_bookings) return res.status(400).json({ error: '该时间槽已满，请选择其他时间' });
-  if (new Date(slot.slot_datetime) <= new Date()) return res.status(400).json({ error: '该时间槽已过期' });
+  if (new Date(slot.slot_datetime) <= new Date()) return res.status(400).json({ error: 'This time slot has already passed. Please go back and select another time.' });
 
   try {
     if (existing && existing.status === 'cancelled') {
