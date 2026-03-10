@@ -6727,6 +6727,14 @@ app.delete('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
 });
 
 // ─── INVOICE STORAGE ───
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  detail TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   invoice_number TEXT NOT NULL,
@@ -6757,6 +6765,8 @@ app.post('/api/admin/invoices', requireAdmin, (req, res) => {
     INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved');
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(result.lastInsertRowid, '创建', `Invoice 编号: ${invoice_number}`);
   res.json({ id: result.lastInsertRowid });
 });
 
@@ -6814,6 +6824,8 @@ app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single
   const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
   db.prepare(`UPDATE invoices SET payment_status='paid', payment_receipt_path=?, paid_at=datetime('now') WHERE id=?`)
     .run(receiptPath, req.params.id);
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(req.params.id, '标记已付款', receiptPath ? `回执文件: ${path.basename(receiptPath)}` : '');
   res.json({ success: true, receipt_path: receiptPath });
 });
 
@@ -6827,7 +6839,26 @@ app.post('/api/admin/invoices/:id/mark-unpaid', requireAdmin, (req, res) => {
   }
   db.prepare(`UPDATE invoices SET payment_status='unpaid', payment_receipt_path=NULL, paid_at=NULL WHERE id=?`)
     .run(req.params.id);
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(req.params.id, '取消已付款', '');
   res.json({ success: true });
+});
+
+// ─── INVOICE HISTORY ───
+
+// Log an invoice action
+app.post('/api/admin/invoices/:id/history', requireAdmin, (req, res) => {
+  const { action, detail } = req.body;
+  if (!action) return res.status(400).json({ error: 'action required' });
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(req.params.id, action, detail || '');
+  res.json({ success: true });
+});
+
+// Get invoice history
+app.get('/api/admin/invoices/:id/history', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT id, action, detail, created_at FROM invoice_history WHERE invoice_id=? ORDER BY created_at DESC`).all(req.params.id);
+  res.json(rows);
 });
 
 // ─── INVOICE GENERATION ───
