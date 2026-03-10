@@ -1689,6 +1689,35 @@ let _activeTab = 'jobs';
 function _t(key) { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh)[key] || key; }
 const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+// ── Employee state-based timezone ──
+const _STATE_TZ = {
+  AL:'America/Chicago',AK:'America/Anchorage',AZ:'America/Phoenix',AR:'America/Chicago',
+  CA:'America/Los_Angeles',CO:'America/Denver',CT:'America/New_York',DE:'America/New_York',
+  FL:'America/New_York',GA:'America/New_York',HI:'Pacific/Honolulu',ID:'America/Boise',
+  IL:'America/Chicago',IN:'America/Indiana/Indianapolis',IA:'America/Chicago',KS:'America/Chicago',
+  KY:'America/New_York',LA:'America/Chicago',ME:'America/New_York',MD:'America/New_York',
+  MA:'America/New_York',MI:'America/Detroit',MN:'America/Chicago',MS:'America/Chicago',
+  MO:'America/Chicago',MT:'America/Denver',NE:'America/Chicago',NV:'America/Los_Angeles',
+  NH:'America/New_York',NJ:'America/New_York',NM:'America/Denver',NY:'America/New_York',
+  NC:'America/New_York',ND:'America/Chicago',OH:'America/New_York',OK:'America/Chicago',
+  OR:'America/Los_Angeles',PA:'America/New_York',RI:'America/New_York',SC:'America/New_York',
+  SD:'America/Chicago',TN:'America/Chicago',TX:'America/Chicago',UT:'America/Denver',
+  VT:'America/New_York',VA:'America/New_York',WA:'America/Los_Angeles',WV:'America/New_York',
+  WI:'America/Chicago',WY:'America/Denver',DC:'America/New_York'
+};
+function workerTz() {
+  const empId = (_workerInfo && _workerInfo.employee && _workerInfo.employee.employee_id) || '';
+  const m = empId.match(/^([A-Za-z]{2})/);
+  const state = m ? m[1].toUpperCase() : '';
+  return (state && _STATE_TZ[state]) || localTz();
+}
+function tzAbbr(dt, tz) {
+  const d = dt instanceof Date ? dt : new Date(dt);
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz || workerTz(), timeZoneName: 'short' }).formatToParts(d);
+  const p = parts.find(x => x.type === 'timeZoneName');
+  return p ? p.value : '';
+}
+
 // ── Auto-translate job info via Google Translate (unofficial, no key needed) ──
 const _txCache = {};
 async function _gtranslate(text, lang, alwaysTranslate = false) {
@@ -2582,7 +2611,8 @@ function openBookModal(slotId, slot) {
   if (slot) {
     const dt = new Date(slot.slot_datetime);
     const dateStr = dt.toLocaleDateString(_t('bookDateLocale'), { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-    const timeStr = dt.toLocaleTimeString(_t('bookTimeLocale'), { hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
+    const _btz = workerTz();
+    const timeStr = dt.toLocaleTimeString(_t('bookTimeLocale'), { hour:'2-digit', minute:'2-digit', timeZone: _btz }) + ' ' + tzAbbr(dt, _btz);
     details.innerHTML = `
       <div style="display:flex;flex-wrap:wrap;gap:.4rem 1.5rem">
         <span>🕐 <strong>${dateStr} ${timeStr}</strong></span>
@@ -2929,7 +2959,7 @@ function openAppDetail(idx) {
         let times = [];
         if (a.interview_times_json) { try { times = JSON.parse(a.interview_times_json); } catch(e) {} }
         if (!times.length && a.interview_datetime) times = [a.interview_datetime];
-        const fmtDt = dt => new Date(dt).toLocaleString(dtLocale,{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
+        const fmtDt = dt => { const d = new Date(dt), _tz = workerTz(); return d.toLocaleString(dtLocale,{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit',timeZone:_tz}) + ' ' + tzAbbr(d,_tz); };
         const multiTime = times.length > 1;
         return `<div style="border-radius:8px;padding:.9rem;border:2px solid #2563eb40;background:#eff6ff;display:grid;gap:.5rem;font-size:.88rem">
           <div style="font-weight:700;color:#1d4ed8;font-size:.95rem">${_t('appInterviewNotice')}</div>
@@ -4876,7 +4906,8 @@ async function loadOnboarding() {
     if (t.key === 'interview') {
       if (interview && interview.status !== 'cancelled') {
         const dt = new Date(interview.slot_datetime);
-        const dtStr = dt.toLocaleString(_t('bookDateLocale'), { year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
+        const _obtz = workerTz();
+        const dtStr = dt.toLocaleString(_t('bookDateLocale'), { year:'numeric', month:'long', day:'numeric', weekday:'long', hour:'2-digit', minute:'2-digit', timeZone: _obtz }) + ' ' + tzAbbr(dt, _obtz);
         actionHtml = `<div style="margin-top:.55rem;padding:.65rem .85rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem">
           <div style="font-weight:600;color:#0369a1;margin-bottom:.35rem">📅 ${_t('obInterviewBooked')}</div>
           <div>${_t('bookTimeLabel')}<strong>${dtStr}</strong></div>
@@ -4975,7 +5006,8 @@ async function loadInterviewModalSlots() {
   if (interview && interview.status !== 'cancelled') {
     statusDiv.style.display = '';
     const dt = new Date(interview.slot_datetime);
-    const dtStr = dt.toLocaleString(_t('bookDateLocale'), { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
+    const _istz = workerTz();
+    const dtStr = dt.toLocaleString(_t('bookDateLocale'), { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: _istz }) + ' ' + tzAbbr(dt, _istz);
     const statusMap = {
       scheduled: `<span style="color:#d97706;font-weight:700">${_t('bookStatusScheduled')}</span>`,
       completed: `<span style="color:#6366f1;font-weight:700">${_t('bookStatusCompleted')}</span>`,
@@ -5033,7 +5065,8 @@ async function loadInterviewModalSlots() {
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.5rem">`;
     group.slots.forEach(s => {
       const sdt = new Date(s.slot_datetime);
-      const timeStr = sdt.toLocaleTimeString(_t('bookTimeLocale'), { hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
+      const _sltz = workerTz();
+      const timeStr = sdt.toLocaleTimeString(_t('bookTimeLocale'), { hour:'2-digit', minute:'2-digit', timeZone: _sltz }) + ' ' + tzAbbr(sdt, _sltz);
       const remaining = s.max_bookings - s.booked_count;
       const full = remaining <= 0;
       html += `<button onclick="${full ? '' : `modalBookSlot(${s.id})`}" ${full ? 'disabled' : ''}
