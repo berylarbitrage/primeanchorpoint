@@ -9730,13 +9730,16 @@ app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
   try { assignedIds = JSON.parse(obRecord?.assigned_slot_ids || '[]'); } catch {}
   console.log(`[INTERVIEW-SLOTS] workerId=${req.workerId}, assignedIds=${JSON.stringify(assignedIds)}`);
 
+  // Use EST/CDT offset for datetime comparison (slots stored in local time, server runs in UTC)
+  const nowExpr = `datetime('now', '-5 hours')`;
+
   if (assignedIds.length) {
     // Admin assigned specific slots — show only those
     const placeholders = assignedIds.map(() => '?').join(',');
     const assigned = db.prepare(`
       SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
       FROM interview_slots
-      WHERE id IN (${placeholders}) AND active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+      WHERE id IN (${placeholders}) AND active=1 AND booked_count < max_bookings AND datetime(slot_datetime) > ${nowExpr}
       ORDER BY slot_datetime ASC
     `).all(...assignedIds);
     console.log(`[INTERVIEW-SLOTS] Returning ${assigned.length} assigned slots`);
@@ -9747,8 +9750,7 @@ app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
   const reserved = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
-    WHERE active=1 AND booked_count < max_bookings
-      AND datetime(replace(slot_datetime, 'T', ' ')) > datetime('now')
+    WHERE active=1 AND booked_count < max_bookings AND datetime(slot_datetime) > ${nowExpr}
       AND reserved_for_worker_account_id=?
     ORDER BY slot_datetime ASC
   `).all(req.workerId);
@@ -9758,8 +9760,7 @@ app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
   const general = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
-    WHERE active=1 AND booked_count < max_bookings
-      AND datetime(replace(slot_datetime, 'T', ' ')) > datetime('now')
+    WHERE active=1 AND booked_count < max_bookings AND datetime(slot_datetime) > ${nowExpr}
       AND reserved_for_worker_account_id IS NULL
     ORDER BY slot_datetime ASC
   `).all();
@@ -9788,8 +9789,11 @@ app.post('/api/worker/interviews', requireWorker, (req, res) => {
   const slot = db.prepare(`SELECT * FROM interview_slots WHERE id=? AND active=1`).get(slot_id);
   if (!slot) return res.status(404).json({ error: '时间槽不存在' });
   if (slot.booked_count >= slot.max_bookings) return res.status(400).json({ error: '该时间槽已满，请选择其他时间' });
-  const slotUtc = new Date(slot.slot_datetime.replace(' ', 'T') + (slot.slot_datetime.includes('Z') || slot.slot_datetime.includes('+') ? '' : 'Z'));
-  if (slotUtc <= new Date()) return res.status(400).json({ error: 'This time slot has already passed. Please go back and select another time.' });
+  // Compare slot_datetime string directly (both stored as naive local time)
+  // Normalize T-separator to space for consistent comparison with strftime
+  const slotDt = (slot.slot_datetime || '').replace('T', ' ');
+  const nowLocal = db.prepare(`SELECT strftime('%Y-%m-%d %H:%M:%S', 'now', '-5 hours') as t`).get().t;
+  if (slotDt <= nowLocal) return res.status(400).json({ error: '该面试时间已过期，请返回选择其他时间' });
 
   try {
     if (existing && existing.status === 'cancelled') {
