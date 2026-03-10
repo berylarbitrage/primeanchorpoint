@@ -1291,6 +1291,22 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- ════════════════════ INVOICE HISTORY MODAL ════════════════════ -->
+<div class="modal-bg" id="invpHistoryModal" style="display:none" onclick="if(event.target===this)closeInvpHistoryModal()">
+  <div class="modal" style="max-width:600px;width:95vw;max-height:90vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <div>
+        <h2 style="margin:0">📋 操作历史</h2>
+        <div id="invpHistoryInvoiceNum" style="font-size:.83rem;color:var(--gray-500);margin-top:.25rem"></div>
+      </div>
+      <button class="btn btn-outline" onclick="closeInvpHistoryModal()">✕ 关闭</button>
+    </div>
+    <div id="invpHistoryContent">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
+    </div>
+  </div>
+</div>
+
 <!-- ════════════════════ INVOICE BUILDER MODAL ════════════════════ -->
 <div class="modal-bg" id="invpBuilderModal" style="display:none" onclick="if(event.target===this)closeInvpBuilderModal()">
   <div class="modal" style="max-width:900px;width:95vw;max-height:94vh;overflow-y:auto">
@@ -15988,6 +16004,7 @@ function openInvpBuilderModal() {
   window._invpManualEmps = [];
   _invpManualUidSeq = 1;
   window._invpSelectedPartnerState = null;
+  window._invpCurrentSavedId = null;
   const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
@@ -16104,6 +16121,7 @@ async function loadInvpList() {
             <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap">
               <button class="btn btn-sm btn-outline" onclick="openInvpForEdit(${r.id})">查看/编辑</button>
               ${paidBadge}${receiptLink}${paidBtn}
+              <button class="btn btn-sm btn-outline" onclick="openInvpHistoryModal(${r.id}, '${esc(r.invoice_number)}')">历史</button>
               <button class="btn btn-sm btn-outline" style="color:var(--red);border-color:var(--red)" onclick="deleteInvpRecord(${r.id})">删除</button>
             </div>
           </td>
@@ -16117,6 +16135,57 @@ async function deleteInvpRecord(id) {
   if (!await showConfirm('确定删除此 Invoice 记录？', { danger: true })) return;
   await api('/admin/invoices/' + id, { method: 'DELETE' });
   loadInvpList();
+}
+
+let _invpHistoryInvoiceId = null;
+
+async function openInvpHistoryModal(invoiceId, invoiceNumber) {
+  _invpHistoryInvoiceId = invoiceId;
+  document.getElementById('invpHistoryInvoiceNum').textContent = invoiceNumber || '';
+  document.getElementById('invpHistoryContent').innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>';
+  document.getElementById('invpHistoryModal').style.display = 'flex';
+  const rows = await api('/admin/invoices/' + invoiceId + '/history').catch(() => []);
+  const wrap = document.getElementById('invpHistoryContent');
+  if (!rows || !rows.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">暂无操作记录。</div>';
+    return;
+  }
+  const actionIcon = {
+    '创建': '📄',
+    '打印': '🖨️',
+    '下载': '⬇️',
+    '标记已付款': '✅',
+    '取消已付款': '↩️',
+    '更新回执': '🔄',
+  };
+  wrap.innerHTML = `<div style="display:flex;flex-direction:column;gap:0">
+    ${rows.map((r, i) => {
+      const icon = actionIcon[r.action] || '📝';
+      const dt = r.created_at ? r.created_at.replace('T', ' ').replace(/\.\d+$/, '') : '';
+      return `<div style="display:flex;align-items:flex-start;gap:.75rem;padding:.75rem 0;${i < rows.length-1 ? 'border-bottom:1px solid var(--gray-100)' : ''}">
+        <div style="font-size:1.2rem;line-height:1;margin-top:.1rem">${icon}</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:.9rem">${esc(r.action)}</div>
+          ${r.detail ? `<div style="color:var(--gray-500);font-size:.82rem;margin-top:.15rem">${esc(r.detail)}</div>` : ''}
+          <div style="color:var(--gray-400);font-size:.78rem;margin-top:.2rem">${dt}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function closeInvpHistoryModal() {
+  document.getElementById('invpHistoryModal').style.display = 'none';
+  _invpHistoryInvoiceId = null;
+}
+
+async function logInvpAction(invoiceId, action, detail) {
+  if (!invoiceId) return;
+  await api('/admin/invoices/' + invoiceId + '/history', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, detail: detail || '' })
+  }).catch(() => {});
 }
 
 let _invpReceiptInvoiceId = null;
@@ -16250,6 +16319,7 @@ async function saveInvpInvoice(status) {
     // Update existing
     res = await api('/admin/invoices/' + editId, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(e => ({ error: e.message }));
     if (res && res.success) {
+      window._invpCurrentSavedId = parseInt(editId);
       window._invpPreviewSaved = (status === 'saved');
       updateInvpPreviewBtns();
       showToast(status === 'draft' ? '草稿已保存' : `Invoice 已更新：${invNum}`, 'success', 4000);
@@ -16260,6 +16330,7 @@ async function saveInvpInvoice(status) {
     // Create new
     res = await api('/admin/invoices', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) }).catch(e => ({ error: e.message }));
     if (res && res.id) {
+      window._invpCurrentSavedId = res.id;
       document.getElementById('invPageEditId').value = res.id; // now in edit mode
       window._invpPreviewSaved = (status === 'saved');
       updateInvpPreviewBtns();
@@ -16707,6 +16778,9 @@ function printInvpInvoice() {
   w.document.close();
   w.focus();
   setTimeout(() => w.print(), 300);
+  if (window._invpCurrentSavedId) {
+    logInvpAction(window._invpCurrentSavedId, '打印', '打印 / 另存为 PDF');
+  }
 }
 
 function renderInvpProfilePreview() {
