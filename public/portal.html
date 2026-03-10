@@ -88,6 +88,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#faf5ff;color:var(--
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:600}
 .badge-urgent{background:#fef2f2;color:#ef4444;border:1px solid #fecaca}
 .badge-applied{background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0}
+.nav-badge{display:none;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 5px;border-radius:10px;font-size:.68rem;font-weight:700;background:#ef4444;color:#fff;margin-left:auto;flex-shrink:0}
+.nav-badge.show{display:inline-block}
 .btn{padding:.5rem 1rem;border:none;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer}
 .btn-sky{background:var(--sky);color:#fff}
 .btn-sky:hover{background:#7c3aed}
@@ -471,15 +473,15 @@ function googleTranslateElementInit() {
       </div>
     </div>
     <nav class="sidebar-nav">
-      <a class="active" data-tab="jobs" onclick="showTab('jobs')"><span class="nav-icon">💼</span><span class="nav-label">职位浏览</span></a>
-      <a data-tab="interview" onclick="showTab('interview')"><span class="nav-icon">📅</span><span class="nav-label">我的任务</span></a>
-      <a data-tab="applications" onclick="showTab('applications')"><span class="nav-icon">📝</span><span class="nav-label">我的申请</span></a>
-      <a data-tab="timeclock" onclick="showTab('timeclock')"><span class="nav-icon">⏱️</span><span class="nav-label">打卡记录</span></a>
-      <a data-tab="payments" onclick="showTab('payments')"><span class="nav-icon">💰</span><span class="nav-label">打款记录</span></a>
-      <a data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none"><span class="nav-icon">📋</span><span class="nav-label">合规文件</span></a>
-      <a data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none"><span class="nav-icon">✅</span><span class="nav-label">待办事项</span></a>
-      <a data-tab="referral" onclick="showTab('referral')"><span class="nav-icon">🎁</span><span class="nav-label">推荐奖励</span></a>
-      <a data-tab="profile" onclick="showTab('profile')"><span class="nav-icon">👤</span><span class="nav-label">我的信息</span></a>
+      <a class="active" data-tab="jobs" onclick="showTab('jobs')"><span class="nav-icon">💼</span><span class="nav-label">职位浏览</span><span class="nav-badge" id="badgeJobs"></span></a>
+      <a data-tab="interview" onclick="showTab('interview')"><span class="nav-icon">📅</span><span class="nav-label">我的任务</span><span class="nav-badge" id="badgeInterview"></span></a>
+      <a data-tab="applications" onclick="showTab('applications')"><span class="nav-icon">📝</span><span class="nav-label">我的申请</span><span class="nav-badge" id="badgeApplications"></span></a>
+      <a data-tab="timeclock" onclick="showTab('timeclock')"><span class="nav-icon">⏱️</span><span class="nav-label">打卡记录</span><span class="nav-badge" id="badgeTimeclock"></span></a>
+      <a data-tab="payments" onclick="showTab('payments')"><span class="nav-icon">💰</span><span class="nav-label">打款记录</span><span class="nav-badge" id="badgePayments"></span></a>
+      <a data-tab="compliance" id="navCompliance" onclick="showTab('compliance')" style="display:none"><span class="nav-icon">📋</span><span class="nav-label">合规文件</span><span class="nav-badge" id="badgeCompliance"></span></a>
+      <a data-tab="todos" id="navTodos" onclick="showTab('todos')" style="display:none"><span class="nav-icon">✅</span><span class="nav-label">待办事项</span><span class="nav-badge" id="badgeTodos"></span></a>
+      <a data-tab="referral" onclick="showTab('referral')"><span class="nav-icon">🎁</span><span class="nav-label">推荐奖励</span><span class="nav-badge" id="badgeReferral"></span></a>
+      <a data-tab="profile" onclick="showTab('profile')"><span class="nav-icon">👤</span><span class="nav-label">我的信息</span><span class="nav-badge" id="badgeProfile"></span></a>
     </nav>
     <div class="sidebar-bottom">
       <div class="lang-sw">
@@ -1992,6 +1994,7 @@ async function showApp() {
   // Show todos tab (always visible for logged-in workers)
   document.getElementById('navTodos').style.display = '';
 
+  updateSidebarBadges();
   loadJobs();
 
   // Auto-refresh: when user comes back to this browser tab or window, reload current tab data
@@ -2010,6 +2013,7 @@ async function showApp() {
     else if (_activeTab === 'todos') loadOnboarding();
     else if (_activeTab === 'referral') loadReferrals();
     else loadJobs();
+    updateSidebarBadges();
   }
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) _autoRefreshCurrentTab();
@@ -4920,9 +4924,33 @@ async function loadOnboarding() {
   }).join('');
 }
 
+function _setBadge(id, count) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (count > 0) { el.textContent = count; el.classList.add('show'); }
+  else { el.textContent = ''; el.classList.remove('show'); }
+}
+
+async function updateSidebarBadges() {
+  const tasks = await wApi('/onboarding');
+  if (!Array.isArray(tasks)) return;
+  // Count tasks that are pending or submitted (i.e. need worker attention)
+  const pendingCount = tasks.filter(t => t.status === 'pending' || t.status === 'submitted').length;
+  _setBadge('badgeTodos', pendingCount);
+
+  // Tasks that relate to compliance docs
+  const complianceKeys = ['ead_upload', 'i9', 'w9', 'contract', 'gusto'];
+  const compliancePending = tasks.filter(t => complianceKeys.includes(t.key) && (t.status === 'pending' || t.status === 'submitted')).length;
+  _setBadge('badgeCompliance', compliancePending);
+
+  // Interview-related tasks
+  const interviewPending = tasks.filter(t => t.key === 'interview' && t.status === 'pending').length;
+  _setBadge('badgeInterview', interviewPending);
+}
+
 async function submitOnboardingTask(key) {
   const r = await wApi(`/onboarding/${key}/submit`, { method:'POST', body:'{}' });
-  if (r && r.success) { showToast('✅ ' + _t('obSubmitSuccess')); loadOnboarding(); }
+  if (r && r.success) { showToast('✅ ' + _t('obSubmitSuccess')); loadOnboarding(); updateSidebarBadges(); }
   else customAlert(r?.error || _t('obSubmitFail'), _t('obSubmitFail'), '❌');
 }
 
