@@ -4121,7 +4121,7 @@ async function api(path, opts = {}) {
     return { error: '服务器返回异常，请刷新页面或联系管理员重启服务器' };
   }
   const data = await res.json();
-  if (data.pending) { alert(data.message || '操作已提交审批'); return data; }
+  if (data && data.pending) { alert(data.message || '操作已提交审批'); return data; }
   if (res.status === 401 && path !== '/admin/login') { alert('登录已过期，请重新登录'); logout(); return data; }
   if (res.status === 403 && path !== '/admin/login') { alert('权限不足 / Permission denied'); return data; }
   return data;
