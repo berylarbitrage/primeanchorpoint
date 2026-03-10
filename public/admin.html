@@ -555,7 +555,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
-      <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 Invoice</a>
+      <a onclick="openInvpPageModal()" data-role="admin,staff">🧾 Invoice</a>
     </div>
   </div>
 
@@ -1198,123 +1198,126 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════════════════════ INVOICE PAGE TAB ════════════════════ -->
-<div id="tab-ts-invoice" style="display:none">
-  <div class="top">
-    <h1>🧾 Invoice 生成</h1>
-    <div class="top-actions">
-      <button class="btn btn-green" onclick="showInvpBuilder()">+ 生成新 Invoice</button>
-      <button class="btn btn-outline" onclick="openInvpProfileModal()">⚙️ 发票配置（我方信息）</button>
-    </div>
-  </div>
-
-  <!-- Invoice List -->
-  <div class="card" style="margin-bottom:1.25rem">
-    <h3 style="margin:0 0 .75rem">Invoice 列表</h3>
-    <div id="invpListWrap">
-      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
-    </div>
-  </div>
-
-  <!-- Invoice Builder (hidden by default) -->
-  <div id="invpBuilderSection" style="display:none">
-  <div style="display:grid;grid-template-columns:1fr 320px;gap:1.25rem;align-items:start">
-
-    <!-- LEFT: Invoice Builder -->
-    <div class="card">
-      <h3 style="margin:0 0 1rem">发票信息</h3>
-
-      <!-- Meta info -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-        <div class="field">
-          <label>Invoice 编号</label>
-          <input type="text" id="invPageNumber" placeholder="e.g. JCSL20260234">
-        </div>
-        <div class="field">
-          <label>Invoice 日期</label>
-          <input type="date" id="invPageDate">
-        </div>
-        <div class="field">
-          <label>FOR（职位/工种）</label>
-          <input type="text" id="invPageFor" placeholder="e.g. Sorter / Scanner">
-        </div>
-        <div class="field">
-          <label>服务周期 开始 <span style="color:var(--red)">*</span></label>
-          <input type="date" id="invPageStart">
-        </div>
-        <div class="field">
-          <label>服务周期 结束 <span style="color:var(--red)">*</span></label>
-          <input type="date" id="invPageEnd">
-        </div>
-        <div class="field" style="display:flex;align-items:flex-end">
-          <button class="btn btn-outline" style="width:100%" onclick="loadInvPageEmployees()">📥 加载员工工时</button>
-        </div>
-      </div>
-
-      <!-- Bill To -->
-      <h3 style="margin:0 0 .75rem">账单发往（Bill To）</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-        <div class="field" style="grid-column:1/-1">
-          <label>快速选择客户公司</label>
-          <select id="invPageCompany" onchange="onInvPageCompanyChange()" style="width:100%">
-            <option value="">— 从合作公司中选择 —</option>
-          </select>
-        </div>
-        <div class="field">
-          <label>公司名称 <span style="color:var(--red)">*</span></label>
-          <input type="text" id="invPageBillName" placeholder="客户公司名称">
-        </div>
-        <div class="field">
-          <label>地址</label>
-          <input type="text" id="invPageBillAddr" placeholder="客户地址">
-        </div>
-      </div>
-
-      <!-- Employee list -->
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-        <h3 style="margin:0">员工工时明细</h3>
-        <div style="display:flex;gap:.5rem;align-items:center">
-          <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
-          <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
-          <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
-        </div>
-      </div>
-      <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:1rem;max-height:340px;overflow-y:auto">
-        <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先设置服务周期后点击「加载员工工时」</div>
-      </div>
-
-      <div style="display:flex;gap:.75rem;justify-content:flex-end">
-        <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
+<!-- ════════════════════ INVOICE PAGE MODAL ════════════════════ -->
+<div class="modal-bg" id="invpPageModal" style="display:none" onclick="if(event.target===this)closeInvpPageModal()">
+  <div class="modal" style="max-width:1100px;width:95vw;max-height:94vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2 style="margin:0">🧾 Invoice 生成</h2>
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap">
+        <button class="btn btn-green" onclick="showInvpBuilder()">+ 生成新 Invoice</button>
+        <button class="btn btn-outline" onclick="openInvpProfileModal()">⚙️ 发票配置（我方信息）</button>
+        <button class="btn btn-outline" onclick="closeInvpPageModal()">✕ 关闭</button>
       </div>
     </div>
 
-    <!-- RIGHT: Profile Preview -->
-    <div>
-      <div class="card" style="margin-bottom:1rem">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-          <h3 style="margin:0;font-size:.95rem">发票抬头（我方）</h3>
-          <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
-        </div>
-        <div id="invpSenderPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+    <!-- Invoice List -->
+    <div class="card" style="margin-bottom:1.25rem">
+      <h3 style="margin:0 0 .75rem">Invoice 列表</h3>
+      <div id="invpListWrap">
+        <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
       </div>
-      <div class="card" style="margin-bottom:1rem">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-          <h3 style="margin:0;font-size:.95rem">银行收款信息</h3>
-          <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
-        </div>
-        <div id="invpBankPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
-      </div>
+    </div>
+
+    <!-- Invoice Builder (hidden by default) -->
+    <div id="invpBuilderSection" style="display:none">
+    <div style="display:grid;grid-template-columns:1fr 320px;gap:1.25rem;align-items:start">
+
+      <!-- LEFT: Invoice Builder -->
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
-          <h3 style="margin:0;font-size:.95rem">联系人页脚</h3>
-          <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
-        </div>
-        <div id="invpContactPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
-      </div>
-    </div>
+        <h3 style="margin:0 0 1rem">发票信息</h3>
 
+        <!-- Meta info -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+          <div class="field">
+            <label>Invoice 编号</label>
+            <input type="text" id="invPageNumber" placeholder="e.g. JCSL20260234">
+          </div>
+          <div class="field">
+            <label>Invoice 日期</label>
+            <input type="date" id="invPageDate">
+          </div>
+          <div class="field">
+            <label>FOR（职位/工种）</label>
+            <input type="text" id="invPageFor" placeholder="e.g. Sorter / Scanner">
+          </div>
+          <div class="field">
+            <label>服务周期 开始 <span style="color:var(--red)">*</span></label>
+            <input type="date" id="invPageStart">
+          </div>
+          <div class="field">
+            <label>服务周期 结束 <span style="color:var(--red)">*</span></label>
+            <input type="date" id="invPageEnd">
+          </div>
+          <div class="field" style="display:flex;align-items:flex-end">
+            <button class="btn btn-outline" style="width:100%" onclick="loadInvPageEmployees()">📥 加载员工工时</button>
+          </div>
+        </div>
+
+        <!-- Bill To -->
+        <h3 style="margin:0 0 .75rem">账单发往（Bill To）</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+          <div class="field" style="grid-column:1/-1">
+            <label>快速选择客户公司</label>
+            <select id="invPageCompany" onchange="onInvPageCompanyChange()" style="width:100%">
+              <option value="">— 从合作公司中选择 —</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>公司名称 <span style="color:var(--red)">*</span></label>
+            <input type="text" id="invPageBillName" placeholder="客户公司名称">
+          </div>
+          <div class="field">
+            <label>地址</label>
+            <input type="text" id="invPageBillAddr" placeholder="客户地址">
+          </div>
+        </div>
+
+        <!-- Employee list -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+          <h3 style="margin:0">员工工时明细</h3>
+          <div style="display:flex;gap:.5rem;align-items:center">
+            <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
+            <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
+            <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
+          </div>
+        </div>
+        <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:1rem;max-height:300px;overflow-y:auto">
+          <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先设置服务周期后点击「加载员工工时」</div>
+        </div>
+
+        <div style="display:flex;gap:.75rem;justify-content:flex-end">
+          <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
+        </div>
+      </div>
+
+      <!-- RIGHT: Profile Preview -->
+      <div>
+        <div class="card" style="margin-bottom:1rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+            <h3 style="margin:0;font-size:.95rem">发票抬头（我方）</h3>
+            <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+          </div>
+          <div id="invpSenderPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+        </div>
+        <div class="card" style="margin-bottom:1rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+            <h3 style="margin:0;font-size:.95rem">银行收款信息</h3>
+            <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+          </div>
+          <div id="invpBankPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+            <h3 style="margin:0;font-size:.95rem">联系人页脚</h3>
+            <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+          </div>
+          <div id="invpContactPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+        </div>
+      </div>
+
+    </div>
+    </div><!-- /invpBuilderSection -->
   </div>
-  </div><!-- /invpBuilderSection -->
 </div>
 
 <!-- ════════════════════ HR DOCUMENTS TAB ════════════════════ -->
@@ -4598,7 +4601,6 @@ function showTab(t) {
   if (t === 'ts-payment')  loadTsPayment();
   if (t === 'ts-dividend') loadTsDividend();
   if (t === 'ts-history')  loadTsHistory();
-  if (t === 'ts-invoice')  initInvoicePage();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -15595,6 +15597,17 @@ function initInvoicePage() {
   renderInvpProfilePreview();
 }
 
+function openInvpPageModal() {
+  document.getElementById('invpPageModal').style.display = '';
+  initInvoicePage();
+}
+
+function closeInvpPageModal() {
+  document.getElementById('invpPageModal').style.display = 'none';
+  const sec = document.getElementById('invpBuilderSection');
+  if (sec) sec.style.display = 'none';
+}
+
 async function loadInvpList() {
   const wrap = document.getElementById('invpListWrap');
   if (!wrap) return;
@@ -15658,7 +15671,7 @@ function showInvpBuilder() {
       const seq = String(Math.floor(Math.random()*900)+100);
       numEl.value = 'INV' + yy + mm + seq;
     }
-    sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
 
