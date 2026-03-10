@@ -8806,7 +8806,7 @@ async function _execDupLinkWorker() {
   const p = _pendingDupSave;
   _pendingDupSave = null;
   document.getElementById('dupActionBar').style.display = 'none';
-  const empId = currentEmpForDetail && currentEmpForDetail.id;
+  const empId = p.existingEmpId || (currentEmpForDetail && currentEmpForDetail.id);
   closeEmpDetailModal();
   if (!p || !p.convertFromWorkerId || !empId) return;
   await api(`/admin/worker-accounts/${p.convertFromWorkerId}`, {
@@ -8842,7 +8842,7 @@ function _execDupEdit() {
   const p = _pendingDupSave;
   _pendingDupSave = null;
   document.getElementById('dupActionBar').style.display = 'none';
-  const empId = currentEmpForDetail && currentEmpForDetail.id;
+  const empId = p.existingEmpId || (currentEmpForDetail && currentEmpForDetail.id);
   closeEmpDetailModal();
   if (empId) setTimeout(() => {
     if (p && p.convertFromWorkerId) _pendingWorkerLink = { workerId: p.convertFromWorkerId, empId };
@@ -8854,19 +8854,24 @@ function _execDupMerge() {
   const p = _pendingDupSave;
   _pendingDupSave = null;
   document.getElementById('dupActionBar').style.display = 'none';
-  const empId = currentEmpForDetail && currentEmpForDetail.id;
+  const empId = p.existingEmpId || (currentEmpForDetail && currentEmpForDetail.id);
   closeEmpDetailModal();
   if (!empId || !p) return;
   setTimeout(() => {
     if (p.convertFromWorkerId) _pendingWorkerLink = { workerId: p.convertFromWorkerId, empId };
     openEmpModal(empId);
+    const sm = p.data.social_media || {};
     const toMerge = [
       ['ePhone', p.field !== 'phone' ? p.data.phone : null],
       ['eEmail', p.field !== 'email' ? p.data.email : null],
+      ['eMiddle', p.data.middle_name],
       ['eAddr', p.data.address], ['eStreet2', p.data.street2],
-      ['eCity', p.data.city], ['eZip', p.data.zip],
+      ['eCity', p.data.city], ['eState', p.data.state], ['eZip', p.data.zip],
+      ['eHire', p.data.hire_date],
       ['eEmgName', p.data.emergency_name], ['eEmgPhone', p.data.emergency_phone],
       ['eEmgRel', p.data.emergency_relation], ['eNotes', p.data.notes],
+      ['eSocialWhatsapp', sm.whatsapp], ['eSocialWechat', sm.wechat],
+      ['eSocialFacebook', sm.facebook], ['eSocialInstagram', sm.instagram],
     ];
     for (const [elId, val] of toMerge) {
       if (!val) continue;
@@ -9011,7 +9016,7 @@ async function saveEmployee() {
       '查看员工档案 / View Employee',
       'btn',
       async () => {
-        const p = { data, empId: id || null, field: r.field, fieldLabel, existingEmpName: empName, convertFromWorkerId: _convertFromWorkerId || null };
+        const p = { data, empId: id || null, field: r.field, fieldLabel, existingEmpId: emp.id, existingEmpName: empName, convertFromWorkerId: _convertFromWorkerId || null };
         clearModalState('empModal'); closeEmpModal();
         await viewEmployee(emp.id);
         _showDupActionBar(p);
