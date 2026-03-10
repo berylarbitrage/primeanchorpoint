@@ -261,6 +261,14 @@ tr:hover td{background:var(--sky-light)}
 .ts-table .ts-hours{font-weight:700;color:var(--sky);text-align:center;min-width:50px}
 .ts-table .ts-ot{color:var(--accent);font-weight:700;text-align:center}
 .ts-table .ts-off td{opacity:.4}
+.ts-breaks-cell{min-width:200px}
+.ts-break-row{display:flex;align-items:center;gap:4px;margin-bottom:3px}
+.ts-break-row input[type="time"]{min-width:82px;width:82px}
+.ts-break-row .ts-break-sep{color:var(--gray-400);font-size:.8rem;flex-shrink:0}
+.ts-break-rm{background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:.95rem;padding:0 2px;line-height:1}
+.ts-break-rm:hover{color:#dc2626}
+.ts-break-add{background:none;border:1px dashed var(--gray-300);color:var(--gray-500);font-size:.72rem;padding:2px 7px;border-radius:4px;cursor:pointer;margin-top:2px;width:100%}
+.ts-break-add:hover{border-color:var(--sky);color:var(--sky)}
 .ts-totals{background:var(--sky-light);border-radius:var(--radius);padding:1rem;display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1.5rem;font-size:.9rem}
 .ts-totals strong{color:var(--blue)}.ts-totals .ot{color:var(--accent)}
 .ts-confirm{background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.2rem;margin-bottom:1.5rem}
@@ -547,6 +555,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
+      <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 Invoice</a>
     </div>
   </div>
 
@@ -1081,6 +1090,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="top-actions">
       <button class="btn btn-outline" onclick="exportTimeCSV()">导出 CSV</button>
       <button class="btn btn-accent" onclick="showTimeReport()">工时汇总报表</button>
+      <button class="btn btn-outline" onclick="openInvoiceModal()" style="background:#f0fdf4;color:#16a34a;border-color:#86efac">🧾 生成发票</button>
       <button class="btn btn-green" onclick="openTsModal()">+ 手动录入</button>
     </div>
   </div>
@@ -1185,6 +1195,113 @@ tr:hover td{background:var(--sky-light)}
       <thead><tr><th>员工</th><th>公司</th><th>周期</th><th>总工时</th><th>客户付款时间</th><th>劳务付款时间</th><th>Staff 备注</th></tr></thead>
       <tbody id="tsHistoryTable"></tbody>
     </table>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE PAGE TAB ════════════════════ -->
+<div id="tab-ts-invoice" style="display:none">
+  <div class="top">
+    <h1>🧾 Invoice 生成</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="openInvpProfileModal()">⚙️ 发票配置（我方信息）</button>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 320px;gap:1.25rem;align-items:start">
+
+    <!-- LEFT: Invoice Builder -->
+    <div class="card">
+      <h3 style="margin:0 0 1rem">发票信息</h3>
+
+      <!-- Meta info -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+        <div class="field">
+          <label>Invoice 编号</label>
+          <input type="text" id="invPageNumber" placeholder="e.g. JCSL20260234">
+        </div>
+        <div class="field">
+          <label>Invoice 日期</label>
+          <input type="date" id="invPageDate">
+        </div>
+        <div class="field">
+          <label>FOR（职位/工种）</label>
+          <input type="text" id="invPageFor" placeholder="e.g. Sorter / Scanner">
+        </div>
+        <div class="field">
+          <label>服务周期 开始 <span style="color:var(--red)">*</span></label>
+          <input type="date" id="invPageStart">
+        </div>
+        <div class="field">
+          <label>服务周期 结束 <span style="color:var(--red)">*</span></label>
+          <input type="date" id="invPageEnd">
+        </div>
+        <div class="field" style="display:flex;align-items:flex-end">
+          <button class="btn btn-outline" style="width:100%" onclick="loadInvPageEmployees()">📥 加载员工工时</button>
+        </div>
+      </div>
+
+      <!-- Bill To -->
+      <h3 style="margin:0 0 .75rem">账单发往（Bill To）</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+        <div class="field" style="grid-column:1/-1">
+          <label>快速选择客户公司</label>
+          <select id="invPageCompany" onchange="onInvPageCompanyChange()" style="width:100%">
+            <option value="">— 从合作公司中选择 —</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>公司名称 <span style="color:var(--red)">*</span></label>
+          <input type="text" id="invPageBillName" placeholder="客户公司名称">
+        </div>
+        <div class="field">
+          <label>地址</label>
+          <input type="text" id="invPageBillAddr" placeholder="客户地址">
+        </div>
+      </div>
+
+      <!-- Employee list -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <h3 style="margin:0">员工工时明细</h3>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
+          <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
+          <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
+        </div>
+      </div>
+      <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:1rem;max-height:340px;overflow-y:auto">
+        <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先设置服务周期后点击「加载员工工时」</div>
+      </div>
+
+      <div style="display:flex;gap:.75rem;justify-content:flex-end">
+        <button class="btn btn-green" onclick="generateInvpPreview()" style="padding:.55rem 1.5rem">🔍 预览 Invoice</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: Profile Preview -->
+    <div>
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">发票抬头（我方）</h3>
+          <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+        </div>
+        <div id="invpSenderPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+      </div>
+      <div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">银行收款信息</h3>
+          <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+        </div>
+        <div id="invpBankPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+          <h3 style="margin:0;font-size:.95rem">联系人页脚</h3>
+          <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+        </div>
+        <div id="invpContactPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -3649,7 +3766,7 @@ tr:hover td{background:var(--sky-light)}
       </div>
       <div id="tsEmpTags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px"></div>
     </div>
-    <div class="field"><label>公司 (客户)</label><input id="tsCompany" type="text" placeholder="例：ABC Logistics"></div>
+    <div class="field"><label>公司 (客户)</label><input id="tsCompany" type="text" placeholder="搜索公司名称..." autocomplete="off" list="tsCompanyList"><datalist id="tsCompanyList"></datalist></div>
     <div class="field"><label>起始日期 (周一)</label><input id="tsStartDate" type="date" onchange="buildTsRows()"></div>
   </div>
   <div class="field-row no-print" style="margin-bottom:1rem">
@@ -3666,7 +3783,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="tsTableWrap">
     <table class="ts-table">
-      <thead><tr><th>日期</th><th>上班时间 *</th><th>下班时间 *</th><th>午休开始<br><small style="font-weight:400;color:var(--gray-400)">(可选)</small></th><th>午休结束<br><small style="font-weight:400;color:var(--gray-400)">(可选)</small></th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
+      <thead><tr><th>日期</th><th>上班时间 *</th><th>下班时间 *</th><th>休息段<br><small style="font-weight:400;color:var(--gray-400)">(可选，可加多段)</small></th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
       <tbody id="tsBody"></tbody>
     </table>
   </div>
@@ -4435,7 +4552,7 @@ const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
-  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time',
   approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
   'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
@@ -4469,6 +4586,7 @@ function showTab(t) {
   if (t === 'ts-payment')  loadTsPayment();
   if (t === 'ts-dividend') loadTsDividend();
   if (t === 'ts-history')  loadTsHistory();
+  if (t === 'ts-invoice')  initInvoicePage();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -4663,7 +4781,7 @@ function renderJobApps(list) {
   document.getElementById('jobAppsTable').innerHTML = list.length ? list.map(a => {
     const name = a.first_name ? `${a.first_name} ${a.last_name||''}`.trim() : (a.username || '—');
     const ivInfo = a.status === 'interview_scheduled' && a.interview_datetime
-      ? `<br><small style="color:#2563eb">📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</small>` : '';
+      ? `<br><small style="color:#2563eb">📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</small>` : '';
     return `<tr>
       <td style="font-size:.8rem">${(a.created_at||'').slice(0,10)}</td>
       <td><strong>${esc(name)}</strong><br><small style="color:var(--gray-400)">${esc(a.worker_phone||a.worker_email||'')}</small></td>
@@ -4719,7 +4837,7 @@ function showJobAppDetail(id) {
       </div>
       ${a.interview_datetime ? `<div style="background:#eff6ff;border-radius:10px;padding:1rem;font-size:.88rem">
         <div style="font-weight:700;color:var(--gray-700);margin-bottom:.3rem">已安排面试</div>
-        <div>📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit'})}</div>
+        <div>📅 ${new Date(a.interview_datetime).toLocaleString('zh-CN',{year:'numeric',month:'long',day:'numeric',weekday:'long',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</div>
         ${a.interview_location_text ? `<div style="margin-top:.25rem">📍 ${esc(a.interview_location_text)}</div>` : ''}
       </div>` : ''}
     </div>
@@ -5018,7 +5136,7 @@ function renderJobsFiltered() {
     const si = statusInfo(st);
     const reasonTip = j.close_reason ? `<br><small style="color:var(--gray-400)">${CLOSE_REASON_LABEL[j.close_reason]||j.close_reason}${j.close_note?' · '+esc(j.close_note):''}</small>` : '';
     return `<tr>
-      <td style="white-space:nowrap"><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small></td>
+      <td style="white-space:nowrap"><strong>${esc(j.title)}</strong>${j.urgent ? ' <span class="badge badge-urgent">急聘</span>' : ''}<br><small style="color:var(--gray-500)">${esc(j.company_name||'')}</small><br><small style="color:var(--gray-400)">ID: ${j.id}</small></td>
       <td style="white-space:nowrap">${esc(j.type||'')}</td>
       <td style="white-space:nowrap">${etBadge(j.employment_type)}</td>
       <td style="text-align:center;white-space:nowrap">${j.headcount||1}</td>
@@ -5827,6 +5945,8 @@ async function saveJob() {
   };
   if (!data.partner_id) return alert('请选择合作公司');
   if (!data.title) return alert('请填写职位名称');
+  if (!data.type) return alert('请选择职位类型');
+  if (!data.employment_type) return alert('请选择雇佣性质');
   const jCity = document.getElementById('jCity').value.trim();
   const jState = document.getElementById('jState').value;
   if (!jCity || !jState) return alert('请填写工作地点的城市和州');
@@ -6000,7 +6120,7 @@ async function showJobHistory(jobId, title) {
       } else {
         detail = '<span style="color:var(--gray-400)">无字段变更</span>';
       }
-      const dt = new Date(l.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+      const dt = new Date(l.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
       const actionBadge = l.action === 'deleted' ? 'badge-red' : l.action === 'created' ? 'badge-green' : l.action === 'closed' ? 'badge-yellow' : 'badge-blue';
       return `<tr>
         <td style="white-space:nowrap;font-size:.78rem">${dt}</td>
@@ -6050,7 +6170,7 @@ function filterClientInquiries() {
   else if (sort === 'pos_asc')   f = [...f].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
   else if (sort === 'pos_desc')  f = [...f].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
   document.getElementById('cliInqTable').innerHTML = f.length ? f.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
-    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></td>
+    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</span></td>
     <td><span style="font-family:monospace;font-size:.72rem;color:var(--sky)">${esc(i.employer_id||'')}</span></td>
     <td><strong>${esc(i.company||i.name)}</strong>${i.company&&i.company!==i.name?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.name)}</span>`:''}</td>
     <td style="max-width:180px">${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}${i.quote_request?' <span class="badge badge-urgent" style="background:#F5A623">报价</span>':''}</td>
@@ -6115,7 +6235,7 @@ function filterWorkerInquiries() {
   else if (sort === 'pos_asc')   f = [...f].sort((a,b) => (a.positions||'').localeCompare(b.positions||''));
   else if (sort === 'pos_desc')  f = [...f].sort((a,b) => (b.positions||'').localeCompare(a.positions||''));
   document.getElementById('wrkInqTable').innerHTML = f.length ? f.map(i => `<tr style="cursor:pointer" onclick='showInquiry(${JSON.stringify(i).replace(/'/g,"&#39;")})'>
-    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span></td>
+    <td style="white-space:nowrap">${new Date(i.created_at).toLocaleDateString()}<br><span style="font-size:.72rem;color:var(--gray-400)">${new Date(i.created_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'})}</span></td>
     <td><strong>${esc(i.name)}</strong>${i.company?`<br><span style="font-size:.78rem;color:var(--gray-400)">${esc(i.company)}</span>`:''}</td>
     <td style="max-width:180px">${i.job_id?`<span style="font-size:.78rem;background:var(--sky-light);color:var(--sky);padding:1px 6px;border-radius:4px">职位申请</span> `:''}${i.positions?`<span style="font-size:.82rem">${esc(i.positions)}</span>`:'<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.82rem">${esc(i.experience||'—')}</td>
@@ -6213,7 +6333,7 @@ function showInquiry(i) {
     ['语言能力', i.languages], ['备注', i.comments],
     ['简历', i.resume_path ? `<a href="/uploads/${i.resume_path}" target="_blank" style="color:var(--sky)">📄 下载简历</a>` : ''],
     ['报价请求', i.quote_request ? '<span class="badge badge-urgent" style="background:#F5A623">是 — 需要报价</span>' : '否'],
-    ['提交时间', new Date(i.created_at).toLocaleString()]
+    ['提交时间', new Date(i.created_at).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})]
   ].filter(([k, v]) => v);
   document.getElementById('inqDetail').innerHTML = '<table style="width:100%">' +
     fields.map(([k, v]) => `<tr><td style="font-weight:700;width:90px;padding:5px 8px 5px 0;color:var(--gray-500);font-size:.82rem;vertical-align:top">${k}</td><td style="padding:5px 0;font-size:.85rem">${v}</td></tr>`).join('') + '</table>';
@@ -6230,7 +6350,7 @@ function showInquiry(i) {
         const link = `${location.origin}/onboard.html?token=${existing.token}`;
         statusDiv.style.display = '';
         statusDiv.innerHTML = existing.status === 'completed'
-          ? `✅ 已完成入职材料提交 <span style="color:var(--gray-400);font-size:.78rem">${new Date(existing.completed_at).toLocaleString()}</span><br><a href="${link}" target="_blank" style="color:var(--sky);word-break:break-all;font-size:.78rem">${link}</a>`
+          ? `✅ 已完成入职材料提交 <span style="color:var(--gray-400);font-size:.78rem">${new Date(existing.completed_at).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})}</span><br><a href="${link}" target="_blank" style="color:var(--sky);word-break:break-all;font-size:.78rem">${link}</a>`
           : `⏳ 链接已发送，等待填写中<br><span style="color:var(--gray-400);font-size:.78rem;user-select:all">${link}</span>
              <button class="btn btn-sm" style="margin-left:.5rem" onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='✓ 已复制').catch(()=>{})">复制</button>`;
       } else {
@@ -7705,7 +7825,7 @@ async function showAssignmentHistory(id, name) {
     const statusLabelMap = { pending:'待确认', assigned:'已分配', working:'进行中', completed:'已完成', terminated:'已解雇', resigned:'已辞职', no_show:'未出勤', cancelled:'已取消' };
     document.getElementById('assignHistoryList').innerHTML = rows.length
       ? rows.map(r => `<tr style="border-bottom:1px solid var(--gray-100)">
-          <td style="white-space:nowrap;font-size:.82rem;padding:8px 10px">${new Date(r.changed_at).toLocaleString()}</td>
+          <td style="white-space:nowrap;font-size:.82rem;padding:8px 10px">${new Date(r.changed_at).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})}</td>
           <td style="padding:8px 10px"><span class="badge badge-${r.old_status||''}">${statusLabelMap[r.old_status] || r.old_status || '—'}</span></td>
           <td style="padding:8px 4px;color:var(--gray-400)">→</td>
           <td style="padding:8px 10px"><span class="badge badge-${r.new_status}">${statusLabelMap[r.new_status] || r.new_status}</span></td>
@@ -7794,7 +7914,7 @@ async function showPartnerById(id) {
     <div class="detail-row"><span>公司名称</span><span>${esc(p.name)}</span></div>
     <div class="detail-row"><span>行业</span><span>${esc(p.industry)}</span></div>
     <div class="detail-row"><span>状态</span><span>${p.active?'合作中':(p.signed_contract_count||0)>0?'已停止':'待签约'}</span></div>
-    <div class="detail-row"><span>添加时间</span><span>${new Date(p.created_at).toLocaleString()}</span></div>
+    <div class="detail-row"><span>添加时间</span><span>${new Date(p.created_at).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})}</span></div>
   </div></div>`;
   if (contacts.length) {
     html += `<div class="detail-section"><h4>联系人 (${contacts.length})</h4>` +
@@ -8025,8 +8145,8 @@ function renderPartnerHistory(p, files) {
 
   let lastDateStr = '';
   for (const ev of events) {
-    const dateStr = ev.ts.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric' });
-    const timeStr = ev.ts.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+    const dateStr = ev.ts.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', timeZone: localTz() });
+    const timeStr = ev.ts.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
     if (dateStr !== lastDateStr) {
       lastDateStr = dateStr;
       html += `<div style="font-size:.7rem;font-weight:700;color:var(--gray-400);margin:.75rem 0 .25rem;letter-spacing:.3px">${dateStr}</div>`;
@@ -9142,7 +9262,7 @@ async function loadBackups() {
   // Render backup log
   document.getElementById('backupLogTable').innerHTML = data.log.length ? '<table><thead><tr><th>时间</th><th>触发方式</th><th>结果</th></tr></thead><tbody>' +
     data.log.map(l => `<tr>
-      <td>${new Date(l.time).toLocaleString()}</td>
+      <td>${new Date(l.time).toLocaleString('zh-CN',{timeZone:localTz(),timeZoneName:'short'})}</td>
       <td>${esc(l.trigger)}</td>
       <td>${l.results.map(r => `<span class="badge ${r.status === 'ok' ? 'badge-completed' : 'badge-urgent'}">${r.status === 'ok' ? '成功' : '失败'}</span> ${esc(r.dir.split('/').pop())}`).join(' &nbsp; ')}</td>
     </tr>`).join('') +
@@ -10668,7 +10788,7 @@ async function generateEmpDocLink() {
       btn.textContent = '已生成';
       // Show expiry info
       if (r.expires_at) {
-        const exp = new Date(r.expires_at).toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric' });
+        const exp = new Date(r.expires_at).toLocaleString('zh-CN', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric', timeZone: localTz(), timeZoneName: 'short' });
         document.getElementById('empDocLinkUrl').textContent += '\n⏰ 有效期至 ' + exp + '（3天）';
       }
       // Show send-to summary
@@ -10866,16 +10986,17 @@ function exportEmployeeCSV() {
 // ══════════════════════════════════════════════════════
 let allTimeEntries = [];
 
+const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 function fmtDT(dt, tz) {
   if (!dt) return '—';
   const d = new Date(dt);
   if (isNaN(d)) return dt;
-  const opts = { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false };
-  if (tz) opts.timeZone = tz;
+  const opts = { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false, timeZoneName:'short' };
+  opts.timeZone = tz || localTz();
   const parts = new Intl.DateTimeFormat('en-US', opts).formatToParts(d);
   const p = {};
   parts.forEach(x => p[x.type] = x.value);
-  return `${p.month}/${p.day} ${p.hour}:${p.minute}`;
+  return `${p.month}/${p.day} ${p.hour}:${p.minute} ${p.timeZoneName}`;
 }
 function fmtD(dt)  { return dt ? new Date(dt).toLocaleDateString() : '—'; }
 function fmtH(h)   { return h != null ? (+h).toFixed(2)+'h' : '—'; }
@@ -11140,6 +11261,10 @@ async function openTsModal() {
   document.getElementById('tsEmpSearch').value = '';
   document.getElementById('tsEmpDrop').style.display = 'none';
   document.getElementById('tsEmpTags').innerHTML = '';
+  // populate company search datalist from partners
+  const partners = await api('/admin/partners');
+  document.getElementById('tsCompanyList').innerHTML =
+    partners.filter(p=>p.active).map(p=>`<option value="${esc(p.name)}">`).join('');
   document.getElementById('tsCompany').value = '';
   // populate jobs
   const jobs = await api('/admin/jobs');
@@ -11180,8 +11305,15 @@ function buildTsRows() {
       <td class="day-label">${label}<small>${dateLabel} ${dateStr}</small></td>
       <td><input type="time" step="60" class="ts-in" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
       <td><input type="time" step="60" class="ts-out" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
-      <td><input type="time" step="60" class="ts-lunch-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
-      <td><input type="time" step="60" class="ts-lunch-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td class="ts-breaks-cell">
+        <div class="ts-break-row">
+          <input type="time" step="60" class="ts-break-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)">
+          <span class="ts-break-sep">—</span>
+          <input type="time" step="60" class="ts-break-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)">
+          <button type="button" class="ts-break-rm" onclick="removeTsBreak(this)" title="删除此段休息">×</button>
+        </div>
+        <button type="button" class="ts-break-add" onclick="addTsBreak(this)">+ 加休息</button>
+      </td>
       <td class="ts-hours">—</td>
       <td class="ts-hours">—</td>
       <td class="ts-ot">—</td>
@@ -11195,15 +11327,17 @@ function calcTsRow(el) {
   const tr = el.closest('tr');
   const inVal = tr.querySelector('.ts-in').value;
   const outVal = tr.querySelector('.ts-out').value;
-  // compute lunch break in minutes from start/end times
-  const lsVal = tr.querySelector('.ts-lunch-start').value;
-  const leVal = tr.querySelector('.ts-lunch-end').value;
+  // sum all break segments
   let breakMin = 0;
-  if (lsVal && leVal) {
-    const [sh,sm] = lsVal.split(':').map(Number);
-    const [eh,em] = leVal.split(':').map(Number);
-    breakMin = Math.max(0, (eh*60+em) - (sh*60+sm));
-  }
+  tr.querySelectorAll('.ts-break-row').forEach(br => {
+    const s = br.querySelector('.ts-break-start').value;
+    const e = br.querySelector('.ts-break-end').value;
+    if (s && e) {
+      const [sh,sm] = s.split(':').map(Number);
+      const [eh,em] = e.split(':').map(Number);
+      breakMin += Math.max(0, (eh*60+em) - (sh*60+sm));
+    }
+  });
   const cells = tr.querySelectorAll('.ts-hours, .ts-ot');
   if (!inVal || !outVal) { cells[0].textContent = '—'; cells[1].textContent = '—'; cells[2].textContent = '—'; updateTsTotals(); return; }
   const dateStr = tr.dataset.date;
@@ -11218,6 +11352,26 @@ function calcTsRow(el) {
   cells[1].textContent = regular.toFixed(2);
   cells[2].textContent = ot > 0 ? ot.toFixed(2) : '—';
   updateTsTotals();
+}
+
+function addTsBreak(btn) {
+  const cell = btn.closest('.ts-breaks-cell');
+  const row = document.createElement('div');
+  row.className = 'ts-break-row';
+  row.innerHTML = `<input type="time" step="60" class="ts-break-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)"><span class="ts-break-sep">—</span><input type="time" step="60" class="ts-break-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)"><button type="button" class="ts-break-rm" onclick="removeTsBreak(this)" title="删除此段休息">×</button>`;
+  cell.insertBefore(row, btn);
+}
+
+function removeTsBreak(btn) {
+  const cell = btn.closest('.ts-breaks-cell');
+  // keep at least one break row
+  if (cell.querySelectorAll('.ts-break-row').length <= 1) {
+    btn.closest('.ts-break-row').querySelectorAll('input').forEach(i => { i.value = ''; });
+    calcTsRow(btn);
+    return;
+  }
+  btn.closest('.ts-break-row').remove();
+  calcTsRow(cell.querySelector('input'));
 }
 
 function updateTsTotals() {
@@ -11256,8 +11410,12 @@ async function saveBatchTimesheet() {
     if (!inVal && !outVal) return; // both empty, skip quietly
     if (!inVal || !outVal) { skippedRows++; return; } // only one filled, track it
     const dateStr = tr.dataset.date;
-    const lsVal = tr.querySelector('.ts-lunch-start').value;
-    const leVal = tr.querySelector('.ts-lunch-end').value;
+    const breaks = [];
+    tr.querySelectorAll('.ts-break-row').forEach(br => {
+      const s = br.querySelector('.ts-break-start').value;
+      const e = br.querySelector('.ts-break-end').value;
+      if (s && e) breaks.push({ start: s, end: e });
+    });
     let clockOut = dateStr + 'T' + outVal;
     const clockIn = dateStr + 'T' + inVal;
     if (new Date(clockOut) <= new Date(clockIn)) {
@@ -11267,7 +11425,8 @@ async function saveBatchTimesheet() {
     }
     if (!periodStart || dateStr < periodStart) periodStart = dateStr;
     if (!periodEnd || dateStr > periodEnd) periodEnd = dateStr;
-    entries.push({ clock_in: clockIn, clock_out: clockOut, lunch_start: lsVal, lunch_end: leVal });
+    entries.push({ clock_in: clockIn, clock_out: clockOut, breaks,
+      lunch_start: breaks[0]?.start || '', lunch_end: breaks[0]?.end || '' });
   });
   if (entries.length === 0) {
     if (skippedRows > 0) return alert('有 ' + skippedRows + ' 天只填了上班或下班时间，请确保每天的上班时间和下班时间都填写完整。\n（午休时间可以不填）');
@@ -11418,7 +11577,7 @@ function fmtPeriod(s, e) {
 }
 function fmtDt(dt) {
   if (!dt) return '—';
-  return new Date(dt).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  return new Date(dt).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
 }
 
 // ─── 工时核对 ───
@@ -11836,7 +11995,7 @@ async function loadInviteLinks() {
     if (!rows.length) { el.innerHTML = '<span style="color:#92400e;opacity:.7">暂无有效邀请链接</span>'; return; }
     const ROLE = { admin:'Admin', staff:'Staff', manager:'Manager' };
     el.innerHTML = rows.map(r => {
-      const exp = new Date(r.expires_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'numeric',minute:'numeric'});
+      const exp = new Date(r.expires_at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'numeric',minute:'numeric',timeZone:localTz(),timeZoneName:'short'});
       return `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem;flex-wrap:wrap">
         <span style="background:#fff;border:1px solid #fde68a;border-radius:6px;padding:.15rem .5rem;font-weight:700;color:#92400e">${ROLE[r.role]||r.role}</span>
         <span style="flex:1;word-break:break-all;color:#44403c;cursor:pointer;text-decoration:underline" onclick="navigator.clipboard.writeText('${esc(r.url)}').then(()=>showToast('✅ 链接已复制'))" title="点击复制">${esc(r.url)}</span>
@@ -12315,7 +12474,7 @@ function renderOnboardingTasks(tasks) {
         ${t.key==='persona_verify'&&t.action_url?`<div style="font-size:.75rem;margin-top:.2rem;color:var(--gray-400)">📱 短信 · 📧 邮件 · 🖥️ 工人门户 — 已通知</div>`:''}
         ${t.key==='interview'&&_onboardingInterviewInfo&&_onboardingInterviewInfo.slot_datetime?(()=>{
           const dt=new Date(_onboardingInterviewInfo.slot_datetime);
-          const dtStr=dt.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit'});
+          const dtStr=dt.toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',weekday:'short',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
           const loc=_onboardingInterviewInfo.location?` · 📍 ${_onboardingInterviewInfo.location}`:'';
           const statusColor=_onboardingInterviewInfo.status==='completed'?'#065f46':_onboardingInterviewInfo.status==='cancelled'?'#dc2626':'#0369a1';
           const statusBg=_onboardingInterviewInfo.status==='completed'?'#d1fae5':_onboardingInterviewInfo.status==='cancelled'?'#fef2f2':'#f0f9ff';
@@ -12397,7 +12556,7 @@ async function openInterviewCompleteModal() {
   const intvLocEl = document.getElementById('icInterviewLocation');
   if (_onboardingInterviewInfo && _onboardingInterviewInfo.slot_datetime) {
     const dt = new Date(_onboardingInterviewInfo.slot_datetime);
-    intvTimeEl.textContent = dt.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short', hour:'2-digit', minute:'2-digit' });
+    intvTimeEl.textContent = dt.toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
     intvLocEl.textContent = _onboardingInterviewInfo.location ? '📍 ' + _onboardingInterviewInfo.location : '';
     intvBox.style.display = '';
   } else {
@@ -12773,7 +12932,7 @@ async function showWorkerHistory(id, name) {
         <th style="text-align:left;padding:.4rem .5rem">新值</th>
       </tr></thead>
       <tbody>${rows.map(r => {
-        const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+        const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
         const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
         const oldV = fmtWdVal(r.old_value);
         const newV = fmtWdVal(r.new_value);
@@ -12954,7 +13113,7 @@ async function loadWorkerHistory(id) {
     const rows = await api(`/admin/worker-accounts/${id}/history`);
     if (!rows || !rows.length) { el.innerHTML = '<span style="color:var(--gray-300)">暂无变更记录</span>'; return; }
     el.innerHTML = rows.map(r => {
-      const ts = new Date(r.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+      const ts = new Date(r.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
       const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
       const oldV = fmtWdVal(r.old_value);
       const newV = fmtWdVal(r.new_value);
@@ -13533,7 +13692,7 @@ function renderSlots(slots) {
   // Group by date
   const grouped = {};
   filtered.forEach(s => {
-    const dateKey = new Date(s.slot_datetime).toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short' });
+    const dateKey = new Date(s.slot_datetime).toLocaleDateString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short', timeZone: localTz() });
     if (!grouped[dateKey]) grouped[dateKey] = [];
     grouped[dateKey].push(s);
   });
@@ -13544,7 +13703,7 @@ function renderSlots(slots) {
     daySlots.forEach(s => {
       const dt = new Date(s.slot_datetime);
       const past = dt <= now;
-      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit' });
+      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', timeZone: localTz(), timeZoneName: 'short' });
       const contactInfo = s.contact_name ? `<div style="font-size:.72rem;color:var(--gray-500)">👤 ${esc(s.contact_name)} ${esc(s.contact_phone||'')}</div>` : '';
       const instrInfo = s.instructions ? `<div style="font-size:.72rem;color:var(--gray-500);max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(s.instructions)}">📋 ${esc(s.instructions)}</div>` : '';
       html += `<tr style="${past ? 'opacity:.55' : ''}">
@@ -13579,7 +13738,7 @@ async function addInterviewSlot() {
   const r = await api('/admin/interview-slots', {
     method: 'POST',
     body: JSON.stringify({
-      slot_datetime: dt,
+      slot_datetime: new Date(dt).toISOString().replace('T', ' ').slice(0, 19),
       duration_min: parseInt(document.getElementById('ivSlotDuration').value) || 30,
       max_bookings: parseInt(document.getElementById('ivSlotMax').value) || 1,
       ...locData
@@ -13720,7 +13879,7 @@ function collectBatchSlots() {
       const hh = String(Math.floor(cur / 60)).padStart(2, '0');
       const mm = String(cur % 60).padStart(2, '0');
       slots.push({
-        slot_datetime: `${dateStr}T${hh}:${mm}:00`,
+        slot_datetime: new Date(`${dateStr}T${hh}:${mm}:00`).toISOString().replace('T', ' ').slice(0, 19),
         duration_min: duration,
         max_bookings: maxBookings,
         ...locData
@@ -13839,7 +13998,7 @@ function renderInterviews(rows) {
     `<select style="${selStyle}" onchange="${fn}">${opts.map(([v,l])=>`<option value="${v}"${val===v?' selected':''}>${l}</option>`).join('')}</select>`;
 
   wrap.innerHTML = rows.map(i => {
-    const dt  = i.slot_datetime ? new Date(i.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    const dt  = i.slot_datetime ? new Date(i.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'}) : '—';
     const typ = i.interview_type || 'onboarding';
     const typBadge  = `<span style="padding:.15rem .6rem;border-radius:20px;font-size:.73rem;font-weight:700;${IV_TYPE_COLOR[typ]||IV_TYPE_COLOR.other}">${IV_TYPE_LABEL[typ]||typ}</span>`;
     const stBadge   = `<span style="padding:.15rem .6rem;border-radius:20px;font-size:.73rem;font-weight:700;${IV_STATUS_STYLE[i.status]||'background:#f3f4f6;color:#374151'}">${IV_STATUS_LABEL[i.status]||i.status}</span>`;
@@ -14763,7 +14922,7 @@ async function loadMgrInterviews() {
     const interviewStatus = { scheduled:'<span class="badge badge-filled">已预约</span>', completed:'<span class="badge badge-cooperated">已完成</span>', cancelled:'<span class="badge badge-rejected">已取消</span>', no_show:'<span class="badge badge-urgent">未出席</span>' };
     const idStatus = { approved:'<span class="badge badge-cooperated">已通过</span>', pending:'<span class="badge badge-employment">审核中</span>', declined:'<span class="badge badge-rejected">未通过</span>' };
     tbody.innerHTML = rows.map(r => {
-      const dt = r.slot_datetime ? new Date(r.slot_datetime).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+      const dt = r.slot_datetime ? new Date(r.slot_datetime).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'}) : '—';
       return `<tr>
         <td><div style="font-weight:600">${esc(r.worker_name||'—')}</div></td>
         <td><div>${r.worker_phone?`<a href="tel:${esc(r.worker_phone)}" style="color:var(--sky)">${esc(r.worker_phone)}</a>`:'—'}</div><div style="font-size:.78rem">${r.worker_email?`<a href="mailto:${esc(r.worker_email)}" style="color:var(--sky)">${esc(r.worker_email)}</a>`:'—'}</div></td>
@@ -14883,7 +15042,7 @@ async function loadAdminMgrPunch() {
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--gray-400)">暂无打卡记录</td></tr>'; return; }
     tbody.innerHTML = rows.map(r => {
       const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || '—';
-      const tzOpts = r.display_timezone ? {timeZone: r.display_timezone, month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'} : {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'};
+      const tzOpts = r.display_timezone ? {timeZone: r.display_timezone, month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZoneName:'short'} : {timeZone:localTz(),month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZoneName:'short'};
       const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN', tzOpts) : '—';
       const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN', tzOpts) : '—';
       const hrs  = r.total_hours != null ? r.total_hours.toFixed(2) + ' h' : '—';
@@ -14920,8 +15079,9 @@ async function loadAdminMgrSelfPunch() {
     if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--gray-400)">暂无记录</td></tr>'; return; }
     function fmtBreak(mins) { return (!mins && mins!==0) ? '—' : Math.floor(mins/60)+'h'+((mins%60)?((mins%60)+'m'):''); }
     tbody.innerHTML = rows.map(r => {
-      const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN',  {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
-      const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '<span style="color:#f97316;font-weight:600">进行中</span>';
+      const _tz = r.display_timezone || localTz();
+      const cin  = r.clock_in  ? new Date(r.clock_in).toLocaleString('zh-CN',  {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:_tz,timeZoneName:'short'}) : '—';
+      const cout = r.clock_out ? new Date(r.clock_out).toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:_tz,timeZoneName:'short'}) : '<span style="color:#f97316;font-weight:600">进行中</span>';
       const hrs  = r.total_hours != null && r.total_hours > 0 ? r.total_hours.toFixed(2) + ' h' : '—';
       let statusBadge, confirmBtn = '';
       if (r.status === 'open') {
@@ -15183,8 +15343,8 @@ function obivRenderSlots(slots) {
   } else {
     slotSel.innerHTML = slots.map(s => {
       const dt = new Date(s.slot_datetime);
-      const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short' });
-      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
+      const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short', timeZone: localTz() });
+      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone: localTz(), timeZoneName: 'short' });
       const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
       const avail = (s.max_bookings || 1) - (s.booked_count || 0);
       return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
@@ -15253,8 +15413,8 @@ function obivOnSlotChange() {
     const slot = _obivSlots.find(s => s.id == cb.value);
     if (!slot) return '';
     const dt = new Date(slot.slot_datetime);
-    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long' });
-    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false });
+    const dateStr = dt.toLocaleDateString('zh-CN', { year:'numeric', month:'long', day:'numeric', weekday:'long', timeZone: localTz() });
+    const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone: localTz(), timeZoneName: 'short' });
     const locStr = slot.location ? ' · 📍 ' + slot.location : '';
     const avail = (slot.max_bookings || 1) - (slot.booked_count || 0);
     return `⏰ ${dateStr} ${timeStr} · ${slot.duration_min || 30} 分钟${locStr} · 剩余名额：${avail}`;
@@ -15400,6 +15560,540 @@ async function saveMgrAssign() {
   }
 }
 
+
+
+// ═══════════════════════════════════════════════════════
+// INVOICE PAGE (ts-invoice tab)
+// ═══════════════════════════════════════════════════════
+
+const INVP_PROFILE_KEY = 'inv_profile_v1';
+
+function getInvpProfile() {
+  try { return JSON.parse(localStorage.getItem(INVP_PROFILE_KEY)) || {}; } catch { return {}; }
+}
+function saveInvpProfileData(data) {
+  localStorage.setItem(INVP_PROFILE_KEY, JSON.stringify(data));
+}
+
+function initInvoicePage() {
+  const today = new Date();
+  const dow = today.getDay() || 7;
+  const mon = new Date(today); mon.setDate(today.getDate() - dow - 6);
+  const sun = new Date(today); sun.setDate(today.getDate() - dow);
+
+  const startEl = document.getElementById('invPageStart');
+  const endEl   = document.getElementById('invPageEnd');
+  const dateEl  = document.getElementById('invPageDate');
+  const numEl   = document.getElementById('invPageNumber');
+
+  if (startEl && !startEl.value) startEl.value = mon.toISOString().slice(0,10);
+  if (endEl   && !endEl.value)   endEl.value   = sun.toISOString().slice(0,10);
+  if (dateEl  && !dateEl.value)  dateEl.value  = today.toISOString().slice(0,10);
+  if (numEl   && !numEl.value) {
+    const yy = String(today.getFullYear()).slice(2);
+    const mm = String(today.getMonth()+1).padStart(2,'0');
+    const seq = String(Math.floor(Math.random()*900)+100);
+    numEl.value = 'INV' + yy + mm + seq;
+  }
+
+  loadInvpCompanies();
+  renderInvpProfilePreview();
+}
+
+async function loadInvpCompanies() {
+  const res = await api('/admin/partners').catch(() => []);
+  const list = Array.isArray(res) ? res.filter(p => p.active) : (res?.partners || []).filter(p => p.active);
+  window._invpPartners = list;
+  const sel = document.getElementById('invPageCompany');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— 从合作公司中选择 —</option>'
+    + list.map(p => `<option value="${esc(p.name)}" data-addr="${esc(p.address||'')}">${esc(p.name)}</option>`).join('');
+}
+
+function onInvPageCompanyChange() {
+  const sel  = document.getElementById('invPageCompany');
+  const name = sel.value;
+  if (!name) return;
+  document.getElementById('invPageBillName').value = name;
+  const partner = (window._invpPartners||[]).find(p => p.name === name);
+  if (partner) {
+    document.getElementById('invPageBillAddr').value = partner.address || '';
+  }
+}
+
+async function loadInvPageEmployees() {
+  const company = document.getElementById('invPageBillName').value.trim();
+  const ps = document.getElementById('invPageStart').value;
+  const pe = document.getElementById('invPageEnd').value;
+  if (!company) { alert('请先填写客户公司名称（用于匹配打卡记录）'); return; }
+  if (!ps || !pe) { alert('请先填写服务周期'); return; }
+
+  const wrap = document.getElementById('invPageEmpWrap');
+  wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>';
+
+  const qs = new URLSearchParams({ company_name: company, period_start: ps, period_end: pe });
+  const rows = await api('/admin/invoice/employees?' + qs).catch(() => []);
+  window._invpEmps = Array.isArray(rows) ? rows : [];
+
+  if (!window._invpEmps.length) {
+    wrap.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">该公司在所选周期内无打卡记录</div>';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.87rem">
+      <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
+        <th style="padding:6px 8px;text-align:left;width:32px"><input type="checkbox" id="invpSelAll" onchange="invpToggleAll(this)" checked></th>
+        <th style="padding:6px 8px;text-align:left">姓名</th>
+        <th style="padding:6px 8px;text-align:right">总工时</th>
+        <th style="padding:6px 8px;text-align:right">时薪 ($/h)</th>
+        <th style="padding:6px 8px;text-align:right">小计</th>
+      </tr></thead>
+      <tbody>
+        ${window._invpEmps.map(e => {
+          const hrs  = e.total_hours || 0;
+          const rate = e.client_hourly_rate || 0;
+          return `<tr>
+            <td style="padding:5px 8px"><input type="checkbox" class="invp-emp-chk" value="${e.employee_id}" checked></td>
+            <td style="padding:5px 8px">${esc(e.name || ((e.last_name||'')+(e.first_name||'')))}</td>
+            <td style="padding:5px 8px;text-align:right">${hrs.toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right">
+              <input type="number" class="invp-rate-input" data-id="${e.employee_id}" data-hrs="${hrs}"
+                value="${rate.toFixed(2)}" min="0" step="0.01"
+                style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 5px;font-size:.85rem"
+                oninput="updateInvpSub(this)">
+            </td>
+            <td style="padding:5px 8px;text-align:right" class="invp-sub" data-id="${e.employee_id}">${(hrs*rate).toFixed(2)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+function invpToggleAll(chk) {
+  document.querySelectorAll('.invp-emp-chk').forEach(c => c.checked = chk.checked);
+}
+
+function applyInvUniformRate(val) {
+  const rate = parseFloat(val);
+  if (!rate || rate <= 0) return;
+  document.querySelectorAll('.invp-rate-input').forEach(inp => {
+    inp.value = rate.toFixed(2);
+    updateInvpSub(inp);
+  });
+}
+
+function updateInvpSub(inp) {
+  const hrs  = parseFloat(inp.dataset.hrs) || 0;
+  const rate = parseFloat(inp.value) || 0;
+  const cell = document.querySelector(`.invp-sub[data-id="${inp.dataset.id}"]`);
+  if (cell) cell.textContent = (hrs * rate).toFixed(2);
+}
+
+function generateInvpPreview() {
+  const invNum  = document.getElementById('invPageNumber').value.trim();
+  const invDate = document.getElementById('invPageDate').value;
+  const ps      = document.getElementById('invPageStart').value;
+  const pe      = document.getElementById('invPageEnd').value;
+  const forFld  = document.getElementById('invPageFor').value.trim();
+  const billName= document.getElementById('invPageBillName').value.trim();
+  const billAddr= document.getElementById('invPageBillAddr').value.trim();
+
+  if (!billName)    { alert('请填写账单发往公司名称'); return; }
+  if (!ps || !pe)   { alert('请填写服务周期'); return; }
+  if (!window._invpEmps || !window._invpEmps.length) { alert('请先加载员工工时'); return; }
+
+  const selectedIds = new Set([...document.querySelectorAll('.invp-emp-chk:checked')].map(c => c.value));
+  if (!selectedIds.size) { alert('请至少勾选一名员工'); return; }
+
+  const rates = {};
+  document.querySelectorAll('.invp-rate-input').forEach(inp => { rates[inp.dataset.id] = parseFloat(inp.value)||0; });
+
+  const items = window._invpEmps
+    .filter(e => selectedIds.has(String(e.employee_id)))
+    .map(e => ({
+      name:  e.name || ((e.last_name||'')+(e.first_name||'')),
+      hours: e.total_hours || 0,
+      rate:  rates[e.employee_id] || e.client_hourly_rate || 0,
+      total: ((e.total_hours||0) * (rates[e.employee_id] || e.client_hourly_rate || 0))
+    }));
+
+  const profile = getInvpProfile();
+
+  const fmtD = d => {
+    if (!d) return '';
+    const [y,m,day] = d.split('-');
+    return `${parseInt(m)}/${parseInt(day)}/${y}`;
+  };
+  const fmtShort = d => {
+    if (!d) return '';
+    const [y,m,day] = d.split('-');
+    return `${parseInt(m)}/${parseInt(day)}`;
+  };
+  const periodLabel = `${fmtShort(ps)}-${fmtShort(pe)}`;
+  const totalHours  = items.reduce((s,i) => s+i.hours, 0);
+  const totalAmt    = items.reduce((s,i) => s+i.total, 0);
+
+  const tableRows = items.map(i => `
+    <tr style="background:#fff">
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${i.rate.toFixed(1)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.hours.toFixed(2)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.total.toFixed(2)}</td>
+    </tr>`).join('');
+
+  const bankBlock = (profile.bank_account_name||profile.bank_name||profile.bank_account_no||profile.bank_routing_no) ? `
+    <div style="margin-bottom:1.5rem;font-size:.88rem;color:#1e293b;line-height:1.9">
+      ${profile.bank_account_name ? `<div>Account&nbsp;&nbsp;Name：${esc(profile.bank_account_name)}</div>` : ''}
+      ${profile.bank_name         ? `<div>Bank Name：${esc(profile.bank_name)}</div>` : ''}
+      ${profile.bank_account_no   ? `<div>Account&nbsp;&nbsp;No：${esc(profile.bank_account_no)}</div>` : ''}
+      ${profile.bank_routing_no   ? `<div>Routing&nbsp;&nbsp;No：${esc(profile.bank_routing_no)}</div>` : ''}
+    </div>` : '';
+
+  const contactBlock = (profile.contact_name||profile.contact_phone||profile.contact_email) ? `
+    <div style="font-size:.88rem;color:#1e293b;line-height:1.7">
+      If you have any questions concerning this invoice,<br>
+      Contact ${[profile.contact_name,profile.contact_phone,profile.contact_email].filter(Boolean).map(s=>esc(s)).join(' | ')}
+    </div>` : '';
+
+  const html = `
+    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;max-width:760px;margin:0 auto;padding:1rem 0">
+      <!-- Header row: sender left, INVOICE block right -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2rem">
+        <div style="line-height:1.75;font-size:.9rem">
+          <div style="font-size:1.05rem;font-weight:700;margin-bottom:.3rem">${esc(profile.sender_name||'')}</div>
+          ${profile.sender_address ? `<div>${esc(profile.sender_address)}</div>` : ''}
+          ${profile.sender_phone   ? `<div>Phone：${esc(profile.sender_phone)}</div>` : ''}
+          ${profile.sender_email   ? `<div>Email：${esc(profile.sender_email)}</div>` : ''}
+        </div>
+        <div style="text-align:right;font-size:.9rem;line-height:1.75">
+          <div style="font-size:1.9rem;font-weight:800;letter-spacing:3px;margin-bottom:.4rem">INVOICE</div>
+          <div>INVOICE Number：<strong>${esc(invNum||'—')}</strong></div>
+          <div>Pay Period：${fmtD(ps)}-${fmtD(pe)}</div>
+          <div>Invoice Date：${fmtD(invDate)}</div>
+          ${forFld ? `<div>FOR&nbsp;&nbsp;${esc(forFld)}</div>` : ''}
+        </div>
+      </div>
+
+      <!-- Divider -->
+      <div style="border-top:1.5px solid #334155;margin-bottom:1.25rem"></div>
+
+      <!-- Bill To -->
+      <div style="margin-bottom:1.5rem;font-size:.9rem;line-height:1.75">
+        <div style="font-weight:700;text-transform:uppercase;font-size:.8rem;letter-spacing:.06em;color:#64748b;margin-bottom:.3rem">BILL TO</div>
+        <div style="font-weight:600">${esc(billName)}</div>
+        ${billAddr ? `<div>${esc(billAddr)}</div>` : ''}
+      </div>
+
+      <!-- Table -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:2rem">
+        <thead>
+          <tr style="background:#4472c4;color:#fff">
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Date</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Name</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Price per hour</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Hours</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Total Price</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+          <tr style="background:#f6c26b;font-weight:700">
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="2">Total</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${totalHours.toFixed(1)}h</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${totalAmt.toFixed(2)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      ${bankBlock}
+      ${contactBlock}
+    </div>`;
+
+  document.getElementById('invpPreviewContent').innerHTML = html;
+  document.getElementById('invpPreviewModal').style.display = 'flex';
+}
+
+function closeInvpPreview() { document.getElementById('invpPreviewModal').style.display = 'none'; }
+
+function printInvpInvoice() {
+  const content = document.getElementById('invpPrintArea').outerHTML;
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>Invoice</title>
+    <style>
+      body { margin: 1.5cm; font-family: 'Helvetica Neue', Arial, sans-serif; }
+      @media print { body { margin: 1cm; } }
+      table { page-break-inside: avoid; }
+    </style>
+    </head><body>${content}</body></html>`);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 300);
+}
+
+function renderInvpProfilePreview() {
+  const p = getInvpProfile();
+
+  const senderEl  = document.getElementById('invpSenderPreview');
+  const bankEl    = document.getElementById('invpBankPreview');
+  const contactEl = document.getElementById('invpContactPreview');
+
+  if (senderEl) {
+    senderEl.innerHTML = [
+      p.sender_name    ? `<div><strong>${esc(p.sender_name)}</strong></div>` : '',
+      p.sender_address ? `<div>${esc(p.sender_address)}</div>` : '',
+      p.sender_phone   ? `<div>Phone: ${esc(p.sender_phone)}</div>` : '',
+      p.sender_email   ? `<div>Email: ${esc(p.sender_email)}</div>` : '',
+    ].join('') || '<div style="color:var(--gray-400)">（未设置，点击「编辑」配置）</div>';
+  }
+
+  if (bankEl) {
+    bankEl.innerHTML = [
+      p.bank_account_name ? `<div>Account Name: ${esc(p.bank_account_name)}</div>` : '',
+      p.bank_name         ? `<div>Bank Name: ${esc(p.bank_name)}</div>` : '',
+      p.bank_account_no   ? `<div>Account No: ${esc(p.bank_account_no)}</div>` : '',
+      p.bank_routing_no   ? `<div>Routing No: ${esc(p.bank_routing_no)}</div>` : '',
+    ].join('') || '<div style="color:var(--gray-400)">（未设置）</div>';
+  }
+
+  if (contactEl) {
+    contactEl.innerHTML = [
+      p.contact_name  ? `<div>联系人: ${esc(p.contact_name)}</div>` : '',
+      p.contact_phone ? `<div>Tel: ${esc(p.contact_phone)}</div>` : '',
+      p.contact_email ? `<div>Email: ${esc(p.contact_email)}</div>` : '',
+    ].join('') || '<div style="color:var(--gray-400)">（未设置）</div>';
+  }
+}
+
+function openInvpProfileModal() {
+  const p = getInvpProfile();
+  document.getElementById('invpSenderName').value    = p.sender_name    || '';
+  document.getElementById('invpSenderAddr').value    = p.sender_address || '';
+  document.getElementById('invpSenderPhone').value   = p.sender_phone   || '';
+  document.getElementById('invpSenderEmail').value   = p.sender_email   || '';
+  document.getElementById('invpBankAccountName').value = p.bank_account_name || '';
+  document.getElementById('invpBankName').value        = p.bank_name        || '';
+  document.getElementById('invpBankAccountNo').value   = p.bank_account_no  || '';
+  document.getElementById('invpBankRoutingNo').value   = p.bank_routing_no  || '';
+  document.getElementById('invpContactName').value  = p.contact_name  || '';
+  document.getElementById('invpContactPhone').value = p.contact_phone || '';
+  document.getElementById('invpContactEmail').value = p.contact_email || '';
+  document.getElementById('invpProfileModal').style.display = 'flex';
+}
+
+function closeInvpProfileModal() { document.getElementById('invpProfileModal').style.display = 'none'; }
+
+function saveInvpProfile() {
+  const p = {
+    sender_name:      document.getElementById('invpSenderName').value.trim(),
+    sender_address:   document.getElementById('invpSenderAddr').value.trim(),
+    sender_phone:     document.getElementById('invpSenderPhone').value.trim(),
+    sender_email:     document.getElementById('invpSenderEmail').value.trim(),
+    bank_account_name:document.getElementById('invpBankAccountName').value.trim(),
+    bank_name:        document.getElementById('invpBankName').value.trim(),
+    bank_account_no:  document.getElementById('invpBankAccountNo').value.trim(),
+    bank_routing_no:  document.getElementById('invpBankRoutingNo').value.trim(),
+    contact_name:     document.getElementById('invpContactName').value.trim(),
+    contact_phone:    document.getElementById('invpContactPhone').value.trim(),
+    contact_email:    document.getElementById('invpContactEmail').value.trim(),
+  };
+  saveInvpProfileData(p);
+  closeInvpProfileModal();
+  renderInvpProfilePreview();
+  showToast('✅ 配置已保存', 'success');
+}
+
+// ═══════════════════════════════════════════════════════
+// INVOICE GENERATION
+// ═══════════════════════════════════════════════════════
+let _invoiceCompanies = [];
+let _invoiceEmployees = [];
+
+async function openInvoiceModal() {
+  // Load companies from partners
+  const partners = await api('/admin/partners').catch(() => []);
+  _invoiceCompanies = Array.isArray(partners) ? partners.filter(p => p.active) : (partners?.partners || []).filter(p => p.active);
+
+  const sel = document.getElementById('invCompanySelect');
+  sel.innerHTML = '<option value="">— 请选择客户公司 —</option>'
+    + _invoiceCompanies.map(p => `<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+
+  // Default period: previous week Mon-Sun
+  const today = new Date();
+  const dow = today.getDay() || 7; // 1=Mon … 7=Sun
+  const mon = new Date(today); mon.setDate(today.getDate() - dow - 6);
+  const sun = new Date(today); sun.setDate(today.getDate() - dow);
+  document.getElementById('invPeriodStart').value = mon.toISOString().slice(0,10);
+  document.getElementById('invPeriodEnd').value   = sun.toISOString().slice(0,10);
+
+  document.getElementById('invEmpList').innerHTML = '<div style="color:var(--gray-400);font-size:.85rem">请先选择公司和周期后点击「加载员工」</div>';
+  document.getElementById('invMsg').textContent = '';
+  document.getElementById('invoiceModal').style.display = 'flex';
+}
+function closeInvoiceModal() { document.getElementById('invoiceModal').style.display = 'none'; }
+
+async function loadInvoiceEmployees() {
+  const company = document.getElementById('invCompanySelect').value;
+  const ps = document.getElementById('invPeriodStart').value;
+  const pe = document.getElementById('invPeriodEnd').value;
+  if (!company || !ps || !pe) { alert('请先选择公司和周期'); return; }
+
+  const msg = document.getElementById('invMsg');
+  msg.textContent = '加载中…'; msg.style.color = 'var(--gray-400)';
+
+  const qs = new URLSearchParams({ company_name: company, period_start: ps, period_end: pe });
+  const rows = await api('/admin/invoice/employees?' + qs).catch(() => []);
+  _invoiceEmployees = Array.isArray(rows) ? rows : [];
+
+  const container = document.getElementById('invEmpList');
+  if (!_invoiceEmployees.length) {
+    container.innerHTML = '<div style="color:var(--gray-400);font-size:.85rem">该公司在所选周期内无打卡记录</div>';
+    msg.textContent = ''; return;
+  }
+  container.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:.87rem">
+      <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
+        <th style="padding:6px 8px;text-align:left"><input type="checkbox" id="invSelAll" onchange="invToggleAll(this)" checked> 全选</th>
+        <th style="padding:6px 8px">姓名</th>
+        <th style="padding:6px 8px;text-align:right">正常工时</th>
+        <th style="padding:6px 8px;text-align:right">加班工时</th>
+        <th style="padding:6px 8px;text-align:right">合计</th>
+        <th style="padding:6px 8px;text-align:right">计费时薪 ($)</th>
+      </tr></thead>
+      <tbody>
+        ${_invoiceEmployees.map(e => `
+          <tr>
+            <td style="padding:5px 8px"><input type="checkbox" class="inv-emp-chk" value="${e.employee_id}" checked></td>
+            <td style="padding:5px 8px">${esc(e.name||e.first_name+' '+e.last_name)} <span style="font-size:.75rem;color:var(--gray-400)">${esc(e.emp_code||'')}</span></td>
+            <td style="padding:5px 8px;text-align:right">${(e.regular_hours||0).toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right">${(e.overtime_hours||0).toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right"><strong>${(e.total_hours||0).toFixed(2)}</strong></td>
+            <td style="padding:5px 8px;text-align:right"><input type="number" class="inv-rate-input" data-id="${e.employee_id}" value="${(e.client_hourly_rate||0).toFixed(2)}" min="0" step="0.01" style="width:80px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 4px;font-size:.85rem"></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  msg.textContent = `已加载 ${_invoiceEmployees.length} 名员工`;
+  msg.style.color = 'var(--green)';
+}
+
+function invToggleAll(chk) {
+  document.querySelectorAll('.inv-emp-chk').forEach(c => c.checked = chk.checked);
+}
+
+async function generateInvoice() {
+  const company = document.getElementById('invCompanySelect').value;
+  const ps = document.getElementById('invPeriodStart').value;
+  const pe = document.getElementById('invPeriodEnd').value;
+  if (!company || !ps || !pe) { alert('请填写完整信息'); return; }
+
+  const selected = [...document.querySelectorAll('.inv-emp-chk:checked')].map(c => parseInt(c.value));
+  if (!selected.length) { alert('请至少选择一名员工'); return; }
+
+  const bill_rates = {};
+  document.querySelectorAll('.inv-rate-input').forEach(inp => {
+    bill_rates[inp.dataset.id] = parseFloat(inp.value) || 0;
+  });
+
+  const msg = document.getElementById('invMsg');
+  msg.textContent = '生成中…'; msg.style.color = 'var(--gray-400)';
+
+  const data = await api('/admin/invoice/generate', {
+    method: 'POST',
+    body: JSON.stringify({ company_name: company, period_start: ps, period_end: pe, employee_ids: selected, bill_rates })
+  }).catch(e => ({ error: e.message }));
+
+  if (!data || data.error) {
+    msg.textContent = '❌ ' + (data?.error || '生成失败'); msg.style.color = 'var(--red)'; return;
+  }
+  msg.textContent = '';
+  closeInvoiceModal();
+  showInvoicePreview(data);
+}
+
+function showInvoicePreview(inv) {
+  const p = inv.partner || {};
+  const fmtDate = d => d ? d.replace(/-/g,'/') : '';
+  const fmtMoney = n => '$' + (n||0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,',');
+
+  const rows = inv.items.map(item => `
+    <tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9">${esc(item.name)} <span style="font-size:.78rem;color:#94a3b8">${esc(item.emp_code||'')} ${item.position ? '· '+esc(item.position) : ''}</span></td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right">${(item.regular_hours||0).toFixed(2)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right">${(item.overtime_hours||0).toFixed(2)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right">${fmtMoney(item.rate)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right">${fmtMoney(item.rate*1.5)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600">${fmtMoney(item.total_amount)}</td>
+    </tr>`).join('');
+
+  const html = `
+    <div id="invoicePrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;max-width:800px;margin:0 auto">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2rem;padding-bottom:1.5rem;border-bottom:2px solid #e2e8f0">
+        <div>
+          <div style="font-size:1.6rem;font-weight:800;color:#0f172a;letter-spacing:-.5px">INVOICE</div>
+          <div style="font-size:.85rem;color:#64748b;margin-top:.25rem">发票编号：<strong style="color:#0f172a">${esc(inv.invoice_number)}</strong></div>
+          <div style="font-size:.85rem;color:#64748b">生成日期：${new Date(inv.generated_at).toLocaleDateString('zh-CN')}</div>
+          <div style="font-size:.85rem;color:#64748b">服务周期：${fmtDate(inv.period_start)} — ${fmtDate(inv.period_end)}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:1.05rem;font-weight:700;color:#0f172a">Prime Anchor Point</div>
+        </div>
+      </div>
+      <!-- Bill To -->
+      <div style="margin-bottom:1.5rem">
+        <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin-bottom:.35rem">账单发往</div>
+        <div style="font-size:1rem;font-weight:700;color:#0f172a">${esc(inv.company_name)}</div>
+        ${p.contact_person ? `<div style="font-size:.87rem;color:#475569">${esc(p.contact_person)}</div>` : ''}
+        ${p.address ? `<div style="font-size:.87rem;color:#475569">${esc(p.address)}</div>` : ''}
+        ${p.email ? `<div style="font-size:.87rem;color:#475569">${esc(p.email)}</div>` : ''}
+        ${p.phone ? `<div style="font-size:.87rem;color:#475569">${esc(p.phone)}</div>` : ''}
+      </div>
+      <!-- Table -->
+      <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem">
+        <thead>
+          <tr style="background:#f8fafc;font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:#64748b">
+            <th style="padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid #e2e8f0">员工</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">正常工时</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">加班工时</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">时薪</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">加班时薪</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;border-bottom:2px solid #e2e8f0">小计</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <!-- Total -->
+      <div style="display:flex;justify-content:flex-end">
+        <div style="min-width:260px">
+          <div style="display:flex;justify-content:space-between;padding:.5rem 12px;font-size:.9rem;color:#475569">
+            <span>小计</span><span>${fmtMoney(inv.subtotal)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;padding:.75rem 12px;background:#0f172a;color:#fff;font-size:1rem;font-weight:700;border-radius:6px;margin-top:.25rem">
+            <span>合计</span><span>${fmtMoney(inv.subtotal)}</span>
+          </div>
+        </div>
+      </div>
+      <!-- Footer -->
+      <div style="margin-top:2rem;padding-top:1rem;border-top:1px solid #e2e8f0;font-size:.78rem;color:#94a3b8;text-align:center">
+        Payment shall be made within 30 days of receipt of this invoice. Thank you for your business.
+      </div>
+    </div>`;
+
+  document.getElementById('invPreviewContent').innerHTML = html;
+  document.getElementById('invoicePreviewModal').style.display = 'flex';
+}
+function closeInvoicePreview() { document.getElementById('invoicePreviewModal').style.display = 'none'; }
+function printInvoice() {
+  const content = document.getElementById('invoicePrintArea').innerHTML;
+  const w = window.open('', '_blank');
+  w.document.write(`<!DOCTYPE html><html><head><title>Invoice</title>
+    <style>body{margin:2rem;font-family:'Helvetica Neue',Arial,sans-serif}@media print{body{margin:1cm}}</style>
+    </head><body>${content}</body></html>`);
+  w.document.close(); w.focus(); w.print();
+}
+
 </script>
 <!-- Custom Admin Dialog -->
 <div class="adm-dlg-bg" id="admDlgBg">
@@ -15408,6 +16102,140 @@ async function saveMgrAssign() {
     <p id="admDlgMsg"></p>
     <div id="admDlgInputWrap" style="display:none"><input type="text" id="admDlgInput"></div>
     <div class="adm-dlg-btns" id="admDlgBtns"></div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE PAGE: PROFILE SETTINGS MODAL ════════════════════ -->
+<div class="modal-bg" id="invpProfileModal" style="display:none">
+  <div class="modal" style="max-width:600px;max-height:92vh;overflow-y:auto">
+    <h2>⚙️ 发票配置</h2>
+    <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1.25rem">信息保存在本地，下次打开自动载入。</p>
+
+    <h4 style="margin:.25rem 0 .75rem;color:var(--gray-700)">我方信息（Invoice 抬头）</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+      <div class="field" style="grid-column:1/-1">
+        <label>公司名称</label>
+        <input type="text" id="invpSenderName" placeholder="e.g. JC-SL Express Inc">
+      </div>
+      <div class="field" style="grid-column:1/-1">
+        <label>地址</label>
+        <input type="text" id="invpSenderAddr" placeholder="e.g. 1001 Doubleday Ave., Ontario, CA 91761">
+      </div>
+      <div class="field">
+        <label>电话</label>
+        <input type="text" id="invpSenderPhone" placeholder="626-695-8857">
+      </div>
+      <div class="field">
+        <label>邮箱</label>
+        <input type="text" id="invpSenderEmail" placeholder="email@example.com">
+      </div>
+    </div>
+
+    <h4 style="margin:.25rem 0 .75rem;color:var(--gray-700)">银行收款信息</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
+      <div class="field">
+        <label>Account Name</label>
+        <input type="text" id="invpBankAccountName" placeholder="e.g. JC-SL Express Inc">
+      </div>
+      <div class="field">
+        <label>Bank Name</label>
+        <input type="text" id="invpBankName" placeholder="e.g. JPMorgan Bank">
+      </div>
+      <div class="field">
+        <label>Account No</label>
+        <input type="text" id="invpBankAccountNo" placeholder="2904088524">
+      </div>
+      <div class="field">
+        <label>Routing No</label>
+        <input type="text" id="invpBankRoutingNo" placeholder="322271627">
+      </div>
+    </div>
+
+    <h4 style="margin:.25rem 0 .75rem;color:var(--gray-700)">页脚联系人</h4>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.5rem">
+      <div class="field">
+        <label>姓名</label>
+        <input type="text" id="invpContactName" placeholder="Keon">
+      </div>
+      <div class="field">
+        <label>电话</label>
+        <input type="text" id="invpContactPhone" placeholder="626-695-8857">
+      </div>
+      <div class="field">
+        <label>邮箱</label>
+        <input type="text" id="invpContactEmail" placeholder="keonhua88@gmail.com">
+      </div>
+    </div>
+
+    <div style="display:flex;gap:.75rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeInvpProfileModal()">取消</button>
+      <button class="btn btn-green" onclick="saveInvpProfile()">💾 保存配置</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE PAGE: PREVIEW MODAL ════════════════════ -->
+<div class="modal-bg" id="invpPreviewModal" style="display:none">
+  <div class="modal" style="max-width:900px;max-height:94vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2 style="margin:0">Invoice 预览</h2>
+      <div style="display:flex;gap:.6rem">
+        <button class="btn btn-green" onclick="printInvpInvoice()">🖨️ 打印 / 另存为 PDF</button>
+        <button class="btn btn-outline" onclick="closeInvpPreview()">关闭</button>
+      </div>
+    </div>
+    <div id="invpPreviewContent" style="background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:2.5rem"></div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE GENERATION MODAL ════════════════════ -->
+<div class="modal-bg" id="invoiceModal" style="display:none">
+  <div class="modal" style="max-width:660px">
+    <h2>🧾 生成工时发票</h2>
+    <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1.25rem">选择客户公司和服务周期，加载员工工时后生成 Invoice。</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1rem">
+      <div class="field" style="grid-column:1/-1">
+        <label>客户公司 <span style="color:var(--red)">*</span></label>
+        <select id="invCompanySelect" style="width:100%"><option value="">— 请选择 —</option></select>
+      </div>
+      <div class="field">
+        <label>周期开始 <span style="color:var(--red)">*</span></label>
+        <input type="date" id="invPeriodStart">
+      </div>
+      <div class="field">
+        <label>周期结束 <span style="color:var(--red)">*</span></label>
+        <input type="date" id="invPeriodEnd">
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <button class="btn btn-outline" onclick="loadInvoiceEmployees()" style="width:100%">加载员工</button>
+      </div>
+    </div>
+
+    <div id="invEmpList" style="margin-bottom:1rem;min-height:60px;max-height:320px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;background:#fafafa">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">请先选择公司和周期后点击「加载员工」</div>
+    </div>
+
+    <div id="invMsg" style="font-size:.84rem;margin-bottom:.75rem"></div>
+
+    <div style="display:flex;gap:.75rem;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeInvoiceModal()">取消</button>
+      <button class="btn btn-green" onclick="generateInvoice()">生成发票</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════ INVOICE PREVIEW MODAL ════════════════════ -->
+<div class="modal-bg" id="invoicePreviewModal" style="display:none">
+  <div class="modal" style="max-width:880px;max-height:92vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <h2 style="margin:0">发票预览</h2>
+      <div style="display:flex;gap:.6rem">
+        <button class="btn btn-outline" onclick="printInvoice()">🖨️ 打印 / 另存为 PDF</button>
+        <button class="btn btn-outline" onclick="closeInvoicePreview()">关闭</button>
+      </div>
+    </div>
+    <div id="invPreviewContent" style="background:#fff;border:1px solid var(--gray-200);border-radius:8px;padding:2rem"></div>
   </div>
 </div>
 </body>
