@@ -3239,7 +3239,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="form-section"><h4>联系人 * (至少一个，姓名/电话/邮箱必填)</h4>
+  <div class="form-section"><h4>联系人 * (至少一个，姓名必填)</h4>
     <div class="dyn-list" id="pContactsList"></div>
     <button class="btn-add-sm" onclick="addPartnerContact()">+ 添加联系人</button>
   </div>
@@ -8211,8 +8211,8 @@ function addPartnerContact(c) {
         <div class="field"><label>职位</label><input class="pc-role" value="${esc(c?.role||'')}" placeholder="经理"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
-        <div class="field"><label>电话 *</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
-        <div class="field"><label>邮箱 *</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
+        <div class="field"><label>电话</label><input class="pc-phone" value="${esc(c?.phone||'')}" placeholder="(312) 555-0000"></div>
+        <div class="field"><label>邮箱</label><input class="pc-email" value="${esc(c?.email||'')}" placeholder="email@co.com"></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.35rem">
         <div class="field"><label style="font-size:.72rem;color:var(--gray-400)">WhatsApp</label><input class="pc-whatsapp" value="${esc(c?.whatsapp||'')}" placeholder="+1 312-000-0000" style="font-size:.82rem;padding:6px 8px"></div>
@@ -9045,8 +9045,6 @@ async function savePartner() {
   // Validate first contact: name + phone + email required
   const firstContact = contacts[0];
   if (!firstContact || !(`${firstContact.first_name||''} ${firstContact.last_name||''}`.trim())) return alert('请填写联系人姓名（名 + 姓）');
-  if (!firstContact.phone || !firstContact.phone.trim()) return alert('请填写联系人电话');
-  if (!firstContact.email || !firstContact.email.trim()) return alert('请填写联系人邮箱');
   // Validate at least one address
   const addrs = getPartnerAddrs();
   if (!addrs.length || !addrs.some(a => (a.street||a.address||'').trim())) return alert('请至少填写一个公司地址');
