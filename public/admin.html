@@ -15762,6 +15762,11 @@ function onInvpPresetSelect(section) {
   renderInvpSettingsLists();
 }
 
+let _invpPresetSnapshot = '';
+function _invpPresetCurrentState() {
+  const section = document.getElementById('invpPresetSection').value;
+  return JSON.stringify({ name: document.getElementById('invpPresetName').value, ...collectPresetData(section) });
+}
 function openInvpPresetModal(section, editId) {
   document.getElementById('invpPresetSection').value = section;
   document.getElementById('invpPresetEditId').value = editId || '';
@@ -15781,6 +15786,7 @@ function openInvpPresetModal(section, editId) {
     fillPresetFields(section, {});
   }
   document.getElementById('invpPresetModal').style.display = 'flex';
+  _invpPresetSnapshot = _invpPresetCurrentState();
 }
 
 function fillPresetFields(section, data) {
@@ -15833,7 +15839,7 @@ async function saveInvpPreset() {
   } else {
     await api('/admin/invoice-profiles', { method: 'POST', body: JSON.stringify({ name, section, data }) });
   }
-  closeInvpPresetModal();
+  closeInvpPresetModal(true);
   await loadInvpPresets();
   // Auto-select the newly saved preset
   const selMap = { sender: 'invpSenderSelect', bank: 'invpBankSelect', contact: 'invpContactSelect' };
@@ -15847,7 +15853,12 @@ async function saveInvpPreset() {
   showToast('✅ 预设已保存', 'success');
 }
 
-function closeInvpPresetModal() { document.getElementById('invpPresetModal').style.display = 'none'; }
+async function closeInvpPresetModal(force) {
+  if (!force && _invpPresetSnapshot && _invpPresetCurrentState() !== _invpPresetSnapshot) {
+    if (!await showConfirm('当前修改尚未保存，确定关闭？')) return;
+  }
+  document.getElementById('invpPresetModal').style.display = 'none';
+}
 
 function initInvoicePage() {
   loadInvpList();
@@ -16727,7 +16738,7 @@ function printInvoice() {
 </div>
 
 <!-- ════════════════════ INVOICE PAGE: PRESET MODAL ════════════════════ -->
-<div class="modal-bg" id="invpPresetModal" style="display:none">
+<div class="modal-bg" id="invpPresetModal" style="display:none" onclick="if(event.target===this)closeInvpPresetModal()">
   <div class="modal" style="max-width:520px;max-height:92vh;overflow-y:auto">
     <h2 id="invpPresetModalTitle">新建预设</h2>
     <input type="hidden" id="invpPresetEditId">
