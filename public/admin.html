@@ -15588,9 +15588,10 @@ function initInvoicePage() {
   const dateEl  = document.getElementById('invPageDate');
   const numEl   = document.getElementById('invPageNumber');
 
-  if (startEl && !startEl.value) startEl.value = mon.toISOString().slice(0,10);
-  if (endEl   && !endEl.value)   endEl.value   = sun.toISOString().slice(0,10);
-  if (dateEl  && !dateEl.value)  dateEl.value  = today.toISOString().slice(0,10);
+  const toLocalDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  if (startEl && !startEl.value) startEl.value = toLocalDate(mon);
+  if (endEl   && !endEl.value)   endEl.value   = toLocalDate(sun);
+  if (dateEl  && !dateEl.value)  dateEl.value  = toLocalDate(today);
   if (numEl   && !numEl.value) {
     const yy = String(today.getFullYear()).slice(2);
     const mm = String(today.getMonth()+1).padStart(2,'0');
@@ -15927,8 +15928,9 @@ async function openInvoiceModal() {
   const dow = today.getDay() || 7; // 1=Mon … 7=Sun
   const mon = new Date(today); mon.setDate(today.getDate() - dow - 6);
   const sun = new Date(today); sun.setDate(today.getDate() - dow);
-  document.getElementById('invPeriodStart').value = mon.toISOString().slice(0,10);
-  document.getElementById('invPeriodEnd').value   = sun.toISOString().slice(0,10);
+  const toLocalDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('invPeriodStart').value = toLocalDate(mon);
+  document.getElementById('invPeriodEnd').value   = toLocalDate(sun);
 
   document.getElementById('invEmpList').innerHTML = '<div style="color:var(--gray-400);font-size:.85rem">请先选择公司和周期后点击「加载员工」</div>';
   document.getElementById('invMsg').textContent = '';
