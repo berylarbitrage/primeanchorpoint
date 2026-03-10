@@ -2711,18 +2711,19 @@ tr:hover td{background:var(--sky-light)}
         <option value="/year">/ year</option>
       </select>
     </div>
+    <div style="margin-top:.4rem">
+      <select id="jPayPeriod" style="width:100%;box-sizing:border-box">
+        <option value="">— 发薪频率（可选）—</option>
+        <option value="hourly">Hourly / 每小时 / Por hora</option>
+        <option value="daily">Daily / 每天 / Por día</option>
+        <option value="weekly">Weekly Pay / 周薪 / Semanal</option>
+        <option value="biweekly">Biweekly Pay / 双周薪 / Quincenal</option>
+        <option value="semimonthly">Semimonthly / 半月薪 / Semimensual</option>
+        <option value="monthly">Monthly / 月薪 / Mensual</option>
+        <option value="yearly">Yearly / 年薪 / Anual</option>
+      </select>
+    </div>
   </div>
-  <!-- hidden pay_period kept for backend compatibility -->
-  <select id="jPayPeriod" style="display:none">
-    <option value="">不指定</option>
-    <option value="hourly">hourly</option>
-    <option value="daily">daily</option>
-    <option value="weekly">weekly</option>
-    <option value="biweekly">biweekly</option>
-    <option value="semimonthly">semimonthly</option>
-    <option value="monthly">monthly</option>
-    <option value="yearly">yearly</option>
-  </select>
   <div class="field"><label>语言（可多选）</label>
     <div style="display:flex;gap:1.2rem;flex-wrap:wrap;padding:.5rem 0">
       <label style="display:flex;align-items:center;gap:.4rem;font-weight:normal;cursor:pointer"><input type="checkbox" id="jLangEn" value="en" onchange="updateLangSections()"> English</label>
@@ -5187,11 +5188,16 @@ function updatePayInputs() {
   document.getElementById('jPayFixedWrap').style.display = isRange ? 'none' : '';
   document.getElementById('jPayRangeWrap').style.display = isRange ? 'flex' : 'none';
 }
-// Sync hidden jPayPeriod from jPayUnit selection
+// Auto-fill jPayPeriod from jPayUnit only if user hasn't manually chosen a period
 const _unitToPeriod = {'/hr':'hourly','/day':'daily','/week':'weekly','/month':'monthly','/year':'yearly'};
 document.addEventListener('change', e => {
   if (e.target && e.target.id === 'jPayUnit') {
-    document.getElementById('jPayPeriod').value = _unitToPeriod[e.target.value] || '';
+    const pp = document.getElementById('jPayPeriod');
+    // Only auto-fill if no manual selection or if current value matches a unit-derived value
+    const unitDerived = Object.values(_unitToPeriod);
+    if (!pp.value || unitDerived.includes(pp.value)) {
+      pp.value = _unitToPeriod[e.target.value] || '';
+    }
   }
 });
 
