@@ -5317,7 +5317,7 @@ async function openJobModal(job) {
   document.getElementById('jobId').value = job ? job.id : '';
   // Load partners for search
   const partnerRes = await api('/admin/partners');
-  _jobPartners = Array.isArray(partnerRes) ? partnerRes.filter(p => p.active) : [];
+  _jobPartners = Array.isArray(partnerRes) ? partnerRes : [];
   document.getElementById('jPartnerDrop').classList.remove('open');
   if (job && job.partner_id) {
     const p = _jobPartners.find(x => x.id == job.partner_id);
