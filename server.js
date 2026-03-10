@@ -6392,6 +6392,15 @@ app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res)
   const { employee_id, entries, job_id, company_name, period_start, period_end } = req.body;
   if (!employee_id || !entries || !entries.length) return res.status(400).json({ error: 'employee_id and entries required' });
 
+  function breaksMin(breaks) {
+    if (!Array.isArray(breaks) || !breaks.length) return 0;
+    return breaks.reduce((sum, b) => {
+      if (!b.start || !b.end) return sum;
+      const [sh,sm] = b.start.split(':').map(Number);
+      const [eh,em] = b.end.split(':').map(Number);
+      return sum + Math.max(0, (eh*60+em) - (sh*60+sm));
+    }, 0);
+  }
   function lunchMin(start, end) {
     if (!start || !end) return 0;
     const [sh,sm] = start.split(':').map(Number);
@@ -6401,8 +6410,8 @@ app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res)
 
   const stmtEntry = db.prepare(`INSERT INTO time_entries
     (employee_id,clock_in,clock_out,break_minutes,lunch_start,lunch_end,company_name,
-     total_hours,regular_hours,overtime_hours,job_id,notes,status,sheet_id)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+     total_hours,regular_hours,overtime_hours,job_id,notes,status,sheet_id,break_records)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
   const stmtSheet = db.prepare(`INSERT INTO timesheet_sheets
     (employee_id,company_name,period_start,period_end,job_id,
      total_hours,regular_hours,overtime_hours,status,confirm_token)
@@ -6415,7 +6424,9 @@ app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res)
     const prepared = [];
     for (const e of rows) {
       if (!e.clock_in || !e.clock_out) continue;
-      const bMin = lunchMin(e.lunch_start, e.lunch_end) || parseInt(e.break_minutes)||0;
+      const bMin = (Array.isArray(e.breaks) && e.breaks.length)
+        ? breaksMin(e.breaks)
+        : (lunchMin(e.lunch_start, e.lunch_end) || parseInt(e.break_minutes)||0);
       const hrs = calcHours(e.clock_in, e.clock_out, bMin);
       if (hrs.total <= 0) continue;
       totTotal += hrs.total; totReg += hrs.regular; totOT += hrs.overtime;
@@ -6432,9 +6443,15 @@ app.post('/api/admin/time-entries/batch', requireAdmin, blockManager, (req, res)
     const sheetId = sheetRow.lastInsertRowid;
     // insert entries linked to sheet
     for (const { e, bMin, hrs } of prepared) {
+      const dateStr = e.clock_in.slice(0,10);
+      const breaks = Array.isArray(e.breaks) ? e.breaks.filter(b=>b.start&&b.end) : [];
+      const breakRecords = breaks.map(b => ({ start: dateStr+'T'+b.start, end: dateStr+'T'+b.end }));
+      const ls = breaks[0]?.start || e.lunch_start || '';
+      const le = breaks[0]?.end   || e.lunch_end   || '';
       const r = stmtEntry.run(employee_id, e.clock_in, e.clock_out, bMin,
-        e.lunch_start||'', e.lunch_end||'', company_name||'',
-        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed', sheetId);
+        ls, le, company_name||'',
+        hrs.total, hrs.regular, hrs.overtime, job_id||null, e.notes||'', 'closed', sheetId,
+        JSON.stringify(breakRecords));
       stmtLink.run(sheetId, r.lastInsertRowid);
     }
     return { count: prepared.length, token, sheet_id: sheetId };

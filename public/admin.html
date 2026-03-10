@@ -261,6 +261,14 @@ tr:hover td{background:var(--sky-light)}
 .ts-table .ts-hours{font-weight:700;color:var(--sky);text-align:center;min-width:50px}
 .ts-table .ts-ot{color:var(--accent);font-weight:700;text-align:center}
 .ts-table .ts-off td{opacity:.4}
+.ts-breaks-cell{min-width:200px}
+.ts-break-row{display:flex;align-items:center;gap:4px;margin-bottom:3px}
+.ts-break-row input[type="time"]{min-width:82px;width:82px}
+.ts-break-row .ts-break-sep{color:var(--gray-400);font-size:.8rem;flex-shrink:0}
+.ts-break-rm{background:none;border:none;color:var(--gray-400);cursor:pointer;font-size:.95rem;padding:0 2px;line-height:1}
+.ts-break-rm:hover{color:#dc2626}
+.ts-break-add{background:none;border:1px dashed var(--gray-300);color:var(--gray-500);font-size:.72rem;padding:2px 7px;border-radius:4px;cursor:pointer;margin-top:2px;width:100%}
+.ts-break-add:hover{border-color:var(--sky);color:var(--sky)}
 .ts-totals{background:var(--sky-light);border-radius:var(--radius);padding:1rem;display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1.5rem;font-size:.9rem}
 .ts-totals strong{color:var(--blue)}.ts-totals .ot{color:var(--accent)}
 .ts-confirm{background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:1.2rem;margin-bottom:1.5rem}
@@ -3650,7 +3658,7 @@ tr:hover td{background:var(--sky-light)}
       </div>
       <div id="tsEmpTags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px"></div>
     </div>
-    <div class="field"><label>公司 (客户)</label><select id="tsCompany"><option value="">无</option></select></div>
+    <div class="field"><label>公司 (客户)</label><input id="tsCompany" type="text" placeholder="搜索公司名称..." autocomplete="off" list="tsCompanyList"><datalist id="tsCompanyList"></datalist></div>
     <div class="field"><label>起始日期 (周一)</label><input id="tsStartDate" type="date" onchange="buildTsRows()"></div>
   </div>
   <div class="field-row no-print" style="margin-bottom:1rem">
@@ -3667,7 +3675,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div id="tsTableWrap">
     <table class="ts-table">
-      <thead><tr><th>日期</th><th>上班时间 *</th><th>下班时间 *</th><th>午休开始<br><small style="font-weight:400;color:var(--gray-400)">(可选)</small></th><th>午休结束<br><small style="font-weight:400;color:var(--gray-400)">(可选)</small></th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
+      <thead><tr><th>日期</th><th>上班时间 *</th><th>下班时间 *</th><th>休息段<br><small style="font-weight:400;color:var(--gray-400)">(可选，可加多段)</small></th><th>小计(h)</th><th>正常(h)</th><th>加班(h)</th></tr></thead>
       <tbody id="tsBody"></tbody>
     </table>
   </div>
@@ -11143,10 +11151,11 @@ async function openTsModal() {
   document.getElementById('tsEmpSearch').value = '';
   document.getElementById('tsEmpDrop').style.display = 'none';
   document.getElementById('tsEmpTags').innerHTML = '';
-  // populate company (partners) dropdown
+  // populate company search datalist from partners
   const partners = await api('/admin/partners');
-  document.getElementById('tsCompany').innerHTML = '<option value="">无</option>' +
-    partners.filter(p=>p.active).map(p=>`<option value="${esc(p.name)}">${esc(p.name)}</option>`).join('');
+  document.getElementById('tsCompanyList').innerHTML =
+    partners.filter(p=>p.active).map(p=>`<option value="${esc(p.name)}">`).join('');
+  document.getElementById('tsCompany').value = '';
   // populate jobs
   const jobs = await api('/admin/jobs');
   document.getElementById('tsJob').innerHTML = '<option value="">无</option>' +
@@ -11186,8 +11195,15 @@ function buildTsRows() {
       <td class="day-label">${label}<small>${dateLabel} ${dateStr}</small></td>
       <td><input type="time" step="60" class="ts-in" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
       <td><input type="time" step="60" class="ts-out" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
-      <td><input type="time" step="60" class="ts-lunch-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
-      <td><input type="time" step="60" class="ts-lunch-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)"></td>
+      <td class="ts-breaks-cell">
+        <div class="ts-break-row">
+          <input type="time" step="60" class="ts-break-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)">
+          <span class="ts-break-sep">—</span>
+          <input type="time" step="60" class="ts-break-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)">
+          <button type="button" class="ts-break-rm" onclick="removeTsBreak(this)" title="删除此段休息">×</button>
+        </div>
+        <button type="button" class="ts-break-add" onclick="addTsBreak(this)">+ 加休息</button>
+      </td>
       <td class="ts-hours">—</td>
       <td class="ts-hours">—</td>
       <td class="ts-ot">—</td>
@@ -11201,15 +11217,17 @@ function calcTsRow(el) {
   const tr = el.closest('tr');
   const inVal = tr.querySelector('.ts-in').value;
   const outVal = tr.querySelector('.ts-out').value;
-  // compute lunch break in minutes from start/end times
-  const lsVal = tr.querySelector('.ts-lunch-start').value;
-  const leVal = tr.querySelector('.ts-lunch-end').value;
+  // sum all break segments
   let breakMin = 0;
-  if (lsVal && leVal) {
-    const [sh,sm] = lsVal.split(':').map(Number);
-    const [eh,em] = leVal.split(':').map(Number);
-    breakMin = Math.max(0, (eh*60+em) - (sh*60+sm));
-  }
+  tr.querySelectorAll('.ts-break-row').forEach(br => {
+    const s = br.querySelector('.ts-break-start').value;
+    const e = br.querySelector('.ts-break-end').value;
+    if (s && e) {
+      const [sh,sm] = s.split(':').map(Number);
+      const [eh,em] = e.split(':').map(Number);
+      breakMin += Math.max(0, (eh*60+em) - (sh*60+sm));
+    }
+  });
   const cells = tr.querySelectorAll('.ts-hours, .ts-ot');
   if (!inVal || !outVal) { cells[0].textContent = '—'; cells[1].textContent = '—'; cells[2].textContent = '—'; updateTsTotals(); return; }
   const dateStr = tr.dataset.date;
@@ -11224,6 +11242,26 @@ function calcTsRow(el) {
   cells[1].textContent = regular.toFixed(2);
   cells[2].textContent = ot > 0 ? ot.toFixed(2) : '—';
   updateTsTotals();
+}
+
+function addTsBreak(btn) {
+  const cell = btn.closest('.ts-breaks-cell');
+  const row = document.createElement('div');
+  row.className = 'ts-break-row';
+  row.innerHTML = `<input type="time" step="60" class="ts-break-start" oninput="calcTsRow(this)" onchange="calcTsRow(this)"><span class="ts-break-sep">—</span><input type="time" step="60" class="ts-break-end" oninput="calcTsRow(this)" onchange="calcTsRow(this)"><button type="button" class="ts-break-rm" onclick="removeTsBreak(this)" title="删除此段休息">×</button>`;
+  cell.insertBefore(row, btn);
+}
+
+function removeTsBreak(btn) {
+  const cell = btn.closest('.ts-breaks-cell');
+  // keep at least one break row
+  if (cell.querySelectorAll('.ts-break-row').length <= 1) {
+    btn.closest('.ts-break-row').querySelectorAll('input').forEach(i => { i.value = ''; });
+    calcTsRow(btn);
+    return;
+  }
+  btn.closest('.ts-break-row').remove();
+  calcTsRow(cell.querySelector('input'));
 }
 
 function updateTsTotals() {
@@ -11262,8 +11300,12 @@ async function saveBatchTimesheet() {
     if (!inVal && !outVal) return; // both empty, skip quietly
     if (!inVal || !outVal) { skippedRows++; return; } // only one filled, track it
     const dateStr = tr.dataset.date;
-    const lsVal = tr.querySelector('.ts-lunch-start').value;
-    const leVal = tr.querySelector('.ts-lunch-end').value;
+    const breaks = [];
+    tr.querySelectorAll('.ts-break-row').forEach(br => {
+      const s = br.querySelector('.ts-break-start').value;
+      const e = br.querySelector('.ts-break-end').value;
+      if (s && e) breaks.push({ start: s, end: e });
+    });
     let clockOut = dateStr + 'T' + outVal;
     const clockIn = dateStr + 'T' + inVal;
     if (new Date(clockOut) <= new Date(clockIn)) {
@@ -11273,7 +11315,8 @@ async function saveBatchTimesheet() {
     }
     if (!periodStart || dateStr < periodStart) periodStart = dateStr;
     if (!periodEnd || dateStr > periodEnd) periodEnd = dateStr;
-    entries.push({ clock_in: clockIn, clock_out: clockOut, lunch_start: lsVal, lunch_end: leVal });
+    entries.push({ clock_in: clockIn, clock_out: clockOut, breaks,
+      lunch_start: breaks[0]?.start || '', lunch_end: breaks[0]?.end || '' });
   });
   if (entries.length === 0) {
     if (skippedRows > 0) return alert('有 ' + skippedRows + ' 天只填了上班或下班时间，请确保每天的上班时间和下班时间都填写完整。\n（午休时间可以不填）');
