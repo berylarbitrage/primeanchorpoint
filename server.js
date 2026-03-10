@@ -1243,6 +1243,7 @@ if (!db.prepare('SELECT id FROM display_suffix_options LIMIT 1').get()) {
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN assigned_slot_ids TEXT DEFAULT ''"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -3682,19 +3683,18 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmi
   db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
     .run(visible ? 1 : 0, workerId, req.params.key);
 
-  // When assigning interview slots to a worker, reserve those specific slots for them
+  // When assigning interview slots to a worker, store the assigned slot IDs
   if (req.params.key === 'interview' && Array.isArray(slot_ids) && slot_ids.length) {
-    // Clear previous unbooked reserved slots for this worker
-    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(workerId);
-    // Mark selected slots as reserved for this worker
+    // Save assigned slot IDs directly on the onboarding record (primary source of truth)
+    const slotIdsJson = JSON.stringify(slot_ids.map(Number));
+    db.prepare(`UPDATE worker_onboarding SET assigned_slot_ids=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview'`)
+      .run(slotIdsJson, workerId);
+    console.log(`[INTERVIEW-RESERVE] workerId=${workerId}, assigned_slot_ids=${slotIdsJson}`);
+
+    // Also mark slots as reserved (secondary, for reference)
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=?`).run(workerId);
     const stmt = db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=? WHERE id=?`);
-    for (const sid of slot_ids) {
-      const result = stmt.run(workerId, sid);
-      console.log(`[INTERVIEW-RESERVE] workerId=${workerId}, slotId=${sid}, changes=${result.changes}`);
-    }
-    // Verify reservation
-    const check = db.prepare(`SELECT id, reserved_for_worker_account_id, booked_count, active FROM interview_slots WHERE id IN (${slot_ids.map(()=>'?').join(',')})`).all(...slot_ids);
-    console.log(`[INTERVIEW-RESERVE] After reservation:`, JSON.stringify(check));
+    for (const sid of slot_ids) stmt.run(workerId, sid);
   }
 
   res.json({ success: true, tasks: getOnboardingTasks(workerId) });
@@ -9589,13 +9589,26 @@ app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
 
 // Worker: list available slots
 app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
-  // If the admin has reserved specific slots for this worker, show only those.
-  // Otherwise fall back to all general (unreserved) open slots.
-  console.log(`[INTERVIEW-SLOTS] workerId=${req.workerId}, now=${new Date().toISOString()}, sqliteNow=${db.prepare("SELECT datetime('now') as n").get().n}`);
-  // Debug: check all slots reserved for this worker (without filters)
-  const allReserved = db.prepare(`SELECT id, slot_datetime, active, booked_count, max_bookings, reserved_for_worker_account_id FROM interview_slots WHERE reserved_for_worker_account_id=?`).all(req.workerId);
-  console.log(`[INTERVIEW-SLOTS] All reserved for worker (no filters):`, JSON.stringify(allReserved));
+  // Check if admin has assigned specific slot IDs for this worker (stored on onboarding record)
+  const obRecord = db.prepare(`SELECT assigned_slot_ids FROM worker_onboarding WHERE worker_account_id=? AND task_key='interview'`).get(req.workerId);
+  let assignedIds = [];
+  try { assignedIds = JSON.parse(obRecord?.assigned_slot_ids || '[]'); } catch {}
+  console.log(`[INTERVIEW-SLOTS] workerId=${req.workerId}, assignedIds=${JSON.stringify(assignedIds)}`);
 
+  if (assignedIds.length) {
+    // Admin assigned specific slots — show only those
+    const placeholders = assignedIds.map(() => '?').join(',');
+    const assigned = db.prepare(`
+      SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
+      FROM interview_slots
+      WHERE id IN (${placeholders}) AND active=1 AND booked_count < max_bookings AND slot_datetime > datetime('now')
+      ORDER BY slot_datetime ASC
+    `).all(...assignedIds);
+    console.log(`[INTERVIEW-SLOTS] Returning ${assigned.length} assigned slots`);
+    return res.json(assigned);
+  }
+
+  // Fallback: check reserved_for_worker_account_id (legacy)
   const reserved = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
@@ -9603,9 +9616,9 @@ app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
       AND reserved_for_worker_account_id=?
     ORDER BY slot_datetime ASC
   `).all(req.workerId);
-  console.log(`[INTERVIEW-SLOTS] Filtered reserved count=${reserved.length}`);
   if (reserved.length) return res.json(reserved);
 
+  // No specific assignment — show all general (unreserved) open slots
   const general = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
@@ -9613,7 +9626,6 @@ app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
       AND reserved_for_worker_account_id IS NULL
     ORDER BY slot_datetime ASC
   `).all();
-  console.log(`[INTERVIEW-SLOTS] Falling back to general slots count=${general.length}`);
   res.json(general);
 });
 
