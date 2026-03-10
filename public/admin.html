@@ -1203,7 +1203,6 @@ tr:hover td{background:var(--sky-light)}
     <h1>🧾 Invoice 管理</h1>
     <div class="top-actions">
       <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
-      <button class="btn btn-outline" onclick="openInvpProfileModal()">⚙️ 发票配置（我方信息）</button>
       <button class="btn btn-outline" onclick="loadInvpList()">刷新</button>
     </div>
   </div>
@@ -1231,11 +1230,8 @@ tr:hover td{background:var(--sky-light)}
         <h3 style="margin:0 0 1rem">发票信息</h3>
 
         <!-- Meta info -->
+        <input type="hidden" id="invPageNumber">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-          <div class="field">
-            <label>Invoice 编号</label>
-            <input type="text" id="invPageNumber" placeholder="e.g. INV-CA-031026-0001">
-          </div>
           <div class="field">
             <label>Invoice 日期</label>
             <input type="date" id="invPageDate">
@@ -1307,21 +1303,36 @@ tr:hover td{background:var(--sky-light)}
         <div class="card" style="margin-bottom:1rem">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
             <h3 style="margin:0;font-size:.95rem">发票抬头（我方）</h3>
-            <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+            <div style="display:flex;gap:.4rem;align-items:center">
+              <select id="invpSenderSelect" onchange="onInvpPresetSelect('sender')" style="font-size:.82rem;padding:.25rem .5rem;border-radius:5px;border:1px solid var(--gray-200)">
+                <option value="">-- 选择预设 --</option>
+              </select>
+              <button class="btn btn-sm btn-outline" onclick="openInvpPresetModal('sender')" title="管理预设">+ 新建</button>
+            </div>
           </div>
           <div id="invpSenderPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
         </div>
         <div class="card" style="margin-bottom:1rem">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
             <h3 style="margin:0;font-size:.95rem">银行收款信息</h3>
-            <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+            <div style="display:flex;gap:.4rem;align-items:center">
+              <select id="invpBankSelect" onchange="onInvpPresetSelect('bank')" style="font-size:.82rem;padding:.25rem .5rem;border-radius:5px;border:1px solid var(--gray-200)">
+                <option value="">-- 选择预设 --</option>
+              </select>
+              <button class="btn btn-sm btn-outline" onclick="openInvpPresetModal('bank')" title="管理预设">+ 新建</button>
+            </div>
           </div>
           <div id="invpBankPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
         </div>
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
             <h3 style="margin:0;font-size:.95rem">联系人页脚</h3>
-            <button class="btn btn-sm btn-outline" onclick="openInvpProfileModal()">编辑</button>
+            <div style="display:flex;gap:.4rem;align-items:center">
+              <select id="invpContactSelect" onchange="onInvpPresetSelect('contact')" style="font-size:.82rem;padding:.25rem .5rem;border-radius:5px;border:1px solid var(--gray-200)">
+                <option value="">-- 选择预设 --</option>
+              </select>
+              <button class="btn btn-sm btn-outline" onclick="openInvpPresetModal('contact')" title="管理预设">+ 新建</button>
+            </div>
           </div>
           <div id="invpContactPreview" style="font-size:.83rem;color:var(--gray-600);line-height:1.8"></div>
         </div>
@@ -15649,6 +15660,7 @@ async function saveMgrAssign() {
 // ═══════════════════════════════════════════════════════
 
 const INVP_PROFILE_KEY = 'inv_profile_v1';
+let _invpPresets = []; // all presets from server
 
 function getInvpProfile() {
   try { return JSON.parse(localStorage.getItem(INVP_PROFILE_KEY)) || {}; } catch { return {}; }
@@ -15656,6 +15668,134 @@ function getInvpProfile() {
 function saveInvpProfileData(data) {
   localStorage.setItem(INVP_PROFILE_KEY, JSON.stringify(data));
 }
+
+async function loadInvpPresets() {
+  _invpPresets = await api('/admin/invoice-profiles').catch(() => []);
+  populateInvpDropdown('sender');
+  populateInvpDropdown('bank');
+  populateInvpDropdown('contact');
+}
+
+function populateInvpDropdown(section) {
+  const selMap = { sender: 'invpSenderSelect', bank: 'invpBankSelect', contact: 'invpContactSelect' };
+  const sel = document.getElementById(selMap[section]);
+  if (!sel) return;
+  const items = _invpPresets.filter(p => p.section === section);
+  const saved = getInvpProfile();
+  const selectedId = saved[section + '_preset_id'] || '';
+  sel.innerHTML = '<option value="">-- 选择预设 --</option>'
+    + items.map(p => `<option value="${p.id}" ${p.id == selectedId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+}
+
+function onInvpPresetSelect(section) {
+  const selMap = { sender: 'invpSenderSelect', bank: 'invpBankSelect', contact: 'invpContactSelect' };
+  const sel = document.getElementById(selMap[section]);
+  const id = sel.value;
+  const preset = _invpPresets.find(p => p.id == id);
+  const data = preset ? (typeof preset.data === 'string' ? JSON.parse(preset.data) : preset.data) : {};
+  const saved = getInvpProfile();
+  // Merge preset data into saved profile
+  if (section === 'sender') {
+    saved.sender_name = data.sender_name || ''; saved.sender_address = data.sender_address || '';
+    saved.sender_phone = data.sender_phone || ''; saved.sender_email = data.sender_email || '';
+  } else if (section === 'bank') {
+    saved.bank_account_name = data.bank_account_name || ''; saved.bank_name = data.bank_name || '';
+    saved.bank_account_no = data.bank_account_no || ''; saved.bank_routing_no = data.bank_routing_no || '';
+  } else if (section === 'contact') {
+    saved.contact_name = data.contact_name || ''; saved.contact_phone = data.contact_phone || '';
+    saved.contact_email = data.contact_email || '';
+  }
+  saved[section + '_preset_id'] = id;
+  saveInvpProfileData(saved);
+  renderInvpProfilePreview();
+}
+
+function openInvpPresetModal(section, editId) {
+  document.getElementById('invpPresetSection').value = section;
+  document.getElementById('invpPresetEditId').value = editId || '';
+  ['Sender','Bank','Contact'].forEach(s => document.getElementById('invpPresetFields' + s).style.display = 'none');
+  const fieldMap = { sender: 'Sender', bank: 'Bank', contact: 'Contact' };
+  document.getElementById('invpPresetFields' + fieldMap[section]).style.display = '';
+  const titleMap = { sender: '发票抬头', bank: '银行收款信息', contact: '联系人页脚' };
+  if (editId) {
+    const preset = _invpPresets.find(p => p.id == editId);
+    const data = preset ? (typeof preset.data === 'string' ? JSON.parse(preset.data) : preset.data) : {};
+    document.getElementById('invpPresetName').value = preset ? preset.name : '';
+    document.getElementById('invpPresetModalTitle').textContent = '编辑预设 - ' + titleMap[section];
+    fillPresetFields(section, data);
+  } else {
+    document.getElementById('invpPresetName').value = '';
+    document.getElementById('invpPresetModalTitle').textContent = '新建预设 - ' + titleMap[section];
+    fillPresetFields(section, {});
+  }
+  document.getElementById('invpPresetModal').style.display = 'flex';
+}
+
+function fillPresetFields(section, data) {
+  if (section === 'sender') {
+    document.getElementById('invpSenderName').value = data.sender_name || '';
+    document.getElementById('invpSenderAddr').value = data.sender_address || '';
+    document.getElementById('invpSenderPhone').value = data.sender_phone || '';
+    document.getElementById('invpSenderEmail').value = data.sender_email || '';
+  } else if (section === 'bank') {
+    document.getElementById('invpBankAccountName').value = data.bank_account_name || '';
+    document.getElementById('invpBankName').value = data.bank_name || '';
+    document.getElementById('invpBankAccountNo').value = data.bank_account_no || '';
+    document.getElementById('invpBankRoutingNo').value = data.bank_routing_no || '';
+  } else if (section === 'contact') {
+    document.getElementById('invpContactName').value = data.contact_name || '';
+    document.getElementById('invpContactPhone').value = data.contact_phone || '';
+    document.getElementById('invpContactEmail').value = data.contact_email || '';
+  }
+}
+
+function collectPresetData(section) {
+  if (section === 'sender') return {
+    sender_name: document.getElementById('invpSenderName').value.trim(),
+    sender_address: document.getElementById('invpSenderAddr').value.trim(),
+    sender_phone: document.getElementById('invpSenderPhone').value.trim(),
+    sender_email: document.getElementById('invpSenderEmail').value.trim(),
+  };
+  if (section === 'bank') return {
+    bank_account_name: document.getElementById('invpBankAccountName').value.trim(),
+    bank_name: document.getElementById('invpBankName').value.trim(),
+    bank_account_no: document.getElementById('invpBankAccountNo').value.trim(),
+    bank_routing_no: document.getElementById('invpBankRoutingNo').value.trim(),
+  };
+  if (section === 'contact') return {
+    contact_name: document.getElementById('invpContactName').value.trim(),
+    contact_phone: document.getElementById('invpContactPhone').value.trim(),
+    contact_email: document.getElementById('invpContactEmail').value.trim(),
+  };
+  return {};
+}
+
+async function saveInvpPreset() {
+  const section = document.getElementById('invpPresetSection').value;
+  const editId = document.getElementById('invpPresetEditId').value;
+  const name = document.getElementById('invpPresetName').value.trim();
+  if (!name) { showToast('请输入预设名称', 'error'); return; }
+  const data = collectPresetData(section);
+  if (editId) {
+    await api(`/admin/invoice-profiles/${editId}`, { method: 'PUT', body: JSON.stringify({ name, data }) });
+  } else {
+    await api('/admin/invoice-profiles', { method: 'POST', body: JSON.stringify({ name, section, data }) });
+  }
+  closeInvpPresetModal();
+  await loadInvpPresets();
+  // Auto-select the newly saved preset
+  const selMap = { sender: 'invpSenderSelect', bank: 'invpBankSelect', contact: 'invpContactSelect' };
+  const sel = document.getElementById(selMap[section]);
+  if (!editId) {
+    const newest = _invpPresets.filter(p => p.section === section).sort((a,b) => b.id - a.id)[0];
+    if (newest) { sel.value = newest.id; onInvpPresetSelect(section); }
+  } else {
+    sel.value = editId; onInvpPresetSelect(section);
+  }
+  showToast('✅ 预设已保存', 'success');
+}
+
+function closeInvpPresetModal() { document.getElementById('invpPresetModal').style.display = 'none'; }
 
 function initInvoicePage() {
   loadInvpList();
@@ -15744,8 +15884,7 @@ async function showInvpBuilder() {
   if (startEl && !startEl.value) { startEl.value = toLocalDate(mon); renderInvpManualTable(); }
   if (endEl   && !endEl.value)   { endEl.value   = toLocalDate(sun); renderInvpManualTable(); }
   if (dateEl  && !dateEl.value)  dateEl.value  = toLocalDate(today);
-  // Invoice number will be generated when company is selected (uses customer state)
-  await invpRefreshInvoiceNumber();
+  loadInvpPresets().then(() => renderInvpProfilePreview());
 }
 
 async function invpRefreshInvoiceNumber() {
@@ -15786,7 +15925,7 @@ async function saveInvpInvoice() {
   })}).catch(e => ({ error: e.message }));
 
   if (res && res.id) {
-    alert('Invoice 已保存！');
+    showToast(`发票编号已生成：${invNum}`, 'success', 5000);
     document.getElementById('invpPreviewModal').style.display = 'none';
     loadInvpList();
   } else {
@@ -16057,7 +16196,6 @@ function getInvpManualItems() {
 }
 
 function generateInvpPreview() {
-  const invNum  = document.getElementById('invPageNumber').value.trim();
   const invDate = document.getElementById('invPageDate').value;
   const ps      = document.getElementById('invPageStart').value;
   const pe      = document.getElementById('invPageEnd').value;
@@ -16066,6 +16204,9 @@ function generateInvpPreview() {
 
   if (!billName)    { alert('请填写账单发往公司名称'); return; }
   if (!ps || !pe)   { alert('请填写服务周期'); return; }
+  // Auto-generate invoice number if not set
+  if (!document.getElementById('invPageNumber').value) await invpRefreshInvoiceNumber();
+  const invNum = document.getElementById('invPageNumber').value;
 
   const items = getInvpManualItems();
   if (!items.length) { alert('请至少添加一名员工并填写姓名'); return; }
@@ -16165,6 +16306,11 @@ function generateInvpPreview() {
 
   document.getElementById('invpPreviewContent').innerHTML = html;
   document.getElementById('invpPreviewModal').style.display = 'flex';
+
+  // Show invoice number confirmation
+  setTimeout(() => {
+    showToast(`发票编号已生成：${invNum}`, 'success', 5000);
+  }, 300);
 }
 
 function closeInvpPreview() { document.getElementById('invpPreviewModal').style.display = 'none'; }
@@ -16191,75 +16337,55 @@ function renderInvpProfilePreview() {
   const bankEl    = document.getElementById('invpBankPreview');
   const contactEl = document.getElementById('invpContactPreview');
 
+  const editBtn = (section, id) => id ? ` <button class="btn btn-sm btn-outline" style="font-size:.72rem;padding:.1rem .4rem;margin-left:.4rem" onclick="openInvpPresetModal('${section}',${id})">编辑</button> <button class="btn btn-sm" style="font-size:.72rem;padding:.1rem .4rem;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5" onclick="deleteInvpPreset(${id},'${section}')">删除</button>` : '';
+
   if (senderEl) {
-    senderEl.innerHTML = [
-      p.sender_name       ? `<div><strong>${esc(p.sender_name)}</strong></div>` : '',
-      p.sender_address    ? `<div>${esc(p.sender_address)}</div>` : '',
-      p.sender_phone      ? `<div>Phone: ${esc(p.sender_phone)}</div>` : '',
-      p.sender_email      ? `<div>Email: ${esc(p.sender_email)}</div>` : '',
-      p.inv_number_prefix ? `<div style="margin-top:.25rem;font-size:.8rem;color:var(--gray-500)">Invoice 编号前缀: <strong>${esc(p.inv_number_prefix)}</strong></div>` : '',
-    ].join('') || '<div style="color:var(--gray-400)">（未设置，点击「编辑」配置）</div>';
+    const sid = p.sender_preset_id;
+    senderEl.innerHTML = ([
+      p.sender_name    ? `<div><strong>${esc(p.sender_name)}</strong></div>` : '',
+      p.sender_address ? `<div>${esc(p.sender_address)}</div>` : '',
+      p.sender_phone   ? `<div>Phone: ${esc(p.sender_phone)}</div>` : '',
+      p.sender_email   ? `<div>Email: ${esc(p.sender_email)}</div>` : '',
+    ].join('') || '<div style="color:var(--gray-400)">（请从下拉菜单选择预设，或点击「+ 新建」创建）</div>') + editBtn('sender', sid);
   }
 
   if (bankEl) {
-    bankEl.innerHTML = [
+    const bid = p.bank_preset_id;
+    bankEl.innerHTML = ([
       p.bank_account_name ? `<div>Account Name: ${esc(p.bank_account_name)}</div>` : '',
       p.bank_name         ? `<div>Bank Name: ${esc(p.bank_name)}</div>` : '',
       p.bank_account_no   ? `<div>Account No: ${esc(p.bank_account_no)}</div>` : '',
       p.bank_routing_no   ? `<div>Routing No: ${esc(p.bank_routing_no)}</div>` : '',
-    ].join('') || '<div style="color:var(--gray-400)">（未设置）</div>';
+    ].join('') || '<div style="color:var(--gray-400)">（请从下拉菜单选择预设，或点击「+ 新建」创建）</div>') + editBtn('bank', bid);
   }
 
   if (contactEl) {
-    contactEl.innerHTML = [
+    const cid = p.contact_preset_id;
+    contactEl.innerHTML = ([
       p.contact_name  ? `<div>联系人: ${esc(p.contact_name)}</div>` : '',
       p.contact_phone ? `<div>Tel: ${esc(p.contact_phone)}</div>` : '',
       p.contact_email ? `<div>Email: ${esc(p.contact_email)}</div>` : '',
-    ].join('') || '<div style="color:var(--gray-400)">（未设置）</div>';
+    ].join('') || '<div style="color:var(--gray-400)">（请从下拉菜单选择预设，或点击「+ 新建」创建）</div>') + editBtn('contact', cid);
   }
 }
 
-function openInvpProfileModal() {
-  const p = getInvpProfile();
-  document.getElementById('invpSenderName').value    = p.sender_name    || '';
-  document.getElementById('invpSenderState').value   = p.sender_state   || '';
-  document.getElementById('invpNumberPrefix').value  = p.inv_number_prefix || '';
-  document.getElementById('invpSenderAddr').value    = p.sender_address || '';
-  document.getElementById('invpSenderPhone').value   = p.sender_phone   || '';
-  document.getElementById('invpSenderEmail').value   = p.sender_email   || '';
-  document.getElementById('invpBankAccountName').value = p.bank_account_name || '';
-  document.getElementById('invpBankName').value        = p.bank_name        || '';
-  document.getElementById('invpBankAccountNo').value   = p.bank_account_no  || '';
-  document.getElementById('invpBankRoutingNo').value   = p.bank_routing_no  || '';
-  document.getElementById('invpContactName').value  = p.contact_name  || '';
-  document.getElementById('invpContactPhone').value = p.contact_phone || '';
-  document.getElementById('invpContactEmail').value = p.contact_email || '';
-  document.getElementById('invpProfileModal').style.display = 'flex';
-}
-
-function closeInvpProfileModal() { document.getElementById('invpProfileModal').style.display = 'none'; }
-
-function saveInvpProfile() {
-  const p = {
-    sender_name:      document.getElementById('invpSenderName').value.trim(),
-    sender_state:     document.getElementById('invpSenderState').value.trim().toUpperCase(),
-    inv_number_prefix:document.getElementById('invpNumberPrefix').value.trim().toUpperCase(),
-    sender_address:   document.getElementById('invpSenderAddr').value.trim(),
-    sender_phone:     document.getElementById('invpSenderPhone').value.trim(),
-    sender_email:     document.getElementById('invpSenderEmail').value.trim(),
-    bank_account_name:document.getElementById('invpBankAccountName').value.trim(),
-    bank_name:        document.getElementById('invpBankName').value.trim(),
-    bank_account_no:  document.getElementById('invpBankAccountNo').value.trim(),
-    bank_routing_no:  document.getElementById('invpBankRoutingNo').value.trim(),
-    contact_name:     document.getElementById('invpContactName').value.trim(),
-    contact_phone:    document.getElementById('invpContactPhone').value.trim(),
-    contact_email:    document.getElementById('invpContactEmail').value.trim(),
-  };
-  saveInvpProfileData(p);
-  closeInvpProfileModal();
+async function deleteInvpPreset(id, section) {
+  if (!confirm('确定删除此预设？')) return;
+  await api(`/admin/invoice-profiles/${id}`, { method: 'DELETE' });
+  const saved = getInvpProfile();
+  if (saved[section + '_preset_id'] == id) {
+    delete saved[section + '_preset_id'];
+    if (section === 'sender') { saved.sender_name=''; saved.sender_address=''; saved.sender_phone=''; saved.sender_email=''; }
+    if (section === 'bank') { saved.bank_account_name=''; saved.bank_name=''; saved.bank_account_no=''; saved.bank_routing_no=''; }
+    if (section === 'contact') { saved.contact_name=''; saved.contact_phone=''; saved.contact_email=''; }
+    saveInvpProfileData(saved);
+  }
+  await loadInvpPresets();
   renderInvpProfilePreview();
-  showToast('✅ 配置已保存', 'success');
+  showToast('已删除', 'success');
 }
+
+// Old openInvpProfileModal / saveInvpProfile replaced by preset system above
 
 // ═══════════════════════════════════════════════════════
 // INVOICE GENERATION
@@ -16461,79 +16587,42 @@ function printInvoice() {
   </div>
 </div>
 
-<!-- ════════════════════ INVOICE PAGE: PROFILE SETTINGS MODAL ════════════════════ -->
-<div class="modal-bg" id="invpProfileModal" style="display:none">
-  <div class="modal" style="max-width:600px;max-height:92vh;overflow-y:auto">
-    <h2>⚙️ 发票配置</h2>
-    <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1.25rem">信息保存在本地，下次打开自动载入。</p>
-
-    <h4 style="margin:.25rem 0 .75rem;color:var(--gray-700)">我方信息（Invoice 抬头）</h4>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-      <div class="field" style="grid-column:1/-1">
-        <label>公司名称</label>
-        <input type="text" id="invpSenderName" placeholder="e.g. JC-SL Express Inc">
-      </div>
-      <div class="field">
-        <label>州缩写（用于 Invoice 编号）</label>
-        <input type="text" id="invpSenderState" placeholder="e.g. CA" maxlength="2" style="text-transform:uppercase">
-      </div>
-      <div class="field">
-        <label>Invoice 编号前缀</label>
-        <input type="text" id="invpNumberPrefix" placeholder="e.g. INV" style="text-transform:uppercase">
-      </div>
-      <div class="field">
-        <label>地址</label>
-        <input type="text" id="invpSenderAddr" placeholder="e.g. 1001 Doubleday Ave., Ontario, CA 91761">
-      </div>
-      <div class="field">
-        <label>电话</label>
-        <input type="text" id="invpSenderPhone" placeholder="626-695-8857">
-      </div>
-      <div class="field">
-        <label>邮箱</label>
-        <input type="text" id="invpSenderEmail" placeholder="email@example.com">
+<!-- ════════════════════ INVOICE PAGE: PRESET MODAL ════════════════════ -->
+<div class="modal-bg" id="invpPresetModal" style="display:none">
+  <div class="modal" style="max-width:520px;max-height:92vh;overflow-y:auto">
+    <h2 id="invpPresetModalTitle">新建预设</h2>
+    <input type="hidden" id="invpPresetEditId">
+    <input type="hidden" id="invpPresetSection">
+    <div class="field" style="margin-bottom:.75rem">
+      <label>预设名称 *</label>
+      <input type="text" id="invpPresetName" placeholder="例：JC-SL Express / Prime Anchor">
+    </div>
+    <div id="invpPresetFieldsSender" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+        <div class="field" style="grid-column:1/-1"><label>公司名称</label><input type="text" id="invpSenderName" placeholder="e.g. JC-SL Express Inc"></div>
+        <div class="field" style="grid-column:1/-1"><label>地址</label><input type="text" id="invpSenderAddr" placeholder="e.g. 1001 Doubleday Ave., Ontario, CA 91761"></div>
+        <div class="field"><label>电话</label><input type="text" id="invpSenderPhone" placeholder="626-695-8857"></div>
+        <div class="field"><label>邮箱</label><input type="text" id="invpSenderEmail" placeholder="email@example.com"></div>
       </div>
     </div>
-
-    <h4 style="margin:.25rem 0 .75rem;color:var(--gray-700)">银行收款信息</h4>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1.25rem">
-      <div class="field">
-        <label>Account Name</label>
-        <input type="text" id="invpBankAccountName" placeholder="e.g. JC-SL Express Inc">
-      </div>
-      <div class="field">
-        <label>Bank Name</label>
-        <input type="text" id="invpBankName" placeholder="e.g. JPMorgan Bank">
-      </div>
-      <div class="field">
-        <label>Account No</label>
-        <input type="text" id="invpBankAccountNo" placeholder="2904088524">
-      </div>
-      <div class="field">
-        <label>Routing No</label>
-        <input type="text" id="invpBankRoutingNo" placeholder="322271627">
+    <div id="invpPresetFieldsBank" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+        <div class="field"><label>Account Name</label><input type="text" id="invpBankAccountName" placeholder="e.g. JC-SL Express Inc"></div>
+        <div class="field"><label>Bank Name</label><input type="text" id="invpBankName" placeholder="e.g. JPMorgan Bank"></div>
+        <div class="field"><label>Account No</label><input type="text" id="invpBankAccountNo" placeholder="2904088524"></div>
+        <div class="field"><label>Routing No</label><input type="text" id="invpBankRoutingNo" placeholder="322271627"></div>
       </div>
     </div>
-
-    <h4 style="margin:.25rem 0 .75rem;color:var(--gray-700)">页脚联系人</h4>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:1.5rem">
-      <div class="field">
-        <label>姓名</label>
-        <input type="text" id="invpContactName" placeholder="Keon">
-      </div>
-      <div class="field">
-        <label>电话</label>
-        <input type="text" id="invpContactPhone" placeholder="626-695-8857">
-      </div>
-      <div class="field">
-        <label>邮箱</label>
-        <input type="text" id="invpContactEmail" placeholder="keonhua88@gmail.com">
+    <div id="invpPresetFieldsContact" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+        <div class="field"><label>姓名</label><input type="text" id="invpContactName" placeholder="Keon"></div>
+        <div class="field"><label>电话</label><input type="text" id="invpContactPhone" placeholder="626-695-8857"></div>
+        <div class="field"><label>邮箱</label><input type="text" id="invpContactEmail" placeholder="keonhua88@gmail.com"></div>
       </div>
     </div>
-
     <div style="display:flex;gap:.75rem;justify-content:flex-end">
-      <button class="btn btn-outline" onclick="closeInvpProfileModal()">取消</button>
-      <button class="btn btn-green" onclick="saveInvpProfile()">💾 保存配置</button>
+      <button class="btn btn-outline" onclick="closeInvpPresetModal()">取消</button>
+      <button class="btn btn-green" onclick="saveInvpPreset()">💾 保存</button>
     </div>
   </div>
 </div>

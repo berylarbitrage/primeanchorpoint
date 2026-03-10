@@ -1275,6 +1275,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// ─── Invoice Profiles (presets for sender/bank/contact) ───
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  section TEXT NOT NULL,
+  data TEXT DEFAULT '{}',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // ─── Integration Settings (WorkBright, Checkr, Gusto, Twilio) ───
 db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6673,6 +6682,31 @@ app.post('/api/admin/timesheet-sheets/:id/vote-distributed', requireAdmin, (req,
     db.prepare(`UPDATE timesheet_sheets SET status='completed' WHERE id=?`).run(req.params.id);
   }
   res.json({ success: true, all_distributed: allDistributed, dist_count: distCount, staff_count: staffCount });
+});
+
+// ─── INVOICE PROFILES (presets) ───
+
+app.get('/api/admin/invoice-profiles', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM invoice_profiles ORDER BY section, name').all());
+});
+
+app.post('/api/admin/invoice-profiles', requireAdmin, (req, res) => {
+  const { name, section, data } = req.body;
+  if (!name || !section) return res.status(400).json({ error: 'name and section required' });
+  const r = db.prepare('INSERT INTO invoice_profiles (name, section, data) VALUES (?,?,?)').run(name, section, JSON.stringify(data || {}));
+  res.json({ id: r.lastInsertRowid, success: true });
+});
+
+app.put('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
+  const { name, data } = req.body;
+  if (name !== undefined) db.prepare('UPDATE invoice_profiles SET name=? WHERE id=?').run(name, req.params.id);
+  if (data !== undefined) db.prepare('UPDATE invoice_profiles SET data=? WHERE id=?').run(JSON.stringify(data), req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM invoice_profiles WHERE id=?').run(req.params.id);
+  res.json({ success: true });
 });
 
 // ─── INVOICE STORAGE ───
