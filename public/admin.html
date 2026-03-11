@@ -1865,7 +1865,9 @@ tr:hover td{background:var(--sky-light)}
     <label>到场指引 <span style="color:var(--gray-400);font-weight:400;font-size:.8rem">（房间号、停车、注意事项等）</span></label>
     <textarea id="ivLocInstructions" rows="4" placeholder="例：请到2楼前台报到，告知来面试，停车场在大楼东侧，免费停3小时。"></textarea>
   </div>
+  <div id="ivLocAddrStatus" style="display:none;padding:.5rem .75rem;border-radius:8px;font-size:.85rem;margin-bottom:.5rem"></div>
   <div class="modal-actions">
+    <button class="btn" style="background:#4A90D9;color:#fff" onclick="verifyLocationAddress()">验证地址 Verify Address</button>
     <button class="btn btn-green" onclick="saveLocation()">保存</button>
     <button class="btn" onclick="closeModal('ivLocationModal');document.getElementById('ivLocationModal').style.zIndex=''">取消</button>
   </div>
@@ -13815,6 +13817,7 @@ function openLocationModal(id) {
   document.getElementById('ivLocContactName').value   = loc ? (loc.contact_name||'') : '';
   document.getElementById('ivLocContactPhone').value  = loc ? (loc.contact_phone||'') : '';
   document.getElementById('ivLocInstructions').value  = loc ? (loc.instructions||'') : '';
+  document.getElementById('ivLocAddrStatus').style.display = 'none';
   document.getElementById('ivLocationModal').classList.add('show');
 }
 
@@ -13862,6 +13865,44 @@ async function saveLocation() {
     }
   } else {
     showToast('❌ ' + (r?.error || '保存失败'), 'error');
+  }
+}
+
+async function verifyLocationAddress() {
+  const street  = document.getElementById('ivLocAddress1').value.trim();
+  const street2 = document.getElementById('ivLocAddress2').value.trim();
+  const city    = document.getElementById('ivLocCity').value.trim();
+  const state   = document.getElementById('ivLocState').value;
+  const zip     = document.getElementById('ivLocZip').value.trim();
+  if (!street && !city) return showToast('❌ 请先填写地址', 'error');
+  const statusEl = document.getElementById('ivLocAddrStatus');
+  statusEl.style.display = 'block';
+  statusEl.style.background = '#FFF8E1';
+  statusEl.style.color = '#8B6914';
+  statusEl.textContent = '⏳ 正在验证地址… Verifying address…';
+  const result = await validateAddress({ street, street2, city, state, zip });
+  if (!result.proceed) {
+    statusEl.style.display = 'none';
+    return;
+  }
+  if (result.standardized) {
+    const s = result.standardized;
+    document.getElementById('ivLocAddress1').value = s.street;
+    document.getElementById('ivLocAddress2').value = s.street2 || '';
+    document.getElementById('ivLocCity').value     = s.city;
+    fillStateSelect(document.getElementById('ivLocState'), s.state);
+    document.getElementById('ivLocZip').value      = s.zip;
+    statusEl.style.background = '#E8F5E9';
+    statusEl.style.color = '#2E7D32';
+    statusEl.textContent = '✅ 地址已验证并更新 / Address verified and updated';
+  } else if (result.verified) {
+    statusEl.style.background = '#E8F5E9';
+    statusEl.style.color = '#2E7D32';
+    statusEl.textContent = '✅ 地址已验证 / Address verified';
+  } else {
+    statusEl.style.background = '#FFF3E0';
+    statusEl.style.color = '#E65100';
+    statusEl.textContent = '⚠ 地址未通过验证 / Address not verified';
   }
 }
 
