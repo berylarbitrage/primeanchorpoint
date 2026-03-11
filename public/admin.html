@@ -15701,9 +15701,15 @@ async function openOnboardingInterviewSlotModal() {
   document.getElementById('obivStartMin').value  = '00';
   document.getElementById('obivEndMin').value    = '00';
 
-  // Default date to tomorrow
+  // Default date to next weekday (skip weekends), using local timezone
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-  document.getElementById('obivNewDate').value = tomorrow.toISOString().split('T')[0];
+  while (tomorrow.getDay() === 0 || tomorrow.getDay() === 6) {
+    tomorrow.setDate(tomorrow.getDate() + 1);
+  }
+  const ty = tomorrow.getFullYear();
+  const tm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+  const td = String(tomorrow.getDate()).padStart(2, '0');
+  document.getElementById('obivNewDate').value = `${ty}-${tm}-${td}`;
   document.getElementById('obivNewDuration').value = '30';
   document.getElementById('obivNewMax').value = '1';
   document.getElementById('obivBatchPreview').style.display = 'none';
@@ -15815,6 +15821,16 @@ async function obivCreateAndAdd() {
   _obivSlots = await api('/admin/interview-slots') || [];
   const now = new Date();
   _obivFutureSlots = _obivSlots.filter(s => s.active !== 0 && new Date(s.slot_datetime) > now);
+
+  // Refresh location filter to include any newly used locations
+  const usedLocIds = [...new Set(_obivFutureSlots.map(s => s.location_id).filter(Boolean))];
+  const filterLocs = (_ivLocations || []).filter(l => usedLocIds.includes(l.id));
+  const locFilterEl = document.getElementById('obivLocFilter');
+  const prevLocFilter = locFilterEl.value;
+  locFilterEl.innerHTML = '<option value="">全部地点</option>' +
+    filterLocs.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+  if (prevLocFilter) locFilterEl.value = prevLocFilter;
+
   obivFilterSlots();
 
   // Auto-check newly created slots
