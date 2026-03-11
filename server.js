@@ -2148,11 +2148,16 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
 }
 
 async function dsealGetCompanySignUrl(submissionId) {
+  // Get submission to find company submitter ID
   const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
   if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}`);
   const company = (r.data.submitters || []).find(s => s.role === 'First Party') || (r.data.submitters || [])[0];
   if (!company) throw new Error('DocuSeal: 公司签署人未找到');
-  return company.embed_src;
+  // embed_src is only in create response; use PUT /submitters/{id} to retrieve it
+  if (company.embed_src) return company.embed_src;
+  const u = await dsealApiCall('PUT', `/api/submitters/${company.id}`, { name: company.name });
+  if (u.status >= 400 || !u.data?.embed_src) throw new Error(`DocuSeal 获取签署链接失败 ${u.status}`);
+  return u.data.embed_src;
 }
 
 async function dsealGetStatus(submissionId) {
