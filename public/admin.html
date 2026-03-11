@@ -1723,12 +1723,16 @@ tr:hover td{background:var(--sky-light)}
   <h2 id="ivLocModalTitle">添加面试地点</h2>
   <input type="hidden" id="ivLocId">
   <div class="field"><label>地点名称 *</label><input id="ivLocName" placeholder="例：芝加哥主办公室、Zoom 线上面试"></div>
-  <div class="field"><label>街道地址 1 Address 1 *</label><input id="ivLocAddress1" placeholder="e.g. 123 Main St"></div>
+  <div class="field"><label>街道地址 1 Address 1 *</label><input id="ivLocAddress1" placeholder="e.g. 123 Main St" oninput="document.getElementById('ivLocAddrStatus').textContent=''"></div>
   <div class="field"><label>街道地址 2 Address 2 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="ivLocAddress2" placeholder="e.g. Suite 200"></div>
   <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.75rem">
-    <div class="field"><label>城市 City *</label><input id="ivLocCity" placeholder="Chicago"></div>
+    <div class="field"><label>城市 City *</label><input id="ivLocCity" placeholder="Chicago" oninput="document.getElementById('ivLocAddrStatus').textContent=''"></div>
     <div class="field"><label>州 State *</label><select id="ivLocState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%"><option value="">-- 州 --</option></select></div>
-    <div class="field"><label>邮编 ZIP</label><input id="ivLocZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'')"></div>
+    <div class="field"><label>邮编 ZIP</label><input id="ivLocZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');document.getElementById('ivLocAddrStatus').textContent=''"></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:.75rem;margin-top:.35rem;margin-bottom:.25rem">
+    <button type="button" class="btn btn-sm btn-outline" onclick="verifyIvLocAddr()">🔍 验证地址 Verify Address</button>
+    <span id="ivLocAddrStatus" style="font-size:.8rem;font-weight:600"></span>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
     <div class="field"><label>联系人姓名</label><input id="ivLocContactName" placeholder="张经理"></div>
@@ -9584,6 +9588,34 @@ function clearEmpAddrStatus() {
   _setAddrStatus(document.getElementById('eAddrStatus'), null);
 }
 
+async function verifyIvLocAddr() {
+  const street  = document.getElementById('ivLocAddress1').value.trim();
+  const street2 = document.getElementById('ivLocAddress2').value.trim();
+  const city    = document.getElementById('ivLocCity').value.trim();
+  const state   = document.getElementById('ivLocState').value;
+  const zip     = document.getElementById('ivLocZip').value.trim();
+  if (!street && !city && !zip) return;
+  const statusEl = document.getElementById('ivLocAddrStatus');
+  statusEl.textContent = '验证中…';
+  statusEl.style.color = 'var(--gray-400)';
+  try {
+    const result = await validateAddress({ street, street2, city, state, zip });
+    if (result.skipped) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; return; }
+    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
+    if (result.standardized) {
+      const s = result.standardized;
+      document.getElementById('ivLocAddress1').value = s.street;
+      document.getElementById('ivLocAddress2').value = s.street2 || '';
+      document.getElementById('ivLocCity').value     = s.city;
+      fillStateSelect(document.getElementById('ivLocState'), s.state);
+      document.getElementById('ivLocZip').value      = s.zip;
+    }
+    _setAddrStatus(statusEl, result.verified === true);
+  } catch(e) {
+    _setAddrStatus(statusEl, false);
+  }
+}
+
 async function verifyJobAddr() {
   const street  = document.getElementById('jStreet').value.trim();
   const street2 = document.getElementById('jStreet2').value.trim();
@@ -13627,6 +13659,8 @@ function openLocationModal(id) {
   document.getElementById('ivLocContactName').value   = loc ? (loc.contact_name||'') : '';
   document.getElementById('ivLocContactPhone').value  = loc ? (loc.contact_phone||'') : '';
   document.getElementById('ivLocInstructions').value  = loc ? (loc.instructions||'') : '';
+  const ivAddrSt = document.getElementById('ivLocAddrStatus');
+  if (ivAddrSt) { ivAddrSt.textContent = ''; ivAddrSt.style.color = ''; }
   document.getElementById('ivLocationModal').classList.add('show');
 }
 
