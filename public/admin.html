@@ -12777,7 +12777,7 @@ function renderOnboardingTasks(tasks) {
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${t.key==='persona_verify'
-            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : t.key==='interview'
@@ -13014,7 +13014,7 @@ function confirmOnboardingReset(key, title) {
   showConfirmModal(`重置任务：${title}`, '确认将此任务重置为"待处理"状态？', '↩️ 确认重置', 'btn-outline', () => updateOnboardingTask(key, 'pending'), 'amber');
 }
 function confirmSendPersona() {
-  showConfirmModal('发送 Persona 身份验证', '确认向该工人发送 Persona 身份验证（驾照 + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
+  showConfirmModal('发送 Stripe Identity 身份验证', '确认向该工人发送 Stripe Identity 身份验证（驾照/ID + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
 }
 function confirmSendCheckr() {
   showConfirmModal('发送 Checkr 背调邀请', '确认向该工人发送 Checkr 背景调查邀请？邀请链接将通过短信和邮件发送。', '🔍 确认发送', 'btn-blue', sendCheckrFromOnboarding, 'blue');
@@ -13042,7 +13042,7 @@ function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
 
 async function sendPersonaFromOnboarding() {
   if (!_onboardingWorkerId) return;
-  if (!await showConfirm('确定向该工人发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
+  if (!await showConfirm('确定向该工人发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-persona`, { method:'POST', body:JSON.stringify({}) });
   if (r && r.success) {
     const parts = [];
@@ -14493,7 +14493,7 @@ function renderIvHistory(rows) {
 }
 
 async function sendIdentityVerify(interviewId, workerName) {
-  if (!await showConfirm(`确定向 ${workerName} 发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信和邮件发送给工人。`)) return;
+  if (!await showConfirm(`确定向 ${workerName} 发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信和邮件发送给工人。`)) return;
   const r = await api(`/admin/interviews/${interviewId}/send-identity`, { method: 'POST', body: JSON.stringify({}) });
   if (r && r.success) {
     showToast(`✅ 身份验证已发送${r.smsSent ? '（短信已发）' : '（短信未发，请检查 Twilio 配置）'}`, 'success', 5000);
@@ -14521,7 +14521,7 @@ async function ivPassAndSend(id) {
 }
 
 // ─── Compliance Review ───
-const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'身份证件(Persona)', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', ead_upload:'EAD 工卡', other:'其他' };
+const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'身份证件(Stripe Identity)', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', ead_upload:'EAD 工卡', other:'其他' };
 const COMP_STATUS_LABELS = { pending:'待审核', approved:'已通过', rejected:'已拒绝', submitted:'已提交' };
 const COMP_STATUS_COLORS = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)', submitted:'color:#1d4ed8' };
 let _complianceDocs = [];
@@ -14550,7 +14550,7 @@ async function loadComplianceDocs() {
     let personaBadge = '';
     try {
       const fd = JSON.parse(d.form_data || '{}');
-      if (fd.persona_inquiry_id) personaBadge = ' <span style="font-size:.68rem;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px">Persona</span>';
+      if (fd.stripe_session_id || fd.persona_inquiry_id) personaBadge = ' <span style="font-size:.68rem;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px">Stripe Identity</span>';
     } catch {}
     return `<tr>
     <td><strong>${esc(d.worker_name||'')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(d.worker_email||d.worker_phone||'')}</span></td>
@@ -14613,11 +14613,11 @@ function openComplianceReview(id) {
   let formHtml = '';
   try {
     const fd = JSON.parse(doc.form_data || '{}');
-    if (fd.persona_inquiry_id) {
+    if (fd.stripe_session_id || fd.persona_inquiry_id) {
       const personaFields = [
-        ['Persona Inquiry ID', fd.persona_inquiry_id],
-        ['Persona 状态', fd.persona_status || '—'],
-        ['事件', fd.persona_event || '—'],
+        ['Stripe Session ID', fd.stripe_session_id || fd.persona_inquiry_id],
+        ['验证状态', fd.stripe_status || fd.persona_status || '—'],
+        ['事件', fd.stripe_event || fd.persona_event || '—'],
         ...(fd.dl_first_name ? [['名 First Name', fd.dl_first_name]] : []),
         ...(fd.dl_last_name ? [['姓 Last Name', fd.dl_last_name]] : []),
         ...(fd.dl_dob ? [['出生日期 DOB', fd.dl_dob]] : []),
@@ -14627,7 +14627,7 @@ function openComplianceReview(id) {
         ...(fd.id_class ? [['证件类型', fd.id_class]] : []),
         ...(fd.decline_reasons ? [['拒绝原因', JSON.stringify(fd.decline_reasons)]] : [])
       ];
-      formHtml = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem;margin-bottom:1rem"><div style="font-weight:700;color:#1d4ed8;font-size:.85rem;margin-bottom:.5rem">🔐 Persona 自动验证数据</div>' +
+      formHtml = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem;margin-bottom:1rem"><div style="font-weight:700;color:#1d4ed8;font-size:.85rem;margin-bottom:.5rem">🔐 Stripe Identity 自动验证数据</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.82rem">' +
         personaFields.map(([k,v]) => `<div><span style="color:var(--gray-400)">${k}</span><br><strong>${esc(String(v))}</strong></div>`).join('') +
         '</div></div>';

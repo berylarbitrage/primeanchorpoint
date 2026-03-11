@@ -97,67 +97,49 @@ async function getTwilioAccountType() {
   } catch (e) { return { error: e.message }; }
 }
 
-// ─── Persona Identity Verification ───
-async function createPersonaInquiry(workerId, workerName, workerPhone) {
-  const apiKey = process.env.PERSONA_API_KEY;
-  const templateId = process.env.PERSONA_TEMPLATE_ID;
-  if (!apiKey || !templateId) return null;
-  const parts = (workerName || '').trim().split(/\s+/);
-  const firstName = parts[0] || '';
-  const lastName = parts.slice(1).join(' ') || '';
+// ─── Stripe Identity Verification ───
+const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
+
+async function createStripeVerificationSession(workerId, workerName, workerEmail) {
+  if (!stripe) return null;
   try {
-    const resp = await fetch('https://withpersona.com/api/v1/inquiries', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Persona-Version': '2023-01-05' },
-      body: JSON.stringify({ data: { attributes: {
-        'inquiry-template-id': templateId,
-        'reference-id': `worker-${workerId}`,
-        fields: { 'name-first': firstName, 'name-last': lastName, 'phone-number': formatPhoneE164(workerPhone || '') || undefined }
-      }}})
-    });
-    if (!resp.ok) { console.error('[Persona] Create inquiry failed:', await resp.text()); return null; }
-    const d = await resp.json();
-    const inqId = d.data.id;
-    let token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'] || '';
-    // Persona may not return session-token on create; call /resume to obtain it
-    if (!token) {
-      const resumeLink = await resumePersonaInquiry(inqId);
-      if (resumeLink) {
-        const m = resumeLink.match(/session-token=([^&]+)/);
-        if (m) token = m[1];
+    const parts = (workerName || '').trim().split(/\s+/);
+    const firstName = parts[0] || '';
+    const lastName = parts.slice(1).join(' ') || '';
+    const sessionParams = {
+      type: 'document',
+      metadata: { worker_id: String(workerId), worker_name: workerName || '' },
+      options: {
+        document: {
+          allowed_types: ['driving_license', 'id_card', 'passport'],
+          require_matching_selfie: true,
+          require_id_number: false
+        }
       }
+    };
+    if (workerEmail) {
+      sessionParams.provided_details = { email: workerEmail };
     }
-    const link = token ? `https://withpersona.com/verify?inquiry-id=${inqId}&session-token=${token}` : '';
-    return { inquiryId: inqId, sessionToken: token, link };
-  } catch (e) { console.error('[Persona] createPersonaInquiry error:', e.message); return null; }
+    const session = await stripe.identity.verificationSessions.create(sessionParams);
+    return { sessionId: session.id, clientSecret: session.client_secret, url: session.url, status: session.status };
+  } catch (e) { console.error('[Stripe Identity] Create session error:', e.message); return null; }
 }
 
-async function resumePersonaInquiry(inquiryId) {
-  const apiKey = process.env.PERSONA_API_KEY;
-  if (!apiKey || !inquiryId) return null;
+async function getStripeVerificationSession(sessionId) {
+  if (!stripe || !sessionId) return null;
   try {
-    const resp = await fetch(`https://withpersona.com/api/v1/inquiries/${inquiryId}/resume`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Persona-Version': '2023-01-05' }
-    });
-    if (!resp.ok) return null;
-    const d = await resp.json();
-    const token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'];
-    return token ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${token}` : null;
-  } catch (e) { return null; }
+    const session = await stripe.identity.verificationSessions.retrieve(sessionId, { expand: ['verified_outputs'] });
+    return session;
+  } catch (e) { console.error('[Stripe Identity] Retrieve session error:', e.message); return null; }
 }
 
-function verifyPersonaWebhook(rawBody, sigHeader) {
-  const secret = process.env.PERSONA_WEBHOOK_SECRET;
-  if (!secret) return true; // skip if not configured (dev mode)
-  const parts = (sigHeader || '').split(',');
-  const t = parts.find(p => p.startsWith('t='))?.slice(2);
-  const v1 = parts.find(p => p.startsWith('v1='))?.slice(3);
-  if (!t || !v1) return false;
+function verifyStripeWebhook(rawBody, sigHeader) {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) return { valid: true, event: typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody };
   try {
-    const expected = crypto.createHmac('sha256', secret).update(`${t}.${rawBody}`).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(v1, 'hex'), Buffer.from(expected, 'hex'));
-  } catch (e) { return false; }
+    const event = require('stripe').webhooks.constructEvent(rawBody, sigHeader, secret);
+    return { valid: true, event };
+  } catch (e) { console.error('[Stripe Webhook] Verification failed:', e.message); return { valid: false }; }
 }
 
 // ─── Email ───
@@ -3648,7 +3630,7 @@ const ONBOARDING_STEPS = [
   { key: 'interview',       title: '完成面试',             desc: '预约并参加 HR 面试',                              required: true  },
   { key: 'contract',        title: '签署合同 / Offer',     desc: '电子签署雇佣协议 / Contractor Agreement',         required: true  },
   { key: 'background_check',title: '背景调查 (Checkr)',    desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台',    required: true  },
-  { key: 'persona_verify',  title: '身份验证 (Persona)',   desc: '驾照 + 自拍核验 · 由 HR 发起 · 通过 Persona 平台', required: true },
+  { key: 'persona_verify',  title: '身份验证 (Stripe Identity)',   desc: '驾照/ID + 自拍核验 · 由 HR 发起 · 通过 Stripe Identity', required: true },
   { key: 'i9',              title: 'I-9 就业资格',         desc: 'I-9 Section 1 & 2 就业资格验证',                  required: true  },
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
@@ -3785,19 +3767,19 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmi
   res.json({ success: true, tasks: getOnboardingTasks(workerId) });
 });
 
-// Admin: send Persona identity verification from onboarding modal
+// Admin: send Stripe Identity verification from onboarding modal
 app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req, res) => {
   try {
     const workerId = parseInt(req.params.id);
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
     if (!w) return res.status(404).json({ error: 'Worker not found' });
-    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
-      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    if (!stripe)
+      return res.status(503).json({ error: 'Stripe Identity 未配置，请先在 .env 设置 STRIPE_SECRET_KEY' });
     const { force } = req.body || {};
     if (w.identity_status === 'approved' && !force)
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
-    const result = await createPersonaInquiry(workerId, w.name || w.username, w.phone);
-    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    const result = await createStripeVerificationSession(workerId, w.name || w.username, w.email);
+    if (!result) return res.status(500).json({ error: '创建 Stripe Identity 验证失败，请检查 STRIPE_SECRET_KEY' });
     // Auto-add drivers_license to assigned_tasks so compliance tab shows it
     let curTasks = [];
     try { curTasks = JSON.parse(w.assigned_tasks || '[]'); } catch {}
@@ -3806,9 +3788,9 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
       db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(curTasks), workerId);
     }
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(result.inquiryId, workerId);
+      .run(result.sessionId, workerId);
     // Store in worker_compliance_docs so worker portal compliance tab can pick it up
-    const compFormData = JSON.stringify({ persona_inquiry_id: result.inquiryId, persona_status: 'created', persona_session_token: result.sessionToken || '', persona_hosted_url: result.link || '' });
+    const compFormData = JSON.stringify({ stripe_session_id: result.sessionId, stripe_client_secret: result.clientSecret, stripe_status: 'requires_input', stripe_hosted_url: result.url || '' });
     const existingDoc = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(workerId);
     if (existingDoc) {
       db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -3821,11 +3803,12 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
     db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
       VALUES (?,'persona_verify','pending',1,?,?,CURRENT_TIMESTAMP)
       ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
-      .run(workerId, '已发送 Persona 验证链接', result.link || '');
+      .run(workerId, '已发送 Stripe Identity 验证链接', result.url || '');
     // Send SMS
     let smsSent = false;
     if (w.phone) {
-      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照+自拍）以继续入职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照/ID+自拍）以继续入职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(w.phone, smsText);
     }
     // Send email
@@ -3834,19 +3817,19 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(w.email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
+        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${w.name||w.username||''}，</p>
-         <p>HR 已为您发起身份验证（驾照 + 自拍核验）。您可以通过以下任一方式完成：</p>
+         <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
          <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
            <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
            <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
-           ${result.link ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
-           <tr><td style="padding:.3rem 0"><a href="${result.link}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
-           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.link}</span></td></tr>` : ''}
+           ${result.url ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${result.url}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
+           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.url}</span></td></tr>` : ''}
          </table>`
       );
     }
-    res.json({ success: true, smsSent, emailSent, portalReady: true, inquiryId: result.inquiryId, link: result.link || '' });
+    res.json({ success: true, smsSent, emailSent, portalReady: true, sessionId: result.sessionId, link: result.url || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -8521,63 +8504,22 @@ app.post('/api/worker/compliance/drivers-license', requireWorker, complianceUplo
   res.json({ success: true });
 });
 
-// ── Persona Identity Verification ──
+// ── Stripe Identity Verification (Worker Portal) ──
 
-// Worker: create a Persona inquiry for ID verification
+// Worker: create a Stripe Identity verification session
+// Worker: create Stripe Identity verification session
 app.post('/api/worker/persona/inquiry', requireWorker, async (req, res) => {
-  const apiKey = process.env.PERSONA_API_KEY;
-  const templateId = process.env.PERSONA_TEMPLATE_ID;
-  if (!apiKey || !templateId) return res.status(500).json({ error: 'Persona not configured' });
+  if (!stripe) return res.status(500).json({ error: 'Stripe Identity not configured' });
 
   const worker = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!worker) return res.status(404).json({ error: 'Worker not found' });
 
   try {
-    const resp = await fetch('https://api.withpersona.com/api/v1/inquiries', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Persona-Version': '2023-01-05',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        data: {
-          attributes: {
-            'inquiry-template-id': templateId,
-            'reference-id': `worker-${req.workerId}`,
-            fields: {
-              'name-first': (worker.name || '').split(' ')[0] || '',
-              'name-last': (worker.name || '').split(' ').slice(1).join(' ') || '',
-              ...(worker.dob ? { birthdate: worker.dob } : {}),
-              ...(worker.email ? { 'email-address': worker.email } : {}),
-              ...(worker.phone ? { 'phone-number': worker.phone } : {})
-            }
-          }
-        }
-      })
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      console.error('[Persona] Create inquiry failed:', JSON.stringify(data));
-      return res.status(resp.status).json({ error: 'Persona API error', details: data });
-    }
-    const inquiryId = data.data?.id;
-    let sessionToken = data.meta?.['session-token'] || data.data?.attributes?.['session-token'] || '';
-    // Persona may not return session-token on create; call /resume to obtain it
-    if (!sessionToken && inquiryId) {
-      const resumeLink = await resumePersonaInquiry(inquiryId);
-      if (resumeLink) {
-        const m = resumeLink.match(/session-token=([^&]+)/);
-        if (m) sessionToken = m[1];
-      }
-    }
-    // Build hosted flow URL for link/QR sharing
-    const hostedUrl = sessionToken
-      ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${sessionToken}`
-      : '';
-    // Store the inquiry in compliance docs
-    const formData = JSON.stringify({ persona_inquiry_id: inquiryId, persona_status: 'created', persona_session_token: sessionToken, persona_hosted_url: hostedUrl });
+    const result = await createStripeVerificationSession(req.workerId, worker.name, worker.email);
+    if (!result) return res.status(500).json({ error: 'Failed to create Stripe Identity session' });
+
+    // Store the session in compliance docs
+    const formData = JSON.stringify({ stripe_session_id: result.sessionId, stripe_client_secret: result.clientSecret, stripe_status: 'requires_input', stripe_hosted_url: result.url || '' });
     const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(req.workerId);
     if (existing) {
       db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -8586,22 +8528,23 @@ app.post('/api/worker/persona/inquiry', requireWorker, async (req, res) => {
       db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'drivers_license', ?, 'pending')")
         .run(req.workerId, formData);
     }
-    res.json({ success: true, inquiry_id: inquiryId, hosted_url: hostedUrl });
+    // Update worker_accounts
+    db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(result.sessionId, req.workerId);
+    res.json({ success: true, inquiry_id: result.sessionId, client_secret: result.clientSecret, hosted_url: result.url || '' });
   } catch (e) {
-    console.error('[Persona] Error:', e.message);
-    res.status(500).json({ error: 'Failed to create Persona inquiry: ' + e.message });
+    console.error('[Stripe Identity] Error:', e.message);
+    res.status(500).json({ error: 'Failed to create verification session: ' + e.message });
   }
 });
 
-// Worker: get Persona config (template ID + environment) for embedded flow
+// Worker: get Stripe Identity config for embedded flow
 app.get('/api/worker/persona/config', requireWorker, (req, res) => {
-  const templateId = process.env.PERSONA_TEMPLATE_ID;
-  const environment = process.env.PERSONA_ENVIRONMENT || 'sandbox';
-  if (!templateId) return res.json({ enabled: false });
-  res.json({ enabled: true, templateId, environment });
+  if (!stripe) return res.json({ enabled: false });
+  res.json({ enabled: true, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '' });
 });
 
-// Worker: check Persona verification status
+// Worker: check verification status
 app.get('/api/worker/persona/status', requireWorker, (req, res) => {
   const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
   if (!doc) return res.json({ status: 'not_started' });
@@ -8609,9 +8552,10 @@ app.get('/api/worker/persona/status', requireWorker, (req, res) => {
     const formData = JSON.parse(doc.form_data || '{}');
     res.json({
       status: doc.status,
-      persona_inquiry_id: formData.persona_inquiry_id || null,
-      persona_status: formData.persona_status || null,
-      persona_hosted_url: formData.persona_hosted_url || null,
+      persona_inquiry_id: formData.stripe_session_id || formData.persona_inquiry_id || null,
+      persona_status: formData.stripe_status || formData.persona_status || null,
+      persona_hosted_url: formData.stripe_hosted_url || formData.persona_hosted_url || null,
+      client_secret: formData.stripe_client_secret || null,
       reviewer_notes: doc.reviewer_notes || ''
     });
   } catch {
@@ -8619,7 +8563,7 @@ app.get('/api/worker/persona/status', requireWorker, (req, res) => {
   }
 });
 
-// Worker: send Persona verification link via SMS
+// Worker: send verification link via SMS
 app.post('/api/worker/persona/send-sms', requireWorker, async (req, res) => {
   const worker = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!worker) return res.status(404).json({ error: 'Worker not found' });
@@ -8630,7 +8574,7 @@ app.post('/api/worker/persona/send-sms', requireWorker, async (req, res) => {
   if (!doc) return res.status(400).json({ error: '请先创建验证 / Please create verification first' });
   try {
     const formData = JSON.parse(doc.form_data || '{}');
-    const url = formData.persona_hosted_url;
+    const url = formData.stripe_hosted_url || formData.persona_hosted_url;
     if (!url) return res.status(400).json({ error: '验证链接不可用，请重新开始验证 / Verification link not available' });
     const msg = `[Prime Anchor Point] 请点击以下链接完成身份验证 / Click the link below to verify your identity:\n${url}`;
     const ok = await sendSMS(phone, msg);
@@ -8641,7 +8585,7 @@ app.post('/api/worker/persona/send-sms', requireWorker, async (req, res) => {
   }
 });
 
-// Worker: send Persona verification link via email
+// Worker: send verification link via email
 app.post('/api/worker/persona/send-email', requireWorker, async (req, res) => {
   const worker = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!worker) return res.status(404).json({ error: 'Worker not found' });
@@ -8652,7 +8596,7 @@ app.post('/api/worker/persona/send-email', requireWorker, async (req, res) => {
   if (!doc) return res.status(400).json({ error: '请先创建验证 / Please create verification first' });
   try {
     const formData = JSON.parse(doc.form_data || '{}');
-    const url = formData.persona_hosted_url;
+    const url = formData.stripe_hosted_url || formData.persona_hosted_url;
     if (!url) return res.status(400).json({ error: '验证链接不可用，请重新开始验证 / Verification link not available' });
     const subject = 'Prime Anchor Point - 身份验证 / Identity Verification';
     const html = `
@@ -8678,131 +8622,131 @@ app.post('/api/worker/persona/send-email', requireWorker, async (req, res) => {
   }
 });
 
-// Persona webhook - receives verification results
+// Stripe Identity webhook - receives verification results
 app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (req, res) => {
-  const webhookSecret = process.env.PERSONA_WEBHOOK_SECRET;
-
-  // Verify webhook signature if secret is configured
-  if (webhookSecret) {
-    const sigHeader = req.headers['persona-signature'];
-    if (!sigHeader) return res.status(401).json({ error: 'Missing signature' });
-    try {
-      const parts = sigHeader.split(',');
-      const timestamp = parts.find(p => p.startsWith('t=')).slice(2);
-      const signature = parts.find(p => p.startsWith('v1=')).slice(3);
-      const payload = `${timestamp}.${req.body}`;
-      const expected = crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex');
-      if (!crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'))) {
-        return res.status(401).json({ error: 'Invalid signature' });
-      }
-    } catch (e) {
-      console.error('[Persona Webhook] Signature verification error:', e.message);
-      return res.status(401).json({ error: 'Signature verification failed' });
-    }
-  }
+  const rawBody = typeof req.body === 'string' ? req.body : req.body.toString('utf8');
+  const sigHeader = req.headers['stripe-signature'];
+  const { valid, event } = verifyStripeWebhook(rawBody, sigHeader);
+  if (!valid) return res.status(401).json({ error: 'Invalid signature' });
 
   try {
-    const event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const eventType = event.data?.attributes?.name || '';
-    const inquiryData = event.data?.attributes?.payload?.data;
-    const inquiryId = inquiryData?.id;
-    const inquiryStatus = inquiryData?.attributes?.status;
-    const referenceId = inquiryData?.attributes?.['reference-id'] || '';
+    const eventType = event.type || '';
+    const session = event.data?.object;
+    const sessionId = session?.id;
 
-    console.log(`[Persona Webhook] Event: ${eventType}, Inquiry: ${inquiryId}, Status: ${inquiryStatus}`);
+    console.log(`[Stripe Identity Webhook] Event: ${eventType}, Session: ${sessionId}, Status: ${session?.status}`);
 
-    if (!inquiryId) return res.json({ received: true });
+    if (!sessionId || !eventType.startsWith('identity.verification_session.')) return res.json({ received: true });
 
-    // Extract worker ID from reference-id (format: "worker-123" or legacy plain "123")
-    const workerIdMatch = referenceId.match(/^(?:worker-)?(\d+)$/);
-    let docRow = null;
-    if (workerIdMatch) {
-      docRow = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(parseInt(workerIdMatch[1]));
+    // Find compliance doc by stripe_session_id
+    const allDocs = db.prepare("SELECT * FROM worker_compliance_docs WHERE doc_type='drivers_license'").all();
+    let docRow = allDocs.find(d => {
+      try {
+        const fd = JSON.parse(d.form_data || '{}');
+        return fd.stripe_session_id === sessionId || fd.persona_inquiry_id === sessionId;
+      } catch { return false; }
+    });
+    // Also try worker_accounts.persona_inquiry_id (stores session ID)
+    if (!docRow) {
+      const w = db.prepare('SELECT id FROM worker_accounts WHERE persona_inquiry_id=?').get(sessionId);
+      if (w) docRow = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(w.id);
     }
     if (!docRow) {
-      // Fallback: search by inquiry ID in form_data
-      const allDocs = db.prepare("SELECT * FROM worker_compliance_docs WHERE doc_type='drivers_license'").all();
-      docRow = allDocs.find(d => {
-        try { return JSON.parse(d.form_data || '{}').persona_inquiry_id === inquiryId; } catch { return false; }
-      });
+      // Try metadata worker_id
+      const workerId = parseInt(session?.metadata?.worker_id);
+      if (workerId) docRow = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(workerId);
     }
     if (!docRow) {
-      console.warn(`[Persona Webhook] No compliance doc found for inquiry ${inquiryId}`);
+      console.warn(`[Stripe Identity Webhook] No compliance doc found for session ${sessionId}`);
       return res.json({ received: true });
     }
 
-    // Update compliance doc based on event
     const existingForm = JSON.parse(docRow.form_data || '{}');
-    existingForm.persona_inquiry_id = inquiryId;
-    existingForm.persona_status = inquiryStatus;
-    existingForm.persona_event = eventType;
+    existingForm.stripe_session_id = sessionId;
+    existingForm.stripe_status = session.status;
+    existingForm.stripe_event = eventType;
 
-    // Extract verification fields if available
-    const included = event.data?.attributes?.payload?.included || [];
-    const govIdVerification = included.find(i => i.type === 'verification/government-id');
-    if (govIdVerification) {
-      const attrs = govIdVerification.attributes || {};
-      existingForm.dl_number = attrs['id-number'] || '';
-      existingForm.dl_state = attrs['address-subdivision'] || '';
-      existingForm.dl_expiry = attrs['expiration-date'] || '';
-      existingForm.dl_first_name = attrs['name-first'] || '';
-      existingForm.dl_last_name = attrs['name-last'] || '';
-      existingForm.dl_dob = attrs['birthdate'] || '';
-      existingForm.id_class = attrs['id-class'] || '';
+    // Extract verified data if available
+    const verifiedOutputs = session.verified_outputs || session.last_verification_report?.document || {};
+    if (verifiedOutputs) {
+      if (verifiedOutputs.first_name) existingForm.dl_first_name = verifiedOutputs.first_name;
+      if (verifiedOutputs.last_name) existingForm.dl_last_name = verifiedOutputs.last_name;
+      if (verifiedOutputs.dob) {
+        const dob = verifiedOutputs.dob;
+        existingForm.dl_dob = dob.year ? `${dob.year}-${String(dob.month).padStart(2,'0')}-${String(dob.day).padStart(2,'0')}` : '';
+      }
+      if (verifiedOutputs.id_number) existingForm.dl_number = verifiedOutputs.id_number;
+      if (verifiedOutputs.address) {
+        existingForm.dl_state = verifiedOutputs.address.state || '';
+      }
+      if (verifiedOutputs.expiration_date) {
+        const exp = verifiedOutputs.expiration_date;
+        existingForm.dl_expiry = exp.year ? `${exp.year}-${String(exp.month).padStart(2,'0')}-${String(exp.day).padStart(2,'0')}` : '';
+      }
+      if (verifiedOutputs.id_number_type) existingForm.id_class = verifiedOutputs.id_number_type;
     }
 
     let newStatus = docRow.status;
-    if (eventType === 'inquiry.approved' || inquiryStatus === 'approved') {
+    if (session.status === 'verified') {
       newStatus = 'approved';
-    } else if (eventType === 'inquiry.declined' || inquiryStatus === 'declined') {
+    } else if (session.status === 'requires_input') {
+      newStatus = 'pending';
+    } else if (session.status === 'processing') {
+      newStatus = 'submitted';
+    } else if (session.status === 'canceled') {
       newStatus = 'rejected';
-      existingForm.decline_reasons = inquiryData?.attributes?.['decision-reasons'] || [];
-    } else if (eventType === 'inquiry.completed' || inquiryStatus === 'completed') {
-      newStatus = 'submitted'; // user completed verification, awaiting auto-approval or manual review
-    } else if (eventType === 'inquiry.failed' || inquiryStatus === 'failed') {
-      newStatus = 'rejected';
+      existingForm.decline_reasons = [session.last_error?.reason || 'canceled'];
     }
 
     db.prepare("UPDATE worker_compliance_docs SET form_data=?, status=?, reviewer_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-      .run(JSON.stringify(existingForm), newStatus, `Persona: ${eventType}`, docRow.id);
+      .run(JSON.stringify(existingForm), newStatus, `Stripe Identity: ${eventType} (${session.status})`, docRow.id);
 
-    console.log(`[Persona Webhook] Updated doc ${docRow.id} → status=${newStatus}`);
+    // Also update expires_at if extracted
+    if (existingForm.dl_expiry) {
+      db.prepare("UPDATE worker_compliance_docs SET expires_at=? WHERE id=? AND (expires_at IS NULL OR expires_at='')").run(existingForm.dl_expiry, docRow.id);
+    }
+    // Update holder_name if extracted
+    if (existingForm.dl_first_name || existingForm.dl_last_name) {
+      const holderName = `${existingForm.dl_last_name || ''}, ${existingForm.dl_first_name || ''}`.trim().replace(/^,\s*|,\s*$/g, '');
+      db.prepare("UPDATE worker_compliance_docs SET holder_name=? WHERE id=? AND (holder_name IS NULL OR holder_name='')").run(holderName, docRow.id);
+    }
+    // Update doc_number if extracted
+    if (existingForm.dl_number) {
+      db.prepare("UPDATE worker_compliance_docs SET doc_number=? WHERE id=? AND (doc_number IS NULL OR doc_number='')").run(existingForm.dl_number, docRow.id);
+    }
 
-    // Also update worker_accounts.identity_status and auto-complete onboarding
+    console.log(`[Stripe Identity Webhook] Updated doc ${docRow.id} → status=${newStatus}`);
+
+    // Update worker_accounts.identity_status and auto-complete onboarding
     let identityStatus = '';
-    if (inquiryStatus === 'approved' || eventType.includes('approved')) identityStatus = 'approved';
-    else if (inquiryStatus === 'declined' || eventType.includes('declined') || eventType.includes('failed')) identityStatus = 'declined';
-    else if (inquiryStatus === 'completed' || eventType.includes('completed')) identityStatus = 'completed';
+    if (session.status === 'verified') identityStatus = 'approved';
+    else if (session.status === 'canceled') identityStatus = 'declined';
+    else if (session.status === 'processing') identityStatus = 'completed';
     if (identityStatus) {
-      db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
-      console.log(`[Persona Webhook] Updated worker_accounts identity_status → ${identityStatus}`);
-      const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(inquiryId);
+      db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, sessionId);
+      const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(sessionId);
       if (w) {
         if (identityStatus === 'approved') {
           db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
-          console.log(`[Persona Webhook] Auto-completed persona_verify onboarding for worker ${w.id}`);
+          console.log(`[Stripe Identity Webhook] Auto-completed persona_verify for worker ${w.id}`);
         } else if (identityStatus === 'completed') {
           db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
-          console.log(`[Persona Webhook] Updated persona_verify to submitted for worker ${w.id}`);
         } else if (identityStatus === 'declined') {
           db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
-          console.log(`[Persona Webhook] Persona verification declined for worker ${w.id}`);
         }
       }
     }
 
     res.json({ received: true });
   } catch (e) {
-    console.error('[Persona Webhook] Error processing:', e.message);
+    console.error('[Stripe Identity Webhook] Error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// Worker: actively poll Persona API for latest inquiry status (does not rely on webhook)
+// Worker: actively poll Stripe Identity API for latest session status
 app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
-  const apiKey = process.env.PERSONA_API_KEY;
-
-  // Fallback: even without Persona API key, check if identity_status was updated (e.g., by webhook or admin)
+  // Check if identity_status was already updated (e.g., by webhook or admin)
   const w = db.prepare('SELECT identity_status, persona_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   if (w && (w.identity_status === 'approved' || w.identity_status === 'completed' || w.identity_status === 'declined')) {
     // Sync to worker_onboarding if not already synced
@@ -8820,8 +8764,7 @@ app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
     return res.json({ status: docStatus, persona_status: w.identity_status, updated: onboard && onboard.status === 'pending' });
   }
 
-  if (!apiKey) {
-    // No API key + identity_status not yet set → return current DB state
+  if (!stripe) {
     const doc = db.prepare("SELECT status FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
     return res.json({ status: doc ? doc.status : 'not_started', persona_status: null });
   }
@@ -8829,58 +8772,52 @@ app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
   if (!doc) return res.json({ status: 'not_started' });
   let formData;
   try { formData = JSON.parse(doc.form_data || '{}'); } catch { formData = {}; }
-  const inquiryId = formData.persona_inquiry_id;
-  if (!inquiryId) return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+  const sessionId = formData.stripe_session_id || formData.persona_inquiry_id;
+  if (!sessionId) return res.json({ status: doc.status, persona_status: formData.stripe_status || null });
 
   try {
-    const resp = await fetch(`https://withpersona.com/api/v1/inquiries/${inquiryId}`, {
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Persona-Version': '2023-01-05', 'Accept': 'application/json' }
-    });
-    if (!resp.ok) {
-      console.error('[Persona Poll] API error:', resp.status);
-      return res.json({ status: doc.status, persona_status: formData.persona_status || null });
-    }
-    const data = await resp.json();
-    const inquiryStatus = data.data?.attributes?.status;
-    if (!inquiryStatus || inquiryStatus === formData.persona_status) {
-      return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+    const session = await getStripeVerificationSession(sessionId);
+    if (!session) return res.json({ status: doc.status, persona_status: formData.stripe_status || null });
+
+    const stripeStatus = session.status;
+    if (!stripeStatus || stripeStatus === formData.stripe_status) {
+      return res.json({ status: doc.status, persona_status: formData.stripe_status || null });
     }
 
-    // Status changed — update local DB (mirrors webhook logic)
-    formData.persona_status = inquiryStatus;
-    formData.persona_polled_at = new Date().toISOString();
+    // Status changed — update local DB
+    formData.stripe_status = stripeStatus;
+    formData.stripe_polled_at = new Date().toISOString();
 
-    // Extract verification fields if included
-    const included = data.included || [];
-    const govIdVerification = included.find(i => i.type === 'verification/government-id');
-    if (govIdVerification) {
-      const attrs = govIdVerification.attributes || {};
-      formData.dl_number = attrs['id-number'] || formData.dl_number || '';
-      formData.dl_state = attrs['address-subdivision'] || formData.dl_state || '';
-      formData.dl_expiry = attrs['expiration-date'] || formData.dl_expiry || '';
-      formData.dl_first_name = attrs['name-first'] || formData.dl_first_name || '';
-      formData.dl_last_name = attrs['name-last'] || formData.dl_last_name || '';
-      formData.dl_dob = attrs['birthdate'] || formData.dl_dob || '';
-      formData.id_class = attrs['id-class'] || formData.id_class || '';
+    // Extract verified data if available
+    const verifiedOutputs = session.verified_outputs;
+    if (verifiedOutputs) {
+      if (verifiedOutputs.first_name) formData.dl_first_name = verifiedOutputs.first_name;
+      if (verifiedOutputs.last_name) formData.dl_last_name = verifiedOutputs.last_name;
+      if (verifiedOutputs.dob) {
+        const dob = verifiedOutputs.dob;
+        formData.dl_dob = dob.year ? `${dob.year}-${String(dob.month).padStart(2,'0')}-${String(dob.day).padStart(2,'0')}` : '';
+      }
+      if (verifiedOutputs.id_number) formData.dl_number = verifiedOutputs.id_number;
+      if (verifiedOutputs.expiration_date) {
+        const exp = verifiedOutputs.expiration_date;
+        formData.dl_expiry = exp.year ? `${exp.year}-${String(exp.month).padStart(2,'0')}-${String(exp.day).padStart(2,'0')}` : '';
+      }
     }
 
     let newStatus = doc.status;
-    if (inquiryStatus === 'approved') newStatus = 'approved';
-    else if (inquiryStatus === 'declined') newStatus = 'rejected';
-    else if (inquiryStatus === 'completed') newStatus = 'submitted';
-    else if (inquiryStatus === 'failed') newStatus = 'rejected';
-    else if (inquiryStatus === 'needs_review') newStatus = 'submitted';
+    if (stripeStatus === 'verified') newStatus = 'approved';
+    else if (stripeStatus === 'canceled') newStatus = 'rejected';
+    else if (stripeStatus === 'processing') newStatus = 'submitted';
+    else if (stripeStatus === 'requires_input') newStatus = 'pending';
 
-    if (newStatus !== doc.status || inquiryStatus !== (formData.persona_status_prev || '')) {
-      formData.persona_status_prev = inquiryStatus;
+    if (newStatus !== doc.status) {
       db.prepare("UPDATE worker_compliance_docs SET form_data=?, status=?, reviewer_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-        .run(JSON.stringify(formData), newStatus, `Persona poll: ${inquiryStatus}`, doc.id);
+        .run(JSON.stringify(formData), newStatus, `Stripe Identity poll: ${stripeStatus}`, doc.id);
 
-      // Also update worker_accounts and onboarding (same as webhook)
       let identityStatus = '';
-      if (inquiryStatus === 'approved') identityStatus = 'approved';
-      else if (inquiryStatus === 'declined' || inquiryStatus === 'failed') identityStatus = 'declined';
-      else if (inquiryStatus === 'completed' || inquiryStatus === 'needs_review') identityStatus = 'completed';
+      if (stripeStatus === 'verified') identityStatus = 'approved';
+      else if (stripeStatus === 'canceled') identityStatus = 'declined';
+      else if (stripeStatus === 'processing') identityStatus = 'completed';
       if (identityStatus) {
         db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE id=?`).run(identityStatus, req.workerId);
         if (identityStatus === 'approved') {
@@ -8891,13 +8828,21 @@ app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
           db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
         }
       }
-      console.log(`[Persona Poll] Updated worker ${req.workerId} → doc.status=${newStatus}, persona_status=${inquiryStatus}`);
+      // Auto-fill expires_at and holder_name
+      if (formData.dl_expiry) {
+        db.prepare("UPDATE worker_compliance_docs SET expires_at=? WHERE id=? AND (expires_at IS NULL OR expires_at='')").run(formData.dl_expiry, doc.id);
+      }
+      if (formData.dl_first_name || formData.dl_last_name) {
+        const holderName = `${formData.dl_last_name || ''}, ${formData.dl_first_name || ''}`.trim().replace(/^,\s*|,\s*$/g, '');
+        db.prepare("UPDATE worker_compliance_docs SET holder_name=? WHERE id=? AND (holder_name IS NULL OR holder_name='')").run(holderName, doc.id);
+      }
+      console.log(`[Stripe Identity Poll] Updated worker ${req.workerId} → doc.status=${newStatus}, stripe_status=${stripeStatus}`);
     }
 
-    res.json({ status: newStatus, persona_status: inquiryStatus, updated: true });
+    res.json({ status: newStatus, persona_status: stripeStatus, updated: true });
   } catch (e) {
-    console.error('[Persona Poll] Error:', e.message);
-    res.json({ status: doc.status, persona_status: formData.persona_status || null });
+    console.error('[Stripe Identity Poll] Error:', e.message);
+    res.json({ status: doc.status, persona_status: formData.stripe_status || null });
   }
 });
 
@@ -9990,7 +9935,7 @@ app.get('/api/admin/interview-history', requireAdmin, (req, res) => {
   res.json(all);
 });
 
-// Admin: send Persona identity verification to worker via interview
+// Admin: send Stripe Identity verification to worker via interview
 app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, res) => {
   try {
     const interview = db.prepare(`
@@ -9999,65 +9944,39 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       FROM interviews i JOIN worker_accounts w ON i.worker_account_id = w.id WHERE i.id=?
     `).get(req.params.id);
     if (!interview) return res.status(404).json({ error: 'Interview not found' });
-    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
-      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    if (!stripe)
+      return res.status(503).json({ error: 'Stripe Identity 未配置，请先在 .env 设置 STRIPE_SECRET_KEY' });
     const { force } = req.body || {};
     if (interview.identity_status === 'approved' && !force)
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
-    const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
-    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    const result = await createStripeVerificationSession(interview.worker_id, interview.worker_name, interview.worker_email);
+    if (!result) return res.status(500).json({ error: '创建 Stripe Identity 验证失败，请检查 STRIPE_SECRET_KEY' });
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(result.inquiryId, interview.worker_id);
-    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍+SSN）以继续求职流程。点击链接在手机完成：${result.link}`;
+      .run(result.sessionId, interview.worker_id);
+    const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。点击链接：${result.url || portalUrl}`;
     const smsSent = await sendSMS(interview.worker_phone, smsText);
     if (interview.worker_email) {
       await sendEmail(interview.worker_email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证：${result.link}`,
-        `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请在手机上点击以下链接，按提示上传驾照、完成自拍及 SSN 核验：</p><p><a href="${result.link}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.link}</p>`
+        `请完成身份验证：${result.url || portalUrl}`,
+        `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请点击以下链接，按提示上传驾照/ID、完成自拍核验：</p><p><a href="${result.url || portalUrl}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.url || portalUrl}</p>`
       );
     }
-    res.json({ success: true, smsSent, inquiryId: result.inquiryId, link: result.link });
+    res.json({ success: true, smsSent, sessionId: result.sessionId, link: result.url || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Persona webhook — called by Persona when verification status changes
-app.post('/api/webhooks/persona', express.raw({ type: '*/*' }), (req, res) => {
-  try {
-    const rawBody = req.body.toString('utf8');
-    const sig = req.headers['persona-signature'];
-    if (!verifyPersonaWebhook(rawBody, sig)) {
-      console.warn('[Persona Webhook] Signature mismatch');
-      return res.status(400).json({ error: 'Invalid signature' });
-    }
-    const event = JSON.parse(rawBody);
-    const payload = event.data?.attributes?.payload?.data || event.data;
-    const inquiryId = payload?.id;
-    const eventName = event.data?.attributes?.name || '';
-    const status = payload?.attributes?.status || '';
-    console.log(`[Persona Webhook] ${eventName} | inquiry=${inquiryId} | status=${status}`);
-    if (inquiryId) {
-      let identityStatus = '';
-      if (status === 'approved' || eventName.includes('approved')) identityStatus = 'approved';
-      else if (status === 'declined' || eventName.includes('declined') || eventName.includes('failed')) identityStatus = 'declined';
-      else if (status === 'completed' || eventName.includes('completed')) identityStatus = 'completed';
-      if (identityStatus) {
-        db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
-        console.log(`[Persona Webhook] Updated ${inquiryId} → ${identityStatus}`);
-      }
-    }
-    res.json({ received: true });
-  } catch (e) { console.error('[Persona Webhook]', e.message); res.status(500).json({ error: e.message }); }
-});
-
-// Worker: get own identity verification status + fresh session link
+// Worker: get own identity verification status
 app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
   try {
     const w = db.prepare('SELECT persona_inquiry_id, identity_status, identity_sent_at FROM worker_accounts WHERE id=?').get(req.workerId);
     if (!w) return res.status(404).json({ error: 'Not found' });
     let link = null;
-    if (w.persona_inquiry_id && w.identity_status === 'pending') {
-      link = await resumePersonaInquiry(w.persona_inquiry_id);
+    // For Stripe Identity, retrieve fresh session URL if pending
+    if (w.persona_inquiry_id && w.identity_status === 'pending' && stripe) {
+      const session = await getStripeVerificationSession(w.persona_inquiry_id);
+      if (session && session.url) link = session.url;
     }
     res.json({ status: w.identity_status || 'not_sent', sent_at: w.identity_sent_at || null, link });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -10120,7 +10039,7 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
   res.json({ token, expires_at: expiresAt });
 });
 
-// Admin: send Persona identity verification to worker via interview
+// Admin: send Stripe Identity verification to worker via interview
 app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, res) => {
   try {
     const interview = db.prepare(`
@@ -10129,13 +10048,13 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       FROM interviews i JOIN worker_accounts w ON i.worker_account_id = w.id WHERE i.id=?
     `).get(req.params.id);
     if (!interview) return res.status(404).json({ error: 'Interview not found' });
-    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
-      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    if (!stripe)
+      return res.status(503).json({ error: 'Stripe Identity 未配置，请先在 .env 设置 STRIPE_SECRET_KEY' });
     const { force } = req.body || {};
     if (interview.identity_status === 'approved' && !force)
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
-    const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
-    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    const result = await createStripeVerificationSession(interview.worker_id, interview.worker_name, interview.worker_email);
+    if (!result) return res.status(500).json({ error: '创建 Stripe Identity 验证失败，请检查 STRIPE_SECRET_KEY' });
     // Auto-add drivers_license to assigned_tasks
     const wAcct = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(interview.worker_id);
     let curTasks = [];
@@ -10145,9 +10064,9 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(curTasks), interview.worker_id);
     }
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(result.inquiryId, interview.worker_id);
+      .run(result.sessionId, interview.worker_id);
     // Sync to worker_compliance_docs for portal
-    const compFormData = JSON.stringify({ persona_inquiry_id: result.inquiryId, persona_status: 'created', persona_session_token: result.sessionToken || '', persona_hosted_url: result.link || '' });
+    const compFormData = JSON.stringify({ stripe_session_id: result.sessionId, stripe_client_secret: result.clientSecret, stripe_status: 'requires_input', stripe_hosted_url: result.url || '' });
     const existingDoc = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(interview.worker_id);
     if (existingDoc) {
       db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(compFormData, existingDoc.id);
@@ -10158,11 +10077,12 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
       VALUES (?,'persona_verify','pending',1,?,?,CURRENT_TIMESTAMP)
       ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
-      .run(interview.worker_id, '已发送 Persona 验证链接', result.link || '');
+      .run(interview.worker_id, '已发送 Stripe Identity 验证链接', result.url || '');
     // Send SMS
     let smsSent = false;
     if (interview.worker_phone) {
-      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍）以继续求职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(interview.worker_phone, smsText);
     }
     // Send email
@@ -10171,33 +10091,31 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(interview.worker_email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
+        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${interview.worker_name||''}，</p>
-         <p>HR 已为您发起身份验证（驾照 + 自拍核验）。您可以通过以下任一方式完成：</p>
+         <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
          <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
            <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
            <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
-           ${result.link ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
-           <tr><td style="padding:.3rem 0"><a href="${result.link}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
-           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.link}</span></td></tr>` : ''}
+           ${result.url ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${result.url}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
+           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.url}</span></td></tr>` : ''}
          </table>`
       );
     }
-    res.json({ success: true, smsSent, emailSent, portalReady: true, inquiryId: result.inquiryId, link: result.link || '' });
+    res.json({ success: true, smsSent, emailSent, portalReady: true, sessionId: result.sessionId, link: result.url || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// NOTE: Duplicate Persona webhook handler was removed.
-// All Persona webhook logic is now consolidated in the handler above (around line 4405).
-
-// Worker: get own identity verification status + fresh session link
+// Worker: get own identity verification status
 app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
   try {
     const w = db.prepare('SELECT persona_inquiry_id, identity_status, identity_sent_at FROM worker_accounts WHERE id=?').get(req.workerId);
     if (!w) return res.status(404).json({ error: 'Not found' });
     let link = null;
-    if (w.persona_inquiry_id && w.identity_status === 'pending') {
-      link = await resumePersonaInquiry(w.persona_inquiry_id);
+    if (w.persona_inquiry_id && w.identity_status === 'pending' && stripe) {
+      const session = await getStripeVerificationSession(w.persona_inquiry_id);
+      if (session && session.url) link = session.url;
     }
     res.json({ status: w.identity_status || 'not_sent', sent_at: w.identity_sent_at || null, link });
   } catch (e) { res.status(500).json({ error: e.message }); }

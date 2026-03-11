@@ -189,7 +189,7 @@ tr:last-child td{border-bottom:none}
   .content{padding:0 .65rem;margin:.85rem auto}
 }
 </style>
-<script src="https://cdn.withpersona.com/dist/persona-v5.5.0.js" defer></script>
+<script src="https://js.stripe.com/v3/" defer></script>
 <script src="/address-validator.js" defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
@@ -851,7 +851,7 @@ function googleTranslateElementInit() {
           <!-- Step 1: Two-choice selection -->
           <div id="personaChoiceScreen">
             <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem">
-              <!-- Option A: Verify on this website -->
+              <!-- Option A: Verify on this website (Stripe embedded) -->
               <div onclick="personaChooseWebsite()" style="flex:1;min-width:200px;padding:1.2rem;border:2px solid var(--gray-200);border-radius:12px;cursor:pointer;text-align:center;transition:all .2s;background:#fff" onmouseover="this.style.borderColor='#0ea5e9';this.style.background='#f0f9ff'" onmouseout="this.style.borderColor='var(--gray-200)';this.style.background='#fff'">
                 <div style="font-size:2rem;margin-bottom:.5rem">🖥️</div>
                 <div style="font-weight:700;font-size:.95rem;color:var(--gray-700);margin-bottom:.3rem">在本网站验证</div>
@@ -869,15 +869,15 @@ function googleTranslateElementInit() {
             <button type="button" class="btn btn-gray" onclick="hideDLForm()">取消 / Cancel</button>
           </div>
 
-          <!-- Step 2A: Embedded verification (hidden by default) -->
+          <!-- Step 2A: Embedded verification via Stripe.js (hidden by default) -->
           <div id="personaEmbeddedScreen" style="display:none">
             <div style="margin-bottom:1rem">
-              <button class="btn btn-sky" onclick="startPersonaVerification()" id="personaStartBtn" style="font-size:.95rem;padding:.7rem 1.5rem">
+              <button class="btn btn-sky" onclick="startStripeVerification()" id="personaStartBtn" style="font-size:.95rem;padding:.7rem 1.5rem">
                 🖥️ 开始验证 / Start Verification
               </button>
               <button type="button" class="btn btn-outline" onclick="personaBackToChoice()" style="margin-left:.5rem;font-size:.85rem">← 返回 / Back</button>
             </div>
-            <p style="font-size:.8rem;color:var(--gray-400)">验证窗口将在此页面弹出，请按照提示完成操作。<br>A verification window will open on this page. Follow the prompts to complete.</p>
+            <p style="font-size:.8rem;color:var(--gray-400)">验证窗口将在此页面弹出，请按照提示上传驾照/ID并完成自拍核验。<br>A verification modal will open. Follow prompts to upload your ID and take a selfie.</p>
           </div>
 
           <!-- Step 2B: Other platform options (hidden by default) -->
@@ -922,9 +922,9 @@ function googleTranslateElementInit() {
             <div id="personaSendStatus" style="display:none;padding:.5rem .75rem;border-radius:6px;font-size:.82rem;margin-bottom:.5rem"></div>
           </div>
         </div>
-        <!-- Fallback for manual upload if Persona not configured -->
+        <!-- Fallback for manual upload if Stripe Identity not configured -->
         <div id="dlManualFallback" style="display:none;margin-top:1rem;border-top:1px solid var(--gray-200);padding-top:1rem">
-          <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">Persona 未配置，请手动上传驾照</p>
+          <p style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">Stripe Identity 未配置，请手动上传驾照/ID</p>
           <form id="dlForm" onsubmit="submitDL(event)">
             <div class="form-row">
               <div class="form-group"><label>驾照号 DL Number *</label><input name="dl_number" required></div>
@@ -4389,11 +4389,12 @@ async function showDLForm() {
   document.getElementById('dlFormCard').style.display = '';
   // Reset to choice screen
   personaBackToChoice();
-  // Check if Persona is configured
+  // Check if Stripe Identity is configured
   const config = await wApi('/persona/config');
   if (config && config.enabled) {
     document.getElementById('personaActions').style.display = '';
     document.getElementById('dlManualFallback').style.display = 'none';
+    _stripePublishableKey = config.publishableKey || '';
     // Check current status
     const status = await wApi('/persona/status');
     const box = document.getElementById('personaStatusBox');
@@ -4402,28 +4403,30 @@ async function showDLForm() {
       _personaHostedUrl = status.persona_hosted_url;
       updatePersonaLinkUI(status.persona_hosted_url);
     }
+    // Store client secret for embedded flow
+    if (status && status.client_secret) {
+      _stripeClientSecret = status.client_secret;
+    }
     if (status && status.persona_inquiry_id && status.status !== 'rejected') {
       if (status.status === 'approved') {
         box.style.display = '';
         box.style.background = '#f0fdf4';
         box.style.border = '1px solid #86efac';
         box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
-        // Hide all screens when already approved
         document.getElementById('personaChoiceScreen').style.display = 'none';
         document.getElementById('personaEmbeddedScreen').style.display = 'none';
         document.getElementById('personaOtherPlatformScreen').style.display = 'none';
-      } else if (status.status === 'pending' && status.persona_status === 'created') {
-        // Inquiry created but user hasn't completed verification yet
+      } else if (status.status === 'pending' && (status.persona_status === 'requires_input' || status.persona_status === 'created')) {
         box.style.display = '';
         box.style.background = '#eff6ff';
         box.style.border = '1px solid #93c5fd';
         box.innerHTML = '<div style="color:#1d4ed8;font-weight:700">📋 请完成身份验证 / Please Complete ID Verification</div><div style="font-size:.82rem;color:#1e40af;margin-top:.3rem">HR 已为您发起身份验证，请选择以下方式完成验证。<br>HR has initiated identity verification. Please choose a method below to complete it.</div>';
         document.getElementById('personaStartBtn').textContent = '🖥️ 开始验证 / Start Verification';
-      } else if (status.status === 'pending') {
+      } else if (status.status === 'pending' || status.status === 'submitted') {
         box.style.display = '';
         box.style.background = '#fefce8';
         box.style.border = '1px solid #fde047';
-        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Verification in progress</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">Persona 正在自动验证您的证件，请稍候。如果通过手机完成了验证，请刷新页面查看最新状态。<br>Verification is being processed. If you completed it on another device, refresh the page.</div>';
+        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Verification in progress</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">Stripe 正在自动验证您的证件，请稍候。如果通过手机完成了验证，请刷新页面查看最新状态。<br>Verification is being processed. If you completed it on another device, refresh the page.</div>';
         document.getElementById('personaStartBtn').textContent = '🖥️ 重新验证 / Re-verify';
       }
     }
@@ -4452,9 +4455,10 @@ async function openPersonaInPortal() {
   document.getElementById('dlFormCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ── Persona Verification ──
-let _personaClient = null;
+// ── Stripe Identity Verification ──
 let _personaHostedUrl = null; // stored hosted URL for link sharing
+let _stripePublishableKey = '';
+let _stripeClientSecret = null;
 
 // Choice screen navigation
 function personaChooseWebsite() {
@@ -4467,7 +4471,6 @@ function personaChooseOtherPlatform() {
   document.getElementById('personaChoiceScreen').style.display = 'none';
   document.getElementById('personaEmbeddedScreen').style.display = 'none';
   document.getElementById('personaOtherPlatformScreen').style.display = '';
-  // Pre-create inquiry so links are ready
   ensurePersonaInquiry();
 }
 
@@ -4491,7 +4494,6 @@ async function personaOpenNewTab() {
     }
     window.open(_personaHostedUrl, '_blank');
     showPersonaSendStatus('✅ 已在新标签页中打开验证页面 / Verification opened in new tab', 'ok');
-    // Start polling since we can't detect when user finishes in new tab
     startPersonaStatusPoll();
   } catch (e) {
     showPersonaSendStatus('❌ ' + e.message, 'error');
@@ -4500,16 +4502,20 @@ async function personaOpenNewTab() {
 }
 
 async function ensurePersonaInquiry() {
-  // Create inquiry if we don't have a hosted URL yet, or return existing one
   if (_personaHostedUrl) return { inquiry_id: null, hosted_url: _personaHostedUrl };
   const r = await wApi('/persona/inquiry', { method: 'POST' });
   if (r && r.hosted_url) _personaHostedUrl = r.hosted_url;
+  if (r && r.client_secret) _stripeClientSecret = r.client_secret;
   return r;
 }
 
-async function startPersonaVerification() {
-  if (typeof Persona === 'undefined') {
-    showToast('❌ Persona SDK 加载失败，请刷新页面重试', 'error');
+async function startStripeVerification() {
+  if (typeof Stripe === 'undefined') {
+    showToast('❌ Stripe.js 加载失败，请刷新页面重试', 'error');
+    return;
+  }
+  if (!_stripePublishableKey) {
+    showToast('❌ Stripe 未配置 publishable key', 'error');
     return;
   }
   const btn = document.getElementById('personaStartBtn');
@@ -4517,76 +4523,70 @@ async function startPersonaVerification() {
   btn.textContent = '加载中...';
 
   try {
-    // Create inquiry on backend first
-    const r = await wApi('/persona/inquiry', { method: 'POST' });
-    if (!r || !r.inquiry_id) {
-      showToast('❌ ' + (r?.error || '创建验证失败'), 'error');
-      btn.disabled = false;
-      btn.textContent = '🖥️ 开始验证 / Start Verification';
-      return;
-    }
-    // Store hosted URL for sharing
-    if (r.hosted_url) {
-      _personaHostedUrl = r.hosted_url;
-      updatePersonaLinkUI(r.hosted_url);
-    }
-
-    // Open Persona embedded flow
-    if (_personaClient) { try { _personaClient.destroy(); } catch {} }
-
-    _personaClient = new Persona.Client({
-      inquiryId: r.inquiry_id,
-      onReady: () => {
-        _personaClient.open();
+    // Create session on backend if we don't have a client secret
+    if (!_stripeClientSecret) {
+      const r = await wApi('/persona/inquiry', { method: 'POST' });
+      if (!r || !r.client_secret) {
+        showToast('❌ ' + (r?.error || '创建验证失败'), 'error');
         btn.disabled = false;
         btn.textContent = '🖥️ 开始验证 / Start Verification';
-      },
-      onComplete: async ({ inquiryId, status, fields }) => {
-        console.log('[Persona] Complete:', inquiryId, status);
-        const box = document.getElementById('personaStatusBox');
-        box.style.display = '';
-        box.style.background = '#fefce8';
-        box.style.border = '1px solid #fde047';
-        box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Processing...</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">证件已提交，系统正在自动验证。通过后状态会自动更新。<br>Verification submitted. Status will update automatically.</div>';
-        showToast('✅ 证件已提交验证');
-        _personaHostedUrl = null; // reset after completion
-        // Immediately trigger active poll to fetch latest status from Persona API
-        const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
-        loadCompliance();
-        loadOnboarding();
-        if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted')) {
-          if (pollResult.status === 'approved') {
-            box.style.background = '#f0fdf4';
-            box.style.border = '1px solid #86efac';
-            box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
-          } else {
-            box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证已提交，等待审核 / Submitted, Pending Review</div>';
-          }
-        } else {
-          // Continue polling if not yet updated
-          startPersonaStatusPoll();
-        }
-      },
-      onCancel: ({ inquiryId }) => {
-        console.log('[Persona] Cancelled:', inquiryId);
-        showToast('验证已取消', 'error');
-      },
-      onError: (error) => {
-        console.error('[Persona] Error:', error);
-        showToast('❌ 验证出错，请重试', 'error');
-        btn.disabled = false;
-        btn.textContent = '🖥️ 开始验证 / Start Verification';
+        return;
       }
-    });
+      _stripeClientSecret = r.client_secret;
+      if (r.hosted_url) {
+        _personaHostedUrl = r.hosted_url;
+        updatePersonaLinkUI(r.hosted_url);
+      }
+    }
+
+    // Initialize Stripe and open modal
+    const stripeObj = Stripe(_stripePublishableKey);
+    const result = await stripeObj.verifyIdentity(_stripeClientSecret);
+
+    btn.disabled = false;
+    btn.textContent = '🖥️ 开始验证 / Start Verification';
+
+    if (result.error) {
+      console.error('[Stripe Identity] Error:', result.error);
+      if (result.error.code === 'session_cancelled') {
+        showToast('验证已取消', 'error');
+      } else {
+        showToast('❌ 验证出错: ' + result.error.message, 'error');
+      }
+    } else {
+      // Verification submitted successfully
+      const box = document.getElementById('personaStatusBox');
+      box.style.display = '';
+      box.style.background = '#fefce8';
+      box.style.border = '1px solid #fde047';
+      box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证处理中 / Processing...</div><div style="font-size:.82rem;color:#92400e;margin-top:.3rem">证件已提交，系统正在自动验证。通过后状态会自动更新。<br>Verification submitted. Status will update automatically.</div>';
+      showToast('✅ 证件已提交验证');
+      _stripeClientSecret = null; // reset after completion
+
+      // Poll for result
+      const pollResult = await wApi('/persona/poll-status', { method: 'POST' });
+      loadCompliance();
+      loadOnboarding();
+      if (pollResult && (pollResult.status === 'approved' || pollResult.status === 'submitted')) {
+        if (pollResult.status === 'approved') {
+          box.style.background = '#f0fdf4';
+          box.style.border = '1px solid #86efac';
+          box.innerHTML = '<div style="color:#15803d;font-weight:700">✅ 身份验证已通过 / ID Verified</div>';
+        } else {
+          box.innerHTML = '<div style="color:#a16207;font-weight:700">⏳ 验证已提交，等待审核 / Submitted, Pending Review</div>';
+        }
+      } else {
+        startPersonaStatusPoll();
+      }
+    }
   } catch (e) {
-    console.error('[Persona] Init error:', e);
+    console.error('[Stripe Identity] Init error:', e);
     showToast('❌ 初始化失败: ' + e.message, 'error');
     btn.disabled = false;
     btn.textContent = '🖥️ 开始验证 / Start Verification';
   }
 }
 
-// Update link display area with hosted URL
 function updatePersonaLinkUI(url) {
   if (!url) return;
   const linkArea = document.getElementById('personaLinkArea');
@@ -4606,17 +4606,15 @@ function showPersonaSendStatus(msg, type) {
   setTimeout(() => { el.style.display = 'none'; }, 5000);
 }
 
-// Poll Persona status after verification completion — actively queries Persona API
 let _personaPollTimer = null;
 function startPersonaStatusPoll() {
   if (_personaPollTimer) clearInterval(_personaPollTimer);
   let attempts = 0;
   _personaPollTimer = setInterval(async () => {
     attempts++;
-    if (attempts > 20) { clearInterval(_personaPollTimer); _personaPollTimer = null; return; } // stop after ~100s
-    // Use active poll endpoint that queries Persona API directly (not just local DB)
+    if (attempts > 20) { clearInterval(_personaPollTimer); _personaPollTimer = null; return; }
     const st = await wApi('/persona/poll-status', { method: 'POST' });
-    if (st && (st.status === 'approved' || st.status === 'submitted' || st.persona_status === 'approved' || st.persona_status === 'completed' || st.persona_status === 'needs_review')) {
+    if (st && (st.status === 'approved' || st.status === 'submitted' || st.persona_status === 'verified' || st.persona_status === 'processing')) {
       clearInterval(_personaPollTimer);
       _personaPollTimer = null;
       loadOnboarding();
@@ -4630,7 +4628,6 @@ function startPersonaStatusPoll() {
   }, 5000);
 }
 
-// Send verification link via SMS - with phone confirmation
 async function personaSendSMS() {
   const acc = _workerInfo && _workerInfo.account;
   const phone = acc && acc.phone;
@@ -4638,7 +4635,6 @@ async function personaSendSMS() {
     showPersonaSendStatus('❌ 未设置手机号，请先在"个人信息"页面添加手机号 / No phone number set, please add one in Profile first', 'error');
     return;
   }
-  // Show masked phone and ask for confirmation
   const maskedPhone = phone.slice(0, 3) + '****' + phone.slice(-4);
   if (!await customConfirm(`将发送验证链接到以下手机号 / Verification link will be sent to:\n\n📱 ${maskedPhone}\n\n是否确认发送？ / Confirm send?`, '发送短信', '📱')) return;
 
@@ -4649,7 +4645,7 @@ async function personaSendSMS() {
     if (!_personaHostedUrl) {
       const r = await ensurePersonaInquiry();
       if (!r || (!r.hosted_url && !_personaHostedUrl)) {
-        showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+        showPersonaSendStatus('❌ 请先创建验证 / Please create verification first', 'error');
         btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS'; return;
       }
     }
@@ -4665,7 +4661,6 @@ async function personaSendSMS() {
   btn.disabled = false; btn.textContent = '💬 短信发送 / Send SMS';
 }
 
-// Send verification link via email - with email confirmation
 async function personaSendEmail() {
   const acc = _workerInfo && _workerInfo.account;
   const email = acc && acc.email;
@@ -4673,7 +4668,6 @@ async function personaSendEmail() {
     showPersonaSendStatus('❌ 未设置邮箱，请先在"个人信息"页面添加邮箱 / No email set, please add one in Profile first', 'error');
     return;
   }
-  // Show masked email and ask for confirmation
   const maskedEmail = email.replace(/(.{2}).*(@.*)/, '$1****$2');
   if (!await customConfirm(`将发送验证链接到以下邮箱 / Verification link will be sent to:\n\n📧 ${maskedEmail}\n\n是否确认发送？ / Confirm send?`, '发送邮件', '📧')) return;
 
@@ -4684,7 +4678,7 @@ async function personaSendEmail() {
     if (!_personaHostedUrl) {
       const r = await ensurePersonaInquiry();
       if (!r || (!r.hosted_url && !_personaHostedUrl)) {
-        showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+        showPersonaSendStatus('❌ 请先创建验证 / Please create verification first', 'error');
         btn.disabled = false; btn.textContent = '📧 邮件发送 / Send Email'; return;
       }
     }
@@ -4700,7 +4694,6 @@ async function personaSendEmail() {
   btn.disabled = false; btn.textContent = '📧 邮件发送 / Send Email';
 }
 
-// Show QR code for scanning
 async function personaShowQR() {
   const area = document.getElementById('personaQRArea');
   const qrDiv = document.getElementById('personaQRCode');
@@ -4710,20 +4703,17 @@ async function personaShowQR() {
     const r = await ensurePersonaInquiry();
     btn.disabled = false; btn.textContent = '📷 显示二维码 / Show QR Code';
     if (!r || (!r.hosted_url && !_personaHostedUrl)) {
-      showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+      showPersonaSendStatus('❌ 请先创建验证 / Please create verification first', 'error');
       return;
     }
   }
-  // Toggle QR display
   if (area.style.display !== 'none') { area.style.display = 'none'; return; }
   qrDiv.innerHTML = '';
-  // Generate QR code using qrcode.js (loaded on demand)
   if (typeof QRCode === 'undefined') {
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
     script.onload = () => { renderPersonaQR(qrDiv); area.style.display = ''; };
     script.onerror = () => {
-      // Fallback: use Google Charts QR API
       qrDiv.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(_personaHostedUrl)}" alt="QR Code" style="width:200px;height:200px">`;
       area.style.display = '';
     };
@@ -4732,7 +4722,6 @@ async function personaShowQR() {
     renderPersonaQR(qrDiv);
     area.style.display = '';
   }
-  // Also show the link
   updatePersonaLinkUI(_personaHostedUrl);
 }
 
@@ -4740,7 +4729,6 @@ function renderPersonaQR(container) {
   new QRCode(container, { text: _personaHostedUrl, width: 200, height: 200, colorDark: '#000', colorLight: '#fff', correctLevel: QRCode.CorrectLevel.M });
 }
 
-// Copy verification link to clipboard
 async function personaCopyLink() {
   if (!_personaHostedUrl) {
     const btn = document.getElementById('personaCopyBtn');
@@ -4748,7 +4736,7 @@ async function personaCopyLink() {
     const r = await ensurePersonaInquiry();
     btn.disabled = false; btn.textContent = '🔗 复制链接 / Copy Link';
     if (!r || (!r.hosted_url && !_personaHostedUrl)) {
-      showPersonaSendStatus('❌ 请先点击"在此页面验证"生成验证链接 / Please create verification first', 'error');
+      showPersonaSendStatus('❌ 请先创建验证 / Please create verification first', 'error');
       return;
     }
   }
@@ -4757,7 +4745,6 @@ async function personaCopyLink() {
     showPersonaSendStatus('✅ 链接已复制到剪贴板 / Link copied!', 'ok');
     updatePersonaLinkUI(_personaHostedUrl);
   } catch {
-    // Fallback for older browsers
     const input = document.getElementById('personaLinkInput');
     updatePersonaLinkUI(_personaHostedUrl);
     input.select();
