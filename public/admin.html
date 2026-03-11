@@ -13340,9 +13340,19 @@ async function openCompanySign() {
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-sign-url`);
   if (r && r.signUrl) {
     console.log('[CompanySign] signUrl:', r.signUrl);
-    // Open in new tab since DocuSeal blocks iframe embedding via X-Frame-Options
-    window.open(r.signUrl, '_blank');
-    showToast('已在新标签页打开公司签署页面', 'success');
+    const previewDiv = document.getElementById('contractPdfPreview');
+    const frame = document.getElementById('contractPdfFrame');
+    frame.src = r.signUrl;
+    previewDiv.style.display = '';
+    // If iframe fails to load (X-Frame-Options), fall back to new tab after 3s
+    let loaded = false;
+    frame.onload = () => { loaded = true; };
+    setTimeout(() => {
+      if (!loaded || (frame.contentDocument && frame.contentDocument.body && frame.contentDocument.body.innerHTML === '')) {
+        window.open(r.signUrl, '_blank');
+        showToast('签署页面无法内嵌，已在新标签页打开', 'info');
+      }
+    }, 3000);
   } else {
     showToast('❌ 获取签署链接失败: ' + (r?.error || ''), 'error');
   }

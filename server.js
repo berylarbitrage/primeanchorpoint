@@ -2160,13 +2160,15 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
 async function dsealGetCompanySignUrl(submissionId) {
   // Get submission to find company submitter ID
   const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
-  if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}`);
+  console.log(`[DocuSeal] GET submission ${submissionId}: status=${r.status}, submitters=${JSON.stringify((r.data?.submitters||[]).map(s=>({id:s.id,role:s.role,status:s.status,has_embed:!!s.embed_src})))}`);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}: ${JSON.stringify(r.data)}`);
   const company = (r.data.submitters || []).find(s => s.role === 'First Party') || (r.data.submitters || [])[0];
   if (!company) throw new Error('DocuSeal: 公司签署人未找到');
   // embed_src is only in create response; use PUT /submitters/{id} to retrieve it
   if (company.embed_src) return company.embed_src;
   const u = await dsealApiCall('PUT', `/api/submitters/${company.id}`, { name: company.name });
-  if (u.status >= 400 || !u.data?.embed_src) throw new Error(`DocuSeal 获取签署链接失败 ${u.status}`);
+  console.log(`[DocuSeal] PUT submitter ${company.id}: status=${u.status}, has_embed=${!!u.data?.embed_src}, embed_prefix=${(u.data?.embed_src||'').substring(0,60)}`);
+  if (u.status >= 400 || !u.data?.embed_src) throw new Error(`DocuSeal 获取签署链接失败 ${u.status}: ${JSON.stringify(u.data)}`);
   return u.data.embed_src;
 }
 
@@ -4311,8 +4313,9 @@ app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async 
     const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
     const signUrl = await dsealGetCompanySignUrl(onb.ds_envelope_id);
+    console.log(`[CompanySign] workerId=${workerId}, submissionId=${onb.ds_envelope_id}, signUrl=${signUrl ? signUrl.substring(0, 80) + '...' : 'NULL'}`);
     res.json({ signUrl });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { console.error('[CompanySign Error]', e.message); res.status(500).json({ error: e.message }); }
 });
 
 // Admin: void/cancel onboarding contract submission
