@@ -3573,7 +3573,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="field"><input type="file" id="pFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%"></div>
     <div style="display:flex;gap:.5rem;margin-top:.5rem;align-items:center;flex-wrap:wrap">
       <button class="btn-add-sm" onclick="uploadPartnerFile()">上传文件</button>
-      <button class="btn-add-sm" style="background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE" onclick="openContractEditor()" title="编辑并生成格式正确的合伙协议 PDF，锚点字符隐藏，可直接发送 DocuSign">📄 编辑合同模板</button>
+      <button class="btn-add-sm" style="background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE" onclick="openContractEditor()" title="编辑并生成格式正确的合伙协议 PDF，可直接发送 DocuSeal">📄 编辑合同模板</button>
     </div>
   </div>
 
@@ -3652,7 +3652,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════ Partner DocuSign Send Modal ════ -->
+<!-- ════ Partner DocuSeal Send Modal ════ -->
 <div class="modal-bg" id="partnerDsModal"><div class="modal" style="max-width:480px">
   <h2>✍ 发送合同签署邀请</h2>
   <p id="partnerDsCompanyName" style="font-weight:700;color:var(--sky);margin-bottom:1rem"></p>
@@ -3691,7 +3691,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
-<!-- ════ DocuSign Embedded Signing Modal ════ -->
+<!-- ════ Embedded Signing Modal (DocuSeal for partner files, DocuSign for assignments) ════ -->
 <div id="dsSignModal" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:12px;width:min(96vw,900px);height:min(90vh,700px);display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.1rem;border-bottom:1px solid #e2e8f0;flex-shrink:0">
@@ -6788,8 +6788,8 @@ async function sendForDocuSign(type, id, defaultEmail, defaultName) {
   try {
     const r = await api(url, { method: 'POST', body: JSON.stringify(body) });
     if (r.success) {
-      let msg = `合同信封已创建！Envelope ID: ${r.envelopeId}`;
-      if (r.anchors && (!r.anchors.sig1 || !r.anchors.sig2)) msg += '\n\n⚠️ 警告：PDF 中未检测到签名锚点 /sig1/ 或 /sig2/，签字框将使用固定坐标，请确认位置正确。';
+      let msg = type === 'assignment' ? `合同信封已创建！Envelope ID: ${r.envelopeId}` : `合同已提交至 DocuSeal！Submission ID: ${r.envelopeId}`;
+      if (type === 'assignment' && r.anchors && (!r.anchors.sig1 || !r.anchors.sig2)) msg += '\n\n⚠️ 警告：PDF 中未检测到签名锚点 /sig1/ 或 /sig2/，签字框将使用固定坐标，请确认位置正确。';
       if (r.signUrl) {
         await adminAlert(msg + '\n\n请在弹出窗口中完成公司签字。签完后对方将自动收到邮件邀请。', '✅ 合同已发送');
         openDsCompanySign(type, id);
@@ -6843,7 +6843,7 @@ async function refreshAllPartnerFileStatuses() {
     await loadPartners();
     await showPartnerById(currentPartner.id);
     if (anyCompleted) await adminAlert('✅ 合同已完成签署！已签版本已更新，请重新下载文件查看。', '合同签署完成');
-    else await adminAlert('合同尚未完成签署，当前状态已刷新。\n\n如果你已在 DocuSign 完成签署但状态未更新，请检查 DocuSign Connect 的 Webhook 配置是否指向：\n' + location.origin + '/api/docusign/webhook', '签署状态');
+    else await adminAlert('合同尚未完成签署，当前状态已刷新。\n\n如果你已在 DocuSeal 完成签署但状态未更新，请检查 DocuSeal 的 Webhook 配置是否指向：\n' + location.origin + '/api/docuseal/webhook', '签署状态');
   } catch(e) {
     await adminAlert('刷新失败: ' + e.message, '错误');
   } finally {
@@ -6989,7 +6989,7 @@ async function generateContractPdfFromEditor() {
   const content = document.getElementById('contractEditorTextarea').value.trim();
   if (!content) { await adminAlert('合同内容不能为空', '提示'); return; }
   if (!content.includes('/sig1/') || !content.includes('/sig2/')) {
-    if (!await adminConfirm('⚠️ 合同中未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSign 将使用固定坐标定位签字框，位置可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) return;
+    if (!await adminConfirm('⚠️ 合同中未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSeal 将使用预设坐标定位签字框，位置可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) return;
   }
   const btn = document.getElementById('contractGenerateBtn');
   const msgEl = document.getElementById('contractEditorMsg');
@@ -8192,7 +8192,7 @@ async function showPartnerById(id) {
         <button class="btn btn-sm" style="background:#F5F3FF;color:#7c3aed;border:1px solid #ddd6fe" onclick="openLegalDocEditor('amendment')">✏️ 修改合同</button>
         <button class="btn btn-sm" style="background:#ECFDF5;color:#065f46;border:1px solid #a7f3d0" onclick="openLegalDocEditor('mutual')">🤝 协商解除</button>
       </div>
-      <p style="font-size:.75rem;color:var(--gray-400);margin-top:.5rem">前两项发送邮件通知，后两项需双方 DocuSign 签署</p>
+      <p style="font-size:.75rem;color:var(--gray-400);margin-top:.5rem">前两项发送邮件通知，后两项需双方 DocuSeal 签署</p>
     </div>`;
   }
   document.getElementById('partnerDetailTitle').textContent = p.name;
@@ -8200,12 +8200,12 @@ async function showPartnerById(id) {
   // Show reactivate button (admin only, when partner is stopped)
   document.getElementById('btnReactivatePartner').style.display = (USER_ROLE === 'admin' && !p.active) ? '' : 'none';
   document.getElementById('partnerDetailModal').classList.add('show');
-  // Auto-poll contract status if there are pending DocuSign envelopes
+  // Auto-poll contract status if there are pending DocuSeal submissions
   if (hasPendingDs) _startDsPolling(id);
   else _stopDsPolling();
 }
 
-// ─── DocuSign auto-polling when partner detail modal is open ───
+// ─── DocuSeal auto-polling when partner detail modal is open ───
 let _dsPollTimer = null;
 function _startDsPolling(partnerId) {
   _stopDsPolling();
@@ -8325,7 +8325,7 @@ function renderPartnerHistory(p, files) {
 
     if (f.ds_envelope_id) {
       // DocuSign invitation sent (same time as upload — that's when it's sent)
-      addEv(f.uploaded_at, '✉️', '#1d4ed8', '#EFF6FF', '合同已发送，等待双方 DocuSign 签署', fname);
+      addEv(f.uploaded_at, '✉️', '#1d4ed8', '#EFF6FF', '合同已发送，等待双方 DocuSeal 签署', fname);
 
       // Individual signatures
       if (f.ds_company_signed_at)
@@ -8339,7 +8339,7 @@ function renderPartnerHistory(p, files) {
           .filter(Boolean).map(d => new Date(d)).sort((a, b) => b - a)[0];
         if (completedAt) addEv(completedAt.toISOString(), '🤝', '#059669', '#ECFDF5', '合同签署完成，正式合作生效', fname);
       } else if (f.ds_status === 'voided') {
-        addEv(f.uploaded_at, '🚫', '#6B7280', '#F9FAFB', 'DocuSign 签署已撤销', fname);
+        addEv(f.uploaded_at, '🚫', '#6B7280', '#F9FAFB', 'DocuSeal 签署已撤销', fname);
       } else if (f.ds_status === 'declined') {
         addEv(f.uploaded_at, '❌', '#b91c1c', '#FEF2F2',
           '签署被拒绝' + (f.ds_decline_reason ? '：' + f.ds_decline_reason : ''), fname);
@@ -8380,8 +8380,8 @@ function renderPartnerHistory(p, files) {
 const _legalDocMeta = {
   termination: { title: '单方面终止通知书', hint: '此文件将以邮件形式发送给合作方，无需双方签字', emailBtn: true, dsBtn: false },
   breach:      { title: '违约终止通知书',   hint: '此文件将以邮件形式发送给合作方，无需双方签字', emailBtn: true, dsBtn: false },
-  amendment:   { title: '合同修改协议',      hint: '此文件需双方通过 DocuSign 签署后生效', emailBtn: false, dsBtn: true },
-  mutual:      { title: '协商解除协议',      hint: '此文件需双方通过 DocuSign 签署后生效', emailBtn: false, dsBtn: true },
+  amendment:   { title: '合同修改协议',      hint: '此文件需双方通过 DocuSeal 签署后生效', emailBtn: false, dsBtn: true },
+  mutual:      { title: '协商解除协议',      hint: '此文件需双方通过 DocuSeal 签署后生效', emailBtn: false, dsBtn: true },
 };
 
 async function openLegalDocEditor(type) {
@@ -8434,7 +8434,7 @@ function _updateLegalEditorActions(type, saved) {
     } else {
       actionsEl.innerHTML = `
         <button class="btn btn-sm btn-outline" onclick="document.getElementById('contractEditorModal').classList.remove('show')">关闭</button>
-        <button class="btn btn-sm" style="background:#059669;color:#fff" onclick="sendLegalDocDocuSign()">✍ 发送 DocuSign 签署</button>`;
+        <button class="btn btn-sm" style="background:#059669;color:#fff" onclick="sendLegalDocDocuSign()">✍ 发送 DocuSeal 签署</button>`;
     }
   } else {
     // Before save: show save button
@@ -8460,7 +8460,7 @@ async function saveLegalDocPdf() {
   // For amendment/mutual: require sig anchors
   const needsSig = (_ceType === 'amendment' || _ceType === 'mutual');
   if (needsSig && (!content.includes('/sig1/') || !content.includes('/sig2/'))) {
-    if (!await adminConfirm('⚠️ 未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSign 签字框将使用固定坐标，可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) {
+    if (!await adminConfirm('⚠️ 未检测到 /sig1/ 或 /sig2/ 签名锚点，签字框将使用预设坐标，可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) {
       if (btn) { btn.disabled = false; btn.textContent = '📄 生成PDF文件'; }
       return;
     }
@@ -8918,7 +8918,7 @@ async function generateAgreementTemplate() {
     const r = await api(`/admin/partners/${pid}/generate-agreement`, { method: 'POST' });
     if (r.success) {
       await loadPartnerFiles(pid);
-      showToast('合伙协议模板已生成，可直接发送 DocuSign 签署');
+      showToast('合伙协议模板已生成，可直接发送 DocuSeal 签署');
     } else {
       alert(r.error || '生成失败');
     }
@@ -9024,7 +9024,7 @@ async function saveContractPdf() {
   }
   if (!content.includes('/sig1/') || !content.includes('/sig2/')) {
     msgEl.style.cssText = 'display:;background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:.55rem .9rem;border-radius:8px';
-    msgEl.textContent = '警告：合同内容中未找到 /sig1/ 或 /sig2/ 锚点，DocuSign 将无法正确放置签名框。';
+    msgEl.textContent = '警告：合同内容中未找到 /sig1/ 或 /sig2/ 锚点，DocuSeal 将使用预设坐标放置签名框。';
   } else {
     msgEl.style.display = 'none';
   }
@@ -9039,7 +9039,7 @@ async function saveContractPdf() {
     if (r.success) {
       await loadPartnerFiles(pid);
       document.getElementById('contractEditorModal').classList.remove('show');
-      showToast('合同PDF已生成，可直接发送 DocuSign 签署');
+      showToast('合同PDF已生成，可直接发送 DocuSeal 签署');
     } else {
       msgEl.style.cssText = 'display:;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:.55rem .9rem;border-radius:8px';
       msgEl.textContent = '生成失败：' + (r.error || '生成失败');
@@ -9101,7 +9101,7 @@ async function openPartnerDocuSign(partnerId) {
         const label = DS_LABELS[st] || st;
         const color = { sent:'#2563EB', delivered:'#0284C7', completed:'#059669', declined:'#DC2626', voided:'#6B7280' }[st] || '#6B7280';
         statusEl.style.display = '';
-        statusEl.innerHTML = `当前状态：<strong style="color:${color}">✍ ${label}</strong>（Envelope: <code style="font-size:.75rem">${esc(env)}</code>）— 重新发送将创建新信封`;
+        statusEl.innerHTML = `当前状态：<strong style="color:${color}">✍ ${label}</strong>（ID: <code style="font-size:.75rem">${esc(env)}</code>）— 重新发送将创建新提交`;
       } else {
         statusEl.style.display = 'none';
       }
@@ -9150,8 +9150,7 @@ async function doSendPartnerDocuSign() {
       body: JSON.stringify({ partner_email: email, partner_name: name })
     });
     if (r && r.success) {
-      let msg = `✅ 合同信封已创建！Envelope ID: ${r.envelopeId}`;
-      if (r.anchors && (!r.anchors.sig1 || !r.anchors.sig2)) msg += '  ⚠️ PDF 未检测到签名锚点，签字框将用固定坐标。';
+      let msg = `✅ 合同已提交至 DocuSeal！Submission ID: ${r.envelopeId}`;
       if (r.signUrl) msg += '  即将打开公司签字页面…';
       msgEl.style.cssText = 'display:;background:#F0FDF4;border:1px solid #BBF7D0;color:#059669;padding:.6rem .9rem;border-radius:8px';
       msgEl.innerHTML = msg + (r.signUrl ? `<br><button onclick="closeModal('partnerDsModal');openDsCompanySign('partnerfile',${fileId})" style="margin-top:.5rem;padding:.4rem .9rem;background:#1e3a5f;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.84rem">✍ 现在公司签署</button>` : '');
@@ -9283,8 +9282,33 @@ function closeDsSignModal() {
   _dsSignContext = null;
 }
 
-// Listen for DocuSign return postMessage from /docusign-return inside iframe
+// Listen for signing iframe postMessage events:
+// - DocuSeal sends { event: 'completed'|'declined' } or { type: 'docuseal:form_completed' } for partner files
+// - DocuSign sends { type: 'docusign_return', event: '...' } via /docusign-return for assignments
 window.addEventListener('message', async (ev) => {
+  // ── DocuSeal events (partner file embedded signing) ──
+  if (ev.data && _dsSignContext && _dsSignContext.type === 'partnerfile') {
+    let dsealDone = false, dsealDeclined = false;
+    if (typeof ev.data === 'object') {
+      dsealDone = ev.data.event === 'completed' || ev.data.type === 'docuseal:form_completed';
+      dsealDeclined = ev.data.event === 'declined' || ev.data.type === 'docuseal:form_declined';
+    } else if (typeof ev.data === 'string') {
+      try { const p = JSON.parse(ev.data); dsealDone = p.event === 'completed'; dsealDeclined = p.event === 'declined'; } catch {}
+    }
+    if (dsealDone || dsealDeclined) {
+      const ctx = _dsSignContext;
+      closeDsSignModal();
+      if (dsealDeclined) { showToast('签署已取消', 'info'); return; }
+      showToast('✅ 公司已签署，等待对方签署…', 'success');
+      try {
+        const r = await api(`/admin/partner-files/${ctx.id}/docusign-status`);
+        if (r.status === 'completed') showToast('✅ 双方均已签署！已签版本已保存。', 'success');
+      } catch(e) {}
+      if (currentPartner) await showPartnerById(currentPartner.id);
+      return;
+    }
+  }
+  // ── DocuSign events (assignment embedded signing) ──
   if (ev.data && ev.data.type === 'docusign_return') {
     const ctx = _dsSignContext;
     const event = ev.data.event || '';
@@ -9292,21 +9316,10 @@ window.addEventListener('message', async (ev) => {
     if (event === 'signing_complete') {
       showToast('✅ 公司已签署，等待对方签署…', 'success');
       if (ctx) {
-        if (ctx.type === 'partnerfile') {
-          // Auto-refresh status from DocuSign to check if both parties signed
-          try {
-            const r = await api(`/admin/partner-files/${ctx.id}/docusign-status`);
-            if (r.status === 'completed') {
-              showToast('✅ 双方均已签署！已签版本已保存。', 'success');
-            }
-          } catch(e) {}
-          if (currentPartner) await showPartnerById(currentPartner.id);
-        } else if (ctx.type === 'assignment') {
+        if (ctx.type === 'assignment') {
           try {
             const r = await api(`/admin/assignments/${ctx.id}/docusign-status`);
-            if (r.status === 'completed') {
-              showToast('✅ 双方均已签署！', 'success');
-            }
+            if (r.status === 'completed') showToast('✅ 双方均已签署！', 'success');
           } catch(e) {}
           loadAssignments && await loadAssignments();
         } else {
@@ -9391,7 +9404,7 @@ async function savePartner() {
       const hasSignedContract = (files || []).some(f => f.ds_status === 'completed');
       if (!hasSignedContract) {
         const proceed = await showConfirm(
-          '⚠️ 该公司尚未通过 DocuSign 完成双方签署合同。\n\n正常流程应由双方签署合同后自动激活为"合作中"。\n\n是否仍要手动标记为合作中？',
+          '⚠️ 该公司尚未通过 DocuSeal 完成双方签署合同。\n\n正常流程应由双方签署合同后自动激活为"合作中"。\n\n是否仍要手动标记为合作中？',
           { danger: true, confirmLabel: '强制激活', cancelLabel: '取消' }
         );
         if (!proceed) return;

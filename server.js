@@ -2074,6 +2074,133 @@ function checkDsAnchors(docPath) {
   } catch { return { sig1: false, sig2: false, date1: false, date2: false }; }
 }
 
+// ─── DocuSeal eSignature Integration ───
+const http = require('http');
+
+function dsealEnabled() {
+  return !!(process.env.DOCUSEAL_API_KEY && process.env.DOCUSEAL_URL);
+}
+
+async function dsealApiCall(method, apiPath, body) {
+  const baseUrl = (process.env.DOCUSEAL_URL || '').replace(/\/$/, '');
+  const apiKey = process.env.DOCUSEAL_API_KEY || '';
+  const bodyStr = body != null ? JSON.stringify(body) : null;
+  const fullUrl = new URL(baseUrl + apiPath);
+  const isHttps = fullUrl.protocol === 'https:';
+  const transport = isHttps ? https : http;
+  return new Promise((resolve, reject) => {
+    const opts = {
+      hostname: fullUrl.hostname,
+      port: fullUrl.port || (isHttps ? 443 : 80),
+      path: fullUrl.pathname + fullUrl.search,
+      method,
+      headers: {
+        'X-Auth-Token': apiKey,
+        'Accept': 'application/json',
+        ...(bodyStr ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } : {})
+      }
+    };
+    const req = transport.request(opts, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => { try { resolve({ status: res.statusCode, data: JSON.parse(d) }); } catch { resolve({ status: res.statusCode, data: d }); } });
+    });
+    req.on('error', reject); if (bodyStr) req.write(bodyStr); req.end();
+  });
+}
+
+function dsealGetPdfPageCount(docPath) {
+  try {
+    const t = fs.readFileSync(docPath).toString('binary');
+    const m = t.match(/\/Count\s+(\d+)/);
+    return m ? parseInt(m[1]) : 1;
+  } catch { return 1; }
+}
+
+async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
+  const docBase64 = 'data:application/pdf;base64,' + fs.readFileSync(docPath).toString('base64');
+  const lastPage = dsealGetPdfPageCount(docPath);
+  // Step 1: Create template from PDF with two signing roles and signature fields
+  const tmplRes = await dsealApiCall('POST', '/api/templates/pdf', {
+    name: emailSubject || docName,
+    documents: [{ name: docName, file: docBase64 }],
+    schema: [{ name: 'First Party' }, { name: 'Second Party' }],
+    fields: [
+      { name: '公司签名', type: 'signature', role: 'First Party', required: true, areas: [{ x: 0.08, y: 0.82, w: 0.26, h: 0.07, page: lastPage }] },
+      { name: '公司日期', type: 'date', role: 'First Party', required: false, areas: [{ x: 0.08, y: 0.90, w: 0.26, h: 0.05, page: lastPage }] },
+      { name: '合作方签名', type: 'signature', role: 'Second Party', required: true, areas: [{ x: 0.52, y: 0.82, w: 0.26, h: 0.07, page: lastPage }] },
+      { name: '合作方日期', type: 'date', role: 'Second Party', required: false, areas: [{ x: 0.52, y: 0.90, w: 0.26, h: 0.05, page: lastPage }] }
+    ]
+  });
+  if (tmplRes.status >= 400 || !tmplRes.data?.id) {
+    throw new Error(`DocuSeal 模板创建失败 ${tmplRes.status}: ${JSON.stringify(tmplRes.data)}`);
+  }
+  const templateId = tmplRes.data.id;
+  // Step 2: Create submission with two submitters
+  const subRes = await dsealApiCall('POST', '/api/submissions', {
+    template_id: templateId,
+    submitters: [
+      { role: 'First Party', name: signer1.name, email: signer1.email, send_email: false },
+      { role: 'Second Party', name: signer2.name, email: signer2.email, send_email: true }
+    ]
+  });
+  if (subRes.status >= 400 || !Array.isArray(subRes.data) || !subRes.data.length) {
+    throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+  }
+  const company = subRes.data.find(s => s.role === 'First Party') || subRes.data[0];
+  return { submissionId: String(company.submission_id), companyEmbedSrc: company.embed_src };
+}
+
+async function dsealGetCompanySignUrl(submissionId) {
+  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}`);
+  const company = (r.data.submitters || []).find(s => s.role === 'First Party') || (r.data.submitters || [])[0];
+  if (!company) throw new Error('DocuSeal: 公司签署人未找到');
+  return company.embed_src;
+}
+
+async function dsealGetStatus(submissionId) {
+  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取状态失败 ${r.status}`);
+  const sub = r.data;
+  let status = (sub.status === 'completed') ? 'completed' : 'sent';
+  let companySigned = null, partnerSigned = null, declineReason = '';
+  for (const s of (sub.submitters || [])) {
+    if (s.status === 'completed' && s.completed_at) {
+      if (s.role === 'First Party') companySigned = s.completed_at;
+      else partnerSigned = s.completed_at;
+    }
+    if (s.status === 'declined') { status = 'declined'; declineReason = s.decline_reason || '已拒签'; }
+  }
+  return { status, companySigned, partnerSigned, declineReason, raw: sub };
+}
+
+async function dsealArchive(submissionId) {
+  const r = await dsealApiCall('DELETE', `/api/submissions/${submissionId}`, null);
+  if (r.status >= 400) throw new Error(`DocuSeal 归档失败 ${r.status}: ${JSON.stringify(r.data)}`);
+}
+
+async function dsealDownloadDocument(submissionId) {
+  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}`);
+  const sub = r.data;
+  let docUrl = null;
+  for (const s of (sub.submitters || [])) {
+    if (s.documents && s.documents.length) { docUrl = s.documents[0].url; break; }
+  }
+  if (!docUrl) throw new Error('DocuSeal: 签署文件链接不可用');
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(docUrl);
+    const isHttps = urlObj.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    const opts = { hostname: urlObj.hostname, port: urlObj.port || (isHttps ? 443 : 80), path: urlObj.pathname + urlObj.search, method: 'GET', headers: {} };
+    try { if (urlObj.hostname === new URL(process.env.DOCUSEAL_URL || 'https://x').hostname) opts.headers['X-Auth-Token'] = process.env.DOCUSEAL_API_KEY; } catch {}
+    const req = transport.request(opts, (res) => {
+      const chunks = []; res.on('data', c => chunks.push(c)); res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+    req.on('error', reject); req.end();
+  });
+}
+
 // Multi-page PDF builder from plain text (word-wrap + auto-paginate)
 function buildContractPdf(plainText) {
   const esc = s => String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
@@ -4898,11 +5025,8 @@ app.post('/api/admin/partners/:id/reset-contract', requireAdmin, blockManager, a
   const existingFiles = db.prepare("SELECT * FROM partner_files WHERE partner_id=? AND file_type IN ('contract','agreement')").all(req.params.id);
   // Void active envelopes
   for (const f of existingFiles) {
-    if (f.ds_envelope_id && dsEnabled() && f.ds_status && !['completed','voided','declined'].includes(f.ds_status)) {
-      try {
-        const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-        await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`, { status: 'voided', voidedReason: '管理员重新生成合同' });
-      } catch (e) { console.error('[reset-contract] void envelope error:', e.message); }
+    if (f.ds_envelope_id && dsealEnabled() && f.ds_status && !['completed','voided','declined'].includes(f.ds_status)) {
+      try { await dsealArchive(f.ds_envelope_id); } catch (e) { console.error('[reset-contract] archive submission error:', e.message); }
     }
     // Delete local file
     if (f.file_path) { try { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {} }
@@ -5335,14 +5459,13 @@ app.get('/api/admin/partner-files/:id/download', (req, res, next) => {
   res.download(fp, f.file_name || f.file_path);
 });
 
-// POST /api/admin/partner-files/:id/send-docusign — send partner contract to both parties for e-signing
+// POST /api/admin/partner-files/:id/send-docusign — send partner contract to both parties for e-signing via DocuSeal
 app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManager, async (req, res) => {
-  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置，请在环境变量中设置 DOCUSIGN_* 参数' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置，请在环境变量中设置 DOCUSEAL_API_KEY 和 DOCUSEAL_URL' });
   try {
     const f = db.prepare(`SELECT pf.*, p.name as partner_name, p.email as partner_email, p.contacts as partner_contacts FROM partner_files pf LEFT JOIN partners p ON pf.partner_id=p.id WHERE pf.id=?`).get(req.params.id);
     if (!f) return res.status(404).json({ error: 'File not found' });
     if (!f.file_path) return res.status(400).json({ error: '文件不存在' });
-    // Partner signer: use req.body override, else partner contacts, else partner email
     let partnerEmail = req.body.partner_email || f.partner_email || '';
     let partnerName = req.body.partner_name || f.partner_name || '合作方';
     if (!partnerEmail) {
@@ -5358,23 +5481,21 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, f.file_path);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
-    const anchors = checkDsAnchors(docPath);
-    const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: companyEmail, name: companyName }, signer2: { email: partnerEmail, name: partnerName } });
-    db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, f.id);
-    const _proto1 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-    const _host1 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-    const returnUrl = `${_proto1}://${_host1}/docusign-return`;
-    const frameOrigin = `${_proto1}://${_host1}`;
-    let signUrl = null;
-    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl, frameOrigin); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
-    res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
+    const { submissionId, companyEmbedSrc } = await dsealSendEnvelope({
+      docPath, docName: f.file_name || f.file_path,
+      emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`,
+      signer1: { email: companyEmail, name: companyName },
+      signer2: { email: partnerEmail, name: partnerName }
+    });
+    db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(submissionId, f.id);
+    res.json({ success: true, envelopeId: submissionId, signUrl: companyEmbedSrc });
   } catch (e) {
-    console.error('[DocuSign PartnerFile]', e.message);
+    console.error('[DocuSeal PartnerFile]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /docusign-return — served inside the signing iframe; postMessages result to parent so modal can close
+// GET /docusign-return — served inside the signing iframe for DocuSign (assignments); postMessages result to parent
 app.get('/docusign-return', (req, res) => {
   const event = req.query.event || '';
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -5383,120 +5504,78 @@ app.get('/docusign-return', (req, res) => {
   </script></body></html>`);
 });
 
-// GET /api/admin/partner-files/:id/docusign-sign-url — get embedded signing URL for company (signer1)
+// GET /api/admin/partner-files/:id/docusign-sign-url — get embedded signing URL for company via DocuSeal
 app.get('/api/admin/partner-files/:id/docusign-sign-url', requireAdmin, blockManager, async (req, res) => {
-  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
     const f = db.prepare("SELECT id, ds_envelope_id, ds_status FROM partner_files WHERE id=?").get(req.params.id);
-    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
-    const _proto2 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-    const _host2 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-    const returnUrl = `${_proto2}://${_host2}/docusign-return`;
-    const frameOrigin = `${_proto2}://${_host2}`;
-    const signUrl = await dsCreateSignUrl(f.ds_envelope_id, companyEmail, companyName, returnUrl, frameOrigin);
+    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    const signUrl = await dsealGetCompanySignUrl(f.ds_envelope_id);
     res.json({ signUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/admin/partner-files/:id/docusign-void — void the active envelope
+// POST /api/admin/partner-files/:id/docusign-void — archive the active DocuSeal submission
 app.post('/api/admin/partner-files/:id/docusign-void', requireAdmin, blockManager, async (req, res) => {
-  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
     const f = db.prepare("SELECT id, ds_envelope_id, ds_status FROM partner_files WHERE id=?").get(req.params.id);
-    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-    await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`, { status: 'voided', voidedReason: req.body?.reason || '管理员撤销' });
+    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    await dsealArchive(f.ds_envelope_id);
     db.prepare("UPDATE partner_files SET ds_status='voided', ds_envelope_id='', ds_decline_reason='' WHERE id=?").run(f.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/admin/partner-files/:id/docusign-status — refresh signing status from DocuSign
+// GET /api/admin/partner-files/:id/docusign-status — refresh signing status from DocuSeal
 app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManager, async (req, res) => {
   const f = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_partner_signed_at, ds_company_signed_at, ds_decline_reason FROM partner_files WHERE id=?").get(req.params.id);
-  if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-  if (!dsEnabled()) return res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason });
+  if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+  if (!dsealEnabled()) return res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason });
   try {
-    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-    const [envRes, rcpRes] = await Promise.all([
-      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
-      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
-    ]);
-    const status = envRes.data?.status || f.ds_status;
-    let partnerSigned = f.ds_partner_signed_at, companySigned = f.ds_company_signed_at;
-    for (const s of (rcpRes.data?.signers || [])) {
-      if (s.status === 'completed' && s.signedDateTime) {
-        if (s.recipientId === '1') companySigned = s.signedDateTime;
-        if (s.recipientId === '2') partnerSigned = s.signedDateTime;
-      }
-    }
-    let declineReason = f.ds_decline_reason || '';
-    for (const s of (rcpRes.data?.signers || [])) {
-      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
-    }
+    const { status, companySigned, partnerSigned, declineReason } = await dsealGetStatus(f.ds_envelope_id);
     db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, partnerSigned, companySigned, declineReason, f.id);
-    // If completed, download and overwrite local file with signed PDF (fallback if webhook missed)
     if (status === 'completed') {
-      // Auto-activate partner (fallback if webhook missed)
       db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(f.id);
       try {
         const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(f.id);
         if (pfRecord && pfRecord.file_path) {
-          const signedBuf = await dsDownloadSignedDoc(f.ds_envelope_id);
+          const signedBuf = await dsealDownloadDocument(f.ds_envelope_id);
           fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
-          console.log(`[DocuSign] Saved signed partner contract for file id=${f.id}`);
+          console.log(`[DocuSeal] Saved signed partner contract for file id=${f.id}`);
         }
-      } catch (dlErr) { console.error('[DocuSign] Failed to download signed partner doc on status refresh:', dlErr.message); }
+      } catch (dlErr) { console.error('[DocuSeal] Failed to download signed partner doc:', dlErr.message); }
     }
     res.json({ status, partnerSigned, companySigned, declineReason });
   } catch (e) { res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason, error: e.message }); }
 });
 
-// GET /api/admin/partner-files/:id/force-download-signed — force download signed PDF from DocuSign and save
+// POST /api/admin/partner-files/:id/force-download-signed — force download signed PDF from DocuSeal and save
 app.post('/api/admin/partner-files/:id/force-download-signed', requireAdmin, blockManager, async (req, res) => {
-  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
     const f = db.prepare('SELECT id, ds_envelope_id, ds_status, file_path, file_name FROM partner_files WHERE id=?').get(req.params.id);
     if (!f) return res.status(404).json({ error: '文件不存在' });
-    if (!f.ds_envelope_id) return res.status(400).json({ error: '该文件没有关联的 DocuSign 信封' });
-    // First refresh status from DocuSign
-    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-    const [envRes, rcpRes] = await Promise.all([
-      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
-      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
-    ]);
-    const status = envRes.data?.status || f.ds_status;
-    let partnerSigned = null, companySigned = null, declineReason = '';
-    for (const s of (rcpRes.data?.signers || [])) {
-      if (s.status === 'completed' && s.signedDateTime) {
-        if (s.recipientId === '1') companySigned = s.signedDateTime;
-        if (s.recipientId === '2') partnerSigned = s.signedDateTime;
-      }
-      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
-    }
-    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?")
-      .run(status, partnerSigned, companySigned, declineReason, f.id);
+    if (!f.ds_envelope_id) return res.status(400).json({ error: '该文件没有关联的 DocuSeal 提交' });
+    const { status, companySigned, partnerSigned, declineReason } = await dsealGetStatus(f.ds_envelope_id);
+    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, partnerSigned, companySigned, declineReason, f.id);
     if (status !== 'completed') {
       return res.json({ success: false, status, message: `当前签署状态为 "${status}"，只有双方都签署后才能下载已签版本。`, partnerSigned, companySigned });
     }
-    // Auto-activate partner (fallback if webhook missed)
     db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(f.id);
-    // Download signed PDF
-    const signedBuf = await dsDownloadSignedDoc(f.ds_envelope_id);
+    const signedBuf = await dsealDownloadDocument(f.ds_envelope_id);
     if (f.file_path) {
       fs.writeFileSync(path.join(docsDir, f.file_path), signedBuf);
-      console.log(`[DocuSign] Force-saved signed partner contract for file id=${f.id}`);
+      console.log(`[DocuSeal] Force-saved signed partner contract for file id=${f.id}`);
     }
     res.json({ success: true, status, partnerSigned, companySigned, fileSize: signedBuf.length, message: '已签版本已下载并保存，请重新下载文件查看。' });
   } catch (e) {
-    console.error('[DocuSign ForceDownload]', e.message);
+    console.error('[DocuSeal ForceDownload]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /api/admin/partner-files/:id/docusign-debug — detailed diagnostic info
+// GET /api/admin/partner-files/:id/docusign-debug — detailed diagnostic info (DocuSeal)
 app.get('/api/admin/partner-files/:id/docusign-debug', requireAdmin, blockManager, async (req, res) => {
   try {
     const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
@@ -5505,37 +5584,17 @@ app.get('/api/admin/partner-files/:id/docusign-debug', requireAdmin, blockManage
     const localFileExists = localFilePath ? fs.existsSync(localFilePath) : false;
     const localFileSize = localFileExists ? fs.statSync(localFilePath).size : 0;
     const debug = {
-      db: {
-        id: f.id, file_name: f.file_name, file_path: f.file_path,
-        ds_envelope_id: f.ds_envelope_id, ds_status: f.ds_status,
-        ds_partner_signed_at: f.ds_partner_signed_at, ds_company_signed_at: f.ds_company_signed_at,
-        ds_decline_reason: f.ds_decline_reason
-      },
+      db: { id: f.id, file_name: f.file_name, file_path: f.file_path, ds_envelope_id: f.ds_envelope_id, ds_status: f.ds_status, ds_partner_signed_at: f.ds_partner_signed_at, ds_company_signed_at: f.ds_company_signed_at, ds_decline_reason: f.ds_decline_reason },
       local_file: { path: f.file_path, exists: localFileExists, size_bytes: localFileSize },
-      docusign_configured: dsEnabled(),
-      webhook_url: `${(req.headers['x-forwarded-proto'] || req.protocol)}://${(req.headers['x-forwarded-host'] || req.headers.host)}/api/docusign/webhook`,
-      hmac_configured: !!process.env.DOCUSIGN_WEBHOOK_HMAC
+      docuseal_configured: dsealEnabled(),
+      webhook_url: `${(req.headers['x-forwarded-proto'] || req.protocol)}://${(req.headers['x-forwarded-host'] || req.headers.host)}/api/docuseal/webhook`
     };
-    if (dsEnabled() && f.ds_envelope_id) {
+    if (dsealEnabled() && f.ds_envelope_id) {
       try {
-        const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-        const [envRes, rcpRes] = await Promise.all([
-          dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
-          dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
-        ]);
-        debug.docusign_live = {
-          status: envRes.data?.status,
-          sent_date: envRes.data?.sentDateTime,
-          completed_date: envRes.data?.completedDateTime,
-          signers: (rcpRes.data?.signers || []).map(s => ({
-            name: s.name, email: s.email, recipientId: s.recipientId,
-            status: s.status, signedDateTime: s.signedDateTime, declinedReason: s.declinedReason
-          }))
-        };
-        debug.status_mismatch = (envRes.data?.status !== f.ds_status);
-      } catch (apiErr) {
-        debug.docusign_live_error = apiErr.message;
-      }
+        const { status, companySigned, partnerSigned, declineReason, raw } = await dsealGetStatus(f.ds_envelope_id);
+        debug.docuseal_live = { status, companySigned, partnerSigned, declineReason, submitters: raw.submitters };
+        debug.status_mismatch = (status !== f.ds_status);
+      } catch (apiErr) { debug.docuseal_live_error = apiErr.message; }
     }
     res.json(debug);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -9488,7 +9547,52 @@ app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirn
 app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'public', 'data-deletion.html')));
 app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
 
-// POST /api/docusign/webhook — DocuSign Connect event notifications
+// POST /api/docuseal/webhook — DocuSeal event notifications (partner contracts)
+app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
+  console.log(`[DocuSeal Webhook] Received request from ${req.ip} at ${new Date().toISOString()}`);
+  try {
+    const event = req.body;
+    const eventType = event?.event_type;
+    const data = event?.data;
+    console.log(`[DocuSeal Webhook] event_type=${eventType}`);
+    if (!data) { res.json({ received: true }); return; }
+    let submissionId;
+    if (eventType === 'submission.completed' || eventType === 'submission.created') {
+      submissionId = String(data.id || '');
+    } else {
+      submissionId = String(data.submission_id || '');
+    }
+    if (!submissionId) { res.json({ received: true }); return; }
+    const pf = db.prepare("SELECT id FROM partner_files WHERE ds_envelope_id=?").get(submissionId);
+    if (!pf) { res.json({ received: true }); return; }
+    if (eventType === 'submission.completed') {
+      try {
+        const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+        db.prepare("UPDATE partner_files SET ds_status='completed', ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
+        db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
+        const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
+        if (pfRecord?.file_path) {
+          const signedBuf = await dsealDownloadDocument(submissionId);
+          fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
+          console.log(`[DocuSeal] Saved signed partner contract for file id=${pf.id}`);
+        }
+      } catch (e) { console.error('[DocuSeal webhook] completion error:', e.message); }
+    } else if (eventType === 'submitter.completed') {
+      try {
+        const { companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+        db.prepare("UPDATE partner_files SET ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
+      } catch (e) { console.error('[DocuSeal webhook] submitter status error:', e.message); }
+    } else if (eventType === 'submitter.declined') {
+      db.prepare("UPDATE partner_files SET ds_status='declined', ds_decline_reason=? WHERE id=?").run(data.decline_reason || '已拒签', pf.id);
+    }
+    res.json({ received: true });
+  } catch (e) {
+    console.error('[DocuSeal Webhook]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/docusign/webhook — DocuSign Connect event notifications (assignments only)
 app.post('/api/docusign/webhook', express.raw({ type: '*/*' }), async (req, res) => {
   console.log(`[DocuSign Webhook] Received request from ${req.ip} at ${new Date().toISOString()}`);
   try {
@@ -9509,36 +9613,16 @@ app.post('/api/docusign/webhook', express.raw({ type: '*/*' }), async (req, res)
     if (envelopeId && status) {
       const asgn = db.prepare("SELECT id FROM assignments WHERE ds_envelope_id=?").get(envelopeId);
       if (asgn) db.prepare("UPDATE assignments SET ds_status=? WHERE id=?").run(status, asgn.id);
-      const pf = db.prepare("SELECT id FROM partner_files WHERE ds_envelope_id=?").get(envelopeId);
-      if (pf) db.prepare("UPDATE partner_files SET ds_status=? WHERE id=?").run(status, pf.id);
       for (const s of (event?.data?.envelopeSummary?.recipients?.signers || [])) {
         if (s.status === 'completed' && s.signedDateTime) {
           if (asgn) {
             if (s.recipientId === '1') db.prepare("UPDATE assignments SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
             if (s.recipientId === '2') db.prepare("UPDATE assignments SET ds_worker_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
           }
-          if (pf) {
-            if (s.recipientId === '1') db.prepare("UPDATE partner_files SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
-            if (s.recipientId === '2') db.prepare("UPDATE partner_files SET ds_partner_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
-          }
         }
         if (s.status === 'declined' && s.declinedReason) {
           if (asgn) db.prepare("UPDATE assignments SET ds_decline_reason=? WHERE id=?").run(s.declinedReason, asgn.id);
-          if (pf) db.prepare("UPDATE partner_files SET ds_decline_reason=? WHERE id=?").run(s.declinedReason, pf.id);
         }
-      }
-      // Auto-activate partner when contract envelope is fully completed (both parties signed)
-      if (pf && status === 'completed') {
-        db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
-        // Download the signed PDF from DocuSign and overwrite the local file
-        try {
-          const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
-          if (pfRecord && pfRecord.file_path) {
-            const signedBuf = await dsDownloadSignedDoc(envelopeId);
-            fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
-            console.log(`[DocuSign] Saved signed partner contract for file id=${pf.id}`);
-          }
-        } catch (dlErr) { console.error('[DocuSign] Failed to download signed partner doc:', dlErr.message); }
       }
       if (asgn && status === 'completed') {
         // Download the signed PDF from DocuSign and overwrite the local contract file
