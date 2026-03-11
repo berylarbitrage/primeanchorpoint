@@ -7289,10 +7289,10 @@ app.post('/api/worker/login', (req, res) => {
   const identifier = (login || username || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
   const digits10 = identifier.replace(/\D/g, '').slice(-10);
-  // Match by email (exact), phone (last-10-digits, format-agnostic), or username
+  // Match by email (exact), phone (last-10-digits, format-agnostic, skip if empty), or username
   const w = db.prepare(
-    'SELECT * FROM worker_accounts WHERE email=? OR phone10(phone)=? OR username=?'
-  ).get(identifier, digits10, identifier);
+    'SELECT * FROM worker_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?) OR username=?'
+  ).get(identifier, digits10, digits10, identifier);
   if (!w || !verifyPassword(password, w.salt, w.password_hash))
     return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
   if (!w.active)
@@ -8355,7 +8355,8 @@ app.get('/api/worker/payments', requireWorker, (req, res) => {
 app.post('/api/worker/forgot-password', async (req, res) => {
   const { login } = req.body;
   if (!login) return res.status(400).json({ error: '请输入邮箱或手机号' });
-  const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(login, login, login);
+  const digits10 = login.replace(/\D/g, '').slice(-10);
+  const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?) OR username=?').get(login, digits10, digits10, login);
   if (!w) return res.status(404).json({ error: '未找到该账号 / Account not found' });
 
   // Prefer Twilio Verify for phone-based reset
@@ -9011,8 +9012,8 @@ app.post('/api/customer/login', (req, res) => {
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
   const digits10 = identifier.replace(/\D/g, '').slice(-10);
   const cAny = db.prepare(
-    'SELECT * FROM customer_accounts WHERE email=? OR phone10(phone)=?'
-  ).get(identifier, digits10);
+    'SELECT * FROM customer_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?)'
+  ).get(identifier, digits10, digits10);
   if (cAny && cAny.approval_status === 'pending')
     return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
   if (cAny && cAny.approval_status === 'rejected')
@@ -9094,8 +9095,8 @@ app.post('/api/customer/reset-password', (req, res) => {
 app.get('/api/register/check', (req, res) => {
   const { phone, email } = req.query;
   if (phone) {
-    const clean = phone.replace(/[\s\-()+]/g, '');
-    const row = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=?').get(clean);
+    const digits10 = phone.replace(/\D/g, '').slice(-10);
+    const row = digits10 ? db.prepare('SELECT id, active FROM worker_accounts WHERE phone10(phone)=?').get(digits10) : null;
     if (row && row.active) return res.json({ taken: true, field: 'phone' });
   }
   if (email) {
