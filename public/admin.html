@@ -2363,6 +2363,34 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Contract Send Modal -->
+<div class="modal-bg" id="contractSendModal"><div class="modal" style="max-width:720px">
+  <h2>✍️ 发送合同 — <span id="contractWorkerName" style="color:var(--sky)"></span></h2>
+  <div id="contractSendInfo" style="margin:.5rem 0"></div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">合同内容（可编辑）：</label>
+    <textarea id="contractContentEditor" style="width:100%;height:300px;font-family:monospace;font-size:.82rem;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;resize:vertical;line-height:1.5"></textarea>
+  </div>
+  <div style="display:flex;gap:1rem;margin:.5rem 0;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px">
+      <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人邮箱（DocuSeal 签署链接发送至此）：</label>
+      <input id="contractWorkerEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="worker@email.com">
+    </div>
+    <div style="flex:1;min-width:200px">
+      <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人手机（短信通知）：</label>
+      <input id="contractWorkerPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1..." readonly>
+    </div>
+  </div>
+  <div id="contractDsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+    <button class="btn btn-green" id="contractSendBtn" onclick="doSendContract()">📤 生成合同并发送 DocuSeal</button>
+    <button class="btn" id="contractSignBtn" style="display:none;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="openCompanySign()">✍️ 公司签署</button>
+    <button class="btn" id="contractRefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshContractStatus()">🔄 刷新签署状态</button>
+    <button class="btn" id="contractVoidBtn" style="display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="voidContract()">🗑️ 作废</button>
+    <button class="btn" onclick="closeModal('contractSendModal')">关闭</button>
+  </div>
+</div></div>
+
 <!-- Customer Account Modal -->
 <div class="modal-bg" id="customerAccountModal"><div class="modal" style="max-width:520px">
   <h2 id="customerAccModalTitle">新建客户账户</h2>
@@ -12837,7 +12865,9 @@ function renderOnboardingTasks(tasks) {
           ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="confirmOnboardingWaive(${tk},${tt})">⏭️ Waive</button>`:''}
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
-          ${t.key==='persona_verify'
+          ${t.key==='contract'
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':'发送 DocuSeal 合同'}</button>`
+            : t.key==='persona_verify'
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
@@ -13193,6 +13223,129 @@ async function sendCheckrFromOnboarding() {
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '发送失败'), 'error', 5000);
+  }
+}
+
+// ── Contract Send Modal Functions ──
+async function openContractSendModal() {
+  if (!_onboardingWorkerId) return;
+  document.getElementById('contractSendModal').classList.add('show');
+  document.getElementById('contractWorkerName').textContent = _onboardingWorkerData?.name || _onboardingWorkerData?.username || '';
+  document.getElementById('contractContentEditor').value = '加载中…';
+  document.getElementById('contractWorkerEmail').value = '';
+  document.getElementById('contractWorkerPhone').value = '';
+  document.getElementById('contractDsStatus').style.display = 'none';
+  document.getElementById('contractSignBtn').style.display = 'none';
+  document.getElementById('contractRefreshBtn').style.display = 'none';
+  document.getElementById('contractVoidBtn').style.display = 'none';
+  document.getElementById('contractSendBtn').style.display = '';
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-preview`);
+  if (!r) { document.getElementById('contractContentEditor').value = '加载失败'; return; }
+  document.getElementById('contractContentEditor').value = r.content || '';
+  document.getElementById('contractWorkerEmail').value = r.worker_email || '';
+  document.getElementById('contractWorkerPhone').value = r.worker_phone || '';
+  const empLabel = r.employment_type === '1099' ? '1099 承包商' : 'W-2 员工';
+  let infoHtml = `<span style="font-size:.82rem;padding:2px 8px;border-radius:12px;background:#dbeafe;color:#1d4ed8;font-weight:600">${empLabel}</span>`;
+  if (!r.docuseal_enabled) {
+    infoHtml += ` <span style="font-size:.82rem;color:#dc2626;font-weight:600">⚠️ DocuSeal 未配置</span>`;
+  }
+  if (!r.company_email) {
+    infoHtml += ` <span style="font-size:.82rem;color:#dc2626;font-weight:600">⚠️ COMPANY_SIGNER_EMAIL 未设置</span>`;
+  }
+  document.getElementById('contractSendInfo').innerHTML = infoHtml;
+  // Show existing signing status if contract already sent
+  if (r.ds_envelope_id && r.ds_status) {
+    updateContractDsStatusUI(r.ds_status);
+    document.getElementById('contractSignBtn').style.display = '';
+    document.getElementById('contractRefreshBtn').style.display = '';
+    document.getElementById('contractVoidBtn').style.display = '';
+  }
+}
+
+function updateContractDsStatusUI(status) {
+  const el = document.getElementById('contractDsStatus');
+  el.style.display = '';
+  if (status === 'completed') {
+    el.style.background = '#d1fae5'; el.style.color = '#065f46'; el.style.border = '1px solid #6ee7b7';
+    el.innerHTML = '✅ 合同已由双方签署完成';
+  } else if (status === 'sent') {
+    el.style.background = '#dbeafe'; el.style.color = '#1d4ed8'; el.style.border = '1px solid #bfdbfe';
+    el.innerHTML = '📤 合同已发送，等待签署…';
+  } else if (status === 'declined') {
+    el.style.background = '#fef2f2'; el.style.color = '#dc2626'; el.style.border = '1px solid #fecaca';
+    el.innerHTML = '❌ 工人已拒签';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function doSendContract() {
+  if (!_onboardingWorkerId) return;
+  const content = document.getElementById('contractContentEditor').value.trim();
+  const workerEmail = document.getElementById('contractWorkerEmail').value.trim();
+  if (!content) { showToast('合同内容不能为空', 'error'); return; }
+  if (!workerEmail) { showToast('请填写工人邮箱', 'error'); return; }
+  if (!await showConfirm(`确认通过 DocuSeal 发送合同至 ${workerEmail}？\n\n公司方和工人方都需要完成电子签名。`)) return;
+  const btn = document.getElementById('contractSendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-contract`, {
+    method: 'POST', body: JSON.stringify({ content, worker_email: workerEmail })
+  });
+  btn.disabled = false; btn.textContent = '📤 生成合同并发送 DocuSeal';
+  if (r && r.success) {
+    const parts = [];
+    parts.push('📧 DocuSeal 签署邮件 ✓');
+    parts.push(r.smsSent ? '📱 短信通知 ✓' : '📱 短信 ✗');
+    showToast(`✅ 合同已发送\n${parts.join('  ')}`, 'success', 6000);
+    updateContractDsStatusUI('sent');
+    document.getElementById('contractSignBtn').style.display = '';
+    document.getElementById('contractRefreshBtn').style.display = '';
+    document.getElementById('contractVoidBtn').style.display = '';
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '发送失败'), 'error', 5000);
+  }
+}
+
+async function openCompanySign() {
+  if (!_onboardingWorkerId) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-sign-url`);
+  if (r && r.signUrl) {
+    window.open(r.signUrl, '_blank');
+  } else {
+    showToast('❌ 获取签署链接失败: ' + (r?.error || ''), 'error');
+  }
+}
+
+async function refreshContractStatus() {
+  if (!_onboardingWorkerId) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-status`);
+  if (r && r.status) {
+    updateContractDsStatusUI(r.status);
+    let info = `状态: ${r.status}`;
+    if (r.companySigned) info += ` | 公司已签: ${new Date(r.companySigned).toLocaleString('zh-CN')}`;
+    if (r.workerSigned) info += ` | 工人已签: ${new Date(r.workerSigned).toLocaleString('zh-CN')}`;
+    if (r.declineReason) info += ` | 拒签原因: ${r.declineReason}`;
+    showToast(info, 'info', 5000);
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
+  }
+}
+
+async function voidContract() {
+  if (!_onboardingWorkerId) return;
+  if (!await showConfirm('确认作废当前合同？作废后需要重新发送。')) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-void`, { method: 'POST' });
+  if (r && r.success) {
+    showToast('✅ 合同已作废', 'success');
+    document.getElementById('contractDsStatus').style.display = 'none';
+    document.getElementById('contractSignBtn').style.display = 'none';
+    document.getElementById('contractRefreshBtn').style.display = 'none';
+    document.getElementById('contractVoidBtn').style.display = 'none';
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '作废失败'), 'error');
   }
 }
 

@@ -1282,6 +1282,11 @@ try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN employment_type TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN assigned_slot_ids TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_envelope_id TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_status TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_worker_signed_at DATETIME"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_company_signed_at DATETIME"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN contract_content TEXT DEFAULT ''"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -2290,6 +2295,84 @@ function generatePartnerContractText({ partnerName, companyName, partnerAddress,
     'Date: /date1/', '',
     `${partnerName} (Partner)`,
     'Partner Signature: /sig2/',
+    'Date: /date2/',
+  ].join('\n');
+}
+
+function generateWorkerContractText({ workerName, companyName, employmentType, dateStr, position }) {
+  const cname = companyName || 'Prime Anchorpoint LLC';
+  const pos = position || 'General Worker';
+  if (employmentType === '1099') {
+    return [
+      'INDEPENDENT CONTRACTOR AGREEMENT', '',
+      `Date: ${dateStr}`, '',
+      'This Independent Contractor Agreement ("Agreement") is entered into between:', '',
+      `Company: ${cname}  ("Company")`,
+      `Contractor: ${workerName}  ("Contractor")`, '',
+      '1. ENGAGEMENT',
+      `The Company engages the Contractor to perform services as ${pos}.`,
+      'The Contractor shall perform services as an independent contractor, not an employee.', '',
+      '2. COMPENSATION',
+      'Compensation shall be based on mutually agreed rates for each assignment.',
+      'The Contractor shall submit invoices and be paid within 15 business days.', '',
+      '3. TERM',
+      'This Agreement is effective as of the date above and continues until terminated',
+      'by either party with 14 days written notice.', '',
+      '4. RELATIONSHIP',
+      'The Contractor is an independent contractor. Nothing in this Agreement creates',
+      'an employer-employee relationship. The Contractor is responsible for their own',
+      'taxes, insurance, and benefits.', '',
+      '5. CONFIDENTIALITY',
+      'The Contractor agrees to keep confidential all proprietary information of the Company.', '',
+      '6. NON-SOLICITATION',
+      'During the term and for 12 months after, the Contractor shall not directly solicit',
+      'any clients introduced by the Company.', '',
+      '7. GOVERNING LAW',
+      'This Agreement shall be governed by the laws of the State of Illinois.', '',
+      '8. ENTIRE AGREEMENT',
+      'This Agreement constitutes the entire understanding between the parties.', '', '',
+      'SIGNATURES', '',
+      `${cname} (Company)`,
+      'Authorized Signature: /sig1/',
+      'Date: /date1/', '',
+      `${workerName} (Contractor)`,
+      'Contractor Signature: /sig2/',
+      'Date: /date2/',
+    ].join('\n');
+  }
+  // W-2 Employment Agreement
+  return [
+    'EMPLOYMENT AGREEMENT', '',
+    `Date: ${dateStr}`, '',
+    'This Employment Agreement ("Agreement") is entered into between:', '',
+    `Employer: ${cname}  ("Employer")`,
+    `Employee: ${workerName}  ("Employee")`, '',
+    '1. POSITION AND DUTIES',
+    `The Employer hereby employs the Employee in the position of ${pos}.`,
+    'The Employee shall perform duties as assigned by the Employer.', '',
+    '2. COMPENSATION',
+    'Compensation shall be at the rate agreed upon and communicated separately.',
+    'Payment shall be made on a regular payroll schedule via direct deposit (Gusto).', '',
+    '3. EMPLOYMENT TYPE',
+    'This is at-will employment. Either party may terminate the employment relationship',
+    'at any time, with or without cause or prior notice.', '',
+    '4. BENEFITS',
+    'The Employee may be eligible for benefits as determined by company policy.', '',
+    '5. CONFIDENTIALITY',
+    'The Employee agrees to keep confidential all proprietary information of the Employer.', '',
+    '6. WORK AUTHORIZATION',
+    'The Employee represents that they are legally authorized to work in the United States',
+    'and will complete all required employment verification forms (I-9).', '',
+    '7. GOVERNING LAW',
+    'This Agreement shall be governed by the laws of the State of Illinois.', '',
+    '8. ENTIRE AGREEMENT',
+    'This Agreement constitutes the entire understanding between the parties.', '', '',
+    'SIGNATURES', '',
+    `${cname} (Employer)`,
+    'Authorized Signature: /sig1/',
+    'Date: /date1/', '',
+    `${workerName} (Employee)`,
+    'Employee Signature: /sig2/',
     'Date: /date2/',
   ].join('\n');
 }
@@ -4094,6 +4177,135 @@ app.get('/api/admin/worker-accounts/:id/checkr-status', requireAdmin, async (req
       try { report = await checkrApiCall('GET', `/reports/${w.checkr_report_id}`); } catch {}
     }
     res.json({ ...w, report });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: get contract preview for onboarding
+app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+  if (!w) return res.status(404).json({ error: 'Worker not found' });
+  const onb = db.prepare("SELECT contract_content, ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+  const empType = w.employment_type || 'w2';
+  const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const dateStr = new Date().toISOString().slice(0, 10);
+  // If already has saved content, use that; otherwise generate default
+  const content = (onb && onb.contract_content) || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
+  res.json({
+    content,
+    worker_name: workerName,
+    worker_email: w.email || '',
+    worker_phone: w.phone || '',
+    employment_type: empType,
+    ds_envelope_id: onb?.ds_envelope_id || '',
+    ds_status: onb?.ds_status || '',
+    company_email: process.env.COMPANY_SIGNER_EMAIL || '',
+    company_name: companyName,
+    docuseal_enabled: dsealEnabled()
+  });
+});
+
+// Admin: send contract to worker via DocuSeal
+app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置，请在 .env 设置 DOCUSEAL_API_KEY 和 DOCUSEAL_URL' });
+    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+    if (!companyEmail) return res.status(503).json({ error: '请在 .env 设置 COMPANY_SIGNER_EMAIL' });
+    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerEmail = req.body.worker_email || w.email || '';
+    if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
+    // Use provided content or generate default
+    const empType = w.employment_type || 'w2';
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const content = req.body.content || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
+    // Build PDF
+    const pdfBuf = buildContractPdf(content);
+    const filename = `worker-contract-${workerId}-${Date.now()}.pdf`;
+    const docPath = path.join(docsDir, filename);
+    fs.writeFileSync(docPath, pdfBuf);
+    // Send via DocuSeal
+    const { submissionId, companyEmbedSrc } = await dsealSendEnvelope({
+      docPath, docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}.pdf`,
+      emailSubject: `请签署合同 / Please Sign — ${workerName} × ${companyName}`,
+      signer1: { email: companyEmail, name: companyName },
+      signer2: { email: workerEmail, name: workerName }
+    });
+    // Update onboarding record
+    db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
+      contract_content=?, visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
+      WHERE worker_account_id=? AND task_key='contract'`)
+      .run(submissionId, content, `已通过 DocuSeal 发送合同 (${new Date().toLocaleString('zh-CN')})`, companyEmbedSrc || '', workerId);
+    // Send SMS notification
+    let smsSent = false;
+    if (w.phone) {
+      const smsText = `[Prime Anchorpoint] 您好 ${workerName}，您的${empType === '1099' ? '承包商协议' : '雇佣合同'}已发送至您的邮箱 ${workerEmail}，请查收并完成签署。`;
+      smsSent = await sendSMS(w.phone, smsText);
+    }
+    // Send email notification (DocuSeal already sends signing email, this is an extra notification)
+    let emailSent = false;
+    if (w.email && w.email !== workerEmail) {
+      emailSent = await sendEmail(w.email,
+        `Prime Anchorpoint — 合同已发送 / Contract Sent`,
+        `您的${empType === '1099' ? '承包商协议' : '雇佣合同'}已发送至 ${workerEmail}，请查收并完成电子签署。`
+      );
+    }
+    // Clean up temp PDF
+    try { fs.unlinkSync(docPath); } catch {}
+    res.json({ success: true, submissionId, signUrl: companyEmbedSrc, smsSent, emailSent });
+  } catch (e) {
+    console.error('[Contract Send]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: get contract signing status from DocuSeal
+app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, ds_worker_signed_at, ds_company_signed_at FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    if (!dsealEnabled()) return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, companySigned: onb.ds_company_signed_at });
+    const { status, companySigned, partnerSigned, declineReason } = await dsealGetStatus(onb.ds_envelope_id);
+    db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+      .run(status, partnerSigned, companySigned, workerId);
+    if (status === 'completed') {
+      db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
+        .run(workerId);
+      syncOnboardedStatus(workerId);
+    } else if (status === 'declined') {
+      db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
+        .run(`工人已拒签: ${declineReason || ''}`, workerId);
+    }
+    res.json({ status, workerSigned: partnerSigned, companySigned, declineReason });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: get company signing URL for onboarding contract
+app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    const signUrl = await dsealGetCompanySignUrl(onb.ds_envelope_id);
+    res.json({ signUrl });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: void/cancel onboarding contract submission
+app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    await dsealArchive(onb.ds_envelope_id);
+    db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, ds_company_signed_at=NULL, admin_note='合同已作废', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+      .run(workerId);
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -9750,28 +9962,61 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
       submissionId = String(data.submission_id || '');
     }
     if (!submissionId) { res.json({ received: true }); return; }
+
+    // Check partner_files first
     const pf = db.prepare("SELECT id FROM partner_files WHERE ds_envelope_id=?").get(submissionId);
-    if (!pf) { res.json({ received: true }); return; }
-    if (eventType === 'submission.completed') {
-      try {
-        const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
-        db.prepare("UPDATE partner_files SET ds_status='completed', ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
-        db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
-        const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
-        if (pfRecord?.file_path) {
-          const signedBuf = await dsealDownloadDocument(submissionId);
-          fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
-          console.log(`[DocuSeal] Saved signed partner contract for file id=${pf.id}`);
-        }
-      } catch (e) { console.error('[DocuSeal webhook] completion error:', e.message); }
-    } else if (eventType === 'submitter.completed') {
-      try {
-        const { companySigned, partnerSigned } = await dsealGetStatus(submissionId);
-        db.prepare("UPDATE partner_files SET ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
-      } catch (e) { console.error('[DocuSeal webhook] submitter status error:', e.message); }
-    } else if (eventType === 'submitter.declined') {
-      db.prepare("UPDATE partner_files SET ds_status='declined', ds_decline_reason=? WHERE id=?").run(data.decline_reason || '已拒签', pf.id);
+    // Check worker_onboarding contracts
+    const wo = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='contract'").get(submissionId);
+
+    if (!pf && !wo) { res.json({ received: true }); return; }
+
+    // Handle partner file contract events
+    if (pf) {
+      if (eventType === 'submission.completed') {
+        try {
+          const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+          db.prepare("UPDATE partner_files SET ds_status='completed', ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
+          db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
+          const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
+          if (pfRecord?.file_path) {
+            const signedBuf = await dsealDownloadDocument(submissionId);
+            fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
+            console.log(`[DocuSeal] Saved signed partner contract for file id=${pf.id}`);
+          }
+        } catch (e) { console.error('[DocuSeal webhook] completion error:', e.message); }
+      } else if (eventType === 'submitter.completed') {
+        try {
+          const { companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+          db.prepare("UPDATE partner_files SET ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
+        } catch (e) { console.error('[DocuSeal webhook] submitter status error:', e.message); }
+      } else if (eventType === 'submitter.declined') {
+        db.prepare("UPDATE partner_files SET ds_status='declined', ds_decline_reason=? WHERE id=?").run(data.decline_reason || '已拒签', pf.id);
+      }
     }
+
+    // Handle worker onboarding contract events
+    if (wo) {
+      const wid = wo.worker_account_id;
+      if (eventType === 'submission.completed') {
+        try {
+          const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+          db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+            .run(partnerSigned, companySigned, wid);
+          syncOnboardedStatus(wid);
+          console.log(`[DocuSeal] Worker onboarding contract completed for worker ${wid}`);
+        } catch (e) { console.error('[DocuSeal webhook] worker contract completion error:', e.message); }
+      } else if (eventType === 'submitter.completed') {
+        try {
+          const { companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+          db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+            .run(partnerSigned, companySigned, wid);
+        } catch (e) { console.error('[DocuSeal webhook] worker submitter status error:', e.message); }
+      } else if (eventType === 'submitter.declined') {
+        db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+          .run(`工人已拒签: ${data.decline_reason || ''}`, wid);
+      }
+    }
+
     res.json({ received: true });
   } catch (e) {
     console.error('[DocuSeal Webhook]', e.message);
