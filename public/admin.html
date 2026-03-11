@@ -12786,7 +12786,16 @@ function renderOnboardingTasks(tasks) {
     completed:'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7',
     waived:'background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff'
   };
-  document.getElementById('onboardingTaskList').innerHTML = tasks.map(t => {
+  // Check if interview is completed/waived — hide post-interview steps if not
+  const interviewTask = tasks.find(t => t.key === 'interview');
+  const interviewDone = interviewTask && ['completed','waived'].includes(interviewTask.status);
+  const interviewIdx = tasks.findIndex(t => t.key === 'interview');
+  document.getElementById('onboardingTaskList').innerHTML = tasks.filter((t, idx) => {
+    // Always show steps up to and including interview
+    if (idx <= interviewIdx) return true;
+    // After interview: only show if interview is done
+    return interviewDone;
+  }).map(t => {
     const s = t.status;
     const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
     const canWaive = s !== 'completed' && s !== 'waived';
