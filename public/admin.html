@@ -1987,7 +1987,7 @@ tr:hover td{background:var(--sky-light)}
   <!-- Worker -->
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
-      <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th>
+      <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
       <th>合规文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
@@ -12709,6 +12709,7 @@ async function loadWorkerAccounts() {
       <option value="opt" ${w.work_status==='opt'?'selected':''}>OPT/CPT</option>
       <option value="other" ${w.work_status==='other'?'selected':''}>其他</option>
     </select></td>
+    <td style="font-size:.78rem;white-space:nowrap">${w.employment_type === 'w2' ? '<span style="padding:2px 8px;border-radius:12px;background:#dbeafe;color:#1d4ed8;font-weight:600">W-2</span>' : w.employment_type === '1099' ? '<span style="padding:2px 8px;border-radius:12px;background:#fff7ed;color:#9a3412;font-weight:600">1099</span>' : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td><div class="wa-compliance">
       ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
       ${complianceBadge2('SSN', c.ssn_card)}
@@ -12737,7 +12738,7 @@ async function loadWorkerAccounts() {
         ${extraBtns}
       </div>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="13" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="14" class="empty">暂无工人账户</td></tr>';
 }
 
 // ─── Onboarding Progress Modal ───
