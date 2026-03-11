@@ -13340,22 +13340,30 @@ async function openCompanySign() {
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-sign-url`);
   if (r && r.signUrl) {
     console.log('[CompanySign] signUrl:', r.signUrl);
-    const previewDiv = document.getElementById('contractPdfPreview');
-    const frame = document.getElementById('contractPdfFrame');
-    frame.src = r.signUrl;
-    previewDiv.style.display = '';
-    // If iframe fails to load (X-Frame-Options), fall back to new tab after 3s
-    let loaded = false;
-    frame.onload = () => { loaded = true; };
-    setTimeout(() => {
-      if (!loaded || (frame.contentDocument && frame.contentDocument.body && frame.contentDocument.body.innerHTML === '')) {
-        window.open(r.signUrl, '_blank');
-        showToast('签署页面无法内嵌，已在新标签页打开', 'info');
-      }
-    }, 3000);
+    // Create full-screen overlay modal with iframe for signing
+    let overlay = document.getElementById('companySignOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'companySignOverlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1rem';
+      overlay.innerHTML = `<div style="background:#fff;border-radius:12px;width:95vw;max-width:1000px;height:90vh;display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.75rem 1rem;border-bottom:1px solid #e5e7eb">
+          <span style="font-weight:700;font-size:1rem">✍️ 公司签署</span>
+          <button onclick="closeCompanySignOverlay()" style="background:#ef4444;color:#fff;border:none;border-radius:6px;padding:.4rem 1rem;cursor:pointer;font-size:.9rem">关闭</button>
+        </div>
+        <iframe id="companySignFrame" style="flex:1;border:none;width:100%"></iframe>
+      </div>`;
+      document.body.appendChild(overlay);
+    }
+    document.getElementById('companySignFrame').src = r.signUrl;
+    overlay.style.display = 'flex';
   } else {
     showToast('❌ 获取签署链接失败: ' + (r?.error || ''), 'error');
   }
+}
+function closeCompanySignOverlay() {
+  const o = document.getElementById('companySignOverlay');
+  if (o) { document.getElementById('companySignFrame').src = ''; o.style.display = 'none'; }
 }
 
 async function refreshContractStatus() {
