@@ -1201,6 +1201,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_compliance_docs (
   FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id)
 )`);
 
+try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN holder_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN doc_number TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN ocr_raw TEXT DEFAULT ''"); } catch {}
+
 // ─── Worker Onboarding Tasks ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -8446,12 +8450,15 @@ app.get('/api/worker/compliance', requireWorker, (req, res) => {
   const worker = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(req.workerId);
   let assignedTasks = [];
   try { assignedTasks = JSON.parse(worker?.assigned_tasks || '[]'); } catch {}
+  // Find expiring/expired approved documents
+  const expiringDocs = docs.filter(d => d.expires_at && d.status === 'approved' && new Date(d.expires_at) <= new Date(Date.now() + 90 * 86400000));
   res.json({
     documents: byType,
     all_documents: docs,
     background_check: bgCheck,
     assigned_tasks: assignedTasks,
-    doc_types: ['i9', 'drivers_license', 'w9', 'ssn_card', 'work_permit', 'other']
+    doc_types: ['i9', 'drivers_license', 'w9', 'ssn_card', 'work_permit', 'other'],
+    expiring_docs: expiringDocs
   });
 });
 
@@ -9009,6 +9016,236 @@ app.get('/api/admin/compliance-docs/:id/download', requireAdmin, (req, res) => {
   if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
   res.download(doc.file_path, doc.file_name || 'document');
 });
+
+// ─── OCR: Extract text from compliance doc image via Google Cloud Vision ───
+app.post('/api/admin/compliance-docs/:id/ocr', requireAdmin, async (req, res) => {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY; // reuse same key (enable Cloud Vision on the key)
+  if (!apiKey) return res.status(400).json({ error: 'Google API key not configured' });
+  const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
+  if (!doc || !doc.file_path) return res.status(404).json({ error: 'No file to process' });
+  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing on disk' });
+
+  try {
+    const imageBuffer = fs.readFileSync(doc.file_path);
+    const base64 = imageBuffer.toString('base64');
+    const visionRes = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{ image: { content: base64 }, features: [{ type: 'TEXT_DETECTION' }] }]
+      })
+    });
+    if (!visionRes.ok) {
+      const errBody = await visionRes.text();
+      console.error('[OCR] Google Vision error:', errBody);
+      return res.status(502).json({ error: 'Google Vision API error' });
+    }
+    const visionData = await visionRes.json();
+    const fullText = visionData.responses?.[0]?.fullTextAnnotation?.text || '';
+    if (!fullText) return res.json({ success: true, text: '', parsed: {}, message: 'No text detected' });
+
+    // Parse extracted text for common document fields
+    const parsed = parseDocumentText(fullText, doc.doc_type);
+
+    // Save OCR results
+    db.prepare('UPDATE worker_compliance_docs SET ocr_raw=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(fullText, doc.id);
+
+    // Auto-fill fields if parsed successfully
+    if (parsed.holder_name) {
+      db.prepare('UPDATE worker_compliance_docs SET holder_name=? WHERE id=? AND (holder_name IS NULL OR holder_name=\'\')').run(parsed.holder_name, doc.id);
+    }
+    if (parsed.doc_number) {
+      db.prepare('UPDATE worker_compliance_docs SET doc_number=? WHERE id=? AND (doc_number IS NULL OR doc_number=\'\')').run(parsed.doc_number, doc.id);
+    }
+    if (parsed.expires_at) {
+      db.prepare('UPDATE worker_compliance_docs SET expires_at=? WHERE id=? AND expires_at IS NULL').run(parsed.expires_at, doc.id);
+    }
+
+    res.json({ success: true, text: fullText, parsed });
+  } catch (e) {
+    console.error('[OCR] Error:', e);
+    res.status(500).json({ error: 'OCR processing failed: ' + e.message });
+  }
+});
+
+// Parse document text for name, dates, doc numbers
+function parseDocumentText(text, docType) {
+  const result = {};
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Date patterns: MM/DD/YYYY, MM-DD-YYYY, YYYY-MM-DD, MM/DD/YY
+  const datePatterns = [
+    /(\d{2}\/\d{2}\/\d{4})/g,
+    /(\d{2}-\d{2}-\d{4})/g,
+    /(\d{4}-\d{2}-\d{2})/g,
+    /(\d{2}\/\d{2}\/\d{2})/g,
+  ];
+
+  const allDates = [];
+  for (const p of datePatterns) {
+    const matches = text.match(p);
+    if (matches) allDates.push(...matches);
+  }
+
+  // Expiration date keywords
+  const expKeywords = /exp(?:ir(?:ation|es))?|有效期|到期|EXP|VALID\s*(?:THRU|THROUGH|UNTIL)|CARD EXPIRES/i;
+  for (const line of lines) {
+    if (expKeywords.test(line)) {
+      const dateMatch = line.match(/(\d{2}[\/\-]\d{2}[\/\-]\d{2,4})/);
+      if (dateMatch) {
+        result.expires_at = normalizeDate(dateMatch[1]);
+        break;
+      }
+    }
+  }
+  // If no labeled exp date but dates found, use the latest date as likely expiration
+  if (!result.expires_at && allDates.length) {
+    const sorted = allDates.map(d => ({ raw: d, ts: new Date(normalizeDate(d)).getTime() }))
+      .filter(d => !isNaN(d.ts) && d.ts > Date.now())
+      .sort((a, b) => a.ts - b.ts);
+    if (sorted.length) result.expires_at = normalizeDate(sorted[0].raw);
+  }
+
+  // Document number extraction based on type
+  if (docType === 'work_permit' || docType === 'ead_upload') {
+    // EAD card number pattern: 3 letters + 10 digits (e.g., SRC2190012345)
+    const eadMatch = text.match(/([A-Z]{3}\d{10})/);
+    if (eadMatch) result.doc_number = eadMatch[1];
+    // USCIS number
+    const uscisMatch = text.match(/(?:USCIS|A)\s*#?\s*(\d{7,13})/i);
+    if (uscisMatch) result.uscis_number = uscisMatch[1];
+  }
+  if (docType === 'drivers_license') {
+    const dlMatch = text.match(/(?:DL|ID|LIC|LICENSE)\s*(?:#|NO|:)?\s*([A-Z0-9]{4,20})/i);
+    if (dlMatch) result.doc_number = dlMatch[1];
+  }
+  if (docType === 'ssn_card') {
+    const ssnMatch = text.match(/(\d{3}[\s-]\d{2}[\s-]\d{4})/);
+    if (ssnMatch) result.doc_number = ssnMatch[1];
+  }
+
+  // Name extraction - look for common patterns
+  const nameKeywords = /(?:NAME|姓名|LAST\s*NAME|FIRST\s*NAME|SURNAME|GIVEN\s*NAME)/i;
+  for (let i = 0; i < lines.length; i++) {
+    if (nameKeywords.test(lines[i])) {
+      // Name might be on same line after colon, or on next line
+      const sameLine = lines[i].match(/(?:NAME|姓名)[:\s]+(.+)/i);
+      if (sameLine) { result.holder_name = sameLine[1].trim(); break; }
+      if (i + 1 < lines.length && /^[A-Za-z\s,'-]+$/.test(lines[i+1])) {
+        result.holder_name = lines[i+1].trim();
+        break;
+      }
+    }
+  }
+  // Fallback: look for "LAST, FIRST" pattern common on US IDs
+  if (!result.holder_name) {
+    for (const line of lines) {
+      if (/^[A-Z][A-Z'-]+,\s*[A-Z][A-Z'-]+/.test(line)) {
+        result.holder_name = line;
+        break;
+      }
+    }
+  }
+
+  // Category (EAD specific)
+  const catMatch = text.match(/(?:CATEGORY|Cat(?:egory)?)\s*[:\s]*([A-Z]\d{1,2}[a-z]?)/i);
+  if (catMatch) result.category = catMatch[1].toUpperCase();
+
+  return result;
+}
+
+function normalizeDate(dateStr) {
+  // Convert various formats to YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const parts = dateStr.split(/[\/\-]/);
+  if (parts.length !== 3) return dateStr;
+  let [a, b, c] = parts;
+  if (c.length === 2) c = parseInt(c) > 50 ? '19' + c : '20' + c;
+  // MM/DD/YYYY or MM-DD-YYYY
+  return `${c}-${a.padStart(2,'0')}-${b.padStart(2,'0')}`;
+}
+
+// ─── Update compliance doc fields (expiration, name, number) ───
+app.put('/api/admin/compliance-docs/:id/fields', requireAdmin, (req, res) => {
+  const { expires_at, holder_name, doc_number } = req.body;
+  const sets = [];
+  const vals = [];
+  if (expires_at !== undefined) { sets.push('expires_at=?'); vals.push(expires_at || null); }
+  if (holder_name !== undefined) { sets.push('holder_name=?'); vals.push(holder_name); }
+  if (doc_number !== undefined) { sets.push('doc_number=?'); vals.push(doc_number); }
+  if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
+  sets.push('updated_at=CURRENT_TIMESTAMP');
+  vals.push(req.params.id);
+  db.prepare(`UPDATE worker_compliance_docs SET ${sets.join(',')} WHERE id=?`).run(...vals);
+  res.json({ success: true });
+});
+
+// ─── Expiring documents dashboard endpoint ───
+app.get('/api/admin/compliance-docs/expiring', requireAdmin, (req, res) => {
+  const days = parseInt(req.query.days) || 90;
+  const docs = db.prepare(`
+    SELECT c.*, w.name as worker_name, w.email as worker_email, w.phone as worker_phone
+    FROM worker_compliance_docs c
+    LEFT JOIN worker_accounts w ON c.worker_account_id = w.id
+    WHERE c.expires_at IS NOT NULL
+      AND c.expires_at != ''
+      AND c.status = 'approved'
+      AND date(c.expires_at) <= date('now', '+' || ? || ' days')
+    ORDER BY c.expires_at ASC
+  `).all(days);
+  res.json(docs);
+});
+
+// ─── Scheduled expiration check (runs daily) ───
+function checkExpiringDocs() {
+  const now = new Date().toISOString().slice(0, 10);
+  // Documents expiring within 30 days that haven't been notified recently
+  const expiring = db.prepare(`
+    SELECT c.id, c.doc_type, c.expires_at, c.holder_name, c.worker_account_id,
+      w.name as worker_name, w.email as worker_email, w.phone as worker_phone
+    FROM worker_compliance_docs c
+    LEFT JOIN worker_accounts w ON c.worker_account_id = w.id
+    WHERE c.expires_at IS NOT NULL AND c.expires_at != ''
+      AND c.status = 'approved'
+      AND date(c.expires_at) <= date('now', '+30 days')
+      AND date(c.expires_at) >= date('now', '-7 days')
+      AND (c.last_expiry_notified IS NULL OR date(c.last_expiry_notified) < date('now', '-7 days'))
+  `).all();
+
+  for (const doc of expiring) {
+    const daysLeft = Math.ceil((new Date(doc.expires_at) - new Date(now)) / 86400000);
+    const typeLabel = { i9:'I-9', drivers_license:'驾照', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可/EAD', ead_upload:'EAD工卡', other:'文件' }[doc.doc_type] || doc.doc_type;
+    const urgency = daysLeft <= 0 ? '已过期' : daysLeft <= 7 ? '7天内到期' : '30天内到期';
+
+    // Email worker
+    if (doc.worker_email && (emailTransporter || _sgKey)) {
+      sendEmail(doc.worker_email,
+        `[Prime Anchorpoint] 您的${typeLabel}即将到期 / Your ${typeLabel} is expiring`,
+        `您好 ${doc.worker_name || ''},\n\n您的${typeLabel}将于 ${doc.expires_at} 到期（${urgency}）。\n请尽快更新证件。\n\nHello ${doc.worker_name || ''},\nYour ${typeLabel} expires on ${doc.expires_at} (${urgency}).\nPlease update your document as soon as possible.\n\n— Prime Anchor Point`
+      ).catch(e => console.error('[ExpiryNotify] Email failed:', e));
+    }
+
+    // SMS worker
+    if (doc.worker_phone && twilioClient && (TWILIO_FROM || TWILIO_VERIFY_SID)) {
+      sendSMS(doc.worker_phone,
+        `[Prime Anchorpoint] 您的${typeLabel}将于${doc.expires_at}到期（${urgency}），请尽快更新。Your ${typeLabel} expires ${doc.expires_at}.`
+      ).catch(e => console.error('[ExpiryNotify] SMS failed:', e));
+    }
+
+    // Mark as notified
+    db.prepare('UPDATE worker_compliance_docs SET last_expiry_notified=CURRENT_TIMESTAMP WHERE id=?').run(doc.id);
+    console.log(`[ExpiryNotify] ${doc.worker_name}: ${typeLabel} expires ${doc.expires_at} (${urgency})`);
+  }
+  if (expiring.length) console.log(`[ExpiryNotify] Processed ${expiring.length} expiring documents`);
+}
+
+// Add last_expiry_notified column
+try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN last_expiry_notified DATETIME DEFAULT NULL"); } catch {}
+
+// Run daily at 9 AM
+setInterval(checkExpiringDocs, 24 * 60 * 60 * 1000);
+setTimeout(checkExpiringDocs, 60 * 1000); // First check 1 minute after startup
 
 // ─── Customer Portal API ───
 app.post('/api/customer/login', (req, res) => {

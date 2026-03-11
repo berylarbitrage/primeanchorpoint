@@ -4321,7 +4321,24 @@ async function loadCompliance() {
     background_check: null
   };
 
-  let html = '';
+  // Expiring documents warning
+  const expiringDocs = data.expiring_docs || [];
+  let expiringHtml = '';
+  if (expiringDocs.length) {
+    const docTypeLabels = { i9:'I-9', drivers_license:'驾照/ID', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可/EAD', ead_upload:'EAD 工卡', other:'其他' };
+    expiringHtml = `<div style="grid-column:1/-1;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius);padding:1rem;margin-bottom:.5rem">
+      <div style="font-weight:700;color:#92400e;font-size:.9rem;margin-bottom:.5rem">⚠️ 证件即将到期 / Documents Expiring Soon</div>
+      ${expiringDocs.map(d => {
+        const daysLeft = Math.ceil((new Date(d.expires_at) - new Date()) / 86400000);
+        const urgency = daysLeft <= 0 ? '已过期' : `${daysLeft}天后到期`;
+        const color = daysLeft <= 0 ? '#dc2626' : daysLeft <= 30 ? '#92400e' : '#6b7280';
+        return `<div style="font-size:.85rem;color:${color};padding:.2rem 0"><strong>${docTypeLabels[d.doc_type]||d.doc_type}</strong> — 到期日: ${(d.expires_at||'').slice(0,10)} (${urgency})</div>`;
+      }).join('')}
+      <div style="font-size:.8rem;color:#92400e;margin-top:.4rem">请尽快联系 HR 更新证件。/ Please contact HR to update your documents.</div>
+    </div>`;
+  }
+
+  let html = expiringHtml;
   // Build items from assigned tasks only
   const items = assignedTasks
     .filter(type => DOC_LABELS[type])
