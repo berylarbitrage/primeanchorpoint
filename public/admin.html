@@ -12790,11 +12790,18 @@ function renderOnboardingTasks(tasks) {
   const interviewTask = tasks.find(t => t.key === 'interview');
   const interviewDone = interviewTask && ['completed','waived'].includes(interviewTask.status);
   const interviewIdx = tasks.findIndex(t => t.key === 'interview');
+  // Get assigned tasks for this worker (set after W2/1099 selection)
+  const preInterviewKeys = ['phone_verify', 'email_verify', 'interview'];
+  let assignedTasks = [];
+  try { assignedTasks = JSON.parse((_onboardingWorkerData && _onboardingWorkerData.assigned_tasks) || '[]'); } catch {}
   document.getElementById('onboardingTaskList').innerHTML = tasks.filter((t, idx) => {
-    // Always show steps up to and including interview
-    if (idx <= interviewIdx) return true;
-    // After interview: only show if interview is done
-    return interviewDone;
+    // Always show pre-interview steps
+    if (preInterviewKeys.includes(t.key)) return true;
+    // After interview: hide if interview not done
+    if (!interviewDone) return false;
+    // If assigned_tasks is set, only show tasks in that list
+    if (assignedTasks.length) return assignedTasks.includes(t.key);
+    return true;
   }).map(t => {
     const s = t.status;
     const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
@@ -15970,14 +15977,19 @@ function obivRenderSlots(slots) {
   if (!slots.length) {
     slotSel.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.25rem 0">暂无可用的面试时间，请创建新的时间段</div>';
   } else {
-    slotSel.innerHTML = slots.map(s => {
-      const dt = new Date(s.slot_datetime);
-      const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short', timeZone: localTz() });
-      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone: localTz(), timeZoneName: 'short' });
-      const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
-      const avail = (s.max_bookings || 1) - (s.booked_count || 0);
-      return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
-    }).join('');
+    const available = slots.filter(s => ((s.max_bookings || 1) - (s.booked_count || 0)) > 0);
+    if (!available.length) {
+      slotSel.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.25rem 0">暂无可用的面试时间（所有时段已满），请创建新的时间段</div>';
+    } else {
+      slotSel.innerHTML = available.map(s => {
+        const dt = new Date(s.slot_datetime);
+        const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short', timeZone: localTz() });
+        const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone: localTz(), timeZoneName: 'short' });
+        const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
+        const avail = (s.max_bookings || 1) - (s.booked_count || 0);
+        return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
+      }).join('');
+    }
   }
 }
 
