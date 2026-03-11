@@ -2381,8 +2381,12 @@ tr:hover td{background:var(--sky-light)}
       <input id="contractWorkerPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1..." readonly>
     </div>
   </div>
+  <div id="contractPdfPreview" style="display:none;margin:.5rem 0">
+    <iframe id="contractPdfFrame" style="width:100%;height:400px;border:1px solid var(--gray-200);border-radius:8px"></iframe>
+  </div>
   <div id="contractDsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
   <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+    <button class="btn" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="previewContractPdf()">📄 预览 PDF</button>
     <button class="btn btn-green" id="contractSendBtn" onclick="doSendContract()">📤 生成合同并发送 DocuSeal</button>
     <button class="btn" id="contractSignBtn" style="display:none;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="openCompanySign()">✍️ 公司签署</button>
     <button class="btn" id="contractRefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshContractStatus()">🔄 刷新签署状态</button>
@@ -13285,6 +13289,24 @@ function updateContractDsStatusUI(status) {
   }
 }
 
+async function previewContractPdf() {
+  const content = document.getElementById('contractContentEditor').value.trim();
+  if (!content) { showToast('合同内容为空', 'error'); return; }
+  const previewDiv = document.getElementById('contractPdfPreview');
+  const frame = document.getElementById('contractPdfFrame');
+  try {
+    const resp = await fetch('/api/admin/worker-accounts/contract-preview-pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    });
+    if (!resp.ok) { showToast('❌ PDF 生成失败', 'error'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    frame.src = url;
+    previewDiv.style.display = '';
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
+}
+
 async function doSendContract() {
   if (!_onboardingWorkerId) return;
   const content = document.getElementById('contractContentEditor').value.trim();
@@ -13317,7 +13339,10 @@ async function openCompanySign() {
   if (!_onboardingWorkerId) return;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-sign-url`);
   if (r && r.signUrl) {
-    window.open(r.signUrl, '_blank');
+    const previewDiv = document.getElementById('contractPdfPreview');
+    const frame = document.getElementById('contractPdfFrame');
+    frame.src = r.signUrl;
+    previewDiv.style.display = '';
   } else {
     showToast('❌ 获取签署链接失败: ' + (r?.error || ''), 'error');
   }

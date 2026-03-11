@@ -2114,17 +2114,11 @@ function dsealGetPdfPageCount(docPath) {
 async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
   const docBase64 = 'data:application/pdf;base64,' + fs.readFileSync(docPath).toString('base64');
   const lastPage = dsealGetPdfPageCount(docPath);
-  // Step 1: Create template from PDF with two signing roles and signature fields
-  const sigFields = [
-    { name: '公司签名', type: 'signature', role: 'First Party', required: true, areas: [{ x: 0.08, y: 0.82, w: 0.26, h: 0.07, page: lastPage }] },
-    { name: '公司日期', type: 'date', role: 'First Party', required: false, areas: [{ x: 0.08, y: 0.90, w: 0.26, h: 0.05, page: lastPage }] },
-    { name: '合作方签名', type: 'signature', role: 'Second Party', required: true, areas: [{ x: 0.52, y: 0.82, w: 0.26, h: 0.07, page: lastPage }] },
-    { name: '合作方日期', type: 'date', role: 'Second Party', required: false, areas: [{ x: 0.52, y: 0.90, w: 0.26, h: 0.05, page: lastPage }] }
-  ];
+  // Step 1: Create template from PDF — uses text tags embedded in the PDF
+  // Tags like {{sig1;role=First Party;type=signature}} are auto-detected by DocuSeal
   const tmplRes = await dsealApiCall('POST', '/api/templates/pdf', {
     name: emailSubject || docName,
-    documents: [{ name: docName, file: docBase64, fields: sigFields }],
-    schema: [{ name: 'First Party' }, { name: 'Second Party' }]
+    documents: [{ name: docName, file: docBase64 }]
   });
   if (tmplRes.status >= 400 || !tmplRes.data?.id) {
     throw new Error(`DocuSeal 模板创建失败 ${tmplRes.status}: ${JSON.stringify(tmplRes.data)}`);
@@ -2241,24 +2235,10 @@ function buildContractPdf(plainText) {
   for (let p = 0; p < pc; p++) {
     const pid = 4 + p * 2, sid = 5 + p * 2;
     wo(pid, `${pid} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${sid} 0 R >>\nendobj\n`);
-    const DS_ANCHORS = ['/sig1/', '/sig2/', '/date1/', '/date2/'];
     let stream = ''; let y = pageH - margin;
     for (const { text, size } of pages[p]) {
       if (!text) { y -= lineH; continue; }
-      const anchor = DS_ANCHORS.find(a => text.includes(a));
-      if (anchor) {
-        const idx = text.indexOf(anchor);
-        const before = text.slice(0, idx);
-        const after = text.slice(idx + anchor.length);
-        let s = `BT /F1 ${size} Tf ${margin} ${y} Td `;
-        if (before) s += `(${esc(before)}) Tj `;
-        s += `1 1 1 rg (${esc(anchor)}) Tj 0 0 0 rg`;
-        if (after) s += ` (${esc(after)}) Tj`;
-        s += ` ET\n`;
-        stream += s;
-      } else {
-        stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
-      }
+      stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
       y -= lineH;
     }
     const sb = Buffer.from(stream, 'latin1');
@@ -2301,11 +2281,11 @@ function generatePartnerContractText({ partnerName, companyName, partnerAddress,
     'This Agreement constitutes the entire understanding between the parties.', '', '',
     'SIGNATURES', '',
     `${cname} (Service Provider)`,
-    'Authorized Signature: /sig1/',
-    'Date: /date1/', '',
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}',
+    'Date: {{date1;role=First Party;type=date}}', '',
     `${partnerName} (Partner)`,
-    'Partner Signature: /sig2/',
-    'Date: /date2/',
+    'Partner Signature: {{sig2;role=Second Party;type=signature}}',
+    'Date: {{date2;role=Second Party;type=date}}',
   ].join('\n');
 }
 
@@ -2343,11 +2323,11 @@ function generateWorkerContractText({ workerName, companyName, employmentType, d
       'This Agreement constitutes the entire understanding between the parties.', '', '',
       'SIGNATURES', '',
       `${cname} (Company)`,
-      'Authorized Signature: /sig1/',
-      'Date: /date1/', '',
+      'Authorized Signature: {{sig1;role=First Party;type=signature}}',
+      'Date: {{date1;role=First Party;type=date}}', '',
       `${workerName} (Contractor)`,
-      'Contractor Signature: /sig2/',
-      'Date: /date2/',
+      'Contractor Signature: {{sig2;role=Second Party;type=signature}}',
+      'Date: {{date2;role=Second Party;type=date}}',
     ].join('\n');
   }
   // W-2 Employment Agreement
@@ -2379,11 +2359,11 @@ function generateWorkerContractText({ workerName, companyName, employmentType, d
     'This Agreement constitutes the entire understanding between the parties.', '', '',
     'SIGNATURES', '',
     `${cname} (Employer)`,
-    'Authorized Signature: /sig1/',
-    'Date: /date1/', '',
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}',
+    'Date: {{date1;role=First Party;type=date}}', '',
     `${workerName} (Employee)`,
-    'Employee Signature: /sig2/',
-    'Date: /date2/',
+    'Employee Signature: {{sig2;role=Second Party;type=signature}}',
+    'Date: {{date2;role=Second Party;type=date}}',
   ].join('\n');
 }
 
@@ -2454,9 +2434,9 @@ function generateAmendmentText({ partnerName, companyName, dateStr }) {
     'force and effect.', '', '',
     'IN WITNESS WHEREOF, the parties have executed this Amendment.', '',
     `${c} (Company)`,
-    'Authorized Signature: /sig1/', 'Date: /date1/', '',
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}', 'Date: {{date1;role=First Party;type=date}}', '',
     `${partnerName} (Partner)`,
-    'Partner Signature: /sig2/', 'Date: /date2/',
+    'Partner Signature: {{sig2;role=Second Party;type=signature}}', 'Date: {{date2;role=Second Party;type=date}}',
   ].join('\n');
 }
 
@@ -2484,9 +2464,9 @@ function generateMutualTerminationText({ partnerName, companyName, dateStr }) {
     'other except as set forth in this Agreement.', '', '',
     'IN WITNESS WHEREOF, the parties have executed this Mutual Termination Agreement.', '',
     `${c} (Company)`,
-    'Authorized Signature: /sig1/', 'Date: /date1/', '',
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}', 'Date: {{date1;role=First Party;type=date}}', '',
     `${partnerName} (Partner)`,
-    'Partner Signature: /sig2/', 'Date: /date2/',
+    'Partner Signature: {{sig2;role=Second Party;type=signature}}', 'Date: {{date2;role=Second Party;type=date}}',
   ].join('\n');
 }
 
@@ -2522,11 +2502,11 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
     'This Agreement is governed by the laws of the State of Illinois.', '', '',
     'SIGNATURES', '',
     `${cname} (Employer)`,
-    'Authorized Signature: /sig1/',
-    'Date: /date1/', '',
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}',
+    'Date: {{date1;role=First Party;type=date}}', '',
     `${workerName || 'Employee'} (Employee)`,
-    'Employee Signature: /sig2/',
-    'Date: /date2/',
+    'Employee Signature: {{sig2;role=Second Party;type=signature}}',
+    'Date: {{date2;role=Second Party;type=date}}',
   ].join('\n');
 }
 
@@ -4214,6 +4194,17 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
     company_name: companyName,
     docuseal_enabled: dsealEnabled()
   });
+});
+
+// Admin: preview contract as PDF
+app.post('/api/admin/worker-accounts/contract-preview-pdf', requireAdmin, (req, res) => {
+  try {
+    const content = req.body.content || '';
+    if (!content.trim()) return res.status(400).json({ error: '合同内容为空' });
+    const pdfBuf = buildContractPdf(content);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="contract-preview.pdf"' });
+    res.send(pdfBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Admin: send contract to worker via DocuSeal
