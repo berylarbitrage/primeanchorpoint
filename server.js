@@ -9946,18 +9946,27 @@ app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirn
 app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'public', 'data-deletion.html')));
 app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
 
-// POST /api/docuseal/webhook — DocuSeal event notifications (partner contracts)
+// POST /api/docuseal/webhook — DocuSeal event notifications (partner + worker contracts)
+// Supports both self-hosted events (submission.*, submitter.*) and cloud events (form.*)
 app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
   console.log(`[DocuSeal Webhook] Received request from ${req.ip} at ${new Date().toISOString()}`);
   try {
     const event = req.body;
     const eventType = event?.event_type;
     const data = event?.data;
-    console.log(`[DocuSeal Webhook] event_type=${eventType}`);
+    console.log(`[DocuSeal Webhook] event_type=${eventType}, data_keys=${data ? Object.keys(data).join(',') : 'null'}`);
     if (!data) { res.json({ received: true }); return; }
+
+    // Normalize event type: cloud uses form.*, self-hosted uses submission.*/submitter.*
+    const isCompleted = eventType === 'submission.completed' || eventType === 'form.completed';
+    const isSubmitterCompleted = eventType === 'submitter.completed' || eventType === 'form.started';
+    const isDeclined = eventType === 'submitter.declined' || eventType === 'form.declined';
+    const isCreated = eventType === 'submission.created';
+
+    // Extract submission ID — different structure for cloud vs self-hosted
     let submissionId;
-    if (eventType === 'submission.completed' || eventType === 'submission.created') {
-      submissionId = String(data.id || '');
+    if (isCompleted || isCreated) {
+      submissionId = String(data.submission_id || data.id || '');
     } else {
       submissionId = String(data.submission_id || '');
     }
@@ -9972,7 +9981,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
 
     // Handle partner file contract events
     if (pf) {
-      if (eventType === 'submission.completed') {
+      if (isCompleted) {
         try {
           const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
           db.prepare("UPDATE partner_files SET ds_status='completed', ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
@@ -9984,12 +9993,12 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
             console.log(`[DocuSeal] Saved signed partner contract for file id=${pf.id}`);
           }
         } catch (e) { console.error('[DocuSeal webhook] completion error:', e.message); }
-      } else if (eventType === 'submitter.completed') {
+      } else if (isSubmitterCompleted) {
         try {
           const { companySigned, partnerSigned } = await dsealGetStatus(submissionId);
           db.prepare("UPDATE partner_files SET ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
         } catch (e) { console.error('[DocuSeal webhook] submitter status error:', e.message); }
-      } else if (eventType === 'submitter.declined') {
+      } else if (isDeclined) {
         db.prepare("UPDATE partner_files SET ds_status='declined', ds_decline_reason=? WHERE id=?").run(data.decline_reason || '已拒签', pf.id);
       }
     }
@@ -9997,7 +10006,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
     // Handle worker onboarding contract events
     if (wo) {
       const wid = wo.worker_account_id;
-      if (eventType === 'submission.completed') {
+      if (isCompleted) {
         try {
           const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
           db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
@@ -10005,13 +10014,13 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
           syncOnboardedStatus(wid);
           console.log(`[DocuSeal] Worker onboarding contract completed for worker ${wid}`);
         } catch (e) { console.error('[DocuSeal webhook] worker contract completion error:', e.message); }
-      } else if (eventType === 'submitter.completed') {
+      } else if (isSubmitterCompleted) {
         try {
           const { companySigned, partnerSigned } = await dsealGetStatus(submissionId);
           db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
             .run(partnerSigned, companySigned, wid);
         } catch (e) { console.error('[DocuSeal webhook] worker submitter status error:', e.message); }
-      } else if (eventType === 'submitter.declined') {
+      } else if (isDeclined) {
         db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
           .run(`工人已拒签: ${data.decline_reason || ''}`, wid);
       }
