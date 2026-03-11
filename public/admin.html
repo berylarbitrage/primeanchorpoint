@@ -12790,11 +12790,18 @@ function renderOnboardingTasks(tasks) {
   const interviewTask = tasks.find(t => t.key === 'interview');
   const interviewDone = interviewTask && ['completed','waived'].includes(interviewTask.status);
   const interviewIdx = tasks.findIndex(t => t.key === 'interview');
+  // Get assigned tasks for this worker (set after W2/1099 selection)
+  const preInterviewKeys = ['phone_verify', 'email_verify', 'interview'];
+  let assignedTasks = [];
+  try { assignedTasks = JSON.parse((_onboardingWorkerData && _onboardingWorkerData.assigned_tasks) || '[]'); } catch {}
   document.getElementById('onboardingTaskList').innerHTML = tasks.filter((t, idx) => {
-    // Always show steps up to and including interview
-    if (idx <= interviewIdx) return true;
-    // After interview: only show if interview is done
-    return interviewDone;
+    // Always show pre-interview steps
+    if (preInterviewKeys.includes(t.key)) return true;
+    // After interview: hide if interview not done
+    if (!interviewDone) return false;
+    // If assigned_tasks is set, only show tasks in that list
+    if (assignedTasks.length) return assignedTasks.includes(t.key);
+    return true;
   }).map(t => {
     const s = t.status;
     const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
