@@ -2115,16 +2115,16 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   const docBase64 = 'data:application/pdf;base64,' + fs.readFileSync(docPath).toString('base64');
   const lastPage = dsealGetPdfPageCount(docPath);
   // Step 1: Create template from PDF with two signing roles and signature fields
+  const sigFields = [
+    { name: '公司签名', type: 'signature', role: 'First Party', required: true, areas: [{ x: 0.08, y: 0.82, w: 0.26, h: 0.07, page: lastPage }] },
+    { name: '公司日期', type: 'date', role: 'First Party', required: false, areas: [{ x: 0.08, y: 0.90, w: 0.26, h: 0.05, page: lastPage }] },
+    { name: '合作方签名', type: 'signature', role: 'Second Party', required: true, areas: [{ x: 0.52, y: 0.82, w: 0.26, h: 0.07, page: lastPage }] },
+    { name: '合作方日期', type: 'date', role: 'Second Party', required: false, areas: [{ x: 0.52, y: 0.90, w: 0.26, h: 0.05, page: lastPage }] }
+  ];
   const tmplRes = await dsealApiCall('POST', '/api/templates/pdf', {
     name: emailSubject || docName,
-    documents: [{ name: docName, file: docBase64 }],
-    schema: [{ name: 'First Party' }, { name: 'Second Party' }],
-    fields: [
-      { name: '公司签名', type: 'signature', role: 'First Party', required: true, areas: [{ x: 0.08, y: 0.82, w: 0.26, h: 0.07, page: lastPage }] },
-      { name: '公司日期', type: 'date', role: 'First Party', required: false, areas: [{ x: 0.08, y: 0.90, w: 0.26, h: 0.05, page: lastPage }] },
-      { name: '合作方签名', type: 'signature', role: 'Second Party', required: true, areas: [{ x: 0.52, y: 0.82, w: 0.26, h: 0.07, page: lastPage }] },
-      { name: '合作方日期', type: 'date', role: 'Second Party', required: false, areas: [{ x: 0.52, y: 0.90, w: 0.26, h: 0.05, page: lastPage }] }
-    ]
+    documents: [{ name: docName, file: docBase64, fields: sigFields }],
+    schema: [{ name: 'First Party' }, { name: 'Second Party' }]
   });
   if (tmplRes.status >= 400 || !tmplRes.data?.id) {
     throw new Error(`DocuSeal 模板创建失败 ${tmplRes.status}: ${JSON.stringify(tmplRes.data)}`);
