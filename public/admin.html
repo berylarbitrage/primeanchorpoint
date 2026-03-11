@@ -12848,6 +12848,73 @@ function renderOnboardingTasks(tasks) {
       </div>
     </div>`;
   }).join('');
+
+  // Insert employment type badge after interview if interview is done
+  if (interviewDone) {
+    const empType = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
+    const empLabel = empType === 'w2' ? 'W-2 员工' : empType === '1099' ? '1099 承包商' : '';
+    const empColor = empType === 'w2' ? 'color:#1d4ed8;background:#dbeafe;border:1px solid #bfdbfe' : empType === '1099' ? 'color:#9a3412;background:#fff7ed;border:1px solid #fed7aa' : '';
+    if (empLabel) {
+      // Find interview row and insert after it
+      const taskList = document.getElementById('onboardingTaskList');
+      const rows = taskList.children;
+      // Interview is the 3rd pre-interview step (index 2)
+      const interviewRowIdx = Array.from(rows).findIndex((_, i) => i === preInterviewKeys.indexOf('interview'));
+      const badge = document.createElement('div');
+      badge.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;border-bottom:1px solid var(--gray-100);background:#fafafa;border-radius:6px;margin:.2rem 0';
+      badge.innerHTML = `<span style="font-size:1rem">📋</span><span style="font-weight:700;font-size:.88rem;padding:2px 10px;border-radius:20px;${empColor}">${empLabel}</span><button class="btn btn-sm" style="margin-left:auto;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;font-size:.78rem" onclick="confirmChangeEmploymentType()">🔄 重新选择</button>`;
+      if (interviewRowIdx >= 0 && rows[interviewRowIdx]) {
+        rows[interviewRowIdx].after(badge);
+      } else {
+        taskList.prepend(badge);
+      }
+    }
+  }
+}
+
+function confirmChangeEmploymentType() {
+  const cur = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
+  const curLabel = cur === 'w2' ? 'W-2 员工' : cur === '1099' ? '1099 承包商' : '';
+  const newType = cur === 'w2' ? '1099' : 'w2';
+  const newLabel = newType === 'w2' ? 'W-2 员工' : '1099 承包商';
+  showConfirmModal(
+    '更改雇佣类型',
+    `当前为 <b>${curLabel}</b>，确认要更改为 <b>${newLabel}</b> 吗？<br><br>更改后将自动调整入职任务：不适用的任务会被豁免，新增适用的任务会被重置为待处理。`,
+    `✅ 确认更改为 ${newLabel}`,
+    'btn-green',
+    () => doChangeEmploymentType(newType),
+    'amber'
+  );
+}
+
+async function doChangeEmploymentType(newType) {
+  if (!_onboardingWorkerId) return;
+  const assignedTasks = newType === 'w2' ? W2_TASKS : C1099_TASKS;
+
+  // Save new employment type + assigned tasks
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ employment_type: newType, assigned_tasks: assignedTasks })
+  });
+
+  // Waive tasks not applicable to new type
+  const tasksToWaive = newType === 'w2' ? ['w9'] : ['i9', 'ead_upload', 'gusto'];
+  for (const key of tasksToWaive) {
+    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
+      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
+    });
+  }
+
+  // Reset previously waived tasks that now apply
+  const tasksToReset = newType === 'w2' ? ['i9', 'ead_upload', 'gusto'] : ['w9'];
+  for (const key of tasksToReset) {
+    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
+      method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
+    });
+  }
+
+  showToast(`✅ 已更改为 ${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}`, 'success');
+  await refreshOnboardingModal();
 }
 
 async function initOnboarding() {
