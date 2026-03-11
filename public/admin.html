@@ -12709,7 +12709,12 @@ async function loadWorkerAccounts() {
       <option value="opt" ${w.work_status==='opt'?'selected':''}>OPT/CPT</option>
       <option value="other" ${w.work_status==='other'?'selected':''}>其他</option>
     </select></td>
-    <td style="font-size:.78rem;white-space:nowrap">${w.employment_type === 'w2' ? '<span style="padding:2px 8px;border-radius:12px;background:#dbeafe;color:#1d4ed8;font-weight:600">W-2</span>' : w.employment_type === '1099' ? '<span style="padding:2px 8px;border-radius:12px;background:#fff7ed;color:#9a3412;font-weight:600">1099</span>' : '<span style="color:var(--gray-300)">—</span>'}</td>
+    <td style="font-size:.78rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:90px;font-weight:600;${w.employment_type==='w2'?'color:#1d4ed8;background:#eff6ff':w.employment_type==='1099'?'color:#9a3412;background:#fffbeb':w.employment_type==='cash'?'color:#065f46;background:#ecfdf5':''}" onchange="updateWorkerEmploymentType(${w.id},this.value,this)">
+      <option value="">— 未定 —</option>
+      <option value="w2" ${w.employment_type==='w2'?'selected':''}>W-2</option>
+      <option value="1099" ${w.employment_type==='1099'?'selected':''}>1099</option>
+      <option value="cash" ${w.employment_type==='cash'?'selected':''}>💵 现金</option>
+    </select></td>
     <td><div class="wa-compliance">
       ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
       ${complianceBadge2('SSN', c.ssn_card)}
@@ -13517,6 +13522,17 @@ async function updateWorkerStatus(id, work_status) {
   }
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ work_status }) });
   showToast('✅ 身份已更新');
+}
+
+async function updateWorkerEmploymentType(id, employment_type, sel) {
+  const label = {w2:'W-2 员工', '1099':'1099 承包商', cash:'现金'}[employment_type] || employment_type || '未定';
+  if (!await showConfirm(`确认将雇佣类型改为「${label}」？\n\n注意：更改后入职进度中的任务分配也会相应调整。`)) {
+    loadWorkerAccounts();
+    return;
+  }
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ employment_type }) });
+  showToast(`✅ 雇佣类型已更新为「${label}」`);
+  loadWorkerAccounts();
 }
 
 async function updateWorkerPayMethod(id, payment_method, sel) {
