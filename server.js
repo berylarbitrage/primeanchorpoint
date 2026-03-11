@@ -2077,7 +2077,10 @@ async function dsealApiCall(method, apiPath, body) {
   const baseUrl = (process.env.DOCUSEAL_URL || '').replace(/\/$/, '');
   const apiKey = process.env.DOCUSEAL_API_KEY || '';
   const bodyStr = body != null ? JSON.stringify(body) : null;
-  const fullUrl = new URL(baseUrl + apiPath);
+  // DocuSeal cloud (api.docuseal.com) uses paths without /api prefix
+  const isCloud = /api\.docuseal\.(com|eu)/.test(baseUrl);
+  const adjustedPath = isCloud ? apiPath.replace(/^\/api\//, '/') : apiPath;
+  const fullUrl = new URL(baseUrl + adjustedPath);
   const isHttps = fullUrl.protocol === 'https:';
   const transport = isHttps ? https : http;
   return new Promise((resolve, reject) => {
