@@ -4216,6 +4216,17 @@ app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, r
   });
 });
 
+// Admin: preview contract as PDF
+app.post('/api/admin/worker-accounts/contract-preview-pdf', requireAdmin, (req, res) => {
+  try {
+    const content = req.body.content || '';
+    if (!content.trim()) return res.status(400).json({ error: '合同内容为空' });
+    const pdfBuf = buildContractPdf(content);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="contract-preview.pdf"' });
+    res.send(pdfBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Admin: send contract to worker via DocuSeal
 app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (req, res) => {
   try {
