@@ -2481,6 +2481,27 @@ tr:hover td{background:var(--sky-light)}
     <span id="icInterviewLocation" style="color:#4b5563;margin-left:.5rem"></span>
   </div>
 
+  <!-- Section 0: Employment type selection -->
+  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #bfdbfe">雇佣类型 Employment Type *</div>
+    <div style="display:flex;gap:.75rem">
+      <label style="flex:1;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpTypeW2Label" onclick="selectEmploymentType('w2')">
+        <input type="radio" name="icEmploymentType" id="icEmpTypeW2" value="w2" style="accent-color:#1d4ed8;width:18px;height:18px">
+        <div>
+          <div style="font-weight:700;font-size:.9rem;color:var(--blue)">W-2 员工</div>
+          <div style="font-size:.75rem;color:var(--gray-400)">I-9 · E-Verify · 背调 · Gusto</div>
+        </div>
+      </label>
+      <label style="flex:1;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpType1099Label" onclick="selectEmploymentType('1099')">
+        <input type="radio" name="icEmploymentType" id="icEmpType1099" value="1099" style="accent-color:#1d4ed8;width:18px;height:18px">
+        <div>
+          <div style="font-weight:700;font-size:.9rem;color:var(--blue)">1099 承包商</div>
+          <div style="font-size:.75rem;color:var(--gray-400)">W-9 · 合同 · 背调(如需)</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
   <!-- Section 1: Post-interview worker info -->
   <div style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
     <div style="font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)">面试后记录</div>
@@ -12743,6 +12764,23 @@ function confirmOnboardingComplete(key, title) {
 // IC_POSITIONS now loaded dynamically from _WORKER_POSITIONS cache
 let _icSkills = [];
 
+function selectEmploymentType(type) {
+  const w2Label = document.getElementById('icEmpTypeW2Label');
+  const c1099Label = document.getElementById('icEmpType1099Label');
+  const w2Radio = document.getElementById('icEmpTypeW2');
+  const c1099Radio = document.getElementById('icEmpType1099');
+  w2Label.style.borderColor = type === 'w2' ? '#1d4ed8' : 'var(--gray-200)';
+  w2Label.style.background = type === 'w2' ? '#eff6ff' : '#fff';
+  c1099Label.style.borderColor = type === '1099' ? '#1d4ed8' : 'var(--gray-200)';
+  c1099Label.style.background = type === '1099' ? '#eff6ff' : '#fff';
+  w2Radio.checked = type === 'w2';
+  c1099Radio.checked = type === '1099';
+}
+
+// Onboarding tasks auto-assigned per employment type
+const W2_TASKS = ['contract', 'background_check', 'persona_verify', 'i9', 'ead_upload', 'gusto'];
+const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify'];
+
 async function openInterviewCompleteModal() {
   if (!_onboardingWorkerId) return;
   const w = _onboardingWorkerData;
@@ -12751,6 +12789,20 @@ async function openInterviewCompleteModal() {
   document.getElementById('icWorkStatus').value = (w && w.work_status) || '';
   document.getElementById('icPaymentMethod').value = (w && w.payment_method) || 'cash';
   document.getElementById('icHasSsn').checked = !!(w && w.has_ssn);
+
+  // Employment type
+  const empType = (w && w.employment_type) || '';
+  if (empType === 'w2' || empType === '1099') {
+    selectEmploymentType(empType);
+  } else {
+    // Reset both
+    document.getElementById('icEmpTypeW2').checked = false;
+    document.getElementById('icEmpType1099').checked = false;
+    document.getElementById('icEmpTypeW2Label').style.borderColor = 'var(--gray-200)';
+    document.getElementById('icEmpTypeW2Label').style.background = '#fff';
+    document.getElementById('icEmpType1099Label').style.borderColor = 'var(--gray-200)';
+    document.getElementById('icEmpType1099Label').style.background = '#fff';
+  }
 
   // Skills
   _icSkills = w && w.skills ? w.skills.map(s => ({...s})) : [];
@@ -12868,23 +12920,39 @@ async function addIcSkill() {
 
 async function saveInterviewComplete() {
   if (!_onboardingWorkerId) return;
+  const employmentType = document.getElementById('icEmpTypeW2').checked ? 'w2' : document.getElementById('icEmpType1099').checked ? '1099' : '';
+  if (!employmentType) return showToast('❌ 请选择雇佣类型（W-2 或 1099）', 'error');
   const workStatus = document.getElementById('icWorkStatus').value;
   const paymentMethod = document.getElementById('icPaymentMethod').value;
   const hasSsn = document.getElementById('icHasSsn').checked;
   const positionInterests = Array.from(document.querySelectorAll('#icPositionInterests input[type="checkbox"]:checked')).map(cb => cb.value);
   const skills = _icSkills.filter(s => s.skill_name.trim());
 
-  // Save worker profile fields
+  // Determine assigned tasks based on employment type
+  const assignedTasks = employmentType === 'w2' ? W2_TASKS : C1099_TASKS;
+
+  // Save worker profile fields + employment type + assigned tasks
   await api(`/admin/worker-accounts/${_onboardingWorkerId}`, {
     method: 'PUT',
-    body: JSON.stringify({ work_status: workStatus, payment_method: paymentMethod, has_ssn: hasSsn, position_interests: positionInterests })
+    body: JSON.stringify({ work_status: workStatus, payment_method: paymentMethod, has_ssn: hasSsn, position_interests: positionInterests, employment_type: employmentType, assigned_tasks: assignedTasks })
   });
   // Save skills
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/skills`, { method: 'PUT', body: JSON.stringify({ skills }) });
+
+  // Auto-waive tasks not applicable to this employment type
+  const tasksToWaive = employmentType === 'w2'
+    ? ['w9']         // W-2 doesn't need W-9
+    : ['i9', 'ead_upload', 'gusto'];  // 1099 doesn't need I-9, EAD, Gusto
+  for (const key of tasksToWaive) {
+    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
+      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
+    });
+  }
+
   // Mark interview as complete
   await updateOnboardingTask('interview', 'completed');
   closeModal('interviewCompleteModal');
-  showToast('✅ 面试已完成，信息已保存', 'success', 4000);
+  showToast(`✅ 面试已完成 · 已选择 ${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}流程`, 'success', 4000);
 }
 
 function confirmOnboardingWaive(key, title) {
