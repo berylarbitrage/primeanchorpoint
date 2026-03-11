@@ -1869,7 +1869,9 @@ tr:hover td{background:var(--sky-light)}
     <label>到场指引 <span style="color:var(--gray-400);font-weight:400;font-size:.8rem">（房间号、停车、注意事项等）</span></label>
     <textarea id="ivLocInstructions" rows="4" placeholder="例：请到2楼前台报到，告知来面试，停车场在大楼东侧，免费停3小时。"></textarea>
   </div>
+  <div id="ivLocAddrStatus" style="display:none;padding:.5rem .75rem;border-radius:8px;font-size:.85rem;margin-bottom:.5rem"></div>
   <div class="modal-actions">
+    <button class="btn" style="background:#4A90D9;color:#fff" onclick="verifyLocationAddress()">验证地址 Verify Address</button>
     <button class="btn btn-green" onclick="saveLocation()">保存</button>
     <button class="btn" onclick="closeModal('ivLocationModal');document.getElementById('ivLocationModal').style.zIndex=''">取消</button>
   </div>
@@ -2002,6 +2004,34 @@ tr:hover td{background:var(--sky-light)}
 <!-- Compliance Review 合规审核 -->
 <div id="tab-compliance" style="display:none">
   <div class="top"><h1>合规文件审核</h1></div>
+
+  <!-- Expiring Documents Alert Banner -->
+  <div id="expiringDocsAlert" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;cursor:pointer" onclick="toggleExpiringPanel()">
+    <div style="display:flex;align-items:center;gap:.5rem">
+      <span style="font-size:1.2rem">⚠️</span>
+      <span style="font-weight:700;color:#92400e" id="expiringDocsCount">0 份证件即将到期</span>
+      <span style="margin-left:auto;font-size:.8rem;color:#92400e">点击展开 ▼</span>
+    </div>
+  </div>
+
+  <!-- Expiring Documents Panel (collapsed by default) -->
+  <div id="expiringDocsPanel" style="display:none;margin-bottom:1rem">
+    <div class="card" style="border:2px solid #fde68a">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="color:#92400e;font-size:.95rem">📋 即将到期证件 Expiring Documents</h3>
+        <select id="expiringDaysFilter" onchange="loadExpiringDocs()" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+          <option value="30">30天内</option>
+          <option value="60">60天内</option>
+          <option value="90" selected>90天内</option>
+        </select>
+      </div>
+      <table><thead><tr>
+        <th>工人</th><th>证件类型</th><th>持有人</th><th>证件号</th><th>到期日</th><th>剩余天数</th><th>操作</th>
+      </tr></thead>
+      <tbody id="expiringDocsTable"></tbody></table>
+    </div>
+  </div>
+
   <div class="search-bar" style="margin-bottom:1rem">
     <select id="complianceFilterType" onchange="loadComplianceDocs()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
       <option value="">全部类型</option>
@@ -2010,6 +2040,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="w9">W-9</option>
       <option value="ssn_card">SSN Card</option>
       <option value="work_permit">工作许可</option>
+      <option value="ead_upload">EAD 工卡</option>
     </select>
     <select id="complianceFilterStatus" onchange="loadComplianceDocs()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
       <option value="">全部状态</option>
@@ -2020,7 +2051,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="card">
     <table><thead><tr>
-      <th>工人</th><th>文件类型</th><th>状态</th><th>提交时间</th><th>审核备注</th><th>操作</th>
+      <th>工人</th><th>文件类型</th><th>状态</th><th>到期日</th><th>提交时间</th><th>审核备注</th><th>操作</th>
     </tr></thead>
     <tbody id="complianceDocsTable"></tbody></table>
   </div>
@@ -2210,9 +2241,32 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Compliance Review Modal -->
-<div class="modal-bg" id="complianceReviewModal"><div class="modal" style="max-width:600px">
+<div class="modal-bg" id="complianceReviewModal"><div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto">
   <h2>审核合规文件</h2>
   <div id="complianceReviewContent"></div>
+
+  <!-- OCR Section -->
+  <div id="complianceOcrSection" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <span style="font-weight:700;color:#0369a1;font-size:.85rem">🔍 证件信息提取 OCR</span>
+      <button class="btn btn-sm" style="background:#0369a1;color:#fff" onclick="runComplianceOcr()" id="ocrRunBtn">扫描证件 Scan Document</button>
+    </div>
+    <div id="ocrStatusMsg" style="display:none;font-size:.82rem;padding:.4rem;border-radius:4px;margin-bottom:.5rem"></div>
+    <div id="ocrResultBox" style="display:none;font-size:.82rem;max-height:120px;overflow-y:auto;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem;margin-bottom:.5rem;white-space:pre-wrap;color:var(--gray-500)"></div>
+  </div>
+
+  <!-- Document Fields: Name, Number, Expiration -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+    <div class="field" style="margin:0"><label style="font-size:.8rem;font-weight:600">持有人姓名 Holder Name</label><input id="complianceHolderName" placeholder="证件上的姓名" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+    <div class="field" style="margin:0"><label style="font-size:.8rem;font-weight:600">证件号码 Document #</label><input id="complianceDocNumber" placeholder="证件编号" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+    <div class="field" style="margin:0"><label style="font-size:.8rem;font-weight:600">到期日期 Expiration Date</label><input type="date" id="complianceExpiresAt" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+    <div class="field" style="margin:0;display:flex;align-items:flex-end">
+      <button class="btn btn-sm" style="background:#4A90D9;color:#fff;width:100%;padding:.5rem" onclick="saveComplianceFields()">💾 保存证件信息</button>
+    </div>
+  </div>
+
   <div class="field"><label>审核备注</label><textarea id="complianceReviewNotes" rows="3" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></textarea></div>
   <div class="modal-actions">
     <button class="btn btn-green" onclick="reviewComplianceDoc('approved')">通过 Approve</button>
@@ -2481,6 +2535,27 @@ tr:hover td{background:var(--sky-light)}
   <div id="icInterviewTimeBox" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.6rem .9rem;margin-bottom:1rem;font-size:.86rem;color:#0369a1">
     <span style="font-weight:700">📅 已确认面试时间：</span><span id="icInterviewTime"></span>
     <span id="icInterviewLocation" style="color:#4b5563;margin-left:.5rem"></span>
+  </div>
+
+  <!-- Section 0: Employment type selection -->
+  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #bfdbfe">雇佣类型 Employment Type *</div>
+    <div style="display:flex;gap:.75rem">
+      <label style="flex:1;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpTypeW2Label" onclick="selectEmploymentType('w2')">
+        <input type="radio" name="icEmploymentType" id="icEmpTypeW2" value="w2" style="accent-color:#1d4ed8;width:18px;height:18px">
+        <div>
+          <div style="font-weight:700;font-size:.9rem;color:var(--blue)">W-2 员工</div>
+          <div style="font-size:.75rem;color:var(--gray-400)">I-9 · E-Verify · 背调 · Gusto</div>
+        </div>
+      </label>
+      <label style="flex:1;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpType1099Label" onclick="selectEmploymentType('1099')">
+        <input type="radio" name="icEmploymentType" id="icEmpType1099" value="1099" style="accent-color:#1d4ed8;width:18px;height:18px">
+        <div>
+          <div style="font-weight:700;font-size:.9rem;color:var(--blue)">1099 承包商</div>
+          <div style="font-size:.75rem;color:var(--gray-400)">W-9 · 合同 · 背调(如需)</div>
+        </div>
+      </label>
+    </div>
   </div>
 
   <!-- Section 1: Post-interview worker info -->
@@ -12747,7 +12822,7 @@ function renderOnboardingTasks(tasks) {
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${t.key==='persona_verify'
-            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : t.key==='interview'
@@ -12786,6 +12861,23 @@ function confirmOnboardingComplete(key, title) {
 // IC_POSITIONS now loaded dynamically from _WORKER_POSITIONS cache
 let _icSkills = [];
 
+function selectEmploymentType(type) {
+  const w2Label = document.getElementById('icEmpTypeW2Label');
+  const c1099Label = document.getElementById('icEmpType1099Label');
+  const w2Radio = document.getElementById('icEmpTypeW2');
+  const c1099Radio = document.getElementById('icEmpType1099');
+  w2Label.style.borderColor = type === 'w2' ? '#1d4ed8' : 'var(--gray-200)';
+  w2Label.style.background = type === 'w2' ? '#eff6ff' : '#fff';
+  c1099Label.style.borderColor = type === '1099' ? '#1d4ed8' : 'var(--gray-200)';
+  c1099Label.style.background = type === '1099' ? '#eff6ff' : '#fff';
+  w2Radio.checked = type === 'w2';
+  c1099Radio.checked = type === '1099';
+}
+
+// Onboarding tasks auto-assigned per employment type
+const W2_TASKS = ['contract', 'background_check', 'persona_verify', 'i9', 'ead_upload', 'gusto'];
+const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify'];
+
 async function openInterviewCompleteModal() {
   if (!_onboardingWorkerId) return;
   const w = _onboardingWorkerData;
@@ -12794,6 +12886,20 @@ async function openInterviewCompleteModal() {
   document.getElementById('icWorkStatus').value = (w && w.work_status) || '';
   document.getElementById('icPaymentMethod').value = (w && w.payment_method) || 'cash';
   document.getElementById('icHasSsn').checked = !!(w && w.has_ssn);
+
+  // Employment type
+  const empType = (w && w.employment_type) || '';
+  if (empType === 'w2' || empType === '1099') {
+    selectEmploymentType(empType);
+  } else {
+    // Reset both
+    document.getElementById('icEmpTypeW2').checked = false;
+    document.getElementById('icEmpType1099').checked = false;
+    document.getElementById('icEmpTypeW2Label').style.borderColor = 'var(--gray-200)';
+    document.getElementById('icEmpTypeW2Label').style.background = '#fff';
+    document.getElementById('icEmpType1099Label').style.borderColor = 'var(--gray-200)';
+    document.getElementById('icEmpType1099Label').style.background = '#fff';
+  }
 
   // Skills
   _icSkills = w && w.skills ? w.skills.map(s => ({...s})) : [];
@@ -12911,23 +13017,39 @@ async function addIcSkill() {
 
 async function saveInterviewComplete() {
   if (!_onboardingWorkerId) return;
+  const employmentType = document.getElementById('icEmpTypeW2').checked ? 'w2' : document.getElementById('icEmpType1099').checked ? '1099' : '';
+  if (!employmentType) return showToast('❌ 请选择雇佣类型（W-2 或 1099）', 'error');
   const workStatus = document.getElementById('icWorkStatus').value;
   const paymentMethod = document.getElementById('icPaymentMethod').value;
   const hasSsn = document.getElementById('icHasSsn').checked;
   const positionInterests = Array.from(document.querySelectorAll('#icPositionInterests input[type="checkbox"]:checked')).map(cb => cb.value);
   const skills = _icSkills.filter(s => s.skill_name.trim());
 
-  // Save worker profile fields
+  // Determine assigned tasks based on employment type
+  const assignedTasks = employmentType === 'w2' ? W2_TASKS : C1099_TASKS;
+
+  // Save worker profile fields + employment type + assigned tasks
   await api(`/admin/worker-accounts/${_onboardingWorkerId}`, {
     method: 'PUT',
-    body: JSON.stringify({ work_status: workStatus, payment_method: paymentMethod, has_ssn: hasSsn, position_interests: positionInterests })
+    body: JSON.stringify({ work_status: workStatus, payment_method: paymentMethod, has_ssn: hasSsn, position_interests: positionInterests, employment_type: employmentType, assigned_tasks: assignedTasks })
   });
   // Save skills
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/skills`, { method: 'PUT', body: JSON.stringify({ skills }) });
+
+  // Auto-waive tasks not applicable to this employment type
+  const tasksToWaive = employmentType === 'w2'
+    ? ['w9']         // W-2 doesn't need W-9
+    : ['i9', 'ead_upload', 'gusto'];  // 1099 doesn't need I-9, EAD, Gusto
+  for (const key of tasksToWaive) {
+    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
+      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
+    });
+  }
+
   // Mark interview as complete
   await updateOnboardingTask('interview', 'completed');
   closeModal('interviewCompleteModal');
-  showToast('✅ 面试已完成，信息已保存', 'success', 4000);
+  showToast(`✅ 面试已完成 · 已选择 ${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}流程`, 'success', 4000);
 }
 
 function confirmOnboardingWaive(key, title) {
@@ -12937,7 +13059,7 @@ function confirmOnboardingReset(key, title) {
   showConfirmModal(`重置任务：${title}`, '确认将此任务重置为"待处理"状态？', '↩️ 确认重置', 'btn-outline', () => updateOnboardingTask(key, 'pending'), 'amber');
 }
 function confirmSendPersona() {
-  showConfirmModal('发送 Persona 身份验证', '确认向该工人发送 Persona 身份验证（驾照 + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
+  showConfirmModal('发送 Stripe Identity 身份验证', '确认向该工人发送 Stripe Identity 身份验证（驾照/ID + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
 }
 function confirmSendCheckr() {
   showConfirmModal('发送 Checkr 背调邀请', '确认向该工人发送 Checkr 背景调查邀请？邀请链接将通过短信和邮件发送。', '🔍 确认发送', 'btn-blue', sendCheckrFromOnboarding, 'blue');
@@ -12965,7 +13087,7 @@ function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
 
 async function sendPersonaFromOnboarding() {
   if (!_onboardingWorkerId) return;
-  if (!await showConfirm('确定向该工人发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
+  if (!await showConfirm('确定向该工人发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-persona`, { method:'POST', body:JSON.stringify({}) });
   if (r && r.success) {
     const parts = [];
@@ -13861,7 +13983,7 @@ function openLocationModal(id) {
   document.getElementById('ivLocContactPhone').value  = loc ? (loc.contact_phone||'') : '';
   document.getElementById('ivLocInstructions').value  = loc ? (loc.instructions||'') : '';
   const ivAddrSt = document.getElementById('ivLocAddrStatus');
-  if (ivAddrSt) { ivAddrSt.textContent = ''; ivAddrSt.style.color = ''; }
+  if (ivAddrSt) { ivAddrSt.textContent = ''; ivAddrSt.style.color = ''; ivAddrSt.style.display = 'none'; }
   document.getElementById('ivLocationModal').classList.add('show');
 }
 
@@ -13909,6 +14031,44 @@ async function saveLocation() {
     }
   } else {
     showToast('❌ ' + (r?.error || '保存失败'), 'error');
+  }
+}
+
+async function verifyLocationAddress() {
+  const street  = document.getElementById('ivLocAddress1').value.trim();
+  const street2 = document.getElementById('ivLocAddress2').value.trim();
+  const city    = document.getElementById('ivLocCity').value.trim();
+  const state   = document.getElementById('ivLocState').value;
+  const zip     = document.getElementById('ivLocZip').value.trim();
+  if (!street && !city) return showToast('❌ 请先填写地址', 'error');
+  const statusEl = document.getElementById('ivLocAddrStatus');
+  statusEl.style.display = 'block';
+  statusEl.style.background = '#FFF8E1';
+  statusEl.style.color = '#8B6914';
+  statusEl.textContent = '⏳ 正在验证地址… Verifying address…';
+  const result = await validateAddress({ street, street2, city, state, zip });
+  if (!result.proceed) {
+    statusEl.style.display = 'none';
+    return;
+  }
+  if (result.standardized) {
+    const s = result.standardized;
+    document.getElementById('ivLocAddress1').value = s.street;
+    document.getElementById('ivLocAddress2').value = s.street2 || '';
+    document.getElementById('ivLocCity').value     = s.city;
+    fillStateSelect(document.getElementById('ivLocState'), s.state);
+    document.getElementById('ivLocZip').value      = s.zip;
+    statusEl.style.background = '#E8F5E9';
+    statusEl.style.color = '#2E7D32';
+    statusEl.textContent = '✅ 地址已验证并更新 / Address verified and updated';
+  } else if (result.verified) {
+    statusEl.style.background = '#E8F5E9';
+    statusEl.style.color = '#2E7D32';
+    statusEl.textContent = '✅ 地址已验证 / Address verified';
+  } else {
+    statusEl.style.background = '#FFF3E0';
+    statusEl.style.color = '#E65100';
+    statusEl.textContent = '⚠ 地址未通过验证 / Address not verified';
   }
 }
 
@@ -14379,7 +14539,7 @@ function renderIvHistory(rows) {
 }
 
 async function sendIdentityVerify(interviewId, workerName) {
-  if (!await showConfirm(`确定向 ${workerName} 发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信和邮件发送给工人。`)) return;
+  if (!await showConfirm(`确定向 ${workerName} 发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信和邮件发送给工人。`)) return;
   const r = await api(`/admin/interviews/${interviewId}/send-identity`, { method: 'POST', body: JSON.stringify({}) });
   if (r && r.success) {
     showToast(`✅ 身份验证已发送${r.smsSent ? '（短信已发）' : '（短信未发，请检查 Twilio 配置）'}`, 'success', 5000);
@@ -14407,11 +14567,20 @@ async function ivPassAndSend(id) {
 }
 
 // ─── Compliance Review ───
-const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'身份证件(Persona)', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', other:'其他' };
-const COMP_STATUS_LABELS = { pending:'待审核', approved:'已通过', rejected:'已拒绝' };
-const COMP_STATUS_COLORS = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)' };
+const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'身份证件(Stripe Identity)', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', ead_upload:'EAD 工卡', other:'其他' };
+const COMP_STATUS_LABELS = { pending:'待审核', approved:'已通过', rejected:'已拒绝', submitted:'已提交' };
+const COMP_STATUS_COLORS = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)', submitted:'color:#1d4ed8' };
 let _complianceDocs = [];
 let _reviewDocId = null;
+
+function expiryBadge(expiresAt) {
+  if (!expiresAt) return '<span style="font-size:.75rem;color:var(--gray-400)">—</span>';
+  const d = new Date(expiresAt);
+  const days = Math.ceil((d - new Date()) / 86400000);
+  if (days < 0) return `<span style="font-size:.75rem;background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:4px;font-weight:600">已过期 ${expiresAt.slice(0,10)}</span>`;
+  if (days <= 30) return `<span style="font-size:.75rem;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-weight:600">${expiresAt.slice(0,10)} (${days}天)</span>`;
+  return `<span style="font-size:.75rem;color:var(--gray-500)">${expiresAt.slice(0,10)}</span>`;
+}
 
 async function loadComplianceDocs() {
   const docs = await api('/admin/compliance-docs');
@@ -14427,19 +14596,60 @@ async function loadComplianceDocs() {
     let personaBadge = '';
     try {
       const fd = JSON.parse(d.form_data || '{}');
-      if (fd.persona_inquiry_id) personaBadge = ' <span style="font-size:.68rem;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px">Persona</span>';
+      if (fd.stripe_session_id || fd.persona_inquiry_id) personaBadge = ' <span style="font-size:.68rem;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px">Stripe Identity</span>';
     } catch {}
     return `<tr>
     <td><strong>${esc(d.worker_name||'')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(d.worker_email||d.worker_phone||'')}</span></td>
     <td>${COMP_TYPE_LABELS[d.doc_type]||d.doc_type}${personaBadge}</td>
     <td><span style="font-weight:600;${COMP_STATUS_COLORS[d.status]||''}">${COMP_STATUS_LABELS[d.status]||d.status}</span></td>
+    <td>${expiryBadge(d.expires_at)}</td>
     <td>${(d.created_at||'').slice(0,10)}</td>
     <td style="font-size:.8rem">${esc(d.reviewer_notes||'—')}</td>
     <td>
       <button class="btn btn-sm" onclick="openComplianceReview(${d.id})">查看/审核</button>
       ${d.file_path ? `<a href="/api/admin/compliance-docs/${d.id}/download" class="btn btn-sm" style="margin-left:.3rem">下载</a>` : ''}
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:2rem">暂无记录</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:2rem">暂无记录</td></tr>';
+  // Also load expiring docs
+  loadExpiringDocs();
+}
+
+// ─── Expiring Documents ───
+async function loadExpiringDocs() {
+  const days = document.getElementById('expiringDaysFilter')?.value || 90;
+  const docs = await api(`/admin/compliance-docs/expiring?days=${days}`);
+  if (!docs) return;
+  const alert = document.getElementById('expiringDocsAlert');
+  if (docs.length) {
+    alert.style.display = '';
+    const expired = docs.filter(d => new Date(d.expires_at) < new Date()).length;
+    const expiring = docs.length - expired;
+    const parts = [];
+    if (expired) parts.push(`${expired} 份已过期`);
+    if (expiring) parts.push(`${expiring} 份即将到期`);
+    document.getElementById('expiringDocsCount').textContent = `⚠️ ${parts.join('，')}`;
+  } else {
+    alert.style.display = 'none';
+  }
+  document.getElementById('expiringDocsTable').innerHTML = docs.length ? docs.map(d => {
+    const daysLeft = Math.ceil((new Date(d.expires_at) - new Date()) / 86400000);
+    const urgencyStyle = daysLeft <= 0 ? 'background:#fef2f2;color:#dc2626;font-weight:700' : daysLeft <= 7 ? 'background:#fef3c7;color:#92400e;font-weight:700' : daysLeft <= 30 ? 'color:#92400e;font-weight:600' : 'color:var(--gray-500)';
+    const urgencyText = daysLeft <= 0 ? `已过期 ${Math.abs(daysLeft)}天` : `${daysLeft} 天`;
+    return `<tr>
+      <td><strong>${esc(d.worker_name||'')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(d.worker_email||d.worker_phone||'')}</span></td>
+      <td>${COMP_TYPE_LABELS[d.doc_type]||d.doc_type}</td>
+      <td style="font-size:.85rem">${esc(d.holder_name||'—')}</td>
+      <td style="font-size:.85rem">${esc(d.doc_number||'—')}</td>
+      <td>${(d.expires_at||'').slice(0,10)}</td>
+      <td><span style="padding:2px 8px;border-radius:4px;font-size:.8rem;${urgencyStyle}">${urgencyText}</span></td>
+      <td><button class="btn btn-sm" onclick="openComplianceReview(${d.id})">查看</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:1rem">暂无到期证件</td></tr>';
+}
+
+function toggleExpiringPanel() {
+  const panel = document.getElementById('expiringDocsPanel');
+  panel.style.display = panel.style.display === 'none' ? '' : 'none';
 }
 
 function openComplianceReview(id) {
@@ -14449,12 +14659,11 @@ function openComplianceReview(id) {
   let formHtml = '';
   try {
     const fd = JSON.parse(doc.form_data || '{}');
-    // Persona-specific display
-    if (fd.persona_inquiry_id) {
+    if (fd.stripe_session_id || fd.persona_inquiry_id) {
       const personaFields = [
-        ['Persona Inquiry ID', fd.persona_inquiry_id],
-        ['Persona 状态', fd.persona_status || '—'],
-        ['事件', fd.persona_event || '—'],
+        ['Stripe Session ID', fd.stripe_session_id || fd.persona_inquiry_id],
+        ['验证状态', fd.stripe_status || fd.persona_status || '—'],
+        ['事件', fd.stripe_event || fd.persona_event || '—'],
         ...(fd.dl_first_name ? [['名 First Name', fd.dl_first_name]] : []),
         ...(fd.dl_last_name ? [['姓 Last Name', fd.dl_last_name]] : []),
         ...(fd.dl_dob ? [['出生日期 DOB', fd.dl_dob]] : []),
@@ -14464,7 +14673,7 @@ function openComplianceReview(id) {
         ...(fd.id_class ? [['证件类型', fd.id_class]] : []),
         ...(fd.decline_reasons ? [['拒绝原因', JSON.stringify(fd.decline_reasons)]] : [])
       ];
-      formHtml = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem;margin-bottom:1rem"><div style="font-weight:700;color:#1d4ed8;font-size:.85rem;margin-bottom:.5rem">🔐 Persona 自动验证数据</div>' +
+      formHtml = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem;margin-bottom:1rem"><div style="font-weight:700;color:#1d4ed8;font-size:.85rem;margin-bottom:.5rem">🔐 Stripe Identity 自动验证数据</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.82rem">' +
         personaFields.map(([k,v]) => `<div><span style="color:var(--gray-400)">${k}</span><br><strong>${esc(String(v))}</strong></div>`).join('') +
         '</div></div>';
@@ -14487,13 +14696,100 @@ function openComplianceReview(id) {
     </div>
     ${formHtml ? '<h3 style="font-size:.9rem;margin-bottom:.5rem">表单数据:</h3>' + formHtml : ''}
   `;
+  // Populate document fields
+  document.getElementById('complianceHolderName').value = doc.holder_name || '';
+  document.getElementById('complianceDocNumber').value = doc.doc_number || '';
+  document.getElementById('complianceExpiresAt').value = (doc.expires_at || '').slice(0, 10);
   document.getElementById('complianceReviewNotes').value = doc.reviewer_notes || '';
+  // Show OCR section only if there's a file to scan
+  document.getElementById('complianceOcrSection').style.display = doc.file_path ? '' : 'none';
+  document.getElementById('ocrStatusMsg').style.display = 'none';
+  document.getElementById('ocrResultBox').style.display = doc.ocr_raw ? '' : 'none';
+  document.getElementById('ocrResultBox').textContent = doc.ocr_raw || '';
   document.getElementById('complianceReviewModal').classList.add('show');
+}
+
+async function runComplianceOcr() {
+  if (!_reviewDocId) return;
+  const btn = document.getElementById('ocrRunBtn');
+  const statusMsg = document.getElementById('ocrStatusMsg');
+  btn.disabled = true;
+  btn.textContent = '⏳ 扫描中…';
+  statusMsg.style.display = 'block';
+  statusMsg.style.background = '#FFF8E1';
+  statusMsg.style.color = '#8B6914';
+  statusMsg.textContent = '⏳ 正在通过 Google Cloud Vision 识别证件文字…';
+  const r = await api(`/admin/compliance-docs/${_reviewDocId}/ocr`, { method: 'POST' });
+  btn.disabled = false;
+  btn.textContent = '扫描证件 Scan Document';
+  if (r && r.success) {
+    // Show raw text
+    if (r.text) {
+      document.getElementById('ocrResultBox').style.display = '';
+      document.getElementById('ocrResultBox').textContent = r.text;
+    }
+    // Auto-fill parsed fields
+    if (r.parsed) {
+      if (r.parsed.holder_name && !document.getElementById('complianceHolderName').value) {
+        document.getElementById('complianceHolderName').value = r.parsed.holder_name;
+      }
+      if (r.parsed.doc_number && !document.getElementById('complianceDocNumber').value) {
+        document.getElementById('complianceDocNumber').value = r.parsed.doc_number;
+      }
+      if (r.parsed.expires_at && !document.getElementById('complianceExpiresAt').value) {
+        document.getElementById('complianceExpiresAt').value = r.parsed.expires_at;
+      }
+    }
+    const parsed = r.parsed || {};
+    const found = [parsed.holder_name && '姓名', parsed.doc_number && '证件号', parsed.expires_at && '到期日'].filter(Boolean);
+    statusMsg.style.background = '#E8F5E9';
+    statusMsg.style.color = '#2E7D32';
+    statusMsg.textContent = found.length
+      ? `✅ 识别成功！自动提取：${found.join('、')}`
+      : '✅ 文字已识别，但未自动匹配到结构化字段，请手动确认';
+  } else {
+    statusMsg.style.background = '#FFF3E0';
+    statusMsg.style.color = '#E65100';
+    statusMsg.textContent = '❌ ' + (r?.error || 'OCR 识别失败');
+  }
+}
+
+async function saveComplianceFields() {
+  if (!_reviewDocId) return;
+  const r = await api(`/admin/compliance-docs/${_reviewDocId}/fields`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      holder_name: document.getElementById('complianceHolderName').value.trim(),
+      doc_number: document.getElementById('complianceDocNumber').value.trim(),
+      expires_at: document.getElementById('complianceExpiresAt').value || null
+    })
+  });
+  if (r && r.success) {
+    showToast('✅ 证件信息已保存');
+    // Update local cache
+    const doc = _complianceDocs.find(d => d.id === _reviewDocId);
+    if (doc) {
+      doc.holder_name = document.getElementById('complianceHolderName').value.trim();
+      doc.doc_number = document.getElementById('complianceDocNumber').value.trim();
+      doc.expires_at = document.getElementById('complianceExpiresAt').value || null;
+    }
+  } else {
+    showToast('❌ 保存失败', 'error');
+  }
 }
 
 async function reviewComplianceDoc(status) {
   if (!_reviewDocId) return;
   const notes = document.getElementById('complianceReviewNotes').value;
+  // Also save fields when approving/rejecting
+  await api(`/admin/compliance-docs/${_reviewDocId}/fields`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      holder_name: document.getElementById('complianceHolderName').value.trim(),
+      doc_number: document.getElementById('complianceDocNumber').value.trim(),
+      expires_at: document.getElementById('complianceExpiresAt').value || null
+    })
+  });
   await api(`/admin/compliance-docs/${_reviewDocId}/review`, {
     method:'PUT', body: JSON.stringify({ status, reviewer_notes: notes })
   });
