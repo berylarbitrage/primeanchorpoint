@@ -687,6 +687,9 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN extra_emails TEXT DEFAULT '[]'`)
 try { db.exec(`ALTER TABLE employees ADD COLUMN street2 TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN middle_name TEXT DEFAULT ''`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
@@ -1062,6 +1065,54 @@ try { db.exec("ALTER TABLE interview_slots ADD COLUMN reserved_for_worker_accoun
 // Migrate interviews: add interview_type
 try { db.exec("ALTER TABLE interviews ADD COLUMN interview_type TEXT DEFAULT 'onboarding'"); } catch {}
 
+// ─── Interview History (archives every interview record) ───
+db.exec(`CREATE TABLE IF NOT EXISTS interview_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  original_interview_id INTEGER,
+  worker_account_id INTEGER NOT NULL,
+  worker_name TEXT DEFAULT '',
+  worker_phone TEXT DEFAULT '',
+  worker_email TEXT DEFAULT '',
+  slot_id INTEGER,
+  slot_datetime TEXT DEFAULT '',
+  duration_min INTEGER DEFAULT 30,
+  location TEXT DEFAULT '',
+  interview_type TEXT DEFAULT 'onboarding',
+  status TEXT DEFAULT 'scheduled',
+  admin_notes TEXT DEFAULT '',
+  position_interests TEXT DEFAULT '',
+  expected_pay TEXT DEFAULT '',
+  skills TEXT DEFAULT '',
+  archived_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  original_created_at DATETIME DEFAULT '',
+  original_updated_at DATETIME DEFAULT ''
+)`);
+
+function archiveInterviews(workerAccountId) {
+  const rows = db.prepare(`
+    SELECT i.*, s.slot_datetime, s.duration_min, s.location,
+           w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+           w.position_interests
+    FROM interviews i
+    LEFT JOIN interview_slots s ON i.slot_id = s.id
+    LEFT JOIN worker_accounts w ON i.worker_account_id = w.id
+    WHERE i.worker_account_id = ?
+  `).all(workerAccountId);
+  for (const r of rows) {
+    db.prepare(`INSERT INTO interview_history
+      (original_interview_id, worker_account_id, worker_name, worker_phone, worker_email,
+       slot_id, slot_datetime, duration_min, location, interview_type, status,
+       admin_notes, position_interests, expected_pay, skills,
+       original_created_at, original_updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(r.id, r.worker_account_id, r.worker_name||'', r.worker_phone||'', r.worker_email||'',
+           r.slot_id, r.slot_datetime||'', r.duration_min||30, r.location||'',
+           r.interview_type||'onboarding', r.status||'scheduled',
+           r.admin_notes||'', r.position_interests||'', r.expected_pay||'', r.skills||'',
+           r.created_at||'', r.updated_at||'');
+  }
+}
+
 // ─── Worker Positions (managed in DB) ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_positions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1243,6 +1294,7 @@ if (!db.prepare('SELECT id FROM display_suffix_options LIMIT 1').get()) {
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN assigned_slot_ids TEXT DEFAULT ''"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -1271,6 +1323,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_skills (
   worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id),
   skill_name TEXT NOT NULL,
   rating INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// ─── Invoice Profiles (presets for sender/bank/contact) ───
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_profiles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  section TEXT NOT NULL,
+  data TEXT DEFAULT '{}',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
@@ -1322,6 +1383,20 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_payments (
   created_by TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (employee_id) REFERENCES employees(id)
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_number TEXT NOT NULL,
+  invoice_date TEXT DEFAULT '',
+  company_name TEXT DEFAULT '',
+  bill_to_addr TEXT DEFAULT '',
+  period_start TEXT DEFAULT '',
+  period_end TEXT DEFAULT '',
+  subtotal REAL DEFAULT 0,
+  items TEXT DEFAULT '[]',
+  profile TEXT DEFAULT '{}',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
 // ─── Backup System ───
@@ -3410,6 +3485,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN has_ssn INTEGER DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -3492,6 +3568,17 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   logChange('payment_method', w.payment_method, newPaymentMethod);
   logChange('has_ssn', w.has_ssn||0, newHasSsn);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
+  // When reactivating a deactivated account (active 0→1), clear old interview
+  // and onboarding records so the worker starts fresh
+  if (!w.active && newActive) {
+    const wid = parseInt(req.params.id);
+    archiveInterviews(wid);
+    db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(wid);
+    db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(wid);
+    db.prepare(`UPDATE worker_accounts SET onboarded=0, dispatch_ready=0, identity_status='', bgcheck_status='' WHERE id=?`).run(wid);
+    // Clear reserved interview slots for this worker (don't delete the slot rows)
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(wid);
+  }
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
     payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
@@ -3672,12 +3759,17 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmi
   db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
     .run(visible ? 1 : 0, workerId, req.params.key);
 
-  // When assigning interview slots to a worker, reserve those specific slots for them
+  // When assigning interview slots to a worker, store the assigned slot IDs
   if (req.params.key === 'interview' && Array.isArray(slot_ids) && slot_ids.length) {
-    // Clear previous unbooked reserved slots for this worker
-    db.prepare(`DELETE FROM interview_slots WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(workerId);
-    // Mark selected slots as reserved for this worker
-    const stmt = db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=? WHERE id=? AND booked_count=0`);
+    // Save assigned slot IDs directly on the onboarding record (primary source of truth)
+    const slotIdsJson = JSON.stringify(slot_ids.map(Number));
+    db.prepare(`UPDATE worker_onboarding SET assigned_slot_ids=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='interview'`)
+      .run(slotIdsJson, workerId);
+    console.log(`[INTERVIEW-RESERVE] workerId=${workerId}, assigned_slot_ids=${slotIdsJson}`);
+
+    // Also mark slots as reserved (secondary, for reference)
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=?`).run(workerId);
+    const stmt = db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=? WHERE id=?`);
     for (const sid of slot_ids) stmt.run(workerId, sid);
   }
 
@@ -3922,9 +4014,9 @@ app.post('/api/worker/onboarding/:key/submit', requireWorker, (req, res) => {
 app.get('/api/admin/inquiries/:id/worker-status', requireAdmin, (req, res) => {
   const inq = db.prepare('SELECT phone, email FROM inquiries WHERE id=?').get(req.params.id);
   if (!inq) return res.status(404).json({ error: 'Not found' });
-  const w = db.prepare('SELECT id, active, dispatch_ready, suspended FROM worker_accounts WHERE phone=? OR (? != \'\' AND email=?)').get(inq.phone||'', inq.email||'', inq.email||'');
-  if (!w) return res.json({ has_account: false, dispatch_ready: false });
-  res.json({ has_account: true, dispatch_ready: !!w.dispatch_ready, active: !!w.active, suspended: !!w.suspended, worker_id: w.id });
+  const w = db.prepare('SELECT id, active, dispatch_ready, suspended, preferred_lang FROM worker_accounts WHERE phone=? OR (? != \'\' AND email=?)').get(inq.phone||'', inq.email||'', inq.email||'');
+  if (!w) return res.json({ has_account: false, dispatch_ready: false, preferred_lang: inq.languages || '' });
+  res.json({ has_account: true, dispatch_ready: !!w.dispatch_ready, active: !!w.active, suspended: !!w.suspended, worker_id: w.id, preferred_lang: w.preferred_lang || inq.languages || '' });
 });
 
 // Admin: update worker skills
@@ -4004,6 +4096,7 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
     db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(id);
+    archiveInterviews(id);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(id);
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(id); } catch(_) {}
@@ -4363,7 +4456,7 @@ function diffJob(oldJ, newD) {
 }
 
 app.get('/api/admin/jobs', requireAdmin, blockManager, (req, res) => {
-  res.json(db.prepare('SELECT j.*, p.name AS partner_name FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id ORDER BY j.created_at DESC').all());
+  res.json(db.prepare('SELECT j.*, p.name AS partner_name, js.latitude AS site_lat, js.longitude AS site_lng, js.radius_meters AS site_radius, js.address AS site_address FROM jobs j LEFT JOIN partners p ON j.partner_id = p.id LEFT JOIN job_sites js ON j.site_id = js.id ORDER BY j.created_at DESC').all());
 });
 
 app.get('/api/admin/jobs/:id/history', requireAdmin, blockManager, (req, res) => {
@@ -6658,7 +6751,40 @@ app.post('/api/admin/timesheet-sheets/:id/vote-distributed', requireAdmin, (req,
   res.json({ success: true, all_distributed: allDistributed, dist_count: distCount, staff_count: staffCount });
 });
 
+// ─── INVOICE PROFILES (presets) ───
+
+app.get('/api/admin/invoice-profiles', requireAdmin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM invoice_profiles ORDER BY section, name').all());
+});
+
+app.post('/api/admin/invoice-profiles', requireAdmin, (req, res) => {
+  const { name, section, data } = req.body;
+  if (!name || !section) return res.status(400).json({ error: 'name and section required' });
+  const r = db.prepare('INSERT INTO invoice_profiles (name, section, data) VALUES (?,?,?)').run(name, section, JSON.stringify(data || {}));
+  res.json({ id: r.lastInsertRowid, success: true });
+});
+
+app.put('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
+  const { name, data } = req.body;
+  if (name !== undefined) db.prepare('UPDATE invoice_profiles SET name=? WHERE id=?').run(name, req.params.id);
+  if (data !== undefined) db.prepare('UPDATE invoice_profiles SET data=? WHERE id=?').run(JSON.stringify(data), req.params.id);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/invoice-profiles/:id', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM invoice_profiles WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 // ─── INVOICE STORAGE ───
+db.exec(`CREATE TABLE IF NOT EXISTS invoice_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL,
+  action TEXT NOT NULL,
+  detail TEXT DEFAULT '',
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+
 db.exec(`CREATE TABLE IF NOT EXISTS invoices (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   invoice_number TEXT NOT NULL,
@@ -6677,25 +6803,112 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
 
 // List invoices
 app.get('/api/admin/invoices', requireAdmin, (req, res) => {
-  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, created_at FROM invoices ORDER BY created_at DESC`).all();
+  const rows = db.prepare(`SELECT id, invoice_number, invoice_date, company_name, period_start, period_end, subtotal, status, payment_status, payment_receipt_path, paid_at, created_at FROM invoices ORDER BY created_at DESC`).all();
   res.json(rows);
 });
 
 // Save invoice
 app.post('/api/admin/invoices', requireAdmin, (req, res) => {
-  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile } = req.body;
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
   const result = db.prepare(`
-    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}));
+    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved');
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(result.lastInsertRowid, '创建', `Invoice 编号: ${invoice_number}`);
   res.json({ id: result.lastInsertRowid });
+});
+
+// Get single invoice (with full details)
+app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
+  const row = db.prepare(`SELECT * FROM invoices WHERE id=?`).get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  row.items = row.items_json ? JSON.parse(row.items_json) : [];
+  row.profile = row.profile_json ? JSON.parse(row.profile_json) : {};
+  delete row.items_json; delete row.profile_json;
+  res.json(row);
+});
+
+// Update invoice
+app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status } = req.body;
+  if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
+  db.prepare(`
+    UPDATE invoices SET invoice_number=?, invoice_date=?, company_name=?, bill_to_addr=?, period_start=?, period_end=?, for_label=?, subtotal=?, items_json=?, profile_json=?, status=?
+    WHERE id=?
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', req.params.id);
+  res.json({ success: true });
 });
 
 // Delete invoice
 app.delete('/api/admin/invoices/:id', requireAdmin, (req, res) => {
   db.prepare(`DELETE FROM invoices WHERE id=?`).run(req.params.id);
   res.json({ success: true });
+});
+
+// Upload payment receipt and mark invoice as paid
+const receiptUpload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `receipt-${req.params.id}-${Date.now()}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /\.(pdf|jpg|jpeg|png|gif|webp)$/i.test(path.extname(file.originalname));
+    cb(null, ok);
+  }
+});
+
+app.post('/api/admin/invoices/:id/mark-paid', requireAdmin, receiptUpload.single('receipt'), (req, res) => {
+  const inv = db.prepare('SELECT id, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  // Delete old receipt file if exists
+  if (inv.payment_receipt_path) {
+    const oldPath = path.join(uploadsDir, path.basename(inv.payment_receipt_path));
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  const receiptPath = req.file ? `/uploads/${req.file.filename}` : null;
+  db.prepare(`UPDATE invoices SET payment_status='paid', payment_receipt_path=?, paid_at=datetime('now') WHERE id=?`)
+    .run(receiptPath, req.params.id);
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(req.params.id, '标记已付款', receiptPath ? `回执文件: ${path.basename(receiptPath)}` : '');
+  res.json({ success: true, receipt_path: receiptPath });
+});
+
+// Mark invoice as unpaid (remove receipt)
+app.post('/api/admin/invoices/:id/mark-unpaid', requireAdmin, (req, res) => {
+  const inv = db.prepare('SELECT id, payment_receipt_path FROM invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Invoice not found' });
+  if (inv.payment_receipt_path) {
+    const oldPath = path.join(uploadsDir, path.basename(inv.payment_receipt_path));
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  db.prepare(`UPDATE invoices SET payment_status='unpaid', payment_receipt_path=NULL, paid_at=NULL WHERE id=?`)
+    .run(req.params.id);
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(req.params.id, '取消已付款', '');
+  res.json({ success: true });
+});
+
+// ─── INVOICE HISTORY ───
+
+// Log an invoice action
+app.post('/api/admin/invoices/:id/history', requireAdmin, (req, res) => {
+  const { action, detail } = req.body;
+  if (!action) return res.status(400).json({ error: 'action required' });
+  db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
+    .run(req.params.id, action, detail || '');
+  res.json({ success: true });
+});
+
+// Get invoice history
+app.get('/api/admin/invoices/:id/history', requireAdmin, (req, res) => {
+  const rows = db.prepare(`SELECT id, action, detail, created_at FROM invoice_history WHERE invoice_id=? ORDER BY created_at DESC`).all(req.params.id);
+  res.json(rows);
 });
 
 // ─── INVOICE GENERATION ───
@@ -7076,10 +7289,10 @@ app.post('/api/worker/login', (req, res) => {
   const identifier = (login || username || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
   const digits10 = identifier.replace(/\D/g, '').slice(-10);
-  // Match by email (exact), phone (last-10-digits, format-agnostic), or username
+  // Match by email (exact), phone (last-10-digits, format-agnostic, skip if empty), or username
   const w = db.prepare(
-    'SELECT * FROM worker_accounts WHERE email=? OR phone10(phone)=? OR username=?'
-  ).get(identifier, digits10, identifier);
+    'SELECT * FROM worker_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?) OR username=?'
+  ).get(identifier, digits10, digits10, identifier);
   if (!w || !verifyPassword(password, w.salt, w.password_hash))
     return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
   if (!w.active)
@@ -7118,6 +7331,13 @@ app.put('/api/worker/profile/emergency', requireWorker, (req, res) => {
   const { emergency_name, emergency_phone, emergency_relation } = req.body || {};
   db.prepare('UPDATE employees SET emergency_name=?, emergency_phone=?, emergency_relation=? WHERE id=?')
     .run((emergency_name||'').trim(), (emergency_phone||'').trim(), (emergency_relation||'').trim(), req.workerEmployeeId);
+  res.json({ success: true });
+});
+
+app.put('/api/worker/profile/language', requireWorker, (req, res) => {
+  const { lang } = req.body || {};
+  if (!lang) return res.status(400).json({ error: 'lang required' });
+  db.prepare('UPDATE worker_accounts SET preferred_lang=? WHERE id=?').run(lang, req.workerId);
   res.json({ success: true });
 });
 
@@ -8135,7 +8355,8 @@ app.get('/api/worker/payments', requireWorker, (req, res) => {
 app.post('/api/worker/forgot-password', async (req, res) => {
   const { login } = req.body;
   if (!login) return res.status(400).json({ error: '请输入邮箱或手机号' });
-  const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(login, login, login);
+  const digits10 = login.replace(/\D/g, '').slice(-10);
+  const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?) OR username=?').get(login, digits10, digits10, login);
   if (!w) return res.status(404).json({ error: '未找到该账号 / Account not found' });
 
   // Prefer Twilio Verify for phone-based reset
@@ -8791,8 +9012,8 @@ app.post('/api/customer/login', (req, res) => {
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
   const digits10 = identifier.replace(/\D/g, '').slice(-10);
   const cAny = db.prepare(
-    'SELECT * FROM customer_accounts WHERE email=? OR phone10(phone)=?'
-  ).get(identifier, digits10);
+    'SELECT * FROM customer_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?)'
+  ).get(identifier, digits10, digits10);
   if (cAny && cAny.approval_status === 'pending')
     return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
   if (cAny && cAny.approval_status === 'rejected')
@@ -8874,8 +9095,8 @@ app.post('/api/customer/reset-password', (req, res) => {
 app.get('/api/register/check', (req, res) => {
   const { phone, email } = req.query;
   if (phone) {
-    const clean = phone.replace(/[\s\-()+]/g, '');
-    const row = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=?').get(clean);
+    const digits10 = phone.replace(/\D/g, '').slice(-10);
+    const row = digits10 ? db.prepare('SELECT id, active FROM worker_accounts WHERE phone10(phone)=?').get(digits10) : null;
     if (row && row.active) return res.json({ taken: true, field: 'phone' });
   }
   if (email) {
@@ -8922,9 +9143,18 @@ app.post('/api/register/worker', async (req, res) => {
       };
       return res.status(400).json(pendingResp);
     }
-    // All codes expired — clean up and allow fresh registration
+    // All codes expired — clean up all related records and allow fresh registration
     db.prepare('DELETE FROM verification_codes WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM job_applications WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(existing.id);
+    archiveInterviews(existing.id);
+    db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(existing.id);
+    db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(existing.id);
+    try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(existing.id); } catch(_) {}
+    db.prepare('DELETE FROM worker_sessions WHERE worker_id=?').run(existing.id);
+    db.prepare(`UPDATE interview_slots SET reserved_for_worker_account_id=NULL WHERE reserved_for_worker_account_id=? AND booked_count=0`).run(existing.id);
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(existing.id);
   }
   const salt = crypto.randomBytes(16).toString('hex');
@@ -9374,6 +9604,10 @@ app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
 app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
   const { name, address, address1, address2, city, state, zip, contact_name, contact_phone, instructions } = req.body;
   if (!name) return res.status(400).json({ error: '地点名称必填 / name required' });
+  if (!address1) return res.status(400).json({ error: '街道地址必填 / address1 required' });
+  if (!city) return res.status(400).json({ error: '城市必填 / city required' });
+  if (!state) return res.status(400).json({ error: '请选择州 / state required' });
+  if (zip && !/^\d{5}(-\d{4})?$/.test(zip)) return res.status(400).json({ error: '邮编格式不正确 / invalid ZIP format' });
   const addrDisplay = address || [address1, address2, city && state ? `${city}, ${state}${zip ? ' ' + zip : ''}` : city].filter(Boolean).join(', ') || '';
   const r = db.prepare('INSERT INTO interview_locations (name,address,address1,address2,city,state,zip,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?,?,?,?,?,?)')
     .run(name, addrDisplay, address1||'', address2||'', city||'', state||'', zip||'', contact_name||'', contact_phone||'', instructions||'');
@@ -9483,6 +9717,35 @@ app.get('/api/admin/interviews', requireAdmin, (req, res) => {
     ORDER BY s.slot_datetime DESC
   `).all();
   res.json(rows);
+});
+
+// Admin: get all interview history (current + archived)
+app.get('/api/admin/interview-history', requireAdmin, (req, res) => {
+  const current = db.prepare(`
+    SELECT i.id, i.worker_account_id, i.status, i.admin_notes,
+      COALESCE(i.interview_type,'onboarding') AS interview_type,
+      i.created_at, i.updated_at,
+      s.slot_datetime, s.duration_min, s.location,
+      w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.position_interests, 'current' AS source
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+  `).all();
+  const archived = db.prepare(`
+    SELECT id, worker_account_id, status, admin_notes, interview_type,
+      original_created_at AS created_at, original_updated_at AS updated_at,
+      slot_datetime, duration_min, location,
+      worker_name, worker_phone, worker_email,
+      position_interests, 'archived' AS source, archived_at
+    FROM interview_history
+  `).all();
+  const all = [...current, ...archived].sort((a, b) => {
+    const da = a.slot_datetime || a.created_at || '';
+    const db2 = b.slot_datetime || b.created_at || '';
+    return db2.localeCompare(da);
+  });
+  res.json(all);
 });
 
 // Admin: send Persona identity verification to worker via interview
@@ -9700,23 +9963,43 @@ app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
 
 // Worker: list available slots
 app.get('/api/worker/interview-slots', requireWorker, (req, res) => {
-  // If the admin has reserved specific slots for this worker, show only those.
-  // Otherwise fall back to all general (unreserved) open slots.
+  // Check if admin has assigned specific slot IDs for this worker (stored on onboarding record)
+  const obRecord = db.prepare(`SELECT assigned_slot_ids FROM worker_onboarding WHERE worker_account_id=? AND task_key='interview'`).get(req.workerId);
+  let assignedIds = [];
+  try { assignedIds = JSON.parse(obRecord?.assigned_slot_ids || '[]'); } catch {}
+  console.log(`[INTERVIEW-SLOTS] workerId=${req.workerId}, assignedIds=${JSON.stringify(assignedIds)}`);
+
+  // Use EST/CDT offset for datetime comparison (slots stored in local time, server runs in UTC)
+  const nowExpr = `datetime('now', '-5 hours')`;
+
+  if (assignedIds.length) {
+    // Admin assigned specific slots — show only those
+    const placeholders = assignedIds.map(() => '?').join(',');
+    const assigned = db.prepare(`
+      SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
+      FROM interview_slots
+      WHERE id IN (${placeholders}) AND active=1 AND booked_count < max_bookings AND datetime(slot_datetime) > ${nowExpr}
+      ORDER BY slot_datetime ASC
+    `).all(...assignedIds);
+    console.log(`[INTERVIEW-SLOTS] Returning ${assigned.length} assigned slots`);
+    return res.json(assigned);
+  }
+
+  // Fallback: check reserved_for_worker_account_id (legacy)
   const reserved = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
-    WHERE active=1 AND booked_count < max_bookings
-      AND datetime(replace(slot_datetime, 'T', ' ')) > datetime('now')
+    WHERE active=1 AND booked_count < max_bookings AND datetime(slot_datetime) > ${nowExpr}
       AND reserved_for_worker_account_id=?
     ORDER BY slot_datetime ASC
   `).all(req.workerId);
   if (reserved.length) return res.json(reserved);
 
+  // No specific assignment — show all general (unreserved) open slots
   const general = db.prepare(`
     SELECT id, slot_datetime, duration_min, location, contact_name, contact_phone, instructions, notes, max_bookings, booked_count
     FROM interview_slots
-    WHERE active=1 AND booked_count < max_bookings
-      AND datetime(replace(slot_datetime, 'T', ' ')) > datetime('now')
+    WHERE active=1 AND booked_count < max_bookings AND datetime(slot_datetime) > ${nowExpr}
       AND reserved_for_worker_account_id IS NULL
     ORDER BY slot_datetime ASC
   `).all();
@@ -9745,8 +10028,11 @@ app.post('/api/worker/interviews', requireWorker, (req, res) => {
   const slot = db.prepare(`SELECT * FROM interview_slots WHERE id=? AND active=1`).get(slot_id);
   if (!slot) return res.status(404).json({ error: '时间槽不存在' });
   if (slot.booked_count >= slot.max_bookings) return res.status(400).json({ error: '该时间槽已满，请选择其他时间' });
-  const slotUtc = new Date(slot.slot_datetime.replace(' ', 'T') + (slot.slot_datetime.includes('Z') || slot.slot_datetime.includes('+') ? '' : 'Z'));
-  if (slotUtc <= new Date()) return res.status(400).json({ error: 'This time slot has already passed. Please go back and select another time.' });
+  // Compare slot_datetime string directly (both stored as naive local time)
+  // Normalize T-separator to space for consistent comparison with strftime
+  const slotDt = (slot.slot_datetime || '').replace('T', ' ');
+  const nowLocal = db.prepare(`SELECT strftime('%Y-%m-%d %H:%M:%S', 'now', '-5 hours') as t`).get().t;
+  if (slotDt <= nowLocal) return res.status(400).json({ error: '该面试时间已过期，请返回选择其他时间' });
 
   try {
     if (existing && existing.status === 'cancelled') {
@@ -10002,6 +10288,29 @@ app.post('/api/admin/manager-punch', requireAdmin, (req, res) => {
   const result = db.prepare("INSERT INTO time_entries (employee_id,clock_in,status,job_id,punch_type,break_records,on_break,geo_verified) VALUES(?,?,'open',?,'in','[]',0,0)")
     .run(emp.id, now, job_id);
   return res.json({ action: 'in', clock_in: now, entry_id: result.lastInsertRowid, warning: ciWarning });
+});
+
+// ─── Invoice Management ───
+app.get('/api/admin/invoices', requireAdmin, blockManager, (req, res) => {
+  const rows = db.prepare('SELECT * FROM invoices ORDER BY created_at DESC').all();
+  res.json(rows);
+});
+
+app.post('/api/admin/invoices', requireAdmin, blockManager, (req, res) => {
+  const d = req.body;
+  if (!d.invoice_number || !d.company_name) return res.status(400).json({ error: 'Invoice number and company name required' });
+  const r = db.prepare(`INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, subtotal, items, profile)
+    VALUES (?,?,?,?,?,?,?,?,?)`).run(
+    d.invoice_number, d.invoice_date || '', d.company_name, d.bill_to_addr || '',
+    d.period_start || '', d.period_end || '', d.subtotal || 0,
+    JSON.stringify(d.items || []), JSON.stringify(d.profile || {})
+  );
+  res.json({ id: r.lastInsertRowid });
+});
+
+app.delete('/api/admin/invoices/:id', requireAdmin, blockManager, (req, res) => {
+  db.prepare('DELETE FROM invoices WHERE id=?').run(req.params.id);
+  res.json({ success: true });
 });
 
 // Graceful shutdown: checkpoint WAL and close database
