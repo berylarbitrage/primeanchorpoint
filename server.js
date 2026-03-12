@@ -10514,8 +10514,39 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
     const pf = db.prepare("SELECT id FROM partner_files WHERE ds_envelope_id=?").get(submissionId);
     // Check worker_onboarding contracts
     const wo = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='contract'").get(submissionId);
+    // Check worker_onboarding W-9
+    const w9o = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='w9'").get(submissionId);
 
-    if (!pf && !wo) { res.json({ received: true }); return; }
+    if (!pf && !wo && !w9o) { res.json({ received: true }); return; }
+
+    // ── Handle W-9 completion ──
+    if (w9o) {
+      const wid = w9o.worker_account_id;
+      if (isCompleted || isSubmitterCompleted) {
+        try {
+          // Fetch submission status from DocuSeal to confirm completion
+          const subData = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+          const dsStatus = subData.data?.status || subData.status_str || '';
+          const submitters = subData.data?.submitters || subData.data?.documents?.[0]?.submitters || [];
+          const workerSub = submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0];
+          const workerSignedAt = workerSub?.completed_at || workerSub?.updated_at || new Date().toISOString();
+          const fullyDone = dsStatus === 'completed' || submitters.every(s => s.status === 'completed');
+          console.log(`[DocuSeal W-9 webhook] wid=${wid}, dsStatus=${dsStatus}, fullyDone=${fullyDone}`);
+          if (fullyDone) {
+            db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='W-9 已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+              .run(workerSignedAt, wid);
+            syncOnboardedStatus(wid);
+            console.log(`[DocuSeal W-9 webhook] W-9 marked completed for worker ${wid}`);
+          } else {
+            db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+              .run(workerSignedAt, `W-9 已填写提交，等待最终确认 (${new Date().toLocaleString('zh-CN')})`, wid);
+          }
+        } catch (e) { console.error('[DocuSeal W-9 webhook] error:', e.message); }
+      } else if (isDeclined) {
+        db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+          .run(`W-9 已被拒签: ${data.decline_reason || ''}`, wid);
+      }
+    }
 
     // Handle partner file contract events
     if (pf) {
