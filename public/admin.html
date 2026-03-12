@@ -1382,6 +1382,13 @@ tr:hover td{background:var(--sky-light)}
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 手动添加员工</button>
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpToggleEmpImport()">📥 从系统导入员工</button>
       </div>
+
+      <!-- Markup Rate -->
+      <div style="margin-top:.75rem;display:flex;align-items:center;gap:.6rem;background:var(--amber-light,#fffbeb);border:1px solid #fcd34d;border-radius:7px;padding:.5rem .85rem">
+        <span style="font-size:.85rem;font-weight:600;color:#92400e">Markup Rate（加价系数）：</span>
+        <input type="number" id="invPageMarkupRate" placeholder="如 1.15" min="0" step="0.01" style="width:100px;border:1px solid #d97706;border-radius:6px;padding:4px 8px;font-size:.88rem;font-weight:600;color:#92400e">
+        <span style="font-size:.82rem;color:#92400e">× 员工总工资 = 最终账单金额&nbsp;（例：1.15 表示加价 15%）</span>
+      </div>
     </div>
 
     <!-- Preset selectors at bottom -->
@@ -16005,7 +16012,7 @@ function openInvpBuilderModal() {
   _invpManualUidSeq = 1;
   window._invpSelectedPartnerState = null;
   window._invpCurrentSavedId = null;
-  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageEditId'];
+  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
@@ -16035,6 +16042,7 @@ async function openInvpForEdit(id) {
   document.getElementById('invPageBillName').value = inv.company_name || '';
   document.getElementById('invPageBillAddr').value = inv.bill_to_addr || '';
   document.getElementById('invPageUniformRate').value = '';
+  document.getElementById('invPageMarkupRate').value = (inv.profile && inv.profile.markup_rate) ? inv.profile.markup_rate : '';
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
 
@@ -16308,10 +16316,13 @@ async function saveInvpInvoice(status) {
   if (!invNum || !billName) { alert('请填写 Invoice 编号和客户公司名称'); return; }
 
   const items = getInvpManualItems();
-  const subtotal = items.reduce((s,i) => s+i.total, 0);
+  const baseSubtotal = items.reduce((s,i) => s+i.total, 0);
+  const markupRate = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
+  const subtotal = Math.round(baseSubtotal * markupRate * 100) / 100;
+  const profile = Object.assign({}, getInvpProfile(), { markup_rate: markupRate !== 1 ? markupRate : undefined });
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
-    period_start: ps, period_end: pe, subtotal, items, profile: getInvpProfile(), status
+    period_start: ps, period_end: pe, subtotal, items, profile, status
   };
 
   let res;
@@ -16666,7 +16677,9 @@ async function generateInvpPreview() {
   };
   const periodLabel = `${fmtShort(ps)}-${fmtShort(pe)}`;
   const totalHours  = items.reduce((s,i) => s+i.hours, 0);
-  const totalAmt    = items.reduce((s,i) => s+i.total, 0);
+  const baseAmt     = items.reduce((s,i) => s+i.total, 0);
+  const markupRate  = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
+  const totalAmt    = Math.round(baseAmt * markupRate * 100) / 100;
 
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
   const tableRows = items.map(i => `
@@ -16735,10 +16748,18 @@ async function generateInvpPreview() {
         </thead>
         <tbody>
           ${tableRows}
-          <tr style="background:#f6c26b;font-weight:700">
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Total</td>
+          <tr style="background:#e2e8f0;font-weight:600">
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Subtotal</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${totalHours.toFixed(1)}h</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${baseAmt.toFixed(2)}</td>
+          </tr>
+          ${markupRate !== 1 ? `<tr style="background:#fef3c7;font-weight:600">
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="5">Markup Rate ×${markupRate.toFixed(2)}</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${(totalAmt - baseAmt).toFixed(2)}</td>
+          </tr>` : ''}
+          <tr style="background:#f6c26b;font-weight:700">
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="5">Total</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${totalAmt.toFixed(2)}</td>
           </tr>
         </tbody>
