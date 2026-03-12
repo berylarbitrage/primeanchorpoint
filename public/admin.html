@@ -1362,12 +1362,16 @@ tr:hover td{background:var(--sky-light)}
       </div>
 
       <!-- Employee list -->
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem">
         <h3 style="margin:0">员工工时明细</h3>
-        <div style="display:flex;gap:.5rem;align-items:center">
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
           <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
           <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
-          <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
+          <span style="font-size:.83rem;color:var(--gray-500)">$/h</span>
+          <span style="font-size:.83rem;color:var(--gray-400);margin:0 .3rem">|</span>
+          <span style="font-size:.83rem;color:var(--gray-500)">Markup：</span>
+          <input type="number" id="invPageMarkupRate" placeholder="如 1.35" min="1" step="0.01" value="" style="width:80px;border:1px solid #fde68a;border-radius:6px;padding:4px 8px;font-size:.85rem;background:#fffbeb">
+          <span style="font-size:.83rem;color:var(--gray-500)">×（乘以员工总工资 = 客户账单金额）</span>
         </div>
       </div>
       <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
@@ -18084,19 +18088,26 @@ async function generateInvpPreview() {
   const totalRegHrs = items.reduce((s,i) => s+i.regHours, 0);
   const totalOtHrs  = items.reduce((s,i) => s+i.otHours, 0);
   const totalAmt    = items.reduce((s,i) => s+i.total, 0);
+  const markupRate  = parseFloat(document.getElementById('invPageMarkupRate').value) || 0;
+  const hasMarkup   = markupRate > 1;
+  const billedAmt   = hasMarkup ? totalAmt * markupRate : totalAmt;
 
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
-  const tableRows = items.map(i => `
-    <tr style="background:#fff">
+  const tableRows = items.map(i => {
+    const billedRate   = hasMarkup ? i.rate * markupRate : i.rate;
+    const billedOtRate = hasMarkup ? i.otRate * markupRate : i.otRate;
+    const billedTotal  = hasMarkup ? i.total * markupRate : i.total;
+    return `<tr style="background:#fff">
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${i.rate.toFixed(2)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${i.otRate.toFixed(2)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${billedRate.toFixed(2)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${billedOtRate.toFixed(2)}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${i.regHours.toFixed(2)}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right;${i.otHours > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${i.otHours > 0 ? i.otHours.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right;font-weight:600">$${i.total.toFixed(2)}</td>
-    </tr>`).join('');
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right;font-weight:600">$${billedTotal.toFixed(2)}</td>
+    </tr>`;
+  }).join('');
 
   const bankBlock = (profile.bank_account_name||profile.bank_name||profile.bank_account_no||profile.bank_routing_no) ? `
     <div style="margin-bottom:1.5rem;font-size:.88rem;color:#1e293b;line-height:1.9">
@@ -18157,12 +18168,12 @@ async function generateInvpPreview() {
         <tbody>
           ${tableRows}
           <tr style="background:#f6c26b;font-weight:700">
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Total</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Total${hasMarkup ? ` <span style="font-weight:400;font-size:.8rem">(Markup ×${markupRate})</span>` : ''}</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
             <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${totalRegHrs.toFixed(2)}h</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${totalAmt.toFixed(2)}</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${billedAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
