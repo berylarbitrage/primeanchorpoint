@@ -2390,6 +2390,7 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="previewContractPdf()">📄 预览 PDF</button>
     <button class="btn btn-green" id="contractSendBtn" onclick="doSendContract()">📤 发送合同</button>
     <button class="btn" id="contractSignBtn" style="display:none;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="openCompanySign()">✍️ 公司签署</button>
+    <button class="btn" id="contractViewSignedBtn" style="display:none;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="viewSignedContract()">📋 查看已签版本</button>
     <button class="btn" id="contractRefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshContractStatus()">🔄 刷新签署状态</button>
     <button class="btn" id="contractVoidBtn" style="display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="voidContract()">🗑️ 作废</button>
     <button class="btn" onclick="closeModal('contractSendModal')">关闭</button>
@@ -9353,6 +9354,9 @@ async function openDsCompanySign(type, id) {
     form.setAttribute('data-expand', 'false');
     form.setAttribute('data-order-as-on-page', 'true');
     if (r.companyName) form.setAttribute('data-signature', r.companyName);
+    // Pre-fill date with today
+    const today = new Date().toISOString().slice(0, 10);
+    form.setAttribute('data-values', JSON.stringify({ date1: today }));
     form.setAttribute('data-with-send-copy-button', 'false');
     form.style.width = '100%';
     form.addEventListener('completed', () => {
@@ -9415,6 +9419,8 @@ window.addEventListener('message', async (ev) => {
       if (ctx.type === 'workercontract') {
         showToast('✅ 公司已签署，系统将自动通知工人签署', 'success');
         refreshContractStatus();
+        document.getElementById('contractViewSignedBtn').style.display = '';
+        setTimeout(() => viewSignedContract(), 1500);
         return;
       }
       showToast('✅ 公司已签署，等待对方签署…', 'success');
@@ -12887,7 +12893,7 @@ function renderOnboardingTasks(tasks) {
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${t.key==='contract'
-            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':'发送合同'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>`
             : t.key==='persona_verify'
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
@@ -13257,6 +13263,7 @@ async function openContractSendModal() {
   document.getElementById('contractWorkerPhone').value = '';
   document.getElementById('contractDsStatus').style.display = 'none';
   document.getElementById('contractSignBtn').style.display = 'none';
+  document.getElementById('contractViewSignedBtn').style.display = 'none';
   document.getElementById('contractRefreshBtn').style.display = 'none';
   document.getElementById('contractVoidBtn').style.display = 'none';
   document.getElementById('contractSendBtn').style.display = '';
@@ -13281,6 +13288,10 @@ async function openContractSendModal() {
     document.getElementById('contractSignBtn').style.display = '';
     document.getElementById('contractRefreshBtn').style.display = '';
     document.getElementById('contractVoidBtn').style.display = '';
+    // Show "view signed version" button if at least one party has signed
+    if (r.ds_status === 'company_signed' || r.ds_status === 'worker_signed' || r.ds_status === 'completed') {
+      document.getElementById('contractViewSignedBtn').style.display = '';
+    }
   }
 }
 
@@ -13290,6 +13301,12 @@ function updateContractDsStatusUI(status) {
   if (status === 'completed') {
     el.style.background = '#d1fae5'; el.style.color = '#065f46'; el.style.border = '1px solid #6ee7b7';
     el.innerHTML = '✅ 合同已由双方签署完成';
+  } else if (status === 'company_signed') {
+    el.style.background = '#fef3c7'; el.style.color = '#92400e'; el.style.border = '1px solid #fcd34d';
+    el.innerHTML = '✍ 公司已签署，等待工人签署中…';
+  } else if (status === 'worker_signed') {
+    el.style.background = '#fef3c7'; el.style.color = '#92400e'; el.style.border = '1px solid #fcd34d';
+    el.innerHTML = '✍ 工人已签署，等待公司签署…';
   } else if (status === 'sent') {
     el.style.background = '#dbeafe'; el.style.color = '#1d4ed8'; el.style.border = '1px solid #bfdbfe';
     el.innerHTML = '📤 合同已创建，请先完成公司签署（公司签完后系统自动通知工人）';
@@ -13382,6 +13399,9 @@ async function openCompanySign() {
       closeDsSignModal();
       showToast('✅ 公司已签署，系统将自动通知工人签署', 'success');
       refreshContractStatus();
+      // Show signed version button and auto-open the signed PDF
+      document.getElementById('contractViewSignedBtn').style.display = '';
+      setTimeout(() => viewSignedContract(), 1500);
     });
     form.addEventListener('declined', () => {
       closeDsSignModal();
@@ -13407,10 +13427,28 @@ async function refreshContractStatus() {
     if (r.workerSigned) info += ` | 工人已签: ${new Date(r.workerSigned).toLocaleString('zh-CN')}`;
     if (r.declineReason) info += ` | 拒签原因: ${r.declineReason}`;
     showToast(info, 'info', 5000);
+    // Show view signed button if at least one party has signed
+    if (r.status === 'company_signed' || r.status === 'worker_signed' || r.status === 'completed') {
+      document.getElementById('contractViewSignedBtn').style.display = '';
+    }
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
   }
+}
+
+async function viewSignedContract() {
+  if (!_onboardingWorkerId) return;
+  const previewDiv = document.getElementById('contractPdfPreview');
+  const frame = document.getElementById('contractPdfFrame');
+  try {
+    const resp = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf`);
+    if (!resp.ok) { showToast('❌ 获取已签文档失败', 'error'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    frame.src = url;
+    previewDiv.style.display = '';
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
 }
 
 async function voidContract() {
