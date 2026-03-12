@@ -13477,8 +13477,10 @@ async function viewSignedContract(autoRetry = false) {
 
 async function voidContract() {
   if (!_onboardingWorkerId) return;
-  if (!await showConfirm('确认作废当前合同？作废后需要重新发送。')) return;
-  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-void`, { method: 'POST' });
+  const reason = prompt('请输入作废原因（必填）：\n例如：合同内容有误、需要更换协议类型、工人信息变更等');
+  if (!reason || !reason.trim()) { showToast('❌ 作废原因不能为空', 'error'); return; }
+  if (!await showConfirm(`确认作废当前合同？\n\n作废原因：${reason}\n\n作废后需要重新发送。`)) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-void`, { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) });
   if (r && r.success) {
     showToast('✅ 合同已作废', 'success');
     document.getElementById('contractDsStatus').style.display = 'none';
@@ -13701,18 +13703,21 @@ async function showWorkerHistory(id, name) {
         <th style="text-align:left;padding:.4rem .5rem">字段</th>
         <th style="text-align:left;padding:.4rem .5rem">原值</th>
         <th style="text-align:left;padding:.4rem .5rem">新值</th>
+        <th style="text-align:left;padding:.4rem .5rem">备注</th>
       </tr></thead>
       <tbody>${rows.map(r => {
         const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
         const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
         const oldV = fmtWdVal(r.old_value);
         const newV = fmtWdVal(r.new_value);
+        const note = r.note || '';
         return `<tr style="border-bottom:1px solid var(--gray-100)">
           <td style="padding:.45rem .5rem;color:var(--gray-400);white-space:nowrap">${ts}</td>
           <td style="padding:.45rem .5rem;color:var(--sky);white-space:nowrap">${esc(r.changed_by||'—')}</td>
           <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}</td>
           <td style="padding:.45rem .5rem;color:#dc2626">${esc(oldV)}</td>
           <td style="padding:.45rem .5rem;color:#16a34a">${esc(newV)}</td>
+          <td style="padding:.45rem .5rem;color:var(--gray-500);font-size:.8rem;max-width:200px;word-break:break-word">${esc(note)}</td>
         </tr>`;
       }).join('')}</tbody>
     </table>`;
@@ -13872,7 +13877,7 @@ async function saveWorkerDetail() {
   loadWorkerAccounts();
 }
 
-const WD_FIELD_LABELS = { active:'账户状态', suspended:'暂停状态', work_status:'身份', expected_salary:'期望薪资', our_salary_rating:'评分', payment_method:'支付方式', employee_id:'绑定员工', password:'密码' };
+const WD_FIELD_LABELS = { active:'账户状态', suspended:'暂停状态', work_status:'身份', expected_salary:'期望薪资', our_salary_rating:'评分', payment_method:'支付方式', employee_id:'绑定员工', password:'密码', contract:'合同签署', onboarding_contract:'合同任务', onboarding_interview:'面试任务', onboarding_phone_verify:'电话验证', onboarding_email_verify:'邮箱验证', onboarding_persona_verify:'身份验证', onboarding_background_check:'背调任务', onboarding_tax_form:'税表任务', onboarding_direct_deposit:'银行信息' };
 const WD_VALUE_LABELS = { '0':'否/禁用','1':'是/启用', cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直接存款', citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他', '':'（未填写）' };
 function fmtWdVal(v) { return WD_VALUE_LABELS[v] !== undefined ? WD_VALUE_LABELS[v] : (v || '（空）'); }
 

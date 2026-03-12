@@ -4044,11 +4044,23 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
   if (req.params.key === 'interview' && status === 'pending') {
     db.prepare(`UPDATE interviews SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND status='scheduled'`).run(req.params.id);
   }
+  // Get old status for history logging
+  const oldTask = db.prepare("SELECT status, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key=?").get(req.params.id, req.params.key);
+  const oldStatus = oldTask ? oldTask.status : '';
   db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
     VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
     ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,
       action_url=excluded.action_url, completed_at=excluded.completed_at, updated_at=CURRENT_TIMESTAMP`)
     .run(req.params.id, req.params.key, status, admin_note||'', action_url||'', completedAt);
+  // Log onboarding task changes to worker history
+  if (oldStatus && oldStatus !== status) {
+    const TASK_LABELS = { contract:'合同', interview:'面试', phone_verify:'电话验证', email_verify:'邮箱验证', persona_verify:'身份验证', background_check:'背景调查', tax_form:'税表', direct_deposit:'银行信息' };
+    const STATUS_LABELS = { pending:'待处理', submitted:'已提交', completed:'已完成', waived:'已豁免' };
+    const taskLabel = TASK_LABELS[req.params.key] || req.params.key;
+    const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(req.params.id, changedBy, `onboarding_${req.params.key}`, STATUS_LABELS[oldStatus] || oldStatus, STATUS_LABELS[status] || status, `${taskLabel}: ${STATUS_LABELS[oldStatus]||oldStatus} → ${STATUS_LABELS[status]||status}`);
+  }
   syncOnboardedStatus(parseInt(req.params.id));
   res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
 });
@@ -4359,6 +4371,10 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
       contract_content=?, visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
       WHERE worker_account_id=? AND task_key='contract'`)
       .run(submissionId, content, `合同已创建，等待公司签署 (${new Date().toLocaleString('zh-CN')})`, companyEmbedSrc || '', workerId);
+    // Log contract send to worker history
+    const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, changedBy, 'contract', '', '已发送', `合同已创建并发送至 ${workerEmail}，等待公司签署`);
     // Do NOT send email/SMS to worker yet — company must sign first
     // Worker will be notified after company signs (via webhook handler)
     const smsSent = false;
@@ -4434,15 +4450,22 @@ app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async 
   } catch (e) { console.error('[CompanySign Error]', e.message); res.status(500).json({ error: e.message }); }
 });
 
-// Admin: void/cancel onboarding contract submission
+// Admin: void/cancel onboarding contract submission (requires reason)
 app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (req, res) => {
   try {
     const workerId = parseInt(req.params.id);
-    const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    const reason = (req.body.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: '请填写作废原因' });
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
     await dsealArchive(onb.ds_envelope_id);
-    db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, ds_company_signed_at=NULL, admin_note='合同已作废', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
-      .run(workerId);
+    const voidNote = `合同已作废 — ${reason}`;
+    db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, ds_company_signed_at=NULL, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+      .run(voidNote, workerId);
+    // Log to worker history
+    const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, changedBy, 'contract', onb.ds_status || '已发送', '已作废', voidNote);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -10163,6 +10186,9 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
           if (status === 'completed' && companySigned && partnerSigned) {
             db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
               .run(partnerSigned, companySigned, wid);
+            // Log completion to worker history
+            db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+              .run(wid, 'system', 'contract', '签署中', '双方已签署', `公司签署: ${companySigned || '—'}, 工人签署: ${partnerSigned || '—'}`);
             syncOnboardedStatus(wid);
             console.log(`[DocuSeal] Worker onboarding contract completed for worker ${wid}`);
           } else {
@@ -10181,6 +10207,9 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
           const submitterRole = data.role || data.metadata?.role || '';
           const isCompanySigner = submitterRole === 'First Party' || (companySigned && !partnerSigned);
           if (isCompanySigner) {
+            // Log company signing to worker history
+            db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+              .run(wid, 'system', 'contract', '已发送', '公司已签署', `公司签署时间: ${companySigned || new Date().toISOString()}`);
             console.log(`[DocuSeal webhook] Company signed for worker ${wid}, sending notification to worker`);
             try {
               const wAccount = db.prepare("SELECT name, username, email, phone FROM worker_accounts WHERE id=?").get(wid);
@@ -10243,8 +10272,12 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
           }
         } catch (e) { console.error('[DocuSeal webhook] worker submitter status error:', e.message); }
       } else if (isDeclined) {
+        const declineReason = data.decline_reason || '';
         db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
-          .run(`工人已拒签: ${data.decline_reason || ''}`, wid);
+          .run(`工人已拒签: ${declineReason}`, wid);
+        // Log decline to worker history
+        db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+          .run(wid, 'system', 'contract', '签署中', '已拒签', `工人拒签原因: ${declineReason || '未提供'}`);
       }
     }
 
