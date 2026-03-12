@@ -292,6 +292,7 @@ tr:hover td{background:var(--sky-light)}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
+.toast.warning{background:#78350F;border-left:4px solid #fbbf24}
 /* Onboarding task list scrollbar */
 #onboardingTaskList{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
 #onboardingTaskList::-webkit-scrollbar{width:5px}
@@ -13717,13 +13718,18 @@ async function doSendW9() {
   btn.disabled = false;
   if (r && r.success) {
     btn.textContent = '📤 重新发送 W-9';
-    showToast('✅ W-9 DocuSeal 已发送', 'success');
     updateW9DsStatusUI('sent');
     document.getElementById('w9RefreshBtn').style.display = '';
     if (r.workerSignUrl) {
       document.getElementById('w9SignLink').href = r.workerSignUrl;
       document.getElementById('w9SignLink').textContent = r.workerSignUrl;
       document.getElementById('w9SignLinkBox').style.display = '';
+    }
+    // Show delivery status warnings
+    if (r.warnings && r.warnings.length > 0) {
+      showToast('⚠️ W-9 已创建，但通知发送有问题：<br>' + r.warnings.join('<br>'), 'warning', 8000);
+    } else {
+      showToast('✅ W-9 DocuSeal 已发送，邮件和短信通知已送达', 'success');
     }
     refreshOnboardingModal();
   } else {

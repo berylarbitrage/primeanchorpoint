@@ -4748,9 +4748,11 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
       .run(workerId, changedBy, 'w9', '', '已发送', `W-9 已通过 DocuSeal 发送至 ${workerEmail}`);
     // Send notification email
     const signUrl = workerSignUrl;
+    let emailSent = false;
+    let smsSent = false;
     if (workerEmail) {
       const signLink = signUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${signUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">填写 W-9 / Complete W-9 / Completar W-9</a></p>` : '';
-      await sendEmail(workerEmail,
+      emailSent = await sendEmail(workerEmail,
         `Prime Anchorpoint — 请填写 W-9 税表 / Please Complete W-9 / Complete el W-9`,
         `${workerName}，请点击链接填写并签署 W-9 税表。\n${signUrl || ''}\n\n${workerName}, please click the link to complete your W-9 form.\n${signUrl || ''}\n\n${workerName}, haga clic en el enlace para completar su formulario W-9.\n${signUrl || ''}`,
         `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
@@ -4772,9 +4774,14 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     // Send SMS
     const workerPhone = w.phone || '';
     if (workerPhone) {
-      await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请填写 W-9 税表 / Please complete your W-9 / Complete su W-9${signUrl ? '\n' + signUrl : ''}\nReply STOP to opt out.`);
+      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请填写 W-9 税表 / Please complete your W-9 / Complete su W-9${signUrl ? '\n' + signUrl : ''}\nReply STOP to opt out.`);
     }
-    res.json({ success: true, submissionId, workerSignUrl });
+    const warnings = [];
+    if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
+    if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
+    if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
+    if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
+    res.json({ success: true, submissionId, workerSignUrl, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[W-9 send error]', e.message);
     res.status(500).json({ error: e.message });
