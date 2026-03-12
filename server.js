@@ -4470,6 +4470,18 @@ app.get('/api/admin/worker-accounts/:id/contract-versions', requireAdmin, (req, 
   res.json(rows);
 });
 
+// Admin: download signed PDF for a specific contract version
+app.get('/api/admin/worker-accounts/:id/contract-version-pdf/:versionId', requireAdmin, async (req, res) => {
+  try {
+    const ver = db.prepare('SELECT ds_envelope_id, version_num FROM worker_contract_versions WHERE id=? AND worker_account_id=?').get(req.params.versionId, req.params.id);
+    if (!ver || !ver.ds_envelope_id) return res.status(404).json({ error: '该版本无签署记录' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(ver.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="contract-v${ver.version_num}-${req.params.id}.pdf"` });
+    res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Admin: download current signed document from DocuSeal for onboarding contract
 app.get('/api/admin/worker-accounts/:id/contract-signed-pdf', requireAdmin, async (req, res) => {
   try {

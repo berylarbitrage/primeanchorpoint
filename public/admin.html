@@ -1989,7 +1989,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
-      <th>合规文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>合规文件</th><th>协议</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -12791,8 +12791,10 @@ async function loadWorkerAccounts() {
       ${complianceBadge2('DL', c.drivers_license)}
       ${complianceBadge2('W9', c.w9)}
       ${complianceBadge2('I9', c.i9)}
-      ${w.contract_version_count > 0 ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">协议(${w.contract_version_count})</span>` : ''}
     </div></td>
+    <td style="text-align:center">${w.contract_version_count > 0
+      ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
+      : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
     <td style="font-size:.8rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer" onchange="updateWorkerPayMethod(${w.id},this.value)">
       <option value="cash" ${(w.payment_method||'cash')==='cash'?'selected':''}>💵 现金</option>
       <option value="check" ${w.payment_method==='check'?'selected':''}>✅ 支票</option>
@@ -13574,6 +13576,9 @@ async function showContractVersions(workerId, workerName) {
       if (v.ds_company_signed_at) signInfo.push(`公司签署: ${new Date(v.ds_company_signed_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() })}`);
       if (v.ds_worker_signed_at) signInfo.push(`工人签署: ${new Date(v.ds_worker_signed_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() })}`);
       const signHtml = signInfo.length ? `<div style="color:#065f46;font-size:.8rem;margin-top:.2rem">${signInfo.join(' · ')}</div>` : '';
+      const hasSigned = v.ds_envelope_id && (v.ds_status === 'completed' || v.ds_status === 'company_signed' || v.ds_status === 'worker_signed');
+      const pdfBtnHtml = hasSigned ? `<button class="btn btn-sm" style="margin-top:.4rem;background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;font-size:.78rem" onclick="viewContractVersionPdf(${wid},${v.id},'cvPdfFrame_${v.id}')">📄 查看签署版 PDF</button>
+        <iframe id="cvPdfFrame_${v.id}" style="display:none;width:100%;height:500px;border:1px solid var(--gray-200);border-radius:8px;margin-top:.4rem" allow="clipboard-write"></iframe>` : '';
       return `<div style="border:1px solid ${borderColor};background:${bgColor};border-radius:8px;padding:.6rem .8rem;margin-bottom:.5rem">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.3rem">
           <div>
@@ -13584,15 +13589,27 @@ async function showContractVersions(workerId, workerName) {
           <div style="font-size:.78rem;color:var(--gray-400)">${ts} · ${esc(v.created_by || 'admin')}</div>
         </div>
         ${signHtml}${voidInfo}
+        ${pdfBtnHtml}
         <details style="margin-top:.4rem">
-          <summary style="cursor:pointer;font-size:.8rem;color:var(--sky)">查看协议内容</summary>
-          <pre style="margin-top:.3rem;font-size:.75rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:.5rem">${esc(v.contract_content || '（无内容）')}</pre>
+          <summary style="cursor:pointer;font-size:.8rem;color:var(--gray-400)">查看协议原文</summary>
+          <pre style="margin-top:.3rem;font-size:.75rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow:auto;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:.5rem">${esc(v.contract_content || '（无内容）')}</pre>
         </details>
       </div>`;
     }).join('');
   } catch (e) {
     content.innerHTML = `<div style="color:#dc2626;padding:1rem 0">加载失败: ${esc(e.message)}</div>`;
   }
+}
+
+function viewContractVersionPdf(wid, versionId, frameId) {
+  const frame = document.getElementById(frameId);
+  if (!frame) return;
+  if (frame.style.display !== 'none') {
+    frame.style.display = 'none';
+    return;
+  }
+  frame.style.display = 'block';
+  frame.src = `/api/admin/worker-accounts/${wid}/contract-version-pdf/${versionId}`;
 }
 
 async function toggleDispatchReady() {
