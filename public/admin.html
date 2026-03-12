@@ -13320,7 +13320,7 @@ async function saveInterviewComplete() {
   // Auto-waive tasks not applicable to this employment type
   const tasksToWaive = employmentType === 'w2'
     ? ['w9']         // W-2 doesn't need W-9
-    : ['i9', 'ead_upload', 'gusto'];  // 1099 doesn't need I-9, EAD, Gusto
+    : ['i9', 'ead_upload', 'work_permit', 'work_auth', 'gusto'];  // 1099 doesn't need I-9, EAD, work permit, work auth, Gusto
   for (const key of tasksToWaive) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
