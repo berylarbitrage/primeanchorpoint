@@ -17540,6 +17540,8 @@ function _invpSaveTableState() {
     emp.name = row.querySelector('.invp-man-name').value;
     emp.category = row.querySelector('.invp-man-cat') ? row.querySelector('.invp-man-cat').value : (emp.category || '');
     emp.rate = row.querySelector('.invp-man-rate').value;
+    const otRateInp = row.querySelector('.invp-man-ot-rate');
+    emp.otRate = (otRateInp && otRateInp.dataset.auto !== 'false') ? '' : (otRateInp?.value || '');
     emp.days = emp.days || {};
     row.querySelectorAll('.invp-man-day').forEach(inp => {
       emp.days[inp.dataset.date] = inp.value;
@@ -17598,6 +17600,11 @@ function renderInvpManualTable() {
     }).join('');
     const totalHrs = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
     const rate = parseFloat(emp.rate) || 0;
+    const otRateVal = parseFloat(emp.otRate) || (rate ? rate * 1.5 : 0);
+    const otRateIsAuto = !emp.otRate;
+    const regHrs = Math.min(totalHrs, 40);
+    const otHrs  = Math.max(totalHrs - 40, 0);
+    const subtotal = regHrs * rate + otHrs * otRateVal;
     return `<tr class="invp-manual-row" data-uid="${emp.uid}">
       <td style="padding:3px 6px">
         <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
@@ -17617,8 +17624,17 @@ function renderInvpManualTable() {
           style="width:70px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 5px;font-size:.83rem"
           oninput="invpUpdateRowTotal(this.closest('tr'))">
       </td>
+      <td style="padding:3px 4px;text-align:right">
+        <input type="number" class="invp-man-ot-rate" data-uid="${emp.uid}" value="${otRateVal ? otRateVal.toFixed(2) : ''}"
+          min="0" step="0.01" placeholder="OT $/h"
+          style="width:70px;text-align:right;border:1px solid #fcd34d;border-radius:4px;padding:2px 5px;font-size:.83rem;background:#fffbeb"
+          data-auto="${otRateIsAuto ? 'true' : 'false'}"
+          oninput="this.dataset.auto='false';invpUpdateRowTotal(this.closest('tr'))">
+      </td>
+      <td class="invp-man-reghrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${regHrs.toFixed(2)}h</td>
+      <td class="invp-man-othrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;${otHrs > 0 ? 'color:var(--accent);font-weight:600' : 'color:var(--gray-400)'}">${otHrs > 0 ? otHrs.toFixed(2) + 'h' : '—'}</td>
       <td class="invp-man-totalhrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${totalHrs.toFixed(1)}h</td>
-      <td class="invp-man-subtotal" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">$${(totalHrs*rate).toFixed(2)}</td>
+      <td class="invp-man-subtotal" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;font-weight:600">$${subtotal.toFixed(2)}</td>
       <td style="padding:3px 4px">
         <button onclick="invpRemoveEmp(${emp.uid})" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.85rem;padding:0 4px" title="删除">✕</button>
       </td>
@@ -17633,6 +17649,9 @@ function renderInvpManualTable() {
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">工种类别</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">时薪($/h)</th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fffbeb">加班时薪($/h)<br><span style="font-weight:400;font-size:.72rem;color:#92400e">×1.5 自动</span></th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap">正常工时</th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:var(--accent)">加班工时<br><span style="font-weight:400;font-size:.72rem">&gt;40h/周</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">合计工时</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">小计</th>
         <th style="padding:5px 6px"></th>
@@ -17646,9 +17665,23 @@ function renderInvpManualTable() {
 function invpUpdateRowTotal(row) {
   const dayInputs = row.querySelectorAll('.invp-man-day');
   const rate = parseFloat(row.querySelector('.invp-man-rate').value) || 0;
+  const otRateInp = row.querySelector('.invp-man-ot-rate');
+  // Auto-sync OT rate to 1.5x when rate changes and user hasn't manually set it
+  if (otRateInp && otRateInp.dataset.auto !== 'false') {
+    otRateInp.value = rate ? (rate * 1.5).toFixed(2) : '';
+  }
+  const otRate = parseFloat(otRateInp?.value) || rate * 1.5;
   const totalHrs = [...dayInputs].reduce((s, inp) => s + (parseFloat(inp.value) || 0), 0);
+  const regHrs = Math.min(totalHrs, 40);
+  const otHrs  = Math.max(totalHrs - 40, 0);
+  const subtotal = regHrs * rate + otHrs * otRate;
   row.querySelector('.invp-man-totalhrs').textContent = totalHrs.toFixed(1) + 'h';
-  row.querySelector('.invp-man-subtotal').textContent = '$' + (totalHrs * rate).toFixed(2);
+  row.querySelector('.invp-man-reghrs').textContent = regHrs.toFixed(2) + 'h';
+  const otCell = row.querySelector('.invp-man-othrs');
+  otCell.textContent = otHrs > 0 ? otHrs.toFixed(2) + 'h' : '—';
+  otCell.style.color = otHrs > 0 ? 'var(--accent)' : 'var(--gray-400)';
+  otCell.style.fontWeight = otHrs > 0 ? '600' : '';
+  row.querySelector('.invp-man-subtotal').textContent = '$' + subtotal.toFixed(2);
 }
 
 function invpAddEmp() {
@@ -17733,9 +17766,13 @@ function getInvpManualItems() {
       const name = emp.name || '';
       if (!name.trim()) return null;
       const rate = parseFloat(emp.rate) || 0;
+      const otRate = parseFloat(emp.otRate) || rate * 1.5;
       const dates = _invpGetDates();
       const totalHours = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
-      return { name, category: emp.category || '', hours: totalHours, rate, total: totalHours * rate };
+      const regHours = Math.min(totalHours, 40);
+      const otHours  = Math.max(totalHours - 40, 0);
+      const total = regHours * rate + otHours * otRate;
+      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total };
     })
     .filter(Boolean);
 }
@@ -17770,6 +17807,8 @@ async function generateInvpPreview() {
   };
   const periodLabel = `${fmtShort(ps)}-${fmtShort(pe)}`;
   const totalHours  = items.reduce((s,i) => s+i.hours, 0);
+  const totalRegHrs = items.reduce((s,i) => s+i.regHours, 0);
+  const totalOtHrs  = items.reduce((s,i) => s+i.otHours, 0);
   const totalAmt    = items.reduce((s,i) => s+i.total, 0);
 
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
@@ -17778,9 +17817,11 @@ async function generateInvpPreview() {
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
       <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${i.rate.toFixed(1)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.hours.toFixed(2)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.total.toFixed(2)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${i.rate.toFixed(2)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${i.otRate.toFixed(2)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${i.regHours.toFixed(2)}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right;${i.otHours > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${i.otHours > 0 ? i.otHours.toFixed(2) : '—'}</td>
+      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right;font-weight:600">$${i.total.toFixed(2)}</td>
     </tr>`).join('');
 
   const bankBlock = (profile.bank_account_name||profile.bank_name||profile.bank_account_no||profile.bank_routing_no) ? `
@@ -17829,11 +17870,13 @@ async function generateInvpPreview() {
       <table style="width:100%;border-collapse:collapse;margin-bottom:2rem">
         <thead>
           <tr style="background:#4472c4;color:#fff">
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Date</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Pay Period</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Name</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Position</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Price per hour</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Hours</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Regular Pay Rate</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">OT Pay Rate</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Reg Working Hours</th>
+            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">OT Working Hours</th>
             <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Total Price</th>
           </tr>
         </thead>
@@ -17842,8 +17885,10 @@ async function generateInvpPreview() {
           <tr style="background:#f6c26b;font-weight:700">
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Total</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${totalHours.toFixed(1)}h</td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${totalAmt.toFixed(2)}</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${totalRegHrs.toFixed(2)}h</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${totalAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
