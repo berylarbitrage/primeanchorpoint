@@ -9373,7 +9373,9 @@ async function openDsCompanySign(type, id) {
 }
 
 function retryDsCompanySign() {
-  if (_dsSignContext) openDsCompanySign(_dsSignContext.type, _dsSignContext.id);
+  if (!_dsSignContext) return;
+  if (_dsSignContext.type === 'workercontract') { openCompanySign(); }
+  else { openDsCompanySign(_dsSignContext.type, _dsSignContext.id); }
 }
 
 function closeDsSignModal() {
@@ -9393,8 +9395,8 @@ function closeDsSignModal() {
 // - DocuSeal sends { event: 'completed'|'declined' } or { type: 'docuseal:form_completed' } for partner files
 // - DocuSign sends { type: 'docusign_return', event: '...' } via /docusign-return for assignments
 window.addEventListener('message', async (ev) => {
-  // ── DocuSeal events (partner file embedded signing) ──
-  if (ev.data && _dsSignContext && _dsSignContext.type === 'partnerfile') {
+  // ── DocuSeal events (partner file / worker contract embedded signing) ──
+  if (ev.data && _dsSignContext && (_dsSignContext.type === 'partnerfile' || _dsSignContext.type === 'workercontract')) {
     let dsealDone = false, dsealDeclined = false;
     if (typeof ev.data === 'object') {
       dsealDone = ev.data.event === 'completed' || ev.data.type === 'docuseal:form_completed';
@@ -9406,6 +9408,11 @@ window.addEventListener('message', async (ev) => {
       const ctx = _dsSignContext;
       closeDsSignModal();
       if (dsealDeclined) { showToast('签署已取消', 'info'); return; }
+      if (ctx.type === 'workercontract') {
+        showToast('✅ 公司已签署，系统将自动通知工人签署', 'success');
+        refreshContractStatus();
+        return;
+      }
       showToast('✅ 公司已签署，等待对方签署…', 'success');
       try {
         const r = await api(`/admin/partner-files/${ctx.id}/docusign-status`);
@@ -13335,20 +13342,39 @@ async function doSendContract() {
 
 async function openCompanySign() {
   if (!_onboardingWorkerId) return;
-  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-sign-url`);
-  if (r && r.signUrl) {
+  // Reuse the shared dsSignModal (same as partner file / assignment signing)
+  const modal = document.getElementById('dsSignModal');
+  const iframe = document.getElementById('dsSignIframe');
+  const loading = document.getElementById('dsSignLoading');
+  const loadingText = document.getElementById('dsSignLoadingText');
+  const retryBtn = document.getElementById('dsSignRetryBtn');
+  modal.style.display = 'flex';
+  iframe.style.display = 'none';
+  loading.style.display = 'flex';
+  loadingText.textContent = '加载签署页面中…';
+  retryBtn.style.display = 'none';
+  // Store context so retry works
+  _dsSignContext = { type: 'workercontract', id: _onboardingWorkerId };
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-sign-url`);
+    if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
     console.log('[CompanySign] signUrl:', r.signUrl);
-    // Open signing page in new window (iframe embedding blocked by DocuSeal X-Frame-Options)
-    window.open(r.signUrl, '_blank');
-    showToast('✅ 签署页面已在新窗口打开，签署完成后请刷新状态', 'success', 5000);
-  } else {
-    showToast('❌ 获取签署链接失败: ' + (r?.error || ''), 'error');
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => resolve(), 90000);
+      iframe.onload = () => { clearTimeout(timeout); resolve(); };
+      iframe.onerror = () => { clearTimeout(timeout); reject(new Error('签署页面加载失败')); };
+      iframe.src = r.signUrl;
+    });
+    loading.style.display = 'none';
+    iframe.style.display = '';
+    iframe.onload = null;
+    iframe.onerror = null;
+  } catch (e) {
+    loadingText.textContent = '❌ ' + e.message;
+    retryBtn.style.display = '';
   }
 }
-function closeCompanySignOverlay() {
-  const o = document.getElementById('companySignOverlay');
-  if (o) { document.getElementById('companySignFrame').src = ''; o.style.display = 'none'; }
-}
+
 
 async function refreshContractStatus() {
   if (!_onboardingWorkerId) return;
