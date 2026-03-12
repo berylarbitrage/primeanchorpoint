@@ -1288,6 +1288,22 @@ try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_worker_signed_at DATE
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_company_signed_at DATETIME"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN contract_content TEXT DEFAULT ''"); } catch {}
 
+// Contract version history — stores every contract that was sent, signed, or voided
+db.exec(`CREATE TABLE IF NOT EXISTS worker_contract_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  version_num INTEGER NOT NULL DEFAULT 1,
+  contract_content TEXT NOT NULL DEFAULT '',
+  ds_envelope_id TEXT DEFAULT '',
+  ds_status TEXT DEFAULT '',
+  ds_company_signed_at DATETIME,
+  ds_worker_signed_at DATETIME,
+  created_by TEXT DEFAULT 'admin',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  voided_at DATETIME,
+  void_reason TEXT DEFAULT ''
+)`);
+
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
   const oldRows = db.prepare(`SELECT DISTINCT worker_account_id FROM worker_onboarding WHERE task_key IN ('id_verify','ssn_verify')`).all();
@@ -4052,6 +4068,9 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
     const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(req.params.id);
     if (onb && onb.ds_envelope_id) {
       try { dsealArchive(onb.ds_envelope_id).catch(e => console.error('[contract reset] archive error:', e.message)); } catch {}
+      // Mark contract version as voided (reset)
+      db.prepare("UPDATE worker_contract_versions SET ds_status='voided', voided_at=CURRENT_TIMESTAMP, void_reason='任务重置' WHERE worker_account_id=? AND ds_envelope_id=?")
+        .run(req.params.id, onb.ds_envelope_id);
     }
     db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, ds_company_signed_at=NULL, contract_content='', status='pending', admin_note='合同已重置', action_url='', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
       .run(req.params.id);
@@ -4381,10 +4400,15 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
       contract_content=?, visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
       WHERE worker_account_id=? AND task_key='contract'`)
       .run(submissionId, content, `合同已创建，等待公司签署 (${new Date().toLocaleString('zh-CN')})`, companyEmbedSrc || '', workerId);
-    // Log contract send to worker history
+    // Save contract version
     const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    const lastVer = db.prepare('SELECT MAX(version_num) AS v FROM worker_contract_versions WHERE worker_account_id=?').get(workerId);
+    const versionNum = (lastVer?.v || 0) + 1;
+    db.prepare('INSERT INTO worker_contract_versions (worker_account_id,version_num,contract_content,ds_envelope_id,ds_status,created_by) VALUES (?,?,?,?,?,?)')
+      .run(workerId, versionNum, content, submissionId, 'sent', changedBy);
+    // Log contract send to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(workerId, changedBy, 'contract', '', '已发送', `合同已创建并发送至 ${workerEmail}，等待公司签署`);
+      .run(workerId, changedBy, 'contract', '', '已发送', `合同 v${versionNum} 已创建并发送至 ${workerEmail}，等待公司签署`);
     // Do NOT send email/SMS to worker yet — company must sign first
     // Worker will be notified after company signs (via webhook handler)
     const smsSent = false;
@@ -4434,6 +4458,12 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Admin: get all contract versions for a worker
+app.get('/api/admin/worker-accounts/:id/contract-versions', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM worker_contract_versions WHERE worker_account_id=? ORDER BY version_num DESC').all(req.params.id);
+  res.json(rows);
+});
+
 // Admin: download current signed document from DocuSeal for onboarding contract
 app.get('/api/admin/worker-accounts/:id/contract-signed-pdf', requireAdmin, async (req, res) => {
   try {
@@ -4472,6 +4502,9 @@ app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (re
     const voidNote = `合同已作废 — ${reason}`;
     db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, ds_company_signed_at=NULL, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
       .run(voidNote, workerId);
+    // Mark contract version as voided
+    db.prepare("UPDATE worker_contract_versions SET ds_status='voided', voided_at=CURRENT_TIMESTAMP, void_reason=? WHERE worker_account_id=? AND ds_envelope_id=?")
+      .run(reason, workerId, onb.ds_envelope_id);
     // Log to worker history
     const changedBy = req.session && req.session.username ? req.session.username : 'admin';
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
@@ -4601,6 +4634,7 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
     archiveInterviews(id);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(id);
+    try { db.prepare('DELETE FROM worker_contract_versions WHERE worker_account_id=?').run(id); } catch(_) {}
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(id); } catch(_) {}
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(id);
     res.json({ success: true });
@@ -10196,6 +10230,9 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
           if (status === 'completed' && companySigned && partnerSigned) {
             db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
               .run(partnerSigned, companySigned, wid);
+            // Update contract version status
+            db.prepare("UPDATE worker_contract_versions SET ds_status='completed', ds_company_signed_at=?, ds_worker_signed_at=? WHERE worker_account_id=? AND ds_envelope_id=?")
+              .run(companySigned, partnerSigned, wid, submissionId);
             // Log completion to worker history
             db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
               .run(wid, 'system', 'contract', '签署中', '双方已签署', `公司签署: ${companySigned || '—'}, 工人签署: ${partnerSigned || '—'}`);
@@ -10217,6 +10254,9 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
           const submitterRole = data.role || data.metadata?.role || '';
           const isCompanySigner = submitterRole === 'First Party' || (companySigned && !partnerSigned);
           if (isCompanySigner) {
+            // Update contract version status
+            db.prepare("UPDATE worker_contract_versions SET ds_status='company_signed', ds_company_signed_at=? WHERE worker_account_id=? AND ds_envelope_id=?")
+              .run(companySigned, wid, submissionId);
             // Log company signing to worker history
             db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
               .run(wid, 'system', 'contract', '已发送', '公司已签署', `公司签署时间: ${companySigned || new Date().toISOString()}`);
@@ -10285,6 +10325,9 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
         const declineReason = data.decline_reason || '';
         db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
           .run(`工人已拒签: ${declineReason}`, wid);
+        // Update contract version
+        db.prepare("UPDATE worker_contract_versions SET ds_status='declined', void_reason=? WHERE worker_account_id=? AND ds_envelope_id=?")
+          .run(`工人拒签: ${declineReason || '未提供'}`, wid, submissionId);
         // Log decline to worker history
         db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
           .run(wid, 'system', 'contract', '签署中', '已拒签', `工人拒签原因: ${declineReason || '未提供'}`);

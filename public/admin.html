@@ -2397,6 +2397,15 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Contract Versions Modal -->
+<div class="modal-bg" id="contractVersionsModal"><div class="modal" style="max-width:820px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h2 style="margin:0">📜 协议历史版本</h2>
+    <button class="btn" onclick="closeModal('contractVersionsModal')">关闭</button>
+  </div>
+  <div id="contractVersionsContent" style="margin-top:.75rem;max-height:70vh;overflow:auto"></div>
+</div></div>
+
 <!-- Customer Account Modal -->
 <div class="modal-bg" id="customerAccountModal"><div class="modal" style="max-width:520px">
   <h2 id="customerAccModalTitle">新建客户账户</h2>
@@ -12893,7 +12902,7 @@ function renderOnboardingTasks(tasks) {
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${t.key==='contract'
-            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button><button class="btn btn-sm" style="background:#faf5ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="showContractVersions()">📜 协议历史</button>`
             : t.key==='persona_verify'
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
@@ -13490,6 +13499,50 @@ async function voidContract() {
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '作废失败'), 'error');
+  }
+}
+
+async function showContractVersions() {
+  if (!_onboardingWorkerId) return;
+  const content = document.getElementById('contractVersionsContent');
+  content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">加载中…</div>';
+  document.getElementById('contractVersionsModal').classList.add('show');
+  try {
+    const rows = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-versions`);
+    if (!rows || !rows.length) {
+      content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无协议记录</div>';
+      return;
+    }
+    const STATUS_MAP = { sent:'📤 已发送', company_signed:'✍️ 公司已签', worker_signed:'✍️ 工人已签', completed:'✅ 双方已签署', voided:'🗑️ 已作废', declined:'❌ 已拒签', '':'—' };
+    content.innerHTML = rows.map((v, i) => {
+      const statusLabel = STATUS_MAP[v.ds_status] || v.ds_status || '—';
+      const isActive = i === 0 && v.ds_status && v.ds_status !== 'voided' && v.ds_status !== 'declined';
+      const borderColor = isActive ? '#86efac' : v.ds_status === 'voided' ? '#fecaca' : v.ds_status === 'declined' ? '#fecaca' : '#e5e7eb';
+      const bgColor = isActive ? '#f0fdf4' : v.ds_status === 'voided' ? '#fef2f2' : v.ds_status === 'declined' ? '#fef2f2' : '#fff';
+      const ts = new Date(v.created_at).toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() });
+      const voidInfo = v.voided_at ? `<div style="color:#dc2626;font-size:.8rem;margin-top:.3rem">作废时间: ${new Date(v.voided_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() })} — 原因: ${esc(v.void_reason || '—')}</div>` : '';
+      const signInfo = [];
+      if (v.ds_company_signed_at) signInfo.push(`公司签署: ${new Date(v.ds_company_signed_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() })}`);
+      if (v.ds_worker_signed_at) signInfo.push(`工人签署: ${new Date(v.ds_worker_signed_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() })}`);
+      const signHtml = signInfo.length ? `<div style="color:#065f46;font-size:.8rem;margin-top:.2rem">${signInfo.join(' · ')}</div>` : '';
+      return `<div style="border:1px solid ${borderColor};background:${bgColor};border-radius:8px;padding:.6rem .8rem;margin-bottom:.5rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.3rem">
+          <div>
+            <span style="font-weight:700;font-size:.9rem">v${v.version_num}</span>
+            ${isActive ? '<span style="background:#dcfce7;color:#166534;font-size:.7rem;padding:1px 6px;border-radius:10px;margin-left:.3rem">当前</span>' : ''}
+            <span style="margin-left:.5rem;font-size:.82rem">${statusLabel}</span>
+          </div>
+          <div style="font-size:.78rem;color:var(--gray-400)">${ts} · ${esc(v.created_by || 'admin')}</div>
+        </div>
+        ${signHtml}${voidInfo}
+        <details style="margin-top:.4rem">
+          <summary style="cursor:pointer;font-size:.8rem;color:var(--sky)">查看协议内容</summary>
+          <pre style="margin-top:.3rem;font-size:.75rem;line-height:1.4;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:.5rem">${esc(v.contract_content || '（无内容）')}</pre>
+        </details>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    content.innerHTML = `<div style="color:#dc2626;padding:1rem 0">加载失败: ${esc(e.message)}</div>`;
   }
 }
 
