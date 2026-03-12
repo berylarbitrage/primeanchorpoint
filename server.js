@@ -2143,7 +2143,7 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   // Step 2: Create submission with two submitters
   const subRes = await dsealApiCall('POST', '/api/submissions', {
     template_id: templateId,
-    send_email: false,
+    send_email: true,
     order: 'preserved',
     submitters: [
       { role: 'First Party', name: signer1.name, email: signer1.email, send_email: false },
