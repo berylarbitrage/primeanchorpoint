@@ -1354,6 +1354,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS docuseal_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  docuseal_template_id INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Seed default integration rows if not present
 const intProviders = ['workbright','checkr','gusto','twilio','docuseal'];
 intProviders.forEach(p => {
@@ -2361,9 +2368,17 @@ function generateW9HtmlTemplate(workerName) {
 </div>`;
 }
 
+function getDsealConfigTemplateId(type) {
+  try {
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse(row?.config || '{}');
+    return type === 'w9' ? (cfg.w9_template_id || '') : (cfg.contract_template_id || '');
+  } catch { return ''; }
+}
+
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
 async function dsealSendW9Html({ workerName, workerEmail }) {
-  const templateId = process.env.DOCUSEAL_W9_TEMPLATE_ID || '3113927';
+  const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
   if (templateId) {
@@ -4740,7 +4755,7 @@ app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (re
 
 // Preview W-9 HTML template (admin can see the blank form before sending)
 app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) => {
-  const templateId = process.env.DOCUSEAL_W9_TEMPLATE_ID || '3113927';
+  const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
   if (templateId) {
@@ -4772,7 +4787,7 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     const workerEmail = req.body.worker_email || w.email || '';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    const usingTemplate = !!(process.env.DOCUSEAL_W9_TEMPLATE_ID || '3113927');
+    const usingTemplate = !!(getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID);
     const { submissionId, workerSignUrl } = await dsealSendW9Html({ workerName, workerEmail });
     console.log(`[W-9] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}, template=${usingTemplate}`);
     db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
@@ -11596,10 +11611,43 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
       documents: [{ name: name + '.pdf', file }]
     });
     if (r.status !== 200 && r.status !== 201) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
+    // Save to local DB
+    const dsId = r.data?.id || r.data?.template_id;
+    if (dsId) {
+      db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id) VALUES (?, ?)').run(name, dsId);
+    }
     res.json(r.data);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// GET /api/admin/docuseal/my-templates — list only user-uploaded templates from local DB
+app.get('/api/admin/docuseal/my-templates', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM docuseal_templates ORDER BY created_at DESC').all();
+  res.json(rows);
+});
+
+// DELETE /api/admin/docuseal/my-templates/:id — delete from local DB and DocuSeal
+app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res) => {
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  // Delete from DocuSeal
+  if (dsealEnabled() && local.docuseal_template_id) {
+    try {
+      await dsealApiCall('DELETE', `/api/templates/${local.docuseal_template_id}`, null);
+    } catch (e) { console.error(`[DocuSeal] Failed to delete template ${local.docuseal_template_id}:`, e.message); }
+  }
+  // Clear from config if set as default
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  if (cfg.contract_template_id == local.docuseal_template_id) cfg.contract_template_id = null;
+  if (cfg.w9_template_id == local.docuseal_template_id) cfg.w9_template_id = null;
+  db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+    .run(JSON.stringify(cfg));
+  // Delete from local DB
+  db.prepare('DELETE FROM docuseal_templates WHERE id=?').run(req.params.id);
+  res.json({ success: true });
 });
 
 // Graceful shutdown: checkpoint WAL and close database
