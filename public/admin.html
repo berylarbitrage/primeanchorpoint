@@ -14220,14 +14220,14 @@ async function showWorkerHistory(id, name) {
       content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无变更记录</div>';
       return;
     }
-    content.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.83rem">
+    content.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.83rem;white-space:nowrap">
       <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.75rem">
-        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">时间</th>
+        <th style="text-align:left;padding:.4rem .5rem">时间</th>
         <th style="text-align:left;padding:.4rem .5rem">操作人</th>
         <th style="text-align:left;padding:.4rem .5rem">字段</th>
         <th style="text-align:left;padding:.4rem .5rem">原值</th>
         <th style="text-align:left;padding:.4rem .5rem">新值</th>
-        <th style="text-align:left;padding:.4rem .5rem">备注</th>
+        <th style="text-align:left;padding:.4rem .5rem;max-width:240px">备注</th>
       </tr></thead>
       <tbody>${rows.map(r => {
         const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
@@ -14236,15 +14236,15 @@ async function showWorkerHistory(id, name) {
         const newV = fmtWdVal(r.new_value);
         const note = r.note || '';
         return `<tr style="border-bottom:1px solid var(--gray-100)">
-          <td style="padding:.45rem .5rem;color:var(--gray-400);white-space:nowrap">${ts}</td>
-          <td style="padding:.45rem .5rem;color:var(--sky);white-space:nowrap">${esc(r.changed_by||'—')}</td>
+          <td style="padding:.45rem .5rem;color:var(--gray-400)">${ts}</td>
+          <td style="padding:.45rem .5rem;color:var(--sky)">${esc(r.changed_by||'—')}</td>
           <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}</td>
           <td style="padding:.45rem .5rem;color:#dc2626">${esc(oldV)}</td>
           <td style="padding:.45rem .5rem;color:#16a34a">${esc(newV)}</td>
-          <td style="padding:.45rem .5rem;color:var(--gray-500);font-size:.8rem;max-width:200px;word-break:break-word">${esc(note)}</td>
+          <td style="padding:.45rem .5rem;color:var(--gray-500);font-size:.8rem;max-width:240px;overflow:hidden;text-overflow:ellipsis" title="${esc(note)}">${esc(note)}</td>
         </tr>`;
       }).join('')}</tbody>
-    </table>`;
+    </table></div>`;
   } catch { content.innerHTML = '<div style="color:#dc2626;padding:1rem 0">加载失败，请重试</div>'; }
 }
 
