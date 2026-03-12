@@ -16736,35 +16736,32 @@ async function generateInvpPreview() {
       </div>
 
       <!-- Table -->
-      <table style="width:100%;border-collapse:collapse;margin-bottom:2rem">
+      <table style="width:100%;border-collapse:collapse;margin-bottom:${markupRate !== 1 ? '0.5rem' : '2rem'}">
         <thead>
           <tr style="background:#4472c4;color:#fff">
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Date</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Name</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Position</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Price per hour</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Hours</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Total Price</th>
+            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Pay Period</th>
+            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Name</th>
+            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Position</th>
+            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Rate ($/hr)</th>
+            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Hours</th>
+            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Amount</th>
           </tr>
         </thead>
         <tbody>
           ${tableRows}
-          <tr style="background:#e2e8f0;font-weight:600">
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Subtotal</td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${totalHours.toFixed(1)}h</td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${baseAmt.toFixed(2)}</td>
-          </tr>
-          ${markupRate !== 1 ? `<tr style="background:#fef3c7;font-weight:600">
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="5">Markup Rate ×${markupRate.toFixed(2)}</td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${(totalAmt - baseAmt).toFixed(2)}</td>
-          </tr>` : ''}
           <tr style="background:#f6c26b;font-weight:700">
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="5">Total</td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${totalAmt.toFixed(2)}</td>
+            <td style="padding:9px 12px;border:1px solid #bfcce0;text-align:center" colspan="4">Total${markupRate !== 1 ? ` <span style="font-size:.82rem;font-weight:500">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:9px 12px;border:1px solid #bfcce0;text-align:center">${totalHours.toFixed(1)}h</td>
+            <td style="padding:9px 12px;border:1px solid #bfcce0;text-align:center">$${totalAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
+      ${markupRate !== 1 ? `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:2rem">
+        <div style="font-size:.82rem;color:#64748b;text-align:right">
+          Wage Subtotal&nbsp;&nbsp;$${baseAmt.toFixed(2)}&nbsp;&nbsp;×&nbsp;&nbsp;Markup ${markupRate.toFixed(2)}&nbsp;&nbsp;=&nbsp;&nbsp;<strong style="color:#1e293b">$${totalAmt.toFixed(2)}</strong>
+        </div>
+      </div>` : ''}
 
       ${bankBlock}
       ${contactBlock}
