@@ -4961,6 +4961,24 @@ app.get('/api/worker/onboarding', requireWorker, (req, res) => {
   res.json(tasks);
 });
 
+// Worker: get their own W-9 signing URL (fresh from DocuSeal)
+app.get('/api/worker/w9-sign-url', requireWorker, async (req, res) => {
+  try {
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, action_url FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(req.workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    if (onb.ds_status === 'completed') return res.status(400).json({ error: 'W-9 已完成签署' });
+    let signUrl = onb.action_url || '';
+    if (dsealEnabled()) {
+      try {
+        signUrl = await dsealGetW9SignUrl(onb.ds_envelope_id);
+        if (signUrl) db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'").run(signUrl, req.workerId);
+      } catch (e) { console.error('[worker w9-sign-url]', e.message); }
+    }
+    if (!signUrl) return res.status(404).json({ error: '签署链接暂不可用，请稍后再试' });
+    res.json({ signUrl, dsStatus: onb.ds_status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Worker: get their own contract signing URL (fresh from DocuSeal)
 app.get('/api/worker/contract-sign-url', requireWorker, async (req, res) => {
   try {
