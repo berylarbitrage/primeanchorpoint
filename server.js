@@ -4704,6 +4704,17 @@ app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (re
 
 // ─── Admin: W-9 DocuSeal Endpoints ───
 
+// Preview W-9 HTML template (admin can see the blank form before sending)
+app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) => {
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
+  const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
+  const html = generateW9HtmlTemplate(workerName);
+  // Wrap in a full page with some padding so it looks nice in the iframe
+  const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:12px;background:#f9fafb}</style></head><body>${html}</body></html>`;
+  res.set('Content-Type', 'text/html');
+  res.send(page);
+});
+
 // Send W-9 form to worker via DocuSeal
 app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res) => {
   try {
