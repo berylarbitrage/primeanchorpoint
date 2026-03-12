@@ -18088,14 +18088,14 @@ async function generateInvpPreview() {
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
   const tableRows = items.map(i => `
     <tr style="background:#fff">
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${i.rate.toFixed(2)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${i.otRate.toFixed(2)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${i.regHours.toFixed(2)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right;${i.otHours > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${i.otHours > 0 ? i.otHours.toFixed(2) : '—'}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right;font-weight:600">$${i.total.toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${i.rate.toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${i.otRate.toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">${i.regHours.toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right;${i.otHours > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${i.otHours > 0 ? i.otHours.toFixed(2) : '—'}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right;font-weight:600">$${i.total.toFixed(2)}</td>
     </tr>`).join('');
 
   const bankBlock = (profile.bank_account_name||profile.bank_name||profile.bank_account_no||profile.bank_routing_no) ? `
@@ -18113,7 +18113,7 @@ async function generateInvpPreview() {
     </div>` : '';
 
   const html = `
-    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;max-width:760px;margin:0 auto;padding:1rem 0">
+    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;max-width:860px;margin:0 auto;padding:1rem 0">
       <!-- Header row: sender left, INVOICE block right -->
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2rem">
         <div style="line-height:1.75;font-size:.9rem">
@@ -18141,28 +18141,38 @@ async function generateInvpPreview() {
       </div>
 
       <!-- Table -->
-      <table style="width:100%;border-collapse:collapse;margin-bottom:2rem">
+      <table style="width:100%;border-collapse:collapse;margin-bottom:2rem;font-size:.85rem;table-layout:fixed">
+        <colgroup>
+          <col style="width:10%">
+          <col style="width:11%">
+          <col style="width:15%">
+          <col style="width:12%">
+          <col style="width:10%">
+          <col style="width:13%">
+          <col style="width:13%">
+          <col style="width:16%">
+        </colgroup>
         <thead>
-          <tr style="background:#4472c4;color:#fff">
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Pay Period</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Name</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Position</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Regular Pay Rate</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">OT Pay Rate</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Reg Working Hours</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">OT Working Hours</th>
-            <th style="padding:9px 10px;border:1px solid #3560aa;font-weight:600;text-align:center">Total Price</th>
+          <tr style="background:#4472c4;color:#fff;font-size:.8rem">
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Pay Period</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Name</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Position</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Regular Pay Rate</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">OT Pay Rate</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Reg Working Hours</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">OT Working Hours</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Total Price</th>
           </tr>
         </thead>
         <tbody>
           ${tableRows}
           <tr style="background:#f6c26b;font-weight:700">
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Total</td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${totalRegHrs.toFixed(2)}h</td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${totalAmt.toFixed(2)}</td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center" colspan="3">Total</td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0"></td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0"></td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">${totalRegHrs.toFixed(2)}h</td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${totalAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
@@ -18505,7 +18515,7 @@ function printInvoice() {
 
 <!-- ════════════════════ INVOICE PAGE: PREVIEW MODAL ════════════════════ -->
 <div class="modal-bg" id="invpPreviewModal" style="display:none">
-  <div class="modal" style="max-width:900px;max-height:94vh;overflow-y:auto">
+  <div class="modal" style="max-width:960px;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
       <h2 style="margin:0">Invoice 预览</h2>
       <div id="invpPreviewBtns" style="display:flex;gap:.6rem">
