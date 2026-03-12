@@ -5008,7 +5008,7 @@ async function loadOnboarding() {
       } else if (t.key === 'background_check') {
         actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">${_t('obActionCheckr')}${t.action_url ? ` · <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">${_t('obActionOpenLink')}</a>` : ''}</div>`;
       } else if (t.key === 'w9' && t.action_url) {
-        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openContractModal('${esc(t.action_url)}')">${_t('obActionW9')}</button>`;
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openW9SignModal()">${_t('obActionW9')}</button>`;
       } else if (t.key === 'work_auth') {
         actionHtml = `<div style="margin-top:.55rem">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
@@ -5035,7 +5035,7 @@ async function loadOnboarding() {
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">${_t('obActionDocs')}</button>`;
       } else if (t.key === 'contract' && t.action_url) {
-        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openContractModal('${esc(t.action_url)}')">${_t('obActionContract')}</button>`;
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openContractSignModal()">${_t('obActionContract')}</button>`;
       } else if (t.key === 'contract' && !t.action_url) {
         actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">${_t('obContractWaiting')}</div>`;
       } else if (t.key === 'gusto' && t.action_url) {
@@ -5118,6 +5118,43 @@ async function rescheduleInterview() {
 }
 
 // ── Interview Booking Modal (inline in todos) ──
+async function openW9SignModal() {
+  const modal = document.getElementById('contractModal');
+  const frame = document.getElementById('contractModalFrame');
+  const loading = document.getElementById('contractModalLoading');
+  const titleEl = document.getElementById('contractModalTitle');
+  if (titleEl) titleEl.textContent = '💼 W-9 签署';
+  loading.innerHTML = `<div style="text-align:center;color:var(--gray-400)"><div style="font-size:2rem;margin-bottom:.5rem">⏳</div><div style="font-size:.88rem">加载中…</div></div>`;
+  loading.style.display = 'flex';
+  frame.src = '';
+  modal.classList.add('show');
+  try {
+    const r = await wApi('/w9-sign-url');
+    if (!r || !r.signUrl) throw new Error(r?.error || '签署链接暂不可用');
+    frame.onload = function() { loading.style.display = 'none'; };
+    frame.src = r.signUrl;
+  } catch (e) {
+    loading.innerHTML = `<div style="text-align:center;color:#dc2626;padding:2rem"><div style="font-size:1.5rem;margin-bottom:.5rem">⚠️</div><div style="font-size:.88rem">${e.message || '加载失败，请稍后重试'}</div><button class="btn" style="margin-top:.75rem;font-size:.82rem" onclick="closeContractModal()">关闭</button></div>`;
+  }
+}
+
+async function openContractSignModal() {
+  // Fetch a fresh embed_src URL from the server (avoids expired/non-embeddable stored URL)
+  const modal = document.getElementById('contractModal');
+  const frame = document.getElementById('contractModalFrame');
+  const loading = document.getElementById('contractModalLoading');
+  loading.style.display = 'flex';
+  frame.src = '';
+  modal.classList.add('show');
+  try {
+    const r = await wApi('/contract-sign-url');
+    if (!r || !r.signUrl) throw new Error(r?.error || '签署链接暂不可用');
+    frame.onload = function() { loading.style.display = 'none'; };
+    frame.src = r.signUrl;
+  } catch (e) {
+    loading.innerHTML = `<div style="text-align:center;color:#dc2626;padding:2rem"><div style="font-size:1.5rem;margin-bottom:.5rem">⚠️</div><div style="font-size:.88rem">${e.message || '加载失败，请稍后重试'}</div><button class="btn" style="margin-top:.75rem;font-size:.82rem" onclick="closeContractModal()">关闭</button></div>`;
+  }
+}
 function openContractModal(url) {
   const modal = document.getElementById('contractModal');
   const frame = document.getElementById('contractModalFrame');
@@ -5133,6 +5170,10 @@ function closeContractModal() {
   const frame = document.getElementById('contractModalFrame');
   modal.classList.remove('show');
   frame.src = '';
+  const titleEl = document.getElementById('contractModalTitle');
+  if (titleEl) titleEl.textContent = '📜 合同签署';
+  const loading = document.getElementById('contractModalLoading');
+  if (loading) loading.innerHTML = `<div style="text-align:center;color:var(--gray-400)"><div style="font-size:2rem;margin-bottom:.5rem">⏳</div><div style="font-size:.88rem">加载中…</div></div>`;
   // Refresh onboarding status in case signing was completed
   loadOnboarding();
 }
