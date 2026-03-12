@@ -9420,7 +9420,7 @@ window.addEventListener('message', async (ev) => {
         showToast('✅ 公司已签署，系统将自动通知工人签署', 'success');
         refreshContractStatus();
         document.getElementById('contractViewSignedBtn').style.display = '';
-        setTimeout(() => viewSignedContract(), 1500);
+        setTimeout(() => viewSignedContract(true), 4000);
         return;
       }
       showToast('✅ 公司已签署，等待对方签署…', 'success');
@@ -13401,7 +13401,7 @@ async function openCompanySign() {
       refreshContractStatus();
       // Show signed version button and auto-open the signed PDF
       document.getElementById('contractViewSignedBtn').style.display = '';
-      setTimeout(() => viewSignedContract(), 1500);
+      setTimeout(() => viewSignedContract(true), 4000);
     });
     form.addEventListener('declined', () => {
       closeDsSignModal();
@@ -13437,18 +13437,26 @@ async function refreshContractStatus() {
   }
 }
 
-async function viewSignedContract() {
+async function viewSignedContract(autoRetry = false) {
   if (!_onboardingWorkerId) return;
   const previewDiv = document.getElementById('contractPdfPreview');
   const frame = document.getElementById('contractPdfFrame');
   try {
     const resp = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf`);
-    if (!resp.ok) { showToast('❌ 获取已签文档失败', 'error'); return; }
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      if (autoRetry) { console.warn('[viewSignedContract] auto-retry failed:', errData.error); return; }
+      showToast('❌ 获取已签文档失败: ' + (errData.error || resp.statusText), 'error');
+      return;
+    }
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     frame.src = url;
     previewDiv.style.display = '';
-  } catch (e) { showToast('❌ ' + e.message, 'error'); }
+  } catch (e) {
+    if (autoRetry) { console.warn('[viewSignedContract] auto-retry error:', e.message); return; }
+    showToast('❌ ' + e.message, 'error');
+  }
 }
 
 async function voidContract() {
