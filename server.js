@@ -2163,15 +2163,16 @@ async function dsealSendContractHtml({ contractText, docName, emailSubject, sign
     let l = line
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       // Replace DocuSeal text tags with HTML field elements
-      .replace(/\{\{sig1;role=First Party;type=signature\}\}/g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 40px"></signature-field>')
-      .replace(/\{\{date1;role=First Party;type=date\}\}/g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px"></date-field>')
-      .replace(/\{\{sig2;role=Second Party;type=signature\}\}/g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 40px"></signature-field>')
-      .replace(/\{\{date2;role=Second Party;type=date\}\}/g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px"></date-field>')
+      // Note: display:inline-block and adequate height are required for DocuSeal to properly recognize and render fields
+      .replace(/\{\{sig1;role=First Party;type=signature\}\}/g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 80px; display: inline-block;"></signature-field>')
+      .replace(/\{\{date1;role=First Party;type=date\}\}/g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px; display: inline-block;"></date-field>')
+      .replace(/\{\{sig2;role=Second Party;type=signature\}\}/g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 80px; display: inline-block;"></signature-field>')
+      .replace(/\{\{date2;role=Second Party;type=date\}\}/g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px; display: inline-block;"></date-field>')
       // Also handle legacy /sig1/ etc.
-      .replace(/\/sig1\//g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 40px"></signature-field>')
-      .replace(/\/date1\//g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px"></date-field>')
-      .replace(/\/sig2\//g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 40px"></signature-field>')
-      .replace(/\/date2\//g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px"></date-field>');
+      .replace(/\/sig1\//g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 80px; display: inline-block;"></signature-field>')
+      .replace(/\/date1\//g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px; display: inline-block;"></date-field>')
+      .replace(/\/sig2\//g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 80px; display: inline-block;"></signature-field>')
+      .replace(/\/date2\//g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px; display: inline-block;"></date-field>');
     if (!l.trim()) return '<br>';
     // Headings
     const trimmed = line.trim();
@@ -2290,7 +2291,7 @@ async function dsealDownloadDocument(submissionId, { retries = 3, delayMs = 2000
   throw new Error('DocuSeal: 签署文件链接不可用（重试后仍未获取到已签署PDF）');
 }
 
-function _dsealFetchUrl(docUrl) {
+function _dsealFetchUrl(docUrl, _redirectCount = 0) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(docUrl);
     const isHttps = urlObj.protocol === 'https:';
@@ -2298,6 +2299,12 @@ function _dsealFetchUrl(docUrl) {
     const opts = { hostname: urlObj.hostname, port: urlObj.port || (isHttps ? 443 : 80), path: urlObj.pathname + urlObj.search, method: 'GET', headers: {} };
     try { if (urlObj.hostname === new URL(process.env.DOCUSEAL_URL || 'https://x').hostname) opts.headers['X-Auth-Token'] = process.env.DOCUSEAL_API_KEY; } catch {}
     const req = transport.request(opts, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && _redirectCount < 5) {
+        res.resume();
+        const redirectUrl = new URL(res.headers.location, docUrl).href;
+        console.log(`[DocuSeal] _dsealFetchUrl redirect ${res.statusCode} -> ${redirectUrl.substring(0, 120)}`);
+        return resolve(_dsealFetchUrl(redirectUrl, _redirectCount + 1));
+      }
       const chunks = []; res.on('data', c => chunks.push(c)); res.on('end', () => resolve(Buffer.concat(chunks)));
     });
     req.on('error', reject); req.end();
