@@ -2849,7 +2849,8 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
   }
 }
 
-// DB-backed session store (survives server restarts, tokens expire in 24h)
+// DB-backed session store (survives server restarts, sessions roll on activity)
+const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
 db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -2857,8 +2858,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   role TEXT NOT NULL,
   created_at INTEGER NOT NULL
 )`);
-// Clean up expired sessions on startup
-try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+// Clean up sessions inactive for 30 days
+try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 // DB-backed worker session store (survives server restarts)
 db.exec(`CREATE TABLE IF NOT EXISTS worker_sessions (
@@ -2867,7 +2868,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_sessions (
   employee_id TEXT,
   created_at INTEGER NOT NULL
 )`);
-try { db.prepare('DELETE FROM worker_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+try { db.prepare('DELETE FROM worker_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 // DB-backed customer session store (survives server restarts)
 db.exec(`CREATE TABLE IF NOT EXISTS customer_sessions (
@@ -2876,7 +2877,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS customer_sessions (
   partner_id INTEGER,
   created_at INTEGER NOT NULL
 )`);
-try { db.prepare('DELETE FROM customer_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+try { db.prepare('DELETE FROM customer_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
@@ -2888,20 +2889,27 @@ function getSession(token) {
   if (!token) return null;
   const s = db.prepare('SELECT * FROM admin_sessions WHERE token=?').get(token);
   if (!s) return null;
-  if (Date.now() - s.created_at > 24*60*60*1000) { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); return null; }
-  return { userId: s.user_id, username: s.username, role: s.role, created: s.created_at };
+  if (Date.now() - s.created_at > SESSION_TTL) { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); return null; }
+  // Roll session: refresh last-active timestamp if more than 1 hour old (avoids a DB write on every request)
+  if (Date.now() - s.created_at > 60 * 60 * 1000) {
+    db.prepare('UPDATE admin_sessions SET created_at=? WHERE token=?').run(Date.now(), token);
+  }
+  return { userId: s.user_id, username: s.username, role: s.role, token };
 }
 function validSession(token) { return !!getSession(token); }
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
   let session = null;
-  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  let token = null;
+  if (auth && auth.startsWith('Bearer ')) { token = auth.slice(7); session = getSession(token); }
   if (!session) {
     const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
-    if (cookieMatch) session = getSession(cookieMatch[1]);
+    if (cookieMatch) { token = cookieMatch[1]; session = getSession(token); }
   }
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  // Refresh cookie on each request so it stays alive while the user is active
+  res.setHeader('Set-Cookie', `pa_token=${token};path=/;max-age=${SESSION_TTL / 1000};SameSite=Strict`);
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
