@@ -2257,33 +2257,7 @@ function generateW9HtmlTemplate(workerName) {
   </tr>
   <tr>
     <td colspan="2" style="padding:3px 0">
-      <div style="font-size:8pt;margin-bottom:2px"><strong>2</strong> Business name/disregarded entity name, if different from above</div>
-      <text-field name="w9_business_name" role="Signer" style="${textFieldStyle}"></text-field>
-    </td>
-  </tr>
-  <tr>
-    <td style="width:60%;padding:3px 4px 3px 0;vertical-align:top">
-      <div style="font-size:8pt;margin-bottom:4px"><strong>3</strong> Federal tax classification of the person whose name is entered on line 1. Check only one of the following seven boxes.</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:8pt">
-        <label><checkbox-field name="w9_class_individual" role="Signer" style="width:14px;height:14px"></checkbox-field> Individual/sole proprietor or single-member LLC</label>
-        <label><checkbox-field name="w9_class_c_corp" role="Signer" style="width:14px;height:14px"></checkbox-field> C Corporation</label>
-        <label><checkbox-field name="w9_class_s_corp" role="Signer" style="width:14px;height:14px"></checkbox-field> S Corporation</label>
-        <label><checkbox-field name="w9_class_partnership" role="Signer" style="width:14px;height:14px"></checkbox-field> Partnership</label>
-        <label><checkbox-field name="w9_class_trust" role="Signer" style="width:14px;height:14px"></checkbox-field> Trust/estate</label>
-        <label style="display:flex;align-items:center;gap:3px"><checkbox-field name="w9_class_llc" role="Signer" style="width:14px;height:14px"></checkbox-field> LLC. Tax classification:
-          <text-field name="w9_llc_type" role="Signer" style="${fieldStyle}width:40px;font-size:8pt" placeholder="C/S/P"></text-field>
-        </label>
-        <label style="display:flex;align-items:center;gap:3px"><checkbox-field name="w9_class_other" role="Signer" style="width:14px;height:14px"></checkbox-field> Other:
-          <text-field name="w9_class_other_desc" role="Signer" style="${fieldStyle}width:100px;font-size:8pt"></text-field>
-        </label>
-      </div>
-    </td>
-    <td style="width:40%;padding:3px 0 3px 8px;vertical-align:top;border-left:1px solid #ccc">
-      <div style="font-size:8pt;margin-bottom:3px"><strong>4</strong> Exemptions (codes apply only to certain entities, not individuals)</div>
-      <div style="font-size:8pt;margin-bottom:2px">Exempt payee code (if any)</div>
-      <text-field name="w9_exempt_payee_code" role="Signer" style="${fieldStyle}width:80px"></text-field>
-      <div style="font-size:8pt;margin-top:4px;margin-bottom:2px">Exemption from FATCA reporting code (if any)</div>
-      <text-field name="w9_fatca_code" role="Signer" style="${fieldStyle}width:80px"></text-field>
+      <div style="font-size:8pt;margin-bottom:4px"><strong>3</strong> Federal tax classification: <strong>Individual/sole proprietor</strong></div>
     </td>
   </tr>
   <tr>
@@ -2298,35 +2272,21 @@ function generateW9HtmlTemplate(workerName) {
       <text-field name="w9_city_state_zip" role="Signer" required="true" style="${textFieldStyle}"></text-field>
     </td>
   </tr>
-  <tr>
-    <td colspan="2" style="padding:3px 0">
-      <div style="font-size:8pt;margin-bottom:2px"><strong>7</strong> List account number(s) here (optional)</div>
-      <text-field name="w9_account_numbers" role="Signer" style="${textFieldStyle}"></text-field>
-    </td>
-  </tr>
 </table>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin:8px 0;font-size:8.5pt">
   <strong>Part I — Taxpayer Identification Number (TIN)</strong><br>
-  <span style="font-size:7.5pt">Enter your TIN in the appropriate box. For individuals, this is your social security number (SSN). For other entities, it is your employer identification number (EIN).</span>
+  <span style="font-size:7.5pt">Enter your SSN or ITIN in the box below.</span>
   <table style="width:100%;margin-top:6px;border-collapse:collapse">
     <tr>
-      <td style="width:50%;padding-right:8px">
-        <div style="font-size:8pt;margin-bottom:2px">Social security number (SSN)</div>
+      <td>
+        <div style="font-size:8pt;margin-bottom:2px">Social security number (SSN) / Individual taxpayer identification number (ITIN)</div>
         <div style="display:flex;align-items:center;gap:3px">
-          <text-field name="w9_ssn_1" role="Signer" style="${fieldStyle}width:45px;text-align:center" placeholder="XXX"></text-field>
+          <text-field name="w9_ssn_1" role="Signer" required="true" style="${fieldStyle}width:45px;text-align:center" placeholder="XXX"></text-field>
           <span>–</span>
-          <text-field name="w9_ssn_2" role="Signer" style="${fieldStyle}width:30px;text-align:center" placeholder="XX"></text-field>
+          <text-field name="w9_ssn_2" role="Signer" required="true" style="${fieldStyle}width:30px;text-align:center" placeholder="XX"></text-field>
           <span>–</span>
-          <text-field name="w9_ssn_3" role="Signer" style="${fieldStyle}width:50px;text-align:center" placeholder="XXXX"></text-field>
-        </div>
-      </td>
-      <td style="width:50%;padding-left:8px;border-left:1px solid #ccc">
-        <div style="font-size:8pt;margin-bottom:2px">Employer identification number (EIN)</div>
-        <div style="display:flex;align-items:center;gap:3px">
-          <text-field name="w9_ein_1" role="Signer" style="${fieldStyle}width:35px;text-align:center" placeholder="XX"></text-field>
-          <span>–</span>
-          <text-field name="w9_ein_2" role="Signer" style="${fieldStyle}width:70px;text-align:center" placeholder="XXXXXXX"></text-field>
+          <text-field name="w9_ssn_3" role="Signer" required="true" style="${fieldStyle}width:50px;text-align:center" placeholder="XXXX"></text-field>
         </div>
       </td>
     </tr>
