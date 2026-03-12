@@ -2253,15 +2253,44 @@ async function dsealArchive(submissionId) {
   if (r.status >= 400) throw new Error(`DocuSeal 归档失败 ${r.status}: ${JSON.stringify(r.data)}`);
 }
 
-async function dsealDownloadDocument(submissionId) {
-  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
-  if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}`);
-  const sub = r.data;
-  let docUrl = null;
-  for (const s of (sub.submitters || [])) {
-    if (s.documents && s.documents.length) { docUrl = s.documents[0].url; break; }
+async function dsealDownloadDocument(submissionId, { retries = 3, delayMs = 2000 } = {}) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+    if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}`);
+    const sub = r.data;
+
+    // Prefer documents from completed submitters (they have actual signatures rendered)
+    // Pick the LAST completed submitter's document — it has the most signatures applied
+    let docUrl = null;
+    for (const s of (sub.submitters || [])) {
+      if (s.status === 'completed' && s.completed_at && s.documents && s.documents.length) {
+        docUrl = s.documents[s.documents.length - 1].url;
+      }
+    }
+    // Fallback: any submitter with documents
+    if (!docUrl) {
+      for (const s of (sub.submitters || [])) {
+        if (s.documents && s.documents.length) { docUrl = s.documents[0].url; break; }
+      }
+    }
+
+    if (docUrl) {
+      console.log(`[DocuSeal] Download doc attempt ${attempt}: submissionId=${submissionId}, docUrl=${docUrl.substring(0, 100)}`);
+      const buf = await _dsealFetchUrl(docUrl);
+      // Sanity check: PDF should start with %PDF
+      if (buf.length > 4 && buf.slice(0, 5).toString() === '%PDF-') return buf;
+      // If not a valid PDF, it might be a placeholder; retry after delay
+      console.warn(`[DocuSeal] Downloaded content is not a valid PDF (${buf.length} bytes, starts with "${buf.slice(0, 20).toString()}"), attempt ${attempt}/${retries}`);
+    } else {
+      console.warn(`[DocuSeal] No documents found for submission ${submissionId}, attempt ${attempt}/${retries}, submitters: ${JSON.stringify((sub.submitters || []).map(s => ({ id: s.id, role: s.role, status: s.status, docs: (s.documents || []).length })))}`);
+    }
+
+    if (attempt < retries) await new Promise(ok => setTimeout(ok, delayMs * attempt));
   }
-  if (!docUrl) throw new Error('DocuSeal: 签署文件链接不可用');
+  throw new Error('DocuSeal: 签署文件链接不可用（重试后仍未获取到已签署PDF）');
+}
+
+function _dsealFetchUrl(docUrl) {
   return new Promise((resolve, reject) => {
     const urlObj = new URL(docUrl);
     const isHttps = urlObj.protocol === 'https:';
