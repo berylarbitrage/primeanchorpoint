@@ -2114,32 +2114,28 @@ function dsealGetPdfPageCount(docPath) {
 async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
   const docBase64 = 'data:application/pdf;base64,' + fs.readFileSync(docPath).toString('base64');
   const lastPage = dsealGetPdfPageCount(docPath);
-  // Step 1: Create template from PDF
+  // DocuSeal page is 0-based index
+  const sigPage = lastPage - 1;
+  // Step 1: Create template from PDF with fields defined inline
   const tmplRes = await dsealApiCall('POST', '/api/templates/pdf', {
     name: emailSubject || docName,
-    documents: [{ name: docName, file: docBase64 }]
+    documents: [{ name: docName, file: docBase64 }],
+    fields: [
+      { name: 'Company Signature', type: 'signature', role: 'First Party', required: true,
+        areas: [{ page: sigPage, x: 0.08, y: 0.75, w: 0.35, h: 0.06 }] },
+      { name: 'Company Date', type: 'date', role: 'First Party', required: true,
+        areas: [{ page: sigPage, x: 0.08, y: 0.82, w: 0.25, h: 0.04 }] },
+      { name: 'Worker Signature', type: 'signature', role: 'Second Party', required: true,
+        areas: [{ page: sigPage, x: 0.55, y: 0.75, w: 0.35, h: 0.06 }] },
+      { name: 'Worker Date', type: 'date', role: 'Second Party', required: true,
+        areas: [{ page: sigPage, x: 0.55, y: 0.82, w: 0.25, h: 0.04 }] }
+    ]
   });
   if (tmplRes.status >= 400 || !tmplRes.data?.id) {
     throw new Error(`DocuSeal 模板创建失败 ${tmplRes.status}: ${JSON.stringify(tmplRes.data)}`);
   }
   const templateId = tmplRes.data.id;
-  // Step 1.5: Add signature/date fields explicitly (text-tag detection may fail with minimal PDFs)
-  const sigPageIdx = lastPage - 1; // 0-based page index for last page
-  const updRes = await dsealApiCall('PUT', `/api/templates/${templateId}`, {
-    fields: [
-      { name: 'Company Signature', type: 'signature', role: 'First Party', required: true,
-        areas: [{ page: sigPageIdx, x: 0.08, y: 0.75, w: 0.35, h: 0.06 }] },
-      { name: 'Company Date', type: 'date', role: 'First Party', required: true,
-        areas: [{ page: sigPageIdx, x: 0.08, y: 0.82, w: 0.25, h: 0.04 }] },
-      { name: 'Worker Signature', type: 'signature', role: 'Second Party', required: true,
-        areas: [{ page: sigPageIdx, x: 0.08, y: 0.90, w: 0.35, h: 0.06 }] },
-      { name: 'Worker Date', type: 'date', role: 'Second Party', required: true,
-        areas: [{ page: sigPageIdx, x: 0.08, y: 0.97, w: 0.25, h: 0.04 }] }
-    ]
-  });
-  if (updRes.status >= 400) {
-    console.error(`[DocuSeal] Template field update warning ${updRes.status}: ${JSON.stringify(updRes.data)}`);
-  }
+  console.log(`[DocuSeal] Template created id=${templateId}, lastPage=${lastPage}, fields=${(tmplRes.data.fields||[]).length}, response_keys=${Object.keys(tmplRes.data).join(',')}`);
   // Step 2: Create submission with two submitters
   const subRes = await dsealApiCall('POST', '/api/submissions', {
     template_id: templateId,
