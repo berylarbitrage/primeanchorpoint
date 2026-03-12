@@ -2113,76 +2113,29 @@ function dsealGetPdfPageCount(docPath) {
 
 async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
   const docBase64 = 'data:application/pdf;base64,' + fs.readFileSync(docPath).toString('base64');
-  const lastPage = dsealGetPdfPageCount(docPath);
 
-  // Step 1: Create template from PDF
-  const tmplRes = await dsealApiCall('POST', '/api/templates/pdf', {
+  // Use POST /submissions/pdf — one-step: auto-detects {{field;role=...;type=...}} text tags,
+  // creates fields, removes tag text from rendered PDF, and creates submission in one call.
+  const subRes = await dsealApiCall('POST', '/api/submissions/pdf', {
     name: emailSubject || docName,
-    documents: [{ name: docName, file: docBase64 }]
-  });
-  if (tmplRes.status >= 400 || !tmplRes.data?.id) {
-    throw new Error(`DocuSeal 模板创建失败 ${tmplRes.status}: ${JSON.stringify(tmplRes.data)}`);
-  }
-  const templateId = tmplRes.data.id;
-  console.log(`[DocuSeal] Template created id=${templateId}, lastPage=${lastPage}, response_keys=${Object.keys(tmplRes.data).join(',')}, full=${JSON.stringify(tmplRes.data).substring(0, 500)}`);
-
-  // Step 2: GET template to find document attachment_uuid
-  const getRes = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
-  console.log(`[DocuSeal] GET template: status=${getRes.status}, keys=${Object.keys(getRes.data||{}).join(',')}, schema=${JSON.stringify(getRes.data?.schema).substring(0, 300)}, documents=${JSON.stringify(getRes.data?.documents).substring(0, 300)}, fields=${JSON.stringify(getRes.data?.fields).substring(0, 300)}`);
-  // Find attachment_uuid from schema or documents
-  const schema = getRes.data?.schema || [];
-  const documents = getRes.data?.documents || [];
-  const attachUuid = schema[0]?.attachment_uuid || documents[0]?.uuid || '';
-  console.log(`[DocuSeal] attachment_uuid=${attachUuid}`);
-
-  // Step 3: PUT to add signature/date fields
-  const sigPage = lastPage - 1; // DocuSeal uses 0-based page index
-  const mkArea = (page, x, y, w, h) => {
-    const area = { page, x, y, w, h };
-    if (attachUuid) area.attachment_uuid = attachUuid;
-    return area;
-  };
-  const updRes = await dsealApiCall('PUT', `/api/templates/${templateId}`, {
-    fields: [
-      { name: 'Company Signature', type: 'signature', role: 'First Party', required: true,
-        areas: [mkArea(sigPage, 0.08, 0.75, 0.35, 0.06)] },
-      { name: 'Company Date', type: 'date', role: 'First Party', required: true,
-        areas: [mkArea(sigPage, 0.08, 0.82, 0.25, 0.04)] },
-      { name: 'Worker Signature', type: 'signature', role: 'Second Party', required: true,
-        areas: [mkArea(sigPage, 0.55, 0.75, 0.35, 0.06)] },
-      { name: 'Worker Date', type: 'date', role: 'Second Party', required: true,
-        areas: [mkArea(sigPage, 0.55, 0.82, 0.25, 0.04)] }
-    ]
-  });
-  console.log(`[DocuSeal] Template field update: status=${updRes.status}, fields=${(updRes.data?.fields||[]).length}, response=${JSON.stringify(updRes.data).substring(0, 400)}`);
-  if (updRes.status >= 400) {
-    console.error(`[DocuSeal] Field update FAILED: ${JSON.stringify(updRes.data)}`);
-  }
-
-  // Step 4: Verify template has fields before creating submission
-  const verifyRes = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
-  const fieldCount = (verifyRes.data?.fields || []).length;
-  console.log(`[DocuSeal] Template verify: fields=${fieldCount}, field_names=${(verifyRes.data?.fields||[]).map(f=>f.name).join(',')}`);
-  if (fieldCount === 0) {
-    throw new Error('DocuSeal 模板字段创建失败，模板无字段');
-  }
-
-  // Step 5: Create submission with two submitters
-  const subRes = await dsealApiCall('POST', '/api/submissions', {
-    template_id: templateId,
-    send_email: true,
+    documents: [{ name: docName, file: docBase64 }],
+    send_email: false,
     order: 'preserved',
     submitters: [
-      { role: 'First Party', name: signer1.name, email: signer1.email, send_email: false },
-      { role: 'Second Party', name: signer2.name, email: signer2.email, send_email: false }
+      { role: 'First Party', name: signer1.name, email: signer1.email },
+      { role: 'Second Party', name: signer2.name, email: signer2.email }
     ]
   });
-  if (subRes.status >= 400 || !Array.isArray(subRes.data) || !subRes.data.length) {
+  console.log(`[DocuSeal] submissions/pdf: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
+  // The response is a single submission object (not array) with submitters array
+  const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+  if (subRes.status >= 400 || !submitters.length) {
     throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
   }
-  console.log(`[DocuSeal] Submission response: ${JSON.stringify(subRes.data.map(s => ({ role: s.role, id: s.id, slug: s.slug, embed_src: (s.embed_src||'').substring(0,80) })))}`);
-  const company = subRes.data.find(s => s.role === 'First Party') || subRes.data[0];
-  const worker = subRes.data.find(s => s.role === 'Second Party');
+  console.log(`[DocuSeal] Submitters: ${JSON.stringify(submitters.map(s => ({ role: s.role, id: s.id, slug: s.slug, embed_src: (s.embed_src||'').substring(0,80) })))}`);
+  const submissionId = subRes.data?.id || subRes.data?.submission_id || submitters[0]?.submission_id || '';
+  const company = submitters.find(s => s.role === 'First Party') || submitters[0];
+  const worker = submitters.find(s => s.role === 'Second Party');
   let workerSignUrl = worker?.embed_src || '';
   // If no embed_src in creation response, fetch it via PUT (same approach as company sign URL)
   if (!workerSignUrl && worker?.id) {
@@ -2198,7 +2151,67 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   console.log(`[DocuSeal] Worker sign URL: ${(finalWorkerUrl||'NONE').substring(0,100)}`);
-  return { submissionId: String(company.submission_id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
+  return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
+}
+
+// Send contract via DocuSeal HTML API — converts plain text to HTML with field tags,
+// so DocuSeal reliably creates interactive signature/date fields.
+async function dsealSendContractHtml({ contractText, docName, emailSubject, signer1, signer2 }) {
+  // Convert plain text contract to HTML, replacing field tags with DocuSeal HTML elements
+  const lines = (contractText || '').split('\n');
+  const htmlLines = lines.map(line => {
+    let l = line
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      // Replace DocuSeal text tags with HTML field elements
+      .replace(/\{\{sig1;role=First Party;type=signature\}\}/g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 40px"></signature-field>')
+      .replace(/\{\{date1;role=First Party;type=date\}\}/g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px"></date-field>')
+      .replace(/\{\{sig2;role=Second Party;type=signature\}\}/g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 40px"></signature-field>')
+      .replace(/\{\{date2;role=Second Party;type=date\}\}/g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px"></date-field>')
+      // Also handle legacy /sig1/ etc.
+      .replace(/\/sig1\//g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 40px"></signature-field>')
+      .replace(/\/date1\//g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px"></date-field>')
+      .replace(/\/sig2\//g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 40px"></signature-field>')
+      .replace(/\/date2\//g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px"></date-field>');
+    if (!l.trim()) return '<br>';
+    // Headings
+    const trimmed = line.trim();
+    if (/^[A-Z][A-Z\s]{3,}$/.test(trimmed)) return `<h2 style="text-align:center;margin:16px 0 8px">${l}</h2>`;
+    if (/^\d+\.\s/.test(trimmed)) return `<p style="margin:8px 0 2px"><strong>${l}</strong></p>`;
+    return `<p style="margin:2px 0">${l}</p>`;
+  });
+  const html = `<div style="font-family:Helvetica,Arial,sans-serif;font-size:11pt;line-height:1.5;max-width:700px;margin:0 auto;padding:20px">${htmlLines.join('\n')}</div>`;
+
+  const subRes = await dsealApiCall('POST', '/api/submissions/html', {
+    name: emailSubject || docName,
+    documents: [{ name: docName, html, size: 'Letter' }],
+    send_email: false,
+    order: 'preserved',
+    submitters: [
+      { role: 'First Party', name: signer1.name, email: signer1.email },
+      { role: 'Second Party', name: signer2.name, email: signer2.email }
+    ]
+  });
+  console.log(`[DocuSeal] submissions/html: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
+  const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+  if (subRes.status >= 400 || !submitters.length) {
+    throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+  }
+  console.log(`[DocuSeal] Submitters: ${JSON.stringify(submitters.map(s => ({ role: s.role, id: s.id, slug: s.slug, embed_src: (s.embed_src||'').substring(0,80) })))}`);
+  const submissionId = subRes.data?.id || submitters[0]?.submission_id || '';
+  const company = submitters.find(s => s.role === 'First Party') || submitters[0];
+  const worker = submitters.find(s => s.role === 'Second Party');
+  let workerSignUrl = worker?.embed_src || '';
+  if (!workerSignUrl && worker?.id) {
+    try {
+      const wPut = await dsealApiCall('PUT', `/api/submitters/${worker.id}`, { name: worker.name || signer2.name });
+      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+    } catch (e) { console.error(`[DocuSeal] Failed to get worker embed_src: ${e.message}`); }
+  }
+  const workerSlug = worker?.slug || '';
+  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
+  const finalWorkerUrl = workerDirectUrl || workerSignUrl;
+  return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
 }
 
 async function dsealGetCompanySignUrl(submissionId) {
@@ -4288,14 +4301,15 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     const empType = w.employment_type || 'w2';
     const dateStr = new Date().toISOString().slice(0, 10);
     const content = req.body.content || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
-    // Build PDF
+    // Also build PDF for local preview/archive
     const pdfBuf = buildContractPdf(content);
     const filename = `worker-contract-${workerId}-${Date.now()}.pdf`;
     const docPath = path.join(docsDir, filename);
     fs.writeFileSync(docPath, pdfBuf);
-    // Send via DocuSeal
-    const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendEnvelope({
-      docPath, docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}.pdf`,
+    // Send via DocuSeal HTML API — converts text to HTML with proper field tags
+    const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendContractHtml({
+      contractText: content,
+      docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}`,
       emailSubject: `请签署合同 / Please Sign — ${workerName} × ${companyName}`,
       signer1: { email: companyEmail, name: companyName },
       signer2: { email: workerEmail, name: workerName }
