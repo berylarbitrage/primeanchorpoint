@@ -1356,6 +1356,13 @@ tr:hover td{background:var(--sky-light)}
           <label>地址</label>
           <input type="text" id="invPageBillAddr" placeholder="客户地址">
         </div>
+        <div class="field">
+          <label style="color:#92400e;font-weight:600">Markup Rate（加价系数）</label>
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <input type="number" id="invPageMarkupRate" placeholder="如 1.15" min="0" step="0.01" style="width:110px;border:1px solid #d97706;border-radius:6px;padding:5px 8px;font-size:.88rem;font-weight:600;color:#92400e">
+            <span style="font-size:.8rem;color:#92400e">× 总工资 = 最终账单<br><span style="color:var(--gray-400);font-weight:400">1.15 = 加价 15%</span></span>
+          </div>
+        </div>
       </div>
 
       <!-- Employee list -->
@@ -1383,12 +1390,6 @@ tr:hover td{background:var(--sky-light)}
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpToggleEmpImport()">📥 从系统导入员工</button>
       </div>
 
-      <!-- Markup Rate -->
-      <div style="margin-top:.75rem;display:flex;align-items:center;gap:.6rem;background:var(--amber-light,#fffbeb);border:1px solid #fcd34d;border-radius:7px;padding:.5rem .85rem">
-        <span style="font-size:.85rem;font-weight:600;color:#92400e">Markup Rate（加价系数）：</span>
-        <input type="number" id="invPageMarkupRate" placeholder="如 1.15" min="0" step="0.01" style="width:100px;border:1px solid #d97706;border-radius:6px;padding:4px 8px;font-size:.88rem;font-weight:600;color:#92400e">
-        <span style="font-size:.82rem;color:#92400e">× 员工总工资 = 最终账单金额&nbsp;（例：1.15 表示加价 15%）</span>
-      </div>
     </div>
 
     <!-- Preset selectors at bottom -->
