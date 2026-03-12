@@ -9345,29 +9345,29 @@ async function openDsCompanySign(type, id) {
     const r = await api(endpoint);
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
 
-    // Wait for iframe to load before showing it
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        // After 90s, stop waiting and show the iframe anyway — user can still try to interact
-        resolve();
-      }, 90000);
-      iframe.onload = () => { clearTimeout(timeout); resolve(); };
-      iframe.onerror = () => { clearTimeout(timeout); reject(new Error('签署页面加载失败')); };
-      iframe.src = r.signUrl;
+    // Use DocuSeal <docuseal-form> web component for inline document signing
+    const formContainer = document.getElementById('dsSignFormContainer');
+    formContainer.innerHTML = '';
+    const form = document.createElement('docuseal-form');
+    form.setAttribute('data-src', r.signUrl);
+    form.setAttribute('data-expand', 'false');
+    form.setAttribute('data-order-as-on-page', 'true');
+    if (r.companyName) form.setAttribute('data-signature', r.companyName);
+    form.setAttribute('data-with-send-copy-button', 'false');
+    form.style.width = '100%';
+    form.addEventListener('completed', () => {
+      closeDsSignModal();
+      showToast('✅ 公司已签署', 'success');
+      if (type === 'partnerfile' && currentPartner) showPartnerById(currentPartner.id);
     });
-
+    form.addEventListener('declined', () => {
+      closeDsSignModal();
+      showToast('签署已取消', 'info');
+    });
+    formContainer.appendChild(form);
     loading.style.display = 'none';
-    iframe.style.display = '';
-    iframe.onload = null;
-    iframe.onerror = null;
-
-    // Show retry option after 30s in case DocuSign itself is stuck
-    window._dsLoadTimeout = setTimeout(() => {
-      if (_dsSignContext && _dsSignContext.type === type && _dsSignContext.id === id) {
-        // iframe is visible but user might be stuck — offer retry
-        // Don't hide the iframe, just note the option in footer area (non-intrusive)
-      }
-    }, 30000);
+    iframe.style.display = 'none';
+    formContainer.style.display = '';
   } catch (e) {
     loadingText.textContent = '加载失败：' + e.message;
     retryBtn.style.display = '';
@@ -13368,11 +13368,14 @@ async function openCompanySign() {
     const form = document.createElement('docuseal-form');
     form.setAttribute('data-src', r.signUrl);
     form.setAttribute('id', 'dsSignForm');
+    // Show fields directly on the document (not step-by-step wizard)
+    form.setAttribute('data-expand', 'false');
+    form.setAttribute('data-order-as-on-page', 'true');
     // Pre-fill company signature (typed) so admin just clicks "Complete"
     if (r.companyName) form.setAttribute('data-signature', r.companyName);
     // Pre-fill date field with today's date
     const today = new Date().toISOString().slice(0, 10);
-    form.setAttribute('data-values', JSON.stringify({ 'Company Date': today }));
+    form.setAttribute('data-values', JSON.stringify({ date1: today }));
     form.setAttribute('data-with-send-copy-button', 'false');
     form.style.width = '100%';
     form.addEventListener('completed', () => {
