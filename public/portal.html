@@ -217,6 +217,7 @@ function googleTranslateElementInit() {
 }
 </script>
 <script src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" defer></script>
+<script src="https://cdn.docuseal.com/js/form.js" defer></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -5287,6 +5288,66 @@ else document.getElementById('loginWrap').style.display = '';
     }
   });
 })();
+</script>
+
+<!-- ── Worker Contract Signing Modal ── -->
+<div id="workerContractSignModal" style="display:none;position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;width:min(98vw,860px);height:min(92vh,720px);display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.1rem;border-bottom:1px solid #e2e8f0;flex-shrink:0">
+      <span style="font-weight:700;font-size:.95rem;color:#4c1d95">✍️ 合同签署</span>
+      <button onclick="closeWorkerContractSign()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#64748b;line-height:1">&times;</button>
+    </div>
+    <div id="workerContractSignLoading" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;font-size:.9rem;color:#64748b">
+      <div style="width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#9333ea;border-radius:50%;animation:spin .8s linear infinite"></div>
+      <span id="workerContractSignMsg">加载签署页面中…</span>
+    </div>
+    <div id="workerContractSignForm" style="flex:1;display:none;overflow:auto;min-height:0"></div>
+  </div>
+</div>
+
+<script>
+async function openWorkerContractSign() {
+  const modal = document.getElementById('workerContractSignModal');
+  const loading = document.getElementById('workerContractSignLoading');
+  const msgEl = document.getElementById('workerContractSignMsg');
+  const formDiv = document.getElementById('workerContractSignForm');
+  modal.style.display = 'flex';
+  loading.style.display = 'flex';
+  formDiv.style.display = 'none';
+  formDiv.innerHTML = '';
+  msgEl.textContent = '加载签署页面中…';
+  try {
+    const r = await wApi('/contract-sign-url');
+    if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
+    if (r.dsStatus === 'sent') {
+      msgEl.innerHTML = '⏳ 请等待公司方先完成签署，签署完成后系统将通知您。<br><br><button onclick="closeWorkerContractSign()" style="padding:.5rem 1.5rem;background:#9333ea;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭</button>';
+      return;
+    }
+    // Load DocuSeal form web component
+    const form = document.createElement('docuseal-form');
+    form.setAttribute('data-src', r.signUrl);
+    form.style.width = '100%';
+    form.addEventListener('completed', () => {
+      closeWorkerContractSign();
+      showToast('✅ 合同已签署完成！', 'success', 6000);
+      loadOnboarding();
+    });
+    form.addEventListener('declined', () => {
+      closeWorkerContractSign();
+      showToast('您已拒绝签署合同', 'info');
+    });
+    formDiv.appendChild(form);
+    loading.style.display = 'none';
+    formDiv.style.display = '';
+  } catch (e) {
+    msgEl.innerHTML = `❌ ${e.message}<br><br><button onclick="closeWorkerContractSign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭</button>`;
+  }
+}
+
+function closeWorkerContractSign() {
+  document.getElementById('workerContractSignModal').style.display = 'none';
+  document.getElementById('workerContractSignForm').innerHTML = '';
+}
 </script>
 </body>
 </html>
