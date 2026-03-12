@@ -1362,12 +1362,16 @@ tr:hover td{background:var(--sky-light)}
       </div>
 
       <!-- Employee list -->
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.5rem">
         <h3 style="margin:0">员工工时明细</h3>
-        <div style="display:flex;gap:.5rem;align-items:center">
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
           <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
           <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
-          <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
+          <span style="font-size:.83rem;color:var(--gray-500)">$/h</span>
+          <span style="font-size:.83rem;color:var(--gray-400);margin:0 .25rem">|</span>
+          <span style="font-size:.83rem;color:var(--gray-500)">中介加价率：</span>
+          <input type="number" id="invPageMarkupRate" placeholder="如 35" min="0" step="1" style="width:75px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem">
+          <span style="font-size:.83rem;color:var(--gray-500)">%（最终账单 = 员工总工资 × (1 + 加价率%)）</span>
         </div>
       </div>
       <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
@@ -17094,7 +17098,7 @@ function openInvpBuilderModal() {
   _invpManualUidSeq = 1;
   window._invpSelectedPartnerState = null;
   window._invpCurrentSavedId = null;
-  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageEditId'];
+  const fields = ['invPageNumber','invPageDate','invPageStart','invPageEnd','invPageBillName','invPageBillAddr','invPageUniformRate','invPageMarkupRate','invPageEditId'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
@@ -17124,6 +17128,7 @@ async function openInvpForEdit(id) {
   document.getElementById('invPageBillName').value = inv.company_name || '';
   document.getElementById('invPageBillAddr').value = inv.bill_to_addr || '';
   document.getElementById('invPageUniformRate').value = '';
+  document.getElementById('invPageMarkupRate').value = inv.markup_rate || '';
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
 
@@ -17397,10 +17402,13 @@ async function saveInvpInvoice(status) {
   if (!invNum || !billName) { alert('请填写 Invoice 编号和客户公司名称'); return; }
 
   const items = getInvpManualItems();
-  const subtotal = items.reduce((s,i) => s+i.total, 0);
+  const employeeTotal = items.reduce((s,i) => s+i.total, 0);
+  const markupPct = parseFloat(document.getElementById('invPageMarkupRate').value) || 0;
+  const markupAmt = employeeTotal * markupPct / 100;
+  const subtotal = employeeTotal + markupAmt;
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
-    period_start: ps, period_end: pe, subtotal, items, profile: getInvpProfile(), status
+    period_start: ps, period_end: pe, subtotal, items, markup_rate: markupPct, profile: getInvpProfile(), status
   };
 
   let res;
@@ -17795,6 +17803,9 @@ async function generateInvpPreview() {
   const totalRegHrs = items.reduce((s,i) => s+i.regHours, 0);
   const totalOtHrs  = items.reduce((s,i) => s+i.otHours, 0);
   const totalAmt    = items.reduce((s,i) => s+i.total, 0);
+  const markupPct   = parseFloat(document.getElementById('invPageMarkupRate').value) || 0;
+  const markupAmt   = totalAmt * markupPct / 100;
+  const grandTotal  = totalAmt + markupAmt;
 
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
   const tableRows = items.map(i => `
@@ -17868,13 +17879,22 @@ async function generateInvpPreview() {
         <tbody>
           ${tableRows}
           <tr style="background:#f6c26b;font-weight:700">
-            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Total</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="3">Subtotal</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
             <td style="padding:8px 10px;border:1px solid #bfcce0"></td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${totalRegHrs.toFixed(2)}h</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
             <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${totalAmt.toFixed(2)}</td>
           </tr>
+          ${markupPct > 0 ? `
+          <tr style="background:#fff8e1;font-weight:600">
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center" colspan="7">Staffing Service Fee (${markupPct}%)</td>
+            <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:right">$${markupAmt.toFixed(2)}</td>
+          </tr>
+          <tr style="background:#e65100;color:#fff;font-weight:700">
+            <td style="padding:9px 10px;border:1px solid #bf360c;text-align:center" colspan="7">TOTAL DUE</td>
+            <td style="padding:9px 10px;border:1px solid #bf360c;text-align:right;font-size:1.05em">$${grandTotal.toFixed(2)}</td>
+          </tr>` : ''}
         </tbody>
       </table>
 

@@ -672,6 +672,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`)
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
@@ -7691,12 +7692,12 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
 
 // Save invoice
 app.post('/api/admin/invoices', requireAdmin, (req, res) => {
-  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status } = req.body;
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
   const result = db.prepare(`
-    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved');
+    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json, status, markup_rate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(result.lastInsertRowid, '创建', `Invoice 编号: ${invoice_number}`);
   res.json({ id: result.lastInsertRowid });
@@ -7714,12 +7715,12 @@ app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
 
 // Update invoice
 app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
-  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status } = req.body;
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
   db.prepare(`
-    UPDATE invoices SET invoice_number=?, invoice_date=?, company_name=?, bill_to_addr=?, period_start=?, period_end=?, for_label=?, subtotal=?, items_json=?, profile_json=?, status=?
+    UPDATE invoices SET invoice_number=?, invoice_date=?, company_name=?, bill_to_addr=?, period_start=?, period_end=?, for_label=?, subtotal=?, items_json=?, profile_json=?, status=?, markup_rate=?
     WHERE id=?
-  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', req.params.id);
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0, req.params.id);
   res.json({ success: true });
 });
 
