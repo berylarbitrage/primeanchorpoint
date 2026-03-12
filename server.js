@@ -1709,7 +1709,15 @@ schedule24hReminders();
 // ─── Middleware ───
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+// Redirect *.html URLs to clean URLs (e.g. /admin.html → /admin)
+app.use((req, res, next) => {
+  if (req.path.endsWith('.html') && req.method === 'GET') {
+    return res.redirect(301, req.path.slice(0, -5));
+  }
+  next();
+});
 app.use(express.static('public', {
+  extensions: ['html'],
   setHeaders(res, filePath) {
     if (filePath.endsWith('.html')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
