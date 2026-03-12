@@ -4047,11 +4047,21 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
   // Get old status for history logging
   const oldTask = db.prepare("SELECT status, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key=?").get(req.params.id, req.params.key);
   const oldStatus = oldTask ? oldTask.status : '';
-  db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
-    VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
-    ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,
-      action_url=excluded.action_url, completed_at=excluded.completed_at, updated_at=CURRENT_TIMESTAMP`)
-    .run(req.params.id, req.params.key, status, admin_note||'', action_url||'', completedAt);
+  // When resetting contract to pending, also clear DocuSeal signing data and archive submission
+  if (req.params.key === 'contract' && status === 'pending' && oldTask && oldTask.ds_status) {
+    const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(req.params.id);
+    if (onb && onb.ds_envelope_id) {
+      try { dsealArchive(onb.ds_envelope_id).catch(e => console.error('[contract reset] archive error:', e.message)); } catch {}
+    }
+    db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, ds_company_signed_at=NULL, contract_content='', status='pending', admin_note='合同已重置', action_url='', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+      .run(req.params.id);
+  } else {
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
+      VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,
+        action_url=excluded.action_url, completed_at=excluded.completed_at, updated_at=CURRENT_TIMESTAMP`)
+      .run(req.params.id, req.params.key, status, admin_note||'', action_url||'', completedAt);
+  }
   // Log onboarding task changes to worker history
   if (oldStatus && oldStatus !== status) {
     const TASK_LABELS = { contract:'合同', interview:'面试', phone_verify:'电话验证', email_verify:'邮箱验证', persona_verify:'身份验证', background_check:'背景调查', tax_form:'税表', direct_deposit:'银行信息' };
