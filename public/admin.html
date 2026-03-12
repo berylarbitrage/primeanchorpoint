@@ -13291,6 +13291,8 @@ async function openContractSendModal() {
     // Show "view signed version" button if at least one party has signed
     if (r.ds_status === 'company_signed' || r.ds_status === 'worker_signed' || r.ds_status === 'completed') {
       document.getElementById('contractViewSignedBtn').style.display = '';
+      // Auto-load the signed PDF so the user immediately sees the signature
+      viewSignedContract(true);
     }
   }
 }
@@ -13441,21 +13443,35 @@ async function viewSignedContract(autoRetry = false) {
   if (!_onboardingWorkerId) return;
   const previewDiv = document.getElementById('contractPdfPreview');
   const frame = document.getElementById('contractPdfFrame');
-  try {
-    const resp = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf`);
-    if (!resp.ok) {
-      const errData = await resp.json().catch(() => ({}));
-      if (autoRetry) { console.warn('[viewSignedContract] auto-retry failed:', errData.error); return; }
-      showToast('❌ 获取已签文档失败: ' + (errData.error || resp.statusText), 'error');
+  const maxAttempts = autoRetry ? 4 : 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const resp = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf`);
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        if (autoRetry && attempt < maxAttempts) {
+          console.warn(`[viewSignedContract] attempt ${attempt}/${maxAttempts} failed:`, errData.error);
+          await new Promise(ok => setTimeout(ok, 3000 * attempt));
+          continue;
+        }
+        if (autoRetry) { console.warn('[viewSignedContract] all auto-retry attempts failed:', errData.error); return; }
+        showToast('❌ 获取已签文档失败: ' + (errData.error || resp.statusText), 'error');
+        return;
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      frame.src = url;
+      previewDiv.style.display = '';
       return;
+    } catch (e) {
+      if (autoRetry && attempt < maxAttempts) {
+        console.warn(`[viewSignedContract] attempt ${attempt}/${maxAttempts} error:`, e.message);
+        await new Promise(ok => setTimeout(ok, 3000 * attempt));
+        continue;
+      }
+      if (autoRetry) { console.warn('[viewSignedContract] all auto-retry attempts error:', e.message); return; }
+      showToast('❌ ' + e.message, 'error');
     }
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    frame.src = url;
-    previewDiv.style.display = '';
-  } catch (e) {
-    if (autoRetry) { console.warn('[viewSignedContract] auto-retry error:', e.message); return; }
-    showToast('❌ ' + e.message, 'error');
   }
 }
 
