@@ -1380,7 +1380,7 @@ const PORTAL_I18N = {
     bookLoadingSlot: '加载面试信息…',
     bookDateLocale: 'zh-CN', bookTimeLocale: 'zh-CN',
     obActionCheckr: '📧 请查收 Checkr 发送的邮件完成背景调查', obActionDocs: '去提交文件 →',
-    obActionGusto: '填写 Gusto 信息 →', obActionContract: '查看/签署合同 →', obActionSubmit: '标记已提交',
+    obActionGusto: '填写 Gusto 信息 →', obActionContract: '查看/签署合同 →', obContractWaiting: '⏳ 合同已创建，等待公司签署后即可签署', obActionSubmit: '标记已提交',
     obSubmittedNote: '已提交，等待 HR 审核中…',
     obOptional: '(可豁免)',
     obTaskTitles: { phone_verify:'手机号验证', email_verify:'邮箱验证', interview:'完成面试', persona_verify:'身份证件验证', background_check:'背景调查', id_verify:'身份证件上传', ssn_verify:'SSN 验证', ead_upload:'EAD 文件上传', i9:'I-9 表格', w9:'W-9 表格', contract:'合同签署', gusto:'Gusto 薪资信息' },
@@ -1531,7 +1531,7 @@ const PORTAL_I18N = {
     bookLoadingSlot: 'Loading interview info…',
     bookDateLocale: 'en-US', bookTimeLocale: 'en-US',
     obActionCheckr: '📧 Check your email for Checkr background check', obActionDocs: 'Submit Documents →',
-    obActionGusto: 'Complete Gusto Setup →', obActionContract: 'View/Sign Contract →', obActionSubmit: 'Mark as Submitted',
+    obActionGusto: 'Complete Gusto Setup →', obActionContract: 'View/Sign Contract →', obContractWaiting: '⏳ Contract created, waiting for company to sign first', obActionSubmit: 'Mark as Submitted',
     obSubmittedNote: 'Submitted — awaiting HR review…',
     obOptional: '(Optional)',
     obTaskTitles: { phone_verify:'Phone Verification', email_verify:'Email Verification', interview:'Complete Interview', persona_verify:'Identity Verification', background_check:'Background Check', id_verify:'ID Document Upload', ssn_verify:'SSN Verification', ead_upload:'EAD Upload', i9:'I-9 Form', w9:'W-9 Form', contract:'Sign Contract', gusto:'Gusto Payroll Setup' },
@@ -1682,7 +1682,7 @@ const PORTAL_I18N = {
     bookLoadingSlot: 'Cargando información de entrevista…',
     bookDateLocale: 'es-MX', bookTimeLocale: 'es-MX',
     obActionCheckr: '📧 Revise su correo para el estudio de Checkr', obActionDocs: 'Enviar Documentos →',
-    obActionGusto: 'Completar Gusto →', obActionContract: 'Ver/Firmar Contrato →', obActionSubmit: 'Marcar como Enviado',
+    obActionGusto: 'Completar Gusto →', obActionContract: 'Ver/Firmar Contrato →', obContractWaiting: '⏳ Contrato creado, esperando la firma de la empresa', obActionSubmit: 'Marcar como Enviado',
     obSubmittedNote: 'Enviado — esperando revisión de RR.HH.…',
     obOptional: '(Opcional)',
     obTaskTitles: { phone_verify:'Verificación de Teléfono', email_verify:'Verificación de Correo', interview:'Completar Entrevista', persona_verify:'Verificación de Identidad', background_check:'Verificación de Antecedentes', id_verify:'Carga de Documento ID', ssn_verify:'Verificación de SSN', ead_upload:'Carga de EAD', i9:'Formulario I-9', w9:'Formulario W-9', contract:'Firmar Contrato', gusto:'Configuración de Nómina Gusto' },
@@ -5008,13 +5008,12 @@ async function loadOnboarding() {
         actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">${_t('obActionCheckr')}${t.action_url ? ` · <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">${_t('obActionOpenLink')}</a>` : ''}</div>`;
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">${_t('obActionDocs')}</button>`;
-      } else if ((t.key === 'contract' || t.key === 'gusto') && t.action_url) {
-        const label = t.key === 'gusto' ? _t('obActionGusto') : _t('obActionContract');
-        if (t.key === 'contract') {
-          actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openContractModal('${esc(t.action_url)}')">${label}</button>`;
-        } else {
-          actionHtml = `<a class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;text-decoration:none;display:inline-block" href="${esc(t.action_url)}" target="_blank">${label}</a>`;
-        }
+      } else if (t.key === 'contract' && t.action_url) {
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openContractModal('${esc(t.action_url)}')">${_t('obActionContract')}</button>`;
+      } else if (t.key === 'contract' && !t.action_url) {
+        actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">${_t('obContractWaiting')}</div>`;
+      } else if (t.key === 'gusto' && t.action_url) {
+        actionHtml = `<a class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;text-decoration:none;display:inline-block" href="${esc(t.action_url)}" target="_blank">${_t('obActionGusto')}</a>`;
       } else if (t.key !== 'phone_verify') {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="submitOnboardingTask('${t.key}')">${_t('obActionSubmit')}</button>`;
       }
