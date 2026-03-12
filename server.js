@@ -2377,15 +2377,19 @@ function getDsealConfigTemplateId(type) {
 }
 
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
-async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip }) {
+async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip, ssn, tinType, businessName, taxClassification }) {
   const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
   if (templateId) {
-    // Use existing DocuSeal template (official IRS W-9)
+    // Use existing DocuSeal template (official IRS W-9) — pre-fill all available fields
     const fields = [{ name: 'w9_name', default_value: workerName, readonly: false }];
     if (address) fields.push({ name: 'w9_address', default_value: address, readonly: false });
     if (cityStateZip) fields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
+    if (ssn) fields.push({ name: 'w9_ssn', default_value: ssn, readonly: false });
+    if (businessName) fields.push({ name: 'w9_business_name', default_value: businessName, readonly: false });
+    if (taxClassification) fields.push({ name: 'w9_tax_classification', default_value: taxClassification, readonly: false });
+    fields.push({ name: 'w9_date', default_value: todayDate, readonly: false });
     subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
@@ -4783,7 +4787,7 @@ app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) =>
   res.send(page);
 });
 
-// Send W-9 form to worker via DocuSeal
+// Send W-9 form request to worker — sends portal link for info collection, then DocuSeal for signing
 app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res) => {
   try {
     const workerId = parseInt(req.params.id);
@@ -4791,63 +4795,54 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     if (!w) return res.status(404).json({ error: 'Worker not found' });
     const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
-    const prefillAddress = req.body.address || '';
-    const prefillCityStateZip = req.body.city_state_zip || '';
-    if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
-    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    const usingTemplate = !!(getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID);
-    const { submissionId, workerSignUrl } = await dsealSendW9Html({ workerName, workerEmail, address: prefillAddress, cityStateZip: prefillCityStateZip });
-    console.log(`[W-9] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}, template=${usingTemplate}`);
-    db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
-      visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
-      WHERE worker_account_id=? AND task_key='w9'`)
-      .run(submissionId, `W-9 已发送至 ${workerEmail} (${new Date().toLocaleString('zh-CN')})`, workerSignUrl || '', workerId);
+    const workerPhone = w.phone || '';
+
+    // Make W-9 task visible and set to pending
+    db.prepare(`UPDATE worker_onboarding SET status='pending', visible_to_worker=1, ds_status=NULL, ds_envelope_id=NULL,
+      admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+      .run(`W-9 已发送至工人 (${new Date().toLocaleString('zh-CN')})，等待工人填写信息`, workerId);
     const changedBy = req.session && req.session.username ? req.session.username : 'admin';
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(workerId, changedBy, 'w9', '', '已发送', `W-9 已通过 DocuSeal 发送至 ${workerEmail}`);
-    // Send notification email & SMS
-    const signUrl = workerSignUrl;
+      .run(workerId, changedBy, 'w9', '', '已发送', `W-9 填写请求已发送，等待工人在门户填写信息`);
+
+    // Build portal link — worker opens portal to fill in W-9 info
+    const baseUrl = (process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, '');
+    const portalLink = `${baseUrl}/portal.html#w9`;
+
     let emailSent = false;
     let smsSent = false;
-    let dsealEmailSent = false;
-    if (usingTemplate) {
-      // DocuSeal template mode: DocuSeal sends the email directly (send_email: true)
-      dsealEmailSent = true;
-      emailSent = true;
-    }
-    // Also send our own notification email as backup (with sign link)
-    if (workerEmail && !usingTemplate) {
-      const signLink = signUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${signUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">填写 W-9 / Complete W-9 / Completar W-9</a></p>` : '';
+    // Send email with portal link
+    if (workerEmail) {
+      const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${portalLink}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">填写 W-9 / Complete W-9 / Completar W-9</a></p>`;
       emailSent = await sendEmail(workerEmail,
         `Prime Anchorpoint — 请填写 W-9 税表 / Please Complete W-9 / Complete el W-9`,
-        `${workerName}，请点击链接填写并签署 W-9 税表。\n${signUrl || ''}\n\n${workerName}, please click the link to complete your W-9 form.\n${signUrl || ''}\n\n${workerName}, haga clic en el enlace para completar su formulario W-9.\n${signUrl || ''}`,
+        `${workerName}，请点击链接填写并签署 W-9 税表。\n${portalLink}\n\n${workerName}, please click the link to complete your W-9 form.\n${portalLink}\n\n${workerName}, haga clic en el enlace para completar su formulario W-9.\n${portalLink}`,
         `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
           <h2 style="color:#1a1a1a;text-align:center">请填写 W-9 税表</h2>
-          <p>您好 ${workerName}，请填写并签署 W-9 税表（纳税人识别号申请表）。</p>
+          <p>您好 ${workerName}，请登录门户填写 W-9 税表信息（姓名、地址、税号），填写完成后系统将自动生成正式 W-9 表格供您签字确认。</p>
           ${signLink}
           <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
           <h3 style="font-size:.95rem">Please Complete Your W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please complete and sign the W-9 form (Request for Taxpayer Identification Number).</p>
+          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please log into the portal to fill in your W-9 information (name, address, TIN). After submitting, the system will generate the official W-9 form for your signature.</p>
           ${signLink}
           <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
           <h3 style="font-size:.95rem">Complete el Formulario W-9</h3>
-          <p style="color:#555;font-size:.9rem">Hola ${workerName}, complete y firme el formulario W-9 (Solicitud de Número de Identificación del Contribuyente).</p>
+          <p style="color:#555;font-size:.9rem">Hola ${workerName}, inicie sesión en el portal para completar su información W-9. Después de enviar, el sistema generará el formulario W-9 oficial para su firma.</p>
           ${signLink}
           <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
         </div>`
       );
     }
-    // Send SMS
-    const workerPhone = w.phone || '';
+    // Send SMS with portal link
     if (workerPhone) {
-      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请填写 W-9 税表 / Please complete your W-9 / Complete su W-9${signUrl ? '\n' + signUrl : ''}\nReply STOP to opt out.`);
+      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录门户填写 W-9 税表 / Please complete your W-9 info / Complete su W-9\n${portalLink}\nReply STOP to opt out.`);
     }
     const warnings = [];
-    if (workerEmail && !emailSent && !dsealEmailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
+    if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
     if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
     if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
     if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
-    res.json({ success: true, submissionId, workerSignUrl, emailSent, smsSent, dsealEmailSent, warnings });
+    res.json({ success: true, portalLink, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[W-9 send error]', e.message);
     res.status(500).json({ error: e.message });
@@ -9741,29 +9736,66 @@ app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
   }
 });
 
-// Submit W-9 form data
-app.post('/api/worker/compliance/w9', requireWorker, (req, res) => {
-  const formData = {};
-  const fields = ['name','business_name','tax_classification','exempt_payee_code','fatca_code',
-    'address','city','state','zip','account_numbers','ssn_or_ein','signature_confirm','tin_type'];
-  fields.forEach(f => { if (req.body[f] !== undefined) formData[f] = req.body[f]; });
+// Submit W-9 form data — saves info, then auto-creates DocuSeal submission for signing
+app.post('/api/worker/compliance/w9', requireWorker, async (req, res) => {
+  try {
+    const formData = {};
+    const fields = ['name','business_name','tax_classification','exempt_payee_code','fatca_code',
+      'address','city','state','zip','account_numbers','ssn_or_ein','signature_confirm','tin_type'];
+    fields.forEach(f => { if (req.body[f] !== undefined) formData[f] = req.body[f]; });
 
-  // Encrypt SSN/EIN if provided
-  if (req.body.ssn_or_ein) {
-    formData.ssn_or_ein_masked = req.body.ssn_or_ein.replace(/\d(?=\d{4})/g, '*');
-    formData.ssn_or_ein_encrypted = encryptSSN(req.body.ssn_or_ein);
-    delete formData.ssn_or_ein;
-  }
+    // Encrypt SSN/EIN if provided
+    const rawSsnEin = req.body.ssn_or_ein || '';
+    if (rawSsnEin) {
+      formData.ssn_or_ein_masked = rawSsnEin.replace(/\d(?=\d{4})/g, '*');
+      formData.ssn_or_ein_encrypted = encryptSSN(rawSsnEin);
+      delete formData.ssn_or_ein;
+    }
 
-  const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' AND status IN ('pending','rejected')").get(req.workerId);
-  if (existing) {
-    db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
-      .run(JSON.stringify(formData), existing.id);
-  } else {
-    db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'pending')")
-      .run(req.workerId, JSON.stringify(formData));
+    const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' AND status IN ('pending','rejected')").get(req.workerId);
+    if (existing) {
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .run(JSON.stringify(formData), existing.id);
+    } else {
+      db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'pending')")
+        .run(req.workerId, JSON.stringify(formData));
+    }
+
+    // Auto-create DocuSeal W-9 submission for signing
+    let signUrl = '';
+    if (dsealEnabled()) {
+      const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
+      const workerName = req.body.name || w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+      const workerEmail = w.email || '';
+      const address = req.body.address || '';
+      const cityStateZip = [req.body.city, req.body.state, req.body.zip].filter(Boolean).join(', ');
+      try {
+        const { submissionId, workerSignUrl } = await dsealSendW9Html({
+          workerName, workerEmail, address, cityStateZip,
+          ssn: rawSsnEin, tinType: req.body.tin_type,
+          businessName: req.body.business_name,
+          taxClassification: req.body.tax_classification
+        });
+        signUrl = workerSignUrl || '';
+        // Update onboarding task with DocuSeal info
+        db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', action_url=?, admin_note=?, updated_at=CURRENT_TIMESTAMP
+          WHERE worker_account_id=? AND task_key='w9'`)
+          .run(submissionId, signUrl, `工人已填写 W-9 信息，等待签署确认 (${new Date().toLocaleString('zh-CN')})`, req.workerId);
+        console.log(`[W-9] Worker ${req.workerId} submitted info, DocuSeal created: ${submissionId}`);
+      } catch (e) {
+        console.error(`[W-9] DocuSeal submission failed for worker ${req.workerId}:`, e.message);
+      }
+    }
+
+    // Update onboarding task status to submitted
+    db.prepare("UPDATE worker_onboarding SET status='submitted', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9' AND status='pending'")
+      .run(req.workerId);
+
+    res.json({ success: true, signUrl });
+  } catch (e) {
+    console.error('[W-9 submit error]', e.message);
+    res.status(500).json({ error: e.message });
   }
-  res.json({ success: true });
 });
 
 // Upload generic compliance doc (work_permit, ssn_card, other)
@@ -10605,8 +10637,10 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
     const pf = db.prepare("SELECT id FROM partner_files WHERE ds_envelope_id=?").get(submissionId);
     // Check worker_onboarding contracts
     const wo = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='contract'").get(submissionId);
+    // Check worker_onboarding W-9
+    const w9 = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='w9'").get(submissionId);
 
-    if (!pf && !wo) { res.json({ received: true }); return; }
+    if (!pf && !wo && !w9) { res.json({ received: true }); return; }
 
     // Handle partner file contract events
     if (pf) {
@@ -10761,6 +10795,29 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
         // Log decline to worker history
         db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
           .run(wid, 'system', 'contract', '签署中', '已拒签', `工人拒签原因: ${declineReason || '未提供'}`);
+      }
+    }
+
+    // Handle worker W-9 events
+    if (w9) {
+      const w9wid = w9.worker_account_id;
+      if (isCompleted || isSubmitterCompleted) {
+        try {
+          const { status, workerSigned } = await dsealGetW9Status(submissionId);
+          db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+            .run(status, workerSigned, w9wid);
+          if (status === 'completed') {
+            db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='W-9 已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+              .run(w9wid);
+            db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+              .run(w9wid, 'system', 'w9', '签署中', '已签署', `W-9 签署完成: ${workerSigned || new Date().toISOString()}`);
+            syncOnboardedStatus(w9wid);
+            console.log(`[DocuSeal] Worker W-9 completed for worker ${w9wid}`);
+          }
+        } catch (e) { console.error('[DocuSeal webhook] W-9 completion error:', e.message); }
+      } else if (isDeclined) {
+        db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+          .run(`工人已拒签 W-9: ${data.decline_reason || ''}`, w9wid);
       }
     }
 
