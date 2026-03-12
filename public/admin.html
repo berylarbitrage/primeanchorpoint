@@ -13047,7 +13047,7 @@ async function doChangeEmploymentType(newType) {
   });
 
   // Waive tasks not applicable to new type
-  const tasksToWaive = newType === 'w2' ? ['w9', 'work_auth'] : ['i9', 'ead_upload', 'gusto'];
+  const tasksToWaive = newType === 'w2' ? ['w9'] : ['i9', 'ead_upload', 'work_permit', 'work_auth', 'gusto'];
   for (const key of tasksToWaive) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
@@ -13055,7 +13055,7 @@ async function doChangeEmploymentType(newType) {
   }
 
   // Reset previously waived tasks that now apply
-  const tasksToReset = newType === 'w2' ? ['i9', 'ead_upload', 'gusto'] : ['w9', 'work_auth'];
+  const tasksToReset = newType === 'w2' ? ['i9', 'ead_upload', 'work_permit', 'gusto'] : ['w9'];
   for (const key of tasksToReset) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
@@ -13108,7 +13108,7 @@ function selectEmploymentType(type) {
 
 // Onboarding tasks auto-assigned per employment type
 const W2_TASKS = ['contract', 'background_check', 'persona_verify', 'i9', 'ead_upload', 'work_permit', 'gusto'];
-const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify', 'work_permit', 'work_auth'];
+const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify'];
 
 async function openInterviewCompleteModal() {
   if (!_onboardingWorkerId) return;
