@@ -1355,7 +1355,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
 )`);
 
 // Seed default integration rows if not present
-const intProviders = ['workbright','checkr','gusto','twilio'];
+const intProviders = ['workbright','checkr','gusto','twilio','docuseal'];
 intProviders.forEach(p => {
   const ex = db.prepare('SELECT id FROM integration_settings WHERE provider=?').get(p);
   if (!ex) db.prepare('INSERT INTO integration_settings (provider) VALUES (?)').run(p);
@@ -11486,6 +11486,82 @@ app.post('/api/admin/invoices', requireAdmin, blockManager, (req, res) => {
 app.delete('/api/admin/invoices/:id', requireAdmin, blockManager, (req, res) => {
   db.prepare('DELETE FROM invoices WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── DocuSeal Template Management ───
+
+// GET /api/admin/docuseal/config — return stored template config
+app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
+  const row = db.prepare("SELECT * FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  res.json({
+    connected: dsealEnabled(),
+    url: (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, ''),
+    contract_template_id: cfg.contract_template_id || null,
+    w9_template_id: cfg.w9_template_id || null,
+  });
+});
+
+// POST /api/admin/docuseal/config — save template IDs
+app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
+  const { contract_template_id, w9_template_id } = req.body;
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  if (contract_template_id !== undefined) cfg.contract_template_id = contract_template_id || null;
+  if (w9_template_id !== undefined) cfg.w9_template_id = w9_template_id || null;
+  db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+    .run(JSON.stringify(cfg));
+  res.json({ success: true });
+});
+
+// GET /api/admin/docuseal/templates — list templates from DocuSeal
+app.get('/api/admin/docuseal/templates', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const r = await dsealApiCall('GET', '/api/templates', null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
+    const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+    res.json(templates);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/admin/docuseal/templates/:id — delete a template from DocuSeal
+app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const r = await dsealApiCall('DELETE', `/api/templates/${req.params.id}`, null);
+    if (r.status !== 200 && r.status !== 204) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
+    // Clear from config if it was set as default
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse(row?.config || '{}');
+    const tid = parseInt(req.params.id);
+    if (cfg.contract_template_id === tid) cfg.contract_template_id = null;
+    if (cfg.w9_template_id === tid) cfg.w9_template_id = null;
+    db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+      .run(JSON.stringify(cfg));
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/docuseal/upload-template — upload PDF to DocuSeal as a new template
+app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ limit: '20mb' }), async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const { name, file } = req.body; // file = data:application/pdf;base64,...
+  if (!name || !file) return res.status(400).json({ error: '缺少 name 或 file' });
+  try {
+    const r = await dsealApiCall('POST', '/api/templates/pdf', {
+      name,
+      documents: [{ name: name + '.pdf', file }]
+    });
+    if (r.status !== 200 && r.status !== 201) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
+    res.json(r.data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Graceful shutdown: checkpoint WAL and close database
