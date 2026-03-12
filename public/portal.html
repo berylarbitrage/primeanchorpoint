@@ -5009,6 +5009,29 @@ async function loadOnboarding() {
         actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">${_t('obActionCheckr')}${t.action_url ? ` · <a href="${esc(t.action_url)}" target="_blank" style="color:var(--sky)">${_t('obActionOpenLink')}</a>` : ''}</div>`;
       } else if (t.key === 'w9' && t.action_url) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openContractModal('${esc(t.action_url)}')">${_t('obActionW9')}</button>`;
+      } else if (t.key === 'work_auth') {
+        actionHtml = `<div style="margin-top:.55rem">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+            <div style="border:1.5px solid #bae6fd;border-radius:8px;padding:.5rem .65rem;background:#f0f9ff;font-size:.78rem">
+              <div style="font-weight:700;color:#0369a1;margin-bottom:.25rem">📋 List A</div>
+              <div style="color:var(--gray-700);line-height:1.6">
+                🛂 美国护照 / Passport<br>
+                🟩 绿卡 (I-551)<br>
+                📄 EAD (I-766)<br>
+                📄 外国护照 + I-20
+              </div>
+            </div>
+            <div style="border:1.5px solid #a7f3d0;border-radius:8px;padding:.5rem .65rem;background:#f0fdf4;font-size:.78rem">
+              <div style="font-weight:700;color:#065f46;margin-bottom:.25rem">📋 List B + C</div>
+              <div style="color:var(--gray-700);line-height:1.6">
+                <span style="color:#0369a1">B:</span> 驾照 / State ID<br>
+                <span style="color:#065f46">C:</span> SSN 卡 / 出生证明<br>
+                <span style="color:#065f46">C:</span> 公民证 (N-560/561)
+              </div>
+            </div>
+          </div>
+          <button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem" onclick="showTab('compliance')">${_t('obActionDocs')}</button>
+        </div>`;
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">${_t('obActionDocs')}</button>`;
       } else if (t.key === 'contract' && t.action_url) {

@@ -4343,8 +4343,11 @@ app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res
 app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmin, (req, res) => {
   const { visible, slot_ids } = req.body;
   const workerId = parseInt(req.params.id);
-  db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
-    .run(visible ? 1 : 0, workerId, req.params.key);
+  // Upsert — handles 'not_initialized' rows that don't exist yet
+  db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, updated_at)
+    VALUES (?, ?, 'pending', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(worker_account_id, task_key) DO UPDATE SET visible_to_worker=excluded.visible_to_worker, updated_at=CURRENT_TIMESTAMP`)
+    .run(workerId, req.params.key, visible ? 1 : 0);
 
   // When assigning interview slots to a worker, store the assigned slot IDs
   if (req.params.key === 'interview' && Array.isArray(slot_ids) && slot_ids.length) {
@@ -4894,6 +4897,34 @@ app.get('/api/admin/worker-accounts/:id/w9-signed-pdf', requireAdmin, async (req
     const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-w9-${workerId}.pdf"` });
     res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Send Work Authorization verification task to worker
+app.post('/api/admin/worker-accounts/:id/send-work-auth', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    const adminNote = req.body.note || 'Work Authorization 认证调查已发送，请按要求上传身份证明文件';
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, updated_at)
+      VALUES (?, 'work_auth', 'pending', 1, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id, task_key) DO UPDATE SET status='pending', visible_to_worker=1, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, adminNote);
+    // Send notification via SMS/email
+    const workerName = w.name || w.username || '';
+    const workerPhone = w.phone || '';
+    const workerEmail = w.email || '';
+    if (workerPhone) {
+      await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录工人门户完成 Work Authorization 认证，上传所需身份证明文件。Reply STOP to opt out.`).catch(() => {});
+    }
+    if (workerEmail) {
+      await sendEmail(workerEmail, 'Work Authorization 认证 — 请上传身份证明文件',
+        `${workerName}，\n请登录工人门户完成 Work Authorization 认证调查。\n\nPrime Anchorpoint`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem"><h2>Work Authorization 认证</h2><p>您好 ${workerName}，</p><p>请登录工人门户，在入职进度中完成 <strong>Work Authorization 认证</strong>，按要求上传身份证明文件。</p><p style="color:#64748b;font-size:.9rem">Prime Anchorpoint</p></div>`
+      ).catch(() => {});
+    }
+    res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

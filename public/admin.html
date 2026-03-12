@@ -2506,6 +2506,55 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Work Authorization Modal -->
+<div class="modal-bg" id="workAuthModal"><div class="modal" style="max-width:680px">
+  <h2>📑 Work Authorization 认证 — <span id="workAuthWorkerName" style="color:var(--sky)"></span></h2>
+  <div style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)">工人需上传符合 I-9 要求的身份证明文件，选择下列任一组合即可。</div>
+
+  <!-- Document combos -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin:.75rem 0">
+    <!-- List A -->
+    <div style="border:1.5px solid #bae6fd;border-radius:10px;padding:.75rem 1rem;background:#f0f9ff">
+      <div style="font-weight:700;color:#0369a1;font-size:.9rem;margin-bottom:.4rem">📋 List A — 任选一项</div>
+      <div style="font-size:.82rem;color:var(--gray-700);line-height:1.7">
+        <div>🛂 美国护照 / Passport</div>
+        <div>🟩 永久居民卡 (绿卡 I-551)</div>
+        <div>📄 外国护照 + I-94 / EAD (Form I-766)</div>
+        <div>📄 外国护照 + Form I-20 (F-1 学签)</div>
+      </div>
+    </div>
+    <!-- List B + C -->
+    <div style="border:1.5px solid #a7f3d0;border-radius:10px;padding:.75rem 1rem;background:#f0fdf4">
+      <div style="font-weight:700;color:#065f46;font-size:.9rem;margin-bottom:.4rem">📋 List B + C — 各选一项</div>
+      <div style="font-size:.82rem;color:var(--gray-700);line-height:1.7">
+        <div style="font-weight:600;color:#0369a1;margin-bottom:.15rem">List B（身份证明）：</div>
+        <div>🪪 驾照 / State ID</div>
+        <div>🏫 学生证 + 学校记录</div>
+        <div style="font-weight:600;color:#065f46;margin:.35rem 0 .15rem">List C（就业资格）：</div>
+        <div>🔢 SSN 卡（不限制）</div>
+        <div>📜 出生证明 (Birth Certificate)</div>
+        <div>🇺🇸 美国公民证 (N-560/N-561)</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin:.5rem 0;padding:.5rem .75rem;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#854d0e">
+    ⚠️ 以上为常见文件，实际 I-9 规定以 USCIS 官方列表为准。工人上传后由 HR 审核。
+  </div>
+
+  <div style="margin:.75rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">通知备注（可选，工人可见）：</label>
+    <textarea id="workAuthNote" rows="2" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="请在 Portal 上传符合要求的身份证明文件组合…"></textarea>
+  </div>
+
+  <div id="workAuthStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+
+  <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+    <button class="btn btn-green" id="workAuthSendBtn" onclick="doSendWorkAuth()">📤 发送认证任务给工人</button>
+    <button class="btn" onclick="closeModal('workAuthModal')">关闭</button>
+  </div>
+</div></div>
+
 <!-- Customer Account Modal -->
 <div class="modal-bg" id="customerAccountModal"><div class="modal" style="max-width:520px">
   <h2 id="customerAccModalTitle">新建客户账户</h2>
@@ -13065,7 +13114,7 @@ function renderOnboardingTasks(tasks) {
             : t.key==='w9'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openW9SendModal()">📄 ${t.ds_status==='completed'?'W-9 已完成':t.ds_status==='sent'?'查看/重发 W-9':'发送 DocuSeal W-9'}</button>`
             : t.key==='work_auth'
-            ? `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;font-weight:700" onclick="toggleOnboardingVisibility('work_auth',${isVisible?0:1})">${isVisible?'📑 已发送认证调查':'📑 发送 Work Auth 认证'}</button>`
+            ? `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;font-weight:700" onclick="openWorkAuthModal()">${t.status==='completed'?'📑 Work Auth 已完成':isVisible?'📑 查看/重发认证任务':'📑 发送 Work Auth 认证'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -13833,6 +13882,45 @@ async function refreshW9Status() {
 async function downloadSignedW9() {
   if (!_onboardingWorkerId) return;
   window.open(`/api/admin/worker-accounts/${_onboardingWorkerId}/w9-signed-pdf`, '_blank');
+}
+
+// ─── Work Auth Modal Functions ───
+function openWorkAuthModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  document.getElementById('workAuthWorkerName').textContent = w ? (w.name || w.username || '') : '';
+  document.getElementById('workAuthNote').value = 'Work Authorization 认证调查已发送，请在 Portal 上传符合要求的身份证明文件';
+  document.getElementById('workAuthStatus').style.display = 'none';
+  document.getElementById('workAuthSendBtn').disabled = false;
+  document.getElementById('workAuthSendBtn').textContent = '📤 发送认证任务给工人';
+  document.getElementById('workAuthModal').classList.add('show');
+}
+
+async function doSendWorkAuth() {
+  if (!_onboardingWorkerId) return;
+  const note = document.getElementById('workAuthNote').value.trim();
+  const btn = document.getElementById('workAuthSendBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中…';
+  const statusEl = document.getElementById('workAuthStatus');
+  statusEl.style.display = 'none';
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-work-auth`, { method:'POST', body: JSON.stringify({ note }) });
+  if (r && r.success) {
+    statusEl.textContent = '✅ 认证任务已发送给工人';
+    statusEl.style.display = '';
+    statusEl.style.background = '#d1fae5';
+    statusEl.style.color = '#065f46';
+    btn.textContent = '📤 重新发送';
+    btn.disabled = false;
+    refreshOnboardingModal();
+  } else {
+    statusEl.textContent = '❌ ' + (r?.error || '发送失败');
+    statusEl.style.display = '';
+    statusEl.style.background = '#fef2f2';
+    statusEl.style.color = '#dc2626';
+    btn.disabled = false;
+    btn.textContent = '📤 发送认证任务给工人';
+  }
 }
 
 async function showContractVersions(workerId, workerName) {
