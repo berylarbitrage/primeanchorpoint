@@ -4686,7 +4686,7 @@ function finishLogin(r) {
   USER_ROLE = role;
   USER_NAME = r.username || '';
   _currentUserId = r.user_id || 0;
-  document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
+  document.cookie = `pa_token=${TOKEN};path=/;max-age=2592000;SameSite=Strict`;
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').classList.add('show');
   applyRoleUI();
