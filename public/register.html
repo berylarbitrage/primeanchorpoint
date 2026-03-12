@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>注册 — Prime Anchor Point</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--sky:#0ea5e9;--blue:#0F2B5B;--green:#22c55e;--red:#ef4444;--orange:#f97316;
@@ -1027,7 +1028,7 @@ async function registerWorker() {
     const r = await fetch('/api/register/worker', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ first_name: firstName, middle_name: middleName, last_name: lastName, name, phone, email, dob, city, state, work_status: _selectedStatus, position_interests: interests, password: pwd, ref_code: new URLSearchParams(window.location.search).get('ref') || undefined, invite_token: _inviteToken || undefined })
+      body: JSON.stringify({ first_name: firstName, middle_name: middleName, last_name: lastName, name, phone, email, dob, city, state, work_status: _selectedStatus, position_interests: interests, password: pwd, ref_code: new URLSearchParams(window.location.search).get('ref') || undefined, invite_token: _inviteToken || undefined, sms_consent: document.getElementById('wSmsConsent').checked })
     });
     const d = await r.json();
     if (!r.ok || d.error) return showError(d.error || 'Registration failed');

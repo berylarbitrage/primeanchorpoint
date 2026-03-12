@@ -292,6 +292,7 @@ tr:hover td{background:var(--sky-light)}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
+.toast.warning{background:#78350F;border-left:4px solid #fbbf24}
 /* Onboarding task list scrollbar */
 #onboardingTaskList{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
 #onboardingTaskList::-webkit-scrollbar{width:5px}
@@ -361,6 +362,7 @@ tr:hover td{background:var(--sky-light)}
 <script src="/address-validator.js" defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+<script src="https://cdn.docuseal.com/js/form.js"></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -569,6 +571,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('internal-staff')" data-tab="internal-staff" data-role="admin">👤 内部人员</a>
       <a onclick="showTab('accounts')" data-tab="accounts" data-role="admin">🔐 账户管理</a>
       <a onclick="showTab('integrations')" data-tab="integrations" data-role="admin">🔗 集成设置</a>
+      <a href="/docuseal.html" data-role="admin">📄 DocuSeal 模板</a>
       <a onclick="showTab('skill-settings')" data-tab="skill-settings" data-role="admin">🛠️ 技能设置</a>
       <a onclick="showTab('backups')" data-tab="backups" data-role="admin">备份管理</a>
     </div>
@@ -1366,12 +1369,12 @@ tr:hover td{background:var(--sky-light)}
       </div>
 
       <!-- Employee list -->
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;flex-wrap:wrap;gap:.4rem">
         <h3 style="margin:0">员工工时明细</h3>
-        <div style="display:flex;gap:.5rem;align-items:center">
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
           <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
           <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
-          <span style="font-size:.83rem;color:var(--gray-500)">$/h  （填入后自动覆盖下方所有时薪）</span>
+          <span style="font-size:.83rem;color:var(--gray-500)">$/h</span>
         </div>
       </div>
       <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
@@ -1511,6 +1514,10 @@ tr:hover td{background:var(--sky-light)}
     <button id="ivTabLocations" onclick="switchIvTab('locations')"
       style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
       📍 面试地点管理
+    </button>
+    <button id="ivTabHistory" onclick="switchIvTab('history')"
+      style="padding:.5rem 1.25rem;border:none;background:none;font-weight:700;font-size:.88rem;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--gray-500)">
+      📜 历史记录
     </button>
   </div>
 
@@ -1716,6 +1723,36 @@ tr:hover td{background:var(--sky-light)}
       <tbody id="ivLocationsTable"></tbody></table>
     </div>
   </div>
+
+  <!-- History pane -->
+  <div id="ivPaneHistory" style="display:none">
+    <div class="card" style="margin-bottom:1rem">
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+        <input type="text" id="ivHistSearch" placeholder="搜索姓名、电话..." oninput="filterIvHistory()" style="flex:1;min-width:180px;padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+        <select id="ivHistTypeFilter" onchange="filterIvHistory()" style="padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <option value="">全部类型</option>
+          <option value="onboarding">入职面试</option>
+          <option value="job">工作面试</option>
+          <option value="other">其他</option>
+        </select>
+        <select id="ivHistStatusFilter" onchange="filterIvHistory()" style="padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <option value="">全部状态</option>
+          <option value="scheduled">已预约</option>
+          <option value="completed">面试完成</option>
+          <option value="passed">已通过</option>
+          <option value="failed">未通过</option>
+          <option value="cancelled">已取消</option>
+        </select>
+        <select id="ivHistSourceFilter" onchange="filterIvHistory()" style="padding:.5rem .8rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem">
+          <option value="">全部来源</option>
+          <option value="current">当前</option>
+          <option value="archived">已归档</option>
+        </select>
+      </div>
+    </div>
+    <div id="ivHistoryCount" style="font-size:.82rem;color:var(--gray-500);margin-bottom:.5rem"></div>
+    <div id="ivHistoryTable"></div>
+  </div>
 </div>
 
 <!-- Onboarding Interview Slot Modal -->
@@ -1824,12 +1861,16 @@ tr:hover td{background:var(--sky-light)}
   <h2 id="ivLocModalTitle">添加面试地点</h2>
   <input type="hidden" id="ivLocId">
   <div class="field"><label>地点名称 *</label><input id="ivLocName" placeholder="例：芝加哥主办公室、Zoom 线上面试"></div>
-  <div class="field"><label>街道地址 1 Address 1 *</label><input id="ivLocAddress1" placeholder="e.g. 123 Main St"></div>
+  <div class="field"><label>街道地址 1 Address 1 *</label><input id="ivLocAddress1" placeholder="e.g. 123 Main St" oninput="document.getElementById('ivLocAddrStatus').textContent=''"></div>
   <div class="field"><label>街道地址 2 Address 2 <span style="font-weight:400;color:var(--gray-400)">(选填)</span></label><input id="ivLocAddress2" placeholder="e.g. Suite 200"></div>
   <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.75rem">
-    <div class="field"><label>城市 City *</label><input id="ivLocCity" placeholder="Chicago"></div>
+    <div class="field"><label>城市 City *</label><input id="ivLocCity" placeholder="Chicago" oninput="document.getElementById('ivLocAddrStatus').textContent=''"></div>
     <div class="field"><label>州 State *</label><select id="ivLocState" style="padding:9px 6px;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem;width:100%"><option value="">-- 州 --</option></select></div>
-    <div class="field"><label>邮编 ZIP</label><input id="ivLocZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'')"></div>
+    <div class="field"><label>邮编 ZIP</label><input id="ivLocZip" placeholder="60601" maxlength="10" oninput="this.value=this.value.replace(/[^\d-]/g,'');document.getElementById('ivLocAddrStatus').textContent=''"></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:.75rem;margin-top:.35rem;margin-bottom:.25rem">
+    <button type="button" class="btn btn-sm btn-outline" onclick="verifyIvLocAddr()">🔍 验证地址 Verify Address</button>
+    <span id="ivLocAddrStatus" style="font-size:.8rem;font-weight:600"></span>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
     <div class="field"><label>联系人姓名</label><input id="ivLocContactName" placeholder="张经理"></div>
@@ -1839,7 +1880,9 @@ tr:hover td{background:var(--sky-light)}
     <label>到场指引 <span style="color:var(--gray-400);font-weight:400;font-size:.8rem">（房间号、停车、注意事项等）</span></label>
     <textarea id="ivLocInstructions" rows="4" placeholder="例：请到2楼前台报到，告知来面试，停车场在大楼东侧，免费停3小时。"></textarea>
   </div>
+  <div id="ivLocAddrStatus" style="display:none;padding:.5rem .75rem;border-radius:8px;font-size:.85rem;margin-bottom:.5rem"></div>
   <div class="modal-actions">
+    <button class="btn" style="background:#4A90D9;color:#fff" onclick="verifyLocationAddress()">验证地址 Verify Address</button>
     <button class="btn btn-green" onclick="saveLocation()">保存</button>
     <button class="btn" onclick="closeModal('ivLocationModal');document.getElementById('ivLocationModal').style.zIndex=''">取消</button>
   </div>
@@ -1955,8 +1998,8 @@ tr:hover td{background:var(--sky-light)}
   <!-- Worker -->
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
-      <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th>
-      <th>合规文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
+      <th>合规文件</th><th>协议</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -1972,6 +2015,34 @@ tr:hover td{background:var(--sky-light)}
 <!-- Compliance Review 合规审核 -->
 <div id="tab-compliance" style="display:none">
   <div class="top"><h1>合规文件审核</h1></div>
+
+  <!-- Expiring Documents Alert Banner -->
+  <div id="expiringDocsAlert" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;cursor:pointer" onclick="toggleExpiringPanel()">
+    <div style="display:flex;align-items:center;gap:.5rem">
+      <span style="font-size:1.2rem">⚠️</span>
+      <span style="font-weight:700;color:#92400e" id="expiringDocsCount">0 份证件即将到期</span>
+      <span style="margin-left:auto;font-size:.8rem;color:#92400e">点击展开 ▼</span>
+    </div>
+  </div>
+
+  <!-- Expiring Documents Panel (collapsed by default) -->
+  <div id="expiringDocsPanel" style="display:none;margin-bottom:1rem">
+    <div class="card" style="border:2px solid #fde68a">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h3 style="color:#92400e;font-size:.95rem">📋 即将到期证件 Expiring Documents</h3>
+        <select id="expiringDaysFilter" onchange="loadExpiringDocs()" style="padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+          <option value="30">30天内</option>
+          <option value="60">60天内</option>
+          <option value="90" selected>90天内</option>
+        </select>
+      </div>
+      <table><thead><tr>
+        <th>工人</th><th>证件类型</th><th>持有人</th><th>证件号</th><th>到期日</th><th>剩余天数</th><th>操作</th>
+      </tr></thead>
+      <tbody id="expiringDocsTable"></tbody></table>
+    </div>
+  </div>
+
   <div class="search-bar" style="margin-bottom:1rem">
     <select id="complianceFilterType" onchange="loadComplianceDocs()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
       <option value="">全部类型</option>
@@ -1980,6 +2051,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="w9">W-9</option>
       <option value="ssn_card">SSN Card</option>
       <option value="work_permit">工作许可</option>
+      <option value="ead_upload">EAD 工卡</option>
     </select>
     <select id="complianceFilterStatus" onchange="loadComplianceDocs()" style="padding:.5rem;border:1px solid var(--gray-200);border-radius:6px">
       <option value="">全部状态</option>
@@ -1990,7 +2062,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="card">
     <table><thead><tr>
-      <th>工人</th><th>文件类型</th><th>状态</th><th>提交时间</th><th>审核备注</th><th>操作</th>
+      <th>工人</th><th>文件类型</th><th>状态</th><th>到期日</th><th>提交时间</th><th>审核备注</th><th>操作</th>
     </tr></thead>
     <tbody id="complianceDocsTable"></tbody></table>
   </div>
@@ -2180,9 +2252,32 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <!-- Compliance Review Modal -->
-<div class="modal-bg" id="complianceReviewModal"><div class="modal" style="max-width:600px">
+<div class="modal-bg" id="complianceReviewModal"><div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto">
   <h2>审核合规文件</h2>
   <div id="complianceReviewContent"></div>
+
+  <!-- OCR Section -->
+  <div id="complianceOcrSection" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <span style="font-weight:700;color:#0369a1;font-size:.85rem">🔍 证件信息提取 OCR</span>
+      <button class="btn btn-sm" style="background:#0369a1;color:#fff" onclick="runComplianceOcr()" id="ocrRunBtn">扫描证件 Scan Document</button>
+    </div>
+    <div id="ocrStatusMsg" style="display:none;font-size:.82rem;padding:.4rem;border-radius:4px;margin-bottom:.5rem"></div>
+    <div id="ocrResultBox" style="display:none;font-size:.82rem;max-height:120px;overflow-y:auto;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem;margin-bottom:.5rem;white-space:pre-wrap;color:var(--gray-500)"></div>
+  </div>
+
+  <!-- Document Fields: Name, Number, Expiration -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+    <div class="field" style="margin:0"><label style="font-size:.8rem;font-weight:600">持有人姓名 Holder Name</label><input id="complianceHolderName" placeholder="证件上的姓名" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+    <div class="field" style="margin:0"><label style="font-size:.8rem;font-weight:600">证件号码 Document #</label><input id="complianceDocNumber" placeholder="证件编号" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+    <div class="field" style="margin:0"><label style="font-size:.8rem;font-weight:600">到期日期 Expiration Date</label><input type="date" id="complianceExpiresAt" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></div>
+    <div class="field" style="margin:0;display:flex;align-items:flex-end">
+      <button class="btn btn-sm" style="background:#4A90D9;color:#fff;width:100%;padding:.5rem" onclick="saveComplianceFields()">💾 保存证件信息</button>
+    </div>
+  </div>
+
   <div class="field"><label>审核备注</label><textarea id="complianceReviewNotes" rows="3" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px"></textarea></div>
   <div class="modal-actions">
     <button class="btn btn-green" onclick="reviewComplianceDoc('approved')">通过 Approve</button>
@@ -2276,6 +2371,119 @@ tr:hover td{background:var(--sky-light)}
   </div>
   <div class="modal-actions" style="margin-top:.5rem">
     <button class="btn" onclick="closeModal('onboardingModal')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Contract Send Modal -->
+<div class="modal-bg" id="contractSendModal"><div class="modal" style="max-width:720px">
+  <h2>✍️ 发送合同 — <span id="contractWorkerName" style="color:var(--sky)"></span></h2>
+  <div id="contractSendInfo" style="margin:.5rem 0"></div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">合同内容（可编辑）：</label>
+    <textarea id="contractContentEditor" style="width:100%;height:300px;font-family:monospace;font-size:.82rem;border:1px solid var(--gray-200);border-radius:8px;padding:.5rem;resize:vertical;line-height:1.5"></textarea>
+  </div>
+  <div style="display:flex;gap:1rem;margin:.5rem 0;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px">
+      <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人邮箱（DocuSeal 签署链接发送至此）：</label>
+      <input id="contractWorkerEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="worker@email.com">
+    </div>
+    <div style="flex:1;min-width:200px">
+      <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人手机（短信通知）：</label>
+      <input id="contractWorkerPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1..." readonly>
+    </div>
+  </div>
+  <div id="contractPdfPreview" style="display:none;margin:.5rem 0">
+    <iframe id="contractPdfFrame" style="width:100%;height:500px;border:1px solid var(--gray-200);border-radius:8px" allow="clipboard-write; camera"></iframe>
+  </div>
+  <div id="contractDsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+    <button class="btn" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd" onclick="previewContractPdf()">📄 预览 PDF</button>
+    <button class="btn btn-green" id="contractSendBtn" onclick="doSendContract()">📤 发送合同</button>
+    <button class="btn" id="contractSignBtn" style="display:none;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="openCompanySign()">✍️ 公司签署</button>
+    <button class="btn" id="contractViewSignedBtn" style="display:none;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="viewSignedContract()">📋 查看已签版本</button>
+    <button class="btn" id="contractRefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshContractStatus()">🔄 刷新签署状态</button>
+    <button class="btn" id="contractVoidBtn" style="display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="voidContract()">🗑️ 作废</button>
+    <button class="btn" onclick="closeModal('contractSendModal')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Contract Versions Modal -->
+<div class="modal-bg" id="contractVersionsModal"><div class="modal" style="max-width:820px">
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h2 style="margin:0">📜 协议历史版本</h2>
+    <button class="btn" onclick="closeModal('contractVersionsModal')">关闭</button>
+  </div>
+  <div id="contractVersionsContent" style="margin-top:.75rem;max-height:70vh;overflow:auto"></div>
+</div></div>
+
+<!-- W-9 Send Modal -->
+<div class="modal-bg" id="w9SendModal"><div class="modal" style="max-width:720px">
+  <h2>📄 发送 W-9 — <span id="w9WorkerName" style="color:var(--sky)"></span></h2>
+  <div id="w9SendInfo" style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)">
+    系统将向工人发送门户链接（邮件+短信），工人在门户填写 W-9 信息（姓名、地址、SSN/TIN），提交后系统自动生成正式 W-9 表格供工人签字确认。
+  </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人邮箱：</label>
+    <input id="w9WorkerEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="worker@email.com">
+  </div>
+  <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <div style="margin:.75rem 0;padding:.6rem .75rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;font-size:.82rem;color:#0369a1">
+    <b>新流程：</b>点击「发送」后，工人将收到门户链接 → 填写个人信息（姓名、地址、SSN）→ 系统自动生成预填好的 W-9 → 工人只需签字确认。
+  </div>
+  <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+    <button class="btn btn-green" id="w9SendBtn" onclick="doSendW9()">📤 发送 W-9 填写请求</button>
+    <button class="btn" id="w9RefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshW9Status()">🔄 刷新签署状态</button>
+    <button class="btn" id="w9DownloadBtn" style="display:none;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="downloadSignedW9()">📥 下载已签 W-9</button>
+    <button class="btn" onclick="closeModal('w9SendModal')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Work Authorization Modal -->
+<div class="modal-bg" id="workAuthModal"><div class="modal" style="max-width:680px">
+  <h2>📑 Work Authorization 认证 — <span id="workAuthWorkerName" style="color:var(--sky)"></span></h2>
+  <div style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)">工人需上传符合 I-9 要求的身份证明文件，选择下列任一组合即可。</div>
+
+  <!-- Document combos -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin:.75rem 0">
+    <!-- List A -->
+    <div style="border:1.5px solid #bae6fd;border-radius:10px;padding:.75rem 1rem;background:#f0f9ff">
+      <div style="font-weight:700;color:#0369a1;font-size:.9rem;margin-bottom:.4rem">📋 List A — 任选一项</div>
+      <div style="font-size:.82rem;color:var(--gray-700);line-height:1.7">
+        <div>🛂 美国护照 / Passport</div>
+        <div>🟩 永久居民卡 (绿卡 I-551)</div>
+        <div>📄 外国护照 + I-94 / EAD (Form I-766)</div>
+        <div>📄 外国护照 + Form I-20 (F-1 学签)</div>
+      </div>
+    </div>
+    <!-- List B + C -->
+    <div style="border:1.5px solid #a7f3d0;border-radius:10px;padding:.75rem 1rem;background:#f0fdf4">
+      <div style="font-weight:700;color:#065f46;font-size:.9rem;margin-bottom:.4rem">📋 List B + C — 各选一项</div>
+      <div style="font-size:.82rem;color:var(--gray-700);line-height:1.7">
+        <div style="font-weight:600;color:#0369a1;margin-bottom:.15rem">List B（身份证明）：</div>
+        <div>🪪 驾照 / State ID</div>
+        <div>🏫 学生证 + 学校记录</div>
+        <div style="font-weight:600;color:#065f46;margin:.35rem 0 .15rem">List C（就业资格）：</div>
+        <div>🔢 SSN 卡（不限制）</div>
+        <div>📜 出生证明 (Birth Certificate)</div>
+        <div>🇺🇸 美国公民证 (N-560/N-561)</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin:.5rem 0;padding:.5rem .75rem;background:#fefce8;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#854d0e">
+    ⚠️ 以上为常见文件，实际 I-9 规定以 USCIS 官方列表为准。工人上传后由 HR 审核。
+  </div>
+
+  <div style="margin:.75rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">通知备注（可选，工人可见）：</label>
+    <textarea id="workAuthNote" rows="2" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="请在 Portal 上传符合要求的身份证明文件组合…"></textarea>
+  </div>
+
+  <div id="workAuthStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+
+  <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+    <button class="btn btn-green" id="workAuthSendBtn" onclick="doSendWorkAuth()">📤 发送认证任务给工人</button>
+    <button class="btn" onclick="closeModal('workAuthModal')">关闭</button>
   </div>
 </div></div>
 
@@ -2451,6 +2659,27 @@ tr:hover td{background:var(--sky-light)}
   <div id="icInterviewTimeBox" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.6rem .9rem;margin-bottom:1rem;font-size:.86rem;color:#0369a1">
     <span style="font-weight:700">📅 已确认面试时间：</span><span id="icInterviewTime"></span>
     <span id="icInterviewLocation" style="color:#4b5563;margin-left:.5rem"></span>
+  </div>
+
+  <!-- Section 0: Employment type selection -->
+  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #bfdbfe">雇佣类型 Employment Type *</div>
+    <div style="display:flex;gap:.75rem">
+      <label style="flex:1;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpTypeW2Label" onclick="selectEmploymentType('w2')">
+        <input type="radio" name="icEmploymentType" id="icEmpTypeW2" value="w2" style="accent-color:#1d4ed8;width:18px;height:18px">
+        <div>
+          <div style="font-weight:700;font-size:.9rem;color:var(--blue)">W-2 员工</div>
+          <div style="font-size:.75rem;color:var(--gray-400)">I-9 · E-Verify · 背调 · Gusto</div>
+        </div>
+      </label>
+      <label style="flex:1;display:flex;align-items:center;gap:.5rem;cursor:pointer;padding:.6rem .8rem;border:2px solid var(--gray-200);border-radius:8px;background:#fff;transition:all .2s" id="icEmpType1099Label" onclick="selectEmploymentType('1099')">
+        <input type="radio" name="icEmploymentType" id="icEmpType1099" value="1099" style="accent-color:#1d4ed8;width:18px;height:18px">
+        <div>
+          <div style="font-weight:700;font-size:.9rem;color:var(--blue)">1099 承包商</div>
+          <div style="font-size:.75rem;color:var(--gray-400)">W-9 · 合同 · 背调(如需)</div>
+        </div>
+      </label>
+    </div>
   </div>
 
   <!-- Section 1: Post-interview worker info -->
@@ -3543,7 +3772,7 @@ tr:hover td{background:var(--sky-light)}
     <div class="field"><input type="file" id="pFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.doc,.docx,.xls,.xlsx" style="padding:6px;border:1px solid var(--gray-200);border-radius:var(--radius);width:100%"></div>
     <div style="display:flex;gap:.5rem;margin-top:.5rem;align-items:center;flex-wrap:wrap">
       <button class="btn-add-sm" onclick="uploadPartnerFile()">上传文件</button>
-      <button class="btn-add-sm" style="background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE" onclick="openContractEditor()" title="编辑并生成格式正确的合伙协议 PDF，锚点字符隐藏，可直接发送 DocuSign">📄 编辑合同模板</button>
+      <button class="btn-add-sm" style="background:#EFF6FF;color:#1D4ED8;border-color:#BFDBFE" onclick="openContractEditor()" title="编辑并生成格式正确的合伙协议 PDF，可直接发送 DocuSeal">📄 编辑合同模板</button>
     </div>
   </div>
 
@@ -3622,7 +3851,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════ Partner DocuSign Send Modal ════ -->
+<!-- ════ Partner DocuSeal Send Modal ════ -->
 <div class="modal-bg" id="partnerDsModal"><div class="modal" style="max-width:480px">
   <h2>✍ 发送合同签署邀请</h2>
   <p id="partnerDsCompanyName" style="font-weight:700;color:var(--sky);margin-bottom:1rem"></p>
@@ -3661,7 +3890,7 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
-<!-- ════ DocuSign Embedded Signing Modal ════ -->
+<!-- ════ Embedded Signing Modal (DocuSeal for partner files, DocuSign for assignments) ════ -->
 <div id="dsSignModal" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:12px;width:min(96vw,900px);height:min(90vh,700px);display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden">
     <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.1rem;border-bottom:1px solid #e2e8f0;flex-shrink:0">
@@ -3673,6 +3902,7 @@ tr:hover td{background:var(--sky-light)}
       <button id="dsSignRetryBtn" onclick="retryDsCompanySign()" style="display:none;padding:.4rem 1rem;background:#1d4ed8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">重新加载</button>
     </div>
     <iframe id="dsSignIframe" src="about:blank" style="flex:1;border:none;min-height:0;display:none" allowfullscreen></iframe>
+    <div id="dsSignFormContainer" style="flex:1;display:none;overflow:auto;min-height:0"></div>
   </div>
 </div>
 
@@ -4064,6 +4294,21 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<div class="modal-bg" id="inputPromptModal"><div class="modal" style="max-width:420px">
+  <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1rem">
+    <div id="ipmIcon" style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"></div>
+    <div>
+      <h2 id="ipmTitle" style="margin:0;font-size:1.05rem"></h2>
+      <p id="ipmDesc" style="margin:.25rem 0 0;font-size:.84rem;color:var(--gray-600)"></p>
+    </div>
+  </div>
+  <textarea id="ipmInput" rows="3" placeholder="" style="width:100%;box-sizing:border-box;border:1.5px solid var(--gray-200);border-radius:8px;padding:.5rem .7rem;font-size:.88rem;resize:vertical;outline:none;transition:border .15s;font-family:inherit" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'"></textarea>
+  <div style="display:flex;gap:.65rem;justify-content:flex-end;margin-top:.8rem">
+    <button class="btn btn-outline" onclick="closeInputPrompt()">取消</button>
+    <button class="btn" id="ipmBtn" onclick="execInputPrompt()">确认</button>
+  </div>
+</div></div>
+
 <div class="modal-bg" id="dangerConfirmModal"><div class="modal" style="max-width:420px">
   <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.1rem">
     <div style="width:44px;height:44px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -4087,6 +4332,31 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <script>
+let _ipmResolve = null;
+function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor) {
+  const colors = {
+    blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
+    red:   { bg:'#FEE2E2', stroke:'#DC2626', title:'#B91C1C' },
+    amber: { bg:'#FEF3C7', stroke:'#D97706', title:'#92400E' }
+  };
+  const c = colors[iconColor] || colors.red;
+  document.getElementById('ipmIcon').style.background = c.bg;
+  document.getElementById('ipmIcon').innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c.stroke}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+  document.getElementById('ipmTitle').textContent = title;
+  document.getElementById('ipmTitle').style.color = c.title;
+  document.getElementById('ipmDesc').textContent = desc;
+  document.getElementById('ipmInput').value = '';
+  document.getElementById('ipmInput').placeholder = placeholder || '';
+  const btn = document.getElementById('ipmBtn');
+  btn.textContent = btnText || '确认';
+  btn.className = 'btn ' + (btnClass || 'btn-red');
+  document.getElementById('inputPromptModal').classList.add('show');
+  setTimeout(() => document.getElementById('ipmInput').focus(), 100);
+  return new Promise(resolve => { _ipmResolve = resolve; });
+}
+function closeInputPrompt() { document.getElementById('inputPromptModal').classList.remove('show'); if (_ipmResolve) { _ipmResolve(null); _ipmResolve = null; } }
+function execInputPrompt() { const v = document.getElementById('ipmInput').value.trim(); document.getElementById('inputPromptModal').classList.remove('show'); if (_ipmResolve) { _ipmResolve(v || null); _ipmResolve = null; } }
+
 let _gcmCallback = null;
 let _pendingDupSave = null; // { data, empId, field, fieldLabel, existingEmpName }
 let _pendingWorkerLink = null; // { workerId, empId } - link after editing existing employee
@@ -4411,7 +4681,7 @@ function finishLogin(r) {
   USER_ROLE = role;
   USER_NAME = r.username || '';
   _currentUserId = r.user_id || 0;
-  document.cookie = `pa_token=${TOKEN};path=/;max-age=86400;SameSite=Strict`;
+  document.cookie = `pa_token=${TOKEN};path=/;max-age=2592000;SameSite=Strict`;
   document.getElementById('loginWrap').style.display = 'none';
   document.getElementById('app').classList.add('show');
   applyRoleUI();
@@ -5325,7 +5595,7 @@ async function openJobModal(job) {
   document.getElementById('jobId').value = job ? job.id : '';
   // Load partners for search
   const partnerRes = await api('/admin/partners');
-  _jobPartners = Array.isArray(partnerRes) ? partnerRes.filter(p => p.active) : [];
+  _jobPartners = Array.isArray(partnerRes) ? partnerRes : [];
   document.getElementById('jPartnerDrop').classList.remove('open');
   if (job && job.partner_id) {
     const p = _jobPartners.find(x => x.id == job.partner_id);
@@ -6758,8 +7028,8 @@ async function sendForDocuSign(type, id, defaultEmail, defaultName) {
   try {
     const r = await api(url, { method: 'POST', body: JSON.stringify(body) });
     if (r.success) {
-      let msg = `合同信封已创建！Envelope ID: ${r.envelopeId}`;
-      if (r.anchors && (!r.anchors.sig1 || !r.anchors.sig2)) msg += '\n\n⚠️ 警告：PDF 中未检测到签名锚点 /sig1/ 或 /sig2/，签字框将使用固定坐标，请确认位置正确。';
+      let msg = type === 'assignment' ? `合同信封已创建！Envelope ID: ${r.envelopeId}` : `合同已提交至 DocuSeal！Submission ID: ${r.envelopeId}`;
+      if (type === 'assignment' && r.anchors && (!r.anchors.sig1 || !r.anchors.sig2)) msg += '\n\n⚠️ 警告：PDF 中未检测到签名锚点 /sig1/ 或 /sig2/，签字框将使用固定坐标，请确认位置正确。';
       if (r.signUrl) {
         await adminAlert(msg + '\n\n请在弹出窗口中完成公司签字。签完后对方将自动收到邮件邀请。', '✅ 合同已发送');
         openDsCompanySign(type, id);
@@ -6813,7 +7083,7 @@ async function refreshAllPartnerFileStatuses() {
     await loadPartners();
     await showPartnerById(currentPartner.id);
     if (anyCompleted) await adminAlert('✅ 合同已完成签署！已签版本已更新，请重新下载文件查看。', '合同签署完成');
-    else await adminAlert('合同尚未完成签署，当前状态已刷新。\n\n如果你已在 DocuSign 完成签署但状态未更新，请检查 DocuSign Connect 的 Webhook 配置是否指向：\n' + location.origin + '/api/docusign/webhook', '签署状态');
+    else await adminAlert('合同尚未完成签署，当前状态已刷新。\n\n如果你已在 DocuSeal 完成签署但状态未更新，请检查 DocuSeal 的 Webhook 配置是否指向：\n' + location.origin + '/api/docuseal/webhook', '签署状态');
   } catch(e) {
     await adminAlert('刷新失败: ' + e.message, '错误');
   } finally {
@@ -6959,7 +7229,7 @@ async function generateContractPdfFromEditor() {
   const content = document.getElementById('contractEditorTextarea').value.trim();
   if (!content) { await adminAlert('合同内容不能为空', '提示'); return; }
   if (!content.includes('/sig1/') || !content.includes('/sig2/')) {
-    if (!await adminConfirm('⚠️ 合同中未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSign 将使用固定坐标定位签字框，位置可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) return;
+    if (!await adminConfirm('⚠️ 合同中未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSeal 将使用预设坐标定位签字框，位置可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) return;
   }
   const btn = document.getElementById('contractGenerateBtn');
   const msgEl = document.getElementById('contractEditorMsg');
@@ -8162,7 +8432,7 @@ async function showPartnerById(id) {
         <button class="btn btn-sm" style="background:#F5F3FF;color:#7c3aed;border:1px solid #ddd6fe" onclick="openLegalDocEditor('amendment')">✏️ 修改合同</button>
         <button class="btn btn-sm" style="background:#ECFDF5;color:#065f46;border:1px solid #a7f3d0" onclick="openLegalDocEditor('mutual')">🤝 协商解除</button>
       </div>
-      <p style="font-size:.75rem;color:var(--gray-400);margin-top:.5rem">前两项发送邮件通知，后两项需双方 DocuSign 签署</p>
+      <p style="font-size:.75rem;color:var(--gray-400);margin-top:.5rem">前两项发送邮件通知，后两项需双方 DocuSeal 签署</p>
     </div>`;
   }
   document.getElementById('partnerDetailTitle').textContent = p.name;
@@ -8170,12 +8440,12 @@ async function showPartnerById(id) {
   // Show reactivate button (admin only, when partner is stopped)
   document.getElementById('btnReactivatePartner').style.display = (USER_ROLE === 'admin' && !p.active) ? '' : 'none';
   document.getElementById('partnerDetailModal').classList.add('show');
-  // Auto-poll contract status if there are pending DocuSign envelopes
+  // Auto-poll contract status if there are pending DocuSeal submissions
   if (hasPendingDs) _startDsPolling(id);
   else _stopDsPolling();
 }
 
-// ─── DocuSign auto-polling when partner detail modal is open ───
+// ─── DocuSeal auto-polling when partner detail modal is open ───
 let _dsPollTimer = null;
 function _startDsPolling(partnerId) {
   _stopDsPolling();
@@ -8295,7 +8565,7 @@ function renderPartnerHistory(p, files) {
 
     if (f.ds_envelope_id) {
       // DocuSign invitation sent (same time as upload — that's when it's sent)
-      addEv(f.uploaded_at, '✉️', '#1d4ed8', '#EFF6FF', '合同已发送，等待双方 DocuSign 签署', fname);
+      addEv(f.uploaded_at, '✉️', '#1d4ed8', '#EFF6FF', '合同已发送，等待双方 DocuSeal 签署', fname);
 
       // Individual signatures
       if (f.ds_company_signed_at)
@@ -8309,7 +8579,7 @@ function renderPartnerHistory(p, files) {
           .filter(Boolean).map(d => new Date(d)).sort((a, b) => b - a)[0];
         if (completedAt) addEv(completedAt.toISOString(), '🤝', '#059669', '#ECFDF5', '合同签署完成，正式合作生效', fname);
       } else if (f.ds_status === 'voided') {
-        addEv(f.uploaded_at, '🚫', '#6B7280', '#F9FAFB', 'DocuSign 签署已撤销', fname);
+        addEv(f.uploaded_at, '🚫', '#6B7280', '#F9FAFB', 'DocuSeal 签署已撤销', fname);
       } else if (f.ds_status === 'declined') {
         addEv(f.uploaded_at, '❌', '#b91c1c', '#FEF2F2',
           '签署被拒绝' + (f.ds_decline_reason ? '：' + f.ds_decline_reason : ''), fname);
@@ -8350,8 +8620,8 @@ function renderPartnerHistory(p, files) {
 const _legalDocMeta = {
   termination: { title: '单方面终止通知书', hint: '此文件将以邮件形式发送给合作方，无需双方签字', emailBtn: true, dsBtn: false },
   breach:      { title: '违约终止通知书',   hint: '此文件将以邮件形式发送给合作方，无需双方签字', emailBtn: true, dsBtn: false },
-  amendment:   { title: '合同修改协议',      hint: '此文件需双方通过 DocuSign 签署后生效', emailBtn: false, dsBtn: true },
-  mutual:      { title: '协商解除协议',      hint: '此文件需双方通过 DocuSign 签署后生效', emailBtn: false, dsBtn: true },
+  amendment:   { title: '合同修改协议',      hint: '此文件需双方通过 DocuSeal 签署后生效', emailBtn: false, dsBtn: true },
+  mutual:      { title: '协商解除协议',      hint: '此文件需双方通过 DocuSeal 签署后生效', emailBtn: false, dsBtn: true },
 };
 
 async function openLegalDocEditor(type) {
@@ -8404,7 +8674,7 @@ function _updateLegalEditorActions(type, saved) {
     } else {
       actionsEl.innerHTML = `
         <button class="btn btn-sm btn-outline" onclick="document.getElementById('contractEditorModal').classList.remove('show')">关闭</button>
-        <button class="btn btn-sm" style="background:#059669;color:#fff" onclick="sendLegalDocDocuSign()">✍ 发送 DocuSign 签署</button>`;
+        <button class="btn btn-sm" style="background:#059669;color:#fff" onclick="sendLegalDocDocuSign()">✍ 发送 DocuSeal 签署</button>`;
     }
   } else {
     // Before save: show save button
@@ -8430,7 +8700,7 @@ async function saveLegalDocPdf() {
   // For amendment/mutual: require sig anchors
   const needsSig = (_ceType === 'amendment' || _ceType === 'mutual');
   if (needsSig && (!content.includes('/sig1/') || !content.includes('/sig2/'))) {
-    if (!await adminConfirm('⚠️ 未检测到 /sig1/ 或 /sig2/ 签名锚点，DocuSign 签字框将使用固定坐标，可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) {
+    if (!await adminConfirm('⚠️ 未检测到 /sig1/ 或 /sig2/ 签名锚点，签字框将使用预设坐标，可能不准确。是否继续？', '签名锚点缺失', '继续', '取消')) {
       if (btn) { btn.disabled = false; btn.textContent = '📄 生成PDF文件'; }
       return;
     }
@@ -8888,7 +9158,7 @@ async function generateAgreementTemplate() {
     const r = await api(`/admin/partners/${pid}/generate-agreement`, { method: 'POST' });
     if (r.success) {
       await loadPartnerFiles(pid);
-      showToast('合伙协议模板已生成，可直接发送 DocuSign 签署');
+      showToast('合伙协议模板已生成，可直接发送 DocuSeal 签署');
     } else {
       alert(r.error || '生成失败');
     }
@@ -8994,7 +9264,7 @@ async function saveContractPdf() {
   }
   if (!content.includes('/sig1/') || !content.includes('/sig2/')) {
     msgEl.style.cssText = 'display:;background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:.55rem .9rem;border-radius:8px';
-    msgEl.textContent = '警告：合同内容中未找到 /sig1/ 或 /sig2/ 锚点，DocuSign 将无法正确放置签名框。';
+    msgEl.textContent = '警告：合同内容中未找到 /sig1/ 或 /sig2/ 锚点，DocuSeal 将使用预设坐标放置签名框。';
   } else {
     msgEl.style.display = 'none';
   }
@@ -9009,7 +9279,7 @@ async function saveContractPdf() {
     if (r.success) {
       await loadPartnerFiles(pid);
       document.getElementById('contractEditorModal').classList.remove('show');
-      showToast('合同PDF已生成，可直接发送 DocuSign 签署');
+      showToast('合同PDF已生成，可直接发送 DocuSeal 签署');
     } else {
       msgEl.style.cssText = 'display:;background:#fef2f2;border:1px solid #fecaca;color:#dc2626;padding:.55rem .9rem;border-radius:8px';
       msgEl.textContent = '生成失败：' + (r.error || '生成失败');
@@ -9071,7 +9341,7 @@ async function openPartnerDocuSign(partnerId) {
         const label = DS_LABELS[st] || st;
         const color = { sent:'#2563EB', delivered:'#0284C7', completed:'#059669', declined:'#DC2626', voided:'#6B7280' }[st] || '#6B7280';
         statusEl.style.display = '';
-        statusEl.innerHTML = `当前状态：<strong style="color:${color}">✍ ${label}</strong>（Envelope: <code style="font-size:.75rem">${esc(env)}</code>）— 重新发送将创建新信封`;
+        statusEl.innerHTML = `当前状态：<strong style="color:${color}">✍ ${label}</strong>（ID: <code style="font-size:.75rem">${esc(env)}</code>）— 重新发送将创建新提交`;
       } else {
         statusEl.style.display = 'none';
       }
@@ -9120,8 +9390,7 @@ async function doSendPartnerDocuSign() {
       body: JSON.stringify({ partner_email: email, partner_name: name })
     });
     if (r && r.success) {
-      let msg = `✅ 合同信封已创建！Envelope ID: ${r.envelopeId}`;
-      if (r.anchors && (!r.anchors.sig1 || !r.anchors.sig2)) msg += '  ⚠️ PDF 未检测到签名锚点，签字框将用固定坐标。';
+      let msg = `✅ 合同已提交至 DocuSeal！Submission ID: ${r.envelopeId}`;
       if (r.signUrl) msg += '  即将打开公司签字页面…';
       msgEl.style.cssText = 'display:;background:#F0FDF4;border:1px solid #BBF7D0;color:#059669;padding:.6rem .9rem;border-radius:8px';
       msgEl.innerHTML = msg + (r.signUrl ? `<br><button onclick="closeModal('partnerDsModal');openDsCompanySign('partnerfile',${fileId})" style="margin-top:.5rem;padding:.4rem .9rem;background:#1e3a5f;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.84rem">✍ 现在公司签署</button>` : '');
@@ -9207,29 +9476,32 @@ async function openDsCompanySign(type, id) {
     const r = await api(endpoint);
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
 
-    // Wait for iframe to load before showing it
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        // After 90s, stop waiting and show the iframe anyway — user can still try to interact
-        resolve();
-      }, 90000);
-      iframe.onload = () => { clearTimeout(timeout); resolve(); };
-      iframe.onerror = () => { clearTimeout(timeout); reject(new Error('签署页面加载失败')); };
-      iframe.src = r.signUrl;
+    // Use DocuSeal <docuseal-form> web component for inline document signing
+    const formContainer = document.getElementById('dsSignFormContainer');
+    formContainer.innerHTML = '';
+    const form = document.createElement('docuseal-form');
+    form.setAttribute('data-src', r.signUrl);
+    form.setAttribute('data-expand', 'false');
+    form.setAttribute('data-order-as-on-page', 'true');
+    if (r.companyName) form.setAttribute('data-signature', r.companyName);
+    // Pre-fill date with today
+    const today = new Date().toISOString().slice(0, 10);
+    form.setAttribute('data-values', JSON.stringify({ date1: today }));
+    form.setAttribute('data-with-send-copy-button', 'false');
+    form.style.width = '100%';
+    form.addEventListener('completed', () => {
+      closeDsSignModal();
+      showToast('✅ 公司已签署', 'success');
+      if (type === 'partnerfile' && currentPartner) showPartnerById(currentPartner.id);
     });
-
+    form.addEventListener('declined', () => {
+      closeDsSignModal();
+      showToast('签署已取消', 'info');
+    });
+    formContainer.appendChild(form);
     loading.style.display = 'none';
-    iframe.style.display = '';
-    iframe.onload = null;
-    iframe.onerror = null;
-
-    // Show retry option after 30s in case DocuSign itself is stuck
-    window._dsLoadTimeout = setTimeout(() => {
-      if (_dsSignContext && _dsSignContext.type === type && _dsSignContext.id === id) {
-        // iframe is visible but user might be stuck — offer retry
-        // Don't hide the iframe, just note the option in footer area (non-intrusive)
-      }
-    }, 30000);
+    iframe.style.display = 'none';
+    formContainer.style.display = '';
   } catch (e) {
     loadingText.textContent = '加载失败：' + e.message;
     retryBtn.style.display = '';
@@ -9237,24 +9509,60 @@ async function openDsCompanySign(type, id) {
 }
 
 function retryDsCompanySign() {
-  if (_dsSignContext) openDsCompanySign(_dsSignContext.type, _dsSignContext.id);
+  if (!_dsSignContext) return;
+  if (_dsSignContext.type === 'workercontract') { openCompanySign(); }
+  else { openDsCompanySign(_dsSignContext.type, _dsSignContext.id); }
 }
 
 function closeDsSignModal() {
   const modal = document.getElementById('dsSignModal');
   const iframe = document.getElementById('dsSignIframe');
+  const formContainer = document.getElementById('dsSignFormContainer');
   if (window._dsLoadTimeout) { clearTimeout(window._dsLoadTimeout); window._dsLoadTimeout = null; }
   iframe.onload = null;
   iframe.onerror = null;
   modal.style.display = 'none';
   iframe.src = 'about:blank';
   iframe.style.display = 'none';
+  if (formContainer) { formContainer.style.display = 'none'; formContainer.innerHTML = ''; }
   document.getElementById('dsSignLoading').style.display = 'flex';
   _dsSignContext = null;
 }
 
-// Listen for DocuSign return postMessage from /docusign-return inside iframe
+// Listen for signing iframe postMessage events:
+// - DocuSeal sends { event: 'completed'|'declined' } or { type: 'docuseal:form_completed' } for partner files
+// - DocuSign sends { type: 'docusign_return', event: '...' } via /docusign-return for assignments
 window.addEventListener('message', async (ev) => {
+  // ── DocuSeal events (partner file / worker contract embedded signing) ──
+  if (ev.data && _dsSignContext && (_dsSignContext.type === 'partnerfile' || _dsSignContext.type === 'workercontract')) {
+    let dsealDone = false, dsealDeclined = false;
+    if (typeof ev.data === 'object') {
+      dsealDone = ev.data.event === 'completed' || ev.data.type === 'docuseal:form_completed';
+      dsealDeclined = ev.data.event === 'declined' || ev.data.type === 'docuseal:form_declined';
+    } else if (typeof ev.data === 'string') {
+      try { const p = JSON.parse(ev.data); dsealDone = p.event === 'completed'; dsealDeclined = p.event === 'declined'; } catch {}
+    }
+    if (dsealDone || dsealDeclined) {
+      const ctx = _dsSignContext;
+      closeDsSignModal();
+      if (dsealDeclined) { showToast('签署已取消', 'info'); return; }
+      if (ctx.type === 'workercontract') {
+        showToast('✅ 公司已签署，系统将自动通知工人签署', 'success');
+        refreshContractStatus();
+        document.getElementById('contractViewSignedBtn').style.display = '';
+        setTimeout(() => viewSignedContract(true), 4000);
+        return;
+      }
+      showToast('✅ 公司已签署，等待对方签署…', 'success');
+      try {
+        const r = await api(`/admin/partner-files/${ctx.id}/docusign-status`);
+        if (r.status === 'completed') showToast('✅ 双方均已签署！已签版本已保存。', 'success');
+      } catch(e) {}
+      if (currentPartner) await showPartnerById(currentPartner.id);
+      return;
+    }
+  }
+  // ── DocuSign events (assignment embedded signing) ──
   if (ev.data && ev.data.type === 'docusign_return') {
     const ctx = _dsSignContext;
     const event = ev.data.event || '';
@@ -9262,21 +9570,10 @@ window.addEventListener('message', async (ev) => {
     if (event === 'signing_complete') {
       showToast('✅ 公司已签署，等待对方签署…', 'success');
       if (ctx) {
-        if (ctx.type === 'partnerfile') {
-          // Auto-refresh status from DocuSign to check if both parties signed
-          try {
-            const r = await api(`/admin/partner-files/${ctx.id}/docusign-status`);
-            if (r.status === 'completed') {
-              showToast('✅ 双方均已签署！已签版本已保存。', 'success');
-            }
-          } catch(e) {}
-          if (currentPartner) await showPartnerById(currentPartner.id);
-        } else if (ctx.type === 'assignment') {
+        if (ctx.type === 'assignment') {
           try {
             const r = await api(`/admin/assignments/${ctx.id}/docusign-status`);
-            if (r.status === 'completed') {
-              showToast('✅ 双方均已签署！', 'success');
-            }
+            if (r.status === 'completed') showToast('✅ 双方均已签署！', 'success');
           } catch(e) {}
           loadAssignments && await loadAssignments();
         } else {
@@ -9361,7 +9658,7 @@ async function savePartner() {
       const hasSignedContract = (files || []).some(f => f.ds_status === 'completed');
       if (!hasSignedContract) {
         const proceed = await showConfirm(
-          '⚠️ 该公司尚未通过 DocuSign 完成双方签署合同。\n\n正常流程应由双方签署合同后自动激活为"合作中"。\n\n是否仍要手动标记为合作中？',
+          '⚠️ 该公司尚未通过 DocuSeal 完成双方签署合同。\n\n正常流程应由双方签署合同后自动激活为"合作中"。\n\n是否仍要手动标记为合作中？',
           { danger: true, confirmLabel: '强制激活', cancelLabel: '取消' }
         );
         if (!proceed) return;
@@ -9737,6 +10034,34 @@ function _setAddrStatus(el, verified) {
 
 function clearEmpAddrStatus() {
   _setAddrStatus(document.getElementById('eAddrStatus'), null);
+}
+
+async function verifyIvLocAddr() {
+  const street  = document.getElementById('ivLocAddress1').value.trim();
+  const street2 = document.getElementById('ivLocAddress2').value.trim();
+  const city    = document.getElementById('ivLocCity').value.trim();
+  const state   = document.getElementById('ivLocState').value;
+  const zip     = document.getElementById('ivLocZip').value.trim();
+  if (!street && !city && !zip) return;
+  const statusEl = document.getElementById('ivLocAddrStatus');
+  statusEl.textContent = '验证中…';
+  statusEl.style.color = 'var(--gray-400)';
+  try {
+    const result = await validateAddress({ street, street2, city, state, zip });
+    if (result.skipped) { statusEl.textContent = '⚠ 验证服务未配置'; statusEl.style.color = '#94a3b8'; return; }
+    if (!result.proceed) { _setAddrStatus(statusEl, false); return; }
+    if (result.standardized) {
+      const s = result.standardized;
+      document.getElementById('ivLocAddress1').value = s.street;
+      document.getElementById('ivLocAddress2').value = s.street2 || '';
+      document.getElementById('ivLocCity').value     = s.city;
+      fillStateSelect(document.getElementById('ivLocState'), s.state);
+      document.getElementById('ivLocZip').value      = s.zip;
+    }
+    _setAddrStatus(statusEl, result.verified === true);
+  } catch(e) {
+    _setAddrStatus(statusEl, false);
+  }
 }
 
 async function verifyJobAddr() {
@@ -12535,6 +12860,12 @@ async function loadWorkerAccounts() {
       <option value="opt" ${w.work_status==='opt'?'selected':''}>OPT/CPT</option>
       <option value="other" ${w.work_status==='other'?'selected':''}>其他</option>
     </select></td>
+    <td style="font-size:.78rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:90px;font-weight:600;${w.employment_type==='w2'?'color:#1d4ed8;background:#eff6ff':w.employment_type==='1099'?'color:#9a3412;background:#fffbeb':w.employment_type==='cash'?'color:#065f46;background:#ecfdf5':''}" onchange="updateWorkerEmploymentType(${w.id},this.value,this)">
+      <option value="">— 未定 —</option>
+      <option value="w2" ${w.employment_type==='w2'?'selected':''}>W-2</option>
+      <option value="1099" ${w.employment_type==='1099'?'selected':''}>1099</option>
+      <option value="cash" ${w.employment_type==='cash'?'selected':''}>💵 现金</option>
+    </select></td>
     <td><div class="wa-compliance">
       ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
       ${complianceBadge2('SSN', c.ssn_card)}
@@ -12542,6 +12873,9 @@ async function loadWorkerAccounts() {
       ${complianceBadge2('W9', c.w9)}
       ${complianceBadge2('I9', c.i9)}
     </div></td>
+    <td style="text-align:center">${w.contract_version_count > 0
+      ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
+      : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
     <td style="font-size:.8rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer" onchange="updateWorkerPayMethod(${w.id},this.value)">
       <option value="cash" ${(w.payment_method||'cash')==='cash'?'selected':''}>💵 现金</option>
       <option value="check" ${w.payment_method==='check'?'selected':''}>✅ 支票</option>
@@ -12563,7 +12897,7 @@ async function loadWorkerAccounts() {
         ${extraBtns}
       </div>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="13" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="14" class="empty">暂无工人账户</td></tr>';
 }
 
 // ─── Onboarding Progress Modal ───
@@ -12631,7 +12965,7 @@ async function refreshOnboardingModal() {
 }
 
 function renderOnboardingTasks(tasks) {
-  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂', work_auth:'📑' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
     locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
@@ -12640,7 +12974,31 @@ function renderOnboardingTasks(tasks) {
     completed:'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7',
     waived:'background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff'
   };
-  document.getElementById('onboardingTaskList').innerHTML = tasks.map(t => {
+  // Check if interview is completed/waived — hide post-interview steps if not
+  const interviewTask = tasks.find(t => t.key === 'interview');
+  const interviewDone = interviewTask && ['completed','waived'].includes(interviewTask.status);
+  const interviewIdx = tasks.findIndex(t => t.key === 'interview');
+  // Get assigned tasks for this worker (set after W2/1099 selection)
+  const preInterviewKeys = ['phone_verify', 'email_verify', 'interview'];
+  let assignedTasks = [];
+  try { assignedTasks = JSON.parse((_onboardingWorkerData && _onboardingWorkerData.assigned_tasks) || '[]'); } catch {}
+  // Merge with current type definition so newly added tasks always appear
+  if (assignedTasks.length && _onboardingWorkerData) {
+    const empType = _onboardingWorkerData.employment_type;
+    const typeTasks = empType === 'w2' ? W2_TASKS : empType === '1099' ? C1099_TASKS : [];
+    for (const tk of typeTasks) {
+      if (!assignedTasks.includes(tk)) assignedTasks.push(tk);
+    }
+  }
+  document.getElementById('onboardingTaskList').innerHTML = tasks.filter((t, idx) => {
+    // Always show pre-interview steps
+    if (preInterviewKeys.includes(t.key)) return true;
+    // After interview: hide if interview not done
+    if (!interviewDone) return false;
+    // If assigned_tasks is set, only show tasks in that list
+    if (assignedTasks.length) return assignedTasks.includes(t.key);
+    return true;
+  }).map(t => {
     const s = t.status;
     const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
     const canWaive = s !== 'completed' && s !== 'waived';
@@ -12675,17 +13033,90 @@ function renderOnboardingTasks(tasks) {
           ${canWaive?`<button class="btn btn-sm" style="background:#f3e8ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="confirmOnboardingWaive(${tk},${tt})">⏭️ Waive</button>`:''}
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
-          ${t.key==='persona_verify'
-            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Persona 验证'}</button>`
+          ${t.key==='contract'
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>`
+            : t.key==='persona_verify'
+            ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
+            : t.key==='w9'
+            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'?'✅ W-9 已签署':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>`
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
+            : t.key==='work_auth'
+            ? `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;font-weight:700" onclick="openWorkAuthModal()">${t.status==='completed'?'📑 Work Auth 已完成':isVisible?'📑 查看/重发认证任务':'📑 发送 Work Auth 认证'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
     </div>`;
   }).join('');
+
+  // Insert employment type badge after interview if interview is done
+  if (interviewDone) {
+    const empType = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
+    const empLabel = empType === 'w2' ? 'W-2 员工' : empType === '1099' ? '1099 承包商' : '';
+    const empColor = empType === 'w2' ? 'color:#1d4ed8;background:#dbeafe;border:1px solid #bfdbfe' : empType === '1099' ? 'color:#9a3412;background:#fff7ed;border:1px solid #fed7aa' : '';
+    if (empLabel) {
+      // Find interview row and insert after it
+      const taskList = document.getElementById('onboardingTaskList');
+      const rows = taskList.children;
+      // Interview is the 3rd pre-interview step (index 2)
+      const interviewRowIdx = Array.from(rows).findIndex((_, i) => i === preInterviewKeys.indexOf('interview'));
+      const badge = document.createElement('div');
+      badge.style.cssText = 'display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;border-bottom:1px solid var(--gray-100);background:#fafafa;border-radius:6px;margin:.2rem 0';
+      badge.innerHTML = `<span style="font-size:1rem">📋</span><span style="font-weight:700;font-size:.88rem;padding:2px 10px;border-radius:20px;${empColor}">${empLabel}</span><button class="btn btn-sm" style="margin-left:auto;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;font-size:.78rem" onclick="confirmChangeEmploymentType()">🔄 重新选择</button>`;
+      if (interviewRowIdx >= 0 && rows[interviewRowIdx]) {
+        rows[interviewRowIdx].after(badge);
+      } else {
+        taskList.prepend(badge);
+      }
+    }
+  }
+}
+
+function confirmChangeEmploymentType() {
+  const cur = (_onboardingWorkerData && _onboardingWorkerData.employment_type) || '';
+  const curLabel = cur === 'w2' ? 'W-2 员工' : cur === '1099' ? '1099 承包商' : '';
+  const newType = cur === 'w2' ? '1099' : 'w2';
+  const newLabel = newType === 'w2' ? 'W-2 员工' : '1099 承包商';
+  showConfirmModal(
+    '更改雇佣类型',
+    `当前为 <b>${curLabel}</b>，确认要更改为 <b>${newLabel}</b> 吗？<br><br>更改后将自动调整入职任务：不适用的任务会被豁免，新增适用的任务会被重置为待处理。`,
+    `✅ 确认更改为 ${newLabel}`,
+    'btn-green',
+    () => doChangeEmploymentType(newType),
+    'amber'
+  );
+}
+
+async function doChangeEmploymentType(newType) {
+  if (!_onboardingWorkerId) return;
+  const assignedTasks = newType === 'w2' ? W2_TASKS : C1099_TASKS;
+
+  // Save new employment type + assigned tasks
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ employment_type: newType, assigned_tasks: assignedTasks })
+  });
+
+  // Waive tasks not applicable to new type
+  const tasksToWaive = newType === 'w2' ? ['w9'] : ['i9', 'ead_upload', 'work_permit', 'work_auth', 'gusto'];
+  for (const key of tasksToWaive) {
+    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
+      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
+    });
+  }
+
+  // Reset previously waived tasks that now apply
+  const tasksToReset = newType === 'w2' ? ['i9', 'ead_upload', 'work_permit', 'gusto'] : ['w9'];
+  for (const key of tasksToReset) {
+    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
+      method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
+    });
+  }
+
+  showToast(`✅ 已更改为 ${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}`, 'success');
+  await refreshOnboardingModal();
 }
 
 async function initOnboarding() {
@@ -12715,6 +13146,23 @@ function confirmOnboardingComplete(key, title) {
 // IC_POSITIONS now loaded dynamically from _WORKER_POSITIONS cache
 let _icSkills = [];
 
+function selectEmploymentType(type) {
+  const w2Label = document.getElementById('icEmpTypeW2Label');
+  const c1099Label = document.getElementById('icEmpType1099Label');
+  const w2Radio = document.getElementById('icEmpTypeW2');
+  const c1099Radio = document.getElementById('icEmpType1099');
+  w2Label.style.borderColor = type === 'w2' ? '#1d4ed8' : 'var(--gray-200)';
+  w2Label.style.background = type === 'w2' ? '#eff6ff' : '#fff';
+  c1099Label.style.borderColor = type === '1099' ? '#1d4ed8' : 'var(--gray-200)';
+  c1099Label.style.background = type === '1099' ? '#eff6ff' : '#fff';
+  w2Radio.checked = type === 'w2';
+  c1099Radio.checked = type === '1099';
+}
+
+// Onboarding tasks auto-assigned per employment type
+const W2_TASKS = ['contract', 'background_check', 'persona_verify', 'i9', 'ead_upload', 'work_permit', 'gusto'];
+const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify'];
+
 async function openInterviewCompleteModal() {
   if (!_onboardingWorkerId) return;
   const w = _onboardingWorkerData;
@@ -12723,6 +13171,20 @@ async function openInterviewCompleteModal() {
   document.getElementById('icWorkStatus').value = (w && w.work_status) || '';
   document.getElementById('icPaymentMethod').value = (w && w.payment_method) || 'cash';
   document.getElementById('icHasSsn').checked = !!(w && w.has_ssn);
+
+  // Employment type
+  const empType = (w && w.employment_type) || '';
+  if (empType === 'w2' || empType === '1099') {
+    selectEmploymentType(empType);
+  } else {
+    // Reset both
+    document.getElementById('icEmpTypeW2').checked = false;
+    document.getElementById('icEmpType1099').checked = false;
+    document.getElementById('icEmpTypeW2Label').style.borderColor = 'var(--gray-200)';
+    document.getElementById('icEmpTypeW2Label').style.background = '#fff';
+    document.getElementById('icEmpType1099Label').style.borderColor = 'var(--gray-200)';
+    document.getElementById('icEmpType1099Label').style.background = '#fff';
+  }
 
   // Skills
   _icSkills = w && w.skills ? w.skills.map(s => ({...s})) : [];
@@ -12840,23 +13302,39 @@ async function addIcSkill() {
 
 async function saveInterviewComplete() {
   if (!_onboardingWorkerId) return;
+  const employmentType = document.getElementById('icEmpTypeW2').checked ? 'w2' : document.getElementById('icEmpType1099').checked ? '1099' : '';
+  if (!employmentType) return showToast('❌ 请选择雇佣类型（W-2 或 1099）', 'error');
   const workStatus = document.getElementById('icWorkStatus').value;
   const paymentMethod = document.getElementById('icPaymentMethod').value;
   const hasSsn = document.getElementById('icHasSsn').checked;
   const positionInterests = Array.from(document.querySelectorAll('#icPositionInterests input[type="checkbox"]:checked')).map(cb => cb.value);
   const skills = _icSkills.filter(s => s.skill_name.trim());
 
-  // Save worker profile fields
+  // Determine assigned tasks based on employment type
+  const assignedTasks = employmentType === 'w2' ? W2_TASKS : C1099_TASKS;
+
+  // Save worker profile fields + employment type + assigned tasks
   await api(`/admin/worker-accounts/${_onboardingWorkerId}`, {
     method: 'PUT',
-    body: JSON.stringify({ work_status: workStatus, payment_method: paymentMethod, has_ssn: hasSsn, position_interests: positionInterests })
+    body: JSON.stringify({ work_status: workStatus, payment_method: paymentMethod, has_ssn: hasSsn, position_interests: positionInterests, employment_type: employmentType, assigned_tasks: assignedTasks })
   });
   // Save skills
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/skills`, { method: 'PUT', body: JSON.stringify({ skills }) });
+
+  // Auto-waive tasks not applicable to this employment type
+  const tasksToWaive = employmentType === 'w2'
+    ? ['w9']         // W-2 doesn't need W-9
+    : ['i9', 'ead_upload', 'work_permit', 'work_auth', 'gusto'];  // 1099 doesn't need I-9, EAD, work permit, work auth, Gusto
+  for (const key of tasksToWaive) {
+    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
+      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
+    });
+  }
+
   // Mark interview as complete
   await updateOnboardingTask('interview', 'completed');
   closeModal('interviewCompleteModal');
-  showToast('✅ 面试已完成，信息已保存', 'success', 4000);
+  showToast(`✅ 面试已完成 · 已选择 ${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}流程`, 'success', 4000);
 }
 
 function confirmOnboardingWaive(key, title) {
@@ -12866,7 +13344,7 @@ function confirmOnboardingReset(key, title) {
   showConfirmModal(`重置任务：${title}`, '确认将此任务重置为"待处理"状态？', '↩️ 确认重置', 'btn-outline', () => updateOnboardingTask(key, 'pending'), 'amber');
 }
 function confirmSendPersona() {
-  showConfirmModal('发送 Persona 身份验证', '确认向该工人发送 Persona 身份验证（驾照 + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
+  showConfirmModal('发送 Stripe Identity 身份验证', '确认向该工人发送 Stripe Identity 身份验证（驾照/ID + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
 }
 function confirmSendCheckr() {
   showConfirmModal('发送 Checkr 背调邀请', '确认向该工人发送 Checkr 背景调查邀请？邀请链接将通过短信和邮件发送。', '🔍 确认发送', 'btn-blue', sendCheckrFromOnboarding, 'blue');
@@ -12894,7 +13372,7 @@ function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
 
 async function sendPersonaFromOnboarding() {
   if (!_onboardingWorkerId) return;
-  if (!await showConfirm('确定向该工人发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
+  if (!await showConfirm('确定向该工人发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。')) return;
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-persona`, { method:'POST', body:JSON.stringify({}) });
   if (r && r.success) {
     const parts = [];
@@ -12919,6 +13397,451 @@ async function sendCheckrFromOnboarding() {
     showToast('❌ ' + (r?.error || '发送失败'), 'error', 5000);
   }
 }
+
+// ── Contract Send Modal Functions ──
+async function openContractSendModal() {
+  if (!_onboardingWorkerId) return;
+  document.getElementById('contractSendModal').classList.add('show');
+  document.getElementById('contractWorkerName').textContent = _onboardingWorkerData?.name || _onboardingWorkerData?.username || '';
+  document.getElementById('contractContentEditor').value = '加载中…';
+  document.getElementById('contractWorkerEmail').value = '';
+  document.getElementById('contractWorkerPhone').value = '';
+  document.getElementById('contractDsStatus').style.display = 'none';
+  document.getElementById('contractSignBtn').style.display = 'none';
+  document.getElementById('contractViewSignedBtn').style.display = 'none';
+  document.getElementById('contractRefreshBtn').style.display = 'none';
+  document.getElementById('contractVoidBtn').style.display = 'none';
+  document.getElementById('contractPdfPreview').style.display = 'none';
+  document.getElementById('contractSendBtn').style.display = '';
+  document.getElementById('contractSendBtn').textContent = '📤 发送合同';
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-preview`);
+  if (!r) { document.getElementById('contractContentEditor').value = '加载失败'; return; }
+  document.getElementById('contractContentEditor').value = r.content || '';
+  document.getElementById('contractWorkerEmail').value = r.worker_email || '';
+  document.getElementById('contractWorkerPhone').value = r.worker_phone || '';
+  const empLabel = r.employment_type === '1099' ? '1099 承包商' : 'W-2 员工';
+  let infoHtml = `<span style="font-size:.82rem;padding:2px 8px;border-radius:12px;background:#dbeafe;color:#1d4ed8;font-weight:600">${empLabel}</span>`;
+  if (!r.docuseal_enabled) {
+    infoHtml += ` <span style="font-size:.82rem;color:#dc2626;font-weight:600">⚠️ DocuSeal 未配置</span>`;
+  }
+  if (!r.company_email) {
+    infoHtml += ` <span style="font-size:.82rem;color:#dc2626;font-weight:600">⚠️ COMPANY_SIGNER_EMAIL 未设置</span>`;
+  }
+  document.getElementById('contractSendInfo').innerHTML = infoHtml;
+  // Show existing signing status if contract already sent
+  if (r.ds_envelope_id && r.ds_status) {
+    updateContractDsStatusUI(r.ds_status);
+    document.getElementById('contractSendBtn').textContent = '📤 重新发送合同';
+    document.getElementById('contractSignBtn').style.display = '';
+    document.getElementById('contractRefreshBtn').style.display = '';
+    document.getElementById('contractVoidBtn').style.display = '';
+    // Show "view signed version" button if at least one party has signed
+    if (r.ds_status === 'company_signed' || r.ds_status === 'worker_signed' || r.ds_status === 'completed') {
+      document.getElementById('contractViewSignedBtn').style.display = '';
+      // Auto-load the signed PDF so the user immediately sees the signature
+      viewSignedContract(true);
+    }
+  }
+}
+
+function updateContractDsStatusUI(status) {
+  const el = document.getElementById('contractDsStatus');
+  el.style.display = '';
+  if (status === 'completed') {
+    el.style.background = '#d1fae5'; el.style.color = '#065f46'; el.style.border = '1px solid #6ee7b7';
+    el.innerHTML = '✅ 合同已由双方签署完成';
+  } else if (status === 'company_signed') {
+    el.style.background = '#fef3c7'; el.style.color = '#92400e'; el.style.border = '1px solid #fcd34d';
+    el.innerHTML = '✍ 公司已签署，等待工人签署中…';
+  } else if (status === 'worker_signed') {
+    el.style.background = '#fef3c7'; el.style.color = '#92400e'; el.style.border = '1px solid #fcd34d';
+    el.innerHTML = '✍ 工人已签署，等待公司签署…';
+  } else if (status === 'sent') {
+    el.style.background = '#dbeafe'; el.style.color = '#1d4ed8'; el.style.border = '1px solid #bfdbfe';
+    el.innerHTML = '📤 合同已创建，请先完成公司签署（公司签完后系统自动通知工人）';
+  } else if (status === 'declined') {
+    el.style.background = '#fef2f2'; el.style.color = '#dc2626'; el.style.border = '1px solid #fecaca';
+    el.innerHTML = '❌ 工人已拒签';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function previewContractPdf() {
+  const content = document.getElementById('contractContentEditor').value.trim();
+  if (!content) { showToast('合同内容为空', 'error'); return; }
+  const previewDiv = document.getElementById('contractPdfPreview');
+  const frame = document.getElementById('contractPdfFrame');
+  try {
+    const resp = await fetch('/api/admin/worker-accounts/contract-preview-pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content })
+    });
+    if (!resp.ok) { showToast('❌ PDF 生成失败', 'error'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    frame.src = url;
+    previewDiv.style.display = '';
+  } catch (e) { showToast('❌ ' + e.message, 'error'); }
+}
+
+async function doSendContract() {
+  if (!_onboardingWorkerId) return;
+  const content = document.getElementById('contractContentEditor').value.trim();
+  const workerEmail = document.getElementById('contractWorkerEmail').value.trim();
+  if (!content) { showToast('合同内容不能为空', 'error'); return; }
+  if (!workerEmail) { showToast('请填写工人邮箱', 'error'); return; }
+  if (!await showConfirm(`确认发送合同至 ${workerEmail}？\n\n公司方需先签署，之后工人方再完成签署。`)) return;
+  const btn = document.getElementById('contractSendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-contract`, {
+    method: 'POST', body: JSON.stringify({ content, worker_email: workerEmail })
+  });
+  btn.disabled = false; btn.textContent = '📤 重新发送合同';
+  if (r && r.success) {
+    showToast('✅ 合同已创建，请先完成公司签署。\n公司签署完成后，系统将自动通知工人签署。', 'success', 6000);
+    updateContractDsStatusUI('sent');
+    document.getElementById('contractSignBtn').style.display = '';
+    document.getElementById('contractRefreshBtn').style.display = '';
+    document.getElementById('contractVoidBtn').style.display = '';
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '发送失败'), 'error', 5000);
+  }
+}
+
+async function openCompanySign() {
+  if (!_onboardingWorkerId) return;
+  const modal = document.getElementById('dsSignModal');
+  const iframe = document.getElementById('dsSignIframe');
+  const formContainer = document.getElementById('dsSignFormContainer');
+  const loading = document.getElementById('dsSignLoading');
+  const loadingText = document.getElementById('dsSignLoadingText');
+  const retryBtn = document.getElementById('dsSignRetryBtn');
+  modal.style.display = 'flex';
+  iframe.style.display = 'none';
+  formContainer.style.display = 'none';
+  formContainer.innerHTML = '';
+  loading.style.display = 'flex';
+  loadingText.textContent = '加载签署页面中…';
+  retryBtn.style.display = 'none';
+  _dsSignContext = { type: 'workercontract', id: _onboardingWorkerId };
+  try {
+    const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-sign-url`);
+    if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
+    console.log('[CompanySign] signUrl:', r.signUrl);
+    // Use DocuSeal <docuseal-form> web component (officially supported embed method)
+    const form = document.createElement('docuseal-form');
+    form.setAttribute('data-src', r.signUrl);
+    form.setAttribute('id', 'dsSignForm');
+    // Show fields directly on the document (not step-by-step wizard)
+    form.setAttribute('data-expand', 'false');
+    form.setAttribute('data-order-as-on-page', 'true');
+    // Pre-fill company signature (typed) so admin just clicks "Complete"
+    if (r.companyName) form.setAttribute('data-signature', r.companyName);
+    // Pre-fill date field with today's date
+    const today = new Date().toISOString().slice(0, 10);
+    form.setAttribute('data-values', JSON.stringify({ date1: today }));
+    form.setAttribute('data-with-send-copy-button', 'false');
+    form.style.width = '100%';
+    form.addEventListener('completed', () => {
+      closeDsSignModal();
+      showToast('✅ 公司已签署，系统将自动通知工人签署', 'success');
+      refreshContractStatus();
+      // Show signed version button and auto-open the signed PDF
+      document.getElementById('contractViewSignedBtn').style.display = '';
+      setTimeout(() => viewSignedContract(true), 4000);
+    });
+    form.addEventListener('declined', () => {
+      closeDsSignModal();
+      showToast('签署已取消', 'info');
+    });
+    formContainer.appendChild(form);
+    loading.style.display = 'none';
+    formContainer.style.display = '';
+  } catch (e) {
+    loadingText.textContent = '❌ ' + e.message;
+    retryBtn.style.display = '';
+  }
+}
+
+
+async function refreshContractStatus() {
+  if (!_onboardingWorkerId) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-status`);
+  if (r && r.status) {
+    updateContractDsStatusUI(r.status);
+    let info = `状态: ${r.status}`;
+    if (r.companySigned) info += ` | 公司已签: ${new Date(r.companySigned).toLocaleString('zh-CN')}`;
+    if (r.workerSigned) info += ` | 工人已签: ${new Date(r.workerSigned).toLocaleString('zh-CN')}`;
+    if (r.declineReason) info += ` | 拒签原因: ${r.declineReason}`;
+    showToast(info, 'info', 5000);
+    // Show view signed button if at least one party has signed
+    if (r.status === 'company_signed' || r.status === 'worker_signed' || r.status === 'completed') {
+      document.getElementById('contractViewSignedBtn').style.display = '';
+    }
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
+  }
+}
+
+async function viewSignedContract(autoRetry = false) {
+  if (!_onboardingWorkerId) return;
+  const previewDiv = document.getElementById('contractPdfPreview');
+  const frame = document.getElementById('contractPdfFrame');
+  const maxAttempts = autoRetry ? 4 : 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const resp = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/contract-signed-pdf`);
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        if (autoRetry && attempt < maxAttempts) {
+          console.warn(`[viewSignedContract] attempt ${attempt}/${maxAttempts} failed:`, errData.error);
+          await new Promise(ok => setTimeout(ok, 3000 * attempt));
+          continue;
+        }
+        if (autoRetry) { console.warn('[viewSignedContract] all auto-retry attempts failed:', errData.error); return; }
+        showToast('❌ 获取已签文档失败: ' + (errData.error || resp.statusText), 'error');
+        return;
+      }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      frame.src = url;
+      previewDiv.style.display = '';
+      return;
+    } catch (e) {
+      if (autoRetry && attempt < maxAttempts) {
+        console.warn(`[viewSignedContract] attempt ${attempt}/${maxAttempts} error:`, e.message);
+        await new Promise(ok => setTimeout(ok, 3000 * attempt));
+        continue;
+      }
+      if (autoRetry) { console.warn('[viewSignedContract] all auto-retry attempts error:', e.message); return; }
+      showToast('❌ ' + e.message, 'error');
+    }
+  }
+}
+
+async function voidContract() {
+  if (!_onboardingWorkerId) return;
+  const reason = await showInputPrompt('作废合同', '作废后需要重新发送合同。请填写作废原因：', '例如：合同内容有误、需要更换协议类型、工人信息变更等', '确认作废', 'btn-red', 'red');
+  if (!reason) { showToast('❌ 作废原因不能为空', 'error'); return; }
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-void`, { method: 'POST', body: JSON.stringify({ reason }) });
+  if (r && r.success) {
+    showToast('✅ 合同已作废', 'success');
+    document.getElementById('contractDsStatus').style.display = 'none';
+    document.getElementById('contractSignBtn').style.display = 'none';
+    document.getElementById('contractViewSignedBtn').style.display = 'none';
+    document.getElementById('contractRefreshBtn').style.display = 'none';
+    document.getElementById('contractVoidBtn').style.display = 'none';
+    document.getElementById('contractPdfPreview').style.display = 'none';
+    document.getElementById('contractSendBtn').textContent = '📤 发送合同';
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '作废失败'), 'error');
+  }
+}
+
+// ─── W-9 Modal Functions ───
+
+async function openW9SendModal() {
+  if (!_onboardingWorkerId) return;
+  document.getElementById('w9SendModal').classList.add('show');
+  const w = _onboardingWorkerData;
+  document.getElementById('w9WorkerName').textContent = w ? (w.name || w.username || '') : '';
+  document.getElementById('w9WorkerEmail').value = (w && w.email) || '';
+  document.getElementById('w9DsStatus').style.display = 'none';
+  document.getElementById('w9RefreshBtn').style.display = 'none';
+  document.getElementById('w9DownloadBtn').style.display = 'none';
+  document.getElementById('w9SendBtn').textContent = '📤 发送 W-9 填写请求';
+  // Load existing W-9 status
+  const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
+  if (tasks) {
+    const w9Task = tasks.find(t => t.key === 'w9');
+    if (w9Task && w9Task.ds_envelope_id) {
+      document.getElementById('w9SendBtn').textContent = '📤 重新发送 W-9';
+      document.getElementById('w9RefreshBtn').style.display = '';
+      if (w9Task.action_url) {
+        document.getElementById('w9SignLink').href = w9Task.action_url;
+        document.getElementById('w9SignLink').textContent = w9Task.action_url;
+        document.getElementById('w9SignLinkBox').style.display = '';
+      }
+      // Always auto-poll DocuSeal for current status when modal opens —
+      // so if worker already signed, the download button appears immediately
+      updateW9DsStatusUI('checking');
+      try {
+        const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-status`);
+        if (r && r.status) {
+          updateW9DsStatusUI(r.status);
+          if (r.status === 'completed') {
+            document.getElementById('w9DownloadBtn').style.display = '';
+            refreshOnboardingModal();
+          }
+        } else {
+          updateW9DsStatusUI(w9Task.ds_status || 'sent');
+        }
+      } catch (e) {
+        updateW9DsStatusUI(w9Task.ds_status || 'sent');
+      }
+    }
+  }
+}
+
+function updateW9DsStatusUI(status) {
+  const el = document.getElementById('w9DsStatus');
+  el.style.display = 'block';
+  if (status === 'completed') {
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.88rem;font-weight:700;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+    el.innerHTML = '✅ W-9 已由工人签署完成 — 点击下方「下载已签 W-9」查看';
+  } else if (status === 'checking') {
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#f8fafc;color:var(--gray-500);border:1px solid var(--gray-200)';
+    el.innerHTML = '🔄 正在查询 DocuSeal 最新状态…';
+  } else if (status === 'sent') {
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe';
+    el.innerHTML = '📤 W-9 已发送，等待工人填写签署';
+  } else if (status === 'declined') {
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+    el.innerHTML = '❌ 工人已拒签 W-9';
+  } else {
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#f8fafc;color:var(--gray-500);border:1px solid var(--gray-200)';
+    el.innerHTML = '📋 W-9 状态：' + (status || '未知');
+  }
+}
+
+async function doSendW9() {
+  if (!_onboardingWorkerId) return;
+  const email = document.getElementById('w9WorkerEmail').value.trim();
+  if (!email) { showToast('请填写工人邮箱', 'error'); return; }
+  if (!await showConfirm(`确认发送 W-9 填写请求至 ${email}？\n\n工人将收到门户链接（邮件+短信），在门户填写信息后，系统自动生成 W-9 供签字。`)) return;
+  const btn = document.getElementById('w9SendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-w9`, {
+    method: 'POST', body: JSON.stringify({ worker_email: email })
+  });
+  btn.disabled = false; btn.textContent = '📤 重新发送 W-9 填写请求';
+  if (r && r.success) {
+    const statusEl = document.getElementById('w9DsStatus');
+    statusEl.style.display = ''; statusEl.style.background = '#dbeafe'; statusEl.style.color = '#1d4ed8'; statusEl.style.border = '1px solid #bfdbfe';
+    statusEl.innerHTML = '📤 已发送门户链接，等待工人填写 W-9 信息…';
+    if (r.warnings && r.warnings.length > 0) {
+      showToast('⚠️ W-9 请求已发送，但通知有问题：<br>' + r.warnings.join('<br>'), 'warning', 8000);
+    } else {
+      showToast('✅ W-9 填写请求已发送（邮件+短信）', 'success');
+    }
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '发送失败'), 'error');
+  }
+}
+
+async function refreshW9Status() {
+  if (!_onboardingWorkerId) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-status`);
+  if (r && r.status) {
+    updateW9DsStatusUI(r.status);
+    let info = `W-9 状态: ${r.status}`;
+    if (r.workerSigned) info += ` | 工人已签: ${new Date(r.workerSigned).toLocaleString('zh-CN')}`;
+    if (r.declineReason) info += ` | 拒签原因: ${r.declineReason}`;
+    showToast(info, 'info', 5000);
+    if (r.status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
+  }
+}
+
+async function downloadSignedW9() {
+  if (!_onboardingWorkerId) return;
+  window.open(`/api/admin/worker-accounts/${_onboardingWorkerId}/w9-signed-pdf`, '_blank');
+}
+
+// ─── Work Auth Modal Functions ───
+function openWorkAuthModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  document.getElementById('workAuthWorkerName').textContent = w ? (w.name || w.username || '') : '';
+  document.getElementById('workAuthNote').value = 'Work Authorization 认证调查已发送，请在 Portal 上传符合要求的身份证明文件';
+  document.getElementById('workAuthStatus').style.display = 'none';
+  document.getElementById('workAuthSendBtn').disabled = false;
+  document.getElementById('workAuthSendBtn').textContent = '📤 发送认证任务给工人';
+  document.getElementById('workAuthModal').classList.add('show');
+}
+
+async function doSendWorkAuth() {
+  if (!_onboardingWorkerId) return;
+  const note = document.getElementById('workAuthNote').value.trim();
+  const btn = document.getElementById('workAuthSendBtn');
+  btn.disabled = true;
+  btn.textContent = '发送中…';
+  const statusEl = document.getElementById('workAuthStatus');
+  statusEl.style.display = 'none';
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-work-auth`, { method:'POST', body: JSON.stringify({ note }) });
+  if (r && r.success) {
+    statusEl.textContent = '✅ 认证任务已发送给工人';
+    statusEl.style.display = '';
+    statusEl.style.background = '#d1fae5';
+    statusEl.style.color = '#065f46';
+    btn.textContent = '📤 重新发送';
+    btn.disabled = false;
+    refreshOnboardingModal();
+  } else {
+    statusEl.textContent = '❌ ' + (r?.error || '发送失败');
+    statusEl.style.display = '';
+    statusEl.style.background = '#fef2f2';
+    statusEl.style.color = '#dc2626';
+    btn.disabled = false;
+    btn.textContent = '📤 发送认证任务给工人';
+  }
+}
+
+async function showContractVersions(workerId, workerName) {
+  const wid = workerId || _onboardingWorkerId;
+  if (!wid) return;
+  const content = document.getElementById('contractVersionsContent');
+  content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">加载中…</div>';
+  document.getElementById('contractVersionsModal').classList.add('show');
+  if (workerName) {
+    document.querySelector('#contractVersionsModal h2').textContent = `📜 协议历史 — ${workerName}`;
+  }
+  try {
+    const rows = await api(`/admin/worker-accounts/${wid}/contract-versions`);
+    if (!rows || !rows.length) {
+      content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无协议记录</div>';
+      return;
+    }
+    const STATUS_MAP = { sent:'📤 已发送', company_signed:'✍️ 公司已签', worker_signed:'✍️ 工人已签', completed:'✅ 双方已签署', voided:'🗑️ 已作废', declined:'❌ 已拒签', '':'—' };
+    content.innerHTML = rows.map((v, i) => {
+      const statusLabel = STATUS_MAP[v.ds_status] || v.ds_status || '—';
+      const isActive = i === 0 && v.ds_status && v.ds_status !== 'voided' && v.ds_status !== 'declined';
+      const borderColor = isActive ? '#86efac' : v.ds_status === 'voided' ? '#fecaca' : v.ds_status === 'declined' ? '#fecaca' : '#e5e7eb';
+      const bgColor = isActive ? '#f0fdf4' : v.ds_status === 'voided' ? '#fef2f2' : v.ds_status === 'declined' ? '#fef2f2' : '#fff';
+      const ts = new Date(v.created_at).toLocaleString('zh-CN', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() });
+      const voidInfo = v.voided_at ? `<div style="color:#dc2626;font-size:.8rem;margin-top:.3rem">作废时间: ${new Date(v.voided_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() })} — 原因: ${esc(v.void_reason || '—')}</div>` : '';
+      const signInfo = [];
+      if (v.ds_company_signed_at) signInfo.push(`公司签署: ${new Date(v.ds_company_signed_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() })}`);
+      if (v.ds_worker_signed_at) signInfo.push(`工人签署: ${new Date(v.ds_worker_signed_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() })}`);
+      const signHtml = signInfo.length ? `<div style="color:#065f46;font-size:.8rem;margin-top:.2rem">${signInfo.join(' · ')}</div>` : '';
+      const hasSigned = v.ds_envelope_id && (v.ds_status === 'completed' || v.ds_status === 'company_signed' || v.ds_status === 'worker_signed');
+      const pdfHtml = hasSigned ? `<iframe id="cvPdfFrame_${v.id}" style="width:100%;height:500px;border:1px solid var(--gray-200);border-radius:8px;margin-top:.5rem" src="/api/admin/worker-accounts/${wid}/contract-version-pdf/${v.id}" allow="clipboard-write"></iframe>` : '';
+      return `<div style="border:1px solid ${borderColor};background:${bgColor};border-radius:8px;padding:.6rem .8rem;margin-bottom:.5rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.3rem">
+          <div>
+            <span style="font-weight:700;font-size:.9rem">v${v.version_num}</span>
+            ${isActive ? '<span style="background:#dcfce7;color:#166534;font-size:.7rem;padding:1px 6px;border-radius:10px;margin-left:.3rem">当前</span>' : ''}
+            <span style="margin-left:.5rem;font-size:.82rem">${statusLabel}</span>
+          </div>
+          <div style="font-size:.78rem;color:var(--gray-400)">${ts} · ${esc(v.created_by || 'admin')}</div>
+        </div>
+        ${signHtml}${voidInfo}
+        ${pdfHtml}
+      </div>`;
+    }).join('');
+  } catch (e) {
+    content.innerHTML = `<div style="color:#dc2626;padding:1rem 0">加载失败: ${esc(e.message)}</div>`;
+  }
+}
+
+// (openW9SendModal and doSendW9 are defined above)
 
 async function toggleDispatchReady() {
   const newVal = _onboardingDispatchReady ? 0 : 1;
@@ -13089,6 +14012,17 @@ async function updateWorkerStatus(id, work_status) {
   showToast('✅ 身份已更新');
 }
 
+async function updateWorkerEmploymentType(id, employment_type, sel) {
+  const label = {w2:'W-2 员工', '1099':'1099 承包商', cash:'现金'}[employment_type] || employment_type || '未定';
+  if (!await showConfirm(`确认将雇佣类型改为「${label}」？\n\n注意：更改后入职进度中的任务分配也会相应调整。`)) {
+    loadWorkerAccounts();
+    return;
+  }
+  await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ employment_type }) });
+  showToast(`✅ 雇佣类型已更新为「${label}」`);
+  loadWorkerAccounts();
+}
+
 async function updateWorkerPayMethod(id, payment_method, sel) {
   const label = {cash:'现金',check:'支票',direct_deposit:'直接存款'}[payment_method] || payment_method;
   if (!await showConfirm(`确认将支付方式改为「${label}」？`)) {
@@ -13112,28 +14046,31 @@ async function showWorkerHistory(id, name) {
       content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无变更记录</div>';
       return;
     }
-    content.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:.83rem">
+    content.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.83rem;white-space:nowrap">
       <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.75rem">
-        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">时间</th>
+        <th style="text-align:left;padding:.4rem .5rem">时间</th>
         <th style="text-align:left;padding:.4rem .5rem">操作人</th>
         <th style="text-align:left;padding:.4rem .5rem">字段</th>
         <th style="text-align:left;padding:.4rem .5rem">原值</th>
         <th style="text-align:left;padding:.4rem .5rem">新值</th>
+        <th style="text-align:left;padding:.4rem .5rem;max-width:240px">备注</th>
       </tr></thead>
       <tbody>${rows.map(r => {
         const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
         const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
         const oldV = fmtWdVal(r.old_value);
         const newV = fmtWdVal(r.new_value);
+        const note = r.note || '';
         return `<tr style="border-bottom:1px solid var(--gray-100)">
-          <td style="padding:.45rem .5rem;color:var(--gray-400);white-space:nowrap">${ts}</td>
-          <td style="padding:.45rem .5rem;color:var(--sky);white-space:nowrap">${esc(r.changed_by||'—')}</td>
+          <td style="padding:.45rem .5rem;color:var(--gray-400)">${ts}</td>
+          <td style="padding:.45rem .5rem;color:var(--sky)">${esc(r.changed_by||'—')}</td>
           <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}</td>
           <td style="padding:.45rem .5rem;color:#dc2626">${esc(oldV)}</td>
           <td style="padding:.45rem .5rem;color:#16a34a">${esc(newV)}</td>
+          <td style="padding:.45rem .5rem;color:var(--gray-500);font-size:.8rem;max-width:240px;overflow:hidden;text-overflow:ellipsis" title="${esc(note)}">${esc(note)}</td>
         </tr>`;
       }).join('')}</tbody>
-    </table>`;
+    </table></div>`;
   } catch { content.innerHTML = '<div style="color:#dc2626;padding:1rem 0">加载失败，请重试</div>'; }
 }
 
@@ -13290,7 +14227,7 @@ async function saveWorkerDetail() {
   loadWorkerAccounts();
 }
 
-const WD_FIELD_LABELS = { active:'账户状态', suspended:'暂停状态', work_status:'身份', expected_salary:'期望薪资', our_salary_rating:'评分', payment_method:'支付方式', employee_id:'绑定员工', password:'密码' };
+const WD_FIELD_LABELS = { active:'账户状态', suspended:'暂停状态', work_status:'身份', expected_salary:'期望薪资', our_salary_rating:'评分', payment_method:'支付方式', employee_id:'绑定员工', password:'密码', contract:'合同签署', onboarding_contract:'合同任务', onboarding_interview:'面试任务', onboarding_phone_verify:'电话验证', onboarding_email_verify:'邮箱验证', onboarding_persona_verify:'身份验证', onboarding_background_check:'背调任务', onboarding_tax_form:'税表任务', onboarding_direct_deposit:'银行信息' };
 const WD_VALUE_LABELS = { '0':'否/禁用','1':'是/启用', cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直接存款', citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他', '':'（未填写）' };
 function fmtWdVal(v) { return WD_VALUE_LABELS[v] !== undefined ? WD_VALUE_LABELS[v] : (v || '（空）'); }
 
@@ -13732,7 +14669,7 @@ let _allInterviews = [];
 let _ivLocations = [];
 
 function switchIvTab(tab) {
-  ['slots','list','locations'].forEach(t => {
+  ['slots','list','locations','history'].forEach(t => {
     const paneId = 'ivPane' + t.charAt(0).toUpperCase() + t.slice(1);
     const btnId  = 'ivTab'  + t.charAt(0).toUpperCase() + t.slice(1);
     document.getElementById(paneId).style.display = tab === t ? '' : 'none';
@@ -13742,6 +14679,7 @@ function switchIvTab(tab) {
   });
   if (tab === 'list') filterInterviews();
   if (tab === 'locations') loadInterviewLocations();
+  if (tab === 'history') loadIvHistory();
 }
 
 // ── Interview Location Presets ──
@@ -13788,6 +14726,8 @@ function openLocationModal(id) {
   document.getElementById('ivLocContactName').value   = loc ? (loc.contact_name||'') : '';
   document.getElementById('ivLocContactPhone').value  = loc ? (loc.contact_phone||'') : '';
   document.getElementById('ivLocInstructions').value  = loc ? (loc.instructions||'') : '';
+  const ivAddrSt = document.getElementById('ivLocAddrStatus');
+  if (ivAddrSt) { ivAddrSt.textContent = ''; ivAddrSt.style.color = ''; ivAddrSt.style.display = 'none'; }
   document.getElementById('ivLocationModal').classList.add('show');
 }
 
@@ -13810,6 +14750,10 @@ async function saveLocation() {
     instructions:  document.getElementById('ivLocInstructions').value.trim()
   };
   if (!data.name) return showToast('❌ 地点名称必填', 'error');
+  if (!address1) return showToast('❌ 街道地址必填', 'error');
+  if (!city) return showToast('❌ 城市必填', 'error');
+  if (!state) return showToast('❌ 请选择州', 'error');
+  if (zip && !/^\d{5}(-\d{4})?$/.test(zip)) return showToast('❌ 邮编格式不正确（应为5位数字，如60601）', 'error');
   const r = await api(id ? `/admin/interview-locations/${id}` : '/admin/interview-locations', {
     method: id ? 'PUT' : 'POST',
     body: JSON.stringify(data)
@@ -13831,6 +14775,44 @@ async function saveLocation() {
     }
   } else {
     showToast('❌ ' + (r?.error || '保存失败'), 'error');
+  }
+}
+
+async function verifyLocationAddress() {
+  const street  = document.getElementById('ivLocAddress1').value.trim();
+  const street2 = document.getElementById('ivLocAddress2').value.trim();
+  const city    = document.getElementById('ivLocCity').value.trim();
+  const state   = document.getElementById('ivLocState').value;
+  const zip     = document.getElementById('ivLocZip').value.trim();
+  if (!street && !city) return showToast('❌ 请先填写地址', 'error');
+  const statusEl = document.getElementById('ivLocAddrStatus');
+  statusEl.style.display = 'block';
+  statusEl.style.background = '#FFF8E1';
+  statusEl.style.color = '#8B6914';
+  statusEl.textContent = '⏳ 正在验证地址… Verifying address…';
+  const result = await validateAddress({ street, street2, city, state, zip });
+  if (!result.proceed) {
+    statusEl.style.display = 'none';
+    return;
+  }
+  if (result.standardized) {
+    const s = result.standardized;
+    document.getElementById('ivLocAddress1').value = s.street;
+    document.getElementById('ivLocAddress2').value = s.street2 || '';
+    document.getElementById('ivLocCity').value     = s.city;
+    fillStateSelect(document.getElementById('ivLocState'), s.state);
+    document.getElementById('ivLocZip').value      = s.zip;
+    statusEl.style.background = '#E8F5E9';
+    statusEl.style.color = '#2E7D32';
+    statusEl.textContent = '✅ 地址已验证并更新 / Address verified and updated';
+  } else if (result.verified) {
+    statusEl.style.background = '#E8F5E9';
+    statusEl.style.color = '#2E7D32';
+    statusEl.textContent = '✅ 地址已验证 / Address verified';
+  } else {
+    statusEl.style.background = '#FFF3E0';
+    statusEl.style.color = '#E65100';
+    statusEl.textContent = '⚠ 地址未通过验证 / Address not verified';
   }
 }
 
@@ -14243,8 +15225,65 @@ async function setIvField(id, field, value) {
   await api(`/admin/interviews/${id}`, { method:'PUT', body: JSON.stringify({ [field]: value }) });
 }
 
+// ── Interview History ──
+let _allIvHistory = [];
+async function loadIvHistory() {
+  _allIvHistory = await api('/admin/interview-history') || [];
+  filterIvHistory();
+}
+function filterIvHistory() {
+  const q = (document.getElementById('ivHistSearch')?.value || '').toLowerCase();
+  const typeF = document.getElementById('ivHistTypeFilter')?.value || '';
+  const statusF = document.getElementById('ivHistStatusFilter')?.value || '';
+  const sourceF = document.getElementById('ivHistSourceFilter')?.value || '';
+  let rows = _allIvHistory;
+  if (q) rows = rows.filter(r => (r.worker_name||'').toLowerCase().includes(q) || (r.worker_phone||'').includes(q) || (r.worker_email||'').toLowerCase().includes(q));
+  if (typeF) rows = rows.filter(r => r.interview_type === typeF);
+  if (statusF) rows = rows.filter(r => r.status === statusF);
+  if (sourceF) rows = rows.filter(r => r.source === sourceF);
+  const countEl = document.getElementById('ivHistoryCount');
+  if (countEl) countEl.textContent = `共 ${rows.length} 条记录` + (rows.length !== _allIvHistory.length ? `（筛选自 ${_allIvHistory.length} 条）` : '');
+  renderIvHistory(rows);
+}
+function renderIvHistory(rows) {
+  const wrap = document.getElementById('ivHistoryTable');
+  if (!rows.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:2.5rem;color:var(--gray-400);background:#fff;border-radius:10px;border:1px solid var(--gray-200)">暂无面试历史记录</div>';
+    return;
+  }
+  const IV_TYPE_LABEL_H = { onboarding:'入职面试', job:'工作面试', other:'其他' };
+  wrap.innerHTML = `<div style="overflow-x:auto"><table>
+    <thead><tr>
+      <th>姓名</th><th>联系方式</th><th>面试时间</th><th>时长</th><th>地点</th>
+      <th>类型</th><th>状态</th><th>岗位意向</th><th>备注</th><th>来源</th>
+    </tr></thead>
+    <tbody>${rows.map(r => {
+      const dt = r.slot_datetime ? new Date(r.slot_datetime).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz()}) : '—';
+      const typ = r.interview_type || 'onboarding';
+      const typBadge = `<span style="padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700;${IV_TYPE_COLOR[typ]||IV_TYPE_COLOR.other}">${IV_TYPE_LABEL_H[typ]||typ}</span>`;
+      const stBadge = `<span style="padding:.12rem .5rem;border-radius:20px;font-size:.72rem;font-weight:700;${IV_STATUS_STYLE[r.status]||'background:#f3f4f6;color:#374151'}">${IV_STATUS_LABEL[r.status]||r.status}</span>`;
+      const srcBadge = r.source === 'archived'
+        ? '<span style="font-size:.72rem;background:#f3e8ff;color:#7c3aed;padding:.1rem .45rem;border-radius:10px;font-weight:600">已归档</span>'
+        : '<span style="font-size:.72rem;background:#dcfce7;color:#15803d;padding:.1rem .45rem;border-radius:10px;font-weight:600">当前</span>';
+      const contact = [r.worker_phone, r.worker_email].filter(Boolean).join('<br>');
+      return `<tr>
+        <td style="font-weight:600">${esc(r.worker_name||'—')}</td>
+        <td style="font-size:.82rem;color:var(--gray-500)">${contact||'—'}</td>
+        <td style="font-size:.84rem;white-space:nowrap">${dt}</td>
+        <td style="font-size:.84rem">${r.duration_min ? r.duration_min+'min' : '—'}</td>
+        <td style="font-size:.82rem;max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(r.location||'—')}</td>
+        <td>${typBadge}</td>
+        <td>${stBadge}</td>
+        <td style="font-size:.82rem;max-width:140px;overflow:hidden;text-overflow:ellipsis">${esc(r.position_interests||'—')}</td>
+        <td style="font-size:.82rem;max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(r.admin_notes||'—')}</td>
+        <td>${srcBadge}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>`;
+}
+
 async function sendIdentityVerify(interviewId, workerName) {
-  if (!await showConfirm(`确定向 ${workerName} 发送 Persona 身份验证（驾照+自拍）？\n验证链接将通过短信和邮件发送给工人。`)) return;
+  if (!await showConfirm(`确定向 ${workerName} 发送 Stripe Identity 身份验证（驾照/ID+自拍）？\n验证链接将通过短信和邮件发送给工人。`)) return;
   const r = await api(`/admin/interviews/${interviewId}/send-identity`, { method: 'POST', body: JSON.stringify({}) });
   if (r && r.success) {
     showToast(`✅ 身份验证已发送${r.smsSent ? '（短信已发）' : '（短信未发，请检查 Twilio 配置）'}`, 'success', 5000);
@@ -14272,11 +15311,20 @@ async function ivPassAndSend(id) {
 }
 
 // ─── Compliance Review ───
-const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'身份证件(Persona)', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', other:'其他' };
-const COMP_STATUS_LABELS = { pending:'待审核', approved:'已通过', rejected:'已拒绝' };
-const COMP_STATUS_COLORS = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)' };
+const COMP_TYPE_LABELS = { i9:'I-9', drivers_license:'身份证件(Stripe Identity)', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可', ead_upload:'EAD 工卡', other:'其他' };
+const COMP_STATUS_LABELS = { pending:'待审核', approved:'已通过', rejected:'已拒绝', submitted:'已提交' };
+const COMP_STATUS_COLORS = { pending:'color:var(--orange)', approved:'color:var(--green)', rejected:'color:var(--red)', submitted:'color:#1d4ed8' };
 let _complianceDocs = [];
 let _reviewDocId = null;
+
+function expiryBadge(expiresAt) {
+  if (!expiresAt) return '<span style="font-size:.75rem;color:var(--gray-400)">—</span>';
+  const d = new Date(expiresAt);
+  const days = Math.ceil((d - new Date()) / 86400000);
+  if (days < 0) return `<span style="font-size:.75rem;background:#fef2f2;color:#dc2626;padding:1px 6px;border-radius:4px;font-weight:600">已过期 ${expiresAt.slice(0,10)}</span>`;
+  if (days <= 30) return `<span style="font-size:.75rem;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-weight:600">${expiresAt.slice(0,10)} (${days}天)</span>`;
+  return `<span style="font-size:.75rem;color:var(--gray-500)">${expiresAt.slice(0,10)}</span>`;
+}
 
 async function loadComplianceDocs() {
   const docs = await api('/admin/compliance-docs');
@@ -14292,19 +15340,60 @@ async function loadComplianceDocs() {
     let personaBadge = '';
     try {
       const fd = JSON.parse(d.form_data || '{}');
-      if (fd.persona_inquiry_id) personaBadge = ' <span style="font-size:.68rem;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px">Persona</span>';
+      if (fd.stripe_session_id || fd.persona_inquiry_id) personaBadge = ' <span style="font-size:.68rem;background:#dbeafe;color:#1d4ed8;padding:1px 5px;border-radius:4px">Stripe Identity</span>';
     } catch {}
     return `<tr>
     <td><strong>${esc(d.worker_name||'')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(d.worker_email||d.worker_phone||'')}</span></td>
     <td>${COMP_TYPE_LABELS[d.doc_type]||d.doc_type}${personaBadge}</td>
     <td><span style="font-weight:600;${COMP_STATUS_COLORS[d.status]||''}">${COMP_STATUS_LABELS[d.status]||d.status}</span></td>
+    <td>${expiryBadge(d.expires_at)}</td>
     <td>${(d.created_at||'').slice(0,10)}</td>
     <td style="font-size:.8rem">${esc(d.reviewer_notes||'—')}</td>
     <td>
       <button class="btn btn-sm" onclick="openComplianceReview(${d.id})">查看/审核</button>
       ${d.file_path ? `<a href="/api/admin/compliance-docs/${d.id}/download" class="btn btn-sm" style="margin-left:.3rem">下载</a>` : ''}
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--gray-400);padding:2rem">暂无记录</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:2rem">暂无记录</td></tr>';
+  // Also load expiring docs
+  loadExpiringDocs();
+}
+
+// ─── Expiring Documents ───
+async function loadExpiringDocs() {
+  const days = document.getElementById('expiringDaysFilter')?.value || 90;
+  const docs = await api(`/admin/compliance-docs/expiring?days=${days}`);
+  if (!docs) return;
+  const alert = document.getElementById('expiringDocsAlert');
+  if (docs.length) {
+    alert.style.display = '';
+    const expired = docs.filter(d => new Date(d.expires_at) < new Date()).length;
+    const expiring = docs.length - expired;
+    const parts = [];
+    if (expired) parts.push(`${expired} 份已过期`);
+    if (expiring) parts.push(`${expiring} 份即将到期`);
+    document.getElementById('expiringDocsCount').textContent = `⚠️ ${parts.join('，')}`;
+  } else {
+    alert.style.display = 'none';
+  }
+  document.getElementById('expiringDocsTable').innerHTML = docs.length ? docs.map(d => {
+    const daysLeft = Math.ceil((new Date(d.expires_at) - new Date()) / 86400000);
+    const urgencyStyle = daysLeft <= 0 ? 'background:#fef2f2;color:#dc2626;font-weight:700' : daysLeft <= 7 ? 'background:#fef3c7;color:#92400e;font-weight:700' : daysLeft <= 30 ? 'color:#92400e;font-weight:600' : 'color:var(--gray-500)';
+    const urgencyText = daysLeft <= 0 ? `已过期 ${Math.abs(daysLeft)}天` : `${daysLeft} 天`;
+    return `<tr>
+      <td><strong>${esc(d.worker_name||'')}</strong><br><span style="font-size:.75rem;color:var(--gray-400)">${esc(d.worker_email||d.worker_phone||'')}</span></td>
+      <td>${COMP_TYPE_LABELS[d.doc_type]||d.doc_type}</td>
+      <td style="font-size:.85rem">${esc(d.holder_name||'—')}</td>
+      <td style="font-size:.85rem">${esc(d.doc_number||'—')}</td>
+      <td>${(d.expires_at||'').slice(0,10)}</td>
+      <td><span style="padding:2px 8px;border-radius:4px;font-size:.8rem;${urgencyStyle}">${urgencyText}</span></td>
+      <td><button class="btn btn-sm" onclick="openComplianceReview(${d.id})">查看</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--gray-400);padding:1rem">暂无到期证件</td></tr>';
+}
+
+function toggleExpiringPanel() {
+  const panel = document.getElementById('expiringDocsPanel');
+  panel.style.display = panel.style.display === 'none' ? '' : 'none';
 }
 
 function openComplianceReview(id) {
@@ -14314,12 +15403,11 @@ function openComplianceReview(id) {
   let formHtml = '';
   try {
     const fd = JSON.parse(doc.form_data || '{}');
-    // Persona-specific display
-    if (fd.persona_inquiry_id) {
+    if (fd.stripe_session_id || fd.persona_inquiry_id) {
       const personaFields = [
-        ['Persona Inquiry ID', fd.persona_inquiry_id],
-        ['Persona 状态', fd.persona_status || '—'],
-        ['事件', fd.persona_event || '—'],
+        ['Stripe Session ID', fd.stripe_session_id || fd.persona_inquiry_id],
+        ['验证状态', fd.stripe_status || fd.persona_status || '—'],
+        ['事件', fd.stripe_event || fd.persona_event || '—'],
         ...(fd.dl_first_name ? [['名 First Name', fd.dl_first_name]] : []),
         ...(fd.dl_last_name ? [['姓 Last Name', fd.dl_last_name]] : []),
         ...(fd.dl_dob ? [['出生日期 DOB', fd.dl_dob]] : []),
@@ -14329,7 +15417,7 @@ function openComplianceReview(id) {
         ...(fd.id_class ? [['证件类型', fd.id_class]] : []),
         ...(fd.decline_reasons ? [['拒绝原因', JSON.stringify(fd.decline_reasons)]] : [])
       ];
-      formHtml = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem;margin-bottom:1rem"><div style="font-weight:700;color:#1d4ed8;font-size:.85rem;margin-bottom:.5rem">🔐 Persona 自动验证数据</div>' +
+      formHtml = '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem;margin-bottom:1rem"><div style="font-weight:700;color:#1d4ed8;font-size:.85rem;margin-bottom:.5rem">🔐 Stripe Identity 自动验证数据</div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.82rem">' +
         personaFields.map(([k,v]) => `<div><span style="color:var(--gray-400)">${k}</span><br><strong>${esc(String(v))}</strong></div>`).join('') +
         '</div></div>';
@@ -14352,13 +15440,100 @@ function openComplianceReview(id) {
     </div>
     ${formHtml ? '<h3 style="font-size:.9rem;margin-bottom:.5rem">表单数据:</h3>' + formHtml : ''}
   `;
+  // Populate document fields
+  document.getElementById('complianceHolderName').value = doc.holder_name || '';
+  document.getElementById('complianceDocNumber').value = doc.doc_number || '';
+  document.getElementById('complianceExpiresAt').value = (doc.expires_at || '').slice(0, 10);
   document.getElementById('complianceReviewNotes').value = doc.reviewer_notes || '';
+  // Show OCR section only if there's a file to scan
+  document.getElementById('complianceOcrSection').style.display = doc.file_path ? '' : 'none';
+  document.getElementById('ocrStatusMsg').style.display = 'none';
+  document.getElementById('ocrResultBox').style.display = doc.ocr_raw ? '' : 'none';
+  document.getElementById('ocrResultBox').textContent = doc.ocr_raw || '';
   document.getElementById('complianceReviewModal').classList.add('show');
+}
+
+async function runComplianceOcr() {
+  if (!_reviewDocId) return;
+  const btn = document.getElementById('ocrRunBtn');
+  const statusMsg = document.getElementById('ocrStatusMsg');
+  btn.disabled = true;
+  btn.textContent = '⏳ 扫描中…';
+  statusMsg.style.display = 'block';
+  statusMsg.style.background = '#FFF8E1';
+  statusMsg.style.color = '#8B6914';
+  statusMsg.textContent = '⏳ 正在通过 Google Cloud Vision 识别证件文字…';
+  const r = await api(`/admin/compliance-docs/${_reviewDocId}/ocr`, { method: 'POST' });
+  btn.disabled = false;
+  btn.textContent = '扫描证件 Scan Document';
+  if (r && r.success) {
+    // Show raw text
+    if (r.text) {
+      document.getElementById('ocrResultBox').style.display = '';
+      document.getElementById('ocrResultBox').textContent = r.text;
+    }
+    // Auto-fill parsed fields
+    if (r.parsed) {
+      if (r.parsed.holder_name && !document.getElementById('complianceHolderName').value) {
+        document.getElementById('complianceHolderName').value = r.parsed.holder_name;
+      }
+      if (r.parsed.doc_number && !document.getElementById('complianceDocNumber').value) {
+        document.getElementById('complianceDocNumber').value = r.parsed.doc_number;
+      }
+      if (r.parsed.expires_at && !document.getElementById('complianceExpiresAt').value) {
+        document.getElementById('complianceExpiresAt').value = r.parsed.expires_at;
+      }
+    }
+    const parsed = r.parsed || {};
+    const found = [parsed.holder_name && '姓名', parsed.doc_number && '证件号', parsed.expires_at && '到期日'].filter(Boolean);
+    statusMsg.style.background = '#E8F5E9';
+    statusMsg.style.color = '#2E7D32';
+    statusMsg.textContent = found.length
+      ? `✅ 识别成功！自动提取：${found.join('、')}`
+      : '✅ 文字已识别，但未自动匹配到结构化字段，请手动确认';
+  } else {
+    statusMsg.style.background = '#FFF3E0';
+    statusMsg.style.color = '#E65100';
+    statusMsg.textContent = '❌ ' + (r?.error || 'OCR 识别失败');
+  }
+}
+
+async function saveComplianceFields() {
+  if (!_reviewDocId) return;
+  const r = await api(`/admin/compliance-docs/${_reviewDocId}/fields`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      holder_name: document.getElementById('complianceHolderName').value.trim(),
+      doc_number: document.getElementById('complianceDocNumber').value.trim(),
+      expires_at: document.getElementById('complianceExpiresAt').value || null
+    })
+  });
+  if (r && r.success) {
+    showToast('✅ 证件信息已保存');
+    // Update local cache
+    const doc = _complianceDocs.find(d => d.id === _reviewDocId);
+    if (doc) {
+      doc.holder_name = document.getElementById('complianceHolderName').value.trim();
+      doc.doc_number = document.getElementById('complianceDocNumber').value.trim();
+      doc.expires_at = document.getElementById('complianceExpiresAt').value || null;
+    }
+  } else {
+    showToast('❌ 保存失败', 'error');
+  }
 }
 
 async function reviewComplianceDoc(status) {
   if (!_reviewDocId) return;
   const notes = document.getElementById('complianceReviewNotes').value;
+  // Also save fields when approving/rejecting
+  await api(`/admin/compliance-docs/${_reviewDocId}/fields`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      holder_name: document.getElementById('complianceHolderName').value.trim(),
+      doc_number: document.getElementById('complianceDocNumber').value.trim(),
+      expires_at: document.getElementById('complianceExpiresAt').value || null
+    })
+  });
   await api(`/admin/compliance-docs/${_reviewDocId}/review`, {
     method:'PUT', body: JSON.stringify({ status, reviewer_notes: notes })
   });
@@ -15530,14 +16705,19 @@ function obivRenderSlots(slots) {
   if (!slots.length) {
     slotSel.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.25rem 0">暂无可用的面试时间，请创建新的时间段</div>';
   } else {
-    slotSel.innerHTML = slots.map(s => {
-      const dt = new Date(s.slot_datetime);
-      const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short', timeZone: localTz() });
-      const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone: localTz(), timeZoneName: 'short' });
-      const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
-      const avail = (s.max_bookings || 1) - (s.booked_count || 0);
-      return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
-    }).join('');
+    const available = slots.filter(s => ((s.max_bookings || 1) - (s.booked_count || 0)) > 0);
+    if (!available.length) {
+      slotSel.innerHTML = '<div style="color:var(--gray-400);font-size:.82rem;padding:.25rem 0">暂无可用的面试时间（所有时段已满），请创建新的时间段</div>';
+    } else {
+      slotSel.innerHTML = available.map(s => {
+        const dt = new Date(s.slot_datetime);
+        const dateStr = dt.toLocaleDateString('zh-CN', { month:'numeric', day:'numeric', weekday:'short', timeZone: localTz() });
+        const timeStr = dt.toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', hour12:false, timeZone: localTz(), timeZoneName: 'short' });
+        const locStr = s.location ? ' · ' + s.location.substring(0, 25) : '';
+        const avail = (s.max_bookings || 1) - (s.booked_count || 0);
+        return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border-radius:4px;cursor:pointer;user-select:none" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background=''"><input type="checkbox" value="${s.id}" onchange="obivOnSlotChange()" style="flex-shrink:0"><span>${dateStr} ${timeStr}${locStr}（剩 ${avail} 名额）</span></label>`;
+      }).join('');
+    }
   }
 }
 
@@ -15579,9 +16759,15 @@ async function openOnboardingInterviewSlotModal() {
   document.getElementById('obivStartMin').value  = '00';
   document.getElementById('obivEndMin').value    = '00';
 
-  // Default date to tomorrow
+  // Default date to next weekday (skip weekends), using local timezone
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-  document.getElementById('obivNewDate').value = tomorrow.toISOString().split('T')[0];
+  while (tomorrow.getDay() === 0 || tomorrow.getDay() === 6) {
+    tomorrow.setDate(tomorrow.getDate() + 1);
+  }
+  const ty = tomorrow.getFullYear();
+  const tm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+  const td = String(tomorrow.getDate()).padStart(2, '0');
+  document.getElementById('obivNewDate').value = `${ty}-${tm}-${td}`;
   document.getElementById('obivNewDuration').value = '30';
   document.getElementById('obivNewMax').value = '1';
   document.getElementById('obivBatchPreview').style.display = 'none';
@@ -15693,6 +16879,16 @@ async function obivCreateAndAdd() {
   _obivSlots = await api('/admin/interview-slots') || [];
   const now = new Date();
   _obivFutureSlots = _obivSlots.filter(s => s.active !== 0 && new Date(s.slot_datetime) > now);
+
+  // Refresh location filter to include any newly used locations
+  const usedLocIds = [...new Set(_obivFutureSlots.map(s => s.location_id).filter(Boolean))];
+  const filterLocs = (_ivLocations || []).filter(l => usedLocIds.includes(l.id));
+  const locFilterEl = document.getElementById('obivLocFilter');
+  const prevLocFilter = locFilterEl.value;
+  locFilterEl.innerHTML = '<option value="">全部地点</option>' +
+    filterLocs.map(l => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+  if (prevLocFilter) locFilterEl.value = prevLocFilter;
+
   obivFilterSlots();
 
   // Auto-check newly created slots
@@ -16043,7 +17239,7 @@ async function openInvpForEdit(id) {
   document.getElementById('invPageBillName').value = inv.company_name || '';
   document.getElementById('invPageBillAddr').value = inv.bill_to_addr || '';
   document.getElementById('invPageUniformRate').value = '';
-  document.getElementById('invPageMarkupRate').value = (inv.profile && inv.profile.markup_rate) ? inv.profile.markup_rate : '';
+  document.getElementById('invPageMarkupRate').value = inv.markup_rate || '';
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
   const iw = document.getElementById('invpEmpImportWrap'); if (iw) iw.style.display = 'none';
 
@@ -16317,13 +17513,12 @@ async function saveInvpInvoice(status) {
   if (!invNum || !billName) { alert('请填写 Invoice 编号和客户公司名称'); return; }
 
   const items = getInvpManualItems();
-  const baseSubtotal = items.reduce((s,i) => s+i.total, 0);
+  const employeeTotal = items.reduce((s,i) => s+i.total, 0);
   const markupRate = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
-  const subtotal = Math.round(baseSubtotal * markupRate * 100) / 100;
-  const profile = Object.assign({}, getInvpProfile(), { markup_rate: markupRate !== 1 ? markupRate : undefined });
+  const subtotal = Math.round(employeeTotal * markupRate * 100) / 100;
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
-    period_start: ps, period_end: pe, subtotal, items, profile, status
+    period_start: ps, period_end: pe, subtotal, items, markup_rate: markupRate, profile: getInvpProfile(), status
   };
 
   let res;
@@ -16448,6 +17643,8 @@ function _invpSaveTableState() {
     emp.name = row.querySelector('.invp-man-name').value;
     emp.category = row.querySelector('.invp-man-cat') ? row.querySelector('.invp-man-cat').value : (emp.category || '');
     emp.rate = row.querySelector('.invp-man-rate').value;
+    const otRateInp = row.querySelector('.invp-man-ot-rate');
+    emp.otRate = (otRateInp && otRateInp.dataset.auto !== 'false') ? '' : (otRateInp?.value || '');
     emp.days = emp.days || {};
     row.querySelectorAll('.invp-man-day').forEach(inp => {
       emp.days[inp.dataset.date] = inp.value;
@@ -16506,6 +17703,11 @@ function renderInvpManualTable() {
     }).join('');
     const totalHrs = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
     const rate = parseFloat(emp.rate) || 0;
+    const otRateVal = parseFloat(emp.otRate) || (rate ? rate * 1.5 : 0);
+    const otRateIsAuto = !emp.otRate;
+    const regHrs = Math.min(totalHrs, 40);
+    const otHrs  = Math.max(totalHrs - 40, 0);
+    const subtotal = regHrs * rate + otHrs * otRateVal;
     return `<tr class="invp-manual-row" data-uid="${emp.uid}">
       <td style="padding:3px 6px">
         <input type="text" class="invp-man-name" data-uid="${emp.uid}" value="${esc(emp.name||'')}"
@@ -16525,8 +17727,17 @@ function renderInvpManualTable() {
           style="width:70px;text-align:right;border:1px solid var(--gray-200);border-radius:4px;padding:2px 5px;font-size:.83rem"
           oninput="invpUpdateRowTotal(this.closest('tr'))">
       </td>
+      <td style="padding:3px 4px;text-align:right">
+        <input type="number" class="invp-man-ot-rate" data-uid="${emp.uid}" value="${otRateVal ? otRateVal.toFixed(2) : ''}"
+          min="0" step="0.01" placeholder="OT $/h"
+          style="width:70px;text-align:right;border:1px solid #fcd34d;border-radius:4px;padding:2px 5px;font-size:.83rem;background:#fffbeb"
+          data-auto="${otRateIsAuto ? 'true' : 'false'}"
+          oninput="this.dataset.auto='false';invpUpdateRowTotal(this.closest('tr'))">
+      </td>
+      <td class="invp-man-reghrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${regHrs.toFixed(2)}h</td>
+      <td class="invp-man-othrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;${otHrs > 0 ? 'color:var(--accent);font-weight:600' : 'color:var(--gray-400)'}">${otHrs > 0 ? otHrs.toFixed(2) + 'h' : '—'}</td>
       <td class="invp-man-totalhrs" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">${totalHrs.toFixed(1)}h</td>
-      <td class="invp-man-subtotal" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap">$${(totalHrs*rate).toFixed(2)}</td>
+      <td class="invp-man-subtotal" style="padding:3px 6px;text-align:right;font-size:.84rem;white-space:nowrap;font-weight:600">$${subtotal.toFixed(2)}</td>
       <td style="padding:3px 4px">
         <button onclick="invpRemoveEmp(${emp.uid})" style="background:none;border:none;cursor:pointer;color:var(--gray-400);font-size:.85rem;padding:0 4px" title="删除">✕</button>
       </td>
@@ -16541,6 +17752,9 @@ function renderInvpManualTable() {
         <th style="padding:5px 6px;text-align:left;white-space:nowrap">工种类别</th>
         ${dayTh}
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">时薪($/h)</th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;background:#fffbeb">加班时薪($/h) <span style="font-weight:400;font-size:.72rem;color:#92400e">×1.5 自动</span></th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap">正常工时</th>
+        <th style="padding:5px 6px;text-align:right;white-space:nowrap;color:var(--accent)">加班工时 <span style="font-weight:400;font-size:.72rem">&gt;40h/周</span></th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">合计工时</th>
         <th style="padding:5px 6px;text-align:right;white-space:nowrap">小计</th>
         <th style="padding:5px 6px"></th>
@@ -16554,9 +17768,23 @@ function renderInvpManualTable() {
 function invpUpdateRowTotal(row) {
   const dayInputs = row.querySelectorAll('.invp-man-day');
   const rate = parseFloat(row.querySelector('.invp-man-rate').value) || 0;
+  const otRateInp = row.querySelector('.invp-man-ot-rate');
+  // Auto-sync OT rate to 1.5x when rate changes and user hasn't manually set it
+  if (otRateInp && otRateInp.dataset.auto !== 'false') {
+    otRateInp.value = rate ? (rate * 1.5).toFixed(2) : '';
+  }
+  const otRate = parseFloat(otRateInp?.value) || rate * 1.5;
   const totalHrs = [...dayInputs].reduce((s, inp) => s + (parseFloat(inp.value) || 0), 0);
+  const regHrs = Math.min(totalHrs, 40);
+  const otHrs  = Math.max(totalHrs - 40, 0);
+  const subtotal = regHrs * rate + otHrs * otRate;
   row.querySelector('.invp-man-totalhrs').textContent = totalHrs.toFixed(1) + 'h';
-  row.querySelector('.invp-man-subtotal').textContent = '$' + (totalHrs * rate).toFixed(2);
+  row.querySelector('.invp-man-reghrs').textContent = regHrs.toFixed(2) + 'h';
+  const otCell = row.querySelector('.invp-man-othrs');
+  otCell.textContent = otHrs > 0 ? otHrs.toFixed(2) + 'h' : '—';
+  otCell.style.color = otHrs > 0 ? 'var(--accent)' : 'var(--gray-400)';
+  otCell.style.fontWeight = otHrs > 0 ? '600' : '';
+  row.querySelector('.invp-man-subtotal').textContent = '$' + subtotal.toFixed(2);
 }
 
 function invpAddEmp() {
@@ -16641,9 +17869,13 @@ function getInvpManualItems() {
       const name = emp.name || '';
       if (!name.trim()) return null;
       const rate = parseFloat(emp.rate) || 0;
+      const otRate = parseFloat(emp.otRate) || rate * 1.5;
       const dates = _invpGetDates();
       const totalHours = dates.reduce((s, d) => s + (parseFloat((emp.days && emp.days[d]) || 0)), 0);
-      return { name, category: emp.category || '', hours: totalHours, rate, total: totalHours * rate };
+      const regHours = Math.min(totalHours, 40);
+      const otHours  = Math.max(totalHours - 40, 0);
+      const total = regHours * rate + otHours * otRate;
+      return { name, category: emp.category || '', hours: totalHours, regHours, otHours, rate, otRate, total };
     })
     .filter(Boolean);
 }
@@ -16679,18 +17911,22 @@ async function generateInvpPreview() {
   const periodLabel = `${fmtShort(ps)}-${fmtShort(pe)}`;
   const totalHours  = items.reduce((s,i) => s+i.hours, 0);
   const baseAmt     = items.reduce((s,i) => s+i.total, 0);
+  const totalRegHrs = items.reduce((s,i) => s+(i.regHours||0), 0);
+  const totalOtHrs  = items.reduce((s,i) => s+(i.otHours||0), 0);
   const markupRate  = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
-  const totalAmt    = Math.round(baseAmt * markupRate * 100) / 100;
+  const hasMarkup   = markupRate > 1;
+  const billedAmt   = Math.round(baseAmt * markupRate * 100) / 100;
 
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
-  const tableRows = items.map(i => `
-    <tr style="background:#fff">
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">$${i.rate.toFixed(1)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.hours.toFixed(2)}</td>
-      <td style="padding:8px 10px;border:1px solid #bfcce0;text-align:center">${i.total.toFixed(2)}</td>
+  const tableRows = items.map(i => `<tr style="background:#fff">
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">${(i.regHours||0).toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right;${(i.otHours||0) > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
     </tr>`).join('');
 
   const bankBlock = (profile.bank_account_name||profile.bank_name||profile.bank_account_no||profile.bank_routing_no) ? `
@@ -16708,7 +17944,7 @@ async function generateInvpPreview() {
     </div>` : '';
 
   const html = `
-    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;max-width:760px;margin:0 auto;padding:1rem 0">
+    <div id="invpPrintArea" style="font-family:'Helvetica Neue',Arial,sans-serif;color:#1e293b;max-width:860px;margin:0 auto;padding:1rem 0">
       <!-- Header row: sender left, INVOICE block right -->
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2rem">
         <div style="line-height:1.75;font-size:.9rem">
@@ -16736,30 +17972,45 @@ async function generateInvpPreview() {
       </div>
 
       <!-- Table -->
-      <table style="width:100%;border-collapse:collapse;margin-bottom:${markupRate !== 1 ? '0.5rem' : '2rem'}">
+      <table style="width:100%;border-collapse:collapse;margin-bottom:2rem;font-size:.85rem;table-layout:fixed">
+        <colgroup>
+          <col style="width:10%">
+          <col style="width:11%">
+          <col style="width:15%">
+          <col style="width:12%">
+          <col style="width:10%">
+          <col style="width:13%">
+          <col style="width:13%">
+          <col style="width:16%">
+        </colgroup>
         <thead>
-          <tr style="background:#4472c4;color:#fff">
-            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Pay Period</th>
-            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Name</th>
-            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Position</th>
-            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Rate ($/hr)</th>
-            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Hours</th>
-            <th style="padding:9px 12px;border:1px solid #3560aa;font-weight:600;text-align:center;white-space:nowrap">Amount</th>
+          <tr style="background:#4472c4;color:#fff;font-size:.8rem">
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Pay Period</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Name</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Position</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Regular Pay Rate</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">OT Pay Rate</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Reg Working Hours</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">OT Working Hours</th>
+            <th style="padding:8px 6px;border:1px solid #3560aa;font-weight:600;text-align:center">Total Price</th>
           </tr>
         </thead>
         <tbody>
           ${tableRows}
           <tr style="background:#f6c26b;font-weight:700">
-            <td style="padding:9px 12px;border:1px solid #bfcce0;text-align:center" colspan="4">Total${markupRate !== 1 ? ` <span style="font-size:.82rem;font-weight:500">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
-            <td style="padding:9px 12px;border:1px solid #bfcce0;text-align:center">${totalHours.toFixed(1)}h</td>
-            <td style="padding:9px 12px;border:1px solid #bfcce0;text-align:center">$${totalAmt.toFixed(2)}</td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center" colspan="3">Total${hasMarkup ? ` <span style="font-weight:400;font-size:.8rem">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0"></td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0"></td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">${totalRegHrs.toFixed(2)}h</td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">${totalOtHrs > 0 ? totalOtHrs.toFixed(2) + 'h' : '—'}</td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${billedAmt.toFixed(2)}</td>
           </tr>
         </tbody>
       </table>
-      ${markupRate !== 1 ? `
+      ${hasMarkup ? `
       <div style="display:flex;justify-content:flex-end;margin-bottom:2rem">
         <div style="font-size:.82rem;color:#64748b;text-align:right">
-          Wage Subtotal&nbsp;&nbsp;$${baseAmt.toFixed(2)}&nbsp;&nbsp;×&nbsp;&nbsp;Markup ${markupRate.toFixed(2)}&nbsp;&nbsp;=&nbsp;&nbsp;<strong style="color:#1e293b">$${totalAmt.toFixed(2)}</strong>
+          Wage Subtotal&nbsp;&nbsp;$${baseAmt.toFixed(2)}&nbsp;&nbsp;×&nbsp;&nbsp;Markup ${markupRate.toFixed(2)}&nbsp;&nbsp;=&nbsp;&nbsp;<strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
         </div>
       </div>` : ''}
 
@@ -17101,7 +18352,7 @@ function printInvoice() {
 
 <!-- ════════════════════ INVOICE PAGE: PREVIEW MODAL ════════════════════ -->
 <div class="modal-bg" id="invpPreviewModal" style="display:none">
-  <div class="modal" style="max-width:900px;max-height:94vh;overflow-y:auto">
+  <div class="modal" style="max-width:960px;max-height:94vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
       <h2 style="margin:0">Invoice 预览</h2>
       <div id="invpPreviewBtns" style="display:flex;gap:.6rem">

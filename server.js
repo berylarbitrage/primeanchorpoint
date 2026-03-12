@@ -97,67 +97,49 @@ async function getTwilioAccountType() {
   } catch (e) { return { error: e.message }; }
 }
 
-// ─── Persona Identity Verification ───
-async function createPersonaInquiry(workerId, workerName, workerPhone) {
-  const apiKey = process.env.PERSONA_API_KEY;
-  const templateId = process.env.PERSONA_TEMPLATE_ID;
-  if (!apiKey || !templateId) return null;
-  const parts = (workerName || '').trim().split(/\s+/);
-  const firstName = parts[0] || '';
-  const lastName = parts.slice(1).join(' ') || '';
+// ─── Stripe Identity Verification ───
+const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
+
+async function createStripeVerificationSession(workerId, workerName, workerEmail) {
+  if (!stripe) return null;
   try {
-    const resp = await fetch('https://withpersona.com/api/v1/inquiries', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Persona-Version': '2023-01-05' },
-      body: JSON.stringify({ data: { attributes: {
-        'inquiry-template-id': templateId,
-        'reference-id': `worker-${workerId}`,
-        fields: { 'name-first': firstName, 'name-last': lastName, 'phone-number': formatPhoneE164(workerPhone || '') || undefined }
-      }}})
-    });
-    if (!resp.ok) { console.error('[Persona] Create inquiry failed:', await resp.text()); return null; }
-    const d = await resp.json();
-    const inqId = d.data.id;
-    let token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'] || '';
-    // Persona may not return session-token on create; call /resume to obtain it
-    if (!token) {
-      const resumeLink = await resumePersonaInquiry(inqId);
-      if (resumeLink) {
-        const m = resumeLink.match(/session-token=([^&]+)/);
-        if (m) token = m[1];
+    const parts = (workerName || '').trim().split(/\s+/);
+    const firstName = parts[0] || '';
+    const lastName = parts.slice(1).join(' ') || '';
+    const sessionParams = {
+      type: 'document',
+      metadata: { worker_id: String(workerId), worker_name: workerName || '' },
+      options: {
+        document: {
+          allowed_types: ['driving_license', 'id_card', 'passport'],
+          require_matching_selfie: true,
+          require_id_number: false
+        }
       }
+    };
+    if (workerEmail) {
+      sessionParams.provided_details = { email: workerEmail };
     }
-    const link = token ? `https://withpersona.com/verify?inquiry-id=${inqId}&session-token=${token}` : '';
-    return { inquiryId: inqId, sessionToken: token, link };
-  } catch (e) { console.error('[Persona] createPersonaInquiry error:', e.message); return null; }
+    const session = await stripe.identity.verificationSessions.create(sessionParams);
+    return { sessionId: session.id, clientSecret: session.client_secret, url: session.url, status: session.status };
+  } catch (e) { console.error('[Stripe Identity] Create session error:', e.message); return null; }
 }
 
-async function resumePersonaInquiry(inquiryId) {
-  const apiKey = process.env.PERSONA_API_KEY;
-  if (!apiKey || !inquiryId) return null;
+async function getStripeVerificationSession(sessionId) {
+  if (!stripe || !sessionId) return null;
   try {
-    const resp = await fetch(`https://withpersona.com/api/v1/inquiries/${inquiryId}/resume`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Persona-Version': '2023-01-05' }
-    });
-    if (!resp.ok) return null;
-    const d = await resp.json();
-    const token = d.meta?.['session-token'] || d.data?.attributes?.['session-token'];
-    return token ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${token}` : null;
-  } catch (e) { return null; }
+    const session = await stripe.identity.verificationSessions.retrieve(sessionId, { expand: ['verified_outputs'] });
+    return session;
+  } catch (e) { console.error('[Stripe Identity] Retrieve session error:', e.message); return null; }
 }
 
-function verifyPersonaWebhook(rawBody, sigHeader) {
-  const secret = process.env.PERSONA_WEBHOOK_SECRET;
-  if (!secret) return true; // skip if not configured (dev mode)
-  const parts = (sigHeader || '').split(',');
-  const t = parts.find(p => p.startsWith('t='))?.slice(2);
-  const v1 = parts.find(p => p.startsWith('v1='))?.slice(3);
-  if (!t || !v1) return false;
+function verifyStripeWebhook(rawBody, sigHeader) {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret) return { valid: true, event: typeof rawBody === 'string' ? JSON.parse(rawBody) : rawBody };
   try {
-    const expected = crypto.createHmac('sha256', secret).update(`${t}.${rawBody}`).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(v1, 'hex'), Buffer.from(expected, 'hex'));
-  } catch (e) { return false; }
+    const event = require('stripe').webhooks.constructEvent(rawBody, sigHeader, secret);
+    return { valid: true, event };
+  } catch (e) { console.error('[Stripe Webhook] Verification failed:', e.message); return { valid: false }; }
 }
 
 // ─── Email ───
@@ -690,6 +672,7 @@ try { db.exec(`ALTER TABLE employees ADD COLUMN social_media TEXT DEFAULT '{}'`)
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_status TEXT DEFAULT 'unpaid'`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN payment_receipt_path TEXT DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE invoices ADD COLUMN paid_at TEXT DEFAULT NULL`); } catch(e) {}
+try { db.exec(`ALTER TABLE invoices ADD COLUMN markup_rate REAL DEFAULT 0`); } catch(e) {}
 try { db.exec(`ALTER TABLE employees ADD COLUMN inquiry_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE inquiries ADD COLUMN job_id INTEGER DEFAULT NULL`); } catch(e) {}
 try { db.exec(`ALTER TABLE time_entries ADD COLUMN punch_photo_path TEXT DEFAULT ''`); } catch(e) {}
@@ -1065,6 +1048,54 @@ try { db.exec("ALTER TABLE interview_slots ADD COLUMN reserved_for_worker_accoun
 // Migrate interviews: add interview_type
 try { db.exec("ALTER TABLE interviews ADD COLUMN interview_type TEXT DEFAULT 'onboarding'"); } catch {}
 
+// ─── Interview History (archives every interview record) ───
+db.exec(`CREATE TABLE IF NOT EXISTS interview_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  original_interview_id INTEGER,
+  worker_account_id INTEGER NOT NULL,
+  worker_name TEXT DEFAULT '',
+  worker_phone TEXT DEFAULT '',
+  worker_email TEXT DEFAULT '',
+  slot_id INTEGER,
+  slot_datetime TEXT DEFAULT '',
+  duration_min INTEGER DEFAULT 30,
+  location TEXT DEFAULT '',
+  interview_type TEXT DEFAULT 'onboarding',
+  status TEXT DEFAULT 'scheduled',
+  admin_notes TEXT DEFAULT '',
+  position_interests TEXT DEFAULT '',
+  expected_pay TEXT DEFAULT '',
+  skills TEXT DEFAULT '',
+  archived_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  original_created_at DATETIME DEFAULT '',
+  original_updated_at DATETIME DEFAULT ''
+)`);
+
+function archiveInterviews(workerAccountId) {
+  const rows = db.prepare(`
+    SELECT i.*, s.slot_datetime, s.duration_min, s.location,
+           w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+           w.position_interests
+    FROM interviews i
+    LEFT JOIN interview_slots s ON i.slot_id = s.id
+    LEFT JOIN worker_accounts w ON i.worker_account_id = w.id
+    WHERE i.worker_account_id = ?
+  `).all(workerAccountId);
+  for (const r of rows) {
+    db.prepare(`INSERT INTO interview_history
+      (original_interview_id, worker_account_id, worker_name, worker_phone, worker_email,
+       slot_id, slot_datetime, duration_min, location, interview_type, status,
+       admin_notes, position_interests, expected_pay, skills,
+       original_created_at, original_updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(r.id, r.worker_account_id, r.worker_name||'', r.worker_phone||'', r.worker_email||'',
+           r.slot_id, r.slot_datetime||'', r.duration_min||30, r.location||'',
+           r.interview_type||'onboarding', r.status||'scheduled',
+           r.admin_notes||'', r.position_interests||'', r.expected_pay||'', r.skills||'',
+           r.created_at||'', r.updated_at||'');
+  }
+}
+
 // ─── Worker Positions (managed in DB) ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_positions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1152,6 +1183,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_compliance_docs (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id)
 )`);
+
+try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN holder_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN doc_number TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN ocr_raw TEXT DEFAULT ''"); } catch {}
 
 // ─── Worker Onboarding Tasks ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
@@ -1245,8 +1280,30 @@ if (!db.prepare('SELECT id FROM display_suffix_options LIMIT 1').get()) {
 }
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN employment_type TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN assigned_slot_ids TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_envelope_id TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_status TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_worker_signed_at DATETIME"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_company_signed_at DATETIME"); } catch {}
+try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN contract_content TEXT DEFAULT ''"); } catch {}
+
+// Contract version history — stores every contract that was sent, signed, or voided
+db.exec(`CREATE TABLE IF NOT EXISTS worker_contract_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  version_num INTEGER NOT NULL DEFAULT 1,
+  contract_content TEXT NOT NULL DEFAULT '',
+  ds_envelope_id TEXT DEFAULT '',
+  ds_status TEXT DEFAULT '',
+  ds_company_signed_at DATETIME,
+  ds_worker_signed_at DATETIME,
+  created_by TEXT DEFAULT 'admin',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  voided_at DATETIME,
+  void_reason TEXT DEFAULT ''
+)`);
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -1298,8 +1355,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS integration_settings (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS docuseal_templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  docuseal_template_id INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Seed default integration rows if not present
-const intProviders = ['workbright','checkr','gusto','twilio'];
+const intProviders = ['workbright','checkr','gusto','twilio','docuseal'];
 intProviders.forEach(p => {
   const ex = db.prepare('SELECT id FROM integration_settings WHERE provider=?').get(p);
   if (!ex) db.prepare('INSERT INTO integration_settings (provider) VALUES (?)').run(p);
@@ -2026,6 +2090,471 @@ function checkDsAnchors(docPath) {
   } catch { return { sig1: false, sig2: false, date1: false, date2: false }; }
 }
 
+// ─── DocuSeal eSignature Integration ───
+const http = require('http');
+
+function dsealEnabled() {
+  return !!(process.env.DOCUSEAL_API_KEY && process.env.DOCUSEAL_URL);
+}
+
+async function dsealApiCall(method, apiPath, body) {
+  const baseUrl = (process.env.DOCUSEAL_URL || '').replace(/\/$/, '');
+  const apiKey = process.env.DOCUSEAL_API_KEY || '';
+  const bodyStr = body != null ? JSON.stringify(body) : null;
+  // DocuSeal cloud (api.docuseal.com) uses paths without /api prefix
+  const isCloud = /api\.docuseal\.(com|eu)/.test(baseUrl);
+  const adjustedPath = isCloud ? apiPath.replace(/^\/api\//, '/') : apiPath;
+  const fullUrl = new URL(baseUrl + adjustedPath);
+  const isHttps = fullUrl.protocol === 'https:';
+  const transport = isHttps ? https : http;
+  return new Promise((resolve, reject) => {
+    const opts = {
+      hostname: fullUrl.hostname,
+      port: fullUrl.port || (isHttps ? 443 : 80),
+      path: fullUrl.pathname + fullUrl.search,
+      method,
+      headers: {
+        'X-Auth-Token': apiKey,
+        'Accept': 'application/json',
+        ...(bodyStr ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(bodyStr) } : {})
+      }
+    };
+    const req = transport.request(opts, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => { try { resolve({ status: res.statusCode, data: JSON.parse(d) }); } catch { resolve({ status: res.statusCode, data: d }); } });
+    });
+    req.on('error', reject); if (bodyStr) req.write(bodyStr); req.end();
+  });
+}
+
+function dsealGetPdfPageCount(docPath) {
+  try {
+    const t = fs.readFileSync(docPath).toString('binary');
+    const m = t.match(/\/Count\s+(\d+)/);
+    return m ? parseInt(m[1]) : 1;
+  } catch { return 1; }
+}
+
+async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
+  const docBase64 = 'data:application/pdf;base64,' + fs.readFileSync(docPath).toString('base64');
+
+  // Use POST /submissions/pdf — one-step: auto-detects {{field;role=...;type=...}} text tags,
+  // creates fields, removes tag text from rendered PDF, and creates submission in one call.
+  const subRes = await dsealApiCall('POST', '/api/submissions/pdf', {
+    name: emailSubject || docName,
+    documents: [{ name: docName, file: docBase64 }],
+    send_email: false,
+    order: 'preserved',
+    submitters: [
+      { role: 'First Party', name: signer1.name, email: signer1.email },
+      { role: 'Second Party', name: signer2.name, email: signer2.email }
+    ]
+  });
+  console.log(`[DocuSeal] submissions/pdf: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
+  // The response is a single submission object (not array) with submitters array
+  const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+  if (subRes.status >= 400 || !submitters.length) {
+    throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+  }
+  console.log(`[DocuSeal] Submitters: ${JSON.stringify(submitters.map(s => ({ role: s.role, id: s.id, slug: s.slug, embed_src: (s.embed_src||'').substring(0,80) })))}`);
+  const submissionId = subRes.data?.id || subRes.data?.submission_id || submitters[0]?.submission_id || '';
+  const company = submitters.find(s => s.role === 'First Party') || submitters[0];
+  const worker = submitters.find(s => s.role === 'Second Party');
+  let workerSignUrl = worker?.embed_src || '';
+  // If no embed_src in creation response, fetch it via PUT (same approach as company sign URL)
+  if (!workerSignUrl && worker?.id) {
+    try {
+      const wPut = await dsealApiCall('PUT', `/api/submitters/${worker.id}`, { name: worker.name || signer2.name });
+      console.log(`[DocuSeal] PUT worker submitter ${worker.id}: status=${wPut.status}, has_embed=${!!wPut.data?.embed_src}`);
+      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+    } catch (e) { console.error(`[DocuSeal] Failed to get worker embed_src: ${e.message}`); }
+  }
+  // Also try constructing direct URL from slug
+  const workerSlug = worker?.slug || '';
+  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
+  const finalWorkerUrl = workerDirectUrl || workerSignUrl;
+  console.log(`[DocuSeal] Worker sign URL: ${(finalWorkerUrl||'NONE').substring(0,100)}`);
+  return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
+}
+
+// Send contract via DocuSeal HTML API — converts plain text to HTML with field tags,
+// so DocuSeal reliably creates interactive signature/date fields.
+async function dsealSendContractHtml({ contractText, docName, emailSubject, signer1, signer2 }) {
+  // Convert plain text contract to HTML, replacing field tags with DocuSeal HTML elements
+  const lines = (contractText || '').split('\n');
+  const htmlLines = lines.map(line => {
+    let l = line
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      // Replace DocuSeal text tags with HTML field elements
+      // Note: display:inline-block and adequate height are required for DocuSeal to properly recognize and render fields
+      .replace(/\{\{sig1;role=First Party;type=signature\}\}/g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 80px; display: inline-block;"></signature-field>')
+      .replace(/\{\{date1;role=First Party;type=date\}\}/g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px; display: inline-block;"></date-field>')
+      .replace(/\{\{sig2;role=Second Party;type=signature\}\}/g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 80px; display: inline-block;"></signature-field>')
+      .replace(/\{\{date2;role=Second Party;type=date\}\}/g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px; display: inline-block;"></date-field>')
+      // Also handle legacy /sig1/ etc.
+      .replace(/\/sig1\//g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 80px; display: inline-block;"></signature-field>')
+      .replace(/\/date1\//g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px; display: inline-block;"></date-field>')
+      .replace(/\/sig2\//g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 80px; display: inline-block;"></signature-field>')
+      .replace(/\/date2\//g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px; display: inline-block;"></date-field>');
+    if (!l.trim()) return '<br>';
+    // Headings
+    const trimmed = line.trim();
+    if (/^[A-Z][A-Z\s]{3,}$/.test(trimmed)) return `<h2 style="text-align:center;margin:16px 0 8px">${l}</h2>`;
+    if (/^\d+\.\s/.test(trimmed)) return `<p style="margin:8px 0 2px"><strong>${l}</strong></p>`;
+    return `<p style="margin:2px 0">${l}</p>`;
+  });
+  const html = `<div style="font-family:Helvetica,Arial,sans-serif;font-size:11pt;line-height:1.5;max-width:700px;margin:0 auto;padding:20px">${htmlLines.join('\n')}</div>`;
+
+  const todayDate = new Date().toISOString().slice(0, 10);
+  const subRes = await dsealApiCall('POST', '/api/submissions/html', {
+    name: emailSubject || docName,
+    documents: [{ name: docName, html, size: 'Letter' }],
+    send_email: false,
+    order: 'preserved',
+    submitters: [
+      { role: 'First Party', name: signer1.name, email: signer1.email,
+        fields: [{ name: 'date1', default_value: todayDate, readonly: true }] },
+      { role: 'Second Party', name: signer2.name, email: signer2.email,
+        fields: [{ name: 'date2', default_value: todayDate, readonly: true }] }
+    ]
+  });
+  console.log(`[DocuSeal] submissions/html: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
+  const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+  if (subRes.status >= 400 || !submitters.length) {
+    throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+  }
+  console.log(`[DocuSeal] Submitters: ${JSON.stringify(submitters.map(s => ({ role: s.role, id: s.id, slug: s.slug, embed_src: (s.embed_src||'').substring(0,80) })))}`);
+  const submissionId = subRes.data?.id || submitters[0]?.submission_id || '';
+  const company = submitters.find(s => s.role === 'First Party') || submitters[0];
+  const worker = submitters.find(s => s.role === 'Second Party');
+  let workerSignUrl = worker?.embed_src || '';
+  if (!workerSignUrl && worker?.id) {
+    try {
+      const wPut = await dsealApiCall('PUT', `/api/submitters/${worker.id}`, { name: worker.name || signer2.name });
+      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+    } catch (e) { console.error(`[DocuSeal] Failed to get worker embed_src: ${e.message}`); }
+  }
+  const workerSlug = worker?.slug || '';
+  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
+  const finalWorkerUrl = workerDirectUrl || workerSignUrl;
+  return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
+}
+
+// ─── DocuSeal W-9 Template ───
+function generateW9HtmlTemplate(workerName) {
+  const fieldStyle = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const textFieldStyle = `${fieldStyle}width:100%;min-height:22px;`;
+  const roStyle = 'border:1px solid #ccc;border-radius:3px;padding:2px 4px;background:#f0f0f0;min-height:20px;display:inline-block;color:#888;font-size:8pt;';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;max-width:720px;margin:0 auto;padding:16px;color:#111">
+<div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
+  <div style="font-size:1.3rem;font-weight:900;line-height:1">W-9</div>
+  <div>
+    <div style="font-size:8.5pt;font-weight:700">Request for Taxpayer Identification Number and Certification</div>
+    <div style="font-size:7.5pt;color:#555">▶ Go to <em>www.irs.gov/FormW9</em> for instructions and the latest information.</div>
+  </div>
+  <div style="margin-left:auto;font-size:7.5pt;text-align:right">
+    <div>Form W-9</div>
+    <div>(Rev. March 2024)</div>
+    <div>Department of the Treasury</div>
+    <div>Internal Revenue Service</div>
+    <div style="margin-top:2px">OMB No. 1545-0003</div>
+  </div>
+</div>
+
+<table style="width:100%;border-collapse:collapse;font-size:9pt">
+  <tr>
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>1</strong> Name (as shown on your income tax return). Name is required on this line; do not leave this line blank.</div>
+      <text-field name="w9_name" role="Signer" required="true" style="${textFieldStyle}" placeholder="${workerName || ''}"></text-field>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>2</strong> Business name/disregarded entity name, if different from above</div>
+      <div style="${roStyle}width:100%">N/A — Individual</div>
+    </td>
+  </tr>
+  <tr>
+    <td style="width:60%;padding:3px 4px 3px 0;vertical-align:top;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:4px"><strong>3</strong> Federal tax classification of the person whose name is entered on line 1. Check only one of the following seven boxes.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:8pt">
+        <label style="font-weight:700;color:#111">☑ Individual/sole proprietor or single-member LLC</label>
+        <label style="color:#aaa">☐ C Corporation</label>
+        <label style="color:#aaa">☐ S Corporation</label>
+        <label style="color:#aaa">☐ Partnership</label>
+        <label style="color:#aaa">☐ Trust/estate</label>
+        <label style="color:#aaa">☐ LLC. Tax classification: ___</label>
+        <label style="color:#aaa">☐ Other: ___</label>
+      </div>
+    </td>
+    <td style="width:40%;padding:3px 0 3px 8px;vertical-align:top;border-left:1px solid #ccc;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:3px"><strong>4</strong> Exemptions (codes apply only to certain entities, not individuals)</div>
+      <div style="font-size:8pt;color:#aaa;margin-bottom:2px">Exempt payee code (if any): ___</div>
+      <div style="font-size:8pt;color:#aaa">Exemption from FATCA reporting code (if any): ___</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>5</strong> Address (number, street, and apt. or suite no.) — See instructions.</div>
+      <text-field name="w9_address" role="Signer" required="true" style="${textFieldStyle}"></text-field>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>6</strong> City, state, and ZIP code</div>
+      <text-field name="w9_city_state_zip" role="Signer" required="true" style="${textFieldStyle}"></text-field>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>7</strong> List account number(s) here (optional)</div>
+      <div style="${roStyle}width:100%">&nbsp;</div>
+    </td>
+  </tr>
+</table>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin:8px 0;font-size:8.5pt">
+  <strong>Part I — Taxpayer Identification Number (TIN)</strong><br>
+  <span style="font-size:7.5pt">Enter your TIN in the appropriate box. The TIN provided must match the name given on line 1. For individuals, this is generally your social security number (SSN). However, for a resident alien, sole proprietor, or disregarded entity, see the instructions for Part I, later. For other entities, it is your employer identification number (EIN).</span>
+  <table style="width:100%;margin-top:6px;border-collapse:collapse">
+    <tr>
+      <td style="width:55%;padding-right:8px">
+        <div style="font-size:8pt;margin-bottom:2px"><strong>Social security number (SSN) / ITIN</strong></div>
+        <div style="display:flex;align-items:center;gap:3px">
+          <text-field name="w9_ssn_1" role="Signer" required="true" style="${fieldStyle}width:45px;text-align:center" placeholder="XXX"></text-field>
+          <span>–</span>
+          <text-field name="w9_ssn_2" role="Signer" required="true" style="${fieldStyle}width:30px;text-align:center" placeholder="XX"></text-field>
+          <span>–</span>
+          <text-field name="w9_ssn_3" role="Signer" required="true" style="${fieldStyle}width:50px;text-align:center" placeholder="XXXX"></text-field>
+        </div>
+      </td>
+      <td style="width:45%;padding-left:8px;border-left:1px solid #ccc">
+        <div style="font-size:8pt;margin-bottom:2px;color:#aaa">Employer identification number (EIN)</div>
+        <div style="display:flex;align-items:center;gap:3px;color:#aaa">
+          <span style="${roStyle}width:35px;text-align:center">&nbsp;</span>
+          <span>–</span>
+          <span style="${roStyle}width:70px;text-align:center">&nbsp;</span>
+        </div>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin:8px 0;font-size:8.5pt">
+  <strong>Part II — Certification</strong><br>
+  <div style="font-size:7.5pt;margin:4px 0">Under penalties of perjury, I certify that:<br>
+    1. The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and<br>
+    2. I am not subject to backup withholding because: (a) I am exempt from backup withholding, or (b) I have not been notified by the Internal Revenue Service (IRS) that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and<br>
+    3. I am a U.S. citizen or other U.S. person (defined below); and<br>
+    4. The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.</div>
+  <table style="width:100%;margin-top:6px">
+    <tr>
+      <td style="width:65%">
+        <div style="font-size:8pt;margin-bottom:2px"><strong>Signature of U.S. person ▶</strong></div>
+        <signature-field name="w9_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      </td>
+      <td style="width:35%;padding-left:10px">
+        <div style="font-size:8pt;margin-bottom:2px"><strong>Date ▶</strong></div>
+        <date-field name="w9_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="font-size:7pt;color:#555;margin-top:6px;border-top:1px solid #999;padding-top:4px">
+  <strong>General Instructions</strong> — Form W-9 (Rev. March 2024) — Department of the Treasury, Internal Revenue Service. Purpose: An individual or entity who is required to file an information return with the IRS must obtain your correct TIN to report on an information return the amount paid to you. For the latest information about developments related to Form W-9 and its instructions, go to <em>www.irs.gov/FormW9</em>.
+</div>
+</div>`;
+}
+
+function getDsealConfigTemplateId(type) {
+  try {
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse(row?.config || '{}');
+    return type === 'w9' ? (cfg.w9_template_id || '') : (cfg.contract_template_id || '');
+  } catch { return ''; }
+}
+
+// Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
+async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip, ssn, tinType, businessName, taxClassification }) {
+  const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
+  const todayDate = new Date().toISOString().slice(0, 10);
+  let subRes;
+  if (templateId) {
+    // Use existing DocuSeal template (official IRS W-9) — pre-fill all available fields
+    const fields = [{ name: 'w9_name', default_value: workerName, readonly: false }];
+    if (address) fields.push({ name: 'w9_address', default_value: address, readonly: false });
+    if (cityStateZip) fields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
+    if (ssn) fields.push({ name: 'w9_ssn', default_value: ssn, readonly: false });
+    if (businessName) fields.push({ name: 'w9_business_name', default_value: businessName, readonly: false });
+    if (taxClassification) fields.push({ name: 'w9_tax_classification', default_value: taxClassification, readonly: false });
+    fields.push({ name: 'w9_date', default_value: todayDate, readonly: false });
+    subRes = await dsealApiCall('POST', '/api/submissions', {
+      template_id: parseInt(templateId),
+      send_email: true,
+      submitters: [
+        { role: 'First Party', name: workerName, email: workerEmail, fields }
+      ]
+    });
+  } else {
+    // Fallback: generate HTML template
+    const w9Html = generateW9HtmlTemplate(workerName);
+    const fallbackFields = [
+      { name: 'w9_name', default_value: workerName, readonly: false },
+      { name: 'w9_date', default_value: todayDate, readonly: true }
+    ];
+    if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false });
+    if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
+    subRes = await dsealApiCall('POST', '/api/submissions/html', {
+      name: `W-9 表格 - ${workerName}`,
+      documents: [{ name: `W-9 Tax Form - ${workerName}`, html: w9Html, size: 'Letter' }],
+      send_email: false,
+      submitters: [
+        { role: 'Signer', name: workerName, email: workerEmail, fields: fallbackFields }
+      ]
+    });
+  }
+  console.log(`[DocuSeal W-9] submission: status=${subRes.status}, templateId=${templateId || 'html-fallback'}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
+  const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+  if (subRes.status >= 400 || !submitters.length) {
+    throw new Error(`DocuSeal W-9 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+  }
+  const signer = submitters[0];
+  const submissionId = subRes.data?.id || signer?.submission_id || '';
+  let workerSignUrl = signer?.embed_src || '';
+  if (!workerSignUrl && signer?.id) {
+    try {
+      const wPut = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: workerName });
+      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+    } catch (e) { console.error(`[DocuSeal W-9] Failed to get embed_src: ${e.message}`); }
+  }
+  const slug = signer?.slug || '';
+  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const directUrl = slug ? `${baseHost}/s/${slug}` : '';
+  const finalWorkerUrl = directUrl || workerSignUrl;
+  console.log(`[DocuSeal W-9] Worker sign URL: ${(finalWorkerUrl || 'NONE').substring(0, 100)}`);
+  return { submissionId: String(submissionId || signer?.id || ''), workerSignUrl: finalWorkerUrl };
+}
+
+async function dsealGetW9Status(submissionId) {
+  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取 W-9 状态失败 ${r.status}`);
+  const sub = r.data;
+  let status = sub.status === 'completed' ? 'completed' : 'sent';
+  let workerSigned = null, declineReason = '';
+  for (const s of (sub.submitters || [])) {
+    if (s.status === 'completed' && s.completed_at) workerSigned = s.completed_at;
+    if (s.status === 'declined') { status = 'declined'; declineReason = s.decline_reason || '已拒签'; }
+  }
+  return { status, workerSigned, declineReason, raw: sub };
+}
+
+async function dsealGetW9SignUrl(submissionId) {
+  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取 W-9 提交失败 ${r.status}`);
+  const signer = (r.data.submitters || [])[0];
+  if (!signer) throw new Error('DocuSeal W-9: 签署人未找到');
+  if (signer.embed_src) return signer.embed_src;
+  const u = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: signer.name });
+  if (u.status >= 400 || !u.data?.embed_src) throw new Error(`DocuSeal 获取 W-9 签署链接失败 ${u.status}`);
+  return u.data.embed_src;
+}
+
+async function dsealGetCompanySignUrl(submissionId) {
+  // Get submission to find company submitter ID
+  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+  console.log(`[DocuSeal] GET submission ${submissionId}: status=${r.status}, submitters=${JSON.stringify((r.data?.submitters||[]).map(s=>({id:s.id,role:s.role,status:s.status,has_embed:!!s.embed_src})))}`);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}: ${JSON.stringify(r.data)}`);
+  const company = (r.data.submitters || []).find(s => s.role === 'First Party') || (r.data.submitters || [])[0];
+  if (!company) throw new Error('DocuSeal: 公司签署人未找到');
+  // embed_src is only in create response; use PUT /submitters/{id} to retrieve it
+  if (company.embed_src) return company.embed_src;
+  const u = await dsealApiCall('PUT', `/api/submitters/${company.id}`, { name: company.name });
+  console.log(`[DocuSeal] PUT submitter ${company.id}: status=${u.status}, has_embed=${!!u.data?.embed_src}, embed_prefix=${(u.data?.embed_src||'').substring(0,60)}`);
+  if (u.status >= 400 || !u.data?.embed_src) throw new Error(`DocuSeal 获取签署链接失败 ${u.status}: ${JSON.stringify(u.data)}`);
+  return u.data.embed_src;
+}
+
+async function dsealGetStatus(submissionId) {
+  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取状态失败 ${r.status}`);
+  const sub = r.data;
+  let status = (sub.status === 'completed') ? 'completed' : 'sent';
+  let companySigned = null, partnerSigned = null, declineReason = '';
+  for (const s of (sub.submitters || [])) {
+    if (s.status === 'completed' && s.completed_at) {
+      if (s.role === 'First Party') companySigned = s.completed_at;
+      else partnerSigned = s.completed_at;
+    }
+    if (s.status === 'declined') { status = 'declined'; declineReason = s.decline_reason || '已拒签'; }
+  }
+  return { status, companySigned, partnerSigned, declineReason, raw: sub };
+}
+
+async function dsealArchive(submissionId) {
+  const r = await dsealApiCall('DELETE', `/api/submissions/${submissionId}`, null);
+  if (r.status >= 400) throw new Error(`DocuSeal 归档失败 ${r.status}: ${JSON.stringify(r.data)}`);
+}
+
+async function dsealDownloadDocument(submissionId, { retries = 3, delayMs = 2000 } = {}) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+    if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}`);
+    const sub = r.data;
+
+    // Prefer documents from completed submitters (they have actual signatures rendered)
+    // Pick the LAST completed submitter's document — it has the most signatures applied
+    let docUrl = null;
+    for (const s of (sub.submitters || [])) {
+      if (s.status === 'completed' && s.completed_at && s.documents && s.documents.length) {
+        docUrl = s.documents[s.documents.length - 1].url;
+      }
+    }
+    // Fallback: any submitter with documents
+    if (!docUrl) {
+      for (const s of (sub.submitters || [])) {
+        if (s.documents && s.documents.length) { docUrl = s.documents[0].url; break; }
+      }
+    }
+
+    if (docUrl) {
+      console.log(`[DocuSeal] Download doc attempt ${attempt}: submissionId=${submissionId}, docUrl=${docUrl.substring(0, 100)}`);
+      const buf = await _dsealFetchUrl(docUrl);
+      // Sanity check: PDF should start with %PDF
+      if (buf.length > 4 && buf.slice(0, 5).toString() === '%PDF-') return buf;
+      // If not a valid PDF, it might be a placeholder; retry after delay
+      console.warn(`[DocuSeal] Downloaded content is not a valid PDF (${buf.length} bytes, starts with "${buf.slice(0, 20).toString()}"), attempt ${attempt}/${retries}`);
+    } else {
+      console.warn(`[DocuSeal] No documents found for submission ${submissionId}, attempt ${attempt}/${retries}, submitters: ${JSON.stringify((sub.submitters || []).map(s => ({ id: s.id, role: s.role, status: s.status, docs: (s.documents || []).length })))}`);
+    }
+
+    if (attempt < retries) await new Promise(ok => setTimeout(ok, delayMs * attempt));
+  }
+  throw new Error('DocuSeal: 签署文件链接不可用（重试后仍未获取到已签署PDF）');
+}
+
+function _dsealFetchUrl(docUrl, _redirectCount = 0) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(docUrl);
+    const isHttps = urlObj.protocol === 'https:';
+    const transport = isHttps ? https : http;
+    const opts = { hostname: urlObj.hostname, port: urlObj.port || (isHttps ? 443 : 80), path: urlObj.pathname + urlObj.search, method: 'GET', headers: {} };
+    try { if (urlObj.hostname === new URL(process.env.DOCUSEAL_URL || 'https://x').hostname) opts.headers['X-Auth-Token'] = process.env.DOCUSEAL_API_KEY; } catch {}
+    const req = transport.request(opts, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && _redirectCount < 5) {
+        res.resume();
+        const redirectUrl = new URL(res.headers.location, docUrl).href;
+        console.log(`[DocuSeal] _dsealFetchUrl redirect ${res.statusCode} -> ${redirectUrl.substring(0, 120)}`);
+        return resolve(_dsealFetchUrl(redirectUrl, _redirectCount + 1));
+      }
+      const chunks = []; res.on('data', c => chunks.push(c)); res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+    req.on('error', reject); req.end();
+  });
+}
+
 // Multi-page PDF builder from plain text (word-wrap + auto-paginate)
 function buildContractPdf(plainText) {
   const esc = s => String(s).replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
@@ -2064,24 +2593,10 @@ function buildContractPdf(plainText) {
   for (let p = 0; p < pc; p++) {
     const pid = 4 + p * 2, sid = 5 + p * 2;
     wo(pid, `${pid} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${sid} 0 R >>\nendobj\n`);
-    const DS_ANCHORS = ['/sig1/', '/sig2/', '/date1/', '/date2/'];
     let stream = ''; let y = pageH - margin;
     for (const { text, size } of pages[p]) {
       if (!text) { y -= lineH; continue; }
-      const anchor = DS_ANCHORS.find(a => text.includes(a));
-      if (anchor) {
-        const idx = text.indexOf(anchor);
-        const before = text.slice(0, idx);
-        const after = text.slice(idx + anchor.length);
-        let s = `BT /F1 ${size} Tf ${margin} ${y} Td `;
-        if (before) s += `(${esc(before)}) Tj `;
-        s += `1 1 1 rg (${esc(anchor)}) Tj 0 0 0 rg`;
-        if (after) s += ` (${esc(after)}) Tj`;
-        s += ` ET\n`;
-        stream += s;
-      } else {
-        stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
-      }
+      stream += `BT /F1 ${size} Tf ${margin} ${y} Td (${esc(text)}) Tj ET\n`;
       y -= lineH;
     }
     const sb = Buffer.from(stream, 'latin1');
@@ -2124,11 +2639,89 @@ function generatePartnerContractText({ partnerName, companyName, partnerAddress,
     'This Agreement constitutes the entire understanding between the parties.', '', '',
     'SIGNATURES', '',
     `${cname} (Service Provider)`,
-    'Authorized Signature: /sig1/',
-    'Date: /date1/', '',
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}',
+    'Date: {{date1;role=First Party;type=date}}', '',
     `${partnerName} (Partner)`,
-    'Partner Signature: /sig2/',
-    'Date: /date2/',
+    'Partner Signature: {{sig2;role=Second Party;type=signature}}',
+    'Date: {{date2;role=Second Party;type=date}}',
+  ].join('\n');
+}
+
+function generateWorkerContractText({ workerName, companyName, employmentType, dateStr, position }) {
+  const cname = companyName || 'Prime Anchorpoint LLC';
+  const pos = position || 'General Worker';
+  if (employmentType === '1099') {
+    return [
+      'INDEPENDENT CONTRACTOR AGREEMENT', '',
+      `Date: ${dateStr}`, '',
+      'This Independent Contractor Agreement ("Agreement") is entered into between:', '',
+      `Company: ${cname}  ("Company")`,
+      `Contractor: ${workerName}  ("Contractor")`, '',
+      '1. ENGAGEMENT',
+      `The Company engages the Contractor to perform services as ${pos}.`,
+      'The Contractor shall perform services as an independent contractor, not an employee.', '',
+      '2. COMPENSATION',
+      'Compensation shall be based on mutually agreed rates for each assignment.',
+      'The Contractor shall submit invoices and be paid within 15 business days.', '',
+      '3. TERM',
+      'This Agreement is effective as of the date above and continues until terminated',
+      'by either party with 14 days written notice.', '',
+      '4. RELATIONSHIP',
+      'The Contractor is an independent contractor. Nothing in this Agreement creates',
+      'an employer-employee relationship. The Contractor is responsible for their own',
+      'taxes, insurance, and benefits.', '',
+      '5. CONFIDENTIALITY',
+      'The Contractor agrees to keep confidential all proprietary information of the Company.', '',
+      '6. NON-SOLICITATION',
+      'During the term and for 12 months after, the Contractor shall not directly solicit',
+      'any clients introduced by the Company.', '',
+      '7. GOVERNING LAW',
+      'This Agreement shall be governed by the laws of the State of Illinois.', '',
+      '8. ENTIRE AGREEMENT',
+      'This Agreement constitutes the entire understanding between the parties.', '', '',
+      'SIGNATURES', '',
+      `${cname} (Company)`,
+      'Authorized Signature: {{sig1;role=First Party;type=signature}}',
+      'Date: {{date1;role=First Party;type=date}}', '',
+      `${workerName} (Contractor)`,
+      'Contractor Signature: {{sig2;role=Second Party;type=signature}}',
+      'Date: {{date2;role=Second Party;type=date}}',
+    ].join('\n');
+  }
+  // W-2 Employment Agreement
+  return [
+    'EMPLOYMENT AGREEMENT', '',
+    `Date: ${dateStr}`, '',
+    'This Employment Agreement ("Agreement") is entered into between:', '',
+    `Employer: ${cname}  ("Employer")`,
+    `Employee: ${workerName}  ("Employee")`, '',
+    '1. POSITION AND DUTIES',
+    `The Employer hereby employs the Employee in the position of ${pos}.`,
+    'The Employee shall perform duties as assigned by the Employer.', '',
+    '2. COMPENSATION',
+    'Compensation shall be at the rate agreed upon and communicated separately.',
+    'Payment shall be made on a regular payroll schedule via direct deposit (Gusto).', '',
+    '3. EMPLOYMENT TYPE',
+    'This is at-will employment. Either party may terminate the employment relationship',
+    'at any time, with or without cause or prior notice.', '',
+    '4. BENEFITS',
+    'The Employee may be eligible for benefits as determined by company policy.', '',
+    '5. CONFIDENTIALITY',
+    'The Employee agrees to keep confidential all proprietary information of the Employer.', '',
+    '6. WORK AUTHORIZATION',
+    'The Employee represents that they are legally authorized to work in the United States',
+    'and will complete all required employment verification forms (I-9).', '',
+    '7. GOVERNING LAW',
+    'This Agreement shall be governed by the laws of the State of Illinois.', '',
+    '8. ENTIRE AGREEMENT',
+    'This Agreement constitutes the entire understanding between the parties.', '', '',
+    'SIGNATURES', '',
+    `${cname} (Employer)`,
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}',
+    'Date: {{date1;role=First Party;type=date}}', '',
+    `${workerName} (Employee)`,
+    'Employee Signature: {{sig2;role=Second Party;type=signature}}',
+    'Date: {{date2;role=Second Party;type=date}}',
   ].join('\n');
 }
 
@@ -2199,9 +2792,9 @@ function generateAmendmentText({ partnerName, companyName, dateStr }) {
     'force and effect.', '', '',
     'IN WITNESS WHEREOF, the parties have executed this Amendment.', '',
     `${c} (Company)`,
-    'Authorized Signature: /sig1/', 'Date: /date1/', '',
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}', 'Date: {{date1;role=First Party;type=date}}', '',
     `${partnerName} (Partner)`,
-    'Partner Signature: /sig2/', 'Date: /date2/',
+    'Partner Signature: {{sig2;role=Second Party;type=signature}}', 'Date: {{date2;role=Second Party;type=date}}',
   ].join('\n');
 }
 
@@ -2229,9 +2822,9 @@ function generateMutualTerminationText({ partnerName, companyName, dateStr }) {
     'other except as set forth in this Agreement.', '', '',
     'IN WITNESS WHEREOF, the parties have executed this Mutual Termination Agreement.', '',
     `${c} (Company)`,
-    'Authorized Signature: /sig1/', 'Date: /date1/', '',
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}', 'Date: {{date1;role=First Party;type=date}}', '',
     `${partnerName} (Partner)`,
-    'Partner Signature: /sig2/', 'Date: /date2/',
+    'Partner Signature: {{sig2;role=Second Party;type=signature}}', 'Date: {{date2;role=Second Party;type=date}}',
   ].join('\n');
 }
 
@@ -2267,11 +2860,11 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
     'This Agreement is governed by the laws of the State of Illinois.', '', '',
     'SIGNATURES', '',
     `${cname} (Employer)`,
-    'Authorized Signature: /sig1/',
-    'Date: /date1/', '',
+    'Authorized Signature: {{sig1;role=First Party;type=signature}}',
+    'Date: {{date1;role=First Party;type=date}}', '',
     `${workerName || 'Employee'} (Employee)`,
-    'Employee Signature: /sig2/',
-    'Date: /date2/',
+    'Employee Signature: {{sig2;role=Second Party;type=signature}}',
+    'Date: {{date2;role=Second Party;type=date}}',
   ].join('\n');
 }
 
@@ -2302,7 +2895,8 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
   }
 }
 
-// DB-backed session store (survives server restarts, tokens expire in 24h)
+// DB-backed session store (survives server restarts, sessions roll on activity)
+const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
 db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -2310,8 +2904,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   role TEXT NOT NULL,
   created_at INTEGER NOT NULL
 )`);
-// Clean up expired sessions on startup
-try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+// Clean up sessions inactive for 30 days
+try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 // DB-backed worker session store (survives server restarts)
 db.exec(`CREATE TABLE IF NOT EXISTS worker_sessions (
@@ -2320,7 +2914,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_sessions (
   employee_id TEXT,
   created_at INTEGER NOT NULL
 )`);
-try { db.prepare('DELETE FROM worker_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+try { db.prepare('DELETE FROM worker_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 // DB-backed customer session store (survives server restarts)
 db.exec(`CREATE TABLE IF NOT EXISTS customer_sessions (
@@ -2329,7 +2923,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS customer_sessions (
   partner_id INTEGER,
   created_at INTEGER NOT NULL
 )`);
-try { db.prepare('DELETE FROM customer_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+try { db.prepare('DELETE FROM customer_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
@@ -2341,20 +2935,27 @@ function getSession(token) {
   if (!token) return null;
   const s = db.prepare('SELECT * FROM admin_sessions WHERE token=?').get(token);
   if (!s) return null;
-  if (Date.now() - s.created_at > 24*60*60*1000) { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); return null; }
-  return { userId: s.user_id, username: s.username, role: s.role, created: s.created_at };
+  if (Date.now() - s.created_at > SESSION_TTL) { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); return null; }
+  // Roll session: refresh last-active timestamp if more than 1 hour old (avoids a DB write on every request)
+  if (Date.now() - s.created_at > 60 * 60 * 1000) {
+    db.prepare('UPDATE admin_sessions SET created_at=? WHERE token=?').run(Date.now(), token);
+  }
+  return { userId: s.user_id, username: s.username, role: s.role, token };
 }
 function validSession(token) { return !!getSession(token); }
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
   let session = null;
-  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  let token = null;
+  if (auth && auth.startsWith('Bearer ')) { token = auth.slice(7); session = getSession(token); }
   if (!session) {
     const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
-    if (cookieMatch) session = getSession(cookieMatch[1]);
+    if (cookieMatch) { token = cookieMatch[1]; session = getSession(token); }
   }
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  // Refresh cookie on each request so it stays alive while the user is active
+  res.setHeader('Set-Cookie', `pa_token=${token};path=/;max-age=${SESSION_TTL / 1000};SameSite=Strict`);
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
@@ -3438,6 +4039,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN has_ssn INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent INTEGER DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent_at TEXT DEFAULT ''"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -3452,6 +4055,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     WHERE w.referred_by=?
       AND (SELECT COALESCE(SUM(t.total_hours),0) FROM time_entries t WHERE t.employee_id=e.id AND t.status='closed') >= ?
   `);
+  const getContractInfo = db.prepare("SELECT ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'");
+  const getContractVersionCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_contract_versions WHERE worker_account_id=?");
 
   const enriched = workers.map(w => {
     const interview = getInterview.get(w.id);
@@ -3459,6 +4064,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const skills = getSkills.all(w.id);
     const refCount = getReferralCount.get(w.id);
     const qualCount = getQualifiedReferrals.get(w.id, refConfig.min_hours_to_qualify);
+    const contractInfo = getContractInfo.get(w.id);
+    const contractVerCount = getContractVersionCount.get(w.id);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -3470,7 +4077,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       skills: skills || [],
       referral_count: refCount?.cnt || 0,
       qualified_referrals: qualCount?.cnt || 0,
-      referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral
+      referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral,
+      contract_ds_status: contractInfo?.ds_status || '',
+      contract_version_count: contractVerCount?.cnt || 0
     };
   });
 
@@ -3490,7 +4099,7 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status, has_ssn, position_interests } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status, has_ssn, position_interests, employment_type } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -3524,6 +4133,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   // and onboarding records so the worker starts fresh
   if (!w.active && newActive) {
     const wid = parseInt(req.params.id);
+    archiveInterviews(wid);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(wid);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(wid);
     db.prepare(`UPDATE worker_accounts SET onboarded=0, dispatch_ready=0, identity_status='', bgcheck_status='' WHERE id=?`).run(wid);
@@ -3533,7 +4143,8 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
     payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
-    work_status=COALESCE(?,work_status), has_ssn=?, position_interests=? WHERE id=?`)
+    work_status=COALESCE(?,work_status), has_ssn=?, position_interests=?,
+    employment_type=COALESCE(?,employment_type) WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
       newActive, newSuspended,
@@ -3543,6 +4154,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       assigned_tasks !== undefined ? JSON.stringify(assigned_tasks) : null,
       work_status !== undefined ? work_status : null,
       newHasSsn, newPositionInterests,
+      employment_type !== undefined ? employment_type : null,
       req.params.id
     );
   res.json({ success: true });
@@ -3584,17 +4196,21 @@ app.get('/api/admin/worker-accounts/:id/interview-info', requireAdmin, (req, res
 });
 
 // ── Worker Onboarding ──
+// W-2: 申请/筛选 → 面试 → 条件offer/合同 → 背景调查+Checkr → 身份验证 → I-9 → 看证件(EAD) → E-Verify → Gusto/上岗
+// 1099: 申请/筛选 → contractor agreement → W-9 → 背景调查(如需) → 证件/资质核验 → 可接单
 const ONBOARDING_STEPS = [
-  { key: 'phone_verify', title: '手机号验证',      desc: '必须通过手机号验证才能继续',                     required: true  },
-  { key: 'email_verify', title: '邮箱验证',        desc: '必须通过邮箱验证才能继续',                       required: true  },
-  { key: 'interview',    title: '完成面试',          desc: '预约并参加 HR 面试',                              required: true  },
-  { key: 'persona_verify', title: '身份验证 (Persona)', desc: '驾照 + 自拍核验 · 由 HR 发起 · 通过 Persona 平台', required: true },
-  { key: 'background_check', title: '背景调查 (Checkr)', desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台', required: true },
-  { key: 'ead_upload',   title: 'EAD / 工卡上传',    desc: 'EAD 工卡（如适用）',                              required: false },
-  { key: 'i9',           title: 'I-9 就业资格',      desc: '填写并提交 I-9 就业资格验证表',                  required: true  },
-  { key: 'w9',           title: 'W-9 税表',           desc: '独立承包商 W-9 税务信息表',                      required: true  },
-  { key: 'contract',     title: '签署雇佣合同',       desc: '电子签署雇佣协议',                               required: true  },
-  { key: 'gusto',        title: 'Gusto 薪资信息',     desc: '在 Gusto 填写直接存款及薪资信息',               required: true  },
+  { key: 'phone_verify',    title: '手机号验证',           desc: '必须通过手机号验证才能继续',                     required: true  },
+  { key: 'email_verify',    title: '邮箱验证',             desc: '必须通过邮箱验证才能继续',                       required: true  },
+  { key: 'interview',       title: '完成面试',             desc: '预约并参加 HR 面试',                              required: true  },
+  { key: 'contract',        title: '签署合同 / Offer',     desc: '电子签署雇佣协议 / Contractor Agreement',         required: true  },
+  { key: 'background_check',title: '背景调查 (Checkr)',    desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台',    required: false },
+  { key: 'persona_verify',  title: '身份验证 (Stripe Identity)',   desc: '驾照/ID + 自拍核验 · 由 HR 发起 · 通过 Stripe Identity', required: true },
+  { key: 'i9',              title: 'I-9 就业资格',         desc: 'I-9 Section 1 & 2 就业资格验证',                  required: true  },
+  { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
+  { key: 'work_permit',     title: '工作许可验证',          desc: '工作许可 / 签证授权状态核实（如适用）',            required: false },
+  { key: 'work_auth',       title: 'Work Authorization 认证', desc: '独立承包商工作授权资格调查 / 认证（1099 适用）', required: false },
+  { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
+  { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
 ];
 
 function initWorkerOnboarding(workerId) {
@@ -3688,11 +4304,36 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
   if (req.params.key === 'interview' && status === 'pending') {
     db.prepare(`UPDATE interviews SET status='cancelled', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND status='scheduled'`).run(req.params.id);
   }
-  db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
-    VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
-    ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,
-      action_url=excluded.action_url, completed_at=excluded.completed_at, updated_at=CURRENT_TIMESTAMP`)
-    .run(req.params.id, req.params.key, status, admin_note||'', action_url||'', completedAt);
+  // Get old status for history logging
+  const oldTask = db.prepare("SELECT status, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key=?").get(req.params.id, req.params.key);
+  const oldStatus = oldTask ? oldTask.status : '';
+  // When resetting contract to pending, also clear DocuSeal signing data and archive submission
+  if (req.params.key === 'contract' && status === 'pending' && oldTask && oldTask.ds_status) {
+    const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(req.params.id);
+    if (onb && onb.ds_envelope_id) {
+      try { dsealArchive(onb.ds_envelope_id).catch(e => console.error('[contract reset] archive error:', e.message)); } catch {}
+      // Mark contract version as voided (reset)
+      db.prepare("UPDATE worker_contract_versions SET ds_status='voided', voided_at=CURRENT_TIMESTAMP, void_reason='任务重置' WHERE worker_account_id=? AND ds_envelope_id=?")
+        .run(req.params.id, onb.ds_envelope_id);
+    }
+    db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, ds_company_signed_at=NULL, contract_content='', status='pending', admin_note='合同已重置', action_url='', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+      .run(req.params.id);
+  } else {
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, admin_note, action_url, completed_at, updated_at)
+      VALUES (?,?,?,?,?,?,CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status=excluded.status, admin_note=excluded.admin_note,
+        action_url=excluded.action_url, completed_at=excluded.completed_at, updated_at=CURRENT_TIMESTAMP`)
+      .run(req.params.id, req.params.key, status, admin_note||'', action_url||'', completedAt);
+  }
+  // Log onboarding task changes to worker history
+  if (oldStatus && oldStatus !== status) {
+    const TASK_LABELS = { contract:'合同', interview:'面试', phone_verify:'电话验证', email_verify:'邮箱验证', persona_verify:'身份验证', background_check:'背景调查', tax_form:'税表', direct_deposit:'银行信息' };
+    const STATUS_LABELS = { pending:'待处理', submitted:'已提交', completed:'已完成', waived:'已豁免' };
+    const taskLabel = TASK_LABELS[req.params.key] || req.params.key;
+    const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(req.params.id, changedBy, `onboarding_${req.params.key}`, STATUS_LABELS[oldStatus] || oldStatus, STATUS_LABELS[status] || status, `${taskLabel}: ${STATUS_LABELS[oldStatus]||oldStatus} → ${STATUS_LABELS[status]||status}`);
+  }
   syncOnboardedStatus(parseInt(req.params.id));
   res.json({ success: true, tasks: getOnboardingTasks(parseInt(req.params.id)) });
 });
@@ -3707,8 +4348,11 @@ app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res
 app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmin, (req, res) => {
   const { visible, slot_ids } = req.body;
   const workerId = parseInt(req.params.id);
-  db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
-    .run(visible ? 1 : 0, workerId, req.params.key);
+  // Upsert — handles 'not_initialized' rows that don't exist yet
+  db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, updated_at)
+    VALUES (?, ?, 'pending', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(worker_account_id, task_key) DO UPDATE SET visible_to_worker=excluded.visible_to_worker, updated_at=CURRENT_TIMESTAMP`)
+    .run(workerId, req.params.key, visible ? 1 : 0);
 
   // When assigning interview slots to a worker, store the assigned slot IDs
   if (req.params.key === 'interview' && Array.isArray(slot_ids) && slot_ids.length) {
@@ -3727,19 +4371,19 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmi
   res.json({ success: true, tasks: getOnboardingTasks(workerId) });
 });
 
-// Admin: send Persona identity verification from onboarding modal
+// Admin: send Stripe Identity verification from onboarding modal
 app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req, res) => {
   try {
     const workerId = parseInt(req.params.id);
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
     if (!w) return res.status(404).json({ error: 'Worker not found' });
-    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
-      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    if (!stripe)
+      return res.status(503).json({ error: 'Stripe Identity 未配置，请先在 .env 设置 STRIPE_SECRET_KEY' });
     const { force } = req.body || {};
     if (w.identity_status === 'approved' && !force)
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
-    const result = await createPersonaInquiry(workerId, w.name || w.username, w.phone);
-    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    const result = await createStripeVerificationSession(workerId, w.name || w.username, w.email);
+    if (!result) return res.status(500).json({ error: '创建 Stripe Identity 验证失败，请检查 STRIPE_SECRET_KEY' });
     // Auto-add drivers_license to assigned_tasks so compliance tab shows it
     let curTasks = [];
     try { curTasks = JSON.parse(w.assigned_tasks || '[]'); } catch {}
@@ -3748,9 +4392,9 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
       db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(curTasks), workerId);
     }
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(result.inquiryId, workerId);
+      .run(result.sessionId, workerId);
     // Store in worker_compliance_docs so worker portal compliance tab can pick it up
-    const compFormData = JSON.stringify({ persona_inquiry_id: result.inquiryId, persona_status: 'created', persona_session_token: result.sessionToken || '', persona_hosted_url: result.link || '' });
+    const compFormData = JSON.stringify({ stripe_session_id: result.sessionId, stripe_client_secret: result.clientSecret, stripe_status: 'requires_input', stripe_hosted_url: result.url || '' });
     const existingDoc = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(workerId);
     if (existingDoc) {
       db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -3763,11 +4407,12 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
     db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
       VALUES (?,'persona_verify','pending',1,?,?,CURRENT_TIMESTAMP)
       ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
-      .run(workerId, '已发送 Persona 验证链接', result.link || '');
+      .run(workerId, '已发送 Stripe Identity 验证链接', result.url || '');
     // Send SMS
     let smsSent = false;
     if (w.phone) {
-      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照+自拍）以继续入职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+      const smsText = `[Prime Anchorpoint] 您好 ${w.name||w.username||''}，请完成身份验证（驾照/ID+自拍）以继续入职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(w.phone, smsText);
     }
     // Send email
@@ -3776,19 +4421,19 @@ app.post('/api/admin/worker-accounts/:id/send-persona', requireAdmin, async (req
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(w.email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
+        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${w.name||w.username||''}，</p>
-         <p>HR 已为您发起身份验证（驾照 + 自拍核验）。您可以通过以下任一方式完成：</p>
+         <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
          <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
            <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
            <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
-           ${result.link ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
-           <tr><td style="padding:.3rem 0"><a href="${result.link}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
-           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.link}</span></td></tr>` : ''}
+           ${result.url ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${result.url}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
+           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.url}</span></td></tr>` : ''}
          </table>`
       );
     }
-    res.json({ success: true, smsSent, emailSent, portalReady: true, inquiryId: result.inquiryId, link: result.link || '' });
+    res.json({ success: true, smsSent, emailSent, portalReady: true, sessionId: result.sessionId, link: result.url || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3929,6 +4574,367 @@ app.get('/api/admin/worker-accounts/:id/checkr-status', requireAdmin, async (req
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Admin: get contract preview for onboarding
+app.get('/api/admin/worker-accounts/:id/contract-preview', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+  if (!w) return res.status(404).json({ error: 'Worker not found' });
+  const onb = db.prepare("SELECT contract_content, ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+  const empType = w.employment_type || 'w2';
+  const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const dateStr = new Date().toISOString().slice(0, 10);
+  // If already has saved content, use that; otherwise generate default
+  const content = (onb && onb.contract_content) || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
+  res.json({
+    content,
+    worker_name: workerName,
+    worker_email: w.email || '',
+    worker_phone: w.phone || '',
+    employment_type: empType,
+    ds_envelope_id: onb?.ds_envelope_id || '',
+    ds_status: onb?.ds_status || '',
+    company_email: process.env.COMPANY_SIGNER_EMAIL || '',
+    company_name: companyName,
+    docuseal_enabled: dsealEnabled()
+  });
+});
+
+// Admin: preview contract as PDF
+app.post('/api/admin/worker-accounts/contract-preview-pdf', requireAdmin, (req, res) => {
+  try {
+    const content = req.body.content || '';
+    if (!content.trim()) return res.status(400).json({ error: '合同内容为空' });
+    const pdfBuf = buildContractPdf(content);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="contract-preview.pdf"' });
+    res.send(pdfBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: send contract to worker via DocuSeal
+app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置，请在 .env 设置 DOCUSEAL_API_KEY 和 DOCUSEAL_URL' });
+    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+    if (!companyEmail) return res.status(503).json({ error: '请在 .env 设置 COMPANY_SIGNER_EMAIL' });
+    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerEmail = req.body.worker_email || w.email || '';
+    if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
+    // Use provided content or generate default
+    const empType = w.employment_type || 'w2';
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const content = req.body.content || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
+    // Also build PDF for local preview/archive
+    const pdfBuf = buildContractPdf(content);
+    const filename = `worker-contract-${workerId}-${Date.now()}.pdf`;
+    const docPath = path.join(docsDir, filename);
+    fs.writeFileSync(docPath, pdfBuf);
+    // Send via DocuSeal HTML API — converts text to HTML with proper field tags
+    const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendContractHtml({
+      contractText: content,
+      docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}`,
+      emailSubject: `请签署合同 / Please Sign — ${workerName} × ${companyName}`,
+      signer1: { email: companyEmail, name: companyName },
+      signer2: { email: workerEmail, name: workerName }
+    });
+    console.log(`[Contract] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}`);
+    // Store worker's sign URL in action_url so the portal can show the correct signing link.
+    // companyEmbedSrc is only needed for the admin signing flow; it's fetched on demand via /contract-sign-url.
+    db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
+      contract_content=?, visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
+      WHERE worker_account_id=? AND task_key='contract'`)
+      .run(submissionId, content, `合同已创建，等待公司签署 (${new Date().toLocaleString('zh-CN')})`, workerSignUrl || '', workerId);
+    // Save contract version
+    const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    const lastVer = db.prepare('SELECT MAX(version_num) AS v FROM worker_contract_versions WHERE worker_account_id=?').get(workerId);
+    const versionNum = (lastVer?.v || 0) + 1;
+    db.prepare('INSERT INTO worker_contract_versions (worker_account_id,version_num,contract_content,ds_envelope_id,ds_status,created_by) VALUES (?,?,?,?,?,?)')
+      .run(workerId, versionNum, content, submissionId, 'sent', changedBy);
+    // Log contract send to worker history
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, changedBy, 'contract', '', '已发送', `合同 v${versionNum} 已创建并发送至 ${workerEmail}，等待公司签署`);
+    // Do NOT send email/SMS to worker yet — company must sign first
+    // Worker will be notified after company signs (via webhook handler)
+    const smsSent = false;
+    const emailSent = false;
+    // Clean up temp PDF
+    try { fs.unlinkSync(docPath); } catch {}
+    res.json({ success: true, submissionId, signUrl: companyEmbedSrc, smsSent, emailSent });
+  } catch (e) {
+    console.error('[Contract Send]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: get contract signing status from DocuSeal
+app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, ds_worker_signed_at, ds_company_signed_at FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    if (!dsealEnabled()) return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, companySigned: onb.ds_company_signed_at });
+    const { status, companySigned, partnerSigned, declineReason } = await dsealGetStatus(onb.ds_envelope_id);
+    // Determine granular status: completed only when BOTH signed
+    let effectiveStatus = status;
+    if (status === 'completed' && companySigned && partnerSigned) {
+      effectiveStatus = 'completed';
+    } else if (companySigned && !partnerSigned) {
+      effectiveStatus = 'company_signed';
+    } else if (!companySigned && partnerSigned) {
+      effectiveStatus = 'worker_signed';
+    } else if (status !== 'declined') {
+      effectiveStatus = 'sent';
+    }
+    db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+      .run(effectiveStatus, partnerSigned, companySigned, workerId);
+    if (effectiveStatus === 'completed') {
+      db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
+        .run(workerId);
+      syncOnboardedStatus(workerId);
+    } else if (effectiveStatus === 'company_signed') {
+      db.prepare(`UPDATE worker_onboarding SET admin_note='公司已签署，等待工人签署', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
+        .run(workerId);
+    } else if (status === 'declined') {
+      db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
+        .run(`工人已拒签: ${declineReason || ''}`, workerId);
+    }
+    res.json({ status: effectiveStatus, workerSigned: partnerSigned, companySigned, declineReason });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: get all contract versions for a worker
+app.get('/api/admin/worker-accounts/:id/contract-versions', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM worker_contract_versions WHERE worker_account_id=? ORDER BY version_num DESC').all(req.params.id);
+  res.json(rows);
+});
+
+// Admin: download signed PDF for a specific contract version
+app.get('/api/admin/worker-accounts/:id/contract-version-pdf/:versionId', requireAdmin, async (req, res) => {
+  try {
+    const ver = db.prepare('SELECT ds_envelope_id, version_num FROM worker_contract_versions WHERE id=? AND worker_account_id=?').get(req.params.versionId, req.params.id);
+    if (!ver || !ver.ds_envelope_id) return res.status(404).json({ error: '该版本无签署记录' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(ver.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="contract-v${ver.version_num}-${req.params.id}.pdf"` });
+    res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: download current signed document from DocuSeal for onboarding contract
+app.get('/api/admin/worker-accounts/:id/contract-signed-pdf', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '合同未发送' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-contract-${workerId}.pdf"` });
+    res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: get company signing URL for onboarding contract
+app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    const signUrl = await dsealGetCompanySignUrl(onb.ds_envelope_id);
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+    console.log(`[CompanySign] workerId=${workerId}, submissionId=${onb.ds_envelope_id}, signUrl=${signUrl ? signUrl.substring(0, 80) + '...' : 'NULL'}`);
+    res.json({ signUrl, companyName });
+  } catch (e) { console.error('[CompanySign Error]', e.message); res.status(500).json({ error: e.message }); }
+});
+
+// Admin: void/cancel onboarding contract submission (requires reason)
+app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const reason = (req.body.reason || '').trim();
+    if (!reason) return res.status(400).json({ error: '请填写作废原因' });
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    await dsealArchive(onb.ds_envelope_id);
+    const voidNote = `合同已作废 — ${reason}`;
+    db.prepare("UPDATE worker_onboarding SET ds_envelope_id='', ds_status='', ds_worker_signed_at=NULL, ds_company_signed_at=NULL, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+      .run(voidNote, workerId);
+    // Mark contract version as voided
+    db.prepare("UPDATE worker_contract_versions SET ds_status='voided', voided_at=CURRENT_TIMESTAMP, void_reason=? WHERE worker_account_id=? AND ds_envelope_id=?")
+      .run(reason, workerId, onb.ds_envelope_id);
+    // Log to worker history
+    const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, changedBy, 'contract', onb.ds_status || '已发送', '已作废', voidNote);
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Admin: W-9 DocuSeal Endpoints ───
+
+// Preview W-9 HTML template (admin can see the blank form before sending)
+app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) => {
+  const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
+  const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
+  const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
+  if (templateId) {
+    const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+    const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:20px;background:#f9fafb;font-family:Arial,sans-serif}</style></head><body>
+      <div style="text-align:center;padding:2rem;color:#555">
+        <p style="font-size:1.1rem;font-weight:600">使用 DocuSeal 官方 W-9 模板</p>
+        <p style="font-size:.88rem;color:#888">Template ID: ${templateId}</p>
+        <p style="font-size:.85rem;color:#888">工人将收到 DocuSeal 发送的邮件，包含完整的 IRS W-9 表格。</p>
+        <a href="${baseHost}/templates/${templateId}/edit" target="_blank" style="display:inline-block;margin-top:1rem;padding:.5rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:6px;font-size:.88rem">在 DocuSeal 中编辑模板</a>
+      </div>
+    </body></html>`;
+    res.set('Content-Type', 'text/html');
+    return res.send(page);
+  }
+  const html = generateW9HtmlTemplate(workerName);
+  const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:12px;background:#f9fafb}</style></head><body>${html}</body></html>`;
+  res.set('Content-Type', 'text/html');
+  res.send(page);
+});
+
+// Send W-9 form request to worker — sends portal link for info collection, then DocuSeal for signing
+app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerEmail = req.body.worker_email || w.email || '';
+    const workerPhone = w.phone || '';
+
+    // Make W-9 task visible and set to pending
+    db.prepare(`UPDATE worker_onboarding SET status='pending', visible_to_worker=1, ds_status=NULL, ds_envelope_id=NULL,
+      admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+      .run(`W-9 已发送至工人 (${new Date().toLocaleString('zh-CN')})，等待工人填写信息`, workerId);
+    const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, changedBy, 'w9', '', '已发送', `W-9 填写请求已发送，等待工人在门户填写信息`);
+
+    // Build portal link — worker opens portal to fill in W-9 info
+    const baseUrl = (process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, '');
+    const portalLink = `${baseUrl}/portal.html#w9`;
+
+    let emailSent = false;
+    let smsSent = false;
+    // Send email with portal link
+    if (workerEmail) {
+      const signLink = `<p style="margin:1.5rem 0;text-align:center"><a href="${portalLink}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">填写 W-9 / Complete W-9 / Completar W-9</a></p>`;
+      emailSent = await sendEmail(workerEmail,
+        `Prime Anchorpoint — 请填写 W-9 税表 / Please Complete W-9 / Complete el W-9`,
+        `${workerName}，请点击链接填写并签署 W-9 税表。\n${portalLink}\n\n${workerName}, please click the link to complete your W-9 form.\n${portalLink}\n\n${workerName}, haga clic en el enlace para completar su formulario W-9.\n${portalLink}`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+          <h2 style="color:#1a1a1a;text-align:center">请填写 W-9 税表</h2>
+          <p>您好 ${workerName}，请登录门户填写 W-9 税表信息（姓名、地址、税号），填写完成后系统将自动生成正式 W-9 表格供您签字确认。</p>
+          ${signLink}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Please Complete Your W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please log into the portal to fill in your W-9 information (name, address, TIN). After submitting, the system will generate the official W-9 form for your signature.</p>
+          ${signLink}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Complete el Formulario W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hola ${workerName}, inicie sesión en el portal para completar su información W-9. Después de enviar, el sistema generará el formulario W-9 oficial para su firma.</p>
+          ${signLink}
+          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+        </div>`
+      );
+    }
+    // Send SMS with portal link
+    if (workerPhone) {
+      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录门户填写 W-9 税表 / Please complete your W-9 info / Complete su W-9\n${portalLink}\nReply STOP to opt out.`);
+    }
+    const warnings = [];
+    if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
+    if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
+    if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
+    if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
+    res.json({ success: true, portalLink, emailSent, smsSent, warnings });
+  } catch (e) {
+    console.error('[W-9 send error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Get W-9 signing status from DocuSeal
+app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, ds_worker_signed_at FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    if (!dsealEnabled()) return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at });
+    const { status, workerSigned, declineReason } = await dsealGetW9Status(onb.ds_envelope_id);
+    db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+      .run(status, workerSigned, workerId);
+    if (status === 'completed') {
+      db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='W-9 已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+        .run(workerId);
+      syncOnboardedStatus(workerId);
+    } else if (status === 'declined') {
+      db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+        .run(`工人已拒签 W-9: ${declineReason || ''}`, workerId);
+    }
+    res.json({ status, workerSigned, declineReason });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Download signed W-9 PDF from DocuSeal
+app.get('/api/admin/worker-accounts/:id/w9-signed-pdf', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-w9-${workerId}.pdf"` });
+    res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Send Work Authorization verification task to worker
+app.post('/api/admin/worker-accounts/:id/send-work-auth', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    const adminNote = req.body.note || 'Work Authorization 认证调查已发送，请按要求上传身份证明文件';
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, updated_at)
+      VALUES (?, 'work_auth', 'pending', 1, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id, task_key) DO UPDATE SET status='pending', visible_to_worker=1, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, adminNote);
+    // Send notification via SMS/email
+    const workerName = w.name || w.username || '';
+    const workerPhone = w.phone || '';
+    const workerEmail = w.email || '';
+    if (workerPhone) {
+      await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录工人门户完成 Work Authorization 认证，上传所需身份证明文件。Reply STOP to opt out.`).catch(() => {});
+    }
+    if (workerEmail) {
+      await sendEmail(workerEmail, 'Work Authorization 认证 — 请上传身份证明文件',
+        `${workerName}，\n请登录工人门户完成 Work Authorization 认证调查。\n\nPrime Anchorpoint`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem"><h2>Work Authorization 认证</h2><p>您好 ${workerName}，</p><p>请登录工人门户，在入职进度中完成 <strong>Work Authorization 认证</strong>，按要求上传身份证明文件。</p><p style="color:#64748b;font-size:.9rem">Prime Anchorpoint</p></div>`
+      ).catch(() => {});
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get worker W-9 sign URL (resend link)
+app.get('/api/admin/worker-accounts/:id/w9-sign-url', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    const signUrl = await dsealGetW9SignUrl(onb.ds_envelope_id);
+    res.json({ signUrl });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Worker: view own onboarding tasks (only visible ones)
 app.get('/api/worker/onboarding', requireWorker, (req, res) => {
   const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.workerId);
@@ -3949,6 +4955,56 @@ app.get('/api/worker/onboarding', requireWorker, (req, res) => {
 
   const tasks = getOnboardingTasks(req.workerId).filter(t => t.visible_to_worker !== 0);
   res.json(tasks);
+});
+
+// Worker: get their own W-9 signing URL (fresh from DocuSeal)
+app.get('/api/worker/w9-sign-url', requireWorker, async (req, res) => {
+  try {
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, action_url FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(req.workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    if (onb.ds_status === 'completed') return res.status(400).json({ error: 'W-9 已完成签署' });
+    let signUrl = onb.action_url || '';
+    if (dsealEnabled()) {
+      try {
+        signUrl = await dsealGetW9SignUrl(onb.ds_envelope_id);
+        if (signUrl) db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'").run(signUrl, req.workerId);
+      } catch (e) { console.error('[worker w9-sign-url]', e.message); }
+    }
+    if (!signUrl) return res.status(404).json({ error: '签署链接暂不可用，请稍后再试' });
+    res.json({ signUrl, dsStatus: onb.ds_status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Worker: get their own contract signing URL (fresh from DocuSeal)
+app.get('/api/worker/contract-sign-url', requireWorker, async (req, res) => {
+  try {
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, action_url FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(req.workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '合同未发送' });
+    if (onb.ds_status === 'completed') return res.status(400).json({ error: '合同已完成签署' });
+    // Return stored URL first (fast path); also refresh from DocuSeal if enabled
+    let signUrl = onb.action_url || '';
+    if (dsealEnabled()) {
+      try {
+        const subData = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
+        const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party');
+        if (workerSub) {
+          if (workerSub.embed_src) { signUrl = workerSub.embed_src; }
+          else if (workerSub.id) {
+            const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name });
+            if (wPut.data?.embed_src) signUrl = wPut.data.embed_src;
+          }
+          if (!signUrl && workerSub.slug) {
+            const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+            signUrl = `${baseHost}/s/${workerSub.slug}`;
+          }
+          // Update stored URL
+          if (signUrl) db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'").run(signUrl, req.workerId);
+        }
+      } catch (e) { console.error('[worker contract-sign-url]', e.message); }
+    }
+    if (!signUrl) return res.status(404).json({ error: '签署链接暂不可用，请稍后再试' });
+    res.json({ signUrl, dsStatus: onb.ds_status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Worker: submit a task (marks as submitted, pending admin review)
@@ -4047,8 +5103,10 @@ app.delete('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'),
     db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(id);
+    archiveInterviews(id);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(id);
     db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(id);
+    try { db.prepare('DELETE FROM worker_contract_versions WHERE worker_account_id=?').run(id); } catch(_) {}
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(id); } catch(_) {}
     db.prepare('DELETE FROM worker_accounts WHERE id=?').run(id);
     res.json({ success: true });
@@ -4848,11 +5906,8 @@ app.post('/api/admin/partners/:id/reset-contract', requireAdmin, blockManager, a
   const existingFiles = db.prepare("SELECT * FROM partner_files WHERE partner_id=? AND file_type IN ('contract','agreement')").all(req.params.id);
   // Void active envelopes
   for (const f of existingFiles) {
-    if (f.ds_envelope_id && dsEnabled() && f.ds_status && !['completed','voided','declined'].includes(f.ds_status)) {
-      try {
-        const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-        await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`, { status: 'voided', voidedReason: '管理员重新生成合同' });
-      } catch (e) { console.error('[reset-contract] void envelope error:', e.message); }
+    if (f.ds_envelope_id && dsealEnabled() && f.ds_status && !['completed','voided','declined'].includes(f.ds_status)) {
+      try { await dsealArchive(f.ds_envelope_id); } catch (e) { console.error('[reset-contract] archive submission error:', e.message); }
     }
     // Delete local file
     if (f.file_path) { try { const fp = path.join(docsDir, f.file_path); if (fs.existsSync(fp)) fs.unlinkSync(fp); } catch {} }
@@ -5285,14 +6340,13 @@ app.get('/api/admin/partner-files/:id/download', (req, res, next) => {
   res.download(fp, f.file_name || f.file_path);
 });
 
-// POST /api/admin/partner-files/:id/send-docusign — send partner contract to both parties for e-signing
+// POST /api/admin/partner-files/:id/send-docusign — send partner contract to both parties for e-signing via DocuSeal
 app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManager, async (req, res) => {
-  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置，请在环境变量中设置 DOCUSIGN_* 参数' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置，请在环境变量中设置 DOCUSEAL_API_KEY 和 DOCUSEAL_URL' });
   try {
     const f = db.prepare(`SELECT pf.*, p.name as partner_name, p.email as partner_email, p.contacts as partner_contacts FROM partner_files pf LEFT JOIN partners p ON pf.partner_id=p.id WHERE pf.id=?`).get(req.params.id);
     if (!f) return res.status(404).json({ error: 'File not found' });
     if (!f.file_path) return res.status(400).json({ error: '文件不存在' });
-    // Partner signer: use req.body override, else partner contacts, else partner email
     let partnerEmail = req.body.partner_email || f.partner_email || '';
     let partnerName = req.body.partner_name || f.partner_name || '合作方';
     if (!partnerEmail) {
@@ -5308,23 +6362,21 @@ app.post('/api/admin/partner-files/:id/send-docusign', requireAdmin, blockManage
     if (!companyEmail) return res.status(503).json({ error: '请在环境变量中设置 COMPANY_SIGNER_EMAIL' });
     const docPath = path.join(docsDir, f.file_path);
     if (!fs.existsSync(docPath)) return res.status(404).json({ error: '文件不存在' });
-    const anchors = checkDsAnchors(docPath);
-    const result = await dsSendEnvelope({ docPath, docName: f.file_name || f.file_path, emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`, signer1: { email: companyEmail, name: companyName }, signer2: { email: partnerEmail, name: partnerName } });
-    db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(result.envelopeId, f.id);
-    const _proto1 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-    const _host1 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-    const returnUrl = `${_proto1}://${_host1}/docusign-return`;
-    const frameOrigin = `${_proto1}://${_host1}`;
-    let signUrl = null;
-    try { signUrl = await dsCreateSignUrl(result.envelopeId, companyEmail, companyName, returnUrl, frameOrigin); } catch (se) { console.error('[DocuSign SignUrl]', se.message); }
-    res.json({ success: true, envelopeId: result.envelopeId, signUrl, anchors });
+    const { submissionId, companyEmbedSrc } = await dsealSendEnvelope({
+      docPath, docName: f.file_name || f.file_path,
+      emailSubject: `请签署合同 - ${f.partner_name || ''} × Prime Anchorpoint`,
+      signer1: { email: companyEmail, name: companyName },
+      signer2: { email: partnerEmail, name: partnerName }
+    });
+    db.prepare("UPDATE partner_files SET ds_envelope_id=?, ds_status='sent', ds_decline_reason='' WHERE id=?").run(submissionId, f.id);
+    res.json({ success: true, envelopeId: submissionId, signUrl: companyEmbedSrc });
   } catch (e) {
-    console.error('[DocuSign PartnerFile]', e.message);
+    console.error('[DocuSeal PartnerFile]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /docusign-return — served inside the signing iframe; postMessages result to parent so modal can close
+// GET /docusign-return — served inside the signing iframe for DocuSign (assignments); postMessages result to parent
 app.get('/docusign-return', (req, res) => {
   const event = req.query.event || '';
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -5333,120 +6385,78 @@ app.get('/docusign-return', (req, res) => {
   </script></body></html>`);
 });
 
-// GET /api/admin/partner-files/:id/docusign-sign-url — get embedded signing URL for company (signer1)
+// GET /api/admin/partner-files/:id/docusign-sign-url — get embedded signing URL for company via DocuSeal
 app.get('/api/admin/partner-files/:id/docusign-sign-url', requireAdmin, blockManager, async (req, res) => {
-  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
     const f = db.prepare("SELECT id, ds_envelope_id, ds_status FROM partner_files WHERE id=?").get(req.params.id);
-    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-    const companyEmail = process.env.COMPANY_SIGNER_EMAIL || '';
-    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
-    const _proto2 = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-    const _host2 = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
-    const returnUrl = `${_proto2}://${_host2}/docusign-return`;
-    const frameOrigin = `${_proto2}://${_host2}`;
-    const signUrl = await dsCreateSignUrl(f.ds_envelope_id, companyEmail, companyName, returnUrl, frameOrigin);
+    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    const signUrl = await dsealGetCompanySignUrl(f.ds_envelope_id);
     res.json({ signUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/admin/partner-files/:id/docusign-void — void the active envelope
+// POST /api/admin/partner-files/:id/docusign-void — archive the active DocuSeal submission
 app.post('/api/admin/partner-files/:id/docusign-void', requireAdmin, blockManager, async (req, res) => {
-  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
     const f = db.prepare("SELECT id, ds_envelope_id, ds_status FROM partner_files WHERE id=?").get(req.params.id);
-    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-    await dsApiCall('PUT', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`, { status: 'voided', voidedReason: req.body?.reason || '管理员撤销' });
+    if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+    await dsealArchive(f.ds_envelope_id);
     db.prepare("UPDATE partner_files SET ds_status='voided', ds_envelope_id='', ds_decline_reason='' WHERE id=?").run(f.id);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/admin/partner-files/:id/docusign-status — refresh signing status from DocuSign
+// GET /api/admin/partner-files/:id/docusign-status — refresh signing status from DocuSeal
 app.get('/api/admin/partner-files/:id/docusign-status', requireAdmin, blockManager, async (req, res) => {
   const f = db.prepare("SELECT id, ds_envelope_id, ds_status, ds_partner_signed_at, ds_company_signed_at, ds_decline_reason FROM partner_files WHERE id=?").get(req.params.id);
-  if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No envelope' });
-  if (!dsEnabled()) return res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason });
+  if (!f || !f.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
+  if (!dsealEnabled()) return res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason });
   try {
-    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-    const [envRes, rcpRes] = await Promise.all([
-      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
-      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
-    ]);
-    const status = envRes.data?.status || f.ds_status;
-    let partnerSigned = f.ds_partner_signed_at, companySigned = f.ds_company_signed_at;
-    for (const s of (rcpRes.data?.signers || [])) {
-      if (s.status === 'completed' && s.signedDateTime) {
-        if (s.recipientId === '1') companySigned = s.signedDateTime;
-        if (s.recipientId === '2') partnerSigned = s.signedDateTime;
-      }
-    }
-    let declineReason = f.ds_decline_reason || '';
-    for (const s of (rcpRes.data?.signers || [])) {
-      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
-    }
+    const { status, companySigned, partnerSigned, declineReason } = await dsealGetStatus(f.ds_envelope_id);
     db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, partnerSigned, companySigned, declineReason, f.id);
-    // If completed, download and overwrite local file with signed PDF (fallback if webhook missed)
     if (status === 'completed') {
-      // Auto-activate partner (fallback if webhook missed)
       db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(f.id);
       try {
         const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(f.id);
         if (pfRecord && pfRecord.file_path) {
-          const signedBuf = await dsDownloadSignedDoc(f.ds_envelope_id);
+          const signedBuf = await dsealDownloadDocument(f.ds_envelope_id);
           fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
-          console.log(`[DocuSign] Saved signed partner contract for file id=${f.id}`);
+          console.log(`[DocuSeal] Saved signed partner contract for file id=${f.id}`);
         }
-      } catch (dlErr) { console.error('[DocuSign] Failed to download signed partner doc on status refresh:', dlErr.message); }
+      } catch (dlErr) { console.error('[DocuSeal] Failed to download signed partner doc:', dlErr.message); }
     }
     res.json({ status, partnerSigned, companySigned, declineReason });
   } catch (e) { res.json({ status: f.ds_status, partnerSigned: f.ds_partner_signed_at, companySigned: f.ds_company_signed_at, declineReason: f.ds_decline_reason, error: e.message }); }
 });
 
-// GET /api/admin/partner-files/:id/force-download-signed — force download signed PDF from DocuSign and save
+// POST /api/admin/partner-files/:id/force-download-signed — force download signed PDF from DocuSeal and save
 app.post('/api/admin/partner-files/:id/force-download-signed', requireAdmin, blockManager, async (req, res) => {
-  if (!dsEnabled()) return res.status(503).json({ error: 'DocuSign 未配置' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
     const f = db.prepare('SELECT id, ds_envelope_id, ds_status, file_path, file_name FROM partner_files WHERE id=?').get(req.params.id);
     if (!f) return res.status(404).json({ error: '文件不存在' });
-    if (!f.ds_envelope_id) return res.status(400).json({ error: '该文件没有关联的 DocuSign 信封' });
-    // First refresh status from DocuSign
-    const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-    const [envRes, rcpRes] = await Promise.all([
-      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
-      dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
-    ]);
-    const status = envRes.data?.status || f.ds_status;
-    let partnerSigned = null, companySigned = null, declineReason = '';
-    for (const s of (rcpRes.data?.signers || [])) {
-      if (s.status === 'completed' && s.signedDateTime) {
-        if (s.recipientId === '1') companySigned = s.signedDateTime;
-        if (s.recipientId === '2') partnerSigned = s.signedDateTime;
-      }
-      if (s.status === 'declined' && s.declinedReason) declineReason = s.declinedReason;
-    }
-    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?")
-      .run(status, partnerSigned, companySigned, declineReason, f.id);
+    if (!f.ds_envelope_id) return res.status(400).json({ error: '该文件没有关联的 DocuSeal 提交' });
+    const { status, companySigned, partnerSigned, declineReason } = await dsealGetStatus(f.ds_envelope_id);
+    db.prepare("UPDATE partner_files SET ds_status=?, ds_partner_signed_at=?, ds_company_signed_at=?, ds_decline_reason=? WHERE id=?").run(status, partnerSigned, companySigned, declineReason, f.id);
     if (status !== 'completed') {
       return res.json({ success: false, status, message: `当前签署状态为 "${status}"，只有双方都签署后才能下载已签版本。`, partnerSigned, companySigned });
     }
-    // Auto-activate partner (fallback if webhook missed)
     db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(f.id);
-    // Download signed PDF
-    const signedBuf = await dsDownloadSignedDoc(f.ds_envelope_id);
+    const signedBuf = await dsealDownloadDocument(f.ds_envelope_id);
     if (f.file_path) {
       fs.writeFileSync(path.join(docsDir, f.file_path), signedBuf);
-      console.log(`[DocuSign] Force-saved signed partner contract for file id=${f.id}`);
+      console.log(`[DocuSeal] Force-saved signed partner contract for file id=${f.id}`);
     }
     res.json({ success: true, status, partnerSigned, companySigned, fileSize: signedBuf.length, message: '已签版本已下载并保存，请重新下载文件查看。' });
   } catch (e) {
-    console.error('[DocuSign ForceDownload]', e.message);
+    console.error('[DocuSeal ForceDownload]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /api/admin/partner-files/:id/docusign-debug — detailed diagnostic info
+// GET /api/admin/partner-files/:id/docusign-debug — detailed diagnostic info (DocuSeal)
 app.get('/api/admin/partner-files/:id/docusign-debug', requireAdmin, blockManager, async (req, res) => {
   try {
     const f = db.prepare('SELECT * FROM partner_files WHERE id=?').get(req.params.id);
@@ -5455,37 +6465,17 @@ app.get('/api/admin/partner-files/:id/docusign-debug', requireAdmin, blockManage
     const localFileExists = localFilePath ? fs.existsSync(localFilePath) : false;
     const localFileSize = localFileExists ? fs.statSync(localFilePath).size : 0;
     const debug = {
-      db: {
-        id: f.id, file_name: f.file_name, file_path: f.file_path,
-        ds_envelope_id: f.ds_envelope_id, ds_status: f.ds_status,
-        ds_partner_signed_at: f.ds_partner_signed_at, ds_company_signed_at: f.ds_company_signed_at,
-        ds_decline_reason: f.ds_decline_reason
-      },
+      db: { id: f.id, file_name: f.file_name, file_path: f.file_path, ds_envelope_id: f.ds_envelope_id, ds_status: f.ds_status, ds_partner_signed_at: f.ds_partner_signed_at, ds_company_signed_at: f.ds_company_signed_at, ds_decline_reason: f.ds_decline_reason },
       local_file: { path: f.file_path, exists: localFileExists, size_bytes: localFileSize },
-      docusign_configured: dsEnabled(),
-      webhook_url: `${(req.headers['x-forwarded-proto'] || req.protocol)}://${(req.headers['x-forwarded-host'] || req.headers.host)}/api/docusign/webhook`,
-      hmac_configured: !!process.env.DOCUSIGN_WEBHOOK_HMAC
+      docuseal_configured: dsealEnabled(),
+      webhook_url: `${(req.headers['x-forwarded-proto'] || req.protocol)}://${(req.headers['x-forwarded-host'] || req.headers.host)}/api/docuseal/webhook`
     };
-    if (dsEnabled() && f.ds_envelope_id) {
+    if (dsealEnabled() && f.ds_envelope_id) {
       try {
-        const accountId = process.env.DOCUSIGN_ACCOUNT_ID;
-        const [envRes, rcpRes] = await Promise.all([
-          dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}`),
-          dsApiCall('GET', `/restapi/v2.1/accounts/${accountId}/envelopes/${f.ds_envelope_id}/recipients`)
-        ]);
-        debug.docusign_live = {
-          status: envRes.data?.status,
-          sent_date: envRes.data?.sentDateTime,
-          completed_date: envRes.data?.completedDateTime,
-          signers: (rcpRes.data?.signers || []).map(s => ({
-            name: s.name, email: s.email, recipientId: s.recipientId,
-            status: s.status, signedDateTime: s.signedDateTime, declinedReason: s.declinedReason
-          }))
-        };
-        debug.status_mismatch = (envRes.data?.status !== f.ds_status);
-      } catch (apiErr) {
-        debug.docusign_live_error = apiErr.message;
-      }
+        const { status, companySigned, partnerSigned, declineReason, raw } = await dsealGetStatus(f.ds_envelope_id);
+        debug.docuseal_live = { status, companySigned, partnerSigned, declineReason, submitters: raw.submitters };
+        debug.status_mismatch = (status !== f.ds_status);
+      } catch (apiErr) { debug.docuseal_live_error = apiErr.message; }
     }
     res.json(debug);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -6759,12 +7749,12 @@ app.get('/api/admin/invoices', requireAdmin, (req, res) => {
 
 // Save invoice
 app.post('/api/admin/invoices', requireAdmin, (req, res) => {
-  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status } = req.body;
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
   const result = db.prepare(`
-    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved');
+    INSERT INTO invoices (invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items_json, profile_json, status, markup_rate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0);
   db.prepare(`INSERT INTO invoice_history (invoice_id, action, detail) VALUES (?, ?, ?)`)
     .run(result.lastInsertRowid, '创建', `Invoice 编号: ${invoice_number}`);
   res.json({ id: result.lastInsertRowid });
@@ -6782,12 +7772,12 @@ app.get('/api/admin/invoices/:id', requireAdmin, (req, res) => {
 
 // Update invoice
 app.put('/api/admin/invoices/:id', requireAdmin, (req, res) => {
-  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status } = req.body;
+  const { invoice_number, invoice_date, company_name, bill_to_addr, period_start, period_end, for_label, subtotal, items, profile, status, markup_rate } = req.body;
   if (!invoice_number || !company_name) return res.status(400).json({ error: '缺少必填字段' });
   db.prepare(`
-    UPDATE invoices SET invoice_number=?, invoice_date=?, company_name=?, bill_to_addr=?, period_start=?, period_end=?, for_label=?, subtotal=?, items_json=?, profile_json=?, status=?
+    UPDATE invoices SET invoice_number=?, invoice_date=?, company_name=?, bill_to_addr=?, period_start=?, period_end=?, for_label=?, subtotal=?, items_json=?, profile_json=?, status=?, markup_rate=?
     WHERE id=?
-  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', req.params.id);
+  `).run(invoice_number, invoice_date||null, company_name, bill_to_addr||null, period_start||null, period_end||null, for_label||null, subtotal||0, JSON.stringify(items||[]), JSON.stringify(profile||{}), status||'saved', markup_rate||0, req.params.id);
   res.json({ success: true });
 });
 
@@ -7239,10 +8229,10 @@ app.post('/api/worker/login', (req, res) => {
   const identifier = (login || username || '').trim();
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
   const digits10 = identifier.replace(/\D/g, '').slice(-10);
-  // Match by email (exact), phone (last-10-digits, format-agnostic), or username
+  // Match by email (exact), phone (last-10-digits, format-agnostic, skip if empty), or username
   const w = db.prepare(
-    'SELECT * FROM worker_accounts WHERE email=? OR phone10(phone)=? OR username=?'
-  ).get(identifier, digits10, identifier);
+    'SELECT * FROM worker_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?) OR username=?'
+  ).get(identifier, digits10, digits10, identifier);
   if (!w || !verifyPassword(password, w.salt, w.password_hash))
     return res.status(401).json({ error: '邮箱/手机号或密码错误 / Invalid email/phone or password' });
   if (!w.active)
@@ -8305,7 +9295,8 @@ app.get('/api/worker/payments', requireWorker, (req, res) => {
 app.post('/api/worker/forgot-password', async (req, res) => {
   const { login } = req.body;
   if (!login) return res.status(400).json({ error: '请输入邮箱或手机号' });
-  const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR phone=? OR username=?').get(login, login, login);
+  const digits10 = login.replace(/\D/g, '').slice(-10);
+  const w = db.prepare('SELECT id, email, phone FROM worker_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?) OR username=?').get(login, digits10, digits10, login);
   if (!w) return res.status(404).json({ error: '未找到该账号 / Account not found' });
 
   // Prefer Twilio Verify for phone-based reset
@@ -8390,12 +9381,15 @@ app.get('/api/worker/compliance', requireWorker, (req, res) => {
   const worker = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(req.workerId);
   let assignedTasks = [];
   try { assignedTasks = JSON.parse(worker?.assigned_tasks || '[]'); } catch {}
+  // Find expiring/expired approved documents
+  const expiringDocs = docs.filter(d => d.expires_at && d.status === 'approved' && new Date(d.expires_at) <= new Date(Date.now() + 90 * 86400000));
   res.json({
     documents: byType,
     all_documents: docs,
     background_check: bgCheck,
     assigned_tasks: assignedTasks,
-    doc_types: ['i9', 'drivers_license', 'w9', 'ssn_card', 'work_permit', 'other']
+    doc_types: ['i9', 'drivers_license', 'w9', 'ssn_card', 'work_permit', 'other'],
+    expiring_docs: expiringDocs
   });
 });
 
@@ -8458,63 +9452,22 @@ app.post('/api/worker/compliance/drivers-license', requireWorker, complianceUplo
   res.json({ success: true });
 });
 
-// ── Persona Identity Verification ──
+// ── Stripe Identity Verification (Worker Portal) ──
 
-// Worker: create a Persona inquiry for ID verification
+// Worker: create a Stripe Identity verification session
+// Worker: create Stripe Identity verification session
 app.post('/api/worker/persona/inquiry', requireWorker, async (req, res) => {
-  const apiKey = process.env.PERSONA_API_KEY;
-  const templateId = process.env.PERSONA_TEMPLATE_ID;
-  if (!apiKey || !templateId) return res.status(500).json({ error: 'Persona not configured' });
+  if (!stripe) return res.status(500).json({ error: 'Stripe Identity not configured' });
 
   const worker = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!worker) return res.status(404).json({ error: 'Worker not found' });
 
   try {
-    const resp = await fetch('https://api.withpersona.com/api/v1/inquiries', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Persona-Version': '2023-01-05',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify({
-        data: {
-          attributes: {
-            'inquiry-template-id': templateId,
-            'reference-id': `worker-${req.workerId}`,
-            fields: {
-              'name-first': (worker.name || '').split(' ')[0] || '',
-              'name-last': (worker.name || '').split(' ').slice(1).join(' ') || '',
-              ...(worker.dob ? { birthdate: worker.dob } : {}),
-              ...(worker.email ? { 'email-address': worker.email } : {}),
-              ...(worker.phone ? { 'phone-number': worker.phone } : {})
-            }
-          }
-        }
-      })
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      console.error('[Persona] Create inquiry failed:', JSON.stringify(data));
-      return res.status(resp.status).json({ error: 'Persona API error', details: data });
-    }
-    const inquiryId = data.data?.id;
-    let sessionToken = data.meta?.['session-token'] || data.data?.attributes?.['session-token'] || '';
-    // Persona may not return session-token on create; call /resume to obtain it
-    if (!sessionToken && inquiryId) {
-      const resumeLink = await resumePersonaInquiry(inquiryId);
-      if (resumeLink) {
-        const m = resumeLink.match(/session-token=([^&]+)/);
-        if (m) sessionToken = m[1];
-      }
-    }
-    // Build hosted flow URL for link/QR sharing
-    const hostedUrl = sessionToken
-      ? `https://withpersona.com/verify?inquiry-id=${inquiryId}&session-token=${sessionToken}`
-      : '';
-    // Store the inquiry in compliance docs
-    const formData = JSON.stringify({ persona_inquiry_id: inquiryId, persona_status: 'created', persona_session_token: sessionToken, persona_hosted_url: hostedUrl });
+    const result = await createStripeVerificationSession(req.workerId, worker.name, worker.email);
+    if (!result) return res.status(500).json({ error: 'Failed to create Stripe Identity session' });
+
+    // Store the session in compliance docs
+    const formData = JSON.stringify({ stripe_session_id: result.sessionId, stripe_client_secret: result.clientSecret, stripe_status: 'requires_input', stripe_hosted_url: result.url || '' });
     const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(req.workerId);
     if (existing) {
       db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
@@ -8523,22 +9476,23 @@ app.post('/api/worker/persona/inquiry', requireWorker, async (req, res) => {
       db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'drivers_license', ?, 'pending')")
         .run(req.workerId, formData);
     }
-    res.json({ success: true, inquiry_id: inquiryId, hosted_url: hostedUrl });
+    // Update worker_accounts
+    db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(result.sessionId, req.workerId);
+    res.json({ success: true, inquiry_id: result.sessionId, client_secret: result.clientSecret, hosted_url: result.url || '' });
   } catch (e) {
-    console.error('[Persona] Error:', e.message);
-    res.status(500).json({ error: 'Failed to create Persona inquiry: ' + e.message });
+    console.error('[Stripe Identity] Error:', e.message);
+    res.status(500).json({ error: 'Failed to create verification session: ' + e.message });
   }
 });
 
-// Worker: get Persona config (template ID + environment) for embedded flow
+// Worker: get Stripe Identity config for embedded flow
 app.get('/api/worker/persona/config', requireWorker, (req, res) => {
-  const templateId = process.env.PERSONA_TEMPLATE_ID;
-  const environment = process.env.PERSONA_ENVIRONMENT || 'sandbox';
-  if (!templateId) return res.json({ enabled: false });
-  res.json({ enabled: true, templateId, environment });
+  if (!stripe) return res.json({ enabled: false });
+  res.json({ enabled: true, publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '' });
 });
 
-// Worker: check Persona verification status
+// Worker: check verification status
 app.get('/api/worker/persona/status', requireWorker, (req, res) => {
   const doc = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
   if (!doc) return res.json({ status: 'not_started' });
@@ -8546,9 +9500,10 @@ app.get('/api/worker/persona/status', requireWorker, (req, res) => {
     const formData = JSON.parse(doc.form_data || '{}');
     res.json({
       status: doc.status,
-      persona_inquiry_id: formData.persona_inquiry_id || null,
-      persona_status: formData.persona_status || null,
-      persona_hosted_url: formData.persona_hosted_url || null,
+      persona_inquiry_id: formData.stripe_session_id || formData.persona_inquiry_id || null,
+      persona_status: formData.stripe_status || formData.persona_status || null,
+      persona_hosted_url: formData.stripe_hosted_url || formData.persona_hosted_url || null,
+      client_secret: formData.stripe_client_secret || null,
       reviewer_notes: doc.reviewer_notes || ''
     });
   } catch {
@@ -8556,7 +9511,7 @@ app.get('/api/worker/persona/status', requireWorker, (req, res) => {
   }
 });
 
-// Worker: send Persona verification link via SMS
+// Worker: send verification link via SMS
 app.post('/api/worker/persona/send-sms', requireWorker, async (req, res) => {
   const worker = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!worker) return res.status(404).json({ error: 'Worker not found' });
@@ -8567,7 +9522,7 @@ app.post('/api/worker/persona/send-sms', requireWorker, async (req, res) => {
   if (!doc) return res.status(400).json({ error: '请先创建验证 / Please create verification first' });
   try {
     const formData = JSON.parse(doc.form_data || '{}');
-    const url = formData.persona_hosted_url;
+    const url = formData.stripe_hosted_url || formData.persona_hosted_url;
     if (!url) return res.status(400).json({ error: '验证链接不可用，请重新开始验证 / Verification link not available' });
     const msg = `[Prime Anchor Point] 请点击以下链接完成身份验证 / Click the link below to verify your identity:\n${url}`;
     const ok = await sendSMS(phone, msg);
@@ -8578,7 +9533,7 @@ app.post('/api/worker/persona/send-sms', requireWorker, async (req, res) => {
   }
 });
 
-// Worker: send Persona verification link via email
+// Worker: send verification link via email
 app.post('/api/worker/persona/send-email', requireWorker, async (req, res) => {
   const worker = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
   if (!worker) return res.status(404).json({ error: 'Worker not found' });
@@ -8589,7 +9544,7 @@ app.post('/api/worker/persona/send-email', requireWorker, async (req, res) => {
   if (!doc) return res.status(400).json({ error: '请先创建验证 / Please create verification first' });
   try {
     const formData = JSON.parse(doc.form_data || '{}');
-    const url = formData.persona_hosted_url;
+    const url = formData.stripe_hosted_url || formData.persona_hosted_url;
     if (!url) return res.status(400).json({ error: '验证链接不可用，请重新开始验证 / Verification link not available' });
     const subject = 'Prime Anchor Point - 身份验证 / Identity Verification';
     const html = `
@@ -8615,131 +9570,131 @@ app.post('/api/worker/persona/send-email', requireWorker, async (req, res) => {
   }
 });
 
-// Persona webhook - receives verification results
+// Stripe Identity webhook - receives verification results
 app.post('/api/webhooks/persona', express.raw({ type: 'application/json' }), (req, res) => {
-  const webhookSecret = process.env.PERSONA_WEBHOOK_SECRET;
-
-  // Verify webhook signature if secret is configured
-  if (webhookSecret) {
-    const sigHeader = req.headers['persona-signature'];
-    if (!sigHeader) return res.status(401).json({ error: 'Missing signature' });
-    try {
-      const parts = sigHeader.split(',');
-      const timestamp = parts.find(p => p.startsWith('t=')).slice(2);
-      const signature = parts.find(p => p.startsWith('v1=')).slice(3);
-      const payload = `${timestamp}.${req.body}`;
-      const expected = crypto.createHmac('sha256', webhookSecret).update(payload).digest('hex');
-      if (!crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expected, 'hex'))) {
-        return res.status(401).json({ error: 'Invalid signature' });
-      }
-    } catch (e) {
-      console.error('[Persona Webhook] Signature verification error:', e.message);
-      return res.status(401).json({ error: 'Signature verification failed' });
-    }
-  }
+  const rawBody = typeof req.body === 'string' ? req.body : req.body.toString('utf8');
+  const sigHeader = req.headers['stripe-signature'];
+  const { valid, event } = verifyStripeWebhook(rawBody, sigHeader);
+  if (!valid) return res.status(401).json({ error: 'Invalid signature' });
 
   try {
-    const event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const eventType = event.data?.attributes?.name || '';
-    const inquiryData = event.data?.attributes?.payload?.data;
-    const inquiryId = inquiryData?.id;
-    const inquiryStatus = inquiryData?.attributes?.status;
-    const referenceId = inquiryData?.attributes?.['reference-id'] || '';
+    const eventType = event.type || '';
+    const session = event.data?.object;
+    const sessionId = session?.id;
 
-    console.log(`[Persona Webhook] Event: ${eventType}, Inquiry: ${inquiryId}, Status: ${inquiryStatus}`);
+    console.log(`[Stripe Identity Webhook] Event: ${eventType}, Session: ${sessionId}, Status: ${session?.status}`);
 
-    if (!inquiryId) return res.json({ received: true });
+    if (!sessionId || !eventType.startsWith('identity.verification_session.')) return res.json({ received: true });
 
-    // Extract worker ID from reference-id (format: "worker-123" or legacy plain "123")
-    const workerIdMatch = referenceId.match(/^(?:worker-)?(\d+)$/);
-    let docRow = null;
-    if (workerIdMatch) {
-      docRow = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(parseInt(workerIdMatch[1]));
+    // Find compliance doc by stripe_session_id
+    const allDocs = db.prepare("SELECT * FROM worker_compliance_docs WHERE doc_type='drivers_license'").all();
+    let docRow = allDocs.find(d => {
+      try {
+        const fd = JSON.parse(d.form_data || '{}');
+        return fd.stripe_session_id === sessionId || fd.persona_inquiry_id === sessionId;
+      } catch { return false; }
+    });
+    // Also try worker_accounts.persona_inquiry_id (stores session ID)
+    if (!docRow) {
+      const w = db.prepare('SELECT id FROM worker_accounts WHERE persona_inquiry_id=?').get(sessionId);
+      if (w) docRow = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(w.id);
     }
     if (!docRow) {
-      // Fallback: search by inquiry ID in form_data
-      const allDocs = db.prepare("SELECT * FROM worker_compliance_docs WHERE doc_type='drivers_license'").all();
-      docRow = allDocs.find(d => {
-        try { return JSON.parse(d.form_data || '{}').persona_inquiry_id === inquiryId; } catch { return false; }
-      });
+      // Try metadata worker_id
+      const workerId = parseInt(session?.metadata?.worker_id);
+      if (workerId) docRow = db.prepare("SELECT * FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(workerId);
     }
     if (!docRow) {
-      console.warn(`[Persona Webhook] No compliance doc found for inquiry ${inquiryId}`);
+      console.warn(`[Stripe Identity Webhook] No compliance doc found for session ${sessionId}`);
       return res.json({ received: true });
     }
 
-    // Update compliance doc based on event
     const existingForm = JSON.parse(docRow.form_data || '{}');
-    existingForm.persona_inquiry_id = inquiryId;
-    existingForm.persona_status = inquiryStatus;
-    existingForm.persona_event = eventType;
+    existingForm.stripe_session_id = sessionId;
+    existingForm.stripe_status = session.status;
+    existingForm.stripe_event = eventType;
 
-    // Extract verification fields if available
-    const included = event.data?.attributes?.payload?.included || [];
-    const govIdVerification = included.find(i => i.type === 'verification/government-id');
-    if (govIdVerification) {
-      const attrs = govIdVerification.attributes || {};
-      existingForm.dl_number = attrs['id-number'] || '';
-      existingForm.dl_state = attrs['address-subdivision'] || '';
-      existingForm.dl_expiry = attrs['expiration-date'] || '';
-      existingForm.dl_first_name = attrs['name-first'] || '';
-      existingForm.dl_last_name = attrs['name-last'] || '';
-      existingForm.dl_dob = attrs['birthdate'] || '';
-      existingForm.id_class = attrs['id-class'] || '';
+    // Extract verified data if available
+    const verifiedOutputs = session.verified_outputs || session.last_verification_report?.document || {};
+    if (verifiedOutputs) {
+      if (verifiedOutputs.first_name) existingForm.dl_first_name = verifiedOutputs.first_name;
+      if (verifiedOutputs.last_name) existingForm.dl_last_name = verifiedOutputs.last_name;
+      if (verifiedOutputs.dob) {
+        const dob = verifiedOutputs.dob;
+        existingForm.dl_dob = dob.year ? `${dob.year}-${String(dob.month).padStart(2,'0')}-${String(dob.day).padStart(2,'0')}` : '';
+      }
+      if (verifiedOutputs.id_number) existingForm.dl_number = verifiedOutputs.id_number;
+      if (verifiedOutputs.address) {
+        existingForm.dl_state = verifiedOutputs.address.state || '';
+      }
+      if (verifiedOutputs.expiration_date) {
+        const exp = verifiedOutputs.expiration_date;
+        existingForm.dl_expiry = exp.year ? `${exp.year}-${String(exp.month).padStart(2,'0')}-${String(exp.day).padStart(2,'0')}` : '';
+      }
+      if (verifiedOutputs.id_number_type) existingForm.id_class = verifiedOutputs.id_number_type;
     }
 
     let newStatus = docRow.status;
-    if (eventType === 'inquiry.approved' || inquiryStatus === 'approved') {
+    if (session.status === 'verified') {
       newStatus = 'approved';
-    } else if (eventType === 'inquiry.declined' || inquiryStatus === 'declined') {
+    } else if (session.status === 'requires_input') {
+      newStatus = 'pending';
+    } else if (session.status === 'processing') {
+      newStatus = 'submitted';
+    } else if (session.status === 'canceled') {
       newStatus = 'rejected';
-      existingForm.decline_reasons = inquiryData?.attributes?.['decision-reasons'] || [];
-    } else if (eventType === 'inquiry.completed' || inquiryStatus === 'completed') {
-      newStatus = 'submitted'; // user completed verification, awaiting auto-approval or manual review
-    } else if (eventType === 'inquiry.failed' || inquiryStatus === 'failed') {
-      newStatus = 'rejected';
+      existingForm.decline_reasons = [session.last_error?.reason || 'canceled'];
     }
 
     db.prepare("UPDATE worker_compliance_docs SET form_data=?, status=?, reviewer_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-      .run(JSON.stringify(existingForm), newStatus, `Persona: ${eventType}`, docRow.id);
+      .run(JSON.stringify(existingForm), newStatus, `Stripe Identity: ${eventType} (${session.status})`, docRow.id);
 
-    console.log(`[Persona Webhook] Updated doc ${docRow.id} → status=${newStatus}`);
+    // Also update expires_at if extracted
+    if (existingForm.dl_expiry) {
+      db.prepare("UPDATE worker_compliance_docs SET expires_at=? WHERE id=? AND (expires_at IS NULL OR expires_at='')").run(existingForm.dl_expiry, docRow.id);
+    }
+    // Update holder_name if extracted
+    if (existingForm.dl_first_name || existingForm.dl_last_name) {
+      const holderName = `${existingForm.dl_last_name || ''}, ${existingForm.dl_first_name || ''}`.trim().replace(/^,\s*|,\s*$/g, '');
+      db.prepare("UPDATE worker_compliance_docs SET holder_name=? WHERE id=? AND (holder_name IS NULL OR holder_name='')").run(holderName, docRow.id);
+    }
+    // Update doc_number if extracted
+    if (existingForm.dl_number) {
+      db.prepare("UPDATE worker_compliance_docs SET doc_number=? WHERE id=? AND (doc_number IS NULL OR doc_number='')").run(existingForm.dl_number, docRow.id);
+    }
 
-    // Also update worker_accounts.identity_status and auto-complete onboarding
+    console.log(`[Stripe Identity Webhook] Updated doc ${docRow.id} → status=${newStatus}`);
+
+    // Update worker_accounts.identity_status and auto-complete onboarding
     let identityStatus = '';
-    if (inquiryStatus === 'approved' || eventType.includes('approved')) identityStatus = 'approved';
-    else if (inquiryStatus === 'declined' || eventType.includes('declined') || eventType.includes('failed')) identityStatus = 'declined';
-    else if (inquiryStatus === 'completed' || eventType.includes('completed')) identityStatus = 'completed';
+    if (session.status === 'verified') identityStatus = 'approved';
+    else if (session.status === 'canceled') identityStatus = 'declined';
+    else if (session.status === 'processing') identityStatus = 'completed';
     if (identityStatus) {
-      db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
-      console.log(`[Persona Webhook] Updated worker_accounts identity_status → ${identityStatus}`);
-      const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(inquiryId);
+      db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, sessionId);
+      const w = db.prepare(`SELECT id FROM worker_accounts WHERE persona_inquiry_id=?`).get(sessionId);
       if (w) {
         if (identityStatus === 'approved') {
           db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
-          console.log(`[Persona Webhook] Auto-completed persona_verify onboarding for worker ${w.id}`);
+          console.log(`[Stripe Identity Webhook] Auto-completed persona_verify for worker ${w.id}`);
         } else if (identityStatus === 'completed') {
           db.prepare(`UPDATE worker_onboarding SET status='submitted', admin_note='验证已完成，等待审核', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
-          console.log(`[Persona Webhook] Updated persona_verify to submitted for worker ${w.id}`);
         } else if (identityStatus === 'declined') {
           db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(w.id);
-          console.log(`[Persona Webhook] Persona verification declined for worker ${w.id}`);
         }
       }
     }
 
     res.json({ received: true });
   } catch (e) {
-    console.error('[Persona Webhook] Error processing:', e.message);
+    console.error('[Stripe Identity Webhook] Error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// Worker: actively poll Persona API for latest inquiry status (does not rely on webhook)
+// Worker: actively poll Stripe Identity API for latest session status
 app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
-  const apiKey = process.env.PERSONA_API_KEY;
-
-  // Fallback: even without Persona API key, check if identity_status was updated (e.g., by webhook or admin)
+  // Check if identity_status was already updated (e.g., by webhook or admin)
   const w = db.prepare('SELECT identity_status, persona_inquiry_id FROM worker_accounts WHERE id=?').get(req.workerId);
   if (w && (w.identity_status === 'approved' || w.identity_status === 'completed' || w.identity_status === 'declined')) {
     // Sync to worker_onboarding if not already synced
@@ -8757,8 +9712,7 @@ app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
     return res.json({ status: docStatus, persona_status: w.identity_status, updated: onboard && onboard.status === 'pending' });
   }
 
-  if (!apiKey) {
-    // No API key + identity_status not yet set → return current DB state
+  if (!stripe) {
     const doc = db.prepare("SELECT status FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license' ORDER BY id DESC LIMIT 1").get(req.workerId);
     return res.json({ status: doc ? doc.status : 'not_started', persona_status: null });
   }
@@ -8766,58 +9720,52 @@ app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
   if (!doc) return res.json({ status: 'not_started' });
   let formData;
   try { formData = JSON.parse(doc.form_data || '{}'); } catch { formData = {}; }
-  const inquiryId = formData.persona_inquiry_id;
-  if (!inquiryId) return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+  const sessionId = formData.stripe_session_id || formData.persona_inquiry_id;
+  if (!sessionId) return res.json({ status: doc.status, persona_status: formData.stripe_status || null });
 
   try {
-    const resp = await fetch(`https://withpersona.com/api/v1/inquiries/${inquiryId}`, {
-      headers: { 'Authorization': `Bearer ${apiKey}`, 'Persona-Version': '2023-01-05', 'Accept': 'application/json' }
-    });
-    if (!resp.ok) {
-      console.error('[Persona Poll] API error:', resp.status);
-      return res.json({ status: doc.status, persona_status: formData.persona_status || null });
-    }
-    const data = await resp.json();
-    const inquiryStatus = data.data?.attributes?.status;
-    if (!inquiryStatus || inquiryStatus === formData.persona_status) {
-      return res.json({ status: doc.status, persona_status: formData.persona_status || null });
+    const session = await getStripeVerificationSession(sessionId);
+    if (!session) return res.json({ status: doc.status, persona_status: formData.stripe_status || null });
+
+    const stripeStatus = session.status;
+    if (!stripeStatus || stripeStatus === formData.stripe_status) {
+      return res.json({ status: doc.status, persona_status: formData.stripe_status || null });
     }
 
-    // Status changed — update local DB (mirrors webhook logic)
-    formData.persona_status = inquiryStatus;
-    formData.persona_polled_at = new Date().toISOString();
+    // Status changed — update local DB
+    formData.stripe_status = stripeStatus;
+    formData.stripe_polled_at = new Date().toISOString();
 
-    // Extract verification fields if included
-    const included = data.included || [];
-    const govIdVerification = included.find(i => i.type === 'verification/government-id');
-    if (govIdVerification) {
-      const attrs = govIdVerification.attributes || {};
-      formData.dl_number = attrs['id-number'] || formData.dl_number || '';
-      formData.dl_state = attrs['address-subdivision'] || formData.dl_state || '';
-      formData.dl_expiry = attrs['expiration-date'] || formData.dl_expiry || '';
-      formData.dl_first_name = attrs['name-first'] || formData.dl_first_name || '';
-      formData.dl_last_name = attrs['name-last'] || formData.dl_last_name || '';
-      formData.dl_dob = attrs['birthdate'] || formData.dl_dob || '';
-      formData.id_class = attrs['id-class'] || formData.id_class || '';
+    // Extract verified data if available
+    const verifiedOutputs = session.verified_outputs;
+    if (verifiedOutputs) {
+      if (verifiedOutputs.first_name) formData.dl_first_name = verifiedOutputs.first_name;
+      if (verifiedOutputs.last_name) formData.dl_last_name = verifiedOutputs.last_name;
+      if (verifiedOutputs.dob) {
+        const dob = verifiedOutputs.dob;
+        formData.dl_dob = dob.year ? `${dob.year}-${String(dob.month).padStart(2,'0')}-${String(dob.day).padStart(2,'0')}` : '';
+      }
+      if (verifiedOutputs.id_number) formData.dl_number = verifiedOutputs.id_number;
+      if (verifiedOutputs.expiration_date) {
+        const exp = verifiedOutputs.expiration_date;
+        formData.dl_expiry = exp.year ? `${exp.year}-${String(exp.month).padStart(2,'0')}-${String(exp.day).padStart(2,'0')}` : '';
+      }
     }
 
     let newStatus = doc.status;
-    if (inquiryStatus === 'approved') newStatus = 'approved';
-    else if (inquiryStatus === 'declined') newStatus = 'rejected';
-    else if (inquiryStatus === 'completed') newStatus = 'submitted';
-    else if (inquiryStatus === 'failed') newStatus = 'rejected';
-    else if (inquiryStatus === 'needs_review') newStatus = 'submitted';
+    if (stripeStatus === 'verified') newStatus = 'approved';
+    else if (stripeStatus === 'canceled') newStatus = 'rejected';
+    else if (stripeStatus === 'processing') newStatus = 'submitted';
+    else if (stripeStatus === 'requires_input') newStatus = 'pending';
 
-    if (newStatus !== doc.status || inquiryStatus !== (formData.persona_status_prev || '')) {
-      formData.persona_status_prev = inquiryStatus;
+    if (newStatus !== doc.status) {
       db.prepare("UPDATE worker_compliance_docs SET form_data=?, status=?, reviewer_notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
-        .run(JSON.stringify(formData), newStatus, `Persona poll: ${inquiryStatus}`, doc.id);
+        .run(JSON.stringify(formData), newStatus, `Stripe Identity poll: ${stripeStatus}`, doc.id);
 
-      // Also update worker_accounts and onboarding (same as webhook)
       let identityStatus = '';
-      if (inquiryStatus === 'approved') identityStatus = 'approved';
-      else if (inquiryStatus === 'declined' || inquiryStatus === 'failed') identityStatus = 'declined';
-      else if (inquiryStatus === 'completed' || inquiryStatus === 'needs_review') identityStatus = 'completed';
+      if (stripeStatus === 'verified') identityStatus = 'approved';
+      else if (stripeStatus === 'canceled') identityStatus = 'declined';
+      else if (stripeStatus === 'processing') identityStatus = 'completed';
       if (identityStatus) {
         db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE id=?`).run(identityStatus, req.workerId);
         if (identityStatus === 'approved') {
@@ -8828,39 +9776,84 @@ app.post('/api/worker/persona/poll-status', requireWorker, async (req, res) => {
           db.prepare(`UPDATE worker_onboarding SET status='pending', admin_note='验证未通过，请重新验证', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='persona_verify'`).run(req.workerId);
         }
       }
-      console.log(`[Persona Poll] Updated worker ${req.workerId} → doc.status=${newStatus}, persona_status=${inquiryStatus}`);
+      // Auto-fill expires_at and holder_name
+      if (formData.dl_expiry) {
+        db.prepare("UPDATE worker_compliance_docs SET expires_at=? WHERE id=? AND (expires_at IS NULL OR expires_at='')").run(formData.dl_expiry, doc.id);
+      }
+      if (formData.dl_first_name || formData.dl_last_name) {
+        const holderName = `${formData.dl_last_name || ''}, ${formData.dl_first_name || ''}`.trim().replace(/^,\s*|,\s*$/g, '');
+        db.prepare("UPDATE worker_compliance_docs SET holder_name=? WHERE id=? AND (holder_name IS NULL OR holder_name='')").run(holderName, doc.id);
+      }
+      console.log(`[Stripe Identity Poll] Updated worker ${req.workerId} → doc.status=${newStatus}, stripe_status=${stripeStatus}`);
     }
 
-    res.json({ status: newStatus, persona_status: inquiryStatus, updated: true });
+    res.json({ status: newStatus, persona_status: stripeStatus, updated: true });
   } catch (e) {
-    console.error('[Persona Poll] Error:', e.message);
-    res.json({ status: doc.status, persona_status: formData.persona_status || null });
+    console.error('[Stripe Identity Poll] Error:', e.message);
+    res.json({ status: doc.status, persona_status: formData.stripe_status || null });
   }
 });
 
-// Submit W-9 form data
-app.post('/api/worker/compliance/w9', requireWorker, (req, res) => {
-  const formData = {};
-  const fields = ['name','business_name','tax_classification','exempt_payee_code','fatca_code',
-    'address','city','state','zip','account_numbers','ssn_or_ein','signature_confirm','tin_type'];
-  fields.forEach(f => { if (req.body[f] !== undefined) formData[f] = req.body[f]; });
+// Submit W-9 form data — saves info, then auto-creates DocuSeal submission for signing
+app.post('/api/worker/compliance/w9', requireWorker, async (req, res) => {
+  try {
+    const formData = {};
+    const fields = ['name','business_name','tax_classification','exempt_payee_code','fatca_code',
+      'address','city','state','zip','account_numbers','ssn_or_ein','signature_confirm','tin_type'];
+    fields.forEach(f => { if (req.body[f] !== undefined) formData[f] = req.body[f]; });
 
-  // Encrypt SSN/EIN if provided
-  if (req.body.ssn_or_ein) {
-    formData.ssn_or_ein_masked = req.body.ssn_or_ein.replace(/\d(?=\d{4})/g, '*');
-    formData.ssn_or_ein_encrypted = encryptSSN(req.body.ssn_or_ein);
-    delete formData.ssn_or_ein;
-  }
+    // Encrypt SSN/EIN if provided
+    const rawSsnEin = req.body.ssn_or_ein || '';
+    if (rawSsnEin) {
+      formData.ssn_or_ein_masked = rawSsnEin.replace(/\d(?=\d{4})/g, '*');
+      formData.ssn_or_ein_encrypted = encryptSSN(rawSsnEin);
+      delete formData.ssn_or_ein;
+    }
 
-  const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' AND status IN ('pending','rejected')").get(req.workerId);
-  if (existing) {
-    db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
-      .run(JSON.stringify(formData), existing.id);
-  } else {
-    db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'pending')")
-      .run(req.workerId, JSON.stringify(formData));
+    const existing = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='w9' AND status IN ('pending','rejected')").get(req.workerId);
+    if (existing) {
+      db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .run(JSON.stringify(formData), existing.id);
+    } else {
+      db.prepare("INSERT INTO worker_compliance_docs (worker_account_id, doc_type, form_data, status) VALUES (?, 'w9', ?, 'pending')")
+        .run(req.workerId, JSON.stringify(formData));
+    }
+
+    // Auto-create DocuSeal W-9 submission for signing
+    let signUrl = '';
+    if (dsealEnabled()) {
+      const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.workerId);
+      const workerName = req.body.name || w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+      const workerEmail = w.email || '';
+      const address = req.body.address || '';
+      const cityStateZip = [req.body.city, req.body.state, req.body.zip].filter(Boolean).join(', ');
+      try {
+        const { submissionId, workerSignUrl } = await dsealSendW9Html({
+          workerName, workerEmail, address, cityStateZip,
+          ssn: rawSsnEin, tinType: req.body.tin_type,
+          businessName: req.body.business_name,
+          taxClassification: req.body.tax_classification
+        });
+        signUrl = workerSignUrl || '';
+        // Update onboarding task with DocuSeal info
+        db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', action_url=?, admin_note=?, updated_at=CURRENT_TIMESTAMP
+          WHERE worker_account_id=? AND task_key='w9'`)
+          .run(submissionId, signUrl, `工人已填写 W-9 信息，等待签署确认 (${new Date().toLocaleString('zh-CN')})`, req.workerId);
+        console.log(`[W-9] Worker ${req.workerId} submitted info, DocuSeal created: ${submissionId}`);
+      } catch (e) {
+        console.error(`[W-9] DocuSeal submission failed for worker ${req.workerId}:`, e.message);
+      }
+    }
+
+    // Update onboarding task status to submitted
+    db.prepare("UPDATE worker_onboarding SET status='submitted', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9' AND status='pending'")
+      .run(req.workerId);
+
+    res.json({ success: true, signUrl });
+  } catch (e) {
+    console.error('[W-9 submit error]', e.message);
+    res.status(500).json({ error: e.message });
   }
-  res.json({ success: true });
 });
 
 // Upload generic compliance doc (work_permit, ssn_card, other)
@@ -8954,6 +9947,236 @@ app.get('/api/admin/compliance-docs/:id/download', requireAdmin, (req, res) => {
   res.download(doc.file_path, doc.file_name || 'document');
 });
 
+// ─── OCR: Extract text from compliance doc image via Google Cloud Vision ───
+app.post('/api/admin/compliance-docs/:id/ocr', requireAdmin, async (req, res) => {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY; // reuse same key (enable Cloud Vision on the key)
+  if (!apiKey) return res.status(400).json({ error: 'Google API key not configured' });
+  const doc = db.prepare('SELECT * FROM worker_compliance_docs WHERE id=?').get(req.params.id);
+  if (!doc || !doc.file_path) return res.status(404).json({ error: 'No file to process' });
+  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing on disk' });
+
+  try {
+    const imageBuffer = fs.readFileSync(doc.file_path);
+    const base64 = imageBuffer.toString('base64');
+    const visionRes = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{ image: { content: base64 }, features: [{ type: 'TEXT_DETECTION' }] }]
+      })
+    });
+    if (!visionRes.ok) {
+      const errBody = await visionRes.text();
+      console.error('[OCR] Google Vision error:', errBody);
+      return res.status(502).json({ error: 'Google Vision API error' });
+    }
+    const visionData = await visionRes.json();
+    const fullText = visionData.responses?.[0]?.fullTextAnnotation?.text || '';
+    if (!fullText) return res.json({ success: true, text: '', parsed: {}, message: 'No text detected' });
+
+    // Parse extracted text for common document fields
+    const parsed = parseDocumentText(fullText, doc.doc_type);
+
+    // Save OCR results
+    db.prepare('UPDATE worker_compliance_docs SET ocr_raw=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(fullText, doc.id);
+
+    // Auto-fill fields if parsed successfully
+    if (parsed.holder_name) {
+      db.prepare('UPDATE worker_compliance_docs SET holder_name=? WHERE id=? AND (holder_name IS NULL OR holder_name=\'\')').run(parsed.holder_name, doc.id);
+    }
+    if (parsed.doc_number) {
+      db.prepare('UPDATE worker_compliance_docs SET doc_number=? WHERE id=? AND (doc_number IS NULL OR doc_number=\'\')').run(parsed.doc_number, doc.id);
+    }
+    if (parsed.expires_at) {
+      db.prepare('UPDATE worker_compliance_docs SET expires_at=? WHERE id=? AND expires_at IS NULL').run(parsed.expires_at, doc.id);
+    }
+
+    res.json({ success: true, text: fullText, parsed });
+  } catch (e) {
+    console.error('[OCR] Error:', e);
+    res.status(500).json({ error: 'OCR processing failed: ' + e.message });
+  }
+});
+
+// Parse document text for name, dates, doc numbers
+function parseDocumentText(text, docType) {
+  const result = {};
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  // Date patterns: MM/DD/YYYY, MM-DD-YYYY, YYYY-MM-DD, MM/DD/YY
+  const datePatterns = [
+    /(\d{2}\/\d{2}\/\d{4})/g,
+    /(\d{2}-\d{2}-\d{4})/g,
+    /(\d{4}-\d{2}-\d{2})/g,
+    /(\d{2}\/\d{2}\/\d{2})/g,
+  ];
+
+  const allDates = [];
+  for (const p of datePatterns) {
+    const matches = text.match(p);
+    if (matches) allDates.push(...matches);
+  }
+
+  // Expiration date keywords
+  const expKeywords = /exp(?:ir(?:ation|es))?|有效期|到期|EXP|VALID\s*(?:THRU|THROUGH|UNTIL)|CARD EXPIRES/i;
+  for (const line of lines) {
+    if (expKeywords.test(line)) {
+      const dateMatch = line.match(/(\d{2}[\/\-]\d{2}[\/\-]\d{2,4})/);
+      if (dateMatch) {
+        result.expires_at = normalizeDate(dateMatch[1]);
+        break;
+      }
+    }
+  }
+  // If no labeled exp date but dates found, use the latest date as likely expiration
+  if (!result.expires_at && allDates.length) {
+    const sorted = allDates.map(d => ({ raw: d, ts: new Date(normalizeDate(d)).getTime() }))
+      .filter(d => !isNaN(d.ts) && d.ts > Date.now())
+      .sort((a, b) => a.ts - b.ts);
+    if (sorted.length) result.expires_at = normalizeDate(sorted[0].raw);
+  }
+
+  // Document number extraction based on type
+  if (docType === 'work_permit' || docType === 'ead_upload') {
+    // EAD card number pattern: 3 letters + 10 digits (e.g., SRC2190012345)
+    const eadMatch = text.match(/([A-Z]{3}\d{10})/);
+    if (eadMatch) result.doc_number = eadMatch[1];
+    // USCIS number
+    const uscisMatch = text.match(/(?:USCIS|A)\s*#?\s*(\d{7,13})/i);
+    if (uscisMatch) result.uscis_number = uscisMatch[1];
+  }
+  if (docType === 'drivers_license') {
+    const dlMatch = text.match(/(?:DL|ID|LIC|LICENSE)\s*(?:#|NO|:)?\s*([A-Z0-9]{4,20})/i);
+    if (dlMatch) result.doc_number = dlMatch[1];
+  }
+  if (docType === 'ssn_card') {
+    const ssnMatch = text.match(/(\d{3}[\s-]\d{2}[\s-]\d{4})/);
+    if (ssnMatch) result.doc_number = ssnMatch[1];
+  }
+
+  // Name extraction - look for common patterns
+  const nameKeywords = /(?:NAME|姓名|LAST\s*NAME|FIRST\s*NAME|SURNAME|GIVEN\s*NAME)/i;
+  for (let i = 0; i < lines.length; i++) {
+    if (nameKeywords.test(lines[i])) {
+      // Name might be on same line after colon, or on next line
+      const sameLine = lines[i].match(/(?:NAME|姓名)[:\s]+(.+)/i);
+      if (sameLine) { result.holder_name = sameLine[1].trim(); break; }
+      if (i + 1 < lines.length && /^[A-Za-z\s,'-]+$/.test(lines[i+1])) {
+        result.holder_name = lines[i+1].trim();
+        break;
+      }
+    }
+  }
+  // Fallback: look for "LAST, FIRST" pattern common on US IDs
+  if (!result.holder_name) {
+    for (const line of lines) {
+      if (/^[A-Z][A-Z'-]+,\s*[A-Z][A-Z'-]+/.test(line)) {
+        result.holder_name = line;
+        break;
+      }
+    }
+  }
+
+  // Category (EAD specific)
+  const catMatch = text.match(/(?:CATEGORY|Cat(?:egory)?)\s*[:\s]*([A-Z]\d{1,2}[a-z]?)/i);
+  if (catMatch) result.category = catMatch[1].toUpperCase();
+
+  return result;
+}
+
+function normalizeDate(dateStr) {
+  // Convert various formats to YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  const parts = dateStr.split(/[\/\-]/);
+  if (parts.length !== 3) return dateStr;
+  let [a, b, c] = parts;
+  if (c.length === 2) c = parseInt(c) > 50 ? '19' + c : '20' + c;
+  // MM/DD/YYYY or MM-DD-YYYY
+  return `${c}-${a.padStart(2,'0')}-${b.padStart(2,'0')}`;
+}
+
+// ─── Update compliance doc fields (expiration, name, number) ───
+app.put('/api/admin/compliance-docs/:id/fields', requireAdmin, (req, res) => {
+  const { expires_at, holder_name, doc_number } = req.body;
+  const sets = [];
+  const vals = [];
+  if (expires_at !== undefined) { sets.push('expires_at=?'); vals.push(expires_at || null); }
+  if (holder_name !== undefined) { sets.push('holder_name=?'); vals.push(holder_name); }
+  if (doc_number !== undefined) { sets.push('doc_number=?'); vals.push(doc_number); }
+  if (!sets.length) return res.status(400).json({ error: 'No fields to update' });
+  sets.push('updated_at=CURRENT_TIMESTAMP');
+  vals.push(req.params.id);
+  db.prepare(`UPDATE worker_compliance_docs SET ${sets.join(',')} WHERE id=?`).run(...vals);
+  res.json({ success: true });
+});
+
+// ─── Expiring documents dashboard endpoint ───
+app.get('/api/admin/compliance-docs/expiring', requireAdmin, (req, res) => {
+  const days = parseInt(req.query.days) || 90;
+  const docs = db.prepare(`
+    SELECT c.*, w.name as worker_name, w.email as worker_email, w.phone as worker_phone
+    FROM worker_compliance_docs c
+    LEFT JOIN worker_accounts w ON c.worker_account_id = w.id
+    WHERE c.expires_at IS NOT NULL
+      AND c.expires_at != ''
+      AND c.status = 'approved'
+      AND date(c.expires_at) <= date('now', '+' || ? || ' days')
+    ORDER BY c.expires_at ASC
+  `).all(days);
+  res.json(docs);
+});
+
+// ─── Scheduled expiration check (runs daily) ───
+function checkExpiringDocs() {
+  const now = new Date().toISOString().slice(0, 10);
+  // Documents expiring within 30 days that haven't been notified recently
+  const expiring = db.prepare(`
+    SELECT c.id, c.doc_type, c.expires_at, c.holder_name, c.worker_account_id,
+      w.name as worker_name, w.email as worker_email, w.phone as worker_phone
+    FROM worker_compliance_docs c
+    LEFT JOIN worker_accounts w ON c.worker_account_id = w.id
+    WHERE c.expires_at IS NOT NULL AND c.expires_at != ''
+      AND c.status = 'approved'
+      AND date(c.expires_at) <= date('now', '+30 days')
+      AND date(c.expires_at) >= date('now', '-7 days')
+      AND (c.last_expiry_notified IS NULL OR date(c.last_expiry_notified) < date('now', '-7 days'))
+  `).all();
+
+  for (const doc of expiring) {
+    const daysLeft = Math.ceil((new Date(doc.expires_at) - new Date(now)) / 86400000);
+    const typeLabel = { i9:'I-9', drivers_license:'驾照', w9:'W-9', ssn_card:'SSN Card', work_permit:'工作许可/EAD', ead_upload:'EAD工卡', other:'文件' }[doc.doc_type] || doc.doc_type;
+    const urgency = daysLeft <= 0 ? '已过期' : daysLeft <= 7 ? '7天内到期' : '30天内到期';
+
+    // Email worker
+    if (doc.worker_email && (emailTransporter || _sgKey)) {
+      sendEmail(doc.worker_email,
+        `[Prime Anchorpoint] 您的${typeLabel}即将到期 / Your ${typeLabel} is expiring`,
+        `您好 ${doc.worker_name || ''},\n\n您的${typeLabel}将于 ${doc.expires_at} 到期（${urgency}）。\n请尽快更新证件。\n\nHello ${doc.worker_name || ''},\nYour ${typeLabel} expires on ${doc.expires_at} (${urgency}).\nPlease update your document as soon as possible.\n\n— Prime Anchor Point`
+      ).catch(e => console.error('[ExpiryNotify] Email failed:', e));
+    }
+
+    // SMS worker
+    if (doc.worker_phone && twilioClient && (TWILIO_FROM || TWILIO_VERIFY_SID)) {
+      sendSMS(doc.worker_phone,
+        `[Prime Anchorpoint] 您的${typeLabel}将于${doc.expires_at}到期（${urgency}），请尽快更新。Your ${typeLabel} expires ${doc.expires_at}.`
+      ).catch(e => console.error('[ExpiryNotify] SMS failed:', e));
+    }
+
+    // Mark as notified
+    db.prepare('UPDATE worker_compliance_docs SET last_expiry_notified=CURRENT_TIMESTAMP WHERE id=?').run(doc.id);
+    console.log(`[ExpiryNotify] ${doc.worker_name}: ${typeLabel} expires ${doc.expires_at} (${urgency})`);
+  }
+  if (expiring.length) console.log(`[ExpiryNotify] Processed ${expiring.length} expiring documents`);
+}
+
+// Add last_expiry_notified column
+try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN last_expiry_notified DATETIME DEFAULT NULL"); } catch {}
+
+// Run daily at 9 AM
+setInterval(checkExpiringDocs, 24 * 60 * 60 * 1000);
+setTimeout(checkExpiringDocs, 60 * 1000); // First check 1 minute after startup
+
 // ─── Customer Portal API ───
 app.post('/api/customer/login', (req, res) => {
   const { login, email, password } = req.body;
@@ -8961,8 +10184,8 @@ app.post('/api/customer/login', (req, res) => {
   if (!identifier || !password) return res.status(400).json({ error: 'Please provide email/phone and password' });
   const digits10 = identifier.replace(/\D/g, '').slice(-10);
   const cAny = db.prepare(
-    'SELECT * FROM customer_accounts WHERE email=? OR phone10(phone)=?'
-  ).get(identifier, digits10);
+    'SELECT * FROM customer_accounts WHERE email=? OR (? != \'\' AND phone10(phone)=?)'
+  ).get(identifier, digits10, digits10);
   if (cAny && cAny.approval_status === 'pending')
     return res.status(403).json({ error: '您的企业账号正在审核中，请等待管理员批准 / Your account is pending admin approval' });
   if (cAny && cAny.approval_status === 'rejected')
@@ -9044,8 +10267,8 @@ app.post('/api/customer/reset-password', (req, res) => {
 app.get('/api/register/check', (req, res) => {
   const { phone, email } = req.query;
   if (phone) {
-    const clean = phone.replace(/[\s\-()+]/g, '');
-    const row = db.prepare('SELECT id, active FROM worker_accounts WHERE phone=?').get(clean);
+    const digits10 = phone.replace(/\D/g, '').slice(-10);
+    const row = digits10 ? db.prepare('SELECT id, active FROM worker_accounts WHERE phone10(phone)=?').get(digits10) : null;
     if (row && row.active) return res.json({ taken: true, field: 'phone' });
   }
   if (email) {
@@ -9057,7 +10280,7 @@ app.get('/api/register/check', (req, res) => {
 
 app.post('/api/register/worker', async (req, res) => {
   try {
-  const { first_name, middle_name, last_name, phone: phoneRaw, email, dob, work_status, position_interests, password, city, state, ref_code, invite_token } = req.body;
+  const { first_name, middle_name, last_name, phone: phoneRaw, email, dob, work_status, position_interests, password, city, state, ref_code, invite_token, sms_consent } = req.body;
   const phone = phoneRaw ? phoneRaw.replace(/\D/g, '').slice(-10) : ''; // store last 10 digits only
   const nameParts = [first_name, middle_name, last_name].filter(Boolean);
   if (!first_name || !last_name || !phone || !email || !password)
@@ -9098,6 +10321,7 @@ app.post('/api/register/worker', async (req, res) => {
     db.prepare('DELETE FROM worker_skills WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM worker_compliance_docs WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM worker_onboarding WHERE worker_account_id=?').run(existing.id);
+    archiveInterviews(existing.id);
     db.prepare('DELETE FROM interviews WHERE worker_account_id=?').run(existing.id);
     db.prepare('DELETE FROM worker_account_history WHERE worker_account_id=?').run(existing.id);
     try { db.prepare('DELETE FROM pending_profile_changes WHERE worker_account_id=?').run(existing.id); } catch(_) {}
@@ -9133,6 +10357,11 @@ app.post('/api/register/worker', async (req, res) => {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, registrationSource, referredBy, inviteEmployeeId);
   const accountId = r.lastInsertRowid;
+
+  // Store SMS consent
+  if (sms_consent) {
+    db.prepare('UPDATE worker_accounts SET sms_consent=1, sms_consent_at=? WHERE id=?').run(new Date().toISOString(), accountId);
+  }
 
   // Mark invite as used
   if (invite_token && inviteEmployeeId) {
@@ -9436,7 +10665,257 @@ app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirn
 app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'public', 'data-deletion.html')));
 app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
 
-// POST /api/docusign/webhook — DocuSign Connect event notifications
+// POST /api/docuseal/webhook — DocuSeal event notifications (partner + worker contracts)
+// Supports both self-hosted events (submission.*, submitter.*) and cloud events (form.*)
+app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
+  console.log(`[DocuSeal Webhook] Received request from ${req.ip} at ${new Date().toISOString()}`);
+  try {
+    const event = req.body;
+    const eventType = event?.event_type;
+    const data = event?.data;
+    console.log(`[DocuSeal Webhook] event_type=${eventType}, data_keys=${data ? Object.keys(data).join(',') : 'null'}`);
+    if (!data) { res.json({ received: true }); return; }
+
+    // Normalize event type: cloud uses form.*, self-hosted uses submission.*/submitter.*
+    const isCompleted = eventType === 'submission.completed' || eventType === 'form.completed';
+    const isSubmitterCompleted = eventType === 'submitter.completed' || eventType === 'form.started';
+    const isDeclined = eventType === 'submitter.declined' || eventType === 'form.declined';
+    const isCreated = eventType === 'submission.created';
+
+    // Extract submission ID — different structure for cloud vs self-hosted
+    let submissionId;
+    if (isCompleted || isCreated) {
+      submissionId = String(data.submission_id || data.id || '');
+    } else {
+      submissionId = String(data.submission_id || '');
+    }
+    if (!submissionId) { res.json({ received: true }); return; }
+
+    // Check partner_files first
+    const pf = db.prepare("SELECT id FROM partner_files WHERE ds_envelope_id=?").get(submissionId);
+    // Check worker_onboarding contracts
+    const wo = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='contract'").get(submissionId);
+    // Check worker_onboarding W-9
+    const w9o = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='w9'").get(submissionId);
+
+    if (!pf && !wo && !w9o) { res.json({ received: true }); return; }
+
+    // ── Handle W-9 completion ──
+    if (w9o) {
+      const wid = w9o.worker_account_id;
+      if (isCompleted || isSubmitterCompleted) {
+        try {
+          // Fetch submission status from DocuSeal to confirm completion
+          const subData = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+          const dsStatus = subData.data?.status || subData.status_str || '';
+          const submitters = subData.data?.submitters || subData.data?.documents?.[0]?.submitters || [];
+          const workerSub = submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0];
+          const workerSignedAt = workerSub?.completed_at || workerSub?.updated_at || new Date().toISOString();
+          const fullyDone = dsStatus === 'completed' || submitters.every(s => s.status === 'completed');
+          console.log(`[DocuSeal W-9 webhook] wid=${wid}, dsStatus=${dsStatus}, fullyDone=${fullyDone}`);
+          if (fullyDone) {
+            db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='W-9 已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+              .run(workerSignedAt, wid);
+            syncOnboardedStatus(wid);
+            console.log(`[DocuSeal W-9 webhook] W-9 marked completed for worker ${wid}`);
+          } else {
+            db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+              .run(workerSignedAt, `W-9 已填写提交，等待最终确认 (${new Date().toLocaleString('zh-CN')})`, wid);
+          }
+        } catch (e) { console.error('[DocuSeal W-9 webhook] error:', e.message); }
+      } else if (isDeclined) {
+        db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+          .run(`W-9 已被拒签: ${data.decline_reason || ''}`, wid);
+      }
+    }
+
+    // Handle partner file contract events
+    if (pf) {
+      if (isCompleted) {
+        try {
+          const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+          // Verify BOTH parties actually signed before marking as completed
+          if (status === 'completed' && companySigned && partnerSigned) {
+            db.prepare("UPDATE partner_files SET ds_status='completed', ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
+            db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
+            const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
+            if (pfRecord?.file_path) {
+              const signedBuf = await dsealDownloadDocument(submissionId);
+              fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
+              console.log(`[DocuSeal] Saved signed partner contract for file id=${pf.id}`);
+            }
+          } else {
+            console.log(`[DocuSeal] Partner contract not fully completed (company=${!!companySigned}, partner=${!!partnerSigned}), updating partial status`);
+            db.prepare("UPDATE partner_files SET ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
+          }
+        } catch (e) { console.error('[DocuSeal webhook] completion error:', e.message); }
+      } else if (isSubmitterCompleted) {
+        try {
+          const { companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+          db.prepare("UPDATE partner_files SET ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
+        } catch (e) { console.error('[DocuSeal webhook] submitter status error:', e.message); }
+      } else if (isDeclined) {
+        db.prepare("UPDATE partner_files SET ds_status='declined', ds_decline_reason=? WHERE id=?").run(data.decline_reason || '已拒签', pf.id);
+      }
+    }
+
+    // Handle worker onboarding contract events
+    if (wo) {
+      const wid = wo.worker_account_id;
+      if (isCompleted) {
+        try {
+          const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+          // Verify BOTH parties actually signed before marking as completed
+          // (DocuSeal Cloud form.completed may fire per-submitter)
+          if (status === 'completed' && companySigned && partnerSigned) {
+            db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+              .run(partnerSigned, companySigned, wid);
+            // Update contract version status
+            db.prepare("UPDATE worker_contract_versions SET ds_status='completed', ds_company_signed_at=?, ds_worker_signed_at=? WHERE worker_account_id=? AND ds_envelope_id=?")
+              .run(companySigned, partnerSigned, wid, submissionId);
+            // Log completion to worker history
+            db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+              .run(wid, 'system', 'contract', '签署中', '双方已签署', `公司签署: ${companySigned || '—'}, 工人签署: ${partnerSigned || '—'}`);
+            syncOnboardedStatus(wid);
+            console.log(`[DocuSeal] Worker onboarding contract completed for worker ${wid}`);
+          } else {
+            // Only one party signed — treat as partial, update individual timestamps
+            console.log(`[DocuSeal] Worker contract not fully completed yet (company=${!!companySigned}, worker=${!!partnerSigned}), updating partial status`);
+            db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+              .run(partnerSigned, companySigned, wid);
+          }
+        } catch (e) { console.error('[DocuSeal webhook] worker contract completion error:', e.message); }
+      } else if (isSubmitterCompleted) {
+        try {
+          const { companySigned, partnerSigned } = await dsealGetStatus(submissionId);
+          db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+            .run(partnerSigned, companySigned, wid);
+          // If company just signed (First Party), notify worker to sign
+          const submitterRole = data.role || data.metadata?.role || '';
+          const isCompanySigner = submitterRole === 'First Party' || (companySigned && !partnerSigned);
+          if (isCompanySigner) {
+            // Update contract version status
+            db.prepare("UPDATE worker_contract_versions SET ds_status='company_signed', ds_company_signed_at=? WHERE worker_account_id=? AND ds_envelope_id=?")
+              .run(companySigned, wid, submissionId);
+            // Log company signing to worker history
+            db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+              .run(wid, 'system', 'contract', '已发送', '公司已签署', `公司签署时间: ${companySigned || new Date().toISOString()}`);
+            console.log(`[DocuSeal webhook] Company signed for worker ${wid}, sending notification to worker`);
+            try {
+              const wAccount = db.prepare("SELECT name, username, email, phone FROM worker_accounts WHERE id=?").get(wid);
+              if (wAccount) {
+                const workerName = wAccount.name || wAccount.username || '';
+                const workerEmail = wAccount.email || '';
+                const workerPhone = wAccount.phone || '';
+                const onbRecord = db.prepare("SELECT contract_content FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(wid);
+                const empType = (onbRecord?.contract_content || '').includes('Independent Contractor') ? '1099' : 'w2';
+                const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
+                const contractTypeCn = empType === '1099' ? '承包商协议' : '雇佣合同';
+                // Get worker signing URL
+                let workerSignUrl = '';
+                try {
+                  const subData = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+                  const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party');
+                  if (workerSub) {
+                    if (workerSub.embed_src) { workerSignUrl = workerSub.embed_src; }
+                    else if (workerSub.id) {
+                      const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name || workerName });
+                      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+                    }
+                    if (!workerSignUrl && workerSub.slug) {
+                      const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+                      workerSignUrl = `${baseHost}/s/${workerSub.slug}`;
+                    }
+                  }
+                } catch (e2) { console.error('[DocuSeal webhook] get worker sign URL error:', e2.message); }
+                // Update action_url with worker signing URL so portal can show it
+                if (workerSignUrl) {
+                  db.prepare("UPDATE worker_onboarding SET ds_status='company_signed', action_url=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+                    .run(workerSignUrl, `公司已签署，等待工人签署 (${new Date().toLocaleString('zh-CN')})`, wid);
+                }
+                const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
+                const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
+                // Send email to worker (trilingual: Chinese / English / Spanish)
+                if (workerEmail) {
+                  const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
+                  await sendEmail(workerEmail,
+                    `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+                    `您好 ${workerName}，\n${companyName} 已完成签署，现在轮到您了。\n${workerSignUrl ? '签署链接: ' + workerSignUrl : ''}\n\nHi ${workerName},\n${companyName} has signed. It's your turn now.\n${workerSignUrl ? 'Sign here: ' + workerSignUrl : ''}\n\nHola ${workerName},\n${companyName} ha firmado. Ahora es su turno.\n${workerSignUrl ? 'Firme aquí: ' + workerSignUrl : ''}\n\nPrime Anchorpoint`,
+                    `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+                      <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
+                      <p>您好 ${workerName}，</p>
+                      <p>${companyName} 已完成签署，现在轮到您签署了。请点击下方按钮完成电子签署。</p>
+                      ${signLink}
+                      ${workerSignUrl ? `<p style="color:#666;font-size:.85rem">或复制链接：${workerSignUrl}</p>` : ''}
+                      <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+                      <h3 style="color:#333;font-size:.95rem">Please Sign Your ${contractType}</h3>
+                      <p style="color:#555;font-size:.9rem">Hi ${workerName}, ${companyName} has completed their signature. It's now your turn to sign the ${contractType}. Please click the button below to complete your electronic signature.</p>
+                      ${signLink}
+                      <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+                      <h3 style="color:#333;font-size:.95rem">Firme Su ${contractTypeEs}</h3>
+                      <p style="color:#555;font-size:.9rem">Hola ${workerName}, ${companyName} ha completado su firma. Ahora es su turno de firmar el ${contractTypeEs}. Haga clic en el botón de abajo para completar su firma electrónica.</p>
+                      ${signLink}
+                      <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+                    </div>`
+                  );
+                  console.log(`[DocuSeal webhook] Sent trilingual signing email to worker ${workerEmail}`);
+                }
+                // Send SMS to worker (trilingual)
+                if (workerPhone) {
+                  const smsText = workerSignUrl
+                    ? `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
+                    : `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
+                  await sendSMS(workerPhone, smsText);
+                  console.log(`[DocuSeal webhook] Sent trilingual signing SMS to worker ${workerPhone}`);
+                }
+              }
+            } catch (notifyErr) { console.error('[DocuSeal webhook] worker notification error:', notifyErr.message); }
+          }
+        } catch (e) { console.error('[DocuSeal webhook] worker submitter status error:', e.message); }
+      } else if (isDeclined) {
+        const declineReason = data.decline_reason || '';
+        db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+          .run(`工人已拒签: ${declineReason}`, wid);
+        // Update contract version
+        db.prepare("UPDATE worker_contract_versions SET ds_status='declined', void_reason=? WHERE worker_account_id=? AND ds_envelope_id=?")
+          .run(`工人拒签: ${declineReason || '未提供'}`, wid, submissionId);
+        // Log decline to worker history
+        db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+          .run(wid, 'system', 'contract', '签署中', '已拒签', `工人拒签原因: ${declineReason || '未提供'}`);
+      }
+    }
+
+    // Handle worker W-9 events
+    if (w9) {
+      const w9wid = w9.worker_account_id;
+      if (isCompleted || isSubmitterCompleted) {
+        try {
+          const { status, workerSigned } = await dsealGetW9Status(submissionId);
+          db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+            .run(status, workerSigned, w9wid);
+          if (status === 'completed') {
+            db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='W-9 已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+              .run(w9wid);
+            db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+              .run(w9wid, 'system', 'w9', '签署中', '已签署', `W-9 签署完成: ${workerSigned || new Date().toISOString()}`);
+            syncOnboardedStatus(w9wid);
+            console.log(`[DocuSeal] Worker W-9 completed for worker ${w9wid}`);
+          }
+        } catch (e) { console.error('[DocuSeal webhook] W-9 completion error:', e.message); }
+      } else if (isDeclined) {
+        db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+          .run(`工人已拒签 W-9: ${data.decline_reason || ''}`, w9wid);
+      }
+    }
+
+    res.json({ received: true });
+  } catch (e) {
+    console.error('[DocuSeal Webhook]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/docusign/webhook — DocuSign Connect event notifications (assignments only)
 app.post('/api/docusign/webhook', express.raw({ type: '*/*' }), async (req, res) => {
   console.log(`[DocuSign Webhook] Received request from ${req.ip} at ${new Date().toISOString()}`);
   try {
@@ -9457,36 +10936,16 @@ app.post('/api/docusign/webhook', express.raw({ type: '*/*' }), async (req, res)
     if (envelopeId && status) {
       const asgn = db.prepare("SELECT id FROM assignments WHERE ds_envelope_id=?").get(envelopeId);
       if (asgn) db.prepare("UPDATE assignments SET ds_status=? WHERE id=?").run(status, asgn.id);
-      const pf = db.prepare("SELECT id FROM partner_files WHERE ds_envelope_id=?").get(envelopeId);
-      if (pf) db.prepare("UPDATE partner_files SET ds_status=? WHERE id=?").run(status, pf.id);
       for (const s of (event?.data?.envelopeSummary?.recipients?.signers || [])) {
         if (s.status === 'completed' && s.signedDateTime) {
           if (asgn) {
             if (s.recipientId === '1') db.prepare("UPDATE assignments SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
             if (s.recipientId === '2') db.prepare("UPDATE assignments SET ds_worker_signed_at=? WHERE id=?").run(s.signedDateTime, asgn.id);
           }
-          if (pf) {
-            if (s.recipientId === '1') db.prepare("UPDATE partner_files SET ds_company_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
-            if (s.recipientId === '2') db.prepare("UPDATE partner_files SET ds_partner_signed_at=? WHERE id=?").run(s.signedDateTime, pf.id);
-          }
         }
         if (s.status === 'declined' && s.declinedReason) {
           if (asgn) db.prepare("UPDATE assignments SET ds_decline_reason=? WHERE id=?").run(s.declinedReason, asgn.id);
-          if (pf) db.prepare("UPDATE partner_files SET ds_decline_reason=? WHERE id=?").run(s.declinedReason, pf.id);
         }
-      }
-      // Auto-activate partner when contract envelope is fully completed (both parties signed)
-      if (pf && status === 'completed') {
-        db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
-        // Download the signed PDF from DocuSign and overwrite the local file
-        try {
-          const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
-          if (pfRecord && pfRecord.file_path) {
-            const signedBuf = await dsDownloadSignedDoc(envelopeId);
-            fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
-            console.log(`[DocuSign] Saved signed partner contract for file id=${pf.id}`);
-          }
-        } catch (dlErr) { console.error('[DocuSign] Failed to download signed partner doc:', dlErr.message); }
       }
       if (asgn && status === 'completed') {
         // Download the signed PDF from DocuSign and overwrite the local contract file
@@ -9552,6 +11011,10 @@ app.get('/api/admin/interview-locations', requireAdmin, (req, res) => {
 app.post('/api/admin/interview-locations', requireAdmin, (req, res) => {
   const { name, address, address1, address2, city, state, zip, contact_name, contact_phone, instructions } = req.body;
   if (!name) return res.status(400).json({ error: '地点名称必填 / name required' });
+  if (!address1) return res.status(400).json({ error: '街道地址必填 / address1 required' });
+  if (!city) return res.status(400).json({ error: '城市必填 / city required' });
+  if (!state) return res.status(400).json({ error: '请选择州 / state required' });
+  if (zip && !/^\d{5}(-\d{4})?$/.test(zip)) return res.status(400).json({ error: '邮编格式不正确 / invalid ZIP format' });
   const addrDisplay = address || [address1, address2, city && state ? `${city}, ${state}${zip ? ' ' + zip : ''}` : city].filter(Boolean).join(', ') || '';
   const r = db.prepare('INSERT INTO interview_locations (name,address,address1,address2,city,state,zip,contact_name,contact_phone,instructions) VALUES (?,?,?,?,?,?,?,?,?,?)')
     .run(name, addrDisplay, address1||'', address2||'', city||'', state||'', zip||'', contact_name||'', contact_phone||'', instructions||'');
@@ -9663,7 +11126,36 @@ app.get('/api/admin/interviews', requireAdmin, (req, res) => {
   res.json(rows);
 });
 
-// Admin: send Persona identity verification to worker via interview
+// Admin: get all interview history (current + archived)
+app.get('/api/admin/interview-history', requireAdmin, (req, res) => {
+  const current = db.prepare(`
+    SELECT i.id, i.worker_account_id, i.status, i.admin_notes,
+      COALESCE(i.interview_type,'onboarding') AS interview_type,
+      i.created_at, i.updated_at,
+      s.slot_datetime, s.duration_min, s.location,
+      w.name AS worker_name, w.phone AS worker_phone, w.email AS worker_email,
+      w.position_interests, 'current' AS source
+    FROM interviews i
+    JOIN interview_slots s ON i.slot_id = s.id
+    JOIN worker_accounts w ON i.worker_account_id = w.id
+  `).all();
+  const archived = db.prepare(`
+    SELECT id, worker_account_id, status, admin_notes, interview_type,
+      original_created_at AS created_at, original_updated_at AS updated_at,
+      slot_datetime, duration_min, location,
+      worker_name, worker_phone, worker_email,
+      position_interests, 'archived' AS source, archived_at
+    FROM interview_history
+  `).all();
+  const all = [...current, ...archived].sort((a, b) => {
+    const da = a.slot_datetime || a.created_at || '';
+    const db2 = b.slot_datetime || b.created_at || '';
+    return db2.localeCompare(da);
+  });
+  res.json(all);
+});
+
+// Admin: send Stripe Identity verification to worker via interview
 app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, res) => {
   try {
     const interview = db.prepare(`
@@ -9672,65 +11164,39 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       FROM interviews i JOIN worker_accounts w ON i.worker_account_id = w.id WHERE i.id=?
     `).get(req.params.id);
     if (!interview) return res.status(404).json({ error: 'Interview not found' });
-    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
-      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    if (!stripe)
+      return res.status(503).json({ error: 'Stripe Identity 未配置，请先在 .env 设置 STRIPE_SECRET_KEY' });
     const { force } = req.body || {};
     if (interview.identity_status === 'approved' && !force)
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
-    const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
-    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    const result = await createStripeVerificationSession(interview.worker_id, interview.worker_name, interview.worker_email);
+    if (!result) return res.status(500).json({ error: '创建 Stripe Identity 验证失败，请检查 STRIPE_SECRET_KEY' });
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(result.inquiryId, interview.worker_id);
-    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍+SSN）以继续求职流程。点击链接在手机完成：${result.link}`;
+      .run(result.sessionId, interview.worker_id);
+    const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+    const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。点击链接：${result.url || portalUrl}`;
     const smsSent = await sendSMS(interview.worker_phone, smsText);
     if (interview.worker_email) {
       await sendEmail(interview.worker_email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证：${result.link}`,
-        `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请在手机上点击以下链接，按提示上传驾照、完成自拍及 SSN 核验：</p><p><a href="${result.link}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.link}</p>`
+        `请完成身份验证：${result.url || portalUrl}`,
+        `<p>您好 ${interview.worker_name||''}，</p><p>HR 已为您发起身份验证。请点击以下链接，按提示上传驾照/ID、完成自拍核验：</p><p><a href="${result.url || portalUrl}" style="display:inline-block;padding:.65rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证</a></p><p style="color:#888;font-size:.85rem">或复制链接：${result.url || portalUrl}</p>`
       );
     }
-    res.json({ success: true, smsSent, inquiryId: result.inquiryId, link: result.link });
+    res.json({ success: true, smsSent, sessionId: result.sessionId, link: result.url || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Persona webhook — called by Persona when verification status changes
-app.post('/api/webhooks/persona', express.raw({ type: '*/*' }), (req, res) => {
-  try {
-    const rawBody = req.body.toString('utf8');
-    const sig = req.headers['persona-signature'];
-    if (!verifyPersonaWebhook(rawBody, sig)) {
-      console.warn('[Persona Webhook] Signature mismatch');
-      return res.status(400).json({ error: 'Invalid signature' });
-    }
-    const event = JSON.parse(rawBody);
-    const payload = event.data?.attributes?.payload?.data || event.data;
-    const inquiryId = payload?.id;
-    const eventName = event.data?.attributes?.name || '';
-    const status = payload?.attributes?.status || '';
-    console.log(`[Persona Webhook] ${eventName} | inquiry=${inquiryId} | status=${status}`);
-    if (inquiryId) {
-      let identityStatus = '';
-      if (status === 'approved' || eventName.includes('approved')) identityStatus = 'approved';
-      else if (status === 'declined' || eventName.includes('declined') || eventName.includes('failed')) identityStatus = 'declined';
-      else if (status === 'completed' || eventName.includes('completed')) identityStatus = 'completed';
-      if (identityStatus) {
-        db.prepare(`UPDATE worker_accounts SET identity_status=? WHERE persona_inquiry_id=?`).run(identityStatus, inquiryId);
-        console.log(`[Persona Webhook] Updated ${inquiryId} → ${identityStatus}`);
-      }
-    }
-    res.json({ received: true });
-  } catch (e) { console.error('[Persona Webhook]', e.message); res.status(500).json({ error: e.message }); }
-});
-
-// Worker: get own identity verification status + fresh session link
+// Worker: get own identity verification status
 app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
   try {
     const w = db.prepare('SELECT persona_inquiry_id, identity_status, identity_sent_at FROM worker_accounts WHERE id=?').get(req.workerId);
     if (!w) return res.status(404).json({ error: 'Not found' });
     let link = null;
-    if (w.persona_inquiry_id && w.identity_status === 'pending') {
-      link = await resumePersonaInquiry(w.persona_inquiry_id);
+    // For Stripe Identity, retrieve fresh session URL if pending
+    if (w.persona_inquiry_id && w.identity_status === 'pending' && stripe) {
+      const session = await getStripeVerificationSession(w.persona_inquiry_id);
+      if (session && session.url) link = session.url;
     }
     res.json({ status: w.identity_status || 'not_sent', sent_at: w.identity_sent_at || null, link });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -9793,7 +11259,7 @@ app.post('/api/admin/interviews/:id/send-docs', requireAdmin, (req, res) => {
   res.json({ token, expires_at: expiresAt });
 });
 
-// Admin: send Persona identity verification to worker via interview
+// Admin: send Stripe Identity verification to worker via interview
 app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, res) => {
   try {
     const interview = db.prepare(`
@@ -9802,13 +11268,13 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       FROM interviews i JOIN worker_accounts w ON i.worker_account_id = w.id WHERE i.id=?
     `).get(req.params.id);
     if (!interview) return res.status(404).json({ error: 'Interview not found' });
-    if (!process.env.PERSONA_API_KEY || !process.env.PERSONA_TEMPLATE_ID)
-      return res.status(503).json({ error: 'Persona 未配置，请先在 .env 设置 PERSONA_API_KEY 和 PERSONA_TEMPLATE_ID' });
+    if (!stripe)
+      return res.status(503).json({ error: 'Stripe Identity 未配置，请先在 .env 设置 STRIPE_SECRET_KEY' });
     const { force } = req.body || {};
     if (interview.identity_status === 'approved' && !force)
       return res.status(400).json({ error: '该工人身份验证已通过，如需重发传 force:true' });
-    const result = await createPersonaInquiry(interview.worker_id, interview.worker_name, interview.worker_phone);
-    if (!result) return res.status(500).json({ error: '创建 Persona 验证失败，请检查 API Key 和 Template ID' });
+    const result = await createStripeVerificationSession(interview.worker_id, interview.worker_name, interview.worker_email);
+    if (!result) return res.status(500).json({ error: '创建 Stripe Identity 验证失败，请检查 STRIPE_SECRET_KEY' });
     // Auto-add drivers_license to assigned_tasks
     const wAcct = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(interview.worker_id);
     let curTasks = [];
@@ -9818,9 +11284,9 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(curTasks), interview.worker_id);
     }
     db.prepare(`UPDATE worker_accounts SET persona_inquiry_id=?, identity_status='pending', identity_sent_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(result.inquiryId, interview.worker_id);
+      .run(result.sessionId, interview.worker_id);
     // Sync to worker_compliance_docs for portal
-    const compFormData = JSON.stringify({ persona_inquiry_id: result.inquiryId, persona_status: 'created', persona_session_token: result.sessionToken || '', persona_hosted_url: result.link || '' });
+    const compFormData = JSON.stringify({ stripe_session_id: result.sessionId, stripe_client_secret: result.clientSecret, stripe_status: 'requires_input', stripe_hosted_url: result.url || '' });
     const existingDoc = db.prepare("SELECT id FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='drivers_license'").get(interview.worker_id);
     if (existingDoc) {
       db.prepare("UPDATE worker_compliance_docs SET form_data=?, status='pending', updated_at=CURRENT_TIMESTAMP WHERE id=?").run(compFormData, existingDoc.id);
@@ -9831,11 +11297,12 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
     db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, action_url, updated_at)
       VALUES (?,'persona_verify','pending',1,?,?,CURRENT_TIMESTAMP)
       ON CONFLICT(worker_account_id,task_key) DO UPDATE SET status='pending', visible_to_worker=1, action_url=excluded.action_url, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
-      .run(interview.worker_id, '已发送 Persona 验证链接', result.link || '');
+      .run(interview.worker_id, '已发送 Stripe Identity 验证链接', result.url || '');
     // Send SMS
     let smsSent = false;
     if (interview.worker_phone) {
-      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照+自拍）以继续求职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.link || '(请登录工人门户完成)'}`;
+      const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
+      const smsText = `[Prime Anchorpoint] 您好 ${interview.worker_name||''}，请完成身份验证（驾照/ID+自拍）以继续求职流程。\n您可以：\n1. 登录工人门户直接完成验证\n2. 点击链接在手机完成：${result.url || portalUrl}`;
       smsSent = await sendSMS(interview.worker_phone, smsText);
     }
     // Send email
@@ -9844,33 +11311,31 @@ app.post('/api/admin/interviews/:id/send-identity', requireAdmin, async (req, re
       const portalUrl = `${req.protocol}://${req.get('host')}/portal.html`;
       emailSent = await sendEmail(interview.worker_email,
         'Prime Anchorpoint — 身份验证请求 / Identity Verification',
-        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.link || portalUrl}`,
+        `请完成身份验证。您可以登录工人门户直接完成，或点击链接：${result.url || portalUrl}`,
         `<p>您好 ${interview.worker_name||''}，</p>
-         <p>HR 已为您发起身份验证（驾照 + 自拍核验）。您可以通过以下任一方式完成：</p>
+         <p>HR 已为您发起身份验证（驾照/ID + 自拍核验）。您可以通过以下任一方式完成：</p>
          <table cellpadding="0" cellspacing="0" style="margin:1rem 0">
            <tr><td style="padding:.5rem 0"><strong>方式一：</strong> 登录工人门户，在"合规文件"或"待办事项"中直接完成</td></tr>
            <tr><td style="padding:.3rem 0"><a href="${portalUrl}" style="display:inline-block;padding:.6rem 1.2rem;background:#0ea5e9;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">登录工人门户 / Worker Portal</a></td></tr>
-           ${result.link ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
-           <tr><td style="padding:.3rem 0"><a href="${result.link}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
-           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.link}</span></td></tr>` : ''}
+           ${result.url ? `<tr><td style="padding:.75rem 0 .3rem"><strong>方式二：</strong> 点击以下链接直接在手机上完成验证</td></tr>
+           <tr><td style="padding:.3rem 0"><a href="${result.url}" style="display:inline-block;padding:.6rem 1.2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">开始身份验证 / Start Verification</a></td></tr>
+           <tr><td style="padding:.3rem 0"><span style="color:#888;font-size:.82rem">或复制链接：${result.url}</span></td></tr>` : ''}
          </table>`
       );
     }
-    res.json({ success: true, smsSent, emailSent, portalReady: true, inquiryId: result.inquiryId, link: result.link || '' });
+    res.json({ success: true, smsSent, emailSent, portalReady: true, sessionId: result.sessionId, link: result.url || '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// NOTE: Duplicate Persona webhook handler was removed.
-// All Persona webhook logic is now consolidated in the handler above (around line 4405).
-
-// Worker: get own identity verification status + fresh session link
+// Worker: get own identity verification status
 app.get('/api/worker/identity/status', requireWorker, async (req, res) => {
   try {
     const w = db.prepare('SELECT persona_inquiry_id, identity_status, identity_sent_at FROM worker_accounts WHERE id=?').get(req.workerId);
     if (!w) return res.status(404).json({ error: 'Not found' });
     let link = null;
-    if (w.persona_inquiry_id && w.identity_status === 'pending') {
-      link = await resumePersonaInquiry(w.persona_inquiry_id);
+    if (w.persona_inquiry_id && w.identity_status === 'pending' && stripe) {
+      const session = await getStripeVerificationSession(w.persona_inquiry_id);
+      if (session && session.url) link = session.url;
     }
     res.json({ status: w.identity_status || 'not_sent', sent_at: w.identity_sent_at || null, link });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -10225,6 +11690,115 @@ app.post('/api/admin/invoices', requireAdmin, blockManager, (req, res) => {
 
 app.delete('/api/admin/invoices/:id', requireAdmin, blockManager, (req, res) => {
   db.prepare('DELETE FROM invoices WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
+// ─── DocuSeal Template Management ───
+
+// GET /api/admin/docuseal/config — return stored template config
+app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
+  const row = db.prepare("SELECT * FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  res.json({
+    connected: dsealEnabled(),
+    url: (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, ''),
+    contract_template_id: cfg.contract_template_id || null,
+    w9_template_id: cfg.w9_template_id || null,
+  });
+});
+
+// POST /api/admin/docuseal/config — save template IDs
+app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
+  const { contract_template_id, w9_template_id } = req.body;
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  if (contract_template_id !== undefined) cfg.contract_template_id = contract_template_id || null;
+  if (w9_template_id !== undefined) cfg.w9_template_id = w9_template_id || null;
+  db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+    .run(JSON.stringify(cfg));
+  res.json({ success: true });
+});
+
+// GET /api/admin/docuseal/templates — list templates from DocuSeal
+app.get('/api/admin/docuseal/templates', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const r = await dsealApiCall('GET', '/api/templates', null);
+    if (r.status !== 200) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
+    const templates = Array.isArray(r.data) ? r.data : (r.data?.data || []);
+    res.json(templates);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// DELETE /api/admin/docuseal/templates/:id — delete a template from DocuSeal
+app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    const r = await dsealApiCall('DELETE', `/api/templates/${req.params.id}`, null);
+    if (r.status !== 200 && r.status !== 204) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
+    // Clear from config if it was set as default
+    const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse(row?.config || '{}');
+    const tid = parseInt(req.params.id);
+    if (cfg.contract_template_id === tid) cfg.contract_template_id = null;
+    if (cfg.w9_template_id === tid) cfg.w9_template_id = null;
+    db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+      .run(JSON.stringify(cfg));
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/docuseal/upload-template — upload PDF to DocuSeal as a new template
+app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ limit: '20mb' }), async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const { name, file } = req.body; // file = data:application/pdf;base64,...
+  if (!name || !file) return res.status(400).json({ error: '缺少 name 或 file' });
+  try {
+    const r = await dsealApiCall('POST', '/api/templates/pdf', {
+      name,
+      documents: [{ name: name + '.pdf', file }]
+    });
+    if (r.status !== 200 && r.status !== 201) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
+    // Save to local DB
+    const dsId = r.data?.id || r.data?.template_id;
+    if (dsId) {
+      db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id) VALUES (?, ?)').run(name, dsId);
+    }
+    res.json(r.data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/admin/docuseal/my-templates — list only user-uploaded templates from local DB
+app.get('/api/admin/docuseal/my-templates', requireAdmin, (req, res) => {
+  const rows = db.prepare('SELECT * FROM docuseal_templates ORDER BY created_at DESC').all();
+  res.json(rows);
+});
+
+// DELETE /api/admin/docuseal/my-templates/:id — delete from local DB and DocuSeal
+app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res) => {
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  // Delete from DocuSeal
+  if (dsealEnabled() && local.docuseal_template_id) {
+    try {
+      await dsealApiCall('DELETE', `/api/templates/${local.docuseal_template_id}`, null);
+    } catch (e) { console.error(`[DocuSeal] Failed to delete template ${local.docuseal_template_id}:`, e.message); }
+  }
+  // Clear from config if set as default
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  if (cfg.contract_template_id == local.docuseal_template_id) cfg.contract_template_id = null;
+  if (cfg.w9_template_id == local.docuseal_template_id) cfg.w9_template_id = null;
+  db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+    .run(JSON.stringify(cfg));
+  // Delete from local DB
+  db.prepare('DELETE FROM docuseal_templates WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
