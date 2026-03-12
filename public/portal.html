@@ -2058,7 +2058,15 @@ async function showApp() {
   document.getElementById('navTodos').style.display = '';
 
   updateSidebarBadges();
-  loadJobs();
+
+  // Handle hash navigation (e.g. #w9 from email/SMS link)
+  const _hash = window.location.hash.replace('#', '');
+  if (_hash === 'w9') {
+    showTab('compliance');
+    setTimeout(() => { showW9Form(); }, 300);
+  } else {
+    loadJobs();
+  }
 
   // Auto-refresh: when user comes back to this browser tab or window, reload current tab data
   let _lastAutoRefresh = 0;
@@ -4936,6 +4944,8 @@ async function submitW9(e) {
   const body = {};
   new FormData(form).forEach((v, k) => { body[k] = v; });
   body.signature_confirm = form.signature_confirm.checked ? '1' : '';
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ 提交中...'; }
   try {
     const r = await fetch('/api/worker/compliance/w9', {
       method: 'POST',
@@ -4943,9 +4953,25 @@ async function submitW9(e) {
       body: JSON.stringify(body)
     });
     const data = await r.json();
-    if (data.success) { showToast('✅ W-9 已提交，等待审核'); form.reset(); loadCompliance(); }
+    if (data.success) {
+      if (data.signUrl) {
+        // DocuSeal W-9 created — show pre-filled W-9 for signing
+        showToast('✅ W-9 信息已保存，请在新页面签署确认 / Info saved, please sign the W-9');
+        form.reset();
+        loadCompliance();
+        loadOnboarding();
+        // Open DocuSeal signing page
+        setTimeout(() => { window.open(data.signUrl, '_blank'); }, 500);
+      } else {
+        showToast('✅ W-9 已提交，等待审核');
+        form.reset();
+        loadCompliance();
+        loadOnboarding();
+      }
+    }
     else customAlert(data.error || '提交失败', '提交失败', '❌');
   } catch { customAlert('网络错误', '错误', '❌'); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '提交 W-9 / Submit'; } }
 }
 
 // ─── Onboarding / 待办事项 ───
