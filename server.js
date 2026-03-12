@@ -2377,31 +2377,37 @@ function getDsealConfigTemplateId(type) {
 }
 
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
-async function dsealSendW9Html({ workerName, workerEmail }) {
+async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip }) {
   const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
   if (templateId) {
     // Use existing DocuSeal template (official IRS W-9)
+    const fields = [{ name: 'w9_name', default_value: workerName, readonly: false }];
+    if (address) fields.push({ name: 'w9_address', default_value: address, readonly: false });
+    if (cityStateZip) fields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
     subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
       submitters: [
-        { role: 'First Party', name: workerName, email: workerEmail,
-          fields: [{ name: 'w9_name', default_value: workerName, readonly: false }] }
+        { role: 'First Party', name: workerName, email: workerEmail, fields }
       ]
     });
   } else {
     // Fallback: generate HTML template
     const w9Html = generateW9HtmlTemplate(workerName);
+    const fallbackFields = [
+      { name: 'w9_name', default_value: workerName, readonly: false },
+      { name: 'w9_date', default_value: todayDate, readonly: true }
+    ];
+    if (address) fallbackFields.push({ name: 'w9_address', default_value: address, readonly: false });
+    if (cityStateZip) fallbackFields.push({ name: 'w9_city_state_zip', default_value: cityStateZip, readonly: false });
     subRes = await dsealApiCall('POST', '/api/submissions/html', {
       name: `W-9 表格 - ${workerName}`,
       documents: [{ name: `W-9 Tax Form - ${workerName}`, html: w9Html, size: 'Letter' }],
       send_email: false,
       submitters: [
-        { role: 'Signer', name: workerName, email: workerEmail,
-          fields: [{ name: 'w9_name', default_value: workerName, readonly: false },
-                   { name: 'w9_date', default_value: todayDate, readonly: true }] }
+        { role: 'Signer', name: workerName, email: workerEmail, fields: fallbackFields }
       ]
     });
   }
@@ -4793,10 +4799,12 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     if (!w) return res.status(404).json({ error: 'Worker not found' });
     const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
+    const prefillAddress = req.body.address || '';
+    const prefillCityStateZip = req.body.city_state_zip || '';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
     const usingTemplate = !!(getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID);
-    const { submissionId, workerSignUrl } = await dsealSendW9Html({ workerName, workerEmail });
+    const { submissionId, workerSignUrl } = await dsealSendW9Html({ workerName, workerEmail, address: prefillAddress, cityStateZip: prefillCityStateZip });
     console.log(`[W-9] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}, template=${usingTemplate}`);
     db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
       visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP

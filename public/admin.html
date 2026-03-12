@@ -2470,6 +2470,20 @@ tr:hover td{background:var(--sky-light)}
     <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人邮箱（DocuSeal W-9 签署链接发送至此）：</label>
     <input id="w9WorkerEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="worker@email.com">
   </div>
+  <!-- W-9 Address pre-fill with Google validation -->
+  <div style="margin:.75rem 0;padding:.75rem;background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.5rem">📍 预填地址（带 Google 地址验证）：</label>
+    <input id="w9AddrStreet" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Street address (如: 123 Main St, Apt 4)">
+    <div style="display:flex;gap:.4rem">
+      <input id="w9AddrCity" style="flex:2;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="City">
+      <input id="w9AddrState" style="flex:.7;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;text-transform:uppercase" placeholder="State" maxlength="2">
+      <input id="w9AddrZip" style="flex:1;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="ZIP Code">
+    </div>
+    <div style="display:flex;align-items:center;gap:.5rem;margin-top:.4rem">
+      <button class="btn btn-sm" style="font-size:.78rem;padding:.2rem .7rem;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe" onclick="verifyW9Address()">🔍 验证地址</button>
+      <span id="w9AddrStatus" style="font-size:.78rem;color:var(--gray-400)">填写后点击验证，或发送时自动验证</span>
+    </div>
+  </div>
   <!-- W-9 Form Preview -->
   <div id="w9PreviewBox" style="display:none;margin:.5rem 0;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden">
     <div style="background:#f8fafc;padding:.4rem .75rem;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;justify-content:space-between">
@@ -13708,15 +13722,48 @@ function updateW9DsStatusUI(status) {
   }
 }
 
+async function verifyW9Address() {
+  const street = document.getElementById('w9AddrStreet').value.trim();
+  const city = document.getElementById('w9AddrCity').value.trim();
+  const state = document.getElementById('w9AddrState').value.trim();
+  const zip = document.getElementById('w9AddrZip').value.trim();
+  const statusEl = document.getElementById('w9AddrStatus');
+  if (!street && !city) { statusEl.textContent = '请先填写地址'; statusEl.style.color = 'var(--red)'; return false; }
+  statusEl.textContent = '验证中…'; statusEl.style.color = 'var(--gray-500)';
+  const result = await validateAddress({ street, city, state, zip });
+  if (!result.proceed) { statusEl.textContent = '已取消'; statusEl.style.color = 'var(--gray-400)'; return false; }
+  if (result.standardized) {
+    document.getElementById('w9AddrStreet').value = result.standardized.street + (result.standardized.street2 ? ', ' + result.standardized.street2 : '');
+    document.getElementById('w9AddrCity').value = result.standardized.city;
+    document.getElementById('w9AddrState').value = result.standardized.state;
+    document.getElementById('w9AddrZip').value = result.standardized.zip;
+  }
+  if (result.verified) { statusEl.innerHTML = '✅ 地址已验证'; statusEl.style.color = 'var(--green)'; }
+  else { statusEl.innerHTML = '⚠️ 地址未验证，将按原样提交'; statusEl.style.color = 'var(--orange)'; }
+  return true;
+}
+
 async function doSendW9() {
   if (!_onboardingWorkerId) return;
   const workerEmail = document.getElementById('w9WorkerEmail').value.trim();
   if (!workerEmail) { showToast('请填写工人邮箱', 'error'); return; }
+  // Validate address if filled
+  const street = document.getElementById('w9AddrStreet').value.trim();
+  const city = document.getElementById('w9AddrCity').value.trim();
+  const state = document.getElementById('w9AddrState').value.trim();
+  const zip = document.getElementById('w9AddrZip').value.trim();
+  if (street || city) {
+    const addrOk = await verifyW9Address();
+    if (!addrOk) return;
+  }
+  const address = document.getElementById('w9AddrStreet').value.trim();
+  const cityStateZip = [document.getElementById('w9AddrCity').value.trim(), document.getElementById('w9AddrState').value.trim()].filter(Boolean).join(', ')
+    + (document.getElementById('w9AddrZip').value.trim() ? ' ' + document.getElementById('w9AddrZip').value.trim() : '');
   if (!await showConfirm(`确认发送 W-9 DocuSeal 表格至 ${workerEmail}？\n\n工人将收到链接，在线填写 W-9 各字段并签署。`)) return;
   const btn = document.getElementById('w9SendBtn');
   btn.disabled = true; btn.textContent = '发送中…';
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-w9`, {
-    method: 'POST', body: JSON.stringify({ worker_email: workerEmail })
+    method: 'POST', body: JSON.stringify({ worker_email: workerEmail, address: address || '', city_state_zip: cityStateZip || '' })
   });
   btn.disabled = false;
   if (r && r.success) {
