@@ -2181,14 +2181,17 @@ async function dsealSendContractHtml({ contractText, docName, emailSubject, sign
   });
   const html = `<div style="font-family:Helvetica,Arial,sans-serif;font-size:11pt;line-height:1.5;max-width:700px;margin:0 auto;padding:20px">${htmlLines.join('\n')}</div>`;
 
+  const todayDate = new Date().toISOString().slice(0, 10);
   const subRes = await dsealApiCall('POST', '/api/submissions/html', {
     name: emailSubject || docName,
     documents: [{ name: docName, html, size: 'Letter' }],
     send_email: false,
     order: 'preserved',
     submitters: [
-      { role: 'First Party', name: signer1.name, email: signer1.email },
-      { role: 'Second Party', name: signer2.name, email: signer2.email }
+      { role: 'First Party', name: signer1.name, email: signer1.email,
+        fields: [{ name: 'date1', default_value: todayDate, readonly: true }] },
+      { role: 'Second Party', name: signer2.name, email: signer2.email,
+        fields: [{ name: 'date2', default_value: todayDate, readonly: true }] }
     ]
   });
   console.log(`[DocuSeal] submissions/html: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
@@ -4341,17 +4344,44 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
     if (!dsealEnabled()) return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, companySigned: onb.ds_company_signed_at });
     const { status, companySigned, partnerSigned, declineReason } = await dsealGetStatus(onb.ds_envelope_id);
+    // Determine granular status: completed only when BOTH signed
+    let effectiveStatus = status;
+    if (status === 'completed' && companySigned && partnerSigned) {
+      effectiveStatus = 'completed';
+    } else if (companySigned && !partnerSigned) {
+      effectiveStatus = 'company_signed';
+    } else if (!companySigned && partnerSigned) {
+      effectiveStatus = 'worker_signed';
+    } else if (status !== 'declined') {
+      effectiveStatus = 'sent';
+    }
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
-      .run(status, partnerSigned, companySigned, workerId);
-    if (status === 'completed') {
+      .run(effectiveStatus, partnerSigned, companySigned, workerId);
+    if (effectiveStatus === 'completed') {
       db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
         .run(workerId);
       syncOnboardedStatus(workerId);
+    } else if (effectiveStatus === 'company_signed') {
+      db.prepare(`UPDATE worker_onboarding SET admin_note='公司已签署，等待工人签署', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
+        .run(workerId);
     } else if (status === 'declined') {
       db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
         .run(`工人已拒签: ${declineReason || ''}`, workerId);
     }
-    res.json({ status, workerSigned: partnerSigned, companySigned, declineReason });
+    res.json({ status: effectiveStatus, workerSigned: partnerSigned, companySigned, declineReason });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: download current signed document from DocuSeal for onboarding contract
+app.get('/api/admin/worker-accounts/:id/contract-signed-pdf', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '合同未发送' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-contract-${workerId}.pdf"` });
+    res.send(signedBuf);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -10061,13 +10091,19 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
       if (isCompleted) {
         try {
           const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
-          db.prepare("UPDATE partner_files SET ds_status='completed', ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
-          db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
-          const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
-          if (pfRecord?.file_path) {
-            const signedBuf = await dsealDownloadDocument(submissionId);
-            fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
-            console.log(`[DocuSeal] Saved signed partner contract for file id=${pf.id}`);
+          // Verify BOTH parties actually signed before marking as completed
+          if (status === 'completed' && companySigned && partnerSigned) {
+            db.prepare("UPDATE partner_files SET ds_status='completed', ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
+            db.prepare("UPDATE partners SET active=1 WHERE id=(SELECT partner_id FROM partner_files WHERE id=?)").run(pf.id);
+            const pfRecord = db.prepare("SELECT file_path FROM partner_files WHERE id=?").get(pf.id);
+            if (pfRecord?.file_path) {
+              const signedBuf = await dsealDownloadDocument(submissionId);
+              fs.writeFileSync(path.join(docsDir, pfRecord.file_path), signedBuf);
+              console.log(`[DocuSeal] Saved signed partner contract for file id=${pf.id}`);
+            }
+          } else {
+            console.log(`[DocuSeal] Partner contract not fully completed (company=${!!companySigned}, partner=${!!partnerSigned}), updating partial status`);
+            db.prepare("UPDATE partner_files SET ds_company_signed_at=?, ds_partner_signed_at=? WHERE id=?").run(companySigned, partnerSigned, pf.id);
           }
         } catch (e) { console.error('[DocuSeal webhook] completion error:', e.message); }
       } else if (isSubmitterCompleted) {
@@ -10086,10 +10122,19 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
       if (isCompleted) {
         try {
           const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
-          db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
-            .run(partnerSigned, companySigned, wid);
-          syncOnboardedStatus(wid);
-          console.log(`[DocuSeal] Worker onboarding contract completed for worker ${wid}`);
+          // Verify BOTH parties actually signed before marking as completed
+          // (DocuSeal Cloud form.completed may fire per-submitter)
+          if (status === 'completed' && companySigned && partnerSigned) {
+            db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+              .run(partnerSigned, companySigned, wid);
+            syncOnboardedStatus(wid);
+            console.log(`[DocuSeal] Worker onboarding contract completed for worker ${wid}`);
+          } else {
+            // Only one party signed — treat as partial, update individual timestamps
+            console.log(`[DocuSeal] Worker contract not fully completed yet (company=${!!companySigned}, worker=${!!partnerSigned}), updating partial status`);
+            db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+              .run(partnerSigned, companySigned, wid);
+          }
         } catch (e) { console.error('[DocuSeal webhook] worker contract completion error:', e.message); }
       } else if (isSubmitterCompleted) {
         try {
