@@ -2234,6 +2234,188 @@ async function dsealSendContractHtml({ contractText, docName, emailSubject, sign
   return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
 }
 
+// ─── DocuSeal W-9 Template ───
+function generateW9HtmlTemplate(workerName) {
+  const fieldStyle = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const textFieldStyle = `${fieldStyle}width:100%;min-height:22px;`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;max-width:720px;margin:0 auto;padding:16px;color:#111">
+<div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
+  <div style="font-size:1.3rem;font-weight:900;line-height:1">W-9</div>
+  <div>
+    <div style="font-size:8.5pt;font-weight:700">Request for Taxpayer Identification Number and Certification</div>
+    <div style="font-size:7.5pt;color:#555">▶ Go to <em>www.irs.gov/FormW9</em> for instructions and the latest information.</div>
+  </div>
+  <div style="margin-left:auto;font-size:7.5pt;text-align:right">OMB No. 1545-0003</div>
+</div>
+
+<table style="width:100%;border-collapse:collapse;font-size:9pt">
+  <tr>
+    <td colspan="2" style="padding:3px 0">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>1</strong> Name (as shown on your income tax return). Name is required on this line; do not leave this line blank.</div>
+      <text-field name="w9_name" role="Signer" required="true" style="${textFieldStyle}" placeholder="${workerName || ''}"></text-field>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>2</strong> Business name/disregarded entity name, if different from above</div>
+      <text-field name="w9_business_name" role="Signer" style="${textFieldStyle}"></text-field>
+    </td>
+  </tr>
+  <tr>
+    <td style="width:60%;padding:3px 4px 3px 0;vertical-align:top">
+      <div style="font-size:8pt;margin-bottom:4px"><strong>3</strong> Federal tax classification of the person whose name is entered on line 1. Check only one of the following seven boxes.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:8pt">
+        <label><checkbox-field name="w9_class_individual" role="Signer" style="width:14px;height:14px"></checkbox-field> Individual/sole proprietor or single-member LLC</label>
+        <label><checkbox-field name="w9_class_c_corp" role="Signer" style="width:14px;height:14px"></checkbox-field> C Corporation</label>
+        <label><checkbox-field name="w9_class_s_corp" role="Signer" style="width:14px;height:14px"></checkbox-field> S Corporation</label>
+        <label><checkbox-field name="w9_class_partnership" role="Signer" style="width:14px;height:14px"></checkbox-field> Partnership</label>
+        <label><checkbox-field name="w9_class_trust" role="Signer" style="width:14px;height:14px"></checkbox-field> Trust/estate</label>
+        <label style="display:flex;align-items:center;gap:3px"><checkbox-field name="w9_class_llc" role="Signer" style="width:14px;height:14px"></checkbox-field> LLC. Tax classification:
+          <text-field name="w9_llc_type" role="Signer" style="${fieldStyle}width:40px;font-size:8pt" placeholder="C/S/P"></text-field>
+        </label>
+        <label style="display:flex;align-items:center;gap:3px"><checkbox-field name="w9_class_other" role="Signer" style="width:14px;height:14px"></checkbox-field> Other:
+          <text-field name="w9_class_other_desc" role="Signer" style="${fieldStyle}width:100px;font-size:8pt"></text-field>
+        </label>
+      </div>
+    </td>
+    <td style="width:40%;padding:3px 0 3px 8px;vertical-align:top;border-left:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:3px"><strong>4</strong> Exemptions (codes apply only to certain entities, not individuals)</div>
+      <div style="font-size:8pt;margin-bottom:2px">Exempt payee code (if any)</div>
+      <text-field name="w9_exempt_payee_code" role="Signer" style="${fieldStyle}width:80px"></text-field>
+      <div style="font-size:8pt;margin-top:4px;margin-bottom:2px">Exemption from FATCA reporting code (if any)</div>
+      <text-field name="w9_fatca_code" role="Signer" style="${fieldStyle}width:80px"></text-field>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>5</strong> Address (number, street, and apt. or suite no.) — See instructions.</div>
+      <text-field name="w9_address" role="Signer" required="true" style="${textFieldStyle}"></text-field>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>6</strong> City, state, and ZIP code</div>
+      <text-field name="w9_city_state_zip" role="Signer" required="true" style="${textFieldStyle}"></text-field>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>7</strong> List account number(s) here (optional)</div>
+      <text-field name="w9_account_numbers" role="Signer" style="${textFieldStyle}"></text-field>
+    </td>
+  </tr>
+</table>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin:8px 0;font-size:8.5pt">
+  <strong>Part I — Taxpayer Identification Number (TIN)</strong><br>
+  <span style="font-size:7.5pt">Enter your TIN in the appropriate box. For individuals, this is your social security number (SSN). For other entities, it is your employer identification number (EIN).</span>
+  <table style="width:100%;margin-top:6px;border-collapse:collapse">
+    <tr>
+      <td style="width:50%;padding-right:8px">
+        <div style="font-size:8pt;margin-bottom:2px">Social security number (SSN)</div>
+        <div style="display:flex;align-items:center;gap:3px">
+          <text-field name="w9_ssn_1" role="Signer" style="${fieldStyle}width:45px;text-align:center" placeholder="XXX"></text-field>
+          <span>–</span>
+          <text-field name="w9_ssn_2" role="Signer" style="${fieldStyle}width:30px;text-align:center" placeholder="XX"></text-field>
+          <span>–</span>
+          <text-field name="w9_ssn_3" role="Signer" style="${fieldStyle}width:50px;text-align:center" placeholder="XXXX"></text-field>
+        </div>
+      </td>
+      <td style="width:50%;padding-left:8px;border-left:1px solid #ccc">
+        <div style="font-size:8pt;margin-bottom:2px">Employer identification number (EIN)</div>
+        <div style="display:flex;align-items:center;gap:3px">
+          <text-field name="w9_ein_1" role="Signer" style="${fieldStyle}width:35px;text-align:center" placeholder="XX"></text-field>
+          <span>–</span>
+          <text-field name="w9_ein_2" role="Signer" style="${fieldStyle}width:70px;text-align:center" placeholder="XXXXXXX"></text-field>
+        </div>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin:8px 0;font-size:8.5pt">
+  <strong>Part II — Certification</strong><br>
+  <div style="font-size:7.5pt;margin:4px 0">Under penalties of perjury, I certify that: (1) The number shown on this form is my correct taxpayer identification number; (2) I am not subject to backup withholding; (3) I am a U.S. citizen or other U.S. person; (4) The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.</div>
+  <table style="width:100%;margin-top:6px">
+    <tr>
+      <td style="width:65%">
+        <div style="font-size:8pt;margin-bottom:2px">Signature of U.S. person ▶</div>
+        <signature-field name="w9_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      </td>
+      <td style="width:35%;padding-left:10px">
+        <div style="font-size:8pt;margin-bottom:2px">Date ▶</div>
+        <date-field name="w9_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<div style="font-size:7pt;color:#555;margin-top:6px">
+  General Instructions — Section references are to the Internal Revenue Code unless otherwise noted. Future developments: For the latest information about developments related to Form W-9 and its instructions, go to www.irs.gov/FormW9.
+</div>
+</div>`;
+}
+
+// Send W-9 form via DocuSeal HTML API — worker is the sole signer who fills in all fields
+async function dsealSendW9Html({ workerName, workerEmail }) {
+  const w9Html = generateW9HtmlTemplate(workerName);
+  const todayDate = new Date().toISOString().slice(0, 10);
+  const subRes = await dsealApiCall('POST', '/api/submissions/html', {
+    name: `W-9 表格 - ${workerName}`,
+    documents: [{ name: `W-9 Tax Form - ${workerName}`, html: w9Html, size: 'Letter' }],
+    send_email: false,
+    submitters: [
+      { role: 'Signer', name: workerName, email: workerEmail,
+        fields: [{ name: 'w9_name', default_value: workerName, readonly: false },
+                 { name: 'w9_date', default_value: todayDate, readonly: true }] }
+    ]
+  });
+  console.log(`[DocuSeal W-9] submissions/html: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
+  const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+  if (subRes.status >= 400 || !submitters.length) {
+    throw new Error(`DocuSeal W-9 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+  }
+  const signer = submitters[0];
+  const submissionId = subRes.data?.id || signer?.submission_id || '';
+  let workerSignUrl = signer?.embed_src || '';
+  if (!workerSignUrl && signer?.id) {
+    try {
+      const wPut = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: workerName });
+      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+    } catch (e) { console.error(`[DocuSeal W-9] Failed to get embed_src: ${e.message}`); }
+  }
+  const slug = signer?.slug || '';
+  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const directUrl = slug ? `${baseHost}/s/${slug}` : '';
+  const finalWorkerUrl = directUrl || workerSignUrl;
+  console.log(`[DocuSeal W-9] Worker sign URL: ${(finalWorkerUrl || 'NONE').substring(0, 100)}`);
+  return { submissionId: String(submissionId || signer?.id || ''), workerSignUrl: finalWorkerUrl };
+}
+
+async function dsealGetW9Status(submissionId) {
+  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取 W-9 状态失败 ${r.status}`);
+  const sub = r.data;
+  let status = sub.status === 'completed' ? 'completed' : 'sent';
+  let workerSigned = null, declineReason = '';
+  for (const s of (sub.submitters || [])) {
+    if (s.status === 'completed' && s.completed_at) workerSigned = s.completed_at;
+    if (s.status === 'declined') { status = 'declined'; declineReason = s.decline_reason || '已拒签'; }
+  }
+  return { status, workerSigned, declineReason, raw: sub };
+}
+
+async function dsealGetW9SignUrl(submissionId) {
+  const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+  if (r.status !== 200) throw new Error(`DocuSeal 获取 W-9 提交失败 ${r.status}`);
+  const signer = (r.data.submitters || [])[0];
+  if (!signer) throw new Error('DocuSeal W-9: 签署人未找到');
+  if (signer.embed_src) return signer.embed_src;
+  const u = await dsealApiCall('PUT', `/api/submitters/${signer.id}`, { name: signer.name });
+  if (u.status >= 400 || !u.data?.embed_src) throw new Error(`DocuSeal 获取 W-9 签署链接失败 ${u.status}`);
+  return u.data.embed_src;
+}
+
 async function dsealGetCompanySignUrl(submissionId) {
   // Get submission to find company submitter ID
   const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
@@ -4528,6 +4710,80 @@ app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (re
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(workerId, changedBy, 'contract', onb.ds_status || '已发送', '已作废', voidNote);
     res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── Admin: W-9 DocuSeal Endpoints ───
+
+// Send W-9 form to worker via DocuSeal
+app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置，请在 .env 设置 DOCUSEAL_API_KEY 和 DOCUSEAL_URL' });
+    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerEmail = req.body.worker_email || w.email || '';
+    if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
+    const { submissionId, workerSignUrl } = await dsealSendW9Html({ workerName, workerEmail });
+    console.log(`[W-9] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}`);
+    db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
+      visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
+      WHERE worker_account_id=? AND task_key='w9'`)
+      .run(submissionId, `W-9 DocuSeal 已发送给工人 (${new Date().toLocaleString('zh-CN')})`, workerSignUrl || '', workerId);
+    const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, changedBy, 'w9', '', '已发送', `W-9 DocuSeal 表格已发送至 ${workerEmail}`);
+    res.json({ success: true, submissionId, workerSignUrl });
+  } catch (e) {
+    console.error('[W-9 Send]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Get W-9 signing status from DocuSeal
+app.get('/api/admin/worker-accounts/:id/w9-status', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, ds_worker_signed_at FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    if (!dsealEnabled()) return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at });
+    const { status, workerSigned, declineReason } = await dsealGetW9Status(onb.ds_envelope_id);
+    db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+      .run(status, workerSigned, workerId);
+    if (status === 'completed') {
+      db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='W-9 已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+        .run(workerId);
+      syncOnboardedStatus(workerId);
+    } else if (status === 'declined') {
+      db.prepare(`UPDATE worker_onboarding SET admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+        .run(`工人已拒签 W-9: ${declineReason || ''}`, workerId);
+    }
+    res.json({ status, workerSigned, declineReason });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Download signed W-9 PDF from DocuSeal
+app.get('/api/admin/worker-accounts/:id/w9-signed-pdf', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const signedBuf = await dsealDownloadDocument(onb.ds_envelope_id);
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="signed-w9-${workerId}.pdf"` });
+    res.send(signedBuf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Get worker W-9 sign URL (resend link)
+app.get('/api/admin/worker-accounts/:id/w9-sign-url', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    const signUrl = await dsealGetW9SignUrl(onb.ds_envelope_id);
+    res.json({ signUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

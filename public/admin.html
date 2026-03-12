@@ -2406,6 +2406,27 @@ tr:hover td{background:var(--sky-light)}
   <div id="contractVersionsContent" style="margin-top:.75rem;max-height:70vh;overflow:auto"></div>
 </div></div>
 
+<!-- W-9 DocuSeal Send Modal -->
+<div class="modal-bg" id="w9SendModal"><div class="modal" style="max-width:520px">
+  <h2>📄 发送 W-9 DocuSeal — <span id="w9WorkerName" style="color:var(--sky)"></span></h2>
+  <div id="w9SendInfo" style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)">系统将通过 DocuSeal 向工人发送 W-9 表格，工人在线填写并签署后，管理员可下载已签 PDF。</div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人邮箱（DocuSeal W-9 签署链接发送至此）：</label>
+    <input id="w9WorkerEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="worker@email.com">
+  </div>
+  <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <div id="w9SignLinkBox" style="display:none;margin:.5rem 0">
+    <label style="font-size:.82rem;font-weight:700;display:block;margin-bottom:.2rem">工人签署链接：</label>
+    <a id="w9SignLink" href="#" target="_blank" style="font-size:.8rem;color:var(--sky);word-break:break-all"></a>
+  </div>
+  <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+    <button class="btn btn-green" id="w9SendBtn" onclick="doSendW9()">📤 发送 W-9</button>
+    <button class="btn" id="w9RefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshW9Status()">🔄 刷新签署状态</button>
+    <button class="btn" id="w9DownloadBtn" style="display:none;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="downloadSignedW9()">📥 下载已签 W-9</button>
+    <button class="btn" onclick="closeModal('w9SendModal')">关闭</button>
+  </div>
+</div></div>
+
 <!-- Customer Account Modal -->
 <div class="modal-bg" id="customerAccountModal"><div class="modal" style="max-width:520px">
   <h2 id="customerAccModalTitle">新建客户账户</h2>
@@ -12952,6 +12973,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
+            : t.key==='w9'
+            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openW9SendModal()">📄 ${t.ds_status==='completed'?'W-9 已完成':t.ds_status==='sent'?'查看/重发 W-9':'发送 DocuSeal W-9'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -13547,6 +13570,101 @@ async function voidContract() {
   } else {
     showToast('❌ ' + (r?.error || '作废失败'), 'error');
   }
+}
+
+// ─── W-9 DocuSeal Modal Functions ───
+async function openW9SendModal() {
+  if (!_onboardingWorkerId) return;
+  document.getElementById('w9SendModal').classList.add('show');
+  const w = _onboardingWorkerData;
+  document.getElementById('w9WorkerName').textContent = w ? (w.name || w.username || '') : '';
+  document.getElementById('w9WorkerEmail').value = (w && w.email) || '';
+  document.getElementById('w9DsStatus').style.display = 'none';
+  document.getElementById('w9SignLinkBox').style.display = 'none';
+  document.getElementById('w9RefreshBtn').style.display = 'none';
+  document.getElementById('w9DownloadBtn').style.display = 'none';
+  document.getElementById('w9SendBtn').textContent = '📤 发送 W-9';
+  // Load existing W-9 DocuSeal status if already sent
+  const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
+  if (tasks) {
+    const w9Task = tasks.find(t => t.key === 'w9');
+    if (w9Task && w9Task.ds_envelope_id && w9Task.ds_status) {
+      updateW9DsStatusUI(w9Task.ds_status);
+      document.getElementById('w9SendBtn').textContent = '📤 重新发送 W-9';
+      document.getElementById('w9RefreshBtn').style.display = '';
+      if (w9Task.ds_status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
+      if (w9Task.action_url) {
+        document.getElementById('w9SignLink').href = w9Task.action_url;
+        document.getElementById('w9SignLink').textContent = w9Task.action_url;
+        document.getElementById('w9SignLinkBox').style.display = '';
+      }
+    }
+  }
+}
+
+function updateW9DsStatusUI(status) {
+  const el = document.getElementById('w9DsStatus');
+  el.style.display = '';
+  if (status === 'completed') {
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+    el.innerHTML = '✅ W-9 已由工人签署完成';
+  } else if (status === 'sent') {
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe';
+    el.innerHTML = '📤 W-9 已发送，等待工人填写签署';
+  } else if (status === 'declined') {
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
+    el.innerHTML = '❌ 工人已拒签 W-9';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function doSendW9() {
+  if (!_onboardingWorkerId) return;
+  const workerEmail = document.getElementById('w9WorkerEmail').value.trim();
+  if (!workerEmail) { showToast('请填写工人邮箱', 'error'); return; }
+  if (!await showConfirm(`确认发送 W-9 DocuSeal 表格至 ${workerEmail}？\n\n工人将收到链接，在线填写 W-9 各字段并签署。`)) return;
+  const btn = document.getElementById('w9SendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-w9`, {
+    method: 'POST', body: JSON.stringify({ worker_email: workerEmail })
+  });
+  btn.disabled = false;
+  if (r && r.success) {
+    btn.textContent = '📤 重新发送 W-9';
+    showToast('✅ W-9 DocuSeal 已发送', 'success');
+    updateW9DsStatusUI('sent');
+    document.getElementById('w9RefreshBtn').style.display = '';
+    if (r.workerSignUrl) {
+      document.getElementById('w9SignLink').href = r.workerSignUrl;
+      document.getElementById('w9SignLink').textContent = r.workerSignUrl;
+      document.getElementById('w9SignLinkBox').style.display = '';
+    }
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '发送失败'), 'error');
+  }
+}
+
+async function refreshW9Status() {
+  if (!_onboardingWorkerId) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-status`);
+  if (r && r.status) {
+    updateW9DsStatusUI(r.status);
+    let info = `W-9 状态: ${r.status}`;
+    if (r.workerSigned) info += ` | 工人已签: ${new Date(r.workerSigned).toLocaleString('zh-CN')}`;
+    if (r.declineReason) info += ` | 拒签原因: ${r.declineReason}`;
+    showToast(info, 'info', 5000);
+    if (r.status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '获取状态失败'), 'error');
+  }
+}
+
+async function downloadSignedW9() {
+  if (!_onboardingWorkerId) return;
+  window.open(`/api/admin/worker-accounts/${_onboardingWorkerId}/w9-signed-pdf`, '_blank');
 }
 
 async function showContractVersions(workerId, workerName) {
