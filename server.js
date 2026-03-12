@@ -4588,7 +4588,7 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
       contract_content=?, visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
       WHERE worker_account_id=? AND task_key='contract'`)
-      .run(submissionId, content, `合同已创建，等待公司签署 (${new Date().toLocaleString('zh-CN')})`, companyEmbedSrc || '', workerId);
+      .run(submissionId, content, `合同已创建，等待公司签署 (${new Date().toLocaleString('zh-CN')})`, '', workerId);
     // Save contract version
     const changedBy = req.session && req.session.username ? req.session.username : 'admin';
     const lastVer = db.prepare('SELECT MAX(version_num) AS v FROM worker_contract_versions WHERE worker_account_id=?').get(workerId);
