@@ -2363,7 +2363,7 @@ function generateW9HtmlTemplate(workerName) {
 
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
 async function dsealSendW9Html({ workerName, workerEmail }) {
-  const templateId = process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
+  const templateId = process.env.DOCUSEAL_W9_TEMPLATE_ID || '3113927';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
   if (templateId) {
@@ -4739,7 +4739,7 @@ app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (re
 
 // Preview W-9 HTML template (admin can see the blank form before sending)
 app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) => {
-  const templateId = process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
+  const templateId = process.env.DOCUSEAL_W9_TEMPLATE_ID || '3113927';
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
   if (templateId) {
@@ -4771,7 +4771,7 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     const workerEmail = req.body.worker_email || w.email || '';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    const usingTemplate = !!(process.env.DOCUSEAL_W9_TEMPLATE_ID);
+    const usingTemplate = !!(process.env.DOCUSEAL_W9_TEMPLATE_ID || '3113927');
     const { submissionId, workerSignUrl } = await dsealSendW9Html({ workerName, workerEmail });
     console.log(`[W-9] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}, template=${usingTemplate}`);
     db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
