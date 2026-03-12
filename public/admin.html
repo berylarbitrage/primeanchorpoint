@@ -12978,13 +12978,11 @@ function renderOnboardingTasks(tasks) {
   const preInterviewKeys = ['phone_verify', 'email_verify', 'interview'];
   let assignedTasks = [];
   try { assignedTasks = JSON.parse((_onboardingWorkerData && _onboardingWorkerData.assigned_tasks) || '[]'); } catch {}
-  // Merge with current type definition so newly added tasks always appear
-  if (assignedTasks.length && _onboardingWorkerData) {
+  // Use current type definition as the authoritative task list
+  if (_onboardingWorkerData && _onboardingWorkerData.employment_type) {
     const empType = _onboardingWorkerData.employment_type;
     const typeTasks = empType === 'w2' ? W2_TASKS : empType === '1099' ? C1099_TASKS : [];
-    for (const tk of typeTasks) {
-      if (!assignedTasks.includes(tk)) assignedTasks.push(tk);
-    }
+    if (typeTasks.length) assignedTasks = [...typeTasks];
   }
   document.getElementById('onboardingTaskList').innerHTML = tasks.filter((t, idx) => {
     // Always show pre-interview steps
