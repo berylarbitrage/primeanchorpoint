@@ -2234,6 +2234,146 @@ async function dsealSendContractHtml({ contractText, docName, emailSubject, sign
   return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
 }
 
+async function dsealSendW9Html({ workerName, workerEmail }) {
+  const html = `<div style="font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10pt;line-height:1.4;max-width:720px;margin:0 auto;padding:20px">
+  <div style="display:flex;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
+    <div style="flex:1">
+      <div style="font-size:20pt;font-weight:700">W-9</div>
+      <div style="font-size:9pt;font-weight:700;margin-top:2px">Request for Taxpayer<br>Identification Number and Certification</div>
+      <div style="font-size:7pt;margin-top:2px">▶ Go to www.irs.gov/FormW9 for instructions and the latest information.</div>
+    </div>
+    <div style="text-align:right;font-size:8pt">
+      <div style="font-weight:700">OMB No. 1545-0003</div>
+    </div>
+  </div>
+
+  <div style="border:1px solid #000;padding:8px;margin-bottom:6px">
+    <div style="font-size:8pt;font-weight:700;margin-bottom:4px">1 Name (as shown on your income tax return). Name is required on this line; do not leave this line blank.</div>
+    <text-field name="w9_name" role="Second Party" style="width:100%;height:24px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></text-field>
+  </div>
+
+  <div style="border:1px solid #000;border-top:none;padding:8px;margin-bottom:6px">
+    <div style="font-size:8pt;font-weight:700;margin-bottom:4px">2 Business name/disregarded entity name, if different from above</div>
+    <text-field name="w9_business" role="Second Party" style="width:100%;height:24px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></text-field>
+  </div>
+
+  <div style="display:flex;border:1px solid #000;border-top:none;margin-bottom:6px">
+    <div style="flex:3;padding:8px;border-right:1px solid #000">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:6px">3 Federal tax classification of the person whose name is entered on line 1. Check only ONE of the following seven boxes.</div>
+      <div style="font-size:8pt;display:flex;flex-wrap:wrap;gap:4px 12px">
+        <label><checkbox-field name="w9_tax_individual" role="Second Party" style="display:inline-block;width:14px;height:14px;background:#ffffcc;border:1px solid #cca;"></checkbox-field> Individual/sole proprietor or single-member LLC</label>
+        <label><checkbox-field name="w9_tax_ccorp" role="Second Party" style="display:inline-block;width:14px;height:14px;background:#ffffcc;border:1px solid #cca;"></checkbox-field> C Corporation</label>
+        <label><checkbox-field name="w9_tax_scorp" role="Second Party" style="display:inline-block;width:14px;height:14px;background:#ffffcc;border:1px solid #cca;"></checkbox-field> S Corporation</label>
+        <label><checkbox-field name="w9_tax_partner" role="Second Party" style="display:inline-block;width:14px;height:14px;background:#ffffcc;border:1px solid #cca;"></checkbox-field> Partnership</label>
+        <label><checkbox-field name="w9_tax_trust" role="Second Party" style="display:inline-block;width:14px;height:14px;background:#ffffcc;border:1px solid #cca;"></checkbox-field> Trust/estate</label>
+      </div>
+      <div style="font-size:8pt;margin-top:6px">
+        <label><checkbox-field name="w9_tax_llc" role="Second Party" style="display:inline-block;width:14px;height:14px;background:#ffffcc;border:1px solid #cca;"></checkbox-field> LLC. Tax classification: <text-field name="w9_llc_class" role="Second Party" style="width:40px;height:18px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></text-field></label>
+      </div>
+      <div style="font-size:8pt;margin-top:4px">
+        <label><checkbox-field name="w9_tax_other" role="Second Party" style="display:inline-block;width:14px;height:14px;background:#ffffcc;border:1px solid #cca;"></checkbox-field> Other: <text-field name="w9_other_type" role="Second Party" style="width:120px;height:18px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></text-field></label>
+      </div>
+    </div>
+    <div style="flex:1;padding:8px">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">4 Exemptions (codes apply only to certain entities, not individuals)</div>
+      <div style="font-size:8pt;margin-bottom:4px">Exempt payee code (if any):</div>
+      <text-field name="w9_exempt_payee" role="Second Party" style="width:100%;height:20px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></text-field>
+      <div style="font-size:8pt;margin-top:6px;margin-bottom:4px">Exemption from FATCA reporting code (if any):</div>
+      <text-field name="w9_fatca_code" role="Second Party" style="width:100%;height:20px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></text-field>
+    </div>
+  </div>
+
+  <div style="border:1px solid #000;border-top:none;padding:8px;margin-bottom:6px">
+    <div style="font-size:8pt;font-weight:700;margin-bottom:4px">5 Address (number, street, and apt. or suite no.) — See instructions.</div>
+    <text-field name="w9_address" role="Second Party" style="width:100%;height:24px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></text-field>
+  </div>
+
+  <div style="border:1px solid #000;border-top:none;padding:8px;margin-bottom:6px">
+    <div style="font-size:8pt;font-weight:700;margin-bottom:4px">6 City, state, and ZIP code</div>
+    <text-field name="w9_city_state_zip" role="Second Party" style="width:100%;height:24px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></text-field>
+  </div>
+
+  <div style="border:1px solid #000;border-top:none;padding:8px;margin-bottom:6px">
+    <div style="font-size:8pt;font-weight:700;margin-bottom:4px">7 List account number(s) here (optional)</div>
+    <text-field name="w9_account" role="Second Party" style="width:100%;height:24px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></text-field>
+  </div>
+
+  <div style="border:2px solid #000;padding:10px;margin:16px 0">
+    <div style="font-size:11pt;font-weight:700;margin-bottom:8px">Part I — Taxpayer Identification Number (TIN)</div>
+    <div style="font-size:8.5pt;margin-bottom:8px">Enter your TIN in the appropriate box. The TIN provided must match the name given on line 1 to avoid backup withholding. For individuals, this is generally your social security number (SSN). For other entities, it is your employer identification number (EIN).</div>
+    <div style="display:flex;gap:20px;align-items:flex-start">
+      <div>
+        <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Social security number (SSN):</div>
+        <text-field name="w9_ssn" role="Second Party" style="width:200px;height:26px;display:inline-block;background:#ffffcc;border:1px solid #cca;font-size:12pt;"></text-field>
+      </div>
+      <div style="font-size:9pt;font-weight:700;padding-top:16px">or</div>
+      <div>
+        <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Employer identification number (EIN):</div>
+        <text-field name="w9_ein" role="Second Party" style="width:200px;height:26px;display:inline-block;background:#ffffcc;border:1px solid #cca;font-size:12pt;"></text-field>
+      </div>
+    </div>
+  </div>
+
+  <div style="border:2px solid #000;padding:10px;margin-bottom:16px">
+    <div style="font-size:11pt;font-weight:700;margin-bottom:8px">Part II — Certification</div>
+    <div style="font-size:8.5pt;margin-bottom:8px">Under penalties of perjury, I certify that:</div>
+    <ol style="font-size:8.5pt;margin:0 0 8px 20px;padding:0;line-height:1.5">
+      <li>The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and</li>
+      <li>I am not subject to backup withholding because: (a) I am exempt from backup withholding, or (b) I have not been notified by the Internal Revenue Service (IRS) that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and</li>
+      <li>I am a U.S. citizen or other U.S. person (defined in General Instructions); and</li>
+      <li>The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.</li>
+    </ol>
+    <div style="font-size:8pt;font-weight:700;margin-bottom:10px">Certification instructions. You must cross out item 2 above if you have been notified by the IRS that you are currently subject to backup withholding.</div>
+    <div style="display:flex;gap:20px;align-items:flex-end;margin-top:10px;border-top:1px solid #ccc;padding-top:10px">
+      <div style="flex:2">
+        <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Signature of U.S. person ▶</div>
+        <signature-field name="w9_signature" role="Second Party" style="width:100%;height:60px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></signature-field>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Date ▶</div>
+        <date-field name="w9_date" role="Second Party" style="width:100%;height:24px;display:inline-block;background:#ffffcc;border:1px solid #cca;"></date-field>
+      </div>
+    </div>
+  </div>
+
+  <div style="font-size:7pt;color:#666;border-top:1px solid #ccc;padding-top:8px">
+    <strong>General Instructions</strong><br>
+    Form W-9 (Rev. March 2024) — Department of the Treasury, Internal Revenue Service<br>
+    Purpose of Form: An individual or entity (Form W-9 requester) who is required to file an information return with the IRS must obtain your correct taxpayer identification number (TIN) which may be your social security number (SSN), individual taxpayer identification number (ITIN), adoption taxpayer identification number (ATIN), or employer identification number (EIN), to report on an information return the amount paid to you, or other amount reportable on an information return.
+  </div>
+</div>`;
+
+  const todayDate = new Date().toISOString().slice(0, 10);
+  const subRes = await dsealApiCall('POST', '/api/submissions/html', {
+    name: \`W-9 Tax Form — \${workerName}\`,
+    documents: [{ name: \`W-9 — \${workerName}\`, html, size: 'Letter' }],
+    send_email: false,
+    submitters: [
+      { role: 'Second Party', name: workerName, email: workerEmail,
+        fields: [{ name: 'w9_name', default_value: workerName }, { name: 'w9_date', default_value: todayDate, readonly: true }] }
+    ]
+  });
+  console.log(\`[DocuSeal W-9] submissions/html: status=\${subRes.status}\`);
+  const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+  if (subRes.status >= 400 || !submitters.length) {
+    throw new Error(\`DocuSeal W-9 创建失败 \${subRes.status}: \${JSON.stringify(subRes.data)}\`);
+  }
+  const submissionId = subRes.data?.id || submitters[0]?.submission_id || '';
+  const worker = submitters.find(s => s.role === 'Second Party') || submitters[0];
+  let signUrl = worker?.embed_src || '';
+  if (!signUrl && worker?.id) {
+    try {
+      const wPut = await dsealApiCall('PUT', \`/api/submitters/\${worker.id}\`, { name: workerName });
+      if (wPut.data?.embed_src) signUrl = wPut.data.embed_src;
+    } catch (e) { console.error(\`[DocuSeal W-9] Failed to get embed_src: \${e.message}\`); }
+  }
+  if (!signUrl && worker?.slug) {
+    const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\\./, '').replace(/\\/+$/, '');
+    signUrl = \`\${baseHost}/s/\${worker.slug}\`;
+  }
+  return { submissionId: String(submissionId), signUrl };
+}
+
 async function dsealGetCompanySignUrl(submissionId) {
   // Get submission to find company submitter ID
   const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
@@ -4529,6 +4669,58 @@ app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (re
       .run(workerId, changedBy, 'contract', onb.ds_status || '已发送', '已作废', voidNote);
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Send W-9 via DocuSeal
+app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+    const workerEmail = req.body.worker_email || w.email || '';
+    if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const { submissionId, signUrl } = await dsealSendW9Html({ workerName, workerEmail });
+    // Update onboarding task
+    db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', action_url=?, visible_to_worker=1, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
+      .run(submissionId, signUrl || '', `W-9 已发送至 ${workerEmail} (${new Date().toLocaleString('zh-CN')})`, workerId);
+    // Log to history
+    const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(workerId, changedBy, 'w9', '', '已发送', `W-9 已通过 DocuSeal 发送至 ${workerEmail}`);
+    // Send notification email
+    if (workerEmail) {
+      const signLink = signUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${signUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">填写 W-9 / Complete W-9 / Completar W-9</a></p>` : '';
+      await sendEmail(workerEmail,
+        `Prime Anchorpoint — 请填写 W-9 税表 / Please Complete W-9 / Complete el W-9`,
+        `${workerName}，请点击链接填写并签署 W-9 税表。\n${signUrl || ''}\n\n${workerName}, please click the link to complete your W-9 form.\n${signUrl || ''}\n\n${workerName}, haga clic en el enlace para completar su formulario W-9.\n${signUrl || ''}`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+          <h2 style="color:#1a1a1a;text-align:center">请填写 W-9 税表</h2>
+          <p>您好 ${workerName}，请填写并签署 W-9 税表（纳税人识别号申请表）。</p>
+          ${signLink}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Please Complete Your W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please complete and sign the W-9 form (Request for Taxpayer Identification Number).</p>
+          ${signLink}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Complete el Formulario W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hola ${workerName}, complete y firme el formulario W-9 (Solicitud de Número de Identificación del Contribuyente).</p>
+          ${signLink}
+          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+        </div>`
+      );
+    }
+    // Send SMS
+    const workerPhone = w.phone || '';
+    if (workerPhone) {
+      await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请填写 W-9 税表 / Please complete your W-9 / Complete su W-9${signUrl ? '\n' + signUrl : ''}\nReply STOP to opt out.`);
+    }
+    res.json({ success: true, submissionId, signUrl });
+  } catch (e) {
+    console.error('[W-9 send error]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Worker: view own onboarding tasks (only visible ones)
