@@ -13620,15 +13620,30 @@ async function openW9SendModal() {
   const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
   if (tasks) {
     const w9Task = tasks.find(t => t.key === 'w9');
-    if (w9Task && w9Task.ds_envelope_id && w9Task.ds_status) {
-      updateW9DsStatusUI(w9Task.ds_status);
+    if (w9Task && w9Task.ds_envelope_id) {
       document.getElementById('w9SendBtn').textContent = '📤 重新发送 W-9';
       document.getElementById('w9RefreshBtn').style.display = '';
-      if (w9Task.ds_status === 'completed') document.getElementById('w9DownloadBtn').style.display = '';
       if (w9Task.action_url) {
         document.getElementById('w9SignLink').href = w9Task.action_url;
         document.getElementById('w9SignLink').textContent = w9Task.action_url;
         document.getElementById('w9SignLinkBox').style.display = '';
+      }
+      // Always auto-poll DocuSeal for current status when modal opens —
+      // so if worker already signed, the download button appears immediately
+      updateW9DsStatusUI('checking');
+      try {
+        const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/w9-status`);
+        if (r && r.status) {
+          updateW9DsStatusUI(r.status);
+          if (r.status === 'completed') {
+            document.getElementById('w9DownloadBtn').style.display = '';
+            refreshOnboardingModal();
+          }
+        } else {
+          updateW9DsStatusUI(w9Task.ds_status || 'sent');
+        }
+      } catch (e) {
+        updateW9DsStatusUI(w9Task.ds_status || 'sent');
       }
     }
   }
@@ -13636,10 +13651,13 @@ async function openW9SendModal() {
 
 function updateW9DsStatusUI(status) {
   const el = document.getElementById('w9DsStatus');
-  el.style.display = '';
+  el.style.display = 'block';
   if (status === 'completed') {
-    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
-    el.innerHTML = '✅ W-9 已由工人签署完成';
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.88rem;font-weight:700;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+    el.innerHTML = '✅ W-9 已由工人签署完成 — 点击下方「下载已签 W-9」查看';
+  } else if (status === 'checking') {
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#f8fafc;color:var(--gray-500);border:1px solid var(--gray-200)';
+    el.innerHTML = '🔄 正在查询 DocuSeal 最新状态…';
   } else if (status === 'sent') {
     el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe';
     el.innerHTML = '📤 W-9 已发送，等待工人填写签署';
@@ -13647,7 +13665,8 @@ function updateW9DsStatusUI(status) {
     el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#fef2f2;color:#dc2626;border:1px solid #fecaca';
     el.innerHTML = '❌ 工人已拒签 W-9';
   } else {
-    el.style.display = 'none';
+    el.style.cssText = 'display:block;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem;background:#f8fafc;color:var(--gray-500);border:1px solid var(--gray-200)';
+    el.innerHTML = '📋 W-9 状态：' + (status || '未知');
   }
 }
 
