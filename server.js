@@ -4321,8 +4321,9 @@ app.get('/api/admin/worker-accounts/:id/contract-sign-url', requireAdmin, async 
     const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(workerId);
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
     const signUrl = await dsealGetCompanySignUrl(onb.ds_envelope_id);
+    const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
     console.log(`[CompanySign] workerId=${workerId}, submissionId=${onb.ds_envelope_id}, signUrl=${signUrl ? signUrl.substring(0, 80) + '...' : 'NULL'}`);
-    res.json({ signUrl });
+    res.json({ signUrl, companyName });
   } catch (e) { console.error('[CompanySign Error]', e.message); res.status(500).json({ error: e.message }); }
 });
 
