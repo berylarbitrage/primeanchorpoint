@@ -12915,7 +12915,7 @@ async function refreshOnboardingModal() {
 }
 
 function renderOnboardingTasks(tasks) {
-  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂' };
+  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂', work_auth:'📑' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
     locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
@@ -12985,6 +12985,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : t.key==='w9'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openW9SendModal()">📄 ${t.ds_status==='completed'?'W-9 已完成':t.ds_status==='sent'?'查看/重发 W-9':'发送 DocuSeal W-9'}</button>`
+            : t.key==='work_auth'
+            ? `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;font-weight:700" onclick="toggleOnboardingVisibility('work_auth',${isVisible?0:1})">${isVisible?'📑 已发送认证调查':'📑 发送 Work Auth 认证'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -13040,7 +13042,7 @@ async function doChangeEmploymentType(newType) {
   });
 
   // Waive tasks not applicable to new type
-  const tasksToWaive = newType === 'w2' ? ['w9'] : ['i9', 'ead_upload', 'gusto'];
+  const tasksToWaive = newType === 'w2' ? ['w9', 'work_auth'] : ['i9', 'ead_upload', 'gusto'];
   for (const key of tasksToWaive) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
@@ -13048,7 +13050,7 @@ async function doChangeEmploymentType(newType) {
   }
 
   // Reset previously waived tasks that now apply
-  const tasksToReset = newType === 'w2' ? ['i9', 'ead_upload', 'gusto'] : ['w9'];
+  const tasksToReset = newType === 'w2' ? ['i9', 'ead_upload', 'gusto'] : ['w9', 'work_auth'];
   for (const key of tasksToReset) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
@@ -13101,7 +13103,7 @@ function selectEmploymentType(type) {
 
 // Onboarding tasks auto-assigned per employment type
 const W2_TASKS = ['contract', 'background_check', 'persona_verify', 'i9', 'ead_upload', 'work_permit', 'gusto'];
-const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify', 'work_permit'];
+const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify', 'work_permit', 'work_auth'];
 
 async function openInterviewCompleteModal() {
   if (!_onboardingWorkerId) return;
