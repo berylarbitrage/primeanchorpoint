@@ -2154,6 +2154,66 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
 }
 
+// Send contract via DocuSeal HTML API — converts plain text to HTML with field tags,
+// so DocuSeal reliably creates interactive signature/date fields.
+async function dsealSendContractHtml({ contractText, docName, emailSubject, signer1, signer2 }) {
+  // Convert plain text contract to HTML, replacing field tags with DocuSeal HTML elements
+  const lines = (contractText || '').split('\n');
+  const htmlLines = lines.map(line => {
+    let l = line
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      // Replace DocuSeal text tags with HTML field elements
+      .replace(/\{\{sig1;role=First Party;type=signature\}\}/g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 40px"></signature-field>')
+      .replace(/\{\{date1;role=First Party;type=date\}\}/g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px"></date-field>')
+      .replace(/\{\{sig2;role=Second Party;type=signature\}\}/g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 40px"></signature-field>')
+      .replace(/\{\{date2;role=Second Party;type=date\}\}/g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px"></date-field>')
+      // Also handle legacy /sig1/ etc.
+      .replace(/\/sig1\//g, '<signature-field name="sig1" role="First Party" style="width: 200px; height: 40px"></signature-field>')
+      .replace(/\/date1\//g, '<date-field name="date1" role="First Party" style="width: 120px; height: 20px"></date-field>')
+      .replace(/\/sig2\//g, '<signature-field name="sig2" role="Second Party" style="width: 200px; height: 40px"></signature-field>')
+      .replace(/\/date2\//g, '<date-field name="date2" role="Second Party" style="width: 120px; height: 20px"></date-field>');
+    if (!l.trim()) return '<br>';
+    // Headings
+    const trimmed = line.trim();
+    if (/^[A-Z][A-Z\s]{3,}$/.test(trimmed)) return `<h2 style="text-align:center;margin:16px 0 8px">${l}</h2>`;
+    if (/^\d+\.\s/.test(trimmed)) return `<p style="margin:8px 0 2px"><strong>${l}</strong></p>`;
+    return `<p style="margin:2px 0">${l}</p>`;
+  });
+  const html = `<div style="font-family:Helvetica,Arial,sans-serif;font-size:11pt;line-height:1.5;max-width:700px;margin:0 auto;padding:20px">${htmlLines.join('\n')}</div>`;
+
+  const subRes = await dsealApiCall('POST', '/api/submissions/html', {
+    name: emailSubject || docName,
+    documents: [{ name: docName, html, size: 'Letter' }],
+    send_email: false,
+    order: 'preserved',
+    submitters: [
+      { role: 'First Party', name: signer1.name, email: signer1.email },
+      { role: 'Second Party', name: signer2.name, email: signer2.email }
+    ]
+  });
+  console.log(`[DocuSeal] submissions/html: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
+  const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+  if (subRes.status >= 400 || !submitters.length) {
+    throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+  }
+  console.log(`[DocuSeal] Submitters: ${JSON.stringify(submitters.map(s => ({ role: s.role, id: s.id, slug: s.slug, embed_src: (s.embed_src||'').substring(0,80) })))}`);
+  const submissionId = subRes.data?.id || submitters[0]?.submission_id || '';
+  const company = submitters.find(s => s.role === 'First Party') || submitters[0];
+  const worker = submitters.find(s => s.role === 'Second Party');
+  let workerSignUrl = worker?.embed_src || '';
+  if (!workerSignUrl && worker?.id) {
+    try {
+      const wPut = await dsealApiCall('PUT', `/api/submitters/${worker.id}`, { name: worker.name || signer2.name });
+      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+    } catch (e) { console.error(`[DocuSeal] Failed to get worker embed_src: ${e.message}`); }
+  }
+  const workerSlug = worker?.slug || '';
+  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
+  const finalWorkerUrl = workerDirectUrl || workerSignUrl;
+  return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
+}
+
 async function dsealGetCompanySignUrl(submissionId) {
   // Get submission to find company submitter ID
   const r = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
@@ -4240,21 +4300,16 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     // Use provided content or generate default
     const empType = w.employment_type || 'w2';
     const dateStr = new Date().toISOString().slice(0, 10);
-    let content = req.body.content || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
-    // Ensure DocuSeal text field tags are used (replace legacy DocuSign anchors if present)
-    content = content
-      .replace(/\/sig1\//g, '{{sig1;role=First Party;type=signature}}')
-      .replace(/\/date1\//g, '{{date1;role=First Party;type=date}}')
-      .replace(/\/sig2\//g, '{{sig2;role=Second Party;type=signature}}')
-      .replace(/\/date2\//g, '{{date2;role=Second Party;type=date}}');
-    // Build PDF
+    const content = req.body.content || generateWorkerContractText({ workerName, companyName, employmentType: empType, dateStr, position: '' });
+    // Also build PDF for local preview/archive
     const pdfBuf = buildContractPdf(content);
     const filename = `worker-contract-${workerId}-${Date.now()}.pdf`;
     const docPath = path.join(docsDir, filename);
     fs.writeFileSync(docPath, pdfBuf);
-    // Send via DocuSeal
-    const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendEnvelope({
-      docPath, docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}.pdf`,
+    // Send via DocuSeal HTML API — converts text to HTML with proper field tags
+    const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendContractHtml({
+      contractText: content,
+      docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}`,
       emailSubject: `请签署合同 / Please Sign — ${workerName} × ${companyName}`,
       signer1: { email: companyEmail, name: companyName },
       signer2: { email: workerEmail, name: workerName }
