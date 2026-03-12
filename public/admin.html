@@ -12791,6 +12791,7 @@ async function loadWorkerAccounts() {
       ${complianceBadge2('DL', c.drivers_license)}
       ${complianceBadge2('W9', c.w9)}
       ${complianceBadge2('I9', c.i9)}
+      ${w.contract_version_count > 0 ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">协议(${w.contract_version_count})</span>` : ''}
     </div></td>
     <td style="font-size:.8rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer" onchange="updateWorkerPayMethod(${w.id},this.value)">
       <option value="cash" ${(w.payment_method||'cash')==='cash'?'selected':''}>💵 现金</option>
@@ -12942,7 +12943,7 @@ function renderOnboardingTasks(tasks) {
           ${canReset?`<button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-500)" onclick="confirmOnboardingReset(${tk},${tt})">↩️ 重置</button>`:''}
           <button class="btn btn-sm" style="background:#f0f9ff;color:var(--sky);border:1px solid #bae6fd" onclick="openOnboardingNote('${t.key}',${JSON.stringify(t.admin_note||'').replace(/</g,'&lt;')},${JSON.stringify(t.action_url||'').replace(/</g,'&lt;')},${needsUrl})">📝 备注${needsUrl?'/链接':''}</button>
           ${t.key==='contract'
-            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button><button class="btn btn-sm" style="background:#faf5ff;color:#7c3aed;border:1px solid #e9d5ff" onclick="showContractVersions()">📜 协议历史</button>`
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-weight:700" onclick="openContractSendModal()">✍️ ${t.ds_status==='sent'?'查看/重发合同':t.ds_status==='completed'?'已签署':t.ds_status==='company_signed'?'公司已签/等待工人':t.ds_status==='worker_signed'?'工人已签/等待公司':'发送合同'}</button>`
             : t.key==='persona_verify'
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
@@ -13315,7 +13316,9 @@ async function openContractSendModal() {
   document.getElementById('contractViewSignedBtn').style.display = 'none';
   document.getElementById('contractRefreshBtn').style.display = 'none';
   document.getElementById('contractVoidBtn').style.display = 'none';
+  document.getElementById('contractPdfPreview').style.display = 'none';
   document.getElementById('contractSendBtn').style.display = '';
+  document.getElementById('contractSendBtn').textContent = '📤 发送合同';
   const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-preview`);
   if (!r) { document.getElementById('contractContentEditor').value = '加载失败'; return; }
   document.getElementById('contractContentEditor').value = r.content || '';
@@ -13533,21 +13536,28 @@ async function voidContract() {
     showToast('✅ 合同已作废', 'success');
     document.getElementById('contractDsStatus').style.display = 'none';
     document.getElementById('contractSignBtn').style.display = 'none';
+    document.getElementById('contractViewSignedBtn').style.display = 'none';
     document.getElementById('contractRefreshBtn').style.display = 'none';
     document.getElementById('contractVoidBtn').style.display = 'none';
+    document.getElementById('contractPdfPreview').style.display = 'none';
+    document.getElementById('contractSendBtn').textContent = '📤 发送合同';
     refreshOnboardingModal();
   } else {
     showToast('❌ ' + (r?.error || '作废失败'), 'error');
   }
 }
 
-async function showContractVersions() {
-  if (!_onboardingWorkerId) return;
+async function showContractVersions(workerId, workerName) {
+  const wid = workerId || _onboardingWorkerId;
+  if (!wid) return;
   const content = document.getElementById('contractVersionsContent');
   content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">加载中…</div>';
   document.getElementById('contractVersionsModal').classList.add('show');
+  if (workerName) {
+    document.querySelector('#contractVersionsModal h2').textContent = `📜 协议历史 — ${workerName}`;
+  }
   try {
-    const rows = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-versions`);
+    const rows = await api(`/admin/worker-accounts/${wid}/contract-versions`);
     if (!rows || !rows.length) {
       content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无协议记录</div>';
       return;

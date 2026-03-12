@@ -3819,6 +3819,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     WHERE w.referred_by=?
       AND (SELECT COALESCE(SUM(t.total_hours),0) FROM time_entries t WHERE t.employee_id=e.id AND t.status='closed') >= ?
   `);
+  const getContractInfo = db.prepare("SELECT ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'");
+  const getContractVersionCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_contract_versions WHERE worker_account_id=?");
 
   const enriched = workers.map(w => {
     const interview = getInterview.get(w.id);
@@ -3826,6 +3828,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const skills = getSkills.all(w.id);
     const refCount = getReferralCount.get(w.id);
     const qualCount = getQualifiedReferrals.get(w.id, refConfig.min_hours_to_qualify);
+    const contractInfo = getContractInfo.get(w.id);
+    const contractVerCount = getContractVersionCount.get(w.id);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -3837,7 +3841,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       skills: skills || [],
       referral_count: refCount?.cnt || 0,
       qualified_referrals: qualCount?.cnt || 0,
-      referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral
+      referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral,
+      contract_ds_status: contractInfo?.ds_status || '',
+      contract_version_count: contractVerCount?.cnt || 0
     };
   });
 
