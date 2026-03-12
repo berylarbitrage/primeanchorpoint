@@ -4584,11 +4584,12 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
       signer2: { email: workerEmail, name: workerName }
     });
     console.log(`[Contract] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}`);
-    // Update onboarding record — store workerSignUrl for later use when company finishes signing
+    // Store worker's sign URL in action_url so the portal can show the correct signing link.
+    // companyEmbedSrc is only needed for the admin signing flow; it's fetched on demand via /contract-sign-url.
     db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
       contract_content=?, visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
       WHERE worker_account_id=? AND task_key='contract'`)
-      .run(submissionId, content, `合同已创建，等待公司签署 (${new Date().toLocaleString('zh-CN')})`, '', workerId);
+      .run(submissionId, content, `合同已创建，等待公司签署 (${new Date().toLocaleString('zh-CN')})`, workerSignUrl || '', workerId);
     // Save contract version
     const changedBy = req.session && req.session.username ? req.session.username : 'admin';
     const lastVer = db.prepare('SELECT MAX(version_num) AS v FROM worker_contract_versions WHERE worker_account_id=?').get(workerId);
@@ -4819,6 +4820,38 @@ app.get('/api/worker/onboarding', requireWorker, (req, res) => {
 
   const tasks = getOnboardingTasks(req.workerId).filter(t => t.visible_to_worker !== 0);
   res.json(tasks);
+});
+
+// Worker: get their own contract signing URL (fresh from DocuSeal)
+app.get('/api/worker/contract-sign-url', requireWorker, async (req, res) => {
+  try {
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, action_url FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(req.workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: '合同未发送' });
+    if (onb.ds_status === 'completed') return res.status(400).json({ error: '合同已完成签署' });
+    // Return stored URL first (fast path); also refresh from DocuSeal if enabled
+    let signUrl = onb.action_url || '';
+    if (dsealEnabled()) {
+      try {
+        const subData = await dsealApiCall('GET', `/api/submissions/${onb.ds_envelope_id}`, null);
+        const workerSub = (subData.data?.submitters || []).find(s => s.role === 'Second Party');
+        if (workerSub) {
+          if (workerSub.embed_src) { signUrl = workerSub.embed_src; }
+          else if (workerSub.id) {
+            const wPut = await dsealApiCall('PUT', `/api/submitters/${workerSub.id}`, { name: workerSub.name });
+            if (wPut.data?.embed_src) signUrl = wPut.data.embed_src;
+          }
+          if (!signUrl && workerSub.slug) {
+            const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+            signUrl = `${baseHost}/s/${workerSub.slug}`;
+          }
+          // Update stored URL
+          if (signUrl) db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'").run(signUrl, req.workerId);
+        }
+      } catch (e) { console.error('[worker contract-sign-url]', e.message); }
+    }
+    if (!signUrl) return res.status(404).json({ error: '签署链接暂不可用，请稍后再试' });
+    res.json({ signUrl, dsStatus: onb.ds_status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Worker: submit a task (marks as submitted, pending admin review)
