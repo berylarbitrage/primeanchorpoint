@@ -13281,7 +13281,7 @@ function updateContractDsStatusUI(status) {
     el.innerHTML = '✅ 合同已由双方签署完成';
   } else if (status === 'sent') {
     el.style.background = '#dbeafe'; el.style.color = '#1d4ed8'; el.style.border = '1px solid #bfdbfe';
-    el.innerHTML = '📤 合同已发送，等待签署…';
+    el.innerHTML = '📤 合同已创建，请先完成公司签署（公司签完后系统自动通知工人）';
   } else if (status === 'declined') {
     el.style.background = '#fef2f2'; el.style.color = '#dc2626'; el.style.border = '1px solid #fecaca';
     el.innerHTML = '❌ 工人已拒签';
@@ -13322,10 +13322,7 @@ async function doSendContract() {
   });
   btn.disabled = false; btn.textContent = '📤 重新发送合同';
   if (r && r.success) {
-    const parts = ['📧 签署邮件 ✓'];
-    if (r.emailSent) parts.push('📧 通知邮件 ✓');
-    parts.push(r.smsSent ? '📱 短信通知 ✓' : '📱 短信 ✗');
-    showToast(`✅ 合同已发送，请先完成公司签署\n${parts.join('  ')}`, 'success', 6000);
+    showToast('✅ 合同已创建，请先完成公司签署。\n公司签署完成后，系统将自动通知工人签署。', 'success', 6000);
     updateContractDsStatusUI('sent');
     document.getElementById('contractSignBtn').style.display = '';
     document.getElementById('contractRefreshBtn').style.display = '';
