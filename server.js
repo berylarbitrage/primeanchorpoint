@@ -2114,29 +2114,60 @@ function dsealGetPdfPageCount(docPath) {
 async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, signer2 }) {
   const docBase64 = 'data:application/pdf;base64,' + fs.readFileSync(docPath).toString('base64');
   const lastPage = dsealGetPdfPageCount(docPath);
-  // DocuSeal page is 0-based index
-  const sigPage = lastPage - 1;
-  // Step 1: Create template from PDF with fields defined inline
+
+  // Step 1: Create template from PDF
   const tmplRes = await dsealApiCall('POST', '/api/templates/pdf', {
     name: emailSubject || docName,
-    documents: [{ name: docName, file: docBase64 }],
-    fields: [
-      { name: 'Company Signature', type: 'signature', role: 'First Party', required: true,
-        areas: [{ page: sigPage, x: 0.08, y: 0.75, w: 0.35, h: 0.06 }] },
-      { name: 'Company Date', type: 'date', role: 'First Party', required: true,
-        areas: [{ page: sigPage, x: 0.08, y: 0.82, w: 0.25, h: 0.04 }] },
-      { name: 'Worker Signature', type: 'signature', role: 'Second Party', required: true,
-        areas: [{ page: sigPage, x: 0.55, y: 0.75, w: 0.35, h: 0.06 }] },
-      { name: 'Worker Date', type: 'date', role: 'Second Party', required: true,
-        areas: [{ page: sigPage, x: 0.55, y: 0.82, w: 0.25, h: 0.04 }] }
-    ]
+    documents: [{ name: docName, file: docBase64 }]
   });
   if (tmplRes.status >= 400 || !tmplRes.data?.id) {
     throw new Error(`DocuSeal 模板创建失败 ${tmplRes.status}: ${JSON.stringify(tmplRes.data)}`);
   }
   const templateId = tmplRes.data.id;
-  console.log(`[DocuSeal] Template created id=${templateId}, lastPage=${lastPage}, fields=${(tmplRes.data.fields||[]).length}, response_keys=${Object.keys(tmplRes.data).join(',')}`);
-  // Step 2: Create submission with two submitters
+  console.log(`[DocuSeal] Template created id=${templateId}, lastPage=${lastPage}, response_keys=${Object.keys(tmplRes.data).join(',')}, full=${JSON.stringify(tmplRes.data).substring(0, 500)}`);
+
+  // Step 2: GET template to find document attachment_uuid
+  const getRes = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
+  console.log(`[DocuSeal] GET template: status=${getRes.status}, keys=${Object.keys(getRes.data||{}).join(',')}, schema=${JSON.stringify(getRes.data?.schema).substring(0, 300)}, documents=${JSON.stringify(getRes.data?.documents).substring(0, 300)}, fields=${JSON.stringify(getRes.data?.fields).substring(0, 300)}`);
+  // Find attachment_uuid from schema or documents
+  const schema = getRes.data?.schema || [];
+  const documents = getRes.data?.documents || [];
+  const attachUuid = schema[0]?.attachment_uuid || documents[0]?.uuid || '';
+  console.log(`[DocuSeal] attachment_uuid=${attachUuid}`);
+
+  // Step 3: PUT to add signature/date fields
+  const sigPage = lastPage - 1; // DocuSeal uses 0-based page index
+  const mkArea = (page, x, y, w, h) => {
+    const area = { page, x, y, w, h };
+    if (attachUuid) area.attachment_uuid = attachUuid;
+    return area;
+  };
+  const updRes = await dsealApiCall('PUT', `/api/templates/${templateId}`, {
+    fields: [
+      { name: 'Company Signature', type: 'signature', role: 'First Party', required: true,
+        areas: [mkArea(sigPage, 0.08, 0.75, 0.35, 0.06)] },
+      { name: 'Company Date', type: 'date', role: 'First Party', required: true,
+        areas: [mkArea(sigPage, 0.08, 0.82, 0.25, 0.04)] },
+      { name: 'Worker Signature', type: 'signature', role: 'Second Party', required: true,
+        areas: [mkArea(sigPage, 0.55, 0.75, 0.35, 0.06)] },
+      { name: 'Worker Date', type: 'date', role: 'Second Party', required: true,
+        areas: [mkArea(sigPage, 0.55, 0.82, 0.25, 0.04)] }
+    ]
+  });
+  console.log(`[DocuSeal] Template field update: status=${updRes.status}, fields=${(updRes.data?.fields||[]).length}, response=${JSON.stringify(updRes.data).substring(0, 400)}`);
+  if (updRes.status >= 400) {
+    console.error(`[DocuSeal] Field update FAILED: ${JSON.stringify(updRes.data)}`);
+  }
+
+  // Step 4: Verify template has fields before creating submission
+  const verifyRes = await dsealApiCall('GET', `/api/templates/${templateId}`, null);
+  const fieldCount = (verifyRes.data?.fields || []).length;
+  console.log(`[DocuSeal] Template verify: fields=${fieldCount}, field_names=${(verifyRes.data?.fields||[]).map(f=>f.name).join(',')}`);
+  if (fieldCount === 0) {
+    throw new Error('DocuSeal 模板字段创建失败，模板无字段');
+  }
+
+  // Step 5: Create submission with two submitters
   const subRes = await dsealApiCall('POST', '/api/submissions', {
     template_id: templateId,
     send_email: true,
