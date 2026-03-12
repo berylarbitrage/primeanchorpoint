@@ -2238,6 +2238,7 @@ async function dsealSendContractHtml({ contractText, docName, emailSubject, sign
 function generateW9HtmlTemplate(workerName) {
   const fieldStyle = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
   const textFieldStyle = `${fieldStyle}width:100%;min-height:22px;`;
+  const roStyle = 'border:1px solid #ccc;border-radius:3px;padding:2px 4px;background:#f0f0f0;min-height:20px;display:inline-block;color:#888;font-size:8pt;';
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;max-width:720px;margin:0 auto;padding:16px;color:#111">
 <div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
   <div style="font-size:1.3rem;font-weight:900;line-height:1">W-9</div>
@@ -2245,42 +2246,74 @@ function generateW9HtmlTemplate(workerName) {
     <div style="font-size:8.5pt;font-weight:700">Request for Taxpayer Identification Number and Certification</div>
     <div style="font-size:7.5pt;color:#555">▶ Go to <em>www.irs.gov/FormW9</em> for instructions and the latest information.</div>
   </div>
-  <div style="margin-left:auto;font-size:7.5pt;text-align:right">OMB No. 1545-0003</div>
+  <div style="margin-left:auto;font-size:7.5pt;text-align:right">
+    <div>Form W-9</div>
+    <div>(Rev. March 2024)</div>
+    <div>Department of the Treasury</div>
+    <div>Internal Revenue Service</div>
+    <div style="margin-top:2px">OMB No. 1545-0003</div>
+  </div>
 </div>
 
 <table style="width:100%;border-collapse:collapse;font-size:9pt">
   <tr>
-    <td colspan="2" style="padding:3px 0">
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
       <div style="font-size:8pt;margin-bottom:2px"><strong>1</strong> Name (as shown on your income tax return). Name is required on this line; do not leave this line blank.</div>
       <text-field name="w9_name" role="Signer" required="true" style="${textFieldStyle}" placeholder="${workerName || ''}"></text-field>
     </td>
   </tr>
   <tr>
-    <td colspan="2" style="padding:3px 0">
-      <div style="font-size:8pt;margin-bottom:4px"><strong>3</strong> Federal tax classification: <strong>Individual/sole proprietor</strong></div>
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>2</strong> Business name/disregarded entity name, if different from above</div>
+      <div style="${roStyle}width:100%">N/A — Individual</div>
     </td>
   </tr>
   <tr>
-    <td colspan="2" style="padding:3px 0">
+    <td style="width:60%;padding:3px 4px 3px 0;vertical-align:top;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:4px"><strong>3</strong> Federal tax classification of the person whose name is entered on line 1. Check only one of the following seven boxes.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:8pt">
+        <label style="font-weight:700;color:#111">☑ Individual/sole proprietor or single-member LLC</label>
+        <label style="color:#aaa">☐ C Corporation</label>
+        <label style="color:#aaa">☐ S Corporation</label>
+        <label style="color:#aaa">☐ Partnership</label>
+        <label style="color:#aaa">☐ Trust/estate</label>
+        <label style="color:#aaa">☐ LLC. Tax classification: ___</label>
+        <label style="color:#aaa">☐ Other: ___</label>
+      </div>
+    </td>
+    <td style="width:40%;padding:3px 0 3px 8px;vertical-align:top;border-left:1px solid #ccc;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:3px"><strong>4</strong> Exemptions (codes apply only to certain entities, not individuals)</div>
+      <div style="font-size:8pt;color:#aaa;margin-bottom:2px">Exempt payee code (if any): ___</div>
+      <div style="font-size:8pt;color:#aaa">Exemption from FATCA reporting code (if any): ___</div>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
       <div style="font-size:8pt;margin-bottom:2px"><strong>5</strong> Address (number, street, and apt. or suite no.) — See instructions.</div>
       <text-field name="w9_address" role="Signer" required="true" style="${textFieldStyle}"></text-field>
     </td>
   </tr>
   <tr>
-    <td colspan="2" style="padding:3px 0">
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
       <div style="font-size:8pt;margin-bottom:2px"><strong>6</strong> City, state, and ZIP code</div>
       <text-field name="w9_city_state_zip" role="Signer" required="true" style="${textFieldStyle}"></text-field>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>7</strong> List account number(s) here (optional)</div>
+      <div style="${roStyle}width:100%">&nbsp;</div>
     </td>
   </tr>
 </table>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin:8px 0;font-size:8.5pt">
   <strong>Part I — Taxpayer Identification Number (TIN)</strong><br>
-  <span style="font-size:7.5pt">Enter your SSN or ITIN in the box below.</span>
+  <span style="font-size:7.5pt">Enter your TIN in the appropriate box. The TIN provided must match the name given on line 1. For individuals, this is generally your social security number (SSN). However, for a resident alien, sole proprietor, or disregarded entity, see the instructions for Part I, later. For other entities, it is your employer identification number (EIN).</span>
   <table style="width:100%;margin-top:6px;border-collapse:collapse">
     <tr>
-      <td>
-        <div style="font-size:8pt;margin-bottom:2px">Social security number (SSN) / Individual taxpayer identification number (ITIN)</div>
+      <td style="width:55%;padding-right:8px">
+        <div style="font-size:8pt;margin-bottom:2px"><strong>Social security number (SSN) / ITIN</strong></div>
         <div style="display:flex;align-items:center;gap:3px">
           <text-field name="w9_ssn_1" role="Signer" required="true" style="${fieldStyle}width:45px;text-align:center" placeholder="XXX"></text-field>
           <span>–</span>
@@ -2289,29 +2322,41 @@ function generateW9HtmlTemplate(workerName) {
           <text-field name="w9_ssn_3" role="Signer" required="true" style="${fieldStyle}width:50px;text-align:center" placeholder="XXXX"></text-field>
         </div>
       </td>
+      <td style="width:45%;padding-left:8px;border-left:1px solid #ccc">
+        <div style="font-size:8pt;margin-bottom:2px;color:#aaa">Employer identification number (EIN)</div>
+        <div style="display:flex;align-items:center;gap:3px;color:#aaa">
+          <span style="${roStyle}width:35px;text-align:center">&nbsp;</span>
+          <span>–</span>
+          <span style="${roStyle}width:70px;text-align:center">&nbsp;</span>
+        </div>
+      </td>
     </tr>
   </table>
 </div>
 
 <div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin:8px 0;font-size:8.5pt">
   <strong>Part II — Certification</strong><br>
-  <div style="font-size:7.5pt;margin:4px 0">Under penalties of perjury, I certify that: (1) The number shown on this form is my correct taxpayer identification number; (2) I am not subject to backup withholding; (3) I am a U.S. citizen or other U.S. person; (4) The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.</div>
+  <div style="font-size:7.5pt;margin:4px 0">Under penalties of perjury, I certify that:<br>
+    1. The number shown on this form is my correct taxpayer identification number (or I am waiting for a number to be issued to me); and<br>
+    2. I am not subject to backup withholding because: (a) I am exempt from backup withholding, or (b) I have not been notified by the Internal Revenue Service (IRS) that I am subject to backup withholding as a result of a failure to report all interest or dividends, or (c) the IRS has notified me that I am no longer subject to backup withholding; and<br>
+    3. I am a U.S. citizen or other U.S. person (defined below); and<br>
+    4. The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.</div>
   <table style="width:100%;margin-top:6px">
     <tr>
       <td style="width:65%">
-        <div style="font-size:8pt;margin-bottom:2px">Signature of U.S. person ▶</div>
+        <div style="font-size:8pt;margin-bottom:2px"><strong>Signature of U.S. person ▶</strong></div>
         <signature-field name="w9_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
       </td>
       <td style="width:35%;padding-left:10px">
-        <div style="font-size:8pt;margin-bottom:2px">Date ▶</div>
+        <div style="font-size:8pt;margin-bottom:2px"><strong>Date ▶</strong></div>
         <date-field name="w9_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
       </td>
     </tr>
   </table>
 </div>
 
-<div style="font-size:7pt;color:#555;margin-top:6px">
-  General Instructions — Section references are to the Internal Revenue Code unless otherwise noted. Future developments: For the latest information about developments related to Form W-9 and its instructions, go to www.irs.gov/FormW9.
+<div style="font-size:7pt;color:#555;margin-top:6px;border-top:1px solid #999;padding-top:4px">
+  <strong>General Instructions</strong> — Form W-9 (Rev. March 2024) — Department of the Treasury, Internal Revenue Service. Purpose: An individual or entity who is required to file an information return with the IRS must obtain your correct TIN to report on an information return the amount paid to you. For the latest information about developments related to Form W-9 and its instructions, go to <em>www.irs.gov/FormW9</em>.
 </div>
 </div>`;
 }
