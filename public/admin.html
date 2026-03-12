@@ -4213,6 +4213,21 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<div class="modal-bg" id="inputPromptModal"><div class="modal" style="max-width:420px">
+  <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1rem">
+    <div id="ipmIcon" style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0"></div>
+    <div>
+      <h2 id="ipmTitle" style="margin:0;font-size:1.05rem"></h2>
+      <p id="ipmDesc" style="margin:.25rem 0 0;font-size:.84rem;color:var(--gray-600)"></p>
+    </div>
+  </div>
+  <textarea id="ipmInput" rows="3" placeholder="" style="width:100%;box-sizing:border-box;border:1.5px solid var(--gray-200);border-radius:8px;padding:.5rem .7rem;font-size:.88rem;resize:vertical;outline:none;transition:border .15s;font-family:inherit" onfocus="this.style.borderColor='var(--sky)'" onblur="this.style.borderColor='var(--gray-200)'"></textarea>
+  <div style="display:flex;gap:.65rem;justify-content:flex-end;margin-top:.8rem">
+    <button class="btn btn-outline" onclick="closeInputPrompt()">取消</button>
+    <button class="btn" id="ipmBtn" onclick="execInputPrompt()">确认</button>
+  </div>
+</div></div>
+
 <div class="modal-bg" id="dangerConfirmModal"><div class="modal" style="max-width:420px">
   <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.1rem">
     <div style="width:44px;height:44px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;flex-shrink:0">
@@ -4236,6 +4251,31 @@ tr:hover td{background:var(--sky-light)}
 </div></div>
 
 <script>
+let _ipmResolve = null;
+function showInputPrompt(title, desc, placeholder, btnText, btnClass, iconColor) {
+  const colors = {
+    blue:  { bg:'#DBEAFE', stroke:'#2563EB', title:'#1E40AF' },
+    red:   { bg:'#FEE2E2', stroke:'#DC2626', title:'#B91C1C' },
+    amber: { bg:'#FEF3C7', stroke:'#D97706', title:'#92400E' }
+  };
+  const c = colors[iconColor] || colors.red;
+  document.getElementById('ipmIcon').style.background = c.bg;
+  document.getElementById('ipmIcon').innerHTML = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${c.stroke}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+  document.getElementById('ipmTitle').textContent = title;
+  document.getElementById('ipmTitle').style.color = c.title;
+  document.getElementById('ipmDesc').textContent = desc;
+  document.getElementById('ipmInput').value = '';
+  document.getElementById('ipmInput').placeholder = placeholder || '';
+  const btn = document.getElementById('ipmBtn');
+  btn.textContent = btnText || '确认';
+  btn.className = 'btn ' + (btnClass || 'btn-red');
+  document.getElementById('inputPromptModal').classList.add('show');
+  setTimeout(() => document.getElementById('ipmInput').focus(), 100);
+  return new Promise(resolve => { _ipmResolve = resolve; });
+}
+function closeInputPrompt() { document.getElementById('inputPromptModal').classList.remove('show'); if (_ipmResolve) { _ipmResolve(null); _ipmResolve = null; } }
+function execInputPrompt() { const v = document.getElementById('ipmInput').value.trim(); document.getElementById('inputPromptModal').classList.remove('show'); if (_ipmResolve) { _ipmResolve(v || null); _ipmResolve = null; } }
+
 let _gcmCallback = null;
 let _pendingDupSave = null; // { data, empId, field, fieldLabel, existingEmpName }
 let _pendingWorkerLink = null; // { workerId, empId } - link after editing existing employee
@@ -13486,10 +13526,9 @@ async function viewSignedContract(autoRetry = false) {
 
 async function voidContract() {
   if (!_onboardingWorkerId) return;
-  const reason = prompt('请输入作废原因（必填）：\n例如：合同内容有误、需要更换协议类型、工人信息变更等');
-  if (!reason || !reason.trim()) { showToast('❌ 作废原因不能为空', 'error'); return; }
-  if (!await showConfirm(`确认作废当前合同？\n\n作废原因：${reason}\n\n作废后需要重新发送。`)) return;
-  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-void`, { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) });
+  const reason = await showInputPrompt('作废合同', '作废后需要重新发送合同。请填写作废原因：', '例如：合同内容有误、需要更换协议类型、工人信息变更等', '确认作废', 'btn-red', 'red');
+  if (!reason) { showToast('❌ 作废原因不能为空', 'error'); return; }
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-void`, { method: 'POST', body: JSON.stringify({ reason }) });
   if (r && r.success) {
     showToast('✅ 合同已作废', 'success');
     document.getElementById('contractDsStatus').style.display = 'none';
