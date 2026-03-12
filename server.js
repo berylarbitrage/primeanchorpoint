@@ -2154,7 +2154,13 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
     throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
   }
   const company = subRes.data.find(s => s.role === 'First Party') || subRes.data[0];
-  return { submissionId: String(company.submission_id), companyEmbedSrc: company.embed_src };
+  const worker = subRes.data.find(s => s.role === 'Second Party');
+  const workerSignUrl = worker?.embed_src || '';
+  // Construct a direct signing URL from slug if available
+  const workerSlug = worker?.slug || '';
+  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : workerSignUrl;
+  return { submissionId: String(company.submission_id), companyEmbedSrc: company.embed_src, workerSignUrl: workerDirectUrl || workerSignUrl };
 }
 
 async function dsealGetCompanySignUrl(submissionId) {
@@ -4250,29 +4256,45 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     const docPath = path.join(docsDir, filename);
     fs.writeFileSync(docPath, pdfBuf);
     // Send via DocuSeal
-    const { submissionId, companyEmbedSrc } = await dsealSendEnvelope({
+    const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendEnvelope({
       docPath, docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}.pdf`,
       emailSubject: `请签署合同 / Please Sign — ${workerName} × ${companyName}`,
       signer1: { email: companyEmail, name: companyName },
       signer2: { email: workerEmail, name: workerName }
     });
+    console.log(`[Contract] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}`);
     // Update onboarding record
     db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
       contract_content=?, visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
       WHERE worker_account_id=? AND task_key='contract'`)
       .run(submissionId, content, `已通过 DocuSeal 发送合同 (${new Date().toLocaleString('zh-CN')})`, companyEmbedSrc || '', workerId);
-    // Send SMS notification
+    // Send SMS notification with signing link
     let smsSent = false;
     if (w.phone) {
-      const smsText = `[Prime Anchorpoint] 您好 ${workerName}，您的${empType === '1099' ? '承包商协议' : '雇佣合同'}已发送至您的邮箱 ${workerEmail}，请查收并完成签署。`;
+      const contractType = empType === '1099' ? '承包商协议' : '雇佣合同';
+      const smsText = workerSignUrl
+        ? `[Prime Anchorpoint] 您好 ${workerName}，您的${contractType}已准备好，请点击以下链接完成签署：\n${workerSignUrl}\nReply STOP to opt out.`
+        : `[Prime Anchorpoint] 您好 ${workerName}，您的${contractType}已发送至您的邮箱 ${workerEmail}，请查收并完成签署。Reply STOP to opt out.`;
       smsSent = await sendSMS(w.phone, smsText);
     }
-    // Send email notification (DocuSeal already sends signing email, this is an extra notification)
+    // Always send email notification with signing link (don't rely on DocuSeal email delivery)
     let emailSent = false;
-    if (w.email && w.email !== workerEmail) {
-      emailSent = await sendEmail(w.email,
-        `Prime Anchorpoint — 合同已发送 / Contract Sent`,
-        `您的${empType === '1099' ? '承包商协议' : '雇佣合同'}已发送至 ${workerEmail}，请查收并完成电子签署。`
+    if (workerEmail) {
+      const contractType = empType === '1099' ? 'Independent Contractor Agreement' : 'Employment Agreement';
+      const signLink = workerSignUrl ? `<p style="margin:1.5rem 0"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">点击签署合同 / Sign Contract</a></p>` : '';
+      emailSent = await sendEmail(workerEmail,
+        `Prime Anchorpoint — 请签署${empType === '1099' ? '承包商协议' : '合同'} / Please Sign Your ${contractType}`,
+        `您好 ${workerName}，\n\n您的${empType === '1099' ? '承包商协议' : '雇佣合同'}已准备好，请完成电子签署。\n${workerSignUrl ? '签署链接: ' + workerSignUrl : '请查收 DocuSeal 发送的签署邮件。'}\n\nHi ${workerName},\n\nYour ${contractType} is ready for signature.\n${workerSignUrl ? 'Sign here: ' + workerSignUrl : 'Please check for the DocuSeal signing email.'}\n\nPrime Anchorpoint`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+          <h2 style="color:#1a1a1a">请签署您的${empType === '1099' ? '承包商协议' : '雇佣合同'}</h2>
+          <p>您好 ${workerName}，</p>
+          <p>您与 ${companyName} 的 ${contractType} 已准备好，请点击下方按钮完成电子签署。</p>
+          ${signLink}
+          ${workerSignUrl ? `<p style="color:#666;font-size:.85rem">或复制链接：${workerSignUrl}</p>` : ''}
+          <hr style="border:none;border-top:1px solid #eee;margin:2rem 0">
+          <p style="color:#666;font-size:.85rem">Hi ${workerName}, your ${contractType} with ${companyName} is ready for signature. Please click the button above to sign electronically.</p>
+          <p style="color:#999;font-size:.8rem;margin-top:2rem">Prime Anchorpoint LLC</p>
+        </div>`
       );
     }
     // Clean up temp PDF
