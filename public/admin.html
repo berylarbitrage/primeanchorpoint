@@ -1359,6 +1359,13 @@ tr:hover td{background:var(--sky-light)}
           <label>地址</label>
           <input type="text" id="invPageBillAddr" placeholder="客户地址">
         </div>
+        <div class="field">
+          <label style="color:#92400e;font-weight:600">Markup Rate（加价系数）</label>
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <input type="number" id="invPageMarkupRate" placeholder="如 1.15" min="0" step="0.01" style="width:110px;border:1px solid #d97706;border-radius:6px;padding:5px 8px;font-size:.88rem;font-weight:600;color:#92400e">
+            <span style="font-size:.8rem;color:#92400e">× 总工资 = 最终账单<br><span style="color:var(--gray-400);font-weight:400">1.15 = 加价 15%</span></span>
+          </div>
+        </div>
       </div>
 
       <!-- Employee list -->
@@ -1368,10 +1375,6 @@ tr:hover td{background:var(--sky-light)}
           <span style="font-size:.83rem;color:var(--gray-500)">统一时薪：</span>
           <input type="number" id="invPageUniformRate" placeholder="如 20.5" min="0" step="0.5" style="width:90px;border:1px solid var(--gray-200);border-radius:6px;padding:4px 8px;font-size:.85rem" oninput="applyInvUniformRate(this.value)">
           <span style="font-size:.83rem;color:var(--gray-500)">$/h</span>
-          <span style="font-size:.83rem;color:var(--gray-400);margin:0 .3rem">|</span>
-          <span style="font-size:.83rem;color:var(--gray-500)">Markup：</span>
-          <input type="number" id="invPageMarkupRate" placeholder="如 1.35" min="1" step="0.01" value="" style="width:80px;border:1px solid #fde68a;border-radius:6px;padding:4px 8px;font-size:.85rem;background:#fffbeb">
-          <span style="font-size:.83rem;color:var(--gray-500)">×（乘以员工总工资 = 客户账单金额）</span>
         </div>
       </div>
       <div id="invPageEmpWrap" style="border:1px solid var(--gray-200);border-radius:8px;background:#fafafa;padding:.5rem;min-height:80px;margin-bottom:.5rem;overflow-x:auto">
@@ -1389,6 +1392,7 @@ tr:hover td{background:var(--sky-light)}
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem" onclick="invpAddEmp()">＋ 手动添加员工</button>
         <button class="btn btn-outline" style="font-size:.83rem;padding:.3rem .9rem;color:var(--sky);border-color:var(--sky)" onclick="invpToggleEmpImport()">📥 从系统导入员工</button>
       </div>
+
     </div>
 
     <!-- Preset selectors at bottom -->
@@ -17510,12 +17514,11 @@ async function saveInvpInvoice(status) {
 
   const items = getInvpManualItems();
   const employeeTotal = items.reduce((s,i) => s+i.total, 0);
-  const markupPct = parseFloat(document.getElementById('invPageMarkupRate').value) || 0;
-  const markupAmt = employeeTotal * markupPct / 100;
-  const subtotal = employeeTotal + markupAmt;
+  const markupRate = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
+  const subtotal = Math.round(employeeTotal * markupRate * 100) / 100;
   const payload = {
     invoice_number: invNum, invoice_date: invDate, company_name: billName, bill_to_addr: billAddr,
-    period_start: ps, period_end: pe, subtotal, items, markup_rate: markupPct, profile: getInvpProfile(), status
+    period_start: ps, period_end: pe, subtotal, items, markup_rate: markupRate, profile: getInvpProfile(), status
   };
 
   let res;
@@ -17907,29 +17910,24 @@ async function generateInvpPreview() {
   };
   const periodLabel = `${fmtShort(ps)}-${fmtShort(pe)}`;
   const totalHours  = items.reduce((s,i) => s+i.hours, 0);
-  const totalRegHrs = items.reduce((s,i) => s+i.regHours, 0);
-  const totalOtHrs  = items.reduce((s,i) => s+i.otHours, 0);
-  const totalAmt    = items.reduce((s,i) => s+i.total, 0);
-  const markupRate  = parseFloat(document.getElementById('invPageMarkupRate').value) || 0;
+  const baseAmt     = items.reduce((s,i) => s+i.total, 0);
+  const totalRegHrs = items.reduce((s,i) => s+(i.regHours||0), 0);
+  const totalOtHrs  = items.reduce((s,i) => s+(i.otHours||0), 0);
+  const markupRate  = parseFloat(document.getElementById('invPageMarkupRate').value) || 1;
   const hasMarkup   = markupRate > 1;
-  const billedAmt   = hasMarkup ? totalAmt * markupRate : totalAmt;
+  const billedAmt   = Math.round(baseAmt * markupRate * 100) / 100;
 
   const _catLabel = { warehouse_sorter:'Warehouse Sorter', labeler:'Labeler', packer:'Packer', forklift_operator:'Forklift Operator', cdl_driver:'CDL Truck Driver', delivery_driver:'Delivery Driver', shift_supervisor:'Shift Supervisor', site_manager:'Site Manager', quality_inspector:'Quality Inspector', machine_operator:'Machine Operator', assembly_line:'Assembly Line', material_handler:'Material Handler', inventory_clerk:'Inventory Clerk', general_labor:'General Labor', janitorial:'Janitorial', food_processing:'Food Processing', warehouse_lead:'Warehouse Lead', loading_unloading:'Loading/Unloading', order_picker:'Order Picker', welder:'Welder' };
-  const tableRows = items.map(i => {
-    const billedRate   = hasMarkup ? i.rate * markupRate : i.rate;
-    const billedOtRate = hasMarkup ? i.otRate * markupRate : i.otRate;
-    const billedTotal  = hasMarkup ? i.total * markupRate : i.total;
-    return `<tr style="background:#fff">
+  const tableRows = items.map(i => `<tr style="background:#fff">
       <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center">${periodLabel}</td>
       <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center">${esc(i.name)}</td>
       <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center">${i.category ? esc(_catLabel[i.category] || i.category) : ''}</td>
-      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${billedRate.toFixed(2)}</td>
-      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${billedOtRate.toFixed(2)}</td>
-      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">${i.regHours.toFixed(2)}</td>
-      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right;${i.otHours > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${i.otHours > 0 ? i.otHours.toFixed(2) : '—'}</td>
-      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right;font-weight:600">$${billedTotal.toFixed(2)}</td>
-    </tr>`;
-  }).join('');
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${(i.rate||0).toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">$${(i.otRate||0).toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">${(i.regHours||0).toFixed(2)}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right;${(i.otHours||0) > 0 ? 'font-weight:600' : 'color:#94a3b8'}">${(i.otHours||0) > 0 ? (i.otHours).toFixed(2) : '—'}</td>
+      <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right;font-weight:600">$${(i.total||0).toFixed(2)}</td>
+    </tr>`).join('');
 
   const bankBlock = (profile.bank_account_name||profile.bank_name||profile.bank_account_no||profile.bank_routing_no) ? `
     <div style="margin-bottom:1.5rem;font-size:.88rem;color:#1e293b;line-height:1.9">
@@ -18000,7 +17998,7 @@ async function generateInvpPreview() {
         <tbody>
           ${tableRows}
           <tr style="background:#f6c26b;font-weight:700">
-            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center" colspan="3">Total${hasMarkup ? ` <span style="font-weight:400;font-size:.8rem">(Markup ×${markupRate})</span>` : ''}</td>
+            <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:center" colspan="3">Total${hasMarkup ? ` <span style="font-weight:400;font-size:.8rem">(Markup ×${markupRate.toFixed(2)})</span>` : ''}</td>
             <td style="padding:7px 6px;border:1px solid #bfcce0"></td>
             <td style="padding:7px 6px;border:1px solid #bfcce0"></td>
             <td style="padding:7px 6px;border:1px solid #bfcce0;text-align:right">${totalRegHrs.toFixed(2)}h</td>
@@ -18009,6 +18007,12 @@ async function generateInvpPreview() {
           </tr>
         </tbody>
       </table>
+      ${hasMarkup ? `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:2rem">
+        <div style="font-size:.82rem;color:#64748b;text-align:right">
+          Wage Subtotal&nbsp;&nbsp;$${baseAmt.toFixed(2)}&nbsp;&nbsp;×&nbsp;&nbsp;Markup ${markupRate.toFixed(2)}&nbsp;&nbsp;=&nbsp;&nbsp;<strong style="color:#1e293b">$${billedAmt.toFixed(2)}</strong>
+        </div>
+      </div>` : ''}
 
       ${bankBlock}
       ${contactBlock}
