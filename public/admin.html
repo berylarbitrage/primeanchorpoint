@@ -12905,7 +12905,7 @@ async function refreshOnboardingModal() {
 }
 
 function renderOnboardingTasks(tasks) {
-  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
     locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
@@ -13090,8 +13090,8 @@ function selectEmploymentType(type) {
 }
 
 // Onboarding tasks auto-assigned per employment type
-const W2_TASKS = ['contract', 'background_check', 'persona_verify', 'i9', 'ead_upload', 'gusto'];
-const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify'];
+const W2_TASKS = ['contract', 'background_check', 'persona_verify', 'i9', 'ead_upload', 'work_permit', 'gusto'];
+const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify', 'work_permit'];
 
 async function openInterviewCompleteModal() {
   if (!_onboardingWorkerId) return;
