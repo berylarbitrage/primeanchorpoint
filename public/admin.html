@@ -292,6 +292,7 @@ tr:hover td{background:var(--sky-light)}
 .toast{background:#1e293b;color:#fff;padding:.75rem 1.4rem;border-radius:10px;font-size:.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.25);opacity:0;transform:translateY(12px);transition:opacity .25s,transform .25s;pointer-events:none;white-space:nowrap}
 .toast.in{opacity:1;transform:translateY(0)}
 .toast.success{background:#065F46;border-left:4px solid #34d399}
+.toast.warning{background:#78350F;border-left:4px solid #fbbf24}
 /* Onboarding task list scrollbar */
 #onboardingTaskList{scrollbar-width:thin;scrollbar-color:#cbd5e1 transparent}
 #onboardingTaskList::-webkit-scrollbar{width:5px}
@@ -2394,6 +2395,60 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" id="contractRefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshContractStatus()">🔄 刷新签署状态</button>
     <button class="btn" id="contractVoidBtn" style="display:none;background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="voidContract()">🗑️ 作废</button>
     <button class="btn" onclick="closeModal('contractSendModal')">关闭</button>
+  </div>
+</div></div>
+
+<!-- W-9 DocuSeal Send Modal -->
+<div class="modal-bg" id="w9SendModal"><div class="modal" style="max-width:720px">
+  <h2>📋 发送 W-9 DocuSeal — <span id="w9WorkerName" style="color:var(--sky)"></span></h2>
+  <p style="font-size:.85rem;color:var(--gray-500);margin-bottom:.75rem">系统将通过 DocuSeal 向工人发送 W-9 表格，工人在线填写并签署后，管理员可下载已签 PDF。</p>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">工人邮箱（DocuSeal W-9 签署链接发送至此）：</label>
+    <input id="w9WorkerEmail" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.88rem" placeholder="worker@email.com">
+  </div>
+  <div id="w9DsStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <details style="margin:.75rem 0;border:1px solid var(--gray-200);border-radius:8px;overflow:hidden">
+    <summary style="padding:.5rem .75rem;cursor:pointer;font-size:.85rem;font-weight:600;color:var(--sky);background:#f8fafc;user-select:none">📄 W-9 表单预览（工人填写前的空白样式）</summary>
+    <div style="padding:.75rem;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:9pt;line-height:1.35;border-top:1px solid var(--gray-200)">
+      <div style="display:flex;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:5px;margin-bottom:6px">
+        <div style="flex:1"><div style="font-size:18pt;font-weight:700">W-9</div><div style="font-size:8pt;font-weight:700">Request for Taxpayer<br>Identification Number and Certification</div><div style="font-size:7pt;margin-top:2px">▶ Go to www.irs.gov/FormW9 for instructions and the latest information.</div></div>
+        <div style="text-align:right;font-size:7pt"><div style="font-weight:700">OMB No. 1545-0003</div></div>
+      </div>
+      <div style="border:1px solid #000;padding:6px;margin-bottom:4px"><div style="font-size:7.5pt;font-weight:700">1 Name (as shown on your income tax return). Name is required on this line; do not leave this line blank.</div><div style="height:22px;background:#ffffcc;border:1px solid #cca;margin-top:3px;border-radius:2px"></div></div>
+      <div style="border:1px solid #000;border-top:none;padding:6px;margin-bottom:4px"><div style="font-size:7.5pt;font-weight:700">2 Business name/disregarded entity name, if different from above</div><div style="height:22px;background:#ffffcc;border:1px solid #cca;margin-top:3px;border-radius:2px"></div></div>
+      <div style="display:flex;border:1px solid #000;border-top:none;margin-bottom:4px">
+        <div style="flex:3;padding:6px;border-right:1px solid #000"><div style="font-size:7.5pt;font-weight:700;margin-bottom:4px">3 Federal tax classification. Check only ONE box.</div><div style="font-size:7pt;display:flex;flex-wrap:wrap;gap:2px 8px">
+          <label>☐ Individual/sole proprietor</label><label>☐ C Corporation</label><label>☐ S Corporation</label><label>☐ Partnership</label><label>☐ Trust/estate</label><label>☐ LLC. Tax classification: <span style="display:inline-block;width:30px;height:14px;background:#ffffcc;border:1px solid #cca;vertical-align:middle;border-radius:2px"></span></label><label>☐ Other: <span style="display:inline-block;width:80px;height:14px;background:#ffffcc;border:1px solid #cca;vertical-align:middle;border-radius:2px"></span></label></div></div>
+        <div style="flex:1;padding:6px"><div style="font-size:7.5pt;font-weight:700;margin-bottom:3px">4 Exemptions</div><div style="font-size:7pt">Exempt payee code:</div><div style="height:16px;background:#ffffcc;border:1px solid #cca;margin:2px 0;border-radius:2px"></div><div style="font-size:7pt">FATCA code:</div><div style="height:16px;background:#ffffcc;border:1px solid #cca;margin-top:2px;border-radius:2px"></div></div>
+      </div>
+      <div style="border:1px solid #000;border-top:none;padding:6px;margin-bottom:4px"><div style="font-size:7.5pt;font-weight:700">5 Address (number, street, and apt. or suite no.) — See instructions.</div><div style="height:22px;background:#ffffcc;border:1px solid #cca;margin-top:3px;border-radius:2px"></div></div>
+      <div style="border:1px solid #000;border-top:none;padding:6px;margin-bottom:4px"><div style="font-size:7.5pt;font-weight:700">6 City, state, and ZIP code</div><div style="height:22px;background:#ffffcc;border:1px solid #cca;margin-top:3px;border-radius:2px"></div></div>
+      <div style="border:1px solid #000;border-top:none;padding:6px;margin-bottom:8px"><div style="font-size:7.5pt;font-weight:700">7 List account number(s) here (optional)</div><div style="height:22px;background:#ffffcc;border:1px solid #cca;margin-top:3px;border-radius:2px"></div></div>
+      <div style="border:2px solid #000;padding:8px;margin-bottom:8px">
+        <div style="font-size:10pt;font-weight:700;margin-bottom:6px">Part I — Taxpayer Identification Number (TIN)</div>
+        <div style="font-size:7.5pt;margin-bottom:6px">Enter your TIN in the appropriate box. For individuals, this is generally your social security number (SSN).</div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div><div style="font-size:7pt;font-weight:700">Social security number (SSN):</div><div style="width:160px;height:24px;background:#ffffcc;border:1px solid #cca;margin-top:3px;border-radius:2px"></div></div>
+          <div style="font-size:8pt;font-weight:700;padding-top:12px">or</div>
+          <div><div style="font-size:7pt;font-weight:700">Employer identification number (EIN):</div><div style="width:160px;height:24px;background:#ffffcc;border:1px solid #cca;margin-top:3px;border-radius:2px"></div></div>
+        </div>
+      </div>
+      <div style="border:2px solid #000;padding:8px">
+        <div style="font-size:10pt;font-weight:700;margin-bottom:6px">Part II — Certification</div>
+        <div style="font-size:7.5pt;margin-bottom:4px">Under penalties of perjury, I certify that:</div>
+        <ol style="font-size:7.5pt;margin:0 0 6px 16px;padding:0;line-height:1.4"><li>The number shown on this form is my correct taxpayer identification number; and</li><li>I am not subject to backup withholding because: (a) I am exempt, or (b) I have not been notified by the IRS that I am subject to backup withholding, or (c) the IRS has notified me that I am no longer subject; and</li><li>I am a U.S. citizen or other U.S. person; and</li><li>The FATCA code(s) entered on this form (if any) indicating that I am exempt from FATCA reporting is correct.</li></ol>
+        <div style="display:flex;gap:12px;align-items:flex-end;border-top:1px solid #ccc;padding-top:8px;margin-top:6px">
+          <div style="flex:2"><div style="font-size:7pt;font-weight:700">Signature of U.S. person ▶</div><div style="height:40px;background:#ffffcc;border:1px solid #cca;margin-top:3px;border-radius:2px"></div></div>
+          <div style="flex:1"><div style="font-size:7pt;font-weight:700">Date ▶</div><div style="height:20px;background:#ffffcc;border:1px solid #cca;margin-top:3px;border-radius:2px"></div></div>
+        </div>
+      </div>
+      <div style="font-size:6.5pt;color:#666;border-top:1px solid #ccc;padding-top:6px;margin-top:8px"><strong>General Instructions</strong> — Form W-9 (Rev. March 2024) — Department of the Treasury, Internal Revenue Service. Purpose: An individual or entity who is required to file an information return with the IRS must obtain your correct TIN to report on an information return the amount paid to you.</div>
+    </div>
+  </details>
+  <div style="font-size:.78rem;color:var(--gray-400);margin:.3rem 0">💡 黄色区域 = 工人需要填写的字段。工人将在 DocuSeal 中在线填写并电子签署。</div>
+  <div class="modal-actions" style="margin-top:.75rem;gap:.5rem">
+    <button class="btn btn-green" id="w9SendBtn" onclick="doSendW9()">📤 发送 W-9</button>
+    <button class="btn" onclick="closeModal('w9SendModal')">关闭</button>
   </div>
 </div></div>
 
@@ -12980,6 +13035,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#f0f4ff;color:#1a7ed4;border:1px solid #c7d7f5;font-weight:700" onclick="confirmSendPersona()">🪪 ${s==='completed'?'已完成':t.action_url?'重新发送验证':'发送 Stripe 验证'}</button>`
             : t.key==='background_check'
             ? `<button class="btn btn-sm" style="background:#fff7ed;color:#9a3412;border:1px solid #fed7aa;font-weight:700" onclick="confirmSendCheckr()">🔍 ${s==='completed'?'已完成':t.action_url?'重新发送邀请':'发送 Checkr 背调'}</button>`
+            : t.key==='w9'
+            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='sent'?'已发送 W-9':t.ds_status==='completed'?'已签署':'发送 W-9 DocuSeal'}</button>`
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : t.key==='w9'
@@ -13661,13 +13718,18 @@ async function doSendW9() {
   btn.disabled = false;
   if (r && r.success) {
     btn.textContent = '📤 重新发送 W-9';
-    showToast('✅ W-9 DocuSeal 已发送', 'success');
     updateW9DsStatusUI('sent');
     document.getElementById('w9RefreshBtn').style.display = '';
     if (r.workerSignUrl) {
       document.getElementById('w9SignLink').href = r.workerSignUrl;
       document.getElementById('w9SignLink').textContent = r.workerSignUrl;
       document.getElementById('w9SignLinkBox').style.display = '';
+    }
+    // Show delivery status warnings
+    if (r.warnings && r.warnings.length > 0) {
+      showToast('⚠️ W-9 已创建，但通知发送有问题：<br>' + r.warnings.join('<br>'), 'warning', 8000);
+    } else {
+      showToast('✅ W-9 DocuSeal 已发送，邮件和短信通知已送达', 'success');
     }
     refreshOnboardingModal();
   } else {
@@ -13740,6 +13802,53 @@ async function showContractVersions(workerId, workerName) {
     }).join('');
   } catch (e) {
     content.innerHTML = `<div style="color:#dc2626;padding:1rem 0">加载失败: ${esc(e.message)}</div>`;
+  }
+}
+
+async function openW9SendModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  document.getElementById('w9WorkerName').textContent = w ? (w.name || w.username || '') : '';
+  document.getElementById('w9WorkerEmail').value = w ? (w.email || '') : '';
+  document.getElementById('w9SendModal').classList.add('show');
+  // Fetch current W-9 status
+  const statusEl = document.getElementById('w9DsStatus');
+  statusEl.style.display = 'none';
+  try {
+    const tasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
+    const w9Task = tasks ? tasks.find(t => t.key === 'w9') : null;
+    if (w9Task && w9Task.ds_status === 'sent') {
+      statusEl.style.display = ''; statusEl.style.background = '#dbeafe'; statusEl.style.color = '#1d4ed8'; statusEl.style.border = '1px solid #bfdbfe';
+      statusEl.innerHTML = '📤 W-9 已发送，等待工人填写…';
+      document.getElementById('w9SendBtn').textContent = '📤 重新发送 W-9';
+    } else if (w9Task && w9Task.ds_status === 'completed') {
+      statusEl.style.display = ''; statusEl.style.background = '#d1fae5'; statusEl.style.color = '#065f46'; statusEl.style.border = '1px solid #6ee7b7';
+      statusEl.innerHTML = '✅ W-9 已填写完成';
+      document.getElementById('w9SendBtn').textContent = '📤 重新发送 W-9';
+    } else {
+      document.getElementById('w9SendBtn').textContent = '📤 发送 W-9';
+    }
+  } catch {}
+}
+async function doSendW9() {
+  if (!_onboardingWorkerId) return;
+  const email = document.getElementById('w9WorkerEmail').value.trim();
+  if (!email) { showToast('请填写工人邮箱', 'error'); return; }
+  if (!await showConfirm(`确认通过 DocuSeal 发送 W-9 至 ${email}？\n\n工人将收到邮件和短信通知，在线填写并签署 W-9。`)) return;
+  const btn = document.getElementById('w9SendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/send-w9`, {
+    method: 'POST', body: JSON.stringify({ worker_email: email })
+  });
+  btn.disabled = false; btn.textContent = '📤 重新发送 W-9';
+  if (r && r.success) {
+    showToast('✅ W-9 已通过 DocuSeal 发送', 'success');
+    const statusEl = document.getElementById('w9DsStatus');
+    statusEl.style.display = ''; statusEl.style.background = '#dbeafe'; statusEl.style.color = '#1d4ed8'; statusEl.style.border = '1px solid #bfdbfe';
+    statusEl.innerHTML = '📤 W-9 已发送，等待工人填写…';
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '发送失败'), 'error');
   }
 }
 

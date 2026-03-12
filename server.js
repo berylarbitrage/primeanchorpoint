@@ -4722,7 +4722,6 @@ app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) =>
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
   const html = generateW9HtmlTemplate(workerName);
-  // Wrap in a full page with some padding so it looks nice in the iframe
   const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:12px;background:#f9fafb}</style></head><body>${html}</body></html>`;
   res.set('Content-Type', 'text/html');
   res.send(page);
@@ -4734,22 +4733,57 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     const workerId = parseInt(req.params.id);
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
     if (!w) return res.status(404).json({ error: 'Worker not found' });
-    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置，请在 .env 设置 DOCUSEAL_API_KEY 和 DOCUSEAL_URL' });
     const workerName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
     const workerEmail = req.body.worker_email || w.email || '';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
     const { submissionId, workerSignUrl } = await dsealSendW9Html({ workerName, workerEmail });
     console.log(`[W-9] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}`);
     db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
       visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
       WHERE worker_account_id=? AND task_key='w9'`)
-      .run(submissionId, `W-9 DocuSeal 已发送给工人 (${new Date().toLocaleString('zh-CN')})`, workerSignUrl || '', workerId);
+      .run(submissionId, `W-9 已发送至 ${workerEmail} (${new Date().toLocaleString('zh-CN')})`, workerSignUrl || '', workerId);
     const changedBy = req.session && req.session.username ? req.session.username : 'admin';
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(workerId, changedBy, 'w9', '', '已发送', `W-9 DocuSeal 表格已发送至 ${workerEmail}`);
-    res.json({ success: true, submissionId, workerSignUrl });
+      .run(workerId, changedBy, 'w9', '', '已发送', `W-9 已通过 DocuSeal 发送至 ${workerEmail}`);
+    // Send notification email
+    const signUrl = workerSignUrl;
+    let emailSent = false;
+    let smsSent = false;
+    if (workerEmail) {
+      const signLink = signUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${signUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">填写 W-9 / Complete W-9 / Completar W-9</a></p>` : '';
+      emailSent = await sendEmail(workerEmail,
+        `Prime Anchorpoint — 请填写 W-9 税表 / Please Complete W-9 / Complete el W-9`,
+        `${workerName}，请点击链接填写并签署 W-9 税表。\n${signUrl || ''}\n\n${workerName}, please click the link to complete your W-9 form.\n${signUrl || ''}\n\n${workerName}, haga clic en el enlace para completar su formulario W-9.\n${signUrl || ''}`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
+          <h2 style="color:#1a1a1a;text-align:center">请填写 W-9 税表</h2>
+          <p>您好 ${workerName}，请填写并签署 W-9 税表（纳税人识别号申请表）。</p>
+          ${signLink}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Please Complete Your W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hi ${workerName}, please complete and sign the W-9 form (Request for Taxpayer Identification Number).</p>
+          ${signLink}
+          <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+          <h3 style="font-size:.95rem">Complete el Formulario W-9</h3>
+          <p style="color:#555;font-size:.9rem">Hola ${workerName}, complete y firme el formulario W-9 (Solicitud de Número de Identificación del Contribuyente).</p>
+          ${signLink}
+          <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
+        </div>`
+      );
+    }
+    // Send SMS
+    const workerPhone = w.phone || '';
+    if (workerPhone) {
+      smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请填写 W-9 税表 / Please complete your W-9 / Complete su W-9${signUrl ? '\n' + signUrl : ''}\nReply STOP to opt out.`);
+    }
+    const warnings = [];
+    if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
+    if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
+    if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
+    if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
+    res.json({ success: true, submissionId, workerSignUrl, emailSent, smsSent, warnings });
   } catch (e) {
-    console.error('[W-9 Send]', e.message);
+    console.error('[W-9 send error]', e.message);
     res.status(500).json({ error: e.message });
   }
 });
