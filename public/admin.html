@@ -13368,6 +13368,12 @@ async function openCompanySign() {
     const form = document.createElement('docuseal-form');
     form.setAttribute('data-src', r.signUrl);
     form.setAttribute('id', 'dsSignForm');
+    // Pre-fill company signature (typed) so admin just clicks "Complete"
+    if (r.companyName) form.setAttribute('data-signature', r.companyName);
+    // Pre-fill date field with today's date
+    const today = new Date().toISOString().slice(0, 10);
+    form.setAttribute('data-values', JSON.stringify({ 'Company Date': today }));
+    form.setAttribute('data-with-send-copy-button', 'false');
     form.style.width = '100%';
     form.addEventListener('completed', () => {
       closeDsSignModal();
