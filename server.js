@@ -10295,33 +10295,39 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                   }
                 } catch (e2) { console.error('[DocuSeal webhook] get worker sign URL error:', e2.message); }
                 const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
-                // Send email to worker
+                const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
+                // Send email to worker (trilingual: Chinese / English / Spanish)
                 if (workerEmail) {
-                  const signLink = workerSignUrl ? `<p style="margin:1.5rem 0"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">点击签署合同 / Sign Contract</a></p>` : '';
+                  const signLink = workerSignUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${workerSignUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">签署合同 / Sign Contract / Firmar Contrato</a></p>` : '';
                   await sendEmail(workerEmail,
-                    `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign Your ${contractType}`,
-                    `您好 ${workerName}，\n\n${companyName} 已完成签署，现在轮到您了。\n${workerSignUrl ? '签署链接: ' + workerSignUrl : ''}\n\nHi ${workerName},\n\n${companyName} has signed. It's your turn now.\n${workerSignUrl ? 'Sign here: ' + workerSignUrl : ''}\n\nPrime Anchorpoint`,
+                    `Prime Anchorpoint — 请签署${contractTypeCn} / Please Sign / Firme Su Contrato`,
+                    `您好 ${workerName}，\n${companyName} 已完成签署，现在轮到您了。\n${workerSignUrl ? '签署链接: ' + workerSignUrl : ''}\n\nHi ${workerName},\n${companyName} has signed. It's your turn now.\n${workerSignUrl ? 'Sign here: ' + workerSignUrl : ''}\n\nHola ${workerName},\n${companyName} ha firmado. Ahora es su turno.\n${workerSignUrl ? 'Firme aquí: ' + workerSignUrl : ''}\n\nPrime Anchorpoint`,
                     `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem">
-                      <h2 style="color:#1a1a1a">请签署您的${contractTypeCn}</h2>
+                      <h2 style="color:#1a1a1a;text-align:center">请签署您的${contractTypeCn}</h2>
                       <p>您好 ${workerName}，</p>
                       <p>${companyName} 已完成签署，现在轮到您签署了。请点击下方按钮完成电子签署。</p>
                       ${signLink}
                       ${workerSignUrl ? `<p style="color:#666;font-size:.85rem">或复制链接：${workerSignUrl}</p>` : ''}
-                      <hr style="border:none;border-top:1px solid #eee;margin:2rem 0">
-                      <p style="color:#666;font-size:.85rem">Hi ${workerName}, ${companyName} has completed their signature. It's now your turn to sign the ${contractType}.</p>
+                      <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+                      <h3 style="color:#333;font-size:.95rem">Please Sign Your ${contractType}</h3>
+                      <p style="color:#555;font-size:.9rem">Hi ${workerName}, ${companyName} has completed their signature. It's now your turn to sign the ${contractType}. Please click the button below to complete your electronic signature.</p>
                       ${signLink}
-                      <p style="color:#999;font-size:.8rem;margin-top:2rem">Prime Anchorpoint LLC</p>
+                      <hr style="border:none;border-top:1px solid #eee;margin:1.5rem 0">
+                      <h3 style="color:#333;font-size:.95rem">Firme Su ${contractTypeEs}</h3>
+                      <p style="color:#555;font-size:.9rem">Hola ${workerName}, ${companyName} ha completado su firma. Ahora es su turno de firmar el ${contractTypeEs}. Haga clic en el botón de abajo para completar su firma electrónica.</p>
+                      ${signLink}
+                      <p style="color:#999;font-size:.8rem;margin-top:2rem;text-align:center">Prime Anchorpoint LLC</p>
                     </div>`
                   );
-                  console.log(`[DocuSeal webhook] Sent signing email to worker ${workerEmail}`);
+                  console.log(`[DocuSeal webhook] Sent trilingual signing email to worker ${workerEmail}`);
                 }
-                // Send SMS to worker
+                // Send SMS to worker (trilingual)
                 if (workerPhone) {
                   const smsText = workerSignUrl
-                    ? `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成您的签署：\n${workerSignUrl}\nReply STOP to opt out.`
-                    : `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。Reply STOP to opt out.`;
+                    ? `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请点击链接完成签署 / Please sign: / Firme aquí:\n${workerSignUrl}\nReply STOP to opt out.`
+                    : `[Prime Anchorpoint] ${workerName}，${companyName}已签署${contractTypeCn}，请查收邮件完成签署。/ Please check email to sign. / Revise su correo para firmar. Reply STOP to opt out.`;
                   await sendSMS(workerPhone, smsText);
-                  console.log(`[DocuSeal webhook] Sent signing SMS to worker ${workerPhone}`);
+                  console.log(`[DocuSeal webhook] Sent trilingual signing SMS to worker ${workerPhone}`);
                 }
               }
             } catch (notifyErr) { console.error('[DocuSeal webhook] worker notification error:', notifyErr.message); }
