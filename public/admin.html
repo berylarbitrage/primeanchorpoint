@@ -361,6 +361,7 @@ tr:hover td{background:var(--sky-light)}
 <script src="/address-validator.js" defer></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
+<script src="https://cdn.docuseal.com/js/form.js"></script>
 </head>
 <body>
 <div id="toast-wrap"></div>
@@ -3810,6 +3811,7 @@ tr:hover td{background:var(--sky-light)}
       <button id="dsSignRetryBtn" onclick="retryDsCompanySign()" style="display:none;padding:.4rem 1rem;background:#1d4ed8;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">重新加载</button>
     </div>
     <iframe id="dsSignIframe" src="about:blank" style="flex:1;border:none;min-height:0;display:none" allowfullscreen></iframe>
+    <div id="dsSignFormContainer" style="flex:1;display:none;overflow:auto;min-height:0"></div>
   </div>
 </div>
 
@@ -9381,12 +9383,14 @@ function retryDsCompanySign() {
 function closeDsSignModal() {
   const modal = document.getElementById('dsSignModal');
   const iframe = document.getElementById('dsSignIframe');
+  const formContainer = document.getElementById('dsSignFormContainer');
   if (window._dsLoadTimeout) { clearTimeout(window._dsLoadTimeout); window._dsLoadTimeout = null; }
   iframe.onload = null;
   iframe.onerror = null;
   modal.style.display = 'none';
   iframe.src = 'about:blank';
   iframe.style.display = 'none';
+  if (formContainer) { formContainer.style.display = 'none'; formContainer.innerHTML = ''; }
   document.getElementById('dsSignLoading').style.display = 'flex';
   _dsSignContext = null;
 }
@@ -13342,33 +13346,41 @@ async function doSendContract() {
 
 async function openCompanySign() {
   if (!_onboardingWorkerId) return;
-  // Reuse the shared dsSignModal (same as partner file / assignment signing)
   const modal = document.getElementById('dsSignModal');
   const iframe = document.getElementById('dsSignIframe');
+  const formContainer = document.getElementById('dsSignFormContainer');
   const loading = document.getElementById('dsSignLoading');
   const loadingText = document.getElementById('dsSignLoadingText');
   const retryBtn = document.getElementById('dsSignRetryBtn');
   modal.style.display = 'flex';
   iframe.style.display = 'none';
+  formContainer.style.display = 'none';
+  formContainer.innerHTML = '';
   loading.style.display = 'flex';
   loadingText.textContent = '加载签署页面中…';
   retryBtn.style.display = 'none';
-  // Store context so retry works
   _dsSignContext = { type: 'workercontract', id: _onboardingWorkerId };
   try {
     const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-sign-url`);
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
     console.log('[CompanySign] signUrl:', r.signUrl);
-    await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => resolve(), 90000);
-      iframe.onload = () => { clearTimeout(timeout); resolve(); };
-      iframe.onerror = () => { clearTimeout(timeout); reject(new Error('签署页面加载失败')); };
-      iframe.src = r.signUrl;
+    // Use DocuSeal <docuseal-form> web component (officially supported embed method)
+    const form = document.createElement('docuseal-form');
+    form.setAttribute('data-src', r.signUrl);
+    form.setAttribute('id', 'dsSignForm');
+    form.style.width = '100%';
+    form.addEventListener('completed', () => {
+      closeDsSignModal();
+      showToast('✅ 公司已签署，系统将自动通知工人签署', 'success');
+      refreshContractStatus();
     });
+    form.addEventListener('declined', () => {
+      closeDsSignModal();
+      showToast('签署已取消', 'info');
+    });
+    formContainer.appendChild(form);
     loading.style.display = 'none';
-    iframe.style.display = '';
-    iframe.onload = null;
-    iframe.onerror = null;
+    formContainer.style.display = '';
   } catch (e) {
     loadingText.textContent = '❌ ' + e.message;
     retryBtn.style.display = '';
