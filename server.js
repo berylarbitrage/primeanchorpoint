@@ -2361,21 +2361,36 @@ function generateW9HtmlTemplate(workerName) {
 </div>`;
 }
 
-// Send W-9 form via DocuSeal HTML API — worker is the sole signer who fills in all fields
+// Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
 async function dsealSendW9Html({ workerName, workerEmail }) {
-  const w9Html = generateW9HtmlTemplate(workerName);
+  const templateId = process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
-  const subRes = await dsealApiCall('POST', '/api/submissions/html', {
-    name: `W-9 表格 - ${workerName}`,
-    documents: [{ name: `W-9 Tax Form - ${workerName}`, html: w9Html, size: 'Letter' }],
-    send_email: false,
-    submitters: [
-      { role: 'Signer', name: workerName, email: workerEmail,
-        fields: [{ name: 'w9_name', default_value: workerName, readonly: false },
-                 { name: 'w9_date', default_value: todayDate, readonly: true }] }
-    ]
-  });
-  console.log(`[DocuSeal W-9] submissions/html: status=${subRes.status}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
+  let subRes;
+  if (templateId) {
+    // Use existing DocuSeal template (official IRS W-9)
+    subRes = await dsealApiCall('POST', '/api/submissions', {
+      template_id: parseInt(templateId),
+      send_email: true,
+      submitters: [
+        { role: 'First Party', name: workerName, email: workerEmail,
+          fields: [{ name: 'w9_name', default_value: workerName, readonly: false }] }
+      ]
+    });
+  } else {
+    // Fallback: generate HTML template
+    const w9Html = generateW9HtmlTemplate(workerName);
+    subRes = await dsealApiCall('POST', '/api/submissions/html', {
+      name: `W-9 表格 - ${workerName}`,
+      documents: [{ name: `W-9 Tax Form - ${workerName}`, html: w9Html, size: 'Letter' }],
+      send_email: false,
+      submitters: [
+        { role: 'Signer', name: workerName, email: workerEmail,
+          fields: [{ name: 'w9_name', default_value: workerName, readonly: false },
+                   { name: 'w9_date', default_value: todayDate, readonly: true }] }
+      ]
+    });
+  }
+  console.log(`[DocuSeal W-9] submission: status=${subRes.status}, templateId=${templateId || 'html-fallback'}, response=${JSON.stringify(subRes.data).substring(0, 500)}`);
   const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
   if (subRes.status >= 400 || !submitters.length) {
     throw new Error(`DocuSeal W-9 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
@@ -4724,8 +4739,22 @@ app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (re
 
 // Preview W-9 HTML template (admin can see the blank form before sending)
 app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) => {
+  const templateId = process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
+  if (templateId) {
+    const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+    const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:20px;background:#f9fafb;font-family:Arial,sans-serif}</style></head><body>
+      <div style="text-align:center;padding:2rem;color:#555">
+        <p style="font-size:1.1rem;font-weight:600">使用 DocuSeal 官方 W-9 模板</p>
+        <p style="font-size:.88rem;color:#888">Template ID: ${templateId}</p>
+        <p style="font-size:.85rem;color:#888">工人将收到 DocuSeal 发送的邮件，包含完整的 IRS W-9 表格。</p>
+        <a href="${baseHost}/templates/${templateId}/edit" target="_blank" style="display:inline-block;margin-top:1rem;padding:.5rem 1.5rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:6px;font-size:.88rem">在 DocuSeal 中编辑模板</a>
+      </div>
+    </body></html>`;
+    res.set('Content-Type', 'text/html');
+    return res.send(page);
+  }
   const html = generateW9HtmlTemplate(workerName);
   const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:12px;background:#f9fafb}</style></head><body>${html}</body></html>`;
   res.set('Content-Type', 'text/html');
@@ -4742,8 +4771,9 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     const workerEmail = req.body.worker_email || w.email || '';
     if (!workerEmail) return res.status(400).json({ error: '工人邮箱为空，请先补充邮箱' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const usingTemplate = !!(process.env.DOCUSEAL_W9_TEMPLATE_ID);
     const { submissionId, workerSignUrl } = await dsealSendW9Html({ workerName, workerEmail });
-    console.log(`[W-9] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}`);
+    console.log(`[W-9] submissionId=${submissionId}, workerSignUrl=${workerSignUrl ? workerSignUrl.substring(0, 60) : 'NONE'}, template=${usingTemplate}`);
     db.prepare(`UPDATE worker_onboarding SET ds_envelope_id=?, ds_status='sent', ds_worker_signed_at=NULL, ds_company_signed_at=NULL,
       visible_to_worker=1, admin_note=?, action_url=?, updated_at=CURRENT_TIMESTAMP
       WHERE worker_account_id=? AND task_key='w9'`)
@@ -4751,11 +4781,18 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     const changedBy = req.session && req.session.username ? req.session.username : 'admin';
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
       .run(workerId, changedBy, 'w9', '', '已发送', `W-9 已通过 DocuSeal 发送至 ${workerEmail}`);
-    // Send notification email
+    // Send notification email & SMS
     const signUrl = workerSignUrl;
     let emailSent = false;
     let smsSent = false;
-    if (workerEmail) {
+    let dsealEmailSent = false;
+    if (usingTemplate) {
+      // DocuSeal template mode: DocuSeal sends the email directly (send_email: true)
+      dsealEmailSent = true;
+      emailSent = true;
+    }
+    // Also send our own notification email as backup (with sign link)
+    if (workerEmail && !usingTemplate) {
       const signLink = signUrl ? `<p style="margin:1.5rem 0;text-align:center"><a href="${signUrl}" style="display:inline-block;padding:.75rem 2rem;background:#1a7ed4;color:#fff;text-decoration:none;border-radius:8px;font-weight:700;font-size:1rem">填写 W-9 / Complete W-9 / Completar W-9</a></p>` : '';
       emailSent = await sendEmail(workerEmail,
         `Prime Anchorpoint — 请填写 W-9 税表 / Please Complete W-9 / Complete el W-9`,
@@ -4782,11 +4819,11 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
       smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请填写 W-9 税表 / Please complete your W-9 / Complete su W-9${signUrl ? '\n' + signUrl : ''}\nReply STOP to opt out.`);
     }
     const warnings = [];
-    if (workerEmail && !emailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
+    if (workerEmail && !emailSent && !dsealEmailSent) warnings.push('邮件发送失败，请检查邮箱地址或邮件服务配置');
     if (workerPhone && !smsSent) warnings.push('短信发送失败，请检查手机号或短信服务配置');
     if (!workerEmail) warnings.push('工人无邮箱地址，未发送邮件通知');
     if (!workerPhone) warnings.push('工人无手机号，未发送短信通知');
-    res.json({ success: true, submissionId, workerSignUrl, emailSent, smsSent, warnings });
+    res.json({ success: true, submissionId, workerSignUrl, emailSent, smsSent, dsealEmailSent, warnings });
   } catch (e) {
     console.error('[W-9 send error]', e.message);
     res.status(500).json({ error: e.message });
