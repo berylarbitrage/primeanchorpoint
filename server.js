@@ -2144,7 +2144,7 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   const subRes = await dsealApiCall('POST', '/api/submissions', {
     template_id: templateId,
     send_email: true,
-    order: 'random',
+    order: 'preserved',
     submitters: [
       { role: 'First Party', name: signer1.name, email: signer1.email, send_email: false },
       { role: 'Second Party', name: signer2.name, email: signer2.email, send_email: true }
@@ -2153,14 +2153,25 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   if (subRes.status >= 400 || !Array.isArray(subRes.data) || !subRes.data.length) {
     throw new Error(`DocuSeal 提交创建失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
   }
+  console.log(`[DocuSeal] Submission response: ${JSON.stringify(subRes.data.map(s => ({ role: s.role, id: s.id, slug: s.slug, embed_src: (s.embed_src||'').substring(0,80) })))}`);
   const company = subRes.data.find(s => s.role === 'First Party') || subRes.data[0];
   const worker = subRes.data.find(s => s.role === 'Second Party');
-  const workerSignUrl = worker?.embed_src || '';
-  // Construct a direct signing URL from slug if available
+  let workerSignUrl = worker?.embed_src || '';
+  // If no embed_src in creation response, fetch it via PUT (same approach as company sign URL)
+  if (!workerSignUrl && worker?.id) {
+    try {
+      const wPut = await dsealApiCall('PUT', `/api/submitters/${worker.id}`, { name: worker.name || signer2.name });
+      console.log(`[DocuSeal] PUT worker submitter ${worker.id}: status=${wPut.status}, has_embed=${!!wPut.data?.embed_src}`);
+      if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
+    } catch (e) { console.error(`[DocuSeal] Failed to get worker embed_src: ${e.message}`); }
+  }
+  // Also try constructing direct URL from slug
   const workerSlug = worker?.slug || '';
   const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
-  const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : workerSignUrl;
-  return { submissionId: String(company.submission_id), companyEmbedSrc: company.embed_src, workerSignUrl: workerDirectUrl || workerSignUrl };
+  const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
+  const finalWorkerUrl = workerDirectUrl || workerSignUrl;
+  console.log(`[DocuSeal] Worker sign URL: ${(finalWorkerUrl||'NONE').substring(0,100)}`);
+  return { submissionId: String(company.submission_id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
 }
 
 async function dsealGetCompanySignUrl(submissionId) {
