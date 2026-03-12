@@ -10306,6 +10306,11 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                     }
                   }
                 } catch (e2) { console.error('[DocuSeal webhook] get worker sign URL error:', e2.message); }
+                // Update action_url with worker signing URL so portal can show it
+                if (workerSignUrl) {
+                  db.prepare("UPDATE worker_onboarding SET ds_status='company_signed', action_url=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
+                    .run(workerSignUrl, `公司已签署，等待工人签署 (${new Date().toLocaleString('zh-CN')})`, wid);
+                }
                 const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint';
                 const contractTypeEs = empType === '1099' ? 'Acuerdo de Contratista Independiente' : 'Acuerdo de Empleo';
                 // Send email to worker (trilingual: Chinese / English / Spanish)
