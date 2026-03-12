@@ -4174,6 +4174,7 @@ const ONBOARDING_STEPS = [
   { key: 'i9',              title: 'I-9 就业资格',         desc: 'I-9 Section 1 & 2 就业资格验证',                  required: true  },
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
   { key: 'work_permit',     title: '工作许可验证',          desc: '工作许可 / 签证授权状态核实（如适用）',            required: false },
+  { key: 'work_auth',       title: 'Work Authorization 认证', desc: '独立承包商工作授权资格调查 / 认证（1099 适用）', required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
   { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
 ];

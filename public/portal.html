@@ -1384,7 +1384,7 @@ const PORTAL_I18N = {
     obActionGusto: '填写 Gusto 信息 →', obActionContract: '查看/签署合同 →', obActionW9: '填写 W-9 税表 →', obContractWaiting: '⏳ 合同已创建，等待公司签署后即可签署', obActionSubmit: '标记已提交',
     obSubmittedNote: '已提交，等待 HR 审核中…',
     obOptional: '(可豁免)',
-    obTaskTitles: { phone_verify:'手机号验证', email_verify:'邮箱验证', interview:'完成面试', persona_verify:'身份证件验证', background_check:'背景调查', id_verify:'身份证件上传', ssn_verify:'SSN 验证', ead_upload:'EAD 文件上传', i9:'I-9 表格', w9:'W-9 表格', contract:'合同签署', gusto:'Gusto 薪资信息' },
+    obTaskTitles: { phone_verify:'手机号验证', email_verify:'邮箱验证', interview:'完成面试', persona_verify:'身份证件验证', background_check:'背景调查', id_verify:'身份证件上传', ssn_verify:'SSN 验证', ead_upload:'EAD 文件上传', i9:'I-9 表格', w9:'W-9 表格', contract:'合同签署', gusto:'Gusto 薪资信息', work_auth:'Work Authorization 认证' },
     obSubmitSuccess: '已提交，等待 HR 审核', obSubmitFail: '提交失败',
     ccTitlePhone: '更换手机号', ccTitleEmail: '更换邮箱',
     ccSending: '正在发送验证码…',
@@ -1535,7 +1535,7 @@ const PORTAL_I18N = {
     obActionGusto: 'Complete Gusto Setup →', obActionContract: 'View/Sign Contract →', obActionW9: 'Complete W-9 Form →', obContractWaiting: '⏳ Contract created, waiting for company to sign first', obActionSubmit: 'Mark as Submitted',
     obSubmittedNote: 'Submitted — awaiting HR review…',
     obOptional: '(Optional)',
-    obTaskTitles: { phone_verify:'Phone Verification', email_verify:'Email Verification', interview:'Complete Interview', persona_verify:'Identity Verification', background_check:'Background Check', id_verify:'ID Document Upload', ssn_verify:'SSN Verification', ead_upload:'EAD Upload', i9:'I-9 Form', w9:'W-9 Form', contract:'Sign Contract', gusto:'Gusto Payroll Setup' },
+    obTaskTitles: { phone_verify:'Phone Verification', email_verify:'Email Verification', interview:'Complete Interview', persona_verify:'Identity Verification', background_check:'Background Check', id_verify:'ID Document Upload', ssn_verify:'SSN Verification', ead_upload:'EAD Upload', i9:'I-9 Form', w9:'W-9 Form', contract:'Sign Contract', gusto:'Gusto Payroll Setup', work_auth:'Work Authorization' },
     obSubmitSuccess: 'Submitted — awaiting HR review', obSubmitFail: 'Submission failed',
     ccTitlePhone: 'Change Phone', ccTitleEmail: 'Change Email',
     ccSending: 'Sending verification code…',
@@ -1686,7 +1686,7 @@ const PORTAL_I18N = {
     obActionGusto: 'Completar Gusto →', obActionContract: 'Ver/Firmar Contrato →', obActionW9: 'Completar Formulario W-9 →', obContractWaiting: '⏳ Contrato creado, esperando la firma de la empresa', obActionSubmit: 'Marcar como Enviado',
     obSubmittedNote: 'Enviado — esperando revisión de RR.HH.…',
     obOptional: '(Opcional)',
-    obTaskTitles: { phone_verify:'Verificación de Teléfono', email_verify:'Verificación de Correo', interview:'Completar Entrevista', persona_verify:'Verificación de Identidad', background_check:'Verificación de Antecedentes', id_verify:'Carga de Documento ID', ssn_verify:'Verificación de SSN', ead_upload:'Carga de EAD', i9:'Formulario I-9', w9:'Formulario W-9', contract:'Firmar Contrato', gusto:'Configuración de Nómina Gusto' },
+    obTaskTitles: { phone_verify:'Verificación de Teléfono', email_verify:'Verificación de Correo', interview:'Completar Entrevista', persona_verify:'Verificación de Identidad', background_check:'Verificación de Antecedentes', id_verify:'Carga de Documento ID', ssn_verify:'Verificación de SSN', ead_upload:'Carga de EAD', i9:'Formulario I-9', w9:'Formulario W-9', contract:'Firmar Contrato', gusto:'Configuración de Nómina Gusto', work_auth:'Autorización de Trabajo' },
     obSubmitSuccess: 'Enviado — esperando revisión de RR.HH.', obSubmitFail: 'Error al enviar',
     ccTitlePhone: 'Cambiar Teléfono', ccTitleEmail: 'Cambiar Correo',
     ccSending: 'Enviando código de verificación…',
@@ -4971,7 +4971,7 @@ async function loadOnboarding() {
       }
     } catch (e) { /* poll-status unavailable, backend /onboarding already handles sync */ }
   }
-  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸' };
+  const icons = { phone_verify:'📱', email_verify:'📧', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸', work_auth:'📑' };
   const sLabel = { locked: _t('obLocked'), pending: _t('obPending'), submitted: _t('obSubmitted'), completed: _t('obCompleted'), waived: _t('obWaived') };
   const sBadgeStyle = {
     locked:'color:var(--gray-400);background:var(--gray-100);border:1px solid var(--gray-200)',
