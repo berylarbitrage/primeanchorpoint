@@ -2962,23 +2962,31 @@ tr:hover td{background:var(--sky-light)}
         <!-- Treaty (foreign route only) -->
         <div id="trTreatyBlock" style="display:none;margin-bottom:.6rem">
           <div class="field" style="margin-bottom:.5rem">
-            <label style="font-size:.8rem;font-weight:600">是否主张 Tax Treaty benefit?</label>
-            <select id="trTreatyClaim" onchange="trStep4Toggle()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
-              <option value="">—</option><option value="yes">Yes</option><option value="no">No</option><option value="not_sure">Not sure</option>
+            <label style="font-size:.8rem;font-weight:600">Treaty Country 条约国家</label>
+            <select id="trTreatyCountry" onchange="trOnTreatyCountryChange()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+              <option value="">— 选择国家 Select Country —</option>
             </select>
           </div>
-          <div id="trTreatyFields" style="display:none;display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">Treaty Country</label>
-              <input id="trTreatyCountry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-            </div>
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">Income Type</label>
-              <select id="trTreatyIncomeType" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <!-- Treaty info display (auto-populated) -->
+          <div id="trTreatyInfo" style="display:none;border-radius:6px;padding:.5rem .8rem;margin-bottom:.5rem;font-size:.8rem"></div>
+          <div class="field" style="margin-bottom:.5rem">
+            <label style="font-size:.8rem;font-weight:600">是否主张 Tax Treaty benefit / withholding exemption?</label>
+            <select id="trTreatyClaim" onchange="trStep4Toggle()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+              <option value="">—</option><option value="yes">Yes</option><option value="no">No</option><option value="not_sure">Not sure 不确定</option>
+            </select>
+          </div>
+          <div id="trTreatyFields" style="display:none">
+            <div class="field" style="margin-bottom:.5rem">
+              <label style="font-size:.78rem;font-weight:600">Income Type 收入类型</label>
+              <select id="trTreatyIncomeType" onchange="trStep4Toggle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
                 <option value="">—</option>
-                <option value="personal_services">Personal Services 个人服务</option>
+                <option value="personal_services">Personal Services 个人劳务报酬</option>
                 <option value="other_income">Other Income 其他收入</option>
               </select>
+            </div>
+            <!-- 8233 candidate hint -->
+            <div id="tr8233Hint" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:.5rem .8rem;font-size:.78rem;color:#9a3412;margin-bottom:.5rem">
+              <b>Form 8233 Candidate</b> — 非居民外国个人 + 美国境内 personal services + treaty claim → 需要填写 Form 8233（个人服务报酬的条约豁免申请），需人工复核。
             </div>
           </div>
         </div>
@@ -13507,6 +13515,181 @@ const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'background_check', 'per
 let _trStep = 1;
 let _trPath = ''; // 'entity', 'individual_us', 'individual_nr'
 
+// US Tax Treaty Database — personal services provisions (IRS Pub 901)
+// ps = personal services covered, art = article number, note = exemption conditions (ZH+EN)
+const US_TAX_TREATIES = {
+  'Armenia':       { zh:'亚美尼亚', ps:true,  art:'15', note:'受雇服务≤183天且由非美雇主支付可免税' },
+  'Australia':     { zh:'澳大利亚', ps:true,  art:'14/15', note:'独立个人劳务有固定基地例外；受雇≤183天可免' },
+  'Austria':       { zh:'奥地利',   ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天+非美雇主支付可免' },
+  'Azerbaijan':    { zh:'阿塞拜疆', ps:true,  art:'15', note:'受雇≤183天且由非美雇主支付可免' },
+  'Bangladesh':    { zh:'孟加拉',   ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Barbados':      { zh:'巴巴多斯', ps:true,  art:'14', note:'独立个人劳务≤183天可免' },
+  'Belarus':       { zh:'白俄罗斯', ps:true,  art:'15', note:'受雇≤183天且由非美雇主支付可免' },
+  'Belgium':       { zh:'比利时',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Bulgaria':      { zh:'保加利亚', ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Canada':        { zh:'加拿大',   ps:true,  art:'XIV/XV', note:'独立劳务有固定基地例外；受雇≤183天+非加雇主支付可免，$10,000以下可免' },
+  'China':         { zh:'中国',     ps:true,  art:'14/15', note:'独立劳务≤183天且报酬≤$5,000可免；受雇≤183天+非美雇主支付可免' },
+  'Cyprus':        { zh:'塞浦路斯', ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Czech Republic':{ zh:'捷克',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Denmark':       { zh:'丹麦',     ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Egypt':         { zh:'埃及',     ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Estonia':       { zh:'爱沙尼亚', ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Finland':       { zh:'芬兰',     ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'France':        { zh:'法国',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天+非美雇主支付可免' },
+  'Georgia':       { zh:'格鲁吉亚', ps:true,  art:'15', note:'受雇≤183天且由非美雇主支付可免' },
+  'Germany':       { zh:'德国',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天+非美雇主支付可免' },
+  'Greece':        { zh:'希腊',     ps:true,  art:'14/15', note:'独立劳务≤183天且≤$10,000可免；受雇≤183天可免' },
+  'Hungary':       { zh:'匈牙利',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Iceland':       { zh:'冰岛',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'India':         { zh:'印度',     ps:true,  art:'15/16', note:'独立劳务≤90天且≤$5,000可免；受雇≤183天+非美雇主支付可免' },
+  'Indonesia':     { zh:'印度尼西亚', ps:true, art:'14/15', note:'独立劳务≤120天可免；受雇≤183天可免' },
+  'Ireland':       { zh:'爱尔兰',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Israel':        { zh:'以色列',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Italy':         { zh:'意大利',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Jamaica':       { zh:'牙买加',   ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Japan':         { zh:'日本',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天+非美雇主支付可免' },
+  'Kazakhstan':    { zh:'哈萨克斯坦', ps:true, art:'15', note:'受雇≤183天且由非美雇主支付可免' },
+  'Korea, South':  { zh:'韩国',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天+非美雇主支付可免' },
+  'Kyrgyzstan':    { zh:'吉尔吉斯斯坦', ps:true, art:'15', note:'受雇≤183天且由非美雇主支付可免' },
+  'Latvia':        { zh:'拉脱维亚', ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Lithuania':     { zh:'立陶宛',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Luxembourg':    { zh:'卢森堡',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Malta':         { zh:'马耳他',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Mexico':        { zh:'墨西哥',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天+非美雇主支付可免' },
+  'Moldova':       { zh:'摩尔多瓦', ps:true,  art:'15', note:'受雇≤183天且由非美雇主支付可免' },
+  'Morocco':       { zh:'摩洛哥',   ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Netherlands':   { zh:'荷兰',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天+非美雇主支付可免' },
+  'New Zealand':   { zh:'新西兰',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Norway':        { zh:'挪威',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Pakistan':      { zh:'巴基斯坦', ps:true,  art:'14/15', note:'独立劳务≤183天且≤$5,000可免；受雇≤183天可免' },
+  'Philippines':   { zh:'菲律宾',   ps:true,  art:'14/15', note:'独立劳务≤90天且≤$10,000可免；受雇≤183天可免' },
+  'Poland':        { zh:'波兰',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Portugal':      { zh:'葡萄牙',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Romania':       { zh:'罗马尼亚', ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Russia':        { zh:'俄罗斯',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天+非美雇主支付可免' },
+  'Slovak Republic':{ zh:'斯洛伐克', ps:true, art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Slovenia':      { zh:'斯洛文尼亚', ps:true, art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'South Africa':  { zh:'南非',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Spain':         { zh:'西班牙',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Sri Lanka':     { zh:'斯里兰卡', ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Sweden':        { zh:'瑞典',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Switzerland':   { zh:'瑞士',     ps:true,  art:'14/15', note:'独立劳务≤183天且≤$10,000可免；受雇≤183天+非美雇主支付可免' },
+  'Tajikistan':    { zh:'塔吉克斯坦', ps:true, art:'15', note:'受雇≤183天且由非美雇主支付可免' },
+  'Thailand':      { zh:'泰国',     ps:true,  art:'14/15', note:'独立劳务≤183天且≤$10,000可免；受雇≤183天可免' },
+  'Trinidad & Tobago':{ zh:'特立尼达和多巴哥', ps:true, art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Tunisia':       { zh:'突尼斯',   ps:true,  art:'14/15', note:'独立劳务≤183天可免；受雇≤183天可免' },
+  'Turkey':        { zh:'土耳其',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'Turkmenistan':  { zh:'土库曼斯坦', ps:true, art:'15', note:'受雇≤183天且由非美雇主支付可免' },
+  'Ukraine':       { zh:'乌克兰',   ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天可免' },
+  'United Kingdom':{ zh:'英国',     ps:true,  art:'14/15', note:'独立劳务有固定基地例外；受雇≤183天+非美雇主支付可免' },
+  'Uzbekistan':    { zh:'乌兹别克斯坦', ps:true, art:'15', note:'受雇≤183天且由非美雇主支付可免' },
+  'Venezuela':     { zh:'委内瑞拉', ps:true,  art:'14/15', note:'独立劳务≤183天且≤$10,000可免；受雇≤183天可免' },
+};
+
+// Populate treaty country dropdown on page load
+(function() {
+  const sel = document.getElementById('trTreatyCountry');
+  if (!sel) return;
+  // Treaty countries group
+  const grpTreaty = document.createElement('optgroup');
+  grpTreaty.label = '🟢 有条约 Treaty Countries';
+  Object.keys(US_TAX_TREATIES).sort().forEach(c => {
+    const t = US_TAX_TREATIES[c];
+    const opt = document.createElement('option');
+    opt.value = c;
+    opt.textContent = `${c} ${t.zh}`;
+    grpTreaty.appendChild(opt);
+  });
+  sel.appendChild(grpTreaty);
+  // No-treaty common countries
+  const noTreatyCountries = [
+    ['Afghanistan','阿富汗'],['Algeria','阿尔及利亚'],['Argentina','阿根廷'],['Brazil','巴西'],
+    ['Cambodia','柬埔寨'],['Chile','智利'],['Colombia','哥伦比亚'],['Cuba','古巴'],
+    ['Dominican Republic','多米尼加'],['Ecuador','厄瓜多尔'],['El Salvador','萨尔瓦多'],
+    ['Ethiopia','埃塞俄比亚'],['Ghana','加纳'],['Guatemala','危地马拉'],['Haiti','海地'],
+    ['Honduras','洪都拉斯'],['Hong Kong','香港'],['Iran','伊朗'],['Iraq','伊拉克'],
+    ['Jordan','约旦'],['Kenya','肯尼亚'],['Laos','老挝'],['Lebanon','黎巴嫩'],
+    ['Libya','利比亚'],['Malaysia','马来西亚'],['Myanmar','缅甸'],['Nepal','尼泊尔'],
+    ['Nicaragua','尼加拉瓜'],['Nigeria','尼日利亚'],['Panama','巴拿马'],['Paraguay','巴拉圭'],
+    ['Peru','秘鲁'],['Saudi Arabia','沙特阿拉伯'],['Singapore','新加坡'],['Syria','叙利亚'],
+    ['Taiwan','台湾'],['Tanzania','坦桑尼亚'],['Uganda','乌干达'],['Uruguay','乌拉圭'],
+    ['Vietnam','越南'],['Yemen','也门'],['Zimbabwe','津巴布韦'],
+    ['Other 其他','其他']
+  ];
+  const grpNo = document.createElement('optgroup');
+  grpNo.label = '⚪ 无条约 No Treaty';
+  noTreatyCountries.forEach(([en, zh]) => {
+    const opt = document.createElement('option');
+    opt.value = en;
+    opt.textContent = `${en} ${zh}`;
+    grpNo.appendChild(opt);
+  });
+  sel.appendChild(grpNo);
+})();
+
+function trOnTreatyCountryChange() {
+  const country = document.getElementById('trTreatyCountry').value;
+  const info = document.getElementById('trTreatyInfo');
+  const claimSel = document.getElementById('trTreatyClaim');
+  if (!country) {
+    info.style.display = 'none';
+    return;
+  }
+  const treaty = US_TAX_TREATIES[country];
+  if (treaty) {
+    info.style.display = '';
+    info.style.background = '#f0fdf4';
+    info.style.border = '1px solid #bbf7d0';
+    info.style.color = '#166534';
+    info.innerHTML = `<div style="font-weight:700;margin-bottom:.2rem">✅ ${country} ${treaty.zh} — 与美国有税收条约</div>` +
+      `<div>条约条款 Article: <b>${treaty.art}</b></div>` +
+      (treaty.ps ? `<div>个人服务豁免: <b>是</b> — ${treaty.note}</div>` : `<div>个人服务豁免: 否</div>`) +
+      `<div style="font-size:.72rem;color:#15803d;margin-top:.2rem">💡 该国居民可能有资格申请条约豁免，请选择下方 "Yes"</div>`;
+    // Auto-suggest yes if they haven't chosen yet
+    if (!claimSel.value) claimSel.value = 'yes';
+  } else {
+    info.style.display = '';
+    info.style.background = '#fef2f2';
+    info.style.border = '1px solid #fecaca';
+    info.style.color = '#991b1b';
+    info.innerHTML = `<div style="font-weight:700">⚠️ ${country} — 与美国无税收条约</div>` +
+      `<div style="font-size:.78rem">该国居民无法申请条约豁免 (treaty benefit not available)</div>`;
+    if (!claimSel.value) claimSel.value = 'no';
+  }
+  trStep4Toggle();
+}
+
+// Auto-populate treaty country from citizenship/tax-residence entered in Step 2B/3
+function trAutoDetectTreatyCountry() {
+  // Try to find the country from wizard fields
+  const countryFields = ['trSptCitizenship','trSptTaxCountry','trNrCitizenship','trNrTaxCountry','trEntForeignCountry','trEntForeignTaxCountry'];
+  let detectedCountry = '';
+  for (const id of countryFields) {
+    const el = document.getElementById(id);
+    if (el && el.value.trim()) { detectedCountry = el.value.trim(); break; }
+  }
+  if (!detectedCountry) return;
+  // Try to match against treaty country dropdown options
+  const sel = document.getElementById('trTreatyCountry');
+  const lower = detectedCountry.toLowerCase();
+  for (const opt of sel.options) {
+    if (!opt.value) continue;
+    if (opt.value.toLowerCase() === lower || opt.textContent.toLowerCase().includes(lower)) {
+      sel.value = opt.value;
+      trOnTreatyCountryChange();
+      return;
+    }
+  }
+  // Also try matching against Chinese names in treaties
+  for (const [key, t] of Object.entries(US_TAX_TREATIES)) {
+    if (t.zh === detectedCountry || key.toLowerCase() === lower) {
+      sel.value = key;
+      trOnTreatyCountryChange();
+      return;
+    }
+  }
+}
+
 function trSelectType(type) {
   document.getElementById('trTypeInd').checked = type === 'individual';
   document.getElementById('trTypeEnt').checked = type === 'entity';
@@ -13536,7 +13719,7 @@ function trShowStep(n) {
     else document.getElementById('trStep2B').style.display = '';
   }
   else if (n === 3) document.getElementById('trStep3').style.display = '';
-  else if (n === 4) { document.getElementById('trStep4').style.display = ''; trStep4Toggle(); }
+  else if (n === 4) { document.getElementById('trStep4').style.display = ''; trAutoDetectTreatyCountry(); trStep4Toggle(); }
   // Update step indicator
   document.querySelectorAll('#trStepIndicator .tr-step-dot').forEach(dot => {
     const s = parseInt(dot.dataset.step);
@@ -13609,14 +13792,20 @@ function trStep4Toggle() {
   const isIndForeign = type === 'individual' && indStatus && indStatus.value === 'neither';
   const servLoc = document.getElementById('trServicesLoc').value;
   const treatyClaim = document.getElementById('trTreatyClaim').value;
+  const treatyIncType = document.getElementById('trTreatyIncomeType').value;
 
   // Treaty block: only foreign route
   document.getElementById('trTreatyBlock').style.display = isForeign ? '' : 'none';
-  // Treaty fields: only if claim = yes
-  document.getElementById('trTreatyFields').style.display = treatyClaim === 'yes' ? 'grid' : 'none';
+  // Treaty fields (income type): only if claim = yes
+  document.getElementById('trTreatyFields').style.display = treatyClaim === 'yes' ? '' : 'none';
+
+  // 8233 hint: NRA individual + US personal services + treaty claim
+  const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
+  const is8233 = isIndForeign && servInUs && treatyClaim === 'yes' && treatyIncType === 'personal_services';
+  const hint8233 = document.getElementById('tr8233Hint');
+  if (hint8233) hint8233.style.display = is8233 ? '' : 'none';
 
   // Doc block for individuals: trigger conditions
-  const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
   const needIndDocs = isIndForeign && (servInUs || treatyClaim === 'yes');
   document.getElementById('trDocBlock').style.display = needIndDocs ? '' : 'none';
 
@@ -13672,7 +13861,9 @@ function trCalcFinalResult() {
 
   box.style.display = '';
   const fc = form === 'W-9' ? '#065f46' : form === 'W-8BEN-E' ? '#7c3aed' : form === 'Form 8233' ? '#9a3412' : '#1d4ed8';
-  content.innerHTML = `<b>身份:</b> ${status} · <b style="color:${fc}">→ ${form}</b>${review ? ' · <span style="color:#dc2626">⚠️ 需复核</span>' : ''}`;
+  const tc = document.getElementById('trTreatyCountry').value;
+  const tcInfo = tc && US_TAX_TREATIES[tc] ? ` · 🌐 ${tc} ${US_TAX_TREATIES[tc].zh}` : '';
+  content.innerHTML = `<b>身份:</b> ${status} · <b style="color:${fc}">→ ${form}</b>${tcInfo}${review ? ' · <span style="color:#dc2626">⚠️ 需复核</span>' : ''}`;
 }
 
 function trWizardCollectData() {
@@ -13748,6 +13939,8 @@ function trWizardReset() {
   document.getElementById('trNeverInUs').style.display = 'none';
   document.getElementById('trSptBlock').style.display = 'none';
   document.getElementById('trSptExemptDetail').style.display = 'none';
+  document.getElementById('trTreatyInfo').style.display = 'none';
+  const hint8233 = document.getElementById('tr8233Hint'); if (hint8233) hint8233.style.display = 'none';
   trShowStep(1);
 }
 
