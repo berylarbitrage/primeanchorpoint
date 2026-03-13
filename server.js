@@ -1281,6 +1281,7 @@ if (!db.prepare('SELECT id FROM display_suffix_options LIMIT 1').get()) {
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN employment_type TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN entity_type TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN assigned_slot_ids TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_envelope_id TEXT DEFAULT ''"); } catch {}
@@ -4165,7 +4166,7 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status, has_ssn, position_interests, employment_type } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -4194,6 +4195,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   logChange('our_salary_rating', w.our_salary_rating, newOurRating);
   logChange('payment_method', w.payment_method, newPaymentMethod);
   logChange('has_ssn', w.has_ssn||0, newHasSsn);
+  if (entity_type !== undefined) logChange('entity_type', w.entity_type, entity_type);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
   // When reactivating a deactivated account (active 0→1), clear old interview
   // and onboarding records so the worker starts fresh
@@ -4210,7 +4212,8 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
     payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
     work_status=COALESCE(?,work_status), has_ssn=?, position_interests=?,
-    employment_type=COALESCE(?,employment_type) WHERE id=?`)
+    employment_type=COALESCE(?,employment_type),
+    entity_type=COALESCE(?,entity_type) WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
       newActive, newSuspended,
@@ -4221,6 +4224,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       work_status !== undefined ? work_status : null,
       newHasSsn, newPositionInterests,
       employment_type !== undefined ? employment_type : null,
+      entity_type !== undefined ? entity_type : null,
       req.params.id
     );
   res.json({ success: true });
