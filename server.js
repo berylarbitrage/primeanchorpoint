@@ -1305,6 +1305,54 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_contract_versions (
   void_reason TEXT DEFAULT ''
 )`);
 
+// ─── Tax Residency Questionnaire (1099 Resident Test) ───
+db.exec(`CREATE TABLE IF NOT EXISTS tax_residency_questionnaire (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  -- Section A: Basic identity
+  applicant_type TEXT DEFAULT 'individual',
+  is_us_person TEXT DEFAULT '',
+  country_tax_residence TEXT DEFAULT '',
+  country_citizenship TEXT DEFAULT '',
+  entity_country_org TEXT DEFAULT '',
+  -- Section B: Individual resident test
+  is_us_citizen TEXT DEFAULT '',
+  has_green_card TEXT DEFAULT '',
+  first_entry_date TEXT DEFAULT '',
+  days_current_year INTEGER DEFAULT 0,
+  days_last_year INTEGER DEFAULT 0,
+  days_two_years_ago INTEGER DEFAULT 0,
+  has_exempt_days TEXT DEFAULT '',
+  exempt_visa_status TEXT DEFAULT '',
+  exempt_date_range TEXT DEFAULT '',
+  -- Section C: Service location & income source
+  services_location TEXT DEFAULT '',
+  primary_work_locations TEXT DEFAULT '',
+  expected_service_dates TEXT DEFAULT '',
+  will_travel_to_us TEXT DEFAULT '',
+  -- Section D: Treaty / special claims
+  claim_treaty_benefit TEXT DEFAULT '',
+  treaty_country TEXT DEFAULT '',
+  treaty_income_type TEXT DEFAULT '',
+  -- Section E: Supporting documents (flags, not files)
+  immigration_status TEXT DEFAULT '',
+  i94_admission_date TEXT DEFAULT '',
+  status_expiration TEXT DEFAULT '',
+  docs_requested INTEGER DEFAULT 0,
+  -- Computed results
+  spt_weighted_days REAL DEFAULT 0,
+  spt_result TEXT DEFAULT '',
+  tax_status TEXT DEFAULT '',
+  recommended_form TEXT DEFAULT '',
+  needs_manual_review INTEGER DEFAULT 0,
+  admin_override TEXT DEFAULT '',
+  admin_notes TEXT DEFAULT '',
+  completed_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(worker_account_id)
+)`);
+
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
   const oldRows = db.prepare(`SELECT DISTINCT worker_account_id FROM worker_onboarding WHERE task_key IN ('id_verify','ssn_verify')`).all();
@@ -4217,6 +4265,7 @@ const ONBOARDING_STEPS = [
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
   { key: 'work_permit',     title: '工作许可验证',          desc: '工作许可 / 签证授权状态核实（如适用）',            required: false },
   { key: 'work_auth',       title: 'Work Authorization 认证', desc: '独立承包商工作授权资格调查 / 认证（1099 适用）', required: false },
+  { key: 'tax_residency',   title: '税务居民身份判定',      desc: '1099 承包商税务居民预判 / 表格分流（Resident Test）', required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
   { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
 ];
@@ -4782,6 +4831,192 @@ app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (re
 });
 
 // ─── Admin: W-9 DocuSeal Endpoints ───
+
+// ─── Tax Residency Questionnaire (1099 Resident Test) ───
+
+// SPT calculation + form routing engine
+function calculateTaxResidency(data) {
+  const result = { spt_weighted_days: 0, spt_result: '', tax_status: '', recommended_form: '', needs_manual_review: false };
+  const { applicant_type, is_us_person, is_us_citizen, has_green_card,
+    days_current_year, days_last_year, days_two_years_ago, has_exempt_days,
+    services_location, claim_treaty_benefit, treaty_income_type } = data;
+
+  // Rule 1: Entity vs Individual
+  if (applicant_type === 'entity') {
+    if (is_us_person === 'yes') {
+      result.tax_status = 'us_entity';
+      result.recommended_form = 'W-9';
+    } else {
+      result.tax_status = 'foreign_entity';
+      result.recommended_form = 'W-8BEN-E';
+    }
+    return result;
+  }
+
+  // Rule 2: Individual - check U.S. person status
+  if (is_us_citizen === 'yes') {
+    result.tax_status = 'us_citizen';
+    result.recommended_form = 'W-9';
+    return result;
+  }
+  if (has_green_card === 'yes') {
+    result.tax_status = 'resident_alien';
+    result.recommended_form = 'W-9';
+    return result;
+  }
+
+  // Rule 3: SPT calculation
+  const cy = parseInt(days_current_year) || 0;
+  const ly = parseInt(days_last_year) || 0;
+  const ty = parseInt(days_two_years_ago) || 0;
+  const weighted = cy + (ly / 3) + (ty / 6);
+  result.spt_weighted_days = Math.round(weighted * 100) / 100;
+
+  if (cy >= 31 && weighted >= 183) {
+    result.spt_result = 'meets_spt';
+    result.tax_status = 'likely_resident_alien';
+    result.recommended_form = 'W-9';
+    result.needs_manual_review = true; // closer connection exception possible
+  } else {
+    result.spt_result = 'does_not_meet_spt';
+    result.tax_status = 'likely_nonresident_alien';
+  }
+
+  // Rule 4-7: Foreign individual form routing
+  if (result.tax_status === 'likely_nonresident_alien') {
+    if (services_location === 'all_outside_us') {
+      // Rule 5: all services outside U.S.
+      result.recommended_form = 'W-8BEN';
+    } else if (services_location === 'all_in_us' || services_location === 'partly_in_us') {
+      // Rule 5: services in U.S. - needs manual review
+      result.needs_manual_review = true;
+      // Rule 6: check for 8233 candidacy
+      if (claim_treaty_benefit === 'yes' && treaty_income_type === 'personal_services') {
+        result.recommended_form = 'Form 8233';
+      } else if (claim_treaty_benefit === 'yes') {
+        result.recommended_form = 'W-8BEN';
+      } else {
+        result.recommended_form = 'W-8BEN';
+        result.needs_manual_review = true;
+      }
+    } else {
+      result.recommended_form = 'W-8BEN';
+    }
+  }
+
+  // If has exempt days (F/J/M/Q visa), always flag for review
+  if (has_exempt_days === 'yes') {
+    result.needs_manual_review = true;
+  }
+
+  return result;
+}
+
+// Get tax residency questionnaire for a worker
+app.get('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(req.params.id);
+  res.json(row || null);
+});
+
+// Save tax residency questionnaire
+app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const d = req.body;
+
+  // Calculate SPT and determine form routing
+  const calc = calculateTaxResidency(d);
+
+  const fields = {
+    worker_account_id: workerId,
+    applicant_type: d.applicant_type || 'individual',
+    is_us_person: d.is_us_person || '',
+    country_tax_residence: d.country_tax_residence || '',
+    country_citizenship: d.country_citizenship || '',
+    entity_country_org: d.entity_country_org || '',
+    is_us_citizen: d.is_us_citizen || '',
+    has_green_card: d.has_green_card || '',
+    first_entry_date: d.first_entry_date || '',
+    days_current_year: parseInt(d.days_current_year) || 0,
+    days_last_year: parseInt(d.days_last_year) || 0,
+    days_two_years_ago: parseInt(d.days_two_years_ago) || 0,
+    has_exempt_days: d.has_exempt_days || '',
+    exempt_visa_status: d.exempt_visa_status || '',
+    exempt_date_range: d.exempt_date_range || '',
+    services_location: d.services_location || '',
+    primary_work_locations: d.primary_work_locations || '',
+    expected_service_dates: d.expected_service_dates || '',
+    will_travel_to_us: d.will_travel_to_us || '',
+    claim_treaty_benefit: d.claim_treaty_benefit || '',
+    treaty_country: d.treaty_country || '',
+    treaty_income_type: d.treaty_income_type || '',
+    immigration_status: d.immigration_status || '',
+    i94_admission_date: d.i94_admission_date || '',
+    status_expiration: d.status_expiration || '',
+    docs_requested: d.docs_requested ? 1 : 0,
+    spt_weighted_days: calc.spt_weighted_days,
+    spt_result: calc.spt_result,
+    tax_status: calc.tax_status,
+    recommended_form: calc.recommended_form,
+    needs_manual_review: calc.needs_manual_review ? 1 : 0,
+    admin_override: d.admin_override || '',
+    admin_notes: d.admin_notes || '',
+    completed_by: (req.session && req.session.username) || 'admin'
+  };
+
+  db.prepare(`INSERT INTO tax_residency_questionnaire (
+    worker_account_id, applicant_type, is_us_person, country_tax_residence, country_citizenship, entity_country_org,
+    is_us_citizen, has_green_card, first_entry_date, days_current_year, days_last_year, days_two_years_ago,
+    has_exempt_days, exempt_visa_status, exempt_date_range,
+    services_location, primary_work_locations, expected_service_dates, will_travel_to_us,
+    claim_treaty_benefit, treaty_country, treaty_income_type,
+    immigration_status, i94_admission_date, status_expiration, docs_requested,
+    spt_weighted_days, spt_result, tax_status, recommended_form, needs_manual_review,
+    admin_override, admin_notes, completed_by, updated_at
+  ) VALUES (
+    @worker_account_id, @applicant_type, @is_us_person, @country_tax_residence, @country_citizenship, @entity_country_org,
+    @is_us_citizen, @has_green_card, @first_entry_date, @days_current_year, @days_last_year, @days_two_years_ago,
+    @has_exempt_days, @exempt_visa_status, @exempt_date_range,
+    @services_location, @primary_work_locations, @expected_service_dates, @will_travel_to_us,
+    @claim_treaty_benefit, @treaty_country, @treaty_income_type,
+    @immigration_status, @i94_admission_date, @status_expiration, @docs_requested,
+    @spt_weighted_days, @spt_result, @tax_status, @recommended_form, @needs_manual_review,
+    @admin_override, @admin_notes, @completed_by, CURRENT_TIMESTAMP
+  ) ON CONFLICT(worker_account_id) DO UPDATE SET
+    applicant_type=excluded.applicant_type, is_us_person=excluded.is_us_person,
+    country_tax_residence=excluded.country_tax_residence, country_citizenship=excluded.country_citizenship,
+    entity_country_org=excluded.entity_country_org,
+    is_us_citizen=excluded.is_us_citizen, has_green_card=excluded.has_green_card,
+    first_entry_date=excluded.first_entry_date,
+    days_current_year=excluded.days_current_year, days_last_year=excluded.days_last_year,
+    days_two_years_ago=excluded.days_two_years_ago,
+    has_exempt_days=excluded.has_exempt_days, exempt_visa_status=excluded.exempt_visa_status,
+    exempt_date_range=excluded.exempt_date_range,
+    services_location=excluded.services_location, primary_work_locations=excluded.primary_work_locations,
+    expected_service_dates=excluded.expected_service_dates, will_travel_to_us=excluded.will_travel_to_us,
+    claim_treaty_benefit=excluded.claim_treaty_benefit, treaty_country=excluded.treaty_country,
+    treaty_income_type=excluded.treaty_income_type,
+    immigration_status=excluded.immigration_status, i94_admission_date=excluded.i94_admission_date,
+    status_expiration=excluded.status_expiration, docs_requested=excluded.docs_requested,
+    spt_weighted_days=excluded.spt_weighted_days, spt_result=excluded.spt_result,
+    tax_status=excluded.tax_status, recommended_form=excluded.recommended_form,
+    needs_manual_review=excluded.needs_manual_review,
+    admin_override=excluded.admin_override, admin_notes=excluded.admin_notes,
+    completed_by=excluded.completed_by, updated_at=CURRENT_TIMESTAMP
+  `).run(fields);
+
+  // Auto-update onboarding task status
+  db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
+    WHERE worker_account_id=? AND task_key='tax_residency' AND status IN ('pending','submitted')`)
+    .run(workerId);
+  syncOnboardedStatus(workerId);
+
+  // Log to history
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, fields.completed_by, 'tax_residency', '', calc.recommended_form,
+      `税务居民判定完成: ${calc.tax_status} → 推荐表格: ${calc.recommended_form}${calc.needs_manual_review ? ' (需人工复核)' : ''}`);
+
+  res.json({ success: true, ...calc, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
+});
 
 // Preview W-9 HTML template (admin can see the blank form before sending)
 app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) => {

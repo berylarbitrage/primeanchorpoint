@@ -2738,6 +2738,209 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Tax Residency Questionnaire Modal (1099 Resident Test) -->
+<div class="modal-bg" id="taxResidencyModal" style="z-index:220"><div class="modal" style="max-width:720px;max-height:90vh;overflow-y:auto">
+  <h2>🏛️ 税务居民身份判定 (Resident Test)</h2>
+  <p style="font-size:.9rem;font-weight:700;color:var(--sky);margin-bottom:.75rem" id="trWorkerName"></p>
+
+  <!-- Section A: Basic Identity -->
+  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #bfdbfe">A. 基础身份分流 Basic Identity</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">1. Applicant Type *</label>
+        <select id="trApplicantType" onchange="trToggleSections()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+          <option value="individual">Individual 个人</option>
+          <option value="entity">Business / Entity 实体</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">2. U.S. Person? *</label>
+        <select id="trIsUsPerson" onchange="trToggleSections()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+          <option value="">— 请选择 —</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+          <option value="not_sure">Not sure</option>
+        </select>
+        <div style="font-size:.7rem;color:var(--gray-400);margin-top:.2rem">U.S. person = U.S. citizen / resident alien / domestic corp/partnership/LLC/trust/estate (per W-9)</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.75rem">
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">3. Country of Tax Residence</label>
+        <input id="trCountryTaxResidence" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="e.g. China, Mexico, India...">
+      </div>
+      <div class="field" style="margin-bottom:0" id="trCitizenshipField">
+        <label style="font-size:.8rem;font-weight:600">4. Country of Citizenship</label>
+        <input id="trCountryCitizenship" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="e.g. China, Mexico...">
+      </div>
+      <div class="field" style="margin-bottom:0;display:none" id="trEntityCountryField">
+        <label style="font-size:.8rem;font-weight:600">5. Entity Country of Organization</label>
+        <input id="trEntityCountryOrg" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="e.g. China, Canada...">
+      </div>
+    </div>
+  </div>
+
+  <!-- Section B: Individual Resident Test (conditionally shown) -->
+  <div id="trSectionB" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:#854d0e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #fde68a">B. 个人税务居民预判 Resident Alien Test</div>
+    <div style="font-size:.75rem;color:#92400e;margin-bottom:.75rem;background:#fffbeb;padding:.4rem .6rem;border-radius:4px">仅在 Individual 且 Not sure / not U.S. person 时需要填写。用于 Green Card Test 和 Substantial Presence Test (SPT) 判定。</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">6. Are you a U.S. citizen?</label>
+        <select id="trIsUsCitizen" onchange="trToggleSections()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+          <option value="">— 请选择 —</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">7. U.S. Green Card holder?</label>
+        <select id="trHasGreenCard" onchange="trToggleSections()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+          <option value="">— 请选择 —</option>
+          <option value="yes">Yes 是</option>
+          <option value="no">No 否</option>
+        </select>
+      </div>
+    </div>
+    <div id="trSptFields" style="margin-top:.75rem">
+      <div class="field" style="margin-bottom:.75rem">
+        <label style="font-size:.8rem;font-weight:600">8. First date entered the U.S.</label>
+        <input type="date" id="trFirstEntryDate" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
+        <div class="field" style="margin-bottom:0">
+          <label style="font-size:.8rem;font-weight:600">9. Days in U.S. this year</label>
+          <input type="number" id="trDaysCurrentYear" min="0" max="366" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="0">
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label style="font-size:.8rem;font-weight:600">10. Days last year</label>
+          <input type="number" id="trDaysLastYear" min="0" max="366" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="0">
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label style="font-size:.8rem;font-weight:600">11. Days 2 years ago</label>
+          <input type="number" id="trDaysTwoYearsAgo" min="0" max="366" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="0">
+        </div>
+      </div>
+      <div id="trSptPreview" style="display:none;margin-top:.5rem;padding:.4rem .7rem;border-radius:6px;font-size:.82rem;font-weight:600"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.75rem">
+        <div class="field" style="margin-bottom:0">
+          <label style="font-size:.8rem;font-weight:600">12. Exempt days? (F/J/M/Q status)</label>
+          <select id="trHasExemptDays" onchange="trToggleSections()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+            <option value="">— 请选择 —</option>
+            <option value="yes">Yes 是</option>
+            <option value="no">No 否</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:0" id="trExemptVisaField" style="display:none">
+          <label style="font-size:.8rem;font-weight:600">13. Visa/status & date range</label>
+          <input id="trExemptVisaStatus" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="e.g. F-1 OPT, 2023-01 to 2024-06">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section C: Service Location & Income Source -->
+  <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #bbf7d0">C. 服务地点与收入来源 Service Location</div>
+    <div class="field" style="margin-bottom:.75rem">
+      <label style="font-size:.8rem;font-weight:600">14. Services performed in the U.S.? *</label>
+      <select id="trServicesLocation" onchange="trToggleSections()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+        <option value="">— 请选择 —</option>
+        <option value="all_in_us">Yes, all in the U.S. 全部在美国</option>
+        <option value="partly_in_us">Yes, partly in the U.S. 部分在美国</option>
+        <option value="all_outside_us">No, all outside the U.S. 全部在美国以外</option>
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">15. Primary work location(s)</label>
+        <input id="trPrimaryWorkLocations" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="e.g. Chicago IL, Remote...">
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">16. Expected service dates</label>
+        <input id="trExpectedServiceDates" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="e.g. 2026-04 to 2026-12">
+      </div>
+    </div>
+    <div class="field" style="margin-top:.75rem;margin-bottom:0" id="trTravelField">
+      <label style="font-size:.8rem;font-weight:600">17. Will travel to U.S. for services?</label>
+      <select id="trWillTravelToUs" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+        <option value="">— 请选择 —</option>
+        <option value="yes">Yes 是</option>
+        <option value="no">No 否</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Section D: Treaty / Special Claims -->
+  <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #e9d5ff">D. Treaty / 特殊主张 Treaty Claims</div>
+    <div class="field" style="margin-bottom:.75rem">
+      <label style="font-size:.8rem;font-weight:600">18. Claim tax treaty benefit?</label>
+      <select id="trClaimTreatyBenefit" onchange="trToggleSections()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+        <option value="">— 请选择 —</option>
+        <option value="yes">Yes 是</option>
+        <option value="no">No 否</option>
+        <option value="not_sure">Not sure 不确定</option>
+      </select>
+    </div>
+    <div id="trTreatyDetails" style="display:none;display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">19. Treaty country</label>
+        <input id="trTreatyCountry" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="e.g. China, Canada...">
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">20. Treaty income type</label>
+        <select id="trTreatyIncomeType" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+          <option value="">— 请选择 —</option>
+          <option value="personal_services">Personal Services 个人服务</option>
+          <option value="other_income">Other Income 其他收入</option>
+        </select>
+        <div style="font-size:.7rem;color:var(--gray-400);margin-top:.2rem">个人服务 → Form 8233 · 其他 → W-8BEN/W-8BEN-E</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section E: Supporting Documents (conditional) -->
+  <div id="trSectionE" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:#9a3412;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid #fed7aa">E. 证件信息 Supporting Documents</div>
+    <div style="font-size:.75rem;color:#9a3412;margin-bottom:.75rem;background:#fffbeb;padding:.4rem .6rem;border-radius:4px">仅在需要判断 resident/nonresident 或走 8233/treaty 时收集。</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">21. Immigration status / visa type</label>
+        <input id="trImmigrationStatus" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px" placeholder="e.g. F-1, H-1B, B-1...">
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label style="font-size:.8rem;font-weight:600">22. Most recent I-94 admission date</label>
+        <input type="date" id="trI94AdmissionDate" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+      </div>
+    </div>
+    <div class="field" style="margin-top:.75rem;margin-bottom:0">
+      <label style="font-size:.8rem;font-weight:600">23. Status expiration date</label>
+      <input type="date" id="trStatusExpiration" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+    </div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">* 护照、签证、I-94 等文件上传请通过入职流程中的证件上传任务完成。</div>
+  </div>
+
+  <!-- Result Preview -->
+  <div id="trResultPreview" style="display:none;background:#f0f9ff;border:2px solid #bae6fd;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.78rem;font-weight:700;color:#0369a1;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem">判定结果预览 Result Preview</div>
+    <div id="trResultContent" style="font-size:.85rem"></div>
+  </div>
+
+  <!-- Admin notes -->
+  <div style="margin-bottom:1rem">
+    <label style="font-size:.8rem;font-weight:600">管理员备注 Admin Notes</label>
+    <textarea id="trAdminNotes" rows="2" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="备注..."></textarea>
+  </div>
+
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('taxResidencyModal')">取消</button>
+    <button class="btn" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="trPreviewResult()">🔍 预览判定结果</button>
+    <button class="btn btn-green" onclick="saveTaxResidency()">✅ 保存并完成判定</button>
+  </div>
+</div></div>
+
 <!-- Job Modal -->
 <div id="toastContainer"></div>
 
@@ -12965,7 +13168,7 @@ async function refreshOnboardingModal() {
 }
 
 function renderOnboardingTasks(tasks) {
-  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂', work_auth:'📑' };
+  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂', work_auth:'📑' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
     locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
@@ -13041,6 +13244,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'?'✅ W-9 已签署':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>`
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
+            : t.key==='tax_residency'
+            ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openTaxResidencyModal()">🏛️ ${s==='completed'?'查看/修改判定结果':'开始 Resident Test'}</button>`
             : t.key==='work_auth'
             ? `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;font-weight:700" onclick="openWorkAuthModal()">${t.status==='completed'?'📑 Work Auth 已完成':isVisible?'📑 查看/重发认证任务':'📑 发送 Work Auth 认证'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
@@ -13159,7 +13364,7 @@ function selectEmploymentType(type) {
 
 // Onboarding tasks auto-assigned per employment type
 const W2_TASKS = ['contract', 'background_check', 'persona_verify', 'i9', 'ead_upload', 'work_permit', 'gusto'];
-const C1099_TASKS = ['contract', 'w9', 'background_check', 'persona_verify'];
+const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'background_check', 'persona_verify'];
 
 async function openInterviewCompleteModal() {
   if (!_onboardingWorkerId) return;
@@ -13367,6 +13572,270 @@ function openOnboardingNote(key, currentNote, currentUrl, hasUrl) {
   }
   updateOnboardingTask(key, undefined, note, hasUrl ? url : undefined);
 }
+
+// ─── Tax Residency Questionnaire (1099 Resident Test) ───
+let _trExistingData = null;
+
+async function openTaxResidencyModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  document.getElementById('trWorkerName').textContent = w ? (w.name || w.username) : '';
+  _trExistingData = null;
+
+  // Reset all fields
+  ['trApplicantType','trIsUsPerson','trIsUsCitizen','trHasGreenCard','trHasExemptDays',
+   'trServicesLocation','trClaimTreatyBenefit','trTreatyIncomeType','trWillTravelToUs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  ['trCountryTaxResidence','trCountryCitizenship','trEntityCountryOrg','trExemptVisaStatus',
+   'trPrimaryWorkLocations','trExpectedServiceDates','trTreatyCountry','trImmigrationStatus','trAdminNotes'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  ['trFirstEntryDate','trI94AdmissionDate','trStatusExpiration'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  ['trDaysCurrentYear','trDaysLastYear','trDaysTwoYearsAgo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('trApplicantType').value = 'individual';
+  document.getElementById('trResultPreview').style.display = 'none';
+
+  // Load existing data if any
+  const existing = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`);
+  if (existing) {
+    _trExistingData = existing;
+    document.getElementById('trApplicantType').value = existing.applicant_type || 'individual';
+    document.getElementById('trIsUsPerson').value = existing.is_us_person || '';
+    document.getElementById('trCountryTaxResidence').value = existing.country_tax_residence || '';
+    document.getElementById('trCountryCitizenship').value = existing.country_citizenship || '';
+    document.getElementById('trEntityCountryOrg').value = existing.entity_country_org || '';
+    document.getElementById('trIsUsCitizen').value = existing.is_us_citizen || '';
+    document.getElementById('trHasGreenCard').value = existing.has_green_card || '';
+    document.getElementById('trFirstEntryDate').value = existing.first_entry_date || '';
+    if (existing.days_current_year) document.getElementById('trDaysCurrentYear').value = existing.days_current_year;
+    if (existing.days_last_year) document.getElementById('trDaysLastYear').value = existing.days_last_year;
+    if (existing.days_two_years_ago) document.getElementById('trDaysTwoYearsAgo').value = existing.days_two_years_ago;
+    document.getElementById('trHasExemptDays').value = existing.has_exempt_days || '';
+    document.getElementById('trExemptVisaStatus').value = existing.exempt_visa_status || '';
+    document.getElementById('trServicesLocation').value = existing.services_location || '';
+    document.getElementById('trPrimaryWorkLocations').value = existing.primary_work_locations || '';
+    document.getElementById('trExpectedServiceDates').value = existing.expected_service_dates || '';
+    document.getElementById('trWillTravelToUs').value = existing.will_travel_to_us || '';
+    document.getElementById('trClaimTreatyBenefit').value = existing.claim_treaty_benefit || '';
+    document.getElementById('trTreatyCountry').value = existing.treaty_country || '';
+    document.getElementById('trTreatyIncomeType').value = existing.treaty_income_type || '';
+    document.getElementById('trImmigrationStatus').value = existing.immigration_status || '';
+    document.getElementById('trI94AdmissionDate').value = existing.i94_admission_date || '';
+    document.getElementById('trStatusExpiration').value = existing.status_expiration || '';
+    document.getElementById('trAdminNotes').value = existing.admin_notes || '';
+
+    // Show existing result
+    if (existing.recommended_form) {
+      trShowResult(existing);
+    }
+  }
+
+  trToggleSections();
+  document.getElementById('taxResidencyModal').classList.add('show');
+}
+
+function trToggleSections() {
+  const type = document.getElementById('trApplicantType').value;
+  const usPerson = document.getElementById('trIsUsPerson').value;
+  const citizen = document.getElementById('trIsUsCitizen').value;
+  const greenCard = document.getElementById('trHasGreenCard').value;
+  const exemptDays = document.getElementById('trHasExemptDays').value;
+  const treaty = document.getElementById('trClaimTreatyBenefit').value;
+  const servicesLoc = document.getElementById('trServicesLocation').value;
+
+  // Individual vs entity fields
+  document.getElementById('trCitizenshipField').style.display = type === 'individual' ? '' : 'none';
+  document.getElementById('trEntityCountryField').style.display = type === 'entity' ? '' : 'none';
+
+  // Section B: only for individual + not sure/not US person
+  const showB = type === 'individual' && (usPerson === 'no' || usPerson === 'not_sure');
+  document.getElementById('trSectionB').style.display = showB ? '' : 'none';
+
+  // SPT fields: hide if citizen or green card holder
+  const showSpt = showB && citizen !== 'yes' && greenCard !== 'yes';
+  document.getElementById('trSptFields').style.display = showSpt ? '' : 'none';
+
+  // Exempt visa field
+  const exemptField = document.getElementById('trExemptVisaField');
+  if (exemptField) exemptField.style.display = exemptDays === 'yes' ? '' : 'none';
+
+  // Treaty details
+  document.getElementById('trTreatyDetails').style.display = treaty === 'yes' ? 'grid' : 'none';
+
+  // Section E: show when services in US + non-US person, or treaty claim
+  const isNonUs = usPerson === 'no' || usPerson === 'not_sure';
+  const servicesInUs = servicesLoc === 'all_in_us' || servicesLoc === 'partly_in_us';
+  const showE = isNonUs && (servicesInUs || treaty === 'yes');
+  document.getElementById('trSectionE').style.display = showE ? '' : 'none';
+
+  // Travel field: show only when services partly/outside US
+  document.getElementById('trTravelField').style.display = (servicesLoc === 'partly_in_us' || servicesLoc === 'all_outside_us') ? '' : 'none';
+
+  // Live SPT preview
+  trUpdateSptPreview();
+}
+
+function trUpdateSptPreview() {
+  const cy = parseInt(document.getElementById('trDaysCurrentYear').value) || 0;
+  const ly = parseInt(document.getElementById('trDaysLastYear').value) || 0;
+  const ty = parseInt(document.getElementById('trDaysTwoYearsAgo').value) || 0;
+  const preview = document.getElementById('trSptPreview');
+  if (!cy && !ly && !ty) { preview.style.display = 'none'; return; }
+  const weighted = cy + (ly / 3) + (ty / 6);
+  const meetsSpt = cy >= 31 && weighted >= 183;
+  preview.style.display = '';
+  preview.style.background = meetsSpt ? '#fef2f2' : '#f0fdf4';
+  preview.style.color = meetsSpt ? '#991b1b' : '#166534';
+  preview.style.border = meetsSpt ? '1px solid #fecaca' : '1px solid #bbf7d0';
+  preview.innerHTML = `SPT 加权天数: <b>${weighted.toFixed(1)}</b> (${cy} + ${ly}/3 + ${ty}/6)` +
+    (cy >= 31 ? '' : ` · 当年天数 ${cy} < 31`) +
+    ` → <b>${meetsSpt ? '⚠️ 可能满足 SPT (Likely Resident Alien)' : '✅ 不满足 SPT (Likely Nonresident Alien)'}</b>`;
+}
+
+function trCollectData() {
+  return {
+    applicant_type: document.getElementById('trApplicantType').value,
+    is_us_person: document.getElementById('trIsUsPerson').value,
+    country_tax_residence: document.getElementById('trCountryTaxResidence').value.trim(),
+    country_citizenship: document.getElementById('trCountryCitizenship').value.trim(),
+    entity_country_org: document.getElementById('trEntityCountryOrg').value.trim(),
+    is_us_citizen: document.getElementById('trIsUsCitizen').value,
+    has_green_card: document.getElementById('trHasGreenCard').value,
+    first_entry_date: document.getElementById('trFirstEntryDate').value,
+    days_current_year: document.getElementById('trDaysCurrentYear').value || '0',
+    days_last_year: document.getElementById('trDaysLastYear').value || '0',
+    days_two_years_ago: document.getElementById('trDaysTwoYearsAgo').value || '0',
+    has_exempt_days: document.getElementById('trHasExemptDays').value,
+    exempt_visa_status: document.getElementById('trExemptVisaStatus').value.trim(),
+    exempt_date_range: '',
+    services_location: document.getElementById('trServicesLocation').value,
+    primary_work_locations: document.getElementById('trPrimaryWorkLocations').value.trim(),
+    expected_service_dates: document.getElementById('trExpectedServiceDates').value.trim(),
+    will_travel_to_us: document.getElementById('trWillTravelToUs').value,
+    claim_treaty_benefit: document.getElementById('trClaimTreatyBenefit').value,
+    treaty_country: document.getElementById('trTreatyCountry').value.trim(),
+    treaty_income_type: document.getElementById('trTreatyIncomeType').value,
+    immigration_status: document.getElementById('trImmigrationStatus').value.trim(),
+    i94_admission_date: document.getElementById('trI94AdmissionDate').value,
+    status_expiration: document.getElementById('trStatusExpiration').value,
+    admin_notes: document.getElementById('trAdminNotes').value.trim()
+  };
+}
+
+function trShowResult(calc) {
+  const preview = document.getElementById('trResultPreview');
+  const content = document.getElementById('trResultContent');
+  preview.style.display = '';
+
+  const statusLabels = {
+    'us_citizen': '🇺🇸 U.S. Citizen（美国公民）',
+    'us_entity': '🇺🇸 U.S. Entity（美国实体）',
+    'resident_alien': '🟢 Resident Alien（居民外国人）',
+    'likely_resident_alien': '🟡 Likely Resident Alien（可能居民外国人，需复核）',
+    'likely_nonresident_alien': '🔵 Likely Nonresident Alien（可能非居民外国人）',
+    'foreign_entity': '🌐 Foreign Entity（外国实体）'
+  };
+  const formLabels = {
+    'W-9': '📄 W-9（U.S. Person 税表）',
+    'W-8BEN': '📄 W-8BEN（非居民外国个人）',
+    'W-8BEN-E': '📄 W-8BEN-E（外国实体）',
+    'Form 8233': '📄 Form 8233（个人服务 Treaty Exemption）'
+  };
+
+  let html = `<div style="display:grid;gap:.4rem">`;
+  html += `<div><b>税务身份:</b> ${statusLabels[calc.tax_status] || calc.tax_status}</div>`;
+  html += `<div><b>推荐表格:</b> ${formLabels[calc.recommended_form] || calc.recommended_form}</div>`;
+  if (calc.spt_weighted_days) {
+    html += `<div><b>SPT 加权天数:</b> ${calc.spt_weighted_days} ${calc.spt_result === 'meets_spt' ? '(满足 SPT)' : '(不满足 SPT)'}</div>`;
+  }
+  if (calc.needs_manual_review) {
+    html += `<div style="color:#dc2626;font-weight:700">⚠️ 需要人工复核 (Manual Review Required)</div>`;
+    html += `<div style="font-size:.78rem;color:var(--gray-500)">可能原因: closer connection exception, dual-status, F/J/M/Q exempt days, 在美服务 withholding 等</div>`;
+  }
+  html += `</div>`;
+  content.innerHTML = html;
+}
+
+function trPreviewResult() {
+  const data = trCollectData();
+  // Client-side SPT preview
+  const calc = { spt_weighted_days: 0, spt_result: '', tax_status: '', recommended_form: '', needs_manual_review: false };
+
+  if (data.applicant_type === 'entity') {
+    calc.tax_status = data.is_us_person === 'yes' ? 'us_entity' : 'foreign_entity';
+    calc.recommended_form = data.is_us_person === 'yes' ? 'W-9' : 'W-8BEN-E';
+  } else {
+    if (data.is_us_citizen === 'yes') {
+      calc.tax_status = 'us_citizen'; calc.recommended_form = 'W-9';
+    } else if (data.has_green_card === 'yes') {
+      calc.tax_status = 'resident_alien'; calc.recommended_form = 'W-9';
+    } else if (data.is_us_person === 'yes') {
+      calc.tax_status = 'us_citizen'; calc.recommended_form = 'W-9';
+    } else {
+      const cy = parseInt(data.days_current_year) || 0;
+      const ly = parseInt(data.days_last_year) || 0;
+      const ty = parseInt(data.days_two_years_ago) || 0;
+      const weighted = cy + (ly / 3) + (ty / 6);
+      calc.spt_weighted_days = Math.round(weighted * 100) / 100;
+      if (cy >= 31 && weighted >= 183) {
+        calc.spt_result = 'meets_spt'; calc.tax_status = 'likely_resident_alien';
+        calc.recommended_form = 'W-9'; calc.needs_manual_review = true;
+      } else {
+        calc.spt_result = 'does_not_meet_spt'; calc.tax_status = 'likely_nonresident_alien';
+        if (data.services_location === 'all_outside_us') {
+          calc.recommended_form = 'W-8BEN';
+        } else if (data.services_location === 'all_in_us' || data.services_location === 'partly_in_us') {
+          calc.needs_manual_review = true;
+          if (data.claim_treaty_benefit === 'yes' && data.treaty_income_type === 'personal_services') {
+            calc.recommended_form = 'Form 8233';
+          } else {
+            calc.recommended_form = 'W-8BEN';
+          }
+        } else {
+          calc.recommended_form = 'W-8BEN';
+        }
+      }
+      if (data.has_exempt_days === 'yes') calc.needs_manual_review = true;
+    }
+  }
+  trShowResult(calc);
+}
+
+async function saveTaxResidency() {
+  if (!_onboardingWorkerId) return;
+  const data = trCollectData();
+
+  // Basic validation
+  if (!data.is_us_person) return showToast('请选择是否为 U.S. Person', 'error');
+
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`, {
+    method: 'POST', body: JSON.stringify(data)
+  });
+  if (r && r.success) {
+    closeModal('taxResidencyModal');
+    showToast(`✅ 税务居民判定已保存 · 推荐表格: ${r.recommended_form}${r.needs_manual_review ? ' (需复核)' : ''}`, 'success', 5000);
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ 保存失败: ' + ((r && r.error) || '未知错误'), 'error');
+  }
+}
+
+// Add SPT live calculation listeners
+document.addEventListener('DOMContentLoaded', () => {
+  ['trDaysCurrentYear','trDaysLastYear','trDaysTwoYearsAgo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', trUpdateSptPreview);
+  });
+});
 
 async function sendPersonaFromOnboarding() {
   if (!_onboardingWorkerId) return;
