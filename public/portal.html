@@ -5061,7 +5061,7 @@ async function loadOnboarding() {
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">${_t('obActionDocs')}</button>`;
       } else if (t.key === 'contract' && t.action_url) {
-        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openContractSignModal()">${_t('obActionContract')}</button>`;
+        actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openWorkerContractSign()">${_t('obActionContract')}</button>`;
       } else if (t.key === 'contract' && !t.action_url) {
         actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">${_t('obContractWaiting')}</div>`;
       } else if (t.key === 'gusto' && t.action_url) {
@@ -5071,6 +5071,8 @@ async function loadOnboarding() {
       }
     } else if (s === 'submitted') {
       actionHtml = `<div style="font-size:.8rem;color:var(--orange);margin-top:.4rem">${_t('obSubmittedNote')}</div>`;
+    } else if (s === 'completed' && t.key === 'contract' && t.ds_envelope_id) {
+      actionHtml = `<button class="btn" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0" onclick="openSignedContractViewer()">📄 查看已签署合同</button>`;
     }
     return `<div class="ob-step">
       <div class="ob-icon ob-${s==='completed'?'done':s==='waived'?'waived':s==='submitted'?'submitted':s==='pending'?'pending':'locked'}">${icons[t.key]||'📌'}</div>
@@ -5409,6 +5411,49 @@ async function openWorkerContractSign() {
 function closeWorkerContractSign() {
   document.getElementById('workerContractSignModal').style.display = 'none';
   document.getElementById('workerContractSignForm').innerHTML = '';
+}
+</script>
+
+<!-- ── Signed Contract PDF Viewer Modal ── -->
+<div id="signedContractViewerModal" style="display:none;position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;width:min(98vw,860px);height:min(92vh,720px);display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.3);overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.1rem;border-bottom:1px solid #e2e8f0;flex-shrink:0">
+      <span style="font-weight:700;font-size:.95rem;color:#065f46">📄 已签署合同</span>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        <a id="signedContractDownloadLink" href="/api/worker/contract-signed-pdf" download="signed-contract.pdf" style="font-size:.82rem;padding:.25rem .75rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0;border-radius:6px;text-decoration:none">⬇ 下载</a>
+        <button onclick="closeSignedContractViewer()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#64748b;line-height:1">&times;</button>
+      </div>
+    </div>
+    <div id="signedContractViewerLoading" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.75rem;font-size:.9rem;color:#64748b">
+      <div style="width:32px;height:32px;border:3px solid #e2e8f0;border-top-color:#065f46;border-radius:50%;animation:spin .8s linear infinite"></div>
+      <span>加载合同中…</span>
+    </div>
+    <iframe id="signedContractViewerFrame" style="flex:1;display:none;border:none;min-height:0" src=""></iframe>
+  </div>
+</div>
+
+<script>
+function openSignedContractViewer() {
+  const modal = document.getElementById('signedContractViewerModal');
+  const loading = document.getElementById('signedContractViewerLoading');
+  const frame = document.getElementById('signedContractViewerFrame');
+  modal.style.display = 'flex';
+  loading.style.display = 'flex';
+  frame.style.display = 'none';
+  frame.src = '';
+  frame.onload = function() {
+    loading.style.display = 'none';
+    frame.style.display = '';
+  };
+  frame.onerror = function() {
+    loading.innerHTML = '❌ 加载失败，请点击下载按钮查看合同。';
+  };
+  frame.src = '/api/worker/contract-signed-pdf';
+}
+function closeSignedContractViewer() {
+  const modal = document.getElementById('signedContractViewerModal');
+  modal.style.display = 'none';
+  document.getElementById('signedContractViewerFrame').src = '';
 }
 </script>
 </body>
