@@ -2050,10 +2050,13 @@ async function showApp() {
     });
   }
 
-  // Show compliance tab if interview passed OR persona verification has been initiated
+  // Show compliance tab if interview passed OR persona initiated OR interview onboarding task completed
   _interviewPassed = interview && interview.status === 'passed';
   const _personaInitiated = personaStatus && personaStatus.status !== 'not_started';
-  document.getElementById('navCompliance').style.display = (_interviewPassed || _personaInitiated) ? '' : 'none';
+  const _obTasks = await wApi('/onboarding');
+  const _obInterview = Array.isArray(_obTasks) && _obTasks.find(t => t.key === 'interview');
+  const _interviewObDone = _obInterview && ['completed','waived'].includes(_obInterview.status);
+  document.getElementById('navCompliance').style.display = (_interviewPassed || _personaInitiated || _interviewObDone) ? '' : 'none';
   // Show todos tab (always visible for logged-in workers)
   document.getElementById('navTodos').style.display = '';
 
@@ -4313,7 +4316,14 @@ async function loadCompliance() {
     }
   }
   const personaInitiated = pStatus && pStatus.status !== 'not_started';
+  // Also unlock if the onboarding interview task is completed/waived (HR approved)
+  let interviewOnboardingDone = false;
   if (!_interviewPassed && !personaInitiated) {
+    const obTasks = await wApi('/onboarding');
+    const interviewTask = Array.isArray(obTasks) && obTasks.find(t => t.key === 'interview');
+    interviewOnboardingDone = interviewTask && ['completed','waived'].includes(interviewTask.status);
+  }
+  if (!_interviewPassed && !personaInitiated && !interviewOnboardingDone) {
     grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:2.5rem 1rem">
       <div style="font-size:2.5rem;margin-bottom:.75rem">🔒</div>
       <div style="font-weight:700;font-size:1.05rem;color:var(--gray-600);margin-bottom:.5rem">合规文件尚未开放</div>
