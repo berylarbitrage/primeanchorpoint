@@ -13799,6 +13799,32 @@ function trAutoDetectTreatyCountry() {
   }
 }
 
+function trClearDownstream() {
+  // Clear Step 2B individual status
+  document.querySelectorAll('input[name="trIndStatus"]').forEach(r => r.checked = false);
+  ['trIndCitizenLabel','trIndGcLabel','trIndNeitherLabel'].forEach(id => { const el = document.getElementById(id); if (el) { el.style.borderColor = 'var(--gray-200)'; el.style.background = '#fff'; } });
+  ['trIndLegalName','trIndSsn','trIndAddress'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('trIndUsFields').style.display = 'none';
+  // Clear Step 2A entity fields
+  document.getElementById('trEntityUs').value = '';
+  ['trEntLegalName','trEntTaxClass','trEntEin','trEntAddress','trEntForeignName','trEntForeignCountry','trEntForeignTaxCountry','trEntForeignAddr','trEntTreaty'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Clear Step 3
+  document.getElementById('trPresentInUs').value = '';
+  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('trSptExempt').value = '';
+  document.getElementById('trSptPreview').style.display = 'none';
+  document.getElementById('trSptBlock').style.display = 'none';
+  document.getElementById('trNeverInUs').style.display = 'none';
+  // Clear Step 4
+  ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trWorkLoc','trServiceDates','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Hide Steps 3 & 4
+  document.getElementById('trStep3').style.display = 'none';
+  document.getElementById('trStep4').style.display = 'none';
+  // Clear final result
+  document.getElementById('trFinalResult').style.display = 'none';
+}
+
 function trSelectType(type) {
   document.getElementById('trTypeInd').checked = type === 'individual';
   document.getElementById('trTypeEnt').checked = type === 'entity';
@@ -13806,12 +13832,11 @@ function trSelectType(type) {
   document.getElementById('trTypeIndLabel').style.background = type === 'individual' ? '#fffbeb' : '#fff';
   document.getElementById('trTypeEntLabel').style.borderColor = type === 'entity' ? '#854d0e' : 'var(--gray-200)';
   document.getElementById('trTypeEntLabel').style.background = type === 'entity' ? '#fffbeb' : '#fff';
+  // Clear all downstream fields when changing type
+  trClearDownstream();
   // Auto-show relevant sections
   document.getElementById('trStep2A').style.display = type === 'entity' ? '' : 'none';
   document.getElementById('trStep2B').style.display = type === 'individual' ? '' : 'none';
-  document.getElementById('trStep3').style.display = 'none';
-  document.getElementById('trStep4').style.display = 'none';
-  trCalcFinalResult();
 }
 
 function trSelectIndStatus(s) {
@@ -13822,6 +13847,16 @@ function trSelectIndStatus(s) {
     if (l) { l.style.borderColor = (v === s) ? '#854d0e' : 'var(--gray-200)'; l.style.background = (v === s) ? '#fffbeb' : '#fff'; }
   });
   document.getElementById('trIndUsFields').style.display = (s === 'citizen' || s === 'green_card') ? '' : 'none';
+  // Clear Steps 3 & 4 fields when changing identity status
+  document.getElementById('trPresentInUs').value = '';
+  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('trSptExempt').value = '';
+  document.getElementById('trSptPreview').style.display = 'none';
+  document.getElementById('trSptBlock').style.display = 'none';
+  document.getElementById('trNeverInUs').style.display = 'none';
+  ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trWorkLoc','trServiceDates','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('trFinalResult').style.display = 'none';
   // Auto-show/hide steps based on status
   if (s === 'citizen' || s === 'green_card') {
     _trPath = 'individual_us';
@@ -13897,6 +13932,10 @@ function trEntityToggle() {
   document.getElementById('trEntUsFields').style.display = v === 'yes' ? '' : 'none';
   document.getElementById('trEntForeignFields').style.display = v === 'no' ? '' : 'none';
   _trPath = 'entity';
+  // Clear Step 4 fields when changing entity type
+  ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trWorkLoc','trServiceDates','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('trFinalResult').style.display = 'none';
   if (v === 'yes') {
     document.getElementById('trStep4').style.display = 'none';
   } else if (v === 'no') {
