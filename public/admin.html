@@ -2685,33 +2685,13 @@ tr:hover td{background:var(--sky-light)}
   <!-- Section 1: Post-interview worker info -->
   <div style="background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
     <div style="font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)">面试后记录</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
-      <div class="field" style="margin-bottom:0">
-        <label style="font-size:.8rem;font-weight:600">身份 Work Status *</label>
-        <select id="icWorkStatus" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
-          <option value="">— 未确认 —</option>
-          <option value="citizen">🇺🇸 公民 Citizen</option>
-          <option value="green_card">🟢 绿卡 Green Card</option>
-          <option value="ead">📄 EAD 工作许可</option>
-          <option value="h1b">H-1B</option>
-          <option value="opt">OPT/CPT</option>
-          <option value="other">其他 Other</option>
-        </select>
-      </div>
-      <div class="field" style="margin-bottom:0">
-        <label style="font-size:.8rem;font-weight:600">收款方式 Payment Method *</label>
-        <select id="icPaymentMethod" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
-          <option value="cash">💵 现金 Cash</option>
-          <option value="check">✅ 支票 Check</option>
-          <option value="direct_deposit">🏦 直接存款 Direct Deposit</option>
-        </select>
-      </div>
-    </div>
-    <div style="margin-top:.75rem">
-      <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.88rem;font-weight:500">
-        <input type="checkbox" id="icHasSsn" style="width:16px;height:16px;accent-color:var(--sky)">
-        <span>已提供 SSN（社会安全号码）</span>
-      </label>
+    <div class="field" style="margin-bottom:0">
+      <label style="font-size:.8rem;font-weight:600">收款方式 Payment Method *</label>
+      <select id="icPaymentMethod" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
+        <option value="cash">💵 现金 Cash</option>
+        <option value="check">✅ 支票 Check</option>
+        <option value="direct_deposit">🏦 直接存款 Direct Deposit</option>
+      </select>
     </div>
   </div>
 
@@ -14187,9 +14167,7 @@ async function openInterviewCompleteModal() {
   if (!_onboardingWorkerId) return;
   const w = _onboardingWorkerData;
   document.getElementById('icWorkerName').textContent = w ? (w.name || w.username) : '';
-  document.getElementById('icWorkStatus').value = (w && w.work_status) || '';
   document.getElementById('icPaymentMethod').value = (w && w.payment_method) || 'cash';
-  document.getElementById('icHasSsn').checked = !!(w && w.has_ssn);
 
   const empType = (w && w.employment_type) || '';
   if (empType === 'w2' || empType === '1099') {
@@ -14379,16 +14357,14 @@ async function saveInterviewComplete() {
   if (!_onboardingWorkerId) return;
   const employmentType = document.getElementById('icEmpTypeW2').checked ? 'w2' : document.getElementById('icEmpType1099').checked ? '1099' : '';
   if (!employmentType) return showToast('❌ 请选择雇佣类型（W-2 或 1099）', 'error');
-  const workStatus = document.getElementById('icWorkStatus').value;
   const paymentMethod = document.getElementById('icPaymentMethod').value;
-  const hasSsn = document.getElementById('icHasSsn').checked;
   const positionInterests = Array.from(document.querySelectorAll('#icPositionInterests input[type="checkbox"]:checked')).map(cb => cb.value);
   const skills = _icSkills.filter(s => s.skill_name.trim());
   const assignedTasks = employmentType === 'w2' ? W2_TASKS : C1099_TASKS;
 
   await api(`/admin/worker-accounts/${_onboardingWorkerId}`, {
     method: 'PUT',
-    body: JSON.stringify({ work_status: workStatus, payment_method: paymentMethod, has_ssn: hasSsn, position_interests: positionInterests, employment_type: employmentType, assigned_tasks: assignedTasks })
+    body: JSON.stringify({ payment_method: paymentMethod, position_interests: positionInterests, employment_type: employmentType, assigned_tasks: assignedTasks })
   });
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/skills`, { method: 'PUT', body: JSON.stringify({ skills }) });
 
