@@ -5017,6 +5017,31 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
   res.json({ success: true, ...calc, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
 });
 
+// ─── ID Document Upload (admin uploads for worker during interview) ───
+app.get('/api/admin/worker-accounts/:id/id-docs', requireAdmin, (req, res) => {
+  const docs = db.prepare(`SELECT id, doc_type, status, file_name, doc_number, created_at FROM worker_compliance_docs
+    WHERE worker_account_id=? AND doc_type IN ('passport','drivers_license','state_id','green_card','ead_card','visa','ssn_card','itin_letter','other')
+    ORDER BY created_at DESC`).all(req.params.id);
+  res.json(docs);
+});
+
+app.post('/api/admin/worker-accounts/:id/id-docs', requireAdmin, docUpload.single('file'), (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const docType = req.body.doc_type || 'other';
+  const docNumber = req.body.doc_number || '';
+  const filePath = req.file ? req.file.path : '';
+  const fileName = req.file ? req.file.originalname : '';
+
+  db.prepare(`INSERT INTO worker_compliance_docs (worker_account_id, doc_type, doc_number, file_path, file_name, status) VALUES (?,?,?,?,?,?)`)
+    .run(workerId, docType, docNumber, filePath, fileName, 'pending');
+
+  const changedBy = (req.session && req.session.username) || 'admin';
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, changedBy, 'id_doc_upload', '', docType, `上传身份证明文件: ${docType}${docNumber ? ' #' + docNumber : ''} · ${fileName}`);
+
+  res.json({ success: true });
+});
+
 // Preview W-9 HTML template (admin can see the blank form before sending)
 app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) => {
   const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
