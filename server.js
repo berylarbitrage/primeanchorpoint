@@ -4845,9 +4845,13 @@ function calculateTaxResidency(data) {
     if (is_us_person === 'yes') {
       result.tax_status = 'us_entity';
       result.recommended_form = 'W-9';
+    } else if (is_us_person === 'no') {
+      result.tax_status = 'foreign_entity';
+      result.recommended_form = 'W-8BEN-E';
     } else {
       result.tax_status = 'foreign_entity';
       result.recommended_form = 'W-8BEN-E';
+      result.needs_manual_review = true; // entity status unclear
     }
     return result;
   }
