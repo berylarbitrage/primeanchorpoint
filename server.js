@@ -1354,6 +1354,23 @@ db.exec(`CREATE TABLE IF NOT EXISTS tax_residency_questionnaire (
   UNIQUE(worker_account_id)
 )`);
 
+// ─── Work Permit Verification ───
+db.exec(`CREATE TABLE IF NOT EXISTS work_permit_verification (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  doc_type TEXT DEFAULT '',
+  doc_number TEXT DEFAULT '',
+  issue_date TEXT DEFAULT '',
+  expiry_date TEXT DEFAULT '',
+  category TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  verified_at DATETIME,
+  verified_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(worker_account_id)
+)`);
+
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
   const oldRows = db.prepare(`SELECT DISTINCT worker_account_id FROM worker_onboarding WHERE task_key IN ('id_verify','ssn_verify')`).all();
@@ -5119,6 +5136,33 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
       `税务居民判定完成: ${calc.tax_status} → 推荐表格: ${calc.recommended_form}${calc.needs_manual_review ? ' (需人工复核)' : ''}`);
 
   res.json({ success: true, ...calc, taxTasks, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
+});
+
+// ─── Work Permit Verification ───
+app.get('/api/admin/worker-accounts/:id/work-permit', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM work_permit_verification WHERE worker_account_id=?').get(req.params.id);
+  res.json(row || null);
+});
+
+app.post('/api/admin/worker-accounts/:id/work-permit', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const d = req.body;
+  const verifiedBy = (req.session && req.session.username) || 'admin';
+
+  db.prepare(`INSERT INTO work_permit_verification (worker_account_id, doc_type, doc_number, issue_date, expiry_date, category, notes, verified_at, verified_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(worker_account_id) DO UPDATE SET
+      doc_type=excluded.doc_type, doc_number=excluded.doc_number, issue_date=excluded.issue_date,
+      expiry_date=excluded.expiry_date, category=excluded.category, notes=excluded.notes,
+      verified_at=CURRENT_TIMESTAMP, verified_by=excluded.verified_by, updated_at=CURRENT_TIMESTAMP
+  `).run(workerId, d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.category || '', d.notes || '', verifiedBy);
+
+  // Log to history
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, verifiedBy, 'work_permit', '', d.doc_type, `工作许可验证: ${d.doc_type}${d.doc_number ? ' #' + d.doc_number : ''}${d.expiry_date ? ' Exp: ' + d.expiry_date : ''}`);
+
+  syncOnboardedStatus(workerId);
+  res.json({ success: true });
 });
 
 // ─── ID Document Upload (admin uploads for worker during interview) ───
