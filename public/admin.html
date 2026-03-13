@@ -2830,12 +2830,16 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div class="field" style="margin-bottom:.5rem">
           <label style="font-size:.78rem;font-weight:600">U.S. Business Address</label>
-          <input id="trEntAddrStreet" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Street Address">
-          <input id="trEntAddrSuite" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Suite / Apt # (optional)">
-          <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.4rem">
-            <input id="trEntAddrCity" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="City">
-            <input id="trEntAddrState" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;text-transform:uppercase" placeholder="State" maxlength="2">
-            <input id="trEntAddrZip" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="ZIP Code" maxlength="10">
+          <input id="trEntAddrStreet" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Street Address" oninput="document.getElementById('trEntAddrStatus').textContent=''">
+          <input id="trEntAddrSuite" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Suite / Apt # (optional)" oninput="document.getElementById('trEntAddrStatus').textContent=''">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.4rem;margin-bottom:.4rem">
+            <input id="trEntAddrCity" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="City" oninput="document.getElementById('trEntAddrStatus').textContent=''">
+            <input id="trEntAddrState" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;text-transform:uppercase" placeholder="State" maxlength="2" oninput="document.getElementById('trEntAddrStatus').textContent=''">
+            <input id="trEntAddrZip" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="ZIP Code" maxlength="10" oninput="document.getElementById('trEntAddrStatus').textContent=''">
+          </div>
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyTrEntAddr()">🔍 验证地址 Verify</button>
+            <span id="trEntAddrStatus" style="font-size:.78rem;font-weight:600"></span>
           </div>
         </div>
       </div>
@@ -14215,6 +14219,33 @@ function trCalcFinalResult() {
     html += `</div>`;
   }
   content.innerHTML = html;
+}
+
+async function verifyTrEntAddr() {
+  const street = document.getElementById('trEntAddrStreet').value.trim();
+  const street2 = document.getElementById('trEntAddrSuite').value.trim();
+  const city = document.getElementById('trEntAddrCity').value.trim();
+  const state = document.getElementById('trEntAddrState').value.trim();
+  const zip = document.getElementById('trEntAddrZip').value.trim();
+  const statusEl = document.getElementById('trEntAddrStatus');
+  if (!street) { statusEl.textContent = '❌ 请先填写街道地址'; statusEl.style.color = '#dc2626'; return; }
+  statusEl.textContent = '⏳ 验证中...'; statusEl.style.color = '#854d0e';
+  const result = await validateAddress({ street, street2, city, state, zip });
+  if (result.verified && result.standardized) {
+    const s = result.standardized;
+    document.getElementById('trEntAddrStreet').value = s.street || '';
+    document.getElementById('trEntAddrSuite').value = s.street2 || '';
+    document.getElementById('trEntAddrCity').value = s.city || '';
+    document.getElementById('trEntAddrState').value = s.state || '';
+    document.getElementById('trEntAddrZip').value = s.zip || '';
+    statusEl.textContent = '✅ 已验证并更新'; statusEl.style.color = '#16a34a';
+  } else if (result.verified) {
+    statusEl.textContent = '✅ 地址已验证'; statusEl.style.color = '#16a34a';
+  } else if (result.proceed) {
+    statusEl.textContent = '⚠️ 未验证，已跳过'; statusEl.style.color = '#d97706';
+  } else {
+    statusEl.textContent = '';
+  }
 }
 
 function trWizardCollectData() {
