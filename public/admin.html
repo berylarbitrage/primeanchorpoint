@@ -2914,13 +2914,13 @@ tr:hover td{background:var(--sky-light)}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
           <div class="field" style="margin-bottom:0">
             <label style="font-size:.78rem;font-weight:600">Country of Citizenship</label>
-            <select id="trNrCitizenship" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <select id="trNrCitizenship" onchange="trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
               <option value="">— 选择国家 —</option>
             </select>
           </div>
           <div class="field" style="margin-bottom:0">
             <label style="font-size:.78rem;font-weight:600">Country of Tax Residence</label>
-            <select id="trNrTaxCountry" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <select id="trNrTaxCountry" onchange="trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
               <option value="">— 选择国家 —</option>
             </select>
           </div>
@@ -2961,13 +2961,13 @@ tr:hover td{background:var(--sky-light)}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
           <div class="field" style="margin-bottom:0">
             <label style="font-size:.78rem;font-weight:600">Country of Citizenship</label>
-            <select id="trSptCitizenship" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <select id="trSptCitizenship" onchange="trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
               <option value="">— 选择国家 —</option>
             </select>
           </div>
           <div class="field" style="margin-bottom:0">
             <label style="font-size:.78rem;font-weight:600">Country of Tax Residence</label>
-            <select id="trSptTaxCountry" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <select id="trSptTaxCountry" onchange="trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
               <option value="">— 选择国家 —</option>
             </select>
           </div>
@@ -13960,7 +13960,7 @@ function trSptCalc() {
   const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
   const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
   const el = document.getElementById('trSptPreview');
-  if (!cy && !ly && !ty) { el.style.display = 'none'; return; }
+  if (!cy && !ly && !ty) { el.style.display = 'none'; trCalcFinalResult(); return; }
   const w = cy + (ly / 3) + (ty / 6);
   const meets = cy >= 31 && w >= 183;
   el.style.display = '';
@@ -13968,6 +13968,7 @@ function trSptCalc() {
   el.style.color = meets ? '#991b1b' : '#166534';
   el.style.border = meets ? '1px solid #fecaca' : '1px solid #bbf7d0';
   el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${cy}+${ly}/3+${ty}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`;
+  trCalcFinalResult();
 }
 
 function trStep4Toggle() {
