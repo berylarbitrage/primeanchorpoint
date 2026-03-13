@@ -1757,7 +1757,15 @@ schedule24hReminders();
 // ─── Middleware ───
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+// Redirect *.html URLs to clean URLs (e.g. /admin.html → /admin)
+app.use((req, res, next) => {
+  if (req.path.endsWith('.html') && req.method === 'GET') {
+    return res.redirect(301, req.path.slice(0, -5));
+  }
+  next();
+});
 app.use(express.static('public', {
+  extensions: ['html'],
   setHeaders(res, filePath) {
     if (filePath.endsWith('.html')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -2943,7 +2951,8 @@ function generateAssignmentContractText({ workerName, companyName, jobTitle, pay
   }
 }
 
-// DB-backed session store (survives server restarts, tokens expire in 24h)
+// DB-backed session store (survives server restarts, sessions roll on activity)
+const SESSION_TTL = 30 * 24 * 60 * 60 * 1000; // 30 days
 db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -2951,8 +2960,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
   role TEXT NOT NULL,
   created_at INTEGER NOT NULL
 )`);
-// Clean up expired sessions on startup
-try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+// Clean up sessions inactive for 30 days
+try { db.prepare('DELETE FROM admin_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 // DB-backed worker session store (survives server restarts)
 db.exec(`CREATE TABLE IF NOT EXISTS worker_sessions (
@@ -2961,7 +2970,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_sessions (
   employee_id TEXT,
   created_at INTEGER NOT NULL
 )`);
-try { db.prepare('DELETE FROM worker_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+try { db.prepare('DELETE FROM worker_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 // DB-backed customer session store (survives server restarts)
 db.exec(`CREATE TABLE IF NOT EXISTS customer_sessions (
@@ -2970,7 +2979,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS customer_sessions (
   partner_id INTEGER,
   created_at INTEGER NOT NULL
 )`);
-try { db.prepare('DELETE FROM customer_sessions WHERE created_at < ?').run(Date.now() - 24*60*60*1000); } catch(e) {}
+try { db.prepare('DELETE FROM customer_sessions WHERE created_at < ?').run(Date.now() - SESSION_TTL); } catch(e) {}
 
 function createSession(user) {
   const token = crypto.randomBytes(32).toString('hex');
@@ -2982,20 +2991,27 @@ function getSession(token) {
   if (!token) return null;
   const s = db.prepare('SELECT * FROM admin_sessions WHERE token=?').get(token);
   if (!s) return null;
-  if (Date.now() - s.created_at > 24*60*60*1000) { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); return null; }
-  return { userId: s.user_id, username: s.username, role: s.role, created: s.created_at };
+  if (Date.now() - s.created_at > SESSION_TTL) { db.prepare('DELETE FROM admin_sessions WHERE token=?').run(token); return null; }
+  // Roll session: refresh last-active timestamp if more than 1 hour old (avoids a DB write on every request)
+  if (Date.now() - s.created_at > 60 * 60 * 1000) {
+    db.prepare('UPDATE admin_sessions SET created_at=? WHERE token=?').run(Date.now(), token);
+  }
+  return { userId: s.user_id, username: s.username, role: s.role, token };
 }
 function validSession(token) { return !!getSession(token); }
 
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
   let session = null;
-  if (auth && auth.startsWith('Bearer ')) session = getSession(auth.slice(7));
+  let token = null;
+  if (auth && auth.startsWith('Bearer ')) { token = auth.slice(7); session = getSession(token); }
   if (!session) {
     const cookieMatch = (req.headers.cookie || '').match(/pa_token=([^;]+)/);
-    if (cookieMatch) session = getSession(cookieMatch[1]);
+    if (cookieMatch) { token = cookieMatch[1]; session = getSession(token); }
   }
   if (!session) return res.status(401).json({ error: 'Unauthorized' });
+  // Refresh cookie on each request so it stays alive while the user is active
+  res.setHeader('Set-Cookie', `pa_token=${token};path=/;max-age=${SESSION_TTL / 1000};SameSite=Strict`);
   req.userRole = session.role;
   req.userName = session.username;
   req.userId = session.userId;
@@ -4389,8 +4405,11 @@ app.put('/api/admin/worker-accounts/:id/dispatch-ready', requireAdmin, (req, res
 app.put('/api/admin/worker-accounts/:id/onboarding/:key/visibility', requireAdmin, (req, res) => {
   const { visible, slot_ids } = req.body;
   const workerId = parseInt(req.params.id);
-  db.prepare(`UPDATE worker_onboarding SET visible_to_worker=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key=?`)
-    .run(visible ? 1 : 0, workerId, req.params.key);
+  // Upsert — handles 'not_initialized' rows that don't exist yet
+  db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, updated_at)
+    VALUES (?, ?, 'pending', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(worker_account_id, task_key) DO UPDATE SET visible_to_worker=excluded.visible_to_worker, updated_at=CURRENT_TIMESTAMP`)
+    .run(workerId, req.params.key, visible ? 1 : 0);
 
   // When assigning interview slots to a worker, store the assigned slot IDs
   if (req.params.key === 'interview' && Array.isArray(slot_ids) && slot_ids.length) {
@@ -5120,6 +5139,34 @@ app.get('/api/admin/worker-accounts/:id/w9-signed-pdf', requireAdmin, async (req
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Send Work Authorization verification task to worker
+app.post('/api/admin/worker-accounts/:id/send-work-auth', requireAdmin, async (req, res) => {
+  try {
+    const workerId = parseInt(req.params.id);
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(workerId);
+    if (!w) return res.status(404).json({ error: 'Worker not found' });
+    const adminNote = req.body.note || 'Work Authorization 认证调查已发送，请按要求上传身份证明文件';
+    db.prepare(`INSERT INTO worker_onboarding (worker_account_id, task_key, status, visible_to_worker, admin_note, updated_at)
+      VALUES (?, 'work_auth', 'pending', 1, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id, task_key) DO UPDATE SET status='pending', visible_to_worker=1, admin_note=excluded.admin_note, updated_at=CURRENT_TIMESTAMP`)
+      .run(workerId, adminNote);
+    // Send notification via SMS/email
+    const workerName = w.name || w.username || '';
+    const workerPhone = w.phone || '';
+    const workerEmail = w.email || '';
+    if (workerPhone) {
+      await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请登录工人门户完成 Work Authorization 认证，上传所需身份证明文件。Reply STOP to opt out.`).catch(() => {});
+    }
+    if (workerEmail) {
+      await sendEmail(workerEmail, 'Work Authorization 认证 — 请上传身份证明文件',
+        `${workerName}，\n请登录工人门户完成 Work Authorization 认证调查。\n\nPrime Anchorpoint`,
+        `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:2rem"><h2>Work Authorization 认证</h2><p>您好 ${workerName}，</p><p>请登录工人门户，在入职进度中完成 <strong>Work Authorization 认证</strong>，按要求上传身份证明文件。</p><p style="color:#64748b;font-size:.9rem">Prime Anchorpoint</p></div>`
+      ).catch(() => {});
+    }
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Get worker W-9 sign URL (resend link)
 app.get('/api/admin/worker-accounts/:id/w9-sign-url', requireAdmin, async (req, res) => {
   try {
@@ -5151,6 +5198,24 @@ app.get('/api/worker/onboarding', requireWorker, (req, res) => {
 
   const tasks = getOnboardingTasks(req.workerId).filter(t => t.visible_to_worker !== 0);
   res.json(tasks);
+});
+
+// Worker: get their own W-9 signing URL (fresh from DocuSeal)
+app.get('/api/worker/w9-sign-url', requireWorker, async (req, res) => {
+  try {
+    const onb = db.prepare("SELECT ds_envelope_id, ds_status, action_url FROM worker_onboarding WHERE worker_account_id=? AND task_key='w9'").get(req.workerId);
+    if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'W-9 未发送' });
+    if (onb.ds_status === 'completed') return res.status(400).json({ error: 'W-9 已完成签署' });
+    let signUrl = onb.action_url || '';
+    if (dsealEnabled()) {
+      try {
+        signUrl = await dsealGetW9SignUrl(onb.ds_envelope_id);
+        if (signUrl) db.prepare("UPDATE worker_onboarding SET action_url=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'").run(signUrl, req.workerId);
+      } catch (e) { console.error('[worker w9-sign-url]', e.message); }
+    }
+    if (!signUrl) return res.status(404).json({ error: '签署链接暂不可用，请稍后再试' });
+    res.json({ signUrl, dsStatus: onb.ds_status });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Worker: get their own contract signing URL (fresh from DocuSeal)
@@ -10874,9 +10939,38 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
     // Check worker_onboarding contracts
     const wo = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='contract'").get(submissionId);
     // Check worker_onboarding W-9
-    const w9 = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='w9'").get(submissionId);
+    const w9o = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='w9'").get(submissionId);
 
-    if (!pf && !wo && !w9) { res.json({ received: true }); return; }
+    if (!pf && !wo && !w9o) { res.json({ received: true }); return; }
+
+    // ── Handle W-9 completion ──
+    if (w9o) {
+      const wid = w9o.worker_account_id;
+      if (isCompleted || isSubmitterCompleted) {
+        try {
+          // Fetch submission status from DocuSeal to confirm completion
+          const subData = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+          const dsStatus = subData.data?.status || subData.status_str || '';
+          const submitters = subData.data?.submitters || subData.data?.documents?.[0]?.submitters || [];
+          const workerSub = submitters.find(s => s.role !== 'Company' && s.role !== 'First Party') || submitters[0];
+          const workerSignedAt = workerSub?.completed_at || workerSub?.updated_at || new Date().toISOString();
+          const fullyDone = dsStatus === 'completed' || submitters.every(s => s.status === 'completed');
+          console.log(`[DocuSeal W-9 webhook] wid=${wid}, dsStatus=${dsStatus}, fullyDone=${fullyDone}`);
+          if (fullyDone) {
+            db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='W-9 已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+              .run(workerSignedAt, wid);
+            syncOnboardedStatus(wid);
+            console.log(`[DocuSeal W-9 webhook] W-9 marked completed for worker ${wid}`);
+          } else {
+            db.prepare("UPDATE worker_onboarding SET ds_worker_signed_at=?, admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+              .run(workerSignedAt, `W-9 已填写提交，等待最终确认 (${new Date().toLocaleString('zh-CN')})`, wid);
+          }
+        } catch (e) { console.error('[DocuSeal W-9 webhook] error:', e.message); }
+      } else if (isDeclined) {
+        db.prepare("UPDATE worker_onboarding SET ds_status='declined', admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'")
+          .run(`W-9 已被拒签: ${data.decline_reason || ''}`, wid);
+      }
+    }
 
     // Handle partner file contract events
     if (pf) {
