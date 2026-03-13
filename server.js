@@ -4286,7 +4286,9 @@ const ONBOARDING_STEPS = [
   { key: 'tax_doc_w8bene',   title: 'W-8BEN-E 表格',         desc: '外国实体预扣税声明',                             required: true  },
   { key: 'tax_doc_8233',     title: 'Form 8233',              desc: '个人服务条约豁免申请',                           required: true  },
   { key: 'tax_doc_passport', title: '护照复印件',              desc: '护照信息页复印件 Passport Copy',                 required: true  },
-  { key: 'tax_doc_visa_i94', title: '签证 / I-94',            desc: '签证复印件 / I-94 入境记录 / 工作授权文件',       required: true  },
+  { key: 'tax_doc_visa',     title: '签证复印件',              desc: '签证复印件 Visa Copy',                            required: true  },
+  { key: 'tax_doc_i94',      title: 'I-94 入境记录',           desc: 'I-94 Arrival/Departure Record',                    required: true  },
+  { key: 'tax_doc_work_auth',title: '工作授权文件',             desc: 'Work Authorization Document',                      required: true  },
   { key: 'tax_doc_w7_itin',  title: 'W-7 ITIN 申请',         desc: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）',          required: false },
   { key: 'tax_doc_8833',     title: 'Form 8833 条约声明',     desc: '条约申报声明 Treaty-Based Return Position',       required: false },
   { key: 'tax_doc_corp_cert',title: '公司注册文件',            desc: 'Articles / Certificate of Incorporation',         required: true  },
@@ -4966,7 +4968,9 @@ function getTaxDocTasks(form, data) {
     tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
     tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
     if (servInUs) {
-      tasks.push({ key: 'tax_doc_visa_i94', note: '签证 / I-94 / 工作授权文件' });
+      tasks.push({ key: 'tax_doc_visa', note: '签证复印件 Visa Copy' });
+      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
+      tasks.push({ key: 'tax_doc_work_auth', note: '工作授权文件 Work Authorization' });
     }
     if (treatyClaim) {
       tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
@@ -4983,7 +4987,8 @@ function getTaxDocTasks(form, data) {
   } else if (form === 'Form 8233') {
     tasks.push({ key: 'tax_doc_8233', note: 'Form 8233 个人服务条约豁免申请' });
     tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
-    tasks.push({ key: 'tax_doc_visa_i94', note: '签证 / I-94 记录' });
+    tasks.push({ key: 'tax_doc_visa', note: '签证复印件 Visa Copy' });
+    tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
     tasks.push({ key: 'tax_doc_treaty_stmt', note: '条约条款声明 Treaty Statement' });
     tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
     tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });

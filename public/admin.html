@@ -13302,7 +13302,7 @@ async function refreshOnboardingModal() {
 
 function renderOnboardingTasks(tasks) {
   const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂',
-    tax_doc_w8ben:'📄', tax_doc_w8bene:'📄', tax_doc_8233:'📄', tax_doc_passport:'🛂', tax_doc_visa_i94:'📋', tax_doc_w7_itin:'📄', tax_doc_8833:'📄', tax_doc_corp_cert:'📋', tax_doc_sign_auth:'📋', tax_doc_treaty_docs:'📋', tax_doc_treaty_stmt:'📋' };
+    tax_doc_w8ben:'📄', tax_doc_w8bene:'📄', tax_doc_8233:'📄', tax_doc_passport:'🛂', tax_doc_visa:'📋', tax_doc_i94:'📋', tax_doc_work_auth:'📋', tax_doc_w7_itin:'📄', tax_doc_8833:'📄', tax_doc_corp_cert:'📋', tax_doc_sign_auth:'📋', tax_doc_treaty_docs:'📋', tax_doc_treaty_stmt:'📋' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
     locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
@@ -14143,7 +14143,8 @@ function trCalcFinalResult() {
     if (status === 'U.S. Entity') docs.push('📋 公司注册文件 (Articles / Certificate of Formation)');
     if (status === 'Likely Resident Alien (SPT)') {
       docs.push('🛂 护照复印件');
-      docs.push('📋 签证 / I-94 记录');
+      docs.push('📋 签证复印件 Visa Copy');
+      docs.push('📋 I-94 入境记录 Arrival/Departure Record');
       docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN）');
       docs.push('📄 Form 1040-NR — 非居民外国人报税表（年度报税时使用）');
       docs.push('⚠️ 需人工复核 SPT 计算结果');
@@ -14153,7 +14154,9 @@ function trCalcFinalResult() {
     docs.push('🛂 护照复印件');
     docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN/ITIN，需随首次报税一起提交）');
     if (servInUs) {
-      docs.push('📋 签证 / I-94 / 工作授权文件');
+      docs.push('📋 签证复印件 Visa Copy');
+      docs.push('📋 I-94 入境记录 Arrival/Departure Record');
+      docs.push('📋 工作授权文件 Work Authorization');
       docs.push('⚠️ 美国境内服务需代扣 30% withholding（或适用条约税率）');
     }
     if (treatyClaim === 'yes') {
@@ -14176,7 +14179,8 @@ function trCalcFinalResult() {
   } else if (form === 'Form 8233') {
     docs.push('📄 Form 8233 — 个人服务条约豁免申请（Exemption from Withholding）');
     docs.push('🛂 护照复印件');
-    docs.push('📋 签证 / I-94 记录');
+    docs.push('📋 签证复印件 Visa Copy');
+    docs.push('📋 I-94 入境记录 Arrival/Departure Record');
     docs.push('📋 条约条款声明 (Treaty Statement / Attachment)');
     docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN/ITIN）');
     docs.push('📄 Form 8833 — 条约申报声明 (Treaty-Based Return Position Disclosure)');
@@ -14443,14 +14447,16 @@ function trGetRequiredDocs(form) {
       } else {
         // SPT resident
         docs.push({ key: 'passport', label: '护照复印件 Passport Copy', required: true });
-        docs.push({ key: 'visa', label: '签证 / I-94 记录', required: true });
+        docs.push({ key: 'visa', label: '签证复印件 Visa Copy', required: true });
+        docs.push({ key: 'other', label: 'I-94 入境记录 Arrival/Departure Record', required: true });
       }
     }
   } else if (form === 'W-8BEN') {
     docs.push({ key: 'passport', label: '护照复印件 Passport Copy', required: true });
     if (servInUs) {
-      docs.push({ key: 'visa', label: '签证 Visa Copy', required: true });
-      docs.push({ key: 'other', label: 'I-94 入境记录 / 工作授权文件', required: true });
+      docs.push({ key: 'visa', label: '签证复印件 Visa Copy', required: true });
+      docs.push({ key: 'other', label: 'I-94 入境记录 Arrival/Departure Record', required: true });
+      docs.push({ key: 'other', label: '工作授权文件 Work Authorization', required: true });
     }
   } else if (form === 'W-8BEN-E') {
     docs.push({ key: 'other', label: '实体注册证明 Certificate of Incorporation / Formation', required: true });
@@ -14460,8 +14466,8 @@ function trGetRequiredDocs(form) {
     }
   } else if (form === 'Form 8233') {
     docs.push({ key: 'passport', label: '护照复印件 Passport Copy', required: true });
-    docs.push({ key: 'visa', label: '签证 Visa Copy', required: true });
-    docs.push({ key: 'other', label: 'I-94 入境记录', required: true });
+    docs.push({ key: 'visa', label: '签证复印件 Visa Copy', required: true });
+    docs.push({ key: 'other', label: 'I-94 入境记录 Arrival/Departure Record', required: true });
     docs.push({ key: 'other', label: '条约条款声明 Treaty Statement', required: true });
   }
   return docs;
