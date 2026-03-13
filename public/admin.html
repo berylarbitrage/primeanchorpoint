@@ -2793,23 +2793,24 @@ tr:hover td{background:var(--sky-light)}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
             <div class="field" style="margin-bottom:0">
               <label style="font-size:.78rem;font-weight:600">Country of Organization</label>
-              <input id="trEntForeignCountry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+              <select id="trEntForeignCountry" onchange="trEntCountryChange()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+                <option value="">— 选择国家 —</option>
+              </select>
             </div>
             <div class="field" style="margin-bottom:0">
               <label style="font-size:.78rem;font-weight:600">Country of Tax Residence</label>
-              <input id="trEntForeignTaxCountry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+              <select id="trEntForeignTaxCountry" onchange="trEntCountryChange()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+                <option value="">— 选择国家 —</option>
+              </select>
             </div>
           </div>
           <div class="field" style="margin-bottom:.5rem">
             <label style="font-size:.78rem;font-weight:600">Entity Address</label>
             <input id="trEntForeignAddr" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
           </div>
-          <div class="field" style="margin-bottom:.5rem">
-            <label style="font-size:.78rem;font-weight:600">Claim treaty benefits?</label>
-            <select id="trEntTreaty" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-              <option value="">—</option><option value="yes">Yes</option><option value="no">No</option><option value="not_sure">Not sure</option>
-            </select>
-          </div>
+          <!-- Auto-detected treaty info for entity -->
+          <div id="trEntTreatyInfo" style="display:none;border-radius:6px;padding:.5rem .8rem;margin-bottom:.5rem;font-size:.8rem"></div>
+          <input type="hidden" id="trEntTreaty" value="">
           <div style="background:#dbeafe;border-radius:6px;padding:.4rem .7rem;font-size:.8rem;color:#1d4ed8;font-weight:600">→ W-8BEN-E 路线</div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:.6rem">
@@ -2878,11 +2879,15 @@ tr:hover td{background:var(--sky-light)}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
             <div class="field" style="margin-bottom:0">
               <label style="font-size:.78rem;font-weight:600">Country of Citizenship</label>
-              <input id="trNrCitizenship" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+              <select id="trNrCitizenship" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+                <option value="">— 选择国家 —</option>
+              </select>
             </div>
             <div class="field" style="margin-bottom:0">
               <label style="font-size:.78rem;font-weight:600">Country of Tax Residence</label>
-              <input id="trNrTaxCountry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+              <select id="trNrTaxCountry" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+                <option value="">— 选择国家 —</option>
+              </select>
             </div>
           </div>
           <div style="background:#dbeafe;border-radius:6px;padding:.4rem .7rem;font-size:.8rem;color:#1d4ed8;font-weight:600">→ Likely Nonresident Alien</div>
@@ -2923,11 +2928,15 @@ tr:hover td{background:var(--sky-light)}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
             <div class="field" style="margin-bottom:0">
               <label style="font-size:.78rem;font-weight:600">Country of Citizenship</label>
-              <input id="trSptCitizenship" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+              <select id="trSptCitizenship" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+                <option value="">— 选择国家 —</option>
+              </select>
             </div>
             <div class="field" style="margin-bottom:0">
               <label style="font-size:.78rem;font-weight:600">Country of Tax Residence</label>
-              <input id="trSptTaxCountry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+              <select id="trSptTaxCountry" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+                <option value="">— 选择国家 —</option>
+              </select>
             </div>
           </div>
         </div>
@@ -2962,19 +2971,34 @@ tr:hover td{background:var(--sky-light)}
         <!-- Treaty (foreign route only) -->
         <div id="trTreatyBlock" style="display:none;margin-bottom:.6rem">
           <div class="field" style="margin-bottom:.5rem">
-            <label style="font-size:.8rem;font-weight:600">Treaty Country 条约国家</label>
+            <label style="font-size:.8rem;font-weight:600">Treaty Country 条约国家（基于国籍/税务居住国）</label>
             <select id="trTreatyCountry" onchange="trOnTreatyCountryChange()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
               <option value="">— 选择国家 Select Country —</option>
             </select>
           </div>
-          <!-- Treaty info display (auto-populated) -->
+          <!-- Treaty info + rules display (auto-populated based on country) -->
           <div id="trTreatyInfo" style="display:none;border-radius:6px;padding:.5rem .8rem;margin-bottom:.5rem;font-size:.8rem"></div>
-          <div class="field" style="margin-bottom:.5rem">
-            <label style="font-size:.8rem;font-weight:600">是否主张 Tax Treaty benefit / withholding exemption?</label>
-            <select id="trTreatyClaim" onchange="trStep4Toggle()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
-              <option value="">—</option><option value="yes">Yes</option><option value="no">No</option><option value="not_sure">Not sure 不确定</option>
-            </select>
+          <!-- Hidden: auto-set by country lookup, no manual Not sure -->
+          <input type="hidden" id="trTreatyHasTreaty" value="">
+          <!-- Confirmation section: only shown when treaty IS available -->
+          <div id="trTreatyConfirmBlock" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:.6rem .8rem;margin-bottom:.5rem">
+            <div style="font-size:.82rem;font-weight:700;color:#854d0e;margin-bottom:.4rem">⚠️ 该国有税收条约，是否要申请豁免？</div>
+            <div id="trTreatyRulesDetail" style="font-size:.78rem;color:#78350f;margin-bottom:.5rem;line-height:1.5"></div>
+            <div style="font-size:.8rem;font-weight:600;margin-bottom:.3rem">请确认：是否主张 Tax Treaty Benefit / Withholding Exemption?</div>
+            <div style="display:flex;gap:.5rem">
+              <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;padding:.4rem .8rem;border:2px solid var(--gray-200);border-radius:6px;font-size:.84rem;font-weight:600" id="trClaimYesLabel" onclick="trSetTreatyClaim('yes')">
+                <input type="radio" name="trTreatyClaimRadio" id="trClaimYes" value="yes"> Yes, 申请条约豁免
+              </label>
+              <label style="display:flex;align-items:center;gap:.3rem;cursor:pointer;padding:.4rem .8rem;border:2px solid var(--gray-200);border-radius:6px;font-size:.84rem;font-weight:600" id="trClaimNoLabel" onclick="trSetTreatyClaim('no')">
+                <input type="radio" name="trTreatyClaimRadio" id="trClaimNo" value="no"> No, 不申请
+              </label>
+            </div>
           </div>
+          <!-- No treaty message: shown when no treaty available -->
+          <div id="trNoTreatyMsg" style="display:none;background:#f9fafb;border:1px solid var(--gray-200);border-radius:6px;padding:.5rem .8rem;margin-bottom:.5rem;font-size:.8rem;color:var(--gray-500)">
+            该国与美国无税收条约，无法申请条约豁免。Treaty claim 已自动设为 No。
+          </div>
+          <input type="hidden" id="trTreatyClaim" value="">
           <div id="trTreatyFields" style="display:none">
             <div class="field" style="margin-bottom:.5rem">
               <label style="font-size:.78rem;font-weight:600">Income Type 收入类型</label>
@@ -13586,11 +13610,25 @@ const US_TAX_TREATIES = {
   'Venezuela':     { zh:'委内瑞拉', ps:true,  art:'14/15', note:'独立劳务≤183天且≤$10,000可免；受雇≤183天可免' },
 };
 
-// Populate treaty country dropdown on page load
-(function() {
-  const sel = document.getElementById('trTreatyCountry');
-  if (!sel) return;
-  // Treaty countries group
+// All countries list (treaty + no-treaty) for country dropdowns
+const _NO_TREATY_COUNTRIES = [
+  ['Afghanistan','阿富汗'],['Algeria','阿尔及利亚'],['Argentina','阿根廷'],['Brazil','巴西'],
+  ['Cambodia','柬埔寨'],['Chile','智利'],['Colombia','哥伦比亚'],['Cuba','古巴'],
+  ['Dominican Republic','多米尼加'],['Ecuador','厄瓜多尔'],['El Salvador','萨尔瓦多'],
+  ['Ethiopia','埃塞俄比亚'],['Ghana','加纳'],['Guatemala','危地马拉'],['Haiti','海地'],
+  ['Honduras','洪都拉斯'],['Hong Kong','香港'],['Iran','伊朗'],['Iraq','伊拉克'],
+  ['Jordan','约旦'],['Kenya','肯尼亚'],['Laos','老挝'],['Lebanon','黎巴嫩'],
+  ['Libya','利比亚'],['Malaysia','马来西亚'],['Myanmar','缅甸'],['Nepal','尼泊尔'],
+  ['Nicaragua','尼加拉瓜'],['Nigeria','尼日利亚'],['Panama','巴拿马'],['Paraguay','巴拉圭'],
+  ['Peru','秘鲁'],['Saudi Arabia','沙特阿拉伯'],['Singapore','新加坡'],['Syria','叙利亚'],
+  ['Taiwan','台湾'],['Tanzania','坦桑尼亚'],['Uganda','乌干达'],['Uruguay','乌拉圭'],
+  ['Vietnam','越南'],['Yemen','也门'],['Zimbabwe','津巴布韦'],
+  ['Other 其他','其他']
+];
+
+// Populate a country select with treaty + no-treaty groups
+function _trPopulateCountrySelect(sel) {
+  if (!sel || sel.options.length > 1) return; // already populated
   const grpTreaty = document.createElement('optgroup');
   grpTreaty.label = '🟢 有条约 Treaty Countries';
   Object.keys(US_TAX_TREATIES).sort().forEach(c => {
@@ -13601,88 +13639,152 @@ const US_TAX_TREATIES = {
     grpTreaty.appendChild(opt);
   });
   sel.appendChild(grpTreaty);
-  // No-treaty common countries
-  const noTreatyCountries = [
-    ['Afghanistan','阿富汗'],['Algeria','阿尔及利亚'],['Argentina','阿根廷'],['Brazil','巴西'],
-    ['Cambodia','柬埔寨'],['Chile','智利'],['Colombia','哥伦比亚'],['Cuba','古巴'],
-    ['Dominican Republic','多米尼加'],['Ecuador','厄瓜多尔'],['El Salvador','萨尔瓦多'],
-    ['Ethiopia','埃塞俄比亚'],['Ghana','加纳'],['Guatemala','危地马拉'],['Haiti','海地'],
-    ['Honduras','洪都拉斯'],['Hong Kong','香港'],['Iran','伊朗'],['Iraq','伊拉克'],
-    ['Jordan','约旦'],['Kenya','肯尼亚'],['Laos','老挝'],['Lebanon','黎巴嫩'],
-    ['Libya','利比亚'],['Malaysia','马来西亚'],['Myanmar','缅甸'],['Nepal','尼泊尔'],
-    ['Nicaragua','尼加拉瓜'],['Nigeria','尼日利亚'],['Panama','巴拿马'],['Paraguay','巴拉圭'],
-    ['Peru','秘鲁'],['Saudi Arabia','沙特阿拉伯'],['Singapore','新加坡'],['Syria','叙利亚'],
-    ['Taiwan','台湾'],['Tanzania','坦桑尼亚'],['Uganda','乌干达'],['Uruguay','乌拉圭'],
-    ['Vietnam','越南'],['Yemen','也门'],['Zimbabwe','津巴布韦'],
-    ['Other 其他','其他']
-  ];
   const grpNo = document.createElement('optgroup');
   grpNo.label = '⚪ 无条约 No Treaty';
-  noTreatyCountries.forEach(([en, zh]) => {
+  _NO_TREATY_COUNTRIES.forEach(([en, zh]) => {
     const opt = document.createElement('option');
     opt.value = en;
     opt.textContent = `${en} ${zh}`;
     grpNo.appendChild(opt);
   });
   sel.appendChild(grpNo);
+}
+
+// Init: populate all country selects
+(function() {
+  document.querySelectorAll('.tr-country-select').forEach(sel => _trPopulateCountrySelect(sel));
+  _trPopulateCountrySelect(document.getElementById('trTreatyCountry'));
 })();
 
-function trOnTreatyCountryChange() {
-  const country = document.getElementById('trTreatyCountry').value;
-  const info = document.getElementById('trTreatyInfo');
-  const claimSel = document.getElementById('trTreatyClaim');
-  if (!country) {
-    info.style.display = 'none';
-    return;
-  }
+// Entity country change → auto-detect treaty for entity
+function trEntCountryChange() {
+  const orgCountry = document.getElementById('trEntForeignCountry').value;
+  const taxCountry = document.getElementById('trEntForeignTaxCountry').value;
+  const country = taxCountry || orgCountry; // prefer tax residence
+  const info = document.getElementById('trEntTreatyInfo');
+  const hidden = document.getElementById('trEntTreaty');
+  if (!country) { info.style.display = 'none'; hidden.value = ''; return; }
   const treaty = US_TAX_TREATIES[country];
   if (treaty) {
     info.style.display = '';
     info.style.background = '#f0fdf4';
     info.style.border = '1px solid #bbf7d0';
     info.style.color = '#166534';
-    info.innerHTML = `<div style="font-weight:700;margin-bottom:.2rem">✅ ${country} ${treaty.zh} — 与美国有税收条约</div>` +
-      `<div>条约条款 Article: <b>${treaty.art}</b></div>` +
-      (treaty.ps ? `<div>个人服务豁免: <b>是</b> — ${treaty.note}</div>` : `<div>个人服务豁免: 否</div>`) +
-      `<div style="font-size:.72rem;color:#15803d;margin-top:.2rem">💡 该国居民可能有资格申请条约豁免，请选择下方 "Yes"</div>`;
-    // Auto-suggest yes if they haven't chosen yet
-    if (!claimSel.value) claimSel.value = 'yes';
+    info.innerHTML = `<div style="font-weight:700">✅ ${country} ${treaty.zh} — 有税收条约</div>` +
+      `<div style="font-size:.78rem">Article ${treaty.art} · 实体可能适用条约优惠税率 (reduced withholding)</div>`;
+    hidden.value = 'yes';
   } else {
     info.style.display = '';
-    info.style.background = '#fef2f2';
-    info.style.border = '1px solid #fecaca';
-    info.style.color = '#991b1b';
-    info.innerHTML = `<div style="font-weight:700">⚠️ ${country} — 与美国无税收条约</div>` +
-      `<div style="font-size:.78rem">该国居民无法申请条约豁免 (treaty benefit not available)</div>`;
-    if (!claimSel.value) claimSel.value = 'no';
+    info.style.background = '#f9fafb';
+    info.style.border = '1px solid var(--gray-200)';
+    info.style.color = 'var(--gray-500)';
+    info.innerHTML = `<div>${country} — 无税收条约，不适用条约优惠</div>`;
+    hidden.value = 'no';
   }
+}
+
+// Step 4: treaty country change → auto-determine and show rules with confirmation
+function trOnTreatyCountryChange() {
+  const country = document.getElementById('trTreatyCountry').value;
+  const info = document.getElementById('trTreatyInfo');
+  const confirmBlock = document.getElementById('trTreatyConfirmBlock');
+  const noTreatyMsg = document.getElementById('trNoTreatyMsg');
+  const claimHidden = document.getElementById('trTreatyClaim');
+  const hasTreatyHidden = document.getElementById('trTreatyHasTreaty');
+
+  // Reset
+  info.style.display = 'none';
+  confirmBlock.style.display = 'none';
+  noTreatyMsg.style.display = 'none';
+  document.getElementById('trClaimYes').checked = false;
+  document.getElementById('trClaimNo').checked = false;
+  document.getElementById('trClaimYesLabel').style.borderColor = 'var(--gray-200)';
+  document.getElementById('trClaimYesLabel').style.background = '#fff';
+  document.getElementById('trClaimNoLabel').style.borderColor = 'var(--gray-200)';
+  document.getElementById('trClaimNoLabel').style.background = '#fff';
+  claimHidden.value = '';
+  hasTreatyHidden.value = '';
+
+  if (!country) { trStep4Toggle(); return; }
+
+  const treaty = US_TAX_TREATIES[country];
+  if (treaty) {
+    hasTreatyHidden.value = 'yes';
+    // Show treaty info
+    info.style.display = '';
+    info.style.background = '#f0fdf4';
+    info.style.border = '1px solid #bbf7d0';
+    info.style.color = '#166534';
+    info.innerHTML = `<div style="font-weight:700;margin-bottom:.2rem">✅ ${country} ${treaty.zh} — 与美国有税收条约</div>` +
+      `<div>条约条款 Article: <b>${treaty.art}</b></div>` +
+      (treaty.ps ? `<div>个人服务豁免: <b>是</b></div>` : '');
+
+    // Show confirmation with detailed rules
+    confirmBlock.style.display = '';
+    const rules = document.getElementById('trTreatyRulesDetail');
+    let rulesHtml = `<div style="margin-bottom:.3rem"><b>根据美国-${treaty.zh}税收条约 (Article ${treaty.art})：</b></div>`;
+    rulesHtml += `<div style="padding-left:.6rem">${treaty.note}</div>`;
+    if (treaty.ps) {
+      rulesHtml += `<div style="margin-top:.3rem;font-weight:600">如果您的情况符合上述条件，可以申请条约豁免以减免或免除美国预扣税 (withholding)。</div>`;
+      rulesHtml += `<div style="margin-top:.2rem">• 个人劳务报酬 → 需填写 <b>Form 8233</b></div>`;
+      rulesHtml += `<div>• 其他收入（利息、版税等）→ 在 <b>W-8BEN</b> 中注明条约条款</div>`;
+    }
+    rulesHtml += `<div style="margin-top:.3rem;color:#b45309;font-weight:600">⚠️ 如果不确定是否符合条件，建议选择 "Yes" 并提交人工复核。</div>`;
+    rules.innerHTML = rulesHtml;
+  } else {
+    hasTreatyHidden.value = 'no';
+    // No treaty → auto-set No, show message
+    noTreatyMsg.style.display = '';
+    claimHidden.value = 'no';
+  }
+  trStep4Toggle();
+}
+
+// Set treaty claim from radio buttons
+function trSetTreatyClaim(val) {
+  document.getElementById('trTreatyClaim').value = val;
+  document.getElementById('trClaimYes').checked = val === 'yes';
+  document.getElementById('trClaimNo').checked = val === 'no';
+  document.getElementById('trClaimYesLabel').style.borderColor = val === 'yes' ? '#854d0e' : 'var(--gray-200)';
+  document.getElementById('trClaimYesLabel').style.background = val === 'yes' ? '#fffbeb' : '#fff';
+  document.getElementById('trClaimNoLabel').style.borderColor = val === 'no' ? '#854d0e' : 'var(--gray-200)';
+  document.getElementById('trClaimNoLabel').style.background = val === 'no' ? '#fffbeb' : '#fff';
   trStep4Toggle();
 }
 
 // Auto-populate treaty country from citizenship/tax-residence entered in Step 2B/3
 function trAutoDetectTreatyCountry() {
-  // Try to find the country from wizard fields
+  if (document.getElementById('trTreatyCountry').value) return; // already set
   const countryFields = ['trSptCitizenship','trSptTaxCountry','trNrCitizenship','trNrTaxCountry','trEntForeignCountry','trEntForeignTaxCountry'];
   let detectedCountry = '';
   for (const id of countryFields) {
     const el = document.getElementById(id);
-    if (el && el.value.trim()) { detectedCountry = el.value.trim(); break; }
+    if (el && el.value && el.value.trim()) { detectedCountry = el.value.trim(); break; }
   }
   if (!detectedCountry) return;
-  // Try to match against treaty country dropdown options
   const sel = document.getElementById('trTreatyCountry');
-  const lower = detectedCountry.toLowerCase();
+  // Direct match by value
   for (const opt of sel.options) {
     if (!opt.value) continue;
-    if (opt.value.toLowerCase() === lower || opt.textContent.toLowerCase().includes(lower)) {
+    if (opt.value === detectedCountry || opt.value.toLowerCase() === detectedCountry.toLowerCase()) {
       sel.value = opt.value;
       trOnTreatyCountryChange();
       return;
     }
   }
-  // Also try matching against Chinese names in treaties
+  // Fuzzy match by text content
+  const lower = detectedCountry.toLowerCase();
+  for (const opt of sel.options) {
+    if (!opt.value) continue;
+    if (opt.textContent.toLowerCase().includes(lower)) {
+      sel.value = opt.value;
+      trOnTreatyCountryChange();
+      return;
+    }
+  }
+  // Match Chinese names in treaty database
   for (const [key, t] of Object.entries(US_TAX_TREATIES)) {
-    if (t.zh === detectedCountry || key.toLowerCase() === lower) {
+    if (t.zh === detectedCountry) {
       sel.value = key;
       trOnTreatyCountryChange();
       return;
@@ -13940,6 +14042,12 @@ function trWizardReset() {
   document.getElementById('trSptBlock').style.display = 'none';
   document.getElementById('trSptExemptDetail').style.display = 'none';
   document.getElementById('trTreatyInfo').style.display = 'none';
+  document.getElementById('trTreatyConfirmBlock').style.display = 'none';
+  document.getElementById('trNoTreatyMsg').style.display = 'none';
+  document.getElementById('trTreatyHasTreaty').value = '';
+  document.getElementById('trEntTreatyInfo').style.display = 'none';
+  document.querySelectorAll('input[name="trTreatyClaimRadio"]').forEach(r => r.checked = false);
+  ['trClaimYesLabel','trClaimNoLabel'].forEach(id => { const el = document.getElementById(id); if (el) { el.style.borderColor = 'var(--gray-200)'; el.style.background = '#fff'; } });
   const hint8233 = document.getElementById('tr8233Hint'); if (hint8233) hint8233.style.display = 'none';
   trShowStep(1);
 }
@@ -14043,6 +14151,7 @@ async function openInterviewCompleteModal() {
           const fn = document.getElementById('trEntForeignName'); if (fn) fn.value = trData.entity_name || '';
           const fc = document.getElementById('trEntForeignCountry'); if (fc) fc.value = trData.entity_country_org || '';
           const ftc = document.getElementById('trEntForeignTaxCountry'); if (ftc) ftc.value = trData.country_tax_residence || '';
+          trEntCountryChange(); // auto-detect treaty for entity
         }
       }
       // Step 2B: individual path
@@ -14070,8 +14179,8 @@ async function openInterviewCompleteModal() {
       if (trData.services_location) { const el = document.getElementById('trServicesLoc'); if (el) el.value = trData.services_location; }
       if (trData.primary_work_locations) { const el = document.getElementById('trWorkLoc'); if (el) el.value = trData.primary_work_locations; }
       if (trData.expected_service_dates) { const el = document.getElementById('trServiceDates'); if (el) el.value = trData.expected_service_dates; }
-      if (trData.claim_treaty_benefit) { const el = document.getElementById('trTreatyClaim'); if (el) el.value = trData.claim_treaty_benefit; }
-      if (trData.treaty_country) { const el = document.getElementById('trTreatyCountry'); if (el) el.value = trData.treaty_country; }
+      if (trData.treaty_country) { const el = document.getElementById('trTreatyCountry'); if (el) { el.value = trData.treaty_country; trOnTreatyCountryChange(); } }
+      if (trData.claim_treaty_benefit && (trData.claim_treaty_benefit === 'yes' || trData.claim_treaty_benefit === 'no')) { trSetTreatyClaim(trData.claim_treaty_benefit); }
       if (trData.treaty_income_type) { const el = document.getElementById('trTreatyIncomeType'); if (el) el.value = trData.treaty_income_type; }
       if (trData.immigration_status) { const el = document.getElementById('trDocImmStatus'); if (el) el.value = trData.immigration_status; }
       if (trData.i94_admission_date) { const el = document.getElementById('trDocI94'); if (el) el.value = trData.i94_admission_date; }
