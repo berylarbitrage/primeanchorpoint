@@ -2815,7 +2815,7 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:.6rem">
           <button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-600)" onclick="trNext(1)">← 上一步</button>
-          <button class="btn btn-sm" style="background:#854d0e;color:#fff;border:none" onclick="trNext(4)" id="trEntNextBtn">跳到 Step 4 →</button>
+          <button class="btn btn-sm" style="background:#854d0e;color:#fff;border:none" onclick="trEntNext()" id="trEntNextBtn">下一步 →</button>
         </div>
       </div>
 
@@ -3062,14 +3062,14 @@ tr:hover td{background:var(--sky-light)}
             </div>
           </div>
         </div>
-        <!-- Result -->
-        <div id="trFinalResult" style="display:none;background:#f0f9ff;border:2px solid #bae6fd;border-radius:6px;padding:.5rem .8rem;margin-bottom:.5rem">
-          <div id="trFinalResultContent" style="font-size:.82rem;font-weight:600"></div>
-        </div>
         <div style="display:flex;justify-content:space-between;margin-top:.6rem">
           <button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-600)" onclick="trPrevFromStep4()">← 上一步</button>
           <span style="font-size:.75rem;color:var(--gray-400);align-self:center">结果将在保存面试时自动提交</span>
         </div>
+      </div>
+      <!-- Result (outside steps, always visible when shown) -->
+      <div id="trFinalResult" style="display:none;background:#f0f9ff;border:2px solid #bae6fd;border-radius:6px;padding:.5rem .8rem;margin-top:.5rem">
+        <div id="trFinalResultContent" style="font-size:.82rem;font-weight:600"></div>
       </div>
     </div>
   </div>
@@ -13837,12 +13837,27 @@ function trNext(step) {
   trShowStep(step);
 }
 
+function trEntNext() {
+  const eu = document.getElementById('trEntityUs').value;
+  if (!eu) return showToast('请选择实体类型', 'error');
+  if (eu === 'yes') {
+    // US entity → W-9, done. No need for Step 4.
+    _trPath = 'entity';
+    trCalcFinalResult();
+  } else {
+    // Foreign entity → Step 4 for services/treaty
+    _trPath = 'entity';
+    trShowStep(4);
+  }
+}
+
 function trIndNext() {
   const status = document.querySelector('input[name="trIndStatus"]:checked');
   if (!status) return showToast('请选择身份类型', 'error');
   if (status.value === 'citizen' || status.value === 'green_card') {
     _trPath = 'individual_us';
-    trShowStep(4); // skip step 3, go to services
+    // US person → W-9, done. No need for Step 3 or 4.
+    trCalcFinalResult();
   } else {
     _trPath = 'individual_nr';
     trShowStep(3); // go to resident test
@@ -13963,8 +13978,10 @@ function trCalcFinalResult() {
 
   box.style.display = '';
   const fc = form === 'W-9' ? '#065f46' : form === 'W-8BEN-E' ? '#7c3aed' : form === 'Form 8233' ? '#9a3412' : '#1d4ed8';
+  // Only show treaty country for foreign routes
+  const isUsPerson = form === 'W-9' && (status === 'U.S. Citizen' || status === 'U.S. Entity' || status === 'Resident Alien (Green Card)');
   const tc = document.getElementById('trTreatyCountry').value;
-  const tcInfo = tc && US_TAX_TREATIES[tc] ? ` · 🌐 ${tc} ${US_TAX_TREATIES[tc].zh}` : '';
+  const tcInfo = (!isUsPerson && tc && US_TAX_TREATIES[tc]) ? ` · 🌐 ${tc} ${US_TAX_TREATIES[tc].zh}` : '';
   content.innerHTML = `<b>身份:</b> ${status} · <b style="color:${fc}">→ ${form}</b>${tcInfo}${review ? ' · <span style="color:#dc2626">⚠️ 需复核</span>' : ''}`;
 }
 
