@@ -2773,6 +2773,66 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Work Permit Verification Modal -->
+<div class="modal-bg" id="workPermitModal" style="z-index:220"><div class="modal" style="max-width:560px;max-height:90vh;overflow-y:auto">
+  <h2>🛂 工作许可验证 Work Permit Verification</h2>
+  <p style="font-size:.9rem;font-weight:700;color:var(--sky);margin-bottom:.75rem" id="wpWorkerName"></p>
+
+  <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.82rem;color:#0369a1">
+    核验工人的工作许可/签证/EAD 是否有效，记录证件信息和到期日。
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
+    <div class="field">
+      <label style="font-size:.78rem;font-weight:600">证件类型 Document Type</label>
+      <select id="wpDocType" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        <option value="">— 请选择 —</option>
+        <option value="ead">EAD 工卡 (Employment Authorization Document)</option>
+        <option value="work_visa">工作签证 Work Visa (H-1B, L-1, etc.)</option>
+        <option value="green_card">绿卡 Green Card</option>
+        <option value="opt">OPT (Optional Practical Training)</option>
+        <option value="cpt">CPT (Curricular Practical Training)</option>
+        <option value="tn">TN Visa</option>
+        <option value="other">其他 Other</option>
+      </select>
+    </div>
+    <div class="field">
+      <label style="font-size:.78rem;font-weight:600">证件编号 Document Number</label>
+      <input id="wpDocNumber" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. SRC2190012345">
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
+    <div class="field">
+      <label style="font-size:.78rem;font-weight:600">签发日期 Issue Date</label>
+      <input type="date" id="wpIssueDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    </div>
+    <div class="field">
+      <label style="font-size:.78rem;font-weight:600">到期日期 Expiry Date</label>
+      <input type="date" id="wpExpiryDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    </div>
+  </div>
+
+  <div class="field" style="margin-bottom:.75rem">
+    <label style="font-size:.78rem;font-weight:600">签证类别 / USCIS Category</label>
+    <input id="wpCategory" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. C09, H-1B, F-1 OPT">
+  </div>
+
+  <div class="field" style="margin-bottom:.75rem">
+    <label style="font-size:.78rem;font-weight:600">备注 Notes</label>
+    <textarea id="wpNotes" rows="2" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="审核备注、附加信息..."></textarea>
+  </div>
+
+  <div id="wpExpiryWarning" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.5rem .8rem;margin-bottom:.75rem;font-size:.82rem;color:#92400e;font-weight:600"></div>
+
+  <div id="wpCurrentInfo" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem 1rem;margin-bottom:.75rem;font-size:.82rem"></div>
+
+  <div class="modal-actions" style="margin-top:1rem">
+    <button class="btn" onclick="closeModal('workPermitModal')">关闭</button>
+    <button class="btn btn-green" onclick="saveWorkPermit()">🛂 保存并验证通过</button>
+  </div>
+</div></div>
+
 <!-- Tax Residency Wizard Modal (standalone, opens from onboarding task list after contract) -->
 <div class="modal-bg" id="taxResidencyModal" style="z-index:220"><div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto">
   <h2>🏛️ 税务身份判定 Tax Status Wizard</h2>
@@ -13385,6 +13445,8 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : t.key==='tax_residency'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openTaxResidencyModal()">🏛️ ${s==='completed'?'查看/修改判定结果':'开始 Resident Test'}</button>`
+            : t.key==='work_permit'
+            ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openWorkPermitModal()">🛂 ${s==='completed'?'查看/修改验证':'开始工作许可验证'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -13442,7 +13504,7 @@ async function doChangeEmploymentType(newType) {
   });
 
   // Waive tasks not applicable to new type
-  const tasksToWaive = newType === 'w2' ? ['w9', 'tax_residency'] : ['i9', 'ead_upload', 'work_permit', 'gusto'];
+  const tasksToWaive = newType === 'w2' ? ['w9', 'tax_residency'] : ['i9', 'ead_upload', 'gusto'];
   for (const key of tasksToWaive) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
@@ -13450,7 +13512,7 @@ async function doChangeEmploymentType(newType) {
   }
 
   // Reset previously waived tasks that now apply
-  const tasksToReset = newType === 'w2' ? ['i9', 'ead_upload', 'work_permit', 'gusto'] : ['w9', 'tax_residency'];
+  const tasksToReset = newType === 'w2' ? ['i9', 'ead_upload', 'work_permit', 'gusto'] : ['w9', 'tax_residency', 'work_permit'];
   for (const key of tasksToReset) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'pending', admin_note: '' })
@@ -13544,7 +13606,7 @@ function selectEntityType(type) {
 
 // Onboarding tasks auto-assigned per employment type
 const W2_TASKS = ['contract', 'background_check', 'persona_verify', 'i9', 'ead_upload', 'work_permit', 'gusto'];
-const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'background_check', 'persona_verify'];
+const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'background_check', 'persona_verify', 'work_permit'];
 
 
 // ─── Tax Wizard (standalone modal, opens from onboarding task list) ───
@@ -14736,7 +14798,7 @@ async function saveInterviewComplete() {
   // Auto-waive tasks not applicable to this employment type
   const tasksToWaive = employmentType === 'w2'
     ? ['w9', 'tax_residency']
-    : ['i9', 'ead_upload', 'work_permit', 'gusto'];
+    : ['i9', 'ead_upload', 'gusto'];
   for (const key of tasksToWaive) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
@@ -14754,6 +14816,83 @@ function confirmOnboardingWaive(key, title) {
 function confirmOnboardingReset(key, title) {
   showConfirmModal(`重置任务：${title}`, '确认将此任务重置为"待处理"状态？', '↩️ 确认重置', 'btn-outline', () => updateOnboardingTask(key, 'pending'), 'amber');
 }
+// ─── Work Permit Verification ───
+async function openWorkPermitModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  document.getElementById('wpWorkerName').textContent = w ? (w.name || w.username) : '';
+  // Clear fields
+  ['wpDocType','wpDocNumber','wpIssueDate','wpExpiryDate','wpCategory','wpNotes'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('wpExpiryWarning').style.display = 'none';
+  document.getElementById('wpCurrentInfo').style.display = 'none';
+
+  // Load existing data
+  try {
+    const data = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`);
+    if (data && data.doc_type) {
+      document.getElementById('wpDocType').value = data.doc_type || '';
+      document.getElementById('wpDocNumber').value = data.doc_number || '';
+      document.getElementById('wpIssueDate').value = data.issue_date || '';
+      document.getElementById('wpExpiryDate').value = data.expiry_date || '';
+      document.getElementById('wpCategory').value = data.category || '';
+      document.getElementById('wpNotes').value = data.notes || '';
+      // Show current info
+      const info = document.getElementById('wpCurrentInfo');
+      const typeLabels = { ead:'EAD 工卡', work_visa:'工作签证', green_card:'绿卡', opt:'OPT', cpt:'CPT', tn:'TN Visa', other:'其他' };
+      info.innerHTML = `<div style="font-weight:700;color:#065f46;margin-bottom:.3rem">📋 已有记录:</div>
+        <div>类型: <b>${typeLabels[data.doc_type]||data.doc_type}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}${data.verified_at?' · 验证时间: <b>'+new Date(data.verified_at).toLocaleString('zh-CN')+'</b>':''}</div>`;
+      info.style.display = 'block';
+      // Expiry warning
+      if (data.expiry_date) {
+        const days = Math.ceil((new Date(data.expiry_date) - new Date()) / 86400000);
+        const warn = document.getElementById('wpExpiryWarning');
+        if (days <= 0) { warn.textContent = '⚠️ 工作许可已过期！'; warn.style.display = 'block'; warn.style.background = '#fef2f2'; warn.style.borderColor = '#fecaca'; warn.style.color = '#dc2626'; }
+        else if (days <= 30) { warn.textContent = `⚠️ 工作许可将在 ${days} 天内到期`; warn.style.display = 'block'; }
+        else { warn.style.display = 'none'; }
+      }
+    }
+  } catch(e) { /* no existing data */ }
+
+  // Update expiry warning on date change
+  document.getElementById('wpExpiryDate').onchange = function() {
+    const warn = document.getElementById('wpExpiryWarning');
+    if (this.value) {
+      const days = Math.ceil((new Date(this.value) - new Date()) / 86400000);
+      if (days <= 0) { warn.textContent = '⚠️ 该证件已过期！'; warn.style.display = 'block'; warn.style.background = '#fef2f2'; warn.style.borderColor = '#fecaca'; warn.style.color = '#dc2626'; }
+      else if (days <= 30) { warn.textContent = `⚠️ 该证件将在 ${days} 天内到期`; warn.style.display = 'block'; warn.style.background = '#fef3c7'; warn.style.borderColor = '#fde68a'; warn.style.color = '#92400e'; }
+      else { warn.style.display = 'none'; }
+    } else { warn.style.display = 'none'; }
+  };
+
+  document.getElementById('workPermitModal').classList.add('show');
+}
+
+async function saveWorkPermit() {
+  const docType = document.getElementById('wpDocType').value;
+  const docNumber = document.getElementById('wpDocNumber').value.trim();
+  const issueDate = document.getElementById('wpIssueDate').value;
+  const expiryDate = document.getElementById('wpExpiryDate').value;
+  const category = document.getElementById('wpCategory').value.trim();
+  const notes = document.getElementById('wpNotes').value.trim();
+
+  if (!docType) return showToast('请选择证件类型', 'error');
+
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`, {
+    method: 'POST',
+    body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: issueDate, expiry_date: expiryDate, category, notes })
+  });
+
+  // Mark onboarding task as completed
+  const typeLabels = { ead:'EAD', work_visa:'Work Visa', green_card:'Green Card', opt:'OPT', cpt:'CPT', tn:'TN', other:'Other' };
+  const noteText = `${typeLabels[docType]||docType}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}${notes?' · '+notes:''}`;
+  await updateOnboardingTask('work_permit', 'completed', noteText);
+
+  closeModal('workPermitModal');
+  showToast('✅ 工作许可验证已保存', 'success');
+}
+
 function confirmSendPersona() {
   showConfirmModal('发送 Stripe Identity 身份验证', '确认向该工人发送 Stripe Identity 身份验证（驾照/ID + 自拍）？\n验证链接将通过短信、邮件发送，并在工人门户中显示。', '🪪 确认发送', 'btn-blue', sendPersonaFromOnboarding, 'blue');
 }
