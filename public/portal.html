@@ -5443,6 +5443,8 @@ async function openWorkerContractSign() {
     const r = await wApi('/contract-sign-url');
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
     if (r.dsStatus === 'sent') {
+      const spinnerElSent = loading.querySelector('div');
+      if (spinnerElSent) spinnerElSent.style.display = 'none';
       msgEl.innerHTML = '⏳ 请等待公司方先完成签署，签署完成后系统将通知您。<br><br><button onclick="closeWorkerContractSign()" style="padding:.5rem 1.5rem;background:#9333ea;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭</button>';
       return;
     }
@@ -5463,7 +5465,11 @@ async function openWorkerContractSign() {
     loading.style.display = 'none';
     formDiv.style.display = '';
   } catch (e) {
-    msgEl.innerHTML = `❌ ${e.message}<br><br><button onclick="closeWorkerContractSign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭</button>`;
+    // Hide spinner before showing message
+    const spinnerEl = loading.querySelector('div');
+    if (spinnerEl) spinnerEl.style.display = 'none';
+    const isAlreadySigned = e.message && e.message.includes('合同已完成签署');
+    msgEl.innerHTML = `${isAlreadySigned ? '✅' : '❌'} ${e.message}<br><br><button onclick="closeWorkerContractSign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭</button>`;
   }
 }
 
