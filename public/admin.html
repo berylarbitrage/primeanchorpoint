@@ -13168,7 +13168,7 @@ async function refreshOnboardingModal() {
 }
 
 function renderOnboardingTasks(tasks) {
-  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂', work_auth:'📑' };
+  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
     locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
@@ -13246,8 +13246,6 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
             : t.key==='tax_residency'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openTaxResidencyModal()">🏛️ ${s==='completed'?'查看/修改判定结果':'开始 Resident Test'}</button>`
-            : t.key==='work_auth'
-            ? `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;font-weight:700" onclick="openWorkAuthModal()">${t.status==='completed'?'📑 Work Auth 已完成':isVisible?'📑 查看/重发认证任务':'📑 发送 Work Auth 认证'}</button>`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -13303,7 +13301,7 @@ async function doChangeEmploymentType(newType) {
   });
 
   // Waive tasks not applicable to new type
-  const tasksToWaive = newType === 'w2' ? ['w9'] : ['i9', 'ead_upload', 'work_permit', 'work_auth', 'gusto'];
+  const tasksToWaive = newType === 'w2' ? ['w9'] : ['i9', 'ead_upload', 'work_permit', 'gusto'];
   for (const key of tasksToWaive) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${newType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
@@ -13527,7 +13525,7 @@ async function saveInterviewComplete() {
   // Auto-waive tasks not applicable to this employment type
   const tasksToWaive = employmentType === 'w2'
     ? ['w9']         // W-2 doesn't need W-9
-    : ['i9', 'ead_upload', 'work_permit', 'work_auth', 'gusto'];  // 1099 doesn't need I-9, EAD, work permit, work auth, Gusto
+    : ['i9', 'ead_upload', 'work_permit', 'gusto'];  // 1099 doesn't need I-9, EAD, work permit, Gusto
   for (const key of tasksToWaive) {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/${key}`, {
       method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（${employmentType === 'w2' ? 'W-2 员工' : '1099 承包商'}不适用）` })
