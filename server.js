@@ -4264,7 +4264,6 @@ const ONBOARDING_STEPS = [
   { key: 'i9',              title: 'I-9 就业资格',         desc: 'I-9 Section 1 & 2 就业资格验证',                  required: true  },
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
   { key: 'work_permit',     title: '工作许可验证',          desc: '工作许可 / 签证授权状态核实（如适用）',            required: false },
-  { key: 'work_auth',       title: 'Work Authorization 认证', desc: '独立承包商工作授权资格调查 / 认证（1099 适用）', required: false },
   { key: 'tax_residency',   title: '税务居民身份判定',      desc: '1099 承包商税务居民预判 / 表格分流（Resident Test）', required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
   { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
@@ -5016,6 +5015,31 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
       `税务居民判定完成: ${calc.tax_status} → 推荐表格: ${calc.recommended_form}${calc.needs_manual_review ? ' (需人工复核)' : ''}`);
 
   res.json({ success: true, ...calc, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
+});
+
+// ─── ID Document Upload (admin uploads for worker during interview) ───
+app.get('/api/admin/worker-accounts/:id/id-docs', requireAdmin, (req, res) => {
+  const docs = db.prepare(`SELECT id, doc_type, status, file_name, doc_number, created_at FROM worker_compliance_docs
+    WHERE worker_account_id=? AND doc_type IN ('passport','drivers_license','state_id','green_card','ead_card','visa','ssn_card','itin_letter','other')
+    ORDER BY created_at DESC`).all(req.params.id);
+  res.json(docs);
+});
+
+app.post('/api/admin/worker-accounts/:id/id-docs', requireAdmin, docUpload.single('file'), (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const docType = req.body.doc_type || 'other';
+  const docNumber = req.body.doc_number || '';
+  const filePath = req.file ? req.file.path : '';
+  const fileName = req.file ? req.file.originalname : '';
+
+  db.prepare(`INSERT INTO worker_compliance_docs (worker_account_id, doc_type, doc_number, file_path, file_name, status) VALUES (?,?,?,?,?,?)`)
+    .run(workerId, docType, docNumber, filePath, fileName, 'pending');
+
+  const changedBy = (req.session && req.session.username) || 'admin';
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, changedBy, 'id_doc_upload', '', docType, `上传身份证明文件: ${docType}${docNumber ? ' #' + docNumber : ''} · ${fileName}`);
+
+  res.json({ success: true });
 });
 
 // Preview W-9 HTML template (admin can see the blank form before sending)
