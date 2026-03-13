@@ -5058,9 +5058,9 @@ async function loadOnboarding() {
         </div>`;
       } else if (['id_verify','ssn_verify','ead_upload','i9','w9'].includes(t.key)) {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="showTab('compliance')">${_t('obActionDocs')}</button>`;
-      } else if (t.key === 'contract' && t.action_url) {
+      } else if (t.key === 'contract' && t.action_url && t.ds_status !== 'sent') {
         actionHtml = `<button class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem" onclick="openWorkerContractSign()">${_t('obActionContract')}</button>`;
-      } else if (t.key === 'contract' && !t.action_url) {
+      } else if (t.key === 'contract' && (!t.action_url || t.ds_status === 'sent')) {
         actionHtml = `<div style="font-size:.82rem;color:var(--gray-500);margin-top:.4rem">${_t('obContractWaiting')}</div>`;
       } else if (t.key === 'gusto' && t.action_url) {
         actionHtml = `<a class="btn btn-sky" style="font-size:.8rem;padding:.3rem .75rem;margin-top:.5rem;text-decoration:none;display:inline-block" href="${esc(t.action_url)}" target="_blank">${_t('obActionGusto')}</a>`;
