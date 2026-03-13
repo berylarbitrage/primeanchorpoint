@@ -2756,7 +2756,6 @@ tr:hover td{background:var(--sky-light)}
             <option value="">— 请选择 —</option>
             <option value="yes">是，美国实体 Yes, U.S. entity</option>
             <option value="no">否，外国实体 No, foreign entity</option>
-            <option value="not_sure">不确定 Not sure</option>
           </select>
         </div>
         <!-- US Entity fields -->
@@ -13875,7 +13874,7 @@ function trPrevFromStep4() {
 function trEntityToggle() {
   const v = document.getElementById('trEntityUs').value;
   document.getElementById('trEntUsFields').style.display = v === 'yes' ? '' : 'none';
-  document.getElementById('trEntForeignFields').style.display = (v === 'no' || v === 'not_sure') ? '' : 'none';
+  document.getElementById('trEntForeignFields').style.display = v === 'no' ? '' : 'none';
 }
 
 function trResidentToggle() {
@@ -13943,7 +13942,7 @@ function trCalcFinalResult() {
     const eu = document.getElementById('trEntityUs').value;
     if (eu === 'yes') { status = 'U.S. Entity'; form = 'W-9'; }
     else if (eu === 'no') { status = 'Foreign Entity'; form = 'W-8BEN-E'; }
-    else { status = 'Entity (未确定)'; form = 'Manual Review'; review = true; }
+    else { box.style.display = 'none'; return; }
   } else {
     const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
     if (!indStatus) { box.style.display = 'none'; return; }
