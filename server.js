@@ -11055,6 +11055,7 @@ app.get('/background-check-disclosure', (req, res) => res.sendFile(path.join(__d
 app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-consent.html')));
 app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'public', 'data-deletion.html')));
 app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
+app.get('/sms-consent-proof', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-consent-proof.html')));
 
 // POST /api/docuseal/webhook — DocuSeal event notifications (partner + worker contracts)
 // Supports both self-hosted events (submission.*, submitter.*) and cloud events (form.*)
