@@ -13840,11 +13840,17 @@ function trEntNext() {
   const eu = document.getElementById('trEntityUs').value;
   if (!eu) return showToast('请选择实体类型', 'error');
   if (eu === 'yes') {
-    // US entity → W-9, done. No need for Step 4.
+    // Validate US entity fields
+    if (!document.getElementById('trEntLegalName').value.trim()) return showToast('请填写 Legal Business Name', 'error');
+    if (!document.getElementById('trEntEin').value.trim()) return showToast('请填写 EIN / TIN', 'error');
+    if (!document.getElementById('trEntAddress').value.trim()) return showToast('请填写 U.S. Business Address', 'error');
     _trPath = 'entity';
     trCalcFinalResult();
   } else {
-    // Foreign entity → Step 4 for services/treaty
+    // Validate foreign entity fields
+    if (!document.getElementById('trEntForeignName').value.trim()) return showToast('请填写 Legal Entity Name', 'error');
+    if (!document.getElementById('trEntForeignCountry').value) return showToast('请选择 Country of Organization', 'error');
+    if (!document.getElementById('trEntForeignAddr').value.trim()) return showToast('请填写 Entity Address', 'error');
     _trPath = 'entity';
     trShowStep(4);
   }
@@ -13855,11 +13861,10 @@ function trIndNext() {
   if (!status) return showToast('请选择身份类型', 'error');
   if (status.value === 'citizen' || status.value === 'green_card') {
     _trPath = 'individual_us';
-    // US person → W-9, done. No need for Step 3 or 4.
     trCalcFinalResult();
   } else {
     _trPath = 'individual_nr';
-    trShowStep(3); // go to resident test
+    trShowStep(3);
   }
 }
 
@@ -13977,11 +13982,50 @@ function trCalcFinalResult() {
 
   box.style.display = '';
   const fc = form === 'W-9' ? '#065f46' : form === 'W-8BEN-E' ? '#7c3aed' : form === 'Form 8233' ? '#9a3412' : '#1d4ed8';
-  // Only show treaty country for foreign routes
   const isUsPerson = form === 'W-9' && (status === 'U.S. Citizen' || status === 'U.S. Entity' || status === 'Resident Alien (Green Card)');
   const tc = document.getElementById('trTreatyCountry').value;
   const tcInfo = (!isUsPerson && tc && US_TAX_TREATIES[tc]) ? ` · 🌐 ${tc} ${US_TAX_TREATIES[tc].zh}` : '';
-  content.innerHTML = `<b>身份:</b> ${status} · <b style="color:${fc}">→ ${form}</b>${tcInfo}${review ? ' · <span style="color:#dc2626">⚠️ 需复核</span>' : ''}`;
+
+  // Build materials/documents needed list
+  let docs = [];
+  if (form === 'W-9') {
+    docs.push('📄 W-9 表格（由承包商签署）');
+    if (status === 'U.S. Entity') docs.push('📋 公司注册文件 (Articles / Certificate of Formation)');
+    if (status === 'Likely Resident Alien (SPT)') {
+      docs.push('🛂 护照复印件');
+      docs.push('📋 签证 / I-94 记录');
+      docs.push('⚠️ 需人工复核 SPT 计算结果');
+    }
+  } else if (form === 'W-8BEN') {
+    docs.push('📄 W-8BEN 表格（非居民外国个人）');
+    docs.push('🛂 护照复印件');
+    const servLoc = document.getElementById('trServicesLoc').value;
+    if (servLoc === 'all_in_us' || servLoc === 'partly_in_us') {
+      docs.push('📋 签证 / I-94 / 工作授权文件');
+      docs.push('⚠️ 美国境内服务需代扣 30% withholding（或适用条约税率）');
+    }
+  } else if (form === 'W-8BEN-E') {
+    docs.push('📄 W-8BEN-E 表格（外国实体）');
+    docs.push('📋 实体注册证明 (Certificate of Incorporation / Formation)');
+    docs.push('📋 授权签署人证明 (Signing Authority)');
+    const entTreaty = document.getElementById('trEntTreaty').value;
+    if (entTreaty === 'yes') docs.push('📋 条约优惠申请相关文件');
+  } else if (form === 'Form 8233') {
+    docs.push('📄 Form 8233（个人服务条约豁免申请）');
+    docs.push('🛂 护照复印件');
+    docs.push('📋 签证 / I-94 记录');
+    docs.push('📋 条约条款声明 (Treaty Statement)');
+    docs.push('⚠️ 需人工复核，提交 IRS 前需 10 天审查期');
+  }
+
+  let html = `<div style="margin-bottom:.4rem"><b>身份:</b> ${status} · <b style="color:${fc}">→ ${form}</b>${tcInfo}${review ? ' · <span style="color:#dc2626">⚠️ 需复核</span>' : ''}</div>`;
+  if (docs.length) {
+    html += `<div style="font-size:.78rem;color:#374151;border-top:1px solid #bae6fd;padding-top:.4rem;margin-top:.3rem">`;
+    html += `<div style="font-weight:700;margin-bottom:.2rem">📌 需要的材料:</div>`;
+    html += docs.map(d => `<div style="padding-left:.4rem">${d}</div>`).join('');
+    html += `</div>`;
+  }
+  content.innerHTML = html;
 }
 
 function trWizardCollectData() {
