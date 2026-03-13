@@ -2369,8 +2369,20 @@ tr:hover td{background:var(--sky-light)}
     <span id="onboardingDispatchBadge"></span>
     <button class="btn btn-sm" id="onboardingDispatchBtn" onclick="toggleDispatchReady()" style="margin-left:auto"></button>
   </div>
+  <div id="onboardingTaxSection" style="display:none;padding:.75rem 0;border-top:1px solid var(--gray-200);margin-top:.5rem">
+    <button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openTaxInfoModal()">🏛️ 税务信息</button>
+  </div>
   <div class="modal-actions" style="margin-top:.5rem">
     <button class="btn" onclick="closeModal('onboardingModal')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Tax Info Modal -->
+<div class="modal-bg" id="taxInfoModal"><div class="modal" style="max-width:620px">
+  <h2>🏛️ 税务信息 — <span id="taxInfoWorkerName" style="color:var(--sky)"></span></h2>
+  <div id="taxInfoContent" style="margin:.75rem 0;max-height:60vh;overflow-y:auto"></div>
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('taxInfoModal')">关闭</button>
   </div>
 </div></div>
 
@@ -13263,6 +13275,10 @@ async function refreshOnboardingModal() {
   const dispatchSection = document.getElementById('onboardingDispatchSection');
   dispatchSection.style.display = hasEmployee ? 'flex' : 'none';
 
+  // Show tax info button for 1099 workers
+  const taxSection = document.getElementById('onboardingTaxSection');
+  taxSection.style.display = (w && w.employment_type === '1099') ? 'block' : 'none';
+
   if (hasEmployee) {
     const badge = document.getElementById('onboardingDispatchBadge');
     const btn = document.getElementById('onboardingDispatchBtn');
@@ -13285,7 +13301,8 @@ async function refreshOnboardingModal() {
 }
 
 function renderOnboardingTasks(tasks) {
-  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂' };
+  const icons = { phone_verify:'📱', interview:'🎯', persona_verify:'🪪', background_check:'🔍', id_verify:'🪪', ssn_verify:'🔢', ead_upload:'📄', i9:'📋', tax_residency:'🏛️', w9:'💼', contract:'✍️', gusto:'💸', work_permit:'🛂',
+    tax_doc_w8ben:'📄', tax_doc_w8bene:'📄', tax_doc_8233:'📄', tax_doc_passport:'🛂', tax_doc_visa_i94:'📋', tax_doc_w7_itin:'📄', tax_doc_8833:'📄', tax_doc_corp_cert:'📋', tax_doc_sign_auth:'📋', tax_doc_treaty_docs:'📋', tax_doc_treaty_stmt:'📋' };
   const sLabel = { locked:'🔒 未开放', pending:'⏳ 待处理', submitted:'🔄 待审核', completed:'✅ 已完成', waived:'⏭️ 已豁免' };
   const sBadge = {
     locked:'background:var(--gray-100);color:var(--gray-400);border:1px solid var(--gray-200)',
@@ -14358,10 +14375,13 @@ async function saveTaxResidency() {
   // Determine required docs based on recommended form
   _trRequiredDocs = trGetRequiredDocs(_trRecommendedForm);
 
-  // Show phase 2 (doc upload)
-  document.getElementById('trPhase1Actions').style.display = 'none';
+  // Show phase 2 (doc upload) alongside phase 1
+  document.getElementById('trPhase1Actions').style.display = '';
   document.getElementById('trPhase2').style.display = '';
   await trRenderDocUploadList();
+
+  // Refresh onboarding task list to show new tax doc tasks
+  refreshOnboardingModal();
 }
 
 // Determine which identity docs HR must upload based on recommended form
@@ -14498,6 +14518,118 @@ function trCheckAllUploaded(existing) {
 function trBackToWizard() {
   document.getElementById('trPhase2').style.display = 'none';
   document.getElementById('trPhase1Actions').style.display = '';
+}
+
+// ─── Tax Info Modal (year-end obligations) ───
+async function openTaxInfoModal() {
+  if (!_onboardingWorkerId) return;
+  const w = _onboardingWorkerData;
+  document.getElementById('taxInfoWorkerName').textContent = w ? (w.name || w.username) : '';
+
+  const trData = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`);
+  const el = document.getElementById('taxInfoContent');
+
+  if (!trData || !trData.recommended_form) {
+    el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">尚未完成税务居民身份判定，请先完成问卷。</div>';
+    document.getElementById('taxInfoModal').classList.add('show');
+    return;
+  }
+
+  const form = trData.recommended_form;
+  const status = trData.tax_status || '';
+  const treaty = trData.treaty_country || '';
+  const treatyClaim = trData.claim_treaty_benefit === 'yes';
+  const servInUs = trData.services_location === 'all_in_us' || trData.services_location === 'partly_in_us';
+  const isNRA = status.includes('nonresident') || form === 'W-8BEN' || form === 'W-8BEN-E' || form === 'Form 8233';
+  const hasExempt = trData.has_exempt_days === 'yes';
+  const exemptVisa = trData.exempt_visa_status || '';
+
+  let html = '';
+
+  // Summary header
+  const fc = form === 'W-9' ? '#065f46' : form === 'W-8BEN-E' ? '#7c3aed' : form === 'Form 8233' ? '#9a3412' : '#1d4ed8';
+  html += `<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-weight:700;color:${fc};font-size:.9rem;margin-bottom:.3rem">📋 税务身份: ${status.replace(/_/g,' ')} → ${form}</div>
+    <div style="font-size:.8rem;color:var(--gray-500)">
+      ${trData.country_citizenship ? '🌍 国籍: ' + trData.country_citizenship : ''}
+      ${trData.country_tax_residence ? ' · 税务居民: ' + trData.country_tax_residence : ''}
+      ${treaty && treatyClaim ? ' · 🌐 条约国: ' + treaty : ''}
+    </div>
+  </div>`;
+
+  // Year-end obligations section
+  html += `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.82rem;font-weight:700;color:#9a3412;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:1px solid #fed7aa">📅 年末税务义务（公司需出具）</div>`;
+
+  if (isNRA) {
+    html += `<div style="display:flex;flex-direction:column;gap:.5rem;font-size:.84rem">`;
+    html += `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem;background:#fff;border:1px solid var(--gray-200);border-radius:6px">
+      <span style="font-size:1.1rem;flex-shrink:0">📄</span>
+      <div><div style="font-weight:700">Form 1042-S</div>
+      <div style="font-size:.78rem;color:var(--gray-500)">外国人收入及预扣税凭证 — 由公司（付款方）在每年 3/15 前出具给非居民外国人，报告上一年度支付的收入及预扣税款</div></div>
+    </div>`;
+    if (servInUs) {
+      html += `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem;background:#fef2f2;border:1px solid #fecaca;border-radius:6px">
+        <span style="font-size:1.1rem;flex-shrink:0">⚠️</span>
+        <div><div style="font-weight:700;color:#dc2626">30% Withholding 预扣税</div>
+        <div style="font-size:.78rem;color:var(--gray-500)">美国境内服务收入需代扣 30% 联邦所得税（或适用条约税率）。每次付款时需代扣并定期缴纳 IRS${treatyClaim ? '。已申请条约优惠，可能适用降低税率。' : ''}</div></div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  if (!isNRA && form === 'W-9') {
+    html += `<div style="display:flex;flex-direction:column;gap:.5rem;font-size:.84rem">`;
+    html += `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem;background:#fff;border:1px solid var(--gray-200);border-radius:6px">
+      <span style="font-size:1.1rem;flex-shrink:0">📄</span>
+      <div><div style="font-weight:700">Form 1099-NEC</div>
+      <div style="font-size:.78rem;color:var(--gray-500)">非雇员报酬 — 公司在每年 1/31 前出具给独立承包商（年度支付 ≥ $600），报告上一年度支付的非雇员补偿金</div></div>
+    </div>`;
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  // Worker's own filing obligations
+  html += `<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+    <div style="font-size:.82rem;font-weight:700;color:#065f46;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.6rem;padding-bottom:.4rem;border-bottom:1px solid #bbf7d0">📝 工人自行报税义务（信息参考）</div>
+    <div style="display:flex;flex-direction:column;gap:.5rem;font-size:.84rem">`;
+
+  if (isNRA) {
+    html += `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem;background:#fff;border:1px solid var(--gray-200);border-radius:6px">
+      <span style="font-size:1.1rem;flex-shrink:0">📄</span>
+      <div><div style="font-weight:700">Form 1040-NR</div>
+      <div style="font-size:.78rem;color:var(--gray-500)">非居民外国人年度联邦所得税申报表 — 工人需在每年 4/15 前提交（可延期至 6/15）</div></div>
+    </div>`;
+    if (hasExempt || exemptVisa) {
+      html += `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem;background:#fff;border:1px solid var(--gray-200);border-radius:6px">
+        <span style="font-size:1.1rem;flex-shrink:0">📄</span>
+        <div><div style="font-weight:700">Form 8843</div>
+        <div style="font-size:.78rem;color:var(--gray-500)">豁免个人声明 — F/J/M/Q 签证持有者必须填写${exemptVisa ? '（' + exemptVisa + '）' : ''}</div></div>
+      </div>`;
+    }
+    if (treatyClaim) {
+      html += `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem;background:#fff;border:1px solid var(--gray-200);border-radius:6px">
+        <span style="font-size:1.1rem;flex-shrink:0">📄</span>
+        <div><div style="font-weight:700">Form 8833</div>
+        <div style="font-size:.78rem;color:var(--gray-500)">条约申报声明 — 如使用税收条约优惠，需随报税表一起提交</div></div>
+      </div>`;
+    }
+  } else {
+    html += `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem;background:#fff;border:1px solid var(--gray-200);border-radius:6px">
+      <span style="font-size:1.1rem;flex-shrink:0">📄</span>
+      <div><div style="font-weight:700">Schedule C / Form 1040</div>
+      <div style="font-size:.78rem;color:var(--gray-500)">独立承包商需在 Schedule C 报告自雇收入，并随 Form 1040 一起提交。季度预估税 (Form 1040-ES) 可能适用。</div></div>
+    </div>`;
+    html += `<div style="display:flex;align-items:flex-start;gap:.5rem;padding:.5rem;background:#fff;border:1px solid var(--gray-200);border-radius:6px">
+      <span style="font-size:1.1rem;flex-shrink:0">📄</span>
+      <div><div style="font-weight:700">Schedule SE — 自雇税</div>
+      <div style="font-size:.78rem;color:var(--gray-500)">独立承包商需缴纳 Social Security + Medicare 自雇税（约 15.3%），通过 Schedule SE 计算</div></div>
+    </div>`;
+  }
+  html += `</div></div>`;
+
+  el.innerHTML = html;
+  document.getElementById('taxInfoModal').classList.add('show');
 }
 
 // Send the tax form to the worker
