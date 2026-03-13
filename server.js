@@ -4821,13 +4821,33 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     const workerEmail = req.body.worker_email || w.email || '';
     const workerPhone = w.phone || '';
 
-    // Make W-9 task visible and set to pending
-    db.prepare(`UPDATE worker_onboarding SET status='pending', visible_to_worker=1, ds_status=NULL, ds_envelope_id=NULL,
+    // Create DocuSeal W-9 submission immediately so worker can sign directly in portal
+    let w9SubmissionId = '';
+    let w9SignUrl = '';
+    if (dsealEnabled()) {
+      try {
+        const address = w.work_address || '';
+        const { submissionId, workerSignUrl } = await dsealSendW9Html({
+          workerName, workerEmail, address
+        });
+        w9SubmissionId = submissionId || '';
+        w9SignUrl = workerSignUrl || '';
+        console.log(`[W-9 send] DocuSeal submission created: ${w9SubmissionId}, signUrl: ${(w9SignUrl||'').substring(0,80)}`);
+      } catch (e) {
+        console.error('[W-9 send] DocuSeal creation failed:', e.message);
+      }
+    }
+
+    // Make W-9 task visible and set to pending, store DocuSeal info if available
+    const w9Note = w9SubmissionId
+      ? `W-9 已发送至工人 (${new Date().toLocaleString('zh-CN')})，等待工人签署`
+      : `W-9 已发送至工人 (${new Date().toLocaleString('zh-CN')})，等待工人填写信息`;
+    db.prepare(`UPDATE worker_onboarding SET status='pending', visible_to_worker=1, ds_envelope_id=?, ds_status=?, action_url=?,
       admin_note=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='w9'`)
-      .run(`W-9 已发送至工人 (${new Date().toLocaleString('zh-CN')})，等待工人填写信息`, workerId);
+      .run(w9SubmissionId || null, w9SubmissionId ? 'sent' : null, w9SignUrl || '', w9Note, workerId);
     const changedBy = req.session && req.session.username ? req.session.username : 'admin';
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(workerId, changedBy, 'w9', '', '已发送', `W-9 填写请求已发送，等待工人在门户填写信息`);
+      .run(workerId, changedBy, 'w9', '', '已发送', w9SubmissionId ? `W-9 DocuSeal 表格已创建，等待工人签署` : `W-9 填写请求已发送，等待工人在门户填写信息`);
 
     // Build portal link — worker opens portal to fill in W-9 info
     const baseUrl = (process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, '');
