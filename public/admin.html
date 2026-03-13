@@ -2720,13 +2720,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="icTaxResidencySection" style="display:none">
     <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
       <div style="font-size:.78rem;font-weight:700;color:#854d0e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem;padding-bottom:.5rem;border-bottom:1px solid #fde68a">🏛️ 税务身份判定 Tax Status Wizard (1099 必填)</div>
-      <!-- Step indicator -->
-      <div style="display:flex;gap:.3rem;margin-bottom:.75rem" id="trStepIndicator">
-        <span class="tr-step-dot" data-step="1" style="flex:1;height:4px;border-radius:2px;background:#854d0e"></span>
-        <span class="tr-step-dot" data-step="2" style="flex:1;height:4px;border-radius:2px;background:#e5e7eb"></span>
-        <span class="tr-step-dot" data-step="3" style="flex:1;height:4px;border-radius:2px;background:#e5e7eb"></span>
-        <span class="tr-step-dot" data-step="4" style="flex:1;height:4px;border-radius:2px;background:#e5e7eb"></span>
-      </div>
+      <!-- Step indicator removed: single-page flow -->
 
       <!-- Step 1: Applicant Type -->
       <div id="trStep1">
@@ -2744,7 +2738,6 @@ tr:hover td{background:var(--sky-light)}
             </label>
           </div>
         </div>
-        <div style="text-align:right"><button class="btn btn-sm" style="background:#854d0e;color:#fff;border:none" onclick="trNext(2)">下一步 →</button></div>
       </div>
 
       <!-- Step 2A: Entity Path -->
@@ -2781,7 +2774,6 @@ tr:hover td{background:var(--sky-light)}
             <label style="font-size:.78rem;font-weight:600">U.S. Business Address</label>
             <input id="trEntAddress" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
           </div>
-          <div style="background:#d1fae5;border-radius:6px;padding:.4rem .7rem;font-size:.8rem;color:#065f46;font-weight:600">→ W-9 路线</div>
         </div>
         <!-- Foreign Entity fields -->
         <div id="trEntForeignFields" style="display:none">
@@ -2810,11 +2802,6 @@ tr:hover td{background:var(--sky-light)}
           <!-- Auto-detected treaty info for entity -->
           <div id="trEntTreatyInfo" style="display:none;border-radius:6px;padding:.5rem .8rem;margin-bottom:.5rem;font-size:.8rem"></div>
           <input type="hidden" id="trEntTreaty" value="">
-          <div style="background:#dbeafe;border-radius:6px;padding:.4rem .7rem;font-size:.8rem;color:#1d4ed8;font-weight:600">→ W-8BEN-E 路线</div>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-top:.6rem">
-          <button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-600)" onclick="trNext(1)">← 上一步</button>
-          <button class="btn btn-sm" style="background:#854d0e;color:#fff;border:none" onclick="trEntNext()" id="trEntNextBtn">下一步 →</button>
         </div>
       </div>
 
@@ -2854,11 +2841,6 @@ tr:hover td{background:var(--sky-light)}
               <input id="trIndAddress" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
             </div>
           </div>
-          <div style="background:#d1fae5;border-radius:6px;padding:.4rem .7rem;font-size:.8rem;color:#065f46;font-weight:600">→ W-9 路线（完成，无需继续）</div>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-top:.6rem">
-          <button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-600)" onclick="trNext(1)">← 上一步</button>
-          <button class="btn btn-sm" style="background:#854d0e;color:#fff;border:none" onclick="trIndNext()" id="trIndNextBtn">下一步 →</button>
         </div>
       </div>
 
@@ -2889,7 +2871,6 @@ tr:hover td{background:var(--sky-light)}
               </select>
             </div>
           </div>
-          <div style="background:#dbeafe;border-radius:6px;padding:.4rem .7rem;font-size:.8rem;color:#1d4ed8;font-weight:600">→ Likely Nonresident Alien</div>
         </div>
         <!-- If Yes: SPT fields -->
         <div id="trSptBlock" style="display:none">
@@ -2939,13 +2920,9 @@ tr:hover td{background:var(--sky-light)}
             </div>
           </div>
         </div>
-        <div style="display:flex;justify-content:space-between;margin-top:.6rem">
-          <button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-600)" onclick="trNext(2)">← 上一步</button>
-          <button class="btn btn-sm" style="background:#854d0e;color:#fff;border:none" onclick="trNext(4)">下一步 →</button>
-        </div>
       </div>
 
-      <!-- Step 4: Services & Treaty + Conditional Docs -->
+      <!-- Step 4: Services & Treaty -->
       <div id="trStep4" style="display:none">
         <div style="font-size:.85rem;font-weight:700;color:#854d0e;margin-bottom:.6rem">Step 4: Services & Treaty 服务地点</div>
         <div class="field" style="margin-bottom:.6rem">
@@ -3013,58 +2990,12 @@ tr:hover td{background:var(--sky-light)}
             </div>
           </div>
         </div>
-        <!-- Conditional Document Upload -->
-        <div id="trDocBlock" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:.6rem .8rem;margin-bottom:.6rem">
-          <div style="font-size:.75rem;font-weight:700;color:#9a3412;margin-bottom:.4rem">📎 身份证明文件 (条件触发)</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">Immigration status / visa</label>
-              <input id="trDocImmStatus" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="F-1, H-1B...">
-            </div>
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">I-94 admission date</label>
-              <input type="date" id="trDocI94" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-            </div>
-          </div>
-          <div class="field" style="margin-bottom:.5rem">
-            <label style="font-size:.78rem;font-weight:600">Status expiration date</label>
-            <input type="date" id="trDocExpiry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">证件类型</label>
-              <select id="trDocType" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-                <option value="">—</option><option value="passport">🛂 Passport</option><option value="visa">📑 Visa</option>
-                <option value="i94">📋 I-94</option><option value="ead_card">📄 EAD</option><option value="other">📎 Other</option>
-              </select>
-            </div>
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">Upload File</label>
-              <input type="file" id="trDocFile" accept=".pdf,.jpg,.jpeg,.png" style="width:100%;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
-            </div>
-          </div>
-        </div>
-        <!-- Entity doc block -->
-        <div id="trEntDocBlock" style="display:none;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:.6rem .8rem;margin-bottom:.6rem">
-          <div style="font-size:.75rem;font-weight:700;color:#0369a1;margin-bottom:.4rem">📎 实体补充材料 Entity Documents</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">证件类型</label>
-              <select id="trEntDocType" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-                <option value="">—</option><option value="incorporation">Incorporation Cert</option><option value="formation">Formation Doc</option>
-                <option value="signing_auth">Signing Authority</option><option value="other">Other</option>
-              </select>
-            </div>
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">Upload File</label>
-              <input type="file" id="trEntDocFile" accept=".pdf,.jpg,.jpeg,.png" style="width:100%;padding:.3rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem;background:#fff">
-            </div>
-          </div>
-        </div>
-        <div style="display:flex;justify-content:space-between;margin-top:.6rem">
-          <button class="btn btn-sm" style="background:var(--gray-100);color:var(--gray-600)" onclick="trPrevFromStep4()">← 上一步</button>
-          <span style="font-size:.75rem;color:var(--gray-400);align-self:center">结果将在保存面试时自动提交</span>
-        </div>
+        <!-- Hidden fields for compatibility -->
+        <input type="hidden" id="trDocImmStatus" value="">
+        <input type="hidden" id="trDocI94" value="">
+        <input type="hidden" id="trDocExpiry" value="">
+        <input type="hidden" id="trDocType" value="">
+        <input type="hidden" id="trEntDocType" value="">
       </div>
       <!-- Result (outside steps, always visible when shown) -->
       <div id="trFinalResult" style="display:none;background:#f0f9ff;border:2px solid #bae6fd;border-radius:6px;padding:.5rem .8rem;margin-top:.5rem">
@@ -13798,6 +13729,12 @@ function trSelectType(type) {
   document.getElementById('trTypeIndLabel').style.background = type === 'individual' ? '#fffbeb' : '#fff';
   document.getElementById('trTypeEntLabel').style.borderColor = type === 'entity' ? '#854d0e' : 'var(--gray-200)';
   document.getElementById('trTypeEntLabel').style.background = type === 'entity' ? '#fffbeb' : '#fff';
+  // Auto-show relevant sections
+  document.getElementById('trStep2A').style.display = type === 'entity' ? '' : 'none';
+  document.getElementById('trStep2B').style.display = type === 'individual' ? '' : 'none';
+  document.getElementById('trStep3').style.display = 'none';
+  document.getElementById('trStep4').style.display = 'none';
+  trCalcFinalResult();
 }
 
 function trSelectIndStatus(s) {
@@ -13808,24 +13745,26 @@ function trSelectIndStatus(s) {
     if (l) { l.style.borderColor = (v === s) ? '#854d0e' : 'var(--gray-200)'; l.style.background = (v === s) ? '#fffbeb' : '#fff'; }
   });
   document.getElementById('trIndUsFields').style.display = (s === 'citizen' || s === 'green_card') ? '' : 'none';
+  // Auto-show/hide steps based on status
+  if (s === 'citizen' || s === 'green_card') {
+    _trPath = 'individual_us';
+    document.getElementById('trStep3').style.display = 'none';
+    document.getElementById('trStep4').style.display = 'none';
+  } else if (s === 'neither') {
+    _trPath = 'individual_nr';
+    document.getElementById('trStep3').style.display = '';
+    document.getElementById('trStep4').style.display = '';
+    trAutoDetectTreatyCountry();
+    trStep4Toggle();
+  }
+  trCalcFinalResult();
 }
 
 function trShowStep(n) {
   _trStep = n;
-  const applicantType = document.getElementById('trTypeInd').checked ? 'individual' : document.getElementById('trTypeEnt').checked ? 'entity' : '';
+  // Single-page flow: only Step 1 is shown initially, other sections auto-show via selection handlers
   ['trStep1','trStep2A','trStep2B','trStep3','trStep4'].forEach(id => document.getElementById(id).style.display = 'none');
-  if (n === 1) document.getElementById('trStep1').style.display = '';
-  else if (n === 2) {
-    if (applicantType === 'entity') document.getElementById('trStep2A').style.display = '';
-    else document.getElementById('trStep2B').style.display = '';
-  }
-  else if (n === 3) document.getElementById('trStep3').style.display = '';
-  else if (n === 4) { document.getElementById('trStep4').style.display = ''; trAutoDetectTreatyCountry(); trStep4Toggle(); }
-  // Update step indicator
-  document.querySelectorAll('#trStepIndicator .tr-step-dot').forEach(dot => {
-    const s = parseInt(dot.dataset.step);
-    dot.style.background = s <= n ? '#854d0e' : '#e5e7eb';
-  });
+  document.getElementById('trStep1').style.display = '';
 }
 
 function trNext(step) {
@@ -13880,6 +13819,15 @@ function trEntityToggle() {
   const v = document.getElementById('trEntityUs').value;
   document.getElementById('trEntUsFields').style.display = v === 'yes' ? '' : 'none';
   document.getElementById('trEntForeignFields').style.display = v === 'no' ? '' : 'none';
+  _trPath = 'entity';
+  if (v === 'yes') {
+    document.getElementById('trStep4').style.display = 'none';
+  } else if (v === 'no') {
+    document.getElementById('trStep4').style.display = '';
+    trAutoDetectTreatyCountry();
+    trStep4Toggle();
+  }
+  trCalcFinalResult();
 }
 
 function trResidentToggle() {
@@ -13888,6 +13836,7 @@ function trResidentToggle() {
   document.getElementById('trSptBlock').style.display = present === 'yes' ? '' : 'none';
   const exempt = document.getElementById('trSptExempt').value;
   document.getElementById('trSptExemptDetail').style.display = exempt === 'yes' ? '' : 'none';
+  trCalcFinalResult();
 }
 
 function trSptCalc() {
@@ -13925,13 +13874,6 @@ function trStep4Toggle() {
   const is8233 = isIndForeign && servInUs && treatyClaim === 'yes' && treatyIncType === 'personal_services';
   const hint8233 = document.getElementById('tr8233Hint');
   if (hint8233) hint8233.style.display = is8233 ? '' : 'none';
-
-  // Doc block for individuals: trigger conditions
-  const needIndDocs = isIndForeign && (servInUs || treatyClaim === 'yes');
-  document.getElementById('trDocBlock').style.display = needIndDocs ? '' : 'none';
-
-  // Entity doc block
-  document.getElementById('trEntDocBlock').style.display = (type === 'entity' && entityUs !== 'yes') ? '' : 'none';
 
   // Final result
   trCalcFinalResult();
@@ -13986,6 +13928,96 @@ function trCalcFinalResult() {
   const tc = document.getElementById('trTreatyCountry').value;
   const tcInfo = (!isUsPerson && tc && US_TAX_TREATIES[tc]) ? ` · 🌐 ${tc} ${US_TAX_TREATIES[tc].zh}` : '';
 
+  // Build filled-in summary
+  let filled = [];
+  filled.push(['申请主体 Applicant Type', type === 'entity' ? '实体 Entity' : '个人 Individual']);
+  if (type === 'entity') {
+    const eu = document.getElementById('trEntityUs').value;
+    filled.push(['实体类型', eu === 'yes' ? '美国实体 U.S. Entity' : eu === 'no' ? '外国实体 Foreign Entity' : '—']);
+    if (eu === 'yes') {
+      const n = document.getElementById('trEntLegalName').value.trim();
+      const c = document.getElementById('trEntTaxClass').value;
+      const e = document.getElementById('trEntEin').value.trim();
+      const a = document.getElementById('trEntAddress').value.trim();
+      if (n) filled.push(['Legal Business Name', n]);
+      if (c) filled.push(['Tax Classification', c]);
+      if (e) filled.push(['EIN / TIN', e]);
+      if (a) filled.push(['U.S. Business Address', a]);
+    } else if (eu === 'no') {
+      const n = document.getElementById('trEntForeignName').value.trim();
+      const co = document.getElementById('trEntForeignCountry').value;
+      const tc2 = document.getElementById('trEntForeignTaxCountry').value;
+      const a = document.getElementById('trEntForeignAddr').value.trim();
+      if (n) filled.push(['Legal Entity Name', n]);
+      if (co) filled.push(['Country of Organization', co]);
+      if (tc2) filled.push(['Country of Tax Residence', tc2]);
+      if (a) filled.push(['Entity Address', a]);
+    }
+  } else {
+    const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
+    if (indStatus) {
+      const labels = { citizen: '🇺🇸 U.S. Citizen 美国公民', green_card: '🟢 Green Card Holder 绿卡持有者', neither: 'Neither 都不是' };
+      filled.push(['身份类型', labels[indStatus.value] || indStatus.value]);
+      if (indStatus.value === 'citizen' || indStatus.value === 'green_card') {
+        const n = document.getElementById('trIndLegalName').value.trim();
+        const s = document.getElementById('trIndSsn').value.trim();
+        const a = document.getElementById('trIndAddress').value.trim();
+        if (n) filled.push(['Legal Name', n]);
+        if (s) filled.push(['SSN / ITIN', s]);
+        if (a) filled.push(['U.S. Address', a]);
+      } else {
+        const present = document.getElementById('trPresentInUs').value;
+        if (present) filled.push(['是否在美居留', present === 'yes' ? '是 Yes' : '否 No']);
+        if (present === 'yes') {
+          const cy = document.getElementById('trSptDaysCY').value;
+          const ly = document.getElementById('trSptDaysLY').value;
+          const ty = document.getElementById('trSptDays2Y').value;
+          if (cy) filled.push(['今年在美天数', cy]);
+          if (ly) filled.push(['去年在美天数', ly]);
+          if (ty) filled.push(['前年在美天数', ty]);
+          const cyN = parseInt(cy)||0, lyN = parseInt(ly)||0, tyN = parseInt(ty)||0;
+          if (cyN || lyN || tyN) {
+            const w = cyN + (lyN / 3) + (tyN / 6);
+            filled.push(['SPT 加权天数', w.toFixed(1) + (cyN >= 31 && w >= 183 ? ' (≥183, Likely Resident)' : ' (<183, Likely Nonresident)')]);
+          }
+          const exempt = document.getElementById('trSptExempt').value;
+          if (exempt) filled.push(['F/J/M/Q 排除天数', exempt === 'yes' ? '是' : '否']);
+          if (exempt === 'yes') {
+            const visa = document.getElementById('trSptExemptVisa').value.trim();
+            if (visa) filled.push(['签证/身份类型', visa]);
+          }
+          const cit = document.getElementById('trSptCitizenship').value;
+          const taxC = document.getElementById('trSptTaxCountry').value;
+          if (cit) filled.push(['Country of Citizenship', cit]);
+          if (taxC) filled.push(['Country of Tax Residence', taxC]);
+        } else if (present === 'no') {
+          const cit = document.getElementById('trNrCitizenship').value;
+          const taxC = document.getElementById('trNrTaxCountry').value;
+          if (cit) filled.push(['Country of Citizenship', cit]);
+          if (taxC) filled.push(['Country of Tax Residence', taxC]);
+        }
+      }
+    }
+  }
+  // Step 4 fields
+  const servLoc = document.getElementById('trServicesLoc').value;
+  const workLoc = document.getElementById('trWorkLoc').value.trim();
+  const servDates = document.getElementById('trServiceDates').value.trim();
+  const treatyClaim = document.getElementById('trTreatyClaim').value;
+  const treatyIncType = document.getElementById('trTreatyIncomeType').value;
+  if (servLoc) {
+    const locLabels = { all_in_us: '全部在美国', partly_in_us: '部分在美国', all_outside_us: '全在美国外' };
+    filled.push(['服务地点', locLabels[servLoc] || servLoc]);
+  }
+  if (workLoc) filled.push(['Primary Work Location(s)', workLoc]);
+  if (servDates) filled.push(['Expected Service Dates', servDates]);
+  if (tc) filled.push(['Treaty Country', tc + (US_TAX_TREATIES[tc] ? ' ' + US_TAX_TREATIES[tc].zh : '')]);
+  if (treatyClaim) filled.push(['申请条约豁免', treatyClaim === 'yes' ? '是 Yes' : '否 No']);
+  if (treatyClaim === 'yes' && treatyIncType) {
+    const incLabels = { personal_services: 'Personal Services 个人劳务报酬', other_income: 'Other Income 其他收入' };
+    filled.push(['Income Type', incLabels[treatyIncType] || treatyIncType]);
+  }
+
   // Build materials/documents needed list
   let docs = [];
   if (form === 'W-9') {
@@ -13999,7 +14031,6 @@ function trCalcFinalResult() {
   } else if (form === 'W-8BEN') {
     docs.push('📄 W-8BEN 表格（非居民外国个人）');
     docs.push('🛂 护照复印件');
-    const servLoc = document.getElementById('trServicesLoc').value;
     if (servLoc === 'all_in_us' || servLoc === 'partly_in_us') {
       docs.push('📋 签证 / I-94 / 工作授权文件');
       docs.push('⚠️ 美国境内服务需代扣 30% withholding（或适用条约税率）');
@@ -14018,9 +14049,21 @@ function trCalcFinalResult() {
     docs.push('⚠️ 需人工复核，提交 IRS 前需 10 天审查期');
   }
 
-  let html = `<div style="margin-bottom:.4rem"><b>身份:</b> ${status} · <b style="color:${fc}">→ ${form}</b>${tcInfo}${review ? ' · <span style="color:#dc2626">⚠️ 需复核</span>' : ''}</div>`;
+  // Build final HTML: identity + filled summary + docs
+  let html = `<div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem;color:${fc}">身份: ${status} → ${form}${tcInfo}${review ? ' <span style="color:#dc2626">⚠️ 需复核</span>' : ''}</div>`;
+  // Filled-in content summary
+  if (filled.length) {
+    html += `<div style="font-size:.8rem;border-top:1px solid #bae6fd;padding-top:.4rem;margin-bottom:.4rem">`;
+    html += `<div style="font-weight:700;margin-bottom:.3rem">📝 已填写内容:</div>`;
+    html += `<table style="width:100%;font-size:.78rem;border-collapse:collapse">`;
+    filled.forEach(([k, v]) => {
+      html += `<tr><td style="padding:.15rem .4rem .15rem 0;color:#6b7280;white-space:nowrap;vertical-align:top">${k}</td><td style="padding:.15rem 0;font-weight:600">${v}</td></tr>`;
+    });
+    html += `</table></div>`;
+  }
+  // Required documents
   if (docs.length) {
-    html += `<div style="font-size:.78rem;color:#374151;border-top:1px solid #bae6fd;padding-top:.4rem;margin-top:.3rem">`;
+    html += `<div style="font-size:.8rem;color:#374151;border-top:1px solid #bae6fd;padding-top:.4rem;margin-top:.3rem">`;
     html += `<div style="font-weight:700;margin-bottom:.2rem">📌 需要的材料:</div>`;
     html += docs.map(d => `<div style="padding-left:.4rem">${d}</div>`).join('');
     html += `</div>`;
@@ -14093,8 +14136,7 @@ function trWizardReset() {
   ['trServicesLoc','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['trWorkLoc','trServiceDates','trTreatyCountry','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trDocType').value = '';
-  const fileInputs = ['trDocFile','trEntDocFile'];
-  fileInputs.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('trEntDocType').value = '';
   document.getElementById('trFinalResult').style.display = 'none';
   document.getElementById('trEntUsFields').style.display = 'none';
   document.getElementById('trEntForeignFields').style.display = 'none';
