@@ -13981,32 +13981,52 @@ function trCalcFinalResult() {
 
   // Build materials/documents needed list
   let docs = [];
+  const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
   if (form === 'W-9') {
     docs.push('📄 W-9 表格（由承包商签署）');
     if (status === 'U.S. Entity') docs.push('📋 公司注册文件 (Articles / Certificate of Formation)');
     if (status === 'Likely Resident Alien (SPT)') {
       docs.push('🛂 护照复印件');
       docs.push('📋 签证 / I-94 记录');
+      docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN）');
+      docs.push('📄 Form 1040-NR — 非居民外国人报税表（年度报税时使用）');
       docs.push('⚠️ 需人工复核 SPT 计算结果');
     }
   } else if (form === 'W-8BEN') {
-    docs.push('📄 W-8BEN 表格（非居民外国个人）');
+    docs.push('📄 W-8BEN 表格（非居民外国个人，预扣税声明）');
     docs.push('🛂 护照复印件');
-    if (servLoc === 'all_in_us' || servLoc === 'partly_in_us') {
+    docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN/ITIN，需随首次报税一起提交）');
+    if (servInUs) {
       docs.push('📋 签证 / I-94 / 工作授权文件');
       docs.push('⚠️ 美国境内服务需代扣 30% withholding（或适用条约税率）');
     }
+    if (treatyClaim === 'yes') {
+      docs.push('📄 Form 8833 — 条约申报声明 (Treaty-Based Return Position Disclosure)');
+    }
+    docs.push('📄 Form 1042-S — 外国人收入及预扣税凭证（由付款方年终出具）');
+    docs.push('📄 Form 1040-NR — 非居民外国人年度报税表');
+    docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
   } else if (form === 'W-8BEN-E') {
-    docs.push('📄 W-8BEN-E 表格（外国实体）');
+    docs.push('📄 W-8BEN-E 表格（外国实体，预扣税声明）');
     docs.push('📋 实体注册证明 (Certificate of Incorporation / Formation)');
     docs.push('📋 授权签署人证明 (Signing Authority)');
+    docs.push('📄 Form W-7 / Form SS-4 — ITIN 或 EIN 申请（如无美国税号）');
     const entTreaty = document.getElementById('trEntTreaty').value;
-    if (entTreaty === 'yes') docs.push('📋 条约优惠申请相关文件');
+    if (entTreaty === 'yes') {
+      docs.push('📄 Form 8833 — 条约申报声明 (Treaty-Based Return Position Disclosure)');
+      docs.push('📋 条约优惠申请相关文件');
+    }
+    docs.push('📄 Form 1042-S — 外国人收入及预扣税凭证（由付款方年终出具）');
   } else if (form === 'Form 8233') {
-    docs.push('📄 Form 8233（个人服务条约豁免申请）');
+    docs.push('📄 Form 8233 — 个人服务条约豁免申请（Exemption from Withholding）');
     docs.push('🛂 护照复印件');
     docs.push('📋 签证 / I-94 记录');
-    docs.push('📋 条约条款声明 (Treaty Statement)');
+    docs.push('📋 条约条款声明 (Treaty Statement / Attachment)');
+    docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN/ITIN）');
+    docs.push('📄 Form 8833 — 条约申报声明 (Treaty-Based Return Position Disclosure)');
+    docs.push('📄 Form 1042-S — 外国人收入及预扣税凭证（由付款方年终出具）');
+    docs.push('📄 Form 1040-NR — 非居民外国人年度报税表');
+    docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
     docs.push('⚠️ 需人工复核，提交 IRS 前需 10 天审查期');
   }
 
