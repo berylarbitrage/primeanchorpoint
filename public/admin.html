@@ -2996,9 +2996,23 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="modal-actions" style="margin-top:1rem">
+  <!-- Phase 1: Wizard actions -->
+  <div id="trPhase1Actions" class="modal-actions" style="margin-top:1rem">
     <button class="btn" onclick="closeModal('taxResidencyModal')">关闭</button>
     <button class="btn btn-green" onclick="saveTaxResidency()">✅ 保存税务身份判定</button>
+  </div>
+
+  <!-- Phase 2: Document upload (shown after wizard save) -->
+  <div id="trPhase2" style="display:none">
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:.75rem 1rem;margin-top:1rem">
+      <div style="font-size:.78rem;font-weight:700;color:#9a3412;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.5rem;padding-bottom:.5rem;border-bottom:1px solid #fed7aa">📎 上传身份文件（全部上传后方可发送表格）</div>
+      <div id="trDocUploadList" style="display:flex;flex-direction:column;gap:.5rem"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:1rem">
+      <button class="btn" onclick="closeModal('taxResidencyModal')">关闭</button>
+      <button class="btn" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="trBackToWizard()">← 修改问卷</button>
+      <button class="btn btn-green" id="trSendFormBtn" disabled onclick="trSendForm()">📤 发送表格给对方填写</button>
+    </div>
   </div>
 </div></div>
 
@@ -14199,12 +14213,30 @@ async function openTaxResidencyModal() {
     if (trData.i94_admission_date) { const el = document.getElementById('trDocI94'); if (el) el.value = trData.i94_admission_date; }
     if (trData.status_expiration) { const el = document.getElementById('trDocExpiry'); if (el) el.value = trData.status_expiration; }
     trSptCalc();
+
+    // If already completed, show upload phase directly
+    if (trData.recommended_form) {
+      _trRecommendedForm = trData.recommended_form;
+      _trRequiredDocs = trGetRequiredDocs(_trRecommendedForm);
+      document.getElementById('trPhase1Actions').style.display = 'none';
+      document.getElementById('trPhase2').style.display = '';
+      // Defer render to after modal is visible
+      setTimeout(() => trRenderDocUploadList(), 50);
+      document.getElementById('taxResidencyModal').classList.add('show');
+      return;
+    }
   }
 
+  // Show phase 1 (wizard)
+  document.getElementById('trPhase1Actions').style.display = '';
+  document.getElementById('trPhase2').style.display = 'none';
   document.getElementById('taxResidencyModal').classList.add('show');
 }
 
-// Save tax residency from standalone modal
+// Save tax residency from standalone modal → show doc upload phase
+let _trRecommendedForm = '';
+let _trRequiredDocs = [];
+
 async function saveTaxResidency() {
   if (!_onboardingWorkerId) return;
   const hasType = document.getElementById('trTypeInd').checked || document.getElementById('trTypeEnt').checked;
@@ -14219,16 +14251,171 @@ async function saveTaxResidency() {
   await updateOnboardingTask('tax_residency', 'completed');
 
   // Based on result, auto-waive the opposite tax form
-  const recommendedForm = trResult && trResult.recommended_form;
-  if (recommendedForm !== 'W-9') {
+  _trRecommendedForm = (trResult && trResult.recommended_form) || 'W-9';
+  if (_trRecommendedForm !== 'W-9') {
     await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
-      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
+      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${_trRecommendedForm}）` })
     });
   }
 
-  closeModal('taxResidencyModal');
-  showToast(`✅ 税务身份判定已保存 · 推荐表格: ${recommendedForm || 'W-9'}`, 'success', 5000);
-  // Refresh onboarding task list
+  showToast(`✅ 税务身份判定已保存 · 推荐表格: ${_trRecommendedForm}`, 'success', 3000);
+
+  // Determine required docs based on recommended form
+  _trRequiredDocs = trGetRequiredDocs(_trRecommendedForm);
+
+  // Show phase 2 (doc upload)
+  document.getElementById('trPhase1Actions').style.display = 'none';
+  document.getElementById('trPhase2').style.display = '';
+  await trRenderDocUploadList();
+}
+
+// Determine which identity docs HR must upload based on recommended form
+function trGetRequiredDocs(form) {
+  const type = document.getElementById('trTypeInd').checked ? 'individual' : 'entity';
+  const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
+  const entityUs = document.getElementById('trEntityUs').value;
+  const servLoc = document.getElementById('trServicesLoc').value;
+  const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
+  const treatyClaim = document.getElementById('trTreatyClaim').value;
+
+  let docs = [];
+  if (form === 'W-9') {
+    if (type === 'entity' && entityUs === 'yes') {
+      docs.push({ key: 'other', label: '公司注册文件 Articles / Certificate of Formation', required: true });
+    } else if (type === 'individual') {
+      if (indStatus && (indStatus.value === 'citizen' || indStatus.value === 'green_card')) {
+        // US person: minimal docs
+      } else {
+        // SPT resident
+        docs.push({ key: 'passport', label: '护照复印件 Passport Copy', required: true });
+        docs.push({ key: 'visa', label: '签证 / I-94 记录', required: true });
+      }
+    }
+  } else if (form === 'W-8BEN') {
+    docs.push({ key: 'passport', label: '护照复印件 Passport Copy', required: true });
+    if (servInUs) {
+      docs.push({ key: 'visa', label: '签证 Visa Copy', required: true });
+      docs.push({ key: 'other', label: 'I-94 入境记录 / 工作授权文件', required: true });
+    }
+  } else if (form === 'W-8BEN-E') {
+    docs.push({ key: 'other', label: '实体注册证明 Certificate of Incorporation / Formation', required: true });
+    docs.push({ key: 'other', label: '授权签署人证明 Signing Authority', required: true });
+    if (treatyClaim === 'yes') {
+      docs.push({ key: 'other', label: '条约优惠申请文件 Treaty Benefit Documentation', required: true });
+    }
+  } else if (form === 'Form 8233') {
+    docs.push({ key: 'passport', label: '护照复印件 Passport Copy', required: true });
+    docs.push({ key: 'visa', label: '签证 Visa Copy', required: true });
+    docs.push({ key: 'other', label: 'I-94 入境记录', required: true });
+    docs.push({ key: 'other', label: '条约条款声明 Treaty Statement', required: true });
+  }
+  return docs;
+}
+
+// Render upload list and check existing uploads
+async function trRenderDocUploadList() {
+  const list = document.getElementById('trDocUploadList');
+  // Fetch already-uploaded docs
+  const existing = await api(`/admin/worker-accounts/${_onboardingWorkerId}/id-docs`) || [];
+
+  let html = '';
+  if (!_trRequiredDocs.length) {
+    html = '<div style="text-align:center;padding:.5rem;color:#065f46;font-weight:600">✅ 该身份类型无需额外上传文件，可直接发送表格</div>';
+  } else {
+    _trRequiredDocs.forEach((doc, i) => {
+      // Check if a matching doc is already uploaded
+      const uploaded = existing.find(e => e.doc_type === doc.key && e.file_name);
+      const statusHtml = uploaded
+        ? `<span style="color:#065f46;font-weight:600">✅ 已上传: ${uploaded.file_name}</span>`
+        : `<span style="color:#dc2626;font-weight:600">⏳ 未上传</span>`;
+      html += `<div style="display:flex;align-items:center;gap:.6rem;padding:.5rem .6rem;background:#fff;border:1px solid ${uploaded ? '#bbf7d0' : '#fde68a'};border-radius:6px" id="trDocRow${i}">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:.82rem;font-weight:600">${doc.label}</div>
+          <div style="font-size:.75rem;margin-top:.15rem" id="trDocStatus${i}">${statusHtml}</div>
+        </div>
+        <label style="cursor:pointer;padding:.35rem .7rem;background:${uploaded ? '#f0fdf4' : '#dbeafe'};color:${uploaded ? '#065f46' : '#1d4ed8'};border:1px solid ${uploaded ? '#bbf7d0' : '#bfdbfe'};border-radius:6px;font-size:.78rem;font-weight:600;white-space:nowrap">
+          ${uploaded ? '🔄 重新上传' : '📤 上传'}
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.heic" style="display:none" onchange="trUploadDoc(${i},'${doc.key}',this)">
+        </label>
+      </div>`;
+    });
+  }
+  list.innerHTML = html;
+  trCheckAllUploaded(existing);
+}
+
+// Upload a single doc
+async function trUploadDoc(idx, docType, input) {
+  if (!input.files[0]) return;
+  const file = input.files[0];
+  const statusEl = document.getElementById(`trDocStatus${idx}`);
+  statusEl.innerHTML = '<span style="color:#854d0e;font-weight:600">⏳ 上传中...</span>';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('doc_type', docType);
+  const resp = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/id-docs`, {
+    method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  });
+  if (resp.ok) {
+    showToast('✅ 文件已上传', 'success');
+    await trRenderDocUploadList(); // re-render to update status
+  } else {
+    statusEl.innerHTML = '<span style="color:#dc2626;font-weight:600">❌ 上传失败</span>';
+    showToast('❌ 上传失败', 'error');
+  }
+}
+
+// Check if all required docs are uploaded → enable send button
+function trCheckAllUploaded(existing) {
+  const btn = document.getElementById('trSendFormBtn');
+  if (!_trRequiredDocs.length) {
+    btn.disabled = false;
+    btn.textContent = `📤 发送 ${_trRecommendedForm} 给对方填写`;
+    return;
+  }
+  // Count how many required doc types have uploads
+  // For each required doc, check if at least one matching doc_type exists
+  const uploadCounts = {};
+  (existing || []).forEach(e => { if (e.file_name) uploadCounts[e.doc_type] = (uploadCounts[e.doc_type] || 0) + 1; });
+
+  let allDone = true;
+  let needIdx = 0;
+  _trRequiredDocs.forEach((doc, i) => {
+    // For 'other' type docs, we need one upload per required item
+    if (doc.key === 'other') {
+      // Count how many 'other' docs are required up to this index
+      const otherRequired = _trRequiredDocs.filter((d, j) => j <= i && d.key === 'other').length;
+      if ((uploadCounts['other'] || 0) < otherRequired) allDone = false;
+    } else {
+      if (!uploadCounts[doc.key]) allDone = false;
+    }
+  });
+
+  btn.disabled = !allDone;
+  btn.textContent = `📤 发送 ${_trRecommendedForm} 给对方填写`;
+  if (!allDone) {
+    btn.textContent = `📤 发送 ${_trRecommendedForm}（请先上传全部文件）`;
+  }
+}
+
+// Go back to wizard editing
+function trBackToWizard() {
+  document.getElementById('trPhase2').style.display = 'none';
+  document.getElementById('trPhase1Actions').style.display = '';
+}
+
+// Send the tax form to the worker
+async function trSendForm() {
+  if (!_onboardingWorkerId || !_trRecommendedForm) return;
+  if (_trRecommendedForm === 'W-9') {
+    closeModal('taxResidencyModal');
+    openW9SendModal();
+  } else {
+    // For non-W-9 forms (W-8BEN, W-8BEN-E, Form 8233): mark w9 task as waived, show confirmation
+    closeModal('taxResidencyModal');
+    showToast(`✅ 文件已齐全 · 推荐表格: ${_trRecommendedForm}，请线下或通过其他渠道发送给承包商签署`, 'success', 6000);
+  }
   openOnboardingModal(_onboardingWorkerId);
 }
 
