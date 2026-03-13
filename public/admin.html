@@ -2707,12 +2707,7 @@ tr:hover td{background:var(--sky-light)}
         </select>
       </div>
     </div>
-    <div style="margin-top:.75rem">
-      <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.88rem;font-weight:500">
-        <input type="checkbox" id="icHasSsn" style="width:16px;height:16px;accent-color:var(--sky)">
-        <span>已提供 SSN（社会安全号码）</span>
-      </label>
-    </div>
+    <input type="hidden" id="icHasSsn">
   </div>
 
 
@@ -14240,7 +14235,7 @@ async function openInterviewCompleteModal() {
   document.getElementById('icWorkerName').textContent = w ? (w.name || w.username) : '';
   document.getElementById('icWorkStatus').value = (w && w.work_status) || '';
   document.getElementById('icPaymentMethod').value = (w && w.payment_method) || 'cash';
-  document.getElementById('icHasSsn').checked = !!(w && w.has_ssn);
+  document.getElementById('icHasSsn').value = (w && w.has_ssn) ? '1' : '';
 
   const empType = (w && w.employment_type) || '';
   if (empType === 'w2' || empType === '1099') {
@@ -14369,7 +14364,7 @@ async function saveInterviewComplete() {
   if (!employmentType) return showToast('❌ 请选择雇佣类型（W-2 或 1099）', 'error');
   const workStatus = document.getElementById('icWorkStatus').value;
   const paymentMethod = document.getElementById('icPaymentMethod').value;
-  const hasSsn = document.getElementById('icHasSsn').checked;
+  const hasSsn = !!document.getElementById('icHasSsn').value;
   const positionInterests = Array.from(document.querySelectorAll('#icPositionInterests input[type="checkbox"]:checked')).map(cb => cb.value);
   const skills = _icSkills.filter(s => s.skill_name.trim());
   const assignedTasks = employmentType === 'w2' ? W2_TASKS : C1099_TASKS;
