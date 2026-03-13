@@ -2560,15 +2560,25 @@ async function dsealDownloadDocument(submissionId, { retries = 3, delayMs = 2000
     if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}`);
     const sub = r.data;
 
-    // Prefer documents from completed submitters (they have actual signatures rendered)
-    // Pick the LAST completed submitter's document — it has the most signatures applied
+    // 1) Prefer submission-level combined documents (has all signatures)
     let docUrl = null;
-    for (const s of (sub.submitters || [])) {
-      if (s.status === 'completed' && s.completed_at && s.documents && s.documents.length) {
-        docUrl = s.documents[s.documents.length - 1].url;
+    if (sub.documents && sub.documents.length) {
+      docUrl = sub.documents[sub.documents.length - 1].url;
+      console.log(`[DocuSeal] Using submission-level document for ${submissionId}`);
+    }
+    // 2) Fallback: pick the submitter who signed LAST (most recent completed_at) — their doc has the most signatures
+    if (!docUrl) {
+      let latestTime = '';
+      for (const s of (sub.submitters || [])) {
+        if (s.status === 'completed' && s.completed_at && s.documents && s.documents.length) {
+          if (s.completed_at > latestTime) {
+            latestTime = s.completed_at;
+            docUrl = s.documents[s.documents.length - 1].url;
+          }
+        }
       }
     }
-    // Fallback: any submitter with documents
+    // 3) Fallback: any submitter with documents
     if (!docUrl) {
       for (const s of (sub.submitters || [])) {
         if (s.documents && s.documents.length) { docUrl = s.documents[0].url; break; }
@@ -2576,14 +2586,14 @@ async function dsealDownloadDocument(submissionId, { retries = 3, delayMs = 2000
     }
 
     if (docUrl) {
-      console.log(`[DocuSeal] Download doc attempt ${attempt}: submissionId=${submissionId}, docUrl=${docUrl.substring(0, 100)}`);
+      console.log(`[DocuSeal] Download doc attempt ${attempt}: submissionId=${submissionId}, docUrl=${docUrl.substring(0, 100)}, submitters: ${JSON.stringify((sub.submitters || []).map(s => ({ role: s.role, status: s.status, completed_at: s.completed_at, docs: (s.documents || []).length })))}, submission_docs: ${(sub.documents || []).length}`);
       const buf = await _dsealFetchUrl(docUrl);
       // Sanity check: PDF should start with %PDF
       if (buf.length > 4 && buf.slice(0, 5).toString() === '%PDF-') return buf;
       // If not a valid PDF, it might be a placeholder; retry after delay
       console.warn(`[DocuSeal] Downloaded content is not a valid PDF (${buf.length} bytes, starts with "${buf.slice(0, 20).toString()}"), attempt ${attempt}/${retries}`);
     } else {
-      console.warn(`[DocuSeal] No documents found for submission ${submissionId}, attempt ${attempt}/${retries}, submitters: ${JSON.stringify((sub.submitters || []).map(s => ({ id: s.id, role: s.role, status: s.status, docs: (s.documents || []).length })))}`);
+      console.warn(`[DocuSeal] No documents found for submission ${submissionId}, attempt ${attempt}/${retries}, submitters: ${JSON.stringify((sub.submitters || []).map(s => ({ id: s.id, role: s.role, status: s.status, completed_at: s.completed_at, docs: (s.documents || []).length })))}, submission_docs: ${(sub.documents || []).length}`);
     }
 
     if (attempt < retries) await new Promise(ok => setTimeout(ok, delayMs * attempt));
