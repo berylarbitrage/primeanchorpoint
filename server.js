@@ -4281,6 +4281,18 @@ const ONBOARDING_STEPS = [
   { key: 'tax_residency',   title: '税务居民身份判定',      desc: '1099 承包商税务居民预判 / 表格分流（Resident Test）', required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
   { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
+  // Tax document tasks (auto-created by tax residency questionnaire)
+  { key: 'tax_doc_w8ben',    title: 'W-8BEN 表格',           desc: '非居民外国个人预扣税声明',                       required: true  },
+  { key: 'tax_doc_w8bene',   title: 'W-8BEN-E 表格',         desc: '外国实体预扣税声明',                             required: true  },
+  { key: 'tax_doc_8233',     title: 'Form 8233',              desc: '个人服务条约豁免申请',                           required: true  },
+  { key: 'tax_doc_passport', title: '护照复印件',              desc: '护照信息页复印件 Passport Copy',                 required: true  },
+  { key: 'tax_doc_visa_i94', title: '签证 / I-94',            desc: '签证复印件 / I-94 入境记录 / 工作授权文件',       required: true  },
+  { key: 'tax_doc_w7_itin',  title: 'W-7 ITIN 申请',         desc: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）',          required: false },
+  { key: 'tax_doc_8833',     title: 'Form 8833 条约声明',     desc: '条约申报声明 Treaty-Based Return Position',       required: false },
+  { key: 'tax_doc_corp_cert',title: '公司注册文件',            desc: 'Articles / Certificate of Incorporation',         required: true  },
+  { key: 'tax_doc_sign_auth',title: '授权签署人证明',          desc: '签署人身份及授权文件 Signing Authority',           required: true  },
+  { key: 'tax_doc_treaty_docs',title:'条约优惠文件',           desc: '条约优惠申请相关文件 Treaty Benefit Documentation', required: false },
+  { key: 'tax_doc_treaty_stmt',title:'条约条款声明',           desc: '条约条款声明 Treaty Statement / Attachment',       required: true  },
 ];
 
 function initWorkerOnboarding(workerId) {
@@ -4937,6 +4949,48 @@ function calculateTaxResidency(data) {
   return result;
 }
 
+// Determine onboarding tasks needed based on tax form recommendation
+function getTaxDocTasks(form, data) {
+  const tasks = [];
+  const isEntity = data.applicant_type === 'entity';
+  const servInUs = data.services_location === 'all_in_us' || data.services_location === 'partly_in_us';
+  const treatyClaim = data.claim_treaty_benefit === 'yes';
+
+  if (form === 'W-9') {
+    // W-9 handled by existing w9 task
+    if (isEntity) {
+      tasks.push({ key: 'tax_doc_corp_cert', note: '公司注册文件 Articles / Certificate of Formation' });
+    }
+  } else if (form === 'W-8BEN') {
+    tasks.push({ key: 'tax_doc_w8ben', note: 'W-8BEN 非居民外国个人预扣税声明' });
+    tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
+    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
+    if (servInUs) {
+      tasks.push({ key: 'tax_doc_visa_i94', note: '签证 / I-94 / 工作授权文件' });
+    }
+    if (treatyClaim) {
+      tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
+    }
+  } else if (form === 'W-8BEN-E') {
+    tasks.push({ key: 'tax_doc_w8bene', note: 'W-8BEN-E 外国实体预扣税声明' });
+    tasks.push({ key: 'tax_doc_corp_cert', note: '实体注册证明 Certificate of Incorporation' });
+    tasks.push({ key: 'tax_doc_sign_auth', note: '授权签署人证明 Signing Authority' });
+    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7/SS-4 ITIN 或 EIN 申请（如无美国税号）' });
+    if (treatyClaim) {
+      tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
+      tasks.push({ key: 'tax_doc_treaty_docs', note: '条约优惠申请文件 Treaty Benefit Documentation' });
+    }
+  } else if (form === 'Form 8233') {
+    tasks.push({ key: 'tax_doc_8233', note: 'Form 8233 个人服务条约豁免申请' });
+    tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
+    tasks.push({ key: 'tax_doc_visa_i94', note: '签证 / I-94 记录' });
+    tasks.push({ key: 'tax_doc_treaty_stmt', note: '条约条款声明 Treaty Statement' });
+    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
+    tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
+  }
+  return tasks;
+}
+
 // Get tax residency questionnaire for a worker
 app.get('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res) => {
   const row = db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(req.params.id);
@@ -5035,12 +5089,31 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     .run(workerId);
   syncOnboardedStatus(workerId);
 
+  // Auto-create onboarding tasks for required tax documents based on recommended form
+  const taxTasks = getTaxDocTasks(calc.recommended_form, d);
+  // Remove old tax_doc_* tasks first (in case form changed on re-save)
+  db.prepare(`DELETE FROM worker_onboarding WHERE worker_account_id=? AND task_key LIKE 'tax_doc_%'`).run(workerId);
+  const insertTask = db.prepare(`INSERT OR IGNORE INTO worker_onboarding (worker_account_id, task_key, status, admin_note, visible_to_worker, updated_at) VALUES (?,?,?,?,0,CURRENT_TIMESTAMP)`);
+  for (const t of taxTasks) {
+    insertTask.run(workerId, t.key, 'pending', t.note || '');
+  }
+  // Update assigned_tasks to include new tax doc tasks
+  const w2 = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(workerId);
+  if (w2) {
+    let assigned = [];
+    try { assigned = JSON.parse(w2.assigned_tasks || '[]'); } catch {}
+    // Remove old tax_doc_ entries and add new ones
+    assigned = assigned.filter(k => !k.startsWith('tax_doc_'));
+    for (const t of taxTasks) assigned.push(t.key);
+    db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(assigned), workerId);
+  }
+
   // Log to history
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
     .run(workerId, fields.completed_by, 'tax_residency', '', calc.recommended_form,
       `税务居民判定完成: ${calc.tax_status} → 推荐表格: ${calc.recommended_form}${calc.needs_manual_review ? ' (需人工复核)' : ''}`);
 
-  res.json({ success: true, ...calc, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
+  res.json({ success: true, ...calc, taxTasks, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
 });
 
 // ─── ID Document Upload (admin uploads for worker during interview) ───
