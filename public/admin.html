@@ -14227,7 +14227,13 @@ function trAddStatusPeriod(visa, start, end, trips) {
     <div style="display:grid;grid-template-columns:140px 1fr 1fr 24px;gap:.3rem;align-items:center">
       <select data-field="visa" onchange="trTimelineChanged()" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem">${optHtml}</select>
       <input type="date" data-field="start" value="${start||''}" onchange="trTimelineChanged()" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem">
-      <input type="date" data-field="end" value="${end||''}" onchange="trTimelineChanged()" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem" placeholder="至今">
+      <div style="display:flex;gap:.2rem;align-items:center">
+        <select data-field="endType" onchange="trEndTypeChanged(this)" style="padding:.3rem .25rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem;min-width:52px;flex-shrink:0">
+          <option value="date"${end==='D/S'?'':' selected'}>日期</option>
+          <option value="D/S"${end==='D/S'?' selected':''}>D/S</option>
+        </select>
+        <input type="date" data-field="end" value="${end&&end!=='D/S'?end:''}" onchange="trTimelineChanged()" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem;flex:1;${end==='D/S'?'display:none':''}" placeholder="至今">
+      </div>
       <button type="button" onclick="trRemoveStatusPeriod(${id})" style="border:none;background:none;cursor:pointer;font-size:.85rem;color:#dc2626;padding:0;line-height:1" title="删除">✕</button>
     </div>
     <div style="margin-top:.3rem;padding-left:.2rem">
@@ -14250,6 +14256,17 @@ function trAddStatusPeriod(visa, start, end, trips) {
     trips.forEach(t => trAddTripRow(id, t.left, t.returned));
   }
   if (start) trTimelineChanged();
+}
+function trEndTypeChanged(sel) {
+  const wrapper = sel.closest('div');
+  const dateInput = wrapper.querySelector('[data-field="end"]');
+  if (sel.value === 'D/S') {
+    dateInput.style.display = 'none';
+    dateInput.value = '';
+  } else {
+    dateInput.style.display = '';
+  }
+  trTimelineChanged();
 }
 function trRemoveStatusPeriod(id) {
   const el = document.getElementById('trSP' + id);
@@ -14291,7 +14308,9 @@ function trGetStatusPeriods() {
   document.querySelectorAll('#trStatusPeriods > div.tr-status-period').forEach(div => {
     const visa = div.querySelector('[data-field="visa"]').value;
     const start = div.querySelector('[data-field="start"]').value;
-    const end = div.querySelector('[data-field="end"]').value;
+    const endType = div.querySelector('[data-field="endType"]');
+    const endDate = div.querySelector('[data-field="end"]').value;
+    const end = (endType && endType.value === 'D/S') ? 'D/S' : endDate;
     const trips = [];
     div.querySelectorAll('[data-trips-rows] > div').forEach(tr => {
       const left = tr.querySelector('[data-field="left"]').value;
@@ -14321,7 +14340,7 @@ function _trCalcPeriodDaysInYear(period, year, exemptOnly) {
   const now = new Date();
   const yearEnd = (year === now.getFullYear()) ? now : new Date(year, 11, 31);
   const pStart = new Date(period.start + 'T00:00:00');
-  const pEnd = period.end ? new Date(period.end + 'T00:00:00') : now;
+  const pEnd = (period.end && period.end !== 'D/S') ? new Date(period.end + 'T00:00:00') : now;
   const start = pStart < yearStart ? yearStart : pStart;
   const end = pEnd > yearEnd ? yearEnd : pEnd;
   if (start > end) return 0;
@@ -14350,7 +14369,7 @@ function trTimelineChanged() {
   for (const p of periods) {
     if (!p.start) continue;
     if (!firstEntry || p.start < firstEntry) firstEntry = p.start;
-    const pEnd = p.end || now.toISOString().slice(0, 10);
+    const pEnd = (p.end && p.end !== 'D/S') ? p.end : now.toISOString().slice(0, 10);
     if (!lastEnd || pEnd > lastEnd) lastEnd = pEnd;
     if (_trIsExemptVisa(p.visa)) hasExemptVisa = true;
     for (let i = 0; i < 3; i++) {
