@@ -14906,6 +14906,12 @@ function trCalcFinalResult() {
           if (cit) filled.push(['Country of Citizenship', cit]);
           if (taxC) filled.push(['Country of Tax Residence', taxC]);
         }
+        // Work permit category (Step 3)
+        const wpc = document.getElementById('trWorkPermitCategory').value;
+        if (wpc) {
+          const wpcLabels = { work_visa: '工作签证 Employment Visa', ead: 'EAD 工卡', opt: 'OPT / STEM OPT', f1_cpt: 'F-1 CPT', j1: 'J-1 交流访问学者' };
+          filled.push(['工作许可类别 Work Permit', wpcLabels[wpc] || wpc]);
+        }
       }
     }
   }
