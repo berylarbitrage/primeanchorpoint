@@ -2778,22 +2778,17 @@ tr:hover td{background:var(--sky-light)}
   <h2>🛂 工作许可验证 Work Permit Verification</h2>
   <p style="font-size:.9rem;font-weight:700;color:var(--sky);margin-bottom:.75rem" id="wpWorkerName"></p>
 
-  <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.82rem;color:#0369a1">
+  <div id="wpQuestionnaireHint" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.82rem;color:#0369a1">
     核验工人的工作许可/签证/EAD 是否有效，记录证件信息和到期日。
   </div>
+
+  <div id="wpRequiredDocs" style="display:none;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;font-size:.8rem;color:#78350f"></div>
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
     <div class="field">
       <label style="font-size:.78rem;font-weight:600">证件类型 Document Type</label>
       <select id="wpDocType" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
         <option value="">— 请选择 —</option>
-        <option value="ead">EAD 工卡 (Employment Authorization Document)</option>
-        <option value="work_visa">工作签证 Work Visa (H-1B, L-1, etc.)</option>
-        <option value="green_card">绿卡 Green Card</option>
-        <option value="opt">OPT (Optional Practical Training)</option>
-        <option value="cpt">CPT (Curricular Practical Training)</option>
-        <option value="tn">TN Visa</option>
-        <option value="other">其他 Other</option>
       </select>
     </div>
     <div class="field">
@@ -15600,6 +15595,117 @@ function confirmOnboardingReset(key, title) {
   showConfirmModal(`重置任务：${title}`, '确认将此任务重置为"待处理"状态？', '↩️ 确认重置', 'btn-outline', () => updateOnboardingTask(key, 'pending'), 'amber');
 }
 // ─── Work Permit Verification ───
+// All document type options by category
+const WP_DOC_OPTIONS = {
+  citizen: [
+    { value: 'us_passport', label: '美国护照 U.S. Passport' },
+    { value: 'birth_cert', label: '美国出生证明 U.S. Birth Certificate' },
+    { value: 'naturalization', label: '入籍证书 Certificate of Naturalization (N-550/N-570)' },
+    { value: 'citizenship_cert', label: '公民证书 Certificate of Citizenship (N-560/N-561)' },
+    { value: 'consular_report', label: '海外出生领事报告 Consular Report of Birth Abroad (FS-240)' },
+    { value: 'other', label: '其他 Other' }
+  ],
+  green_card: [
+    { value: 'green_card', label: '绿卡正反面 Permanent Resident Card (I-551)' },
+    { value: 'passport_i551', label: '护照 + I-551 临时绿卡章 Passport with I-551 stamp/MRIV' },
+    { value: 'expired_gc_i797', label: '过期绿卡 + I-797 延期通知 Expired GC + I-797 Extension' },
+    { value: 'other', label: '其他 Other' }
+  ],
+  work_visa: [
+    { value: 'work_visa', label: '工作签证 Work Visa (H-1B, L-1, O-1, TN, E-2 等)' },
+    { value: 'other', label: '其他 Other' }
+  ],
+  ead: [
+    { value: 'ead', label: 'EAD 工卡 I-766 (C08, C09, C10, C26, C33 等)' },
+    { value: 'other', label: '其他 Other' }
+  ],
+  opt: [
+    { value: 'opt', label: 'OPT EAD 工卡 I-766 (C03A/C03B)' },
+    { value: 'other', label: '其他 Other' }
+  ],
+  cpt: [
+    { value: 'cpt', label: 'I-20 (含 CPT 授权页 CPT Authorization)' },
+    { value: 'other', label: '其他 Other' }
+  ],
+  j1: [
+    { value: 'j1_ds2019', label: 'DS-2019 (J-1)' },
+    { value: 'other', label: '其他 Other' }
+  ],
+  us_entity: [
+    { value: 'entity_formation', label: '公司注册文件 Articles / Certificate of Formation' },
+    { value: 'ein_letter', label: 'EIN 确认函 IRS EIN Confirmation Letter (CP 575/147C)' },
+    { value: 'other', label: '其他 Other' }
+  ],
+  foreign_entity: [
+    { value: 'foreign_cert', label: '实体注册证明 Certificate of Incorporation / Formation' },
+    { value: 'signing_auth', label: '授权签署人证明 Signing Authority / Board Resolution' },
+    { value: 'other', label: '其他 Other' }
+  ],
+  generic: [
+    { value: 'ead', label: 'EAD 工卡 (Employment Authorization Document)' },
+    { value: 'work_visa', label: '工作签证 Work Visa (H-1B, L-1, etc.)' },
+    { value: 'green_card', label: '绿卡 Green Card' },
+    { value: 'opt', label: 'OPT (Optional Practical Training)' },
+    { value: 'cpt', label: 'CPT (Curricular Practical Training)' },
+    { value: 'tn', label: 'TN Visa' },
+    { value: 'us_passport', label: '美国护照 U.S. Passport' },
+    { value: 'other', label: '其他 Other' }
+  ]
+};
+
+// Required documents info by category
+const WP_REQUIRED_DOCS = {
+  citizen: { title: 'U.S. Citizen → W-9', docs: ['身份证明（以下任一即可）:', '• 美国护照 U.S. Passport', '• 美国出生证明 U.S. Birth Certificate', '• 入籍证书 Certificate of Naturalization (N-550/N-570)', '• 公民证书 Certificate of Citizenship (N-560/N-561)', '• 海外出生领事报告 Consular Report of Birth Abroad (FS-240)'] },
+  green_card: { title: 'Green Card Holder → W-9', docs: ['身份证明（以下任一即可）:', '• 绿卡正反面 Permanent Resident Card (I-551) front & back', '• 护照 + I-551 临时绿卡章 Foreign Passport with I-551 stamp/MRIV', '• 过期绿卡 + I-797 延期通知 Expired Green Card + I-797 Extension Notice'] },
+  work_visa: { title: '工作签证 Work Visa', docs: ['最少需要的材料:', '• 护照 Passport', '• I-797 批准通知 Approval Notice（或有效签证页 Visa stamp）', '• I-94 入境记录 Arrival/Departure Record'] },
+  ead: { title: 'EAD 工卡', docs: ['最少需要的材料:', '• EAD 工卡 (I-766) 正反面 front & back', '• 护照 Passport'] },
+  opt: { title: 'OPT / STEM OPT', docs: ['最少需要的材料:', '• EAD 工卡 (I-766) 正反面 front & back', '• I-20（含 OPT endorsement）', '• 护照 Passport'] },
+  cpt: { title: 'F-1 CPT', docs: ['最少需要的材料:', '• I-20（含 CPT 授权页 CPT authorization）', '• 护照 Passport'] },
+  j1: { title: 'J-1', docs: ['最少需要的材料:', '• DS-2019', '• 护照 Passport'] },
+  us_entity: { title: '美国实体 U.S. Entity → W-9', docs: ['需要的材料:', '• 公司注册文件 Articles / Certificate of Formation', '• EIN 确认函 IRS EIN Confirmation Letter (CP 575 / 147C)'] },
+  foreign_entity: { title: '外国实体 Foreign Entity → W-8BEN-E', docs: ['需要的材料:', '• 实体注册证明 Certificate of Incorporation / Formation', '• 授权签署人证明 Signing Authority / Board Resolution', '• ITIN/EIN 申请 Form W-7 / Form SS-4（如无美国税号）'] }
+};
+
+function wpPopulateDocType(category, existingValue) {
+  const sel = document.getElementById('wpDocType');
+  sel.innerHTML = '<option value="">— 请选择 —</option>';
+  const opts = WP_DOC_OPTIONS[category] || WP_DOC_OPTIONS.generic;
+  opts.forEach(o => {
+    sel.insertAdjacentHTML('beforeend', `<option value="${o.value}">${o.label}</option>`);
+  });
+  if (existingValue) sel.value = existingValue;
+}
+
+function wpShowRequiredDocs(category) {
+  const el = document.getElementById('wpRequiredDocs');
+  const info = WP_REQUIRED_DOCS[category];
+  if (!info) { el.style.display = 'none'; return; }
+  el.innerHTML = `<div style="font-weight:700;margin-bottom:.3rem">📋 ${info.title} — 需验证的材料:</div>` +
+    info.docs.map(d => `<div style="margin-left:${d.startsWith('•') ? '.8rem' : '0'};line-height:1.6">${d}</div>`).join('');
+  el.style.display = '';
+}
+
+function wpDetectCategory(trData) {
+  if (!trData) return 'generic';
+  const appType = trData.applicant_type;
+  if (appType === 'entity') {
+    return trData.entity_us === 'yes' ? 'us_entity' : 'foreign_entity';
+  }
+  const indStatus = trData.individual_status;
+  if (indStatus === 'citizen') return 'citizen';
+  if (indStatus === 'green_card') return 'green_card';
+  // Neither: determine by work auth type (stored in immigration_status field)
+  const wa = trData.immigration_status || '';
+  const VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
+  const EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-OTHER'];
+  if (VISA_TYPES.includes(wa)) return 'work_visa';
+  if (wa === 'EAD-C03A' || wa === 'EAD-C03B') return 'opt';
+  if (EAD_TYPES.includes(wa)) return 'ead';
+  if (wa === 'F-1-CPT') return 'cpt';
+  if (wa === 'J-1') return 'j1';
+  return 'generic';
+}
+
 async function openWorkPermitModal() {
   if (!_onboardingWorkerId) return;
   const w = _onboardingWorkerData;
@@ -15610,12 +15716,46 @@ async function openWorkPermitModal() {
   });
   document.getElementById('wpExpiryWarning').style.display = 'none';
   document.getElementById('wpCurrentInfo').style.display = 'none';
+  document.getElementById('wpRequiredDocs').style.display = 'none';
 
-  // Load existing data
+  // Load questionnaire data to determine category
+  let wpCategory = 'generic';
+  try {
+    const trData = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`);
+    if (trData) {
+      wpCategory = wpDetectCategory(trData);
+      // Show questionnaire-based hint
+      const hint = document.getElementById('wpQuestionnaireHint');
+      const wa = trData.immigration_status || '';
+      const catTitles = {
+        citizen: '🇺🇸 问卷身份: U.S. Citizen — 请验证公民身份证明',
+        green_card: '🟢 问卷身份: Green Card Holder — 请验证绿卡/永久居民证明',
+        work_visa: '🛂 问卷工作许可: 工作签证 (' + wa + ') — 请验证签证和 I-797/I-94',
+        ead: '🛂 问卷工作许可: EAD 工卡 (' + wa + ') — 请验证 EAD 卡(I-766)',
+        opt: '🛂 问卷工作许可: OPT (' + wa + ') — 请验证 EAD 卡 + I-20',
+        cpt: '🛂 问卷工作许可: F-1 CPT — 请验证 I-20 (含 CPT 授权)',
+        j1: '🛂 问卷工作许可: J-1 — 请验证 DS-2019',
+        us_entity: '🏢 问卷身份: 美国实体 U.S. Entity — 请验证公司注册文件和 EIN',
+        foreign_entity: '🌐 问卷身份: 外国实体 Foreign Entity — 请验证实体注册证明'
+      };
+      hint.textContent = catTitles[wpCategory] || '核验工人的工作许可/签证/EAD 是否有效，记录证件信息和到期日。';
+    }
+  } catch(e) { /* no questionnaire data */ }
+
+  // Populate dropdown and show required docs
+  wpPopulateDocType(wpCategory);
+  wpShowRequiredDocs(wpCategory);
+
+  // Load existing work permit data
   try {
     const data = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`);
     if (data && data.doc_type) {
-      document.getElementById('wpDocType').value = data.doc_type || '';
+      // Ensure the saved doc_type option exists in current dropdown; if not, add it
+      const sel = document.getElementById('wpDocType');
+      if (!sel.querySelector(`option[value="${data.doc_type}"]`)) {
+        sel.insertAdjacentHTML('beforeend', `<option value="${data.doc_type}">${data.doc_type}</option>`);
+      }
+      sel.value = data.doc_type || '';
       document.getElementById('wpDocNumber').value = data.doc_number || '';
       document.getElementById('wpIssueDate').value = data.issue_date || '';
       document.getElementById('wpExpiryDate').value = data.expiry_date || '';
@@ -15623,9 +15763,10 @@ async function openWorkPermitModal() {
       document.getElementById('wpNotes').value = data.notes || '';
       // Show current info
       const info = document.getElementById('wpCurrentInfo');
-      const typeLabels = { ead:'EAD 工卡', work_visa:'工作签证', green_card:'绿卡', opt:'OPT', cpt:'CPT', tn:'TN Visa', other:'其他' };
+      const selOpt = sel.options[sel.selectedIndex];
+      const typeLabel = selOpt && selOpt.value ? selOpt.text : data.doc_type;
       info.innerHTML = `<div style="font-weight:700;color:#065f46;margin-bottom:.3rem">📋 已有记录:</div>
-        <div>类型: <b>${typeLabels[data.doc_type]||data.doc_type}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}${data.verified_at?' · 验证时间: <b>'+new Date(data.verified_at).toLocaleString('zh-CN')+'</b>':''}</div>`;
+        <div>类型: <b>${typeLabel}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}${data.verified_at?' · 验证时间: <b>'+new Date(data.verified_at).toLocaleString('zh-CN')+'</b>':''}</div>`;
       info.style.display = 'block';
       // Expiry warning
       if (data.expiry_date) {
@@ -15668,8 +15809,10 @@ async function saveWorkPermit() {
   });
 
   // Mark onboarding task as completed
-  const typeLabels = { ead:'EAD', work_visa:'Work Visa', green_card:'Green Card', opt:'OPT', cpt:'CPT', tn:'TN', other:'Other' };
-  const noteText = `${typeLabels[docType]||docType}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}${notes?' · '+notes:''}`;
+  const sel = document.getElementById('wpDocType');
+  const selOpt = sel.options[sel.selectedIndex];
+  const typeLabel = selOpt ? selOpt.text : docType;
+  const noteText = `${typeLabel}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}${notes?' · '+notes:''}`;
   await updateOnboardingTask('work_permit', 'completed', noteText);
 
   closeModal('workPermitModal');
