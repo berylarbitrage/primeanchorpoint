@@ -14366,6 +14366,23 @@ function trTimelineChanged() {
   const exemptDays = [0, 0, 0];
   let firstEntry = null, lastEnd = null;
   let hasExemptVisa = false;
+  // ── 5-calendar-year exemption cap (IRS Pub 519) ──
+  // F/M/Q students: exempt for at most 5 calendar years
+  // J teachers/researchers: 2 of prior 6 years (simplified to 5 here)
+  // Collect all calendar years with any exempt-visa presence
+  const exemptCalendarYears = new Set();
+  for (const p of periods) {
+    if (!p.start || !_trIsExemptVisa(p.visa)) continue;
+    const pStart = new Date(p.start + 'T00:00:00');
+    const pEnd = (p.end && p.end !== 'D/S') ? new Date(p.end + 'T00:00:00') : now;
+    for (let y = pStart.getFullYear(); y <= pEnd.getFullYear(); y++) {
+      exemptCalendarYears.add(y);
+    }
+  }
+  // Keep only the earliest 5 calendar years as eligible for exemption
+  const sortedExemptYears = [...exemptCalendarYears].sort((a, b) => a - b);
+  const eligibleExemptYears = new Set(sortedExemptYears.slice(0, 5));
+
   for (const p of periods) {
     if (!p.start) continue;
     if (!firstEntry || p.start < firstEntry) firstEntry = p.start;
@@ -14374,7 +14391,10 @@ function trTimelineChanged() {
     if (_trIsExemptVisa(p.visa)) hasExemptVisa = true;
     for (let i = 0; i < 3; i++) {
       daysInUs[i] += _trCalcPeriodDaysInYear(p, years[i], false);
-      exemptDays[i] += _trCalcPeriodDaysInYear(p, years[i], true);
+      // Only count exempt days if this year is within the 5-year cap
+      if (eligibleExemptYears.has(years[i])) {
+        exemptDays[i] += _trCalcPeriodDaysInYear(p, years[i], true);
+      }
     }
   }
   // Show COS Pending guidance if any period uses COS status
@@ -14414,9 +14434,15 @@ function trTimelineChanged() {
     let html = `<b>自动计算结果:</b><br>`;
     html += `📅 在美天数: ${years[0]}年=<b>${daysInUs[0]}</b>天, ${years[1]}年=<b>${daysInUs[1]}</b>天, ${years[2]}年=<b>${daysInUs[2]}</b>天<br>`;
     if (hasExemptVisa && (exemptDays[0] || exemptDays[1] || exemptDays[2])) {
-      html += `🎓 F/J/M/Q 豁免天数: ${years[0]}年=${exemptDays[0]}天, ${years[1]}年=${exemptDays[1]}天, ${years[2]}年=${exemptDays[2]}天<br>`;
+      html += `🎓 F/J/M/Q 豁免天数: ${years[0]}年=${exemptDays[0]}天, ${years[1]}年=${exemptDays[1]}天, ${years[2]}年=${exemptDays[2]}天`;
+      if (sortedExemptYears.length > 5) html += ` <span style="font-size:.72rem;opacity:.7">[豁免上限5年: ${sortedExemptYears.slice(0, 5).join(',')}; 超出: ${sortedExemptYears.slice(5).join(',')}]</span>`;
+      html += `<br>`;
       html += `📊 SPT (排除后): <b>${wAdj.toFixed(1)}</b> (${adjCY}+${adjLY}/3+${adj2Y}/6)`;
       if (Math.abs(wRaw - wAdj) > 0.01) html += ` <span style="font-size:.72rem;opacity:.7">[排除前: ${wRaw.toFixed(1)}]</span>`;
+    } else if (hasExemptVisa && sortedExemptYears.length > 5) {
+      // Has exempt visa but all SPT years exceeded 5-year cap
+      html += `🎓 F/J/M/Q 豁免天数: 0天 <span style="font-size:.72rem;color:#dc2626">[已超出5年豁免上限: ${sortedExemptYears.slice(0, 5).join(',')} 已用完，${sortedExemptYears.slice(5).join(',')} 不再豁免]</span><br>`;
+      html += `📊 SPT: <b>${wRaw.toFixed(1)}</b> (${daysInUs[0]}+${daysInUs[1]}/3+${daysInUs[2]}/6)`;
     } else {
       html += `📊 SPT: <b>${wRaw.toFixed(1)}</b> (${daysInUs[0]}+${daysInUs[1]}/3+${daysInUs[2]}/6)`;
     }
