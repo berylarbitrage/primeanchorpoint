@@ -4935,9 +4935,23 @@ function calculateTaxResidency(data) {
   }
 
   // Rule 3: SPT calculation (with F/J/M/Q exempt day exclusion)
+  // Validate days against first entry date
+  const firstEntry = data.first_entry_date ? new Date(data.first_entry_date + 'T00:00:00') : null;
   const cy = parseInt(days_current_year) || 0;
   const ly = parseInt(days_last_year) || 0;
   const ty = parseInt(days_two_years_ago) || 0;
+  if (firstEntry && !isNaN(firstEntry.getTime())) {
+    const feYear = firstEntry.getFullYear();
+    const now = new Date();
+    const thisYear = now.getFullYear();
+    const years = [{ days: cy, year: thisYear }, { days: ly, year: thisYear - 1 }, { days: ty, year: thisYear - 2 }];
+    for (const { days, year } of years) {
+      if (days > 0 && feYear > year) {
+        result.needs_manual_review = true;
+        result.validation_warning = `First entry date (${data.first_entry_date}) is after ${year}, but ${days} days claimed for that year`;
+      }
+    }
+  }
   const exCY = has_exempt_days === 'yes' ? Math.min(parseInt(data.exempt_days_cy) || 0, cy) : 0;
   const exLY = has_exempt_days === 'yes' ? Math.min(parseInt(data.exempt_days_ly) || 0, ly) : 0;
   const ex2Y = has_exempt_days === 'yes' ? Math.min(parseInt(data.exempt_days_2y) || 0, ty) : 0;

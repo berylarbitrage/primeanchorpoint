@@ -3007,7 +3007,7 @@ tr:hover td{background:var(--sky-light)}
       <div id="trSptBlock" style="display:none">
         <div class="field" style="margin-bottom:.5rem">
           <label style="font-size:.78rem;font-weight:600">第一次进入美国日期</label>
-          <input type="date" id="trSptFirstEntry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <input type="date" id="trSptFirstEntry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" onchange="trFirstEntryChanged()">
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.5rem">
           <div class="field" style="margin-bottom:0">
@@ -14340,26 +14340,48 @@ function trClearExemptRows() {
 }
 
 // ─── Day count validation ───
+function _trFirstEntryDate() {
+  const v = document.getElementById('trSptFirstEntry').value;
+  if (!v) return null;
+  return new Date(v + 'T00:00:00');
+}
 function _trMaxDaysFor(suffix) {
   const y = _trYearFor(suffix);
   const now = new Date();
-  // Current year: max = days elapsed so far; past years: full year
-  if (suffix === 'CY' && now.getFullYear() === y) return _trDayOfYear(now);
-  return _trDaysInYear(y);
+  const fe = _trFirstEntryDate();
+  // If first entry is after this entire year, max = 0
+  if (fe && fe.getFullYear() > y) return 0;
+  // Base max: current year = days elapsed; past years = full year
+  let max = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
+  // If first entry is in this year, cap at days from entry to year end (or today for CY)
+  if (fe && fe.getFullYear() === y) {
+    const entryDoy = _trDayOfYear(fe); // day-of-year of first entry
+    const yearEnd = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
+    max = Math.max(0, yearEnd - entryDoy + 1);
+  }
+  return max;
 }
 function _trDaysValidationError() {
   const suffixes = ['CY', 'LY', '2Y'];
   const labels = { CY: '今年', LY: '去年', '2Y': '前年' };
+  const fe = _trFirstEntryDate();
   for (const s of suffixes) {
     const v = parseInt(document.getElementById('trSptDays' + s).value) || 0;
     const max = _trMaxDaysFor(s);
     const y = _trYearFor(s);
+    if (fe && fe.getFullYear() > y && v > 0) {
+      return `第一次入境日期在 ${y} 年之后 (${fe.toISOString().slice(0,10)})，${labels[s]} (${y}) 在美天数应为 0`;
+    }
+    if (fe && fe.getFullYear() === y && v > max) {
+      return `第一次入境日期为 ${fe.toISOString().slice(0,10)}，${labels[s]} (${y}) 在美天数最多 ${max} 天`;
+    }
     if (v > max) return `${labels[s]} (${y}) 在美天数不能超过 ${max} 天`;
   }
   return '';
 }
 function _trValidateDaysInputs() {
   const suffixes = ['CY', 'LY', '2Y'];
+  const fe = _trFirstEntryDate();
   let hasError = false;
   for (const s of suffixes) {
     const inp = document.getElementById('trSptDays' + s);
@@ -14368,7 +14390,9 @@ function _trValidateDaysInputs() {
     const y = _trYearFor(s);
     const errId = 'trDaysErr' + s;
     let errEl = document.getElementById(errId);
-    if (v > max) {
+    const isOverMax = v > max;
+    const isAfterEntry = fe && fe.getFullYear() > y && v > 0;
+    if (isOverMax || isAfterEntry) {
       hasError = true;
       inp.style.borderColor = '#dc2626';
       inp.style.background = '#fef2f2';
@@ -14378,7 +14402,11 @@ function _trValidateDaysInputs() {
         errEl.style.cssText = 'font-size:.7rem;color:#dc2626;margin-top:.15rem;font-weight:600';
         inp.parentNode.insertBefore(errEl, inp.nextSibling);
       }
-      errEl.textContent = `最多 ${max} 天`;
+      if (isAfterEntry) {
+        errEl.textContent = `首次入境在 ${y} 年之后，应为 0`;
+      } else {
+        errEl.textContent = `最多 ${max} 天`;
+      }
     } else {
       // Restore style based on mode
       const mode = document.getElementById('trSptMode' + s).value;
@@ -14409,13 +14437,34 @@ function trDaysMode(suffix) {
   rangeDiv.style.display = mode === 'range' ? '' : 'none';
   if (mode === 'full') {
     const now = new Date();
-    // Current year hasn't ended yet — cap at today
-    inp.value = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
+    const fe = _trFirstEntryDate();
+    // If first entry is after this year, 0 days
+    if (fe && fe.getFullYear() > y) {
+      inp.value = 0;
+    } else if (fe && fe.getFullYear() === y) {
+      // First entry in this year: from entry date to end of year (or today for CY)
+      const entryDoy = _trDayOfYear(fe);
+      const yearEnd = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
+      inp.value = Math.max(0, yearEnd - entryDoy + 1);
+    } else {
+      // No first entry or entry before this year: full year or year-to-date
+      inp.value = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
+    }
     inp.readOnly = true; inp.style.background = '#f3f4f6';
     trSptCalc();
   } else if (mode === 'ytd') {
     const now = new Date();
-    const days = (now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
+    const fe = _trFirstEntryDate();
+    let days;
+    if (fe && fe.getFullYear() > y) {
+      days = 0;
+    } else if (fe && fe.getFullYear() === y) {
+      const entryDoy = _trDayOfYear(fe);
+      const todayDoy = (now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
+      days = Math.max(0, todayDoy - entryDoy + 1);
+    } else {
+      days = (now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
+    }
     inp.value = days;
     inp.readOnly = true; inp.style.background = '#f3f4f6';
     trSptCalc();
@@ -14452,6 +14501,18 @@ function trDaysRange(suffix) {
   const diff = Math.max(0, Math.round((to - from) / 86400000) + 1);
   document.getElementById('trSptDays' + suffix).value = diff;
   trSptCalc();
+}
+
+// When first entry date changes, recalculate all auto-mode days and revalidate
+function trFirstEntryChanged() {
+  const suffixes = ['CY', 'LY', '2Y'];
+  for (const s of suffixes) {
+    const mode = document.getElementById('trSptMode' + s).value;
+    if (mode === 'full' || mode === 'ytd') {
+      trDaysMode(s); // recalculate with new first entry date
+    }
+  }
+  trSptCalc(); // revalidate and recalculate SPT
 }
 
 // Initialize year labels on load
