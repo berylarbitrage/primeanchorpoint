@@ -1371,6 +1371,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS work_permit_verification (
   UNIQUE(worker_account_id)
 )`);
 
+// Add structured address columns to tax_residency_questionnaire
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street2 TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_city TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_state TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_zip TEXT DEFAULT ''"); } catch {}
+
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
   const oldRows = db.prepare(`SELECT DISTINCT worker_account_id FROM worker_onboarding WHERE task_key IN ('id_verify','ssn_verify')`).all();
@@ -5061,7 +5068,12 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     needs_manual_review: calc.needs_manual_review ? 1 : 0,
     admin_override: d.admin_override || '',
     admin_notes: d.admin_notes || '',
-    completed_by: (req.session && req.session.username) || 'admin'
+    completed_by: (req.session && req.session.username) || 'admin',
+    addr_street: d.addr_street || '',
+    addr_street2: d.addr_street2 || '',
+    addr_city: d.addr_city || '',
+    addr_state: d.addr_state || '',
+    addr_zip: d.addr_zip || ''
   };
 
   db.prepare(`INSERT INTO tax_residency_questionnaire (
@@ -5072,7 +5084,8 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     claim_treaty_benefit, treaty_country, treaty_income_type,
     immigration_status, i94_admission_date, status_expiration, docs_requested,
     spt_weighted_days, spt_result, tax_status, recommended_form, needs_manual_review,
-    admin_override, admin_notes, completed_by, updated_at
+    admin_override, admin_notes, completed_by,
+    addr_street, addr_street2, addr_city, addr_state, addr_zip, updated_at
   ) VALUES (
     @worker_account_id, @applicant_type, @is_us_person, @country_tax_residence, @country_citizenship, @entity_country_org,
     @is_us_citizen, @has_green_card, @first_entry_date, @days_current_year, @days_last_year, @days_two_years_ago,
@@ -5081,7 +5094,8 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     @claim_treaty_benefit, @treaty_country, @treaty_income_type,
     @immigration_status, @i94_admission_date, @status_expiration, @docs_requested,
     @spt_weighted_days, @spt_result, @tax_status, @recommended_form, @needs_manual_review,
-    @admin_override, @admin_notes, @completed_by, CURRENT_TIMESTAMP
+    @admin_override, @admin_notes, @completed_by,
+    @addr_street, @addr_street2, @addr_city, @addr_state, @addr_zip, CURRENT_TIMESTAMP
   ) ON CONFLICT(worker_account_id) DO UPDATE SET
     applicant_type=excluded.applicant_type, is_us_person=excluded.is_us_person,
     country_tax_residence=excluded.country_tax_residence, country_citizenship=excluded.country_citizenship,
@@ -5102,7 +5116,10 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     tax_status=excluded.tax_status, recommended_form=excluded.recommended_form,
     needs_manual_review=excluded.needs_manual_review,
     admin_override=excluded.admin_override, admin_notes=excluded.admin_notes,
-    completed_by=excluded.completed_by, updated_at=CURRENT_TIMESTAMP
+    completed_by=excluded.completed_by,
+    addr_street=excluded.addr_street, addr_street2=excluded.addr_street2,
+    addr_city=excluded.addr_city, addr_state=excluded.addr_state, addr_zip=excluded.addr_zip,
+    updated_at=CURRENT_TIMESTAMP
   `).run(fields);
 
   // Auto-update onboarding task status
