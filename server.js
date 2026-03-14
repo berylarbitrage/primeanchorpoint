@@ -5063,6 +5063,8 @@ function getTaxDocTasks(form, data) {
     }
   } else if (form === 'Form 8233') {
     tasks.push({ key: 'tax_doc_8233', note: 'Form 8233 个人服务条约豁免申请' });
+    // Also require W-8BEN as fallback in case treaty conditions are not met (e.g. >183 days)
+    tasks.push({ key: 'tax_doc_w8ben', note: 'W-8BEN 备选表格（如条约条件不满足则使用此表）Fallback if treaty conditions not met' });
     tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
     tasks.push({ key: 'tax_doc_treaty_stmt', note: '条约条款声明 Treaty Statement' });
     tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
@@ -5227,7 +5229,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
   // Log to history
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
     .run(workerId, fields.completed_by, 'tax_residency', '', calc.recommended_form,
-      `税务居民判定完成: ${calc.tax_status} → 推荐表格: ${calc.recommended_form}${calc.needs_manual_review ? ' (需人工复核)' : ''}`);
+      `税务居民判定完成: ${calc.tax_status} → 推荐表格: ${calc.recommended_form}${calc.recommended_form === 'Form 8233' ? ' + W-8BEN(备选)' : ''}${calc.needs_manual_review ? ' (需人工复核)' : ''}`);
 
   res.json({ success: true, ...calc, taxTasks, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
 });
