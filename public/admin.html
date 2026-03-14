@@ -3061,11 +3061,17 @@ tr:hover td{background:var(--sky-light)}
           </div>
         </div>
       </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:.6rem">
+        <button class="btn btn-green" style="font-size:.82rem" onclick="trStep3Next()">下一步 Next →</button>
+      </div>
     </div>
 
     <!-- Step 4: Services & Treaty -->
     <div id="trStep4" style="display:none">
-      <div style="font-size:.85rem;font-weight:700;color:#854d0e;margin-bottom:.6rem">Step 4: Services & Treaty 服务地点</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem">
+        <div style="font-size:.85rem;font-weight:700;color:#854d0e">Step 4: Services & Treaty 服务地点</div>
+        <button class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="trBackToStep3()">← 上一步</button>
+      </div>
       <div class="field" style="margin-bottom:.6rem">
         <label style="font-size:.8rem;font-weight:600">服务是否在美国境内实际履行？</label>
         <select id="trServicesLoc" onchange="trStep4Toggle()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
@@ -13950,9 +13956,7 @@ function trSelectIndStatus(s) {
   } else if (s === 'neither') {
     _trPath = 'individual_nr';
     document.getElementById('trStep3').style.display = '';
-    document.getElementById('trStep4').style.display = '';
-    trAutoDetectTreatyCountry();
-    trStep4Toggle();
+    document.getElementById('trStep4').style.display = 'none';
   }
   trCalcFinalResult();
 }
@@ -14006,6 +14010,32 @@ function trIndNext() {
     _trPath = 'individual_nr';
     trShowStep(3);
   }
+}
+
+function trStep3Next() {
+  const present = document.getElementById('trPresentInUs').value;
+  if (!present) return showToast('请选择是否在美国居留过', 'error');
+  if (present === 'no') {
+    if (!document.getElementById('trNrCitizenship').value) return showToast('请选择 Country of Citizenship', 'error');
+  } else {
+    const cy = parseInt(document.getElementById('trSptDaysCY').value) || 0;
+    const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
+    const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
+    if (!cy && !ly && !ty) return showToast('请填写在美天数', 'error');
+    if (!document.getElementById('trSptCitizenship').value) return showToast('请选择 Country of Citizenship', 'error');
+  }
+  // Hide Step 3, show Step 4
+  document.getElementById('trStep3').style.display = 'none';
+  document.getElementById('trStep4').style.display = '';
+  trAutoDetectTreatyCountry();
+  trStep4Toggle();
+  trCalcFinalResult();
+}
+
+function trBackToStep3() {
+  document.getElementById('trStep4').style.display = 'none';
+  document.getElementById('trStep3').style.display = '';
+  document.getElementById('trFinalResult').style.display = 'none';
 }
 
 function trPrevFromStep4() {
@@ -14577,6 +14607,16 @@ async function openTaxResidencyModal() {
     trSptCalc();
     // Re-trigger visibility after all fields loaded
     trResidentToggle();
+
+    // For individual "neither" path: if Step 4 data exists, show Step 4 instead of Step 3
+    const isNeither = trData.is_us_person === 'no' && trData.applicant_type !== 'entity';
+    if (isNeither && trData.services_location) {
+      document.getElementById('trStep3').style.display = 'none';
+      document.getElementById('trStep4').style.display = '';
+      trAutoDetectTreatyCountry();
+      trStep4Toggle();
+    }
+
     trCalcFinalResult();
 
   }
