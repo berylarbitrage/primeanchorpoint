@@ -4976,8 +4976,8 @@ function calculateTaxResidency(data) {
   }
 
   // Rule 4-7: Foreign individual form routing
-  // Treaty claim can override SPT result (treaty tie-breaker rules)
-  if (claim_treaty_benefit === 'yes') {
+  // Treaty claim only applies to nonresident aliens (not SPT residents who file W-9)
+  if (claim_treaty_benefit === 'yes' && result.tax_status !== 'likely_resident_alien') {
     result.needs_manual_review = true;
     if (treaty_income_type === 'personal_services' && (services_location === 'all_in_us' || services_location === 'partly_in_us')) {
       result.recommended_form = 'Form 8233';

@@ -14516,14 +14516,36 @@ function trStep4Toggle() {
   const treatyClaim = document.getElementById('trTreatyClaim').value;
   const treatyIncType = document.getElementById('trTreatyIncomeType').value;
 
-  // Treaty block: only foreign route
-  document.getElementById('trTreatyBlock').style.display = isForeign ? '' : 'none';
+  // Check if individual passes SPT (Likely Resident Alien → W-9, no treaty option)
+  let passedSPT = false;
+  if (isIndForeign) {
+    const present = document.getElementById('trPresentInUs').value;
+    if (present !== 'no') {
+      const diu = window._trTimelineDaysInUs || [0,0,0];
+      const exd = window._trTimelineExemptDays || [0,0,0];
+      const adjCY = diu[0] - exd[0], adjLY = diu[1] - exd[1], adj2Y = diu[2] - exd[2];
+      const w = adjCY + (adjLY / 3) + (adj2Y / 6);
+      if (adjCY >= 31 && w >= 183) passedSPT = true;
+    }
+  }
+
+  // Treaty block: only foreign route AND not a resident alien via SPT
+  const showTreaty = isForeign && !passedSPT;
+  document.getElementById('trTreatyBlock').style.display = showTreaty ? '' : 'none';
+  // Reset treaty claim when hiding treaty block to avoid stale values
+  if (!showTreaty && treatyClaim) {
+    document.getElementById('trTreatyClaim').value = '';
+    const yesR = document.getElementById('trClaimYes');
+    const noR = document.getElementById('trClaimNo');
+    if (yesR) yesR.checked = false;
+    if (noR) noR.checked = false;
+  }
   // Treaty fields (income type): only if claim = yes
   document.getElementById('trTreatyFields').style.display = treatyClaim === 'yes' ? '' : 'none';
 
-  // 8233 hint: NRA individual + US personal services + treaty claim
+  // 8233 hint: NRA individual (not passed SPT) + US personal services + treaty claim
   const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
-  const is8233 = isIndForeign && servInUs && treatyClaim === 'yes' && treatyIncType === 'personal_services';
+  const is8233 = isIndForeign && !passedSPT && servInUs && treatyClaim === 'yes' && treatyIncType === 'personal_services';
   const hint8233 = document.getElementById('tr8233Hint');
   if (hint8233) hint8233.style.display = is8233 ? '' : 'none';
 
@@ -14581,7 +14603,7 @@ function trCalcFinalResult() {
 
   box.style.display = '';
   const fc = form === 'W-9' ? '#065f46' : form === 'W-8BEN-E' ? '#7c3aed' : form === 'Form 8233' ? '#9a3412' : '#1d4ed8';
-  const isUsPerson = form === 'W-9' && (status === 'U.S. Citizen' || status === 'U.S. Entity' || status === 'Resident Alien (Green Card)');
+  const isUsPerson = form === 'W-9' && (status === 'U.S. Citizen' || status === 'U.S. Entity' || status === 'Resident Alien (Green Card)' || status === 'Likely Resident Alien (SPT)');
   const tc = document.getElementById('trTreatyCountry').value;
   const tcInfo = (!isUsPerson && tc && US_TAX_TREATIES[tc]) ? ` · 🌐 ${tc} ${US_TAX_TREATIES[tc].zh}` : '';
 
@@ -14684,9 +14706,9 @@ function trCalcFinalResult() {
   }
   if (workLoc) filled.push(['Primary Work Location(s)', workLoc]);
   if (servDates) filled.push(['Expected Service Dates', servDates]);
-  if (tc) filled.push(['Treaty Country', tc + (US_TAX_TREATIES[tc] ? ' ' + US_TAX_TREATIES[tc].zh : '')]);
-  if (treatyClaim) filled.push(['申请条约豁免', treatyClaim === 'yes' ? '是 Yes' : '否 No']);
-  if (treatyClaim === 'yes' && treatyIncType) {
+  if (tc && !isUsPerson) filled.push(['Treaty Country', tc + (US_TAX_TREATIES[tc] ? ' ' + US_TAX_TREATIES[tc].zh : '')]);
+  if (treatyClaim && !isUsPerson) filled.push(['申请条约豁免', treatyClaim === 'yes' ? '是 Yes' : '否 No']);
+  if (treatyClaim === 'yes' && !isUsPerson && treatyIncType) {
     const incLabels = { personal_services: 'Personal Services 个人劳务报酬', other_income: 'Other Income 其他收入' };
     filled.push(['Income Type', incLabels[treatyIncType] || treatyIncType]);
   }
