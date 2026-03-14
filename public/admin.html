@@ -14201,9 +14201,16 @@ const _trVisaOptions = [
   ['H-1B', 'H-1B'], ['H-4', 'H-4'], ['L-1', 'L-1'], ['L-2', 'L-2'],
   ['O-1', 'O-1'], ['TN', 'TN'], ['E-2', 'E-2'],
   ['OPT', 'OPT/STEM OPT'], ['CPT', 'CPT'],
-  ['B-1/B-2', 'B-1/B-2'], ['OTHER', '其他 Other']
+  ['B-1/B-2', 'B-1/B-2'],
+  ['COS-PENDING-EXEMPT', 'COS Pending (原身份 F/J/M/Q exempt)'],
+  ['COS-PENDING', 'COS Pending (原身份非 exempt)'],
+  ['OTHER', '其他 Other']
 ];
 function _trIsExemptVisa(visa) {
+  // COS-PENDING-EXEMPT: original status was F/J/M/Q, still counts as exempt during COS pending
+  // COS-PENDING: original status was non-exempt (e.g. H-1B→F-1), NOT exempt during pending
+  if (visa === 'COS-PENDING-EXEMPT') return true;
+  if (visa === 'COS-PENDING') return false;
   return ['F-1','F-2','J-1','J-2','M-1','M-2','Q-1','Q-2'].includes(visa);
 }
 function trAddStatusPeriod(visa, start, end, trips) {
@@ -14350,6 +14357,25 @@ function trTimelineChanged() {
       daysInUs[i] += _trCalcPeriodDaysInYear(p, years[i], false);
       exemptDays[i] += _trCalcPeriodDaysInYear(p, years[i], true);
     }
+  }
+  // Show COS Pending guidance if any period uses COS status
+  const hasCos = periods.some(p => p.visa === 'COS-PENDING' || p.visa === 'COS-PENDING-EXEMPT');
+  let cosHint = document.getElementById('trCosHint');
+  if (hasCos) {
+    if (!cosHint) {
+      cosHint = document.createElement('div');
+      cosHint.id = 'trCosHint';
+      cosHint.style.cssText = 'background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:.5rem .7rem;margin-top:.5rem;font-size:.76rem;color:#92400e';
+      document.getElementById('trStatusPeriods').parentElement.appendChild(cosHint);
+    }
+    cosHint.innerHTML = `<b>⚠️ COS Pending 身份处理指南:</b><br>
+      • <b>COS Pending (原身份非 exempt)</b>: 如 H-1B→F-1, B→F-1, L→F-1 等。pending 期间天数<b>正常计入 SPT</b>（不享受豁免）<br>
+      • <b>COS Pending (原身份 F/J/M/Q exempt)</b>: 如 F-1→H-1B, J-1→H-1B 等。pending 期间仍按<b>原 exempt 身份</b>计算豁免天数<br>
+      • COS 批准后，从 USCIS 指定的生效日期起，另建一段新身份记录<br>
+      • COS 被拒，则整个 pending 期间按原身份处理`;
+    cosHint.style.display = '';
+  } else if (cosHint) {
+    cosHint.style.display = 'none';
   }
   // Populate hidden compat fields
   document.getElementById('trSptFirstEntry').value = firstEntry || '';
