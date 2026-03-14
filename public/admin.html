@@ -14231,7 +14231,9 @@ function trDaysMode(suffix) {
   const y = _trYearFor(suffix);
   rangeDiv.style.display = mode === 'range' ? '' : 'none';
   if (mode === 'full') {
-    inp.value = _trDaysInYear(y);
+    const now = new Date();
+    // Current year hasn't ended yet — cap at today
+    inp.value = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
     inp.readOnly = true; inp.style.background = '#f3f4f6';
     trSptCalc();
   } else if (mode === 'ytd') {
