@@ -1320,6 +1320,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS tax_residency_questionnaire (
   is_us_citizen TEXT DEFAULT '',
   has_green_card TEXT DEFAULT '',
   first_entry_date TEXT DEFAULT '',
+  last_entry_date TEXT DEFAULT '',
+  entry_exit_records TEXT DEFAULT '',
   days_current_year INTEGER DEFAULT 0,
   days_last_year INTEGER DEFAULT 0,
   days_two_years_ago INTEGER DEFAULT 0,
@@ -1385,6 +1387,8 @@ try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_cy
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_ly INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_2y INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN work_permit_category TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN last_entry_date TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN entry_exit_records TEXT DEFAULT ''"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -5109,6 +5113,8 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     is_us_citizen: d.is_us_citizen || '',
     has_green_card: d.has_green_card || '',
     first_entry_date: d.first_entry_date || '',
+    last_entry_date: d.last_entry_date || '',
+    entry_exit_records: d.entry_exit_records || '',
     days_current_year: parseInt(d.days_current_year) || 0,
     days_last_year: parseInt(d.days_last_year) || 0,
     days_two_years_ago: parseInt(d.days_two_years_ago) || 0,
@@ -5147,7 +5153,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
 
   db.prepare(`INSERT INTO tax_residency_questionnaire (
     worker_account_id, applicant_type, is_us_person, country_tax_residence, country_citizenship, entity_country_org,
-    is_us_citizen, has_green_card, first_entry_date, days_current_year, days_last_year, days_two_years_ago,
+    is_us_citizen, has_green_card, first_entry_date, last_entry_date, entry_exit_records, days_current_year, days_last_year, days_two_years_ago,
     has_exempt_days, exempt_visa_status, exempt_date_range, exempt_days_cy, exempt_days_ly, exempt_days_2y,
     services_location, primary_work_locations, expected_service_dates, will_travel_to_us,
     claim_treaty_benefit, treaty_country, treaty_income_type,
@@ -5157,7 +5163,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     addr_street, addr_street2, addr_city, addr_state, addr_zip, updated_at
   ) VALUES (
     @worker_account_id, @applicant_type, @is_us_person, @country_tax_residence, @country_citizenship, @entity_country_org,
-    @is_us_citizen, @has_green_card, @first_entry_date, @days_current_year, @days_last_year, @days_two_years_ago,
+    @is_us_citizen, @has_green_card, @first_entry_date, @last_entry_date, @entry_exit_records, @days_current_year, @days_last_year, @days_two_years_ago,
     @has_exempt_days, @exempt_visa_status, @exempt_date_range, @exempt_days_cy, @exempt_days_ly, @exempt_days_2y,
     @services_location, @primary_work_locations, @expected_service_dates, @will_travel_to_us,
     @claim_treaty_benefit, @treaty_country, @treaty_income_type,
@@ -5170,7 +5176,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     country_tax_residence=excluded.country_tax_residence, country_citizenship=excluded.country_citizenship,
     entity_country_org=excluded.entity_country_org,
     is_us_citizen=excluded.is_us_citizen, has_green_card=excluded.has_green_card,
-    first_entry_date=excluded.first_entry_date,
+    first_entry_date=excluded.first_entry_date, last_entry_date=excluded.last_entry_date, entry_exit_records=excluded.entry_exit_records,
     days_current_year=excluded.days_current_year, days_last_year=excluded.days_last_year,
     days_two_years_ago=excluded.days_two_years_ago,
     has_exempt_days=excluded.has_exempt_days, exempt_visa_status=excluded.exempt_visa_status,
