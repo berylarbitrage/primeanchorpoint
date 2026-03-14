@@ -14699,6 +14699,8 @@ function trCalcFinalResult() {
     docs.push('📄 Form 1042-S — 外国人收入及预扣税凭证（由付款方年终出具）');
   } else if (form === 'Form 8233') {
     docs.push('📄 Form 8233 — 个人服务条约豁免申请（Exemption from Withholding）');
+    docs.push('<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:.3rem .5rem;margin:.3rem 0;font-size:.76rem;color:#92400e">⚠️ <b>同时需要填写 W-8BEN 作为备选</b> — 如果条约条件最终不满足（如超过 183 天等），将使用 W-8BEN 替代 Form 8233</div>');
+    docs.push('📄 W-8BEN 表格 —（备选）非居民外国个人预扣税声明');
     docs.push('🛂 护照复印件');
     docs.push('📋 条约条款声明 (Treaty Statement / Attachment)');
     docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN/ITIN）');
@@ -14733,7 +14735,8 @@ function trCalcFinalResult() {
   }
 
   // Build final HTML: identity + filled summary + docs
-  let html = `<div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem;color:${fc}">身份: ${status} → ${form}${tcInfo}${review ? ' <span style="color:#dc2626">⚠️ 需复核</span>' : ''}</div>`;
+  const f8233Backup = form === 'Form 8233' ? ' <span style="font-size:.78rem;color:#92400e">+ W-8BEN (备选)</span>' : '';
+  let html = `<div style="font-weight:700;font-size:.88rem;margin-bottom:.5rem;color:${fc}">身份: ${status} → ${form}${f8233Backup}${tcInfo}${review ? ' <span style="color:#dc2626">⚠️ 需复核</span>' : ''}</div>`;
   // Filled-in content summary
   if (filled.length) {
     html += `<div style="font-size:.8rem;border-top:1px solid #bae6fd;padding-top:.4rem;margin-bottom:.4rem">`;
