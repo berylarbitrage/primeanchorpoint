@@ -1387,6 +1387,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS work_permit_docs (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// Add per-doc metadata columns to work_permit_docs
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN doc_number TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN issue_date TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN expiry_date TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN notes TEXT DEFAULT ''"); } catch {}
+
 // Add structured address columns to tax_residency_questionnaire
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street2 TEXT DEFAULT ''"); } catch {}
@@ -5254,26 +5260,37 @@ app.post('/api/admin/worker-accounts/:id/work-permit', requireAdmin, (req, res) 
   const workerId = parseInt(req.params.id);
   const d = req.body;
   const verifiedBy = (req.session && req.session.username) || 'admin';
+  const doVerify = d.verified !== false; // default true for backward compat
 
-  db.prepare(`INSERT INTO work_permit_verification (worker_account_id, doc_type, doc_number, issue_date, expiry_date, category, notes, verified_at, verified_by, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(worker_account_id) DO UPDATE SET
-      doc_type=excluded.doc_type, doc_number=excluded.doc_number, issue_date=excluded.issue_date,
-      expiry_date=excluded.expiry_date, category=excluded.category, notes=excluded.notes,
-      verified_at=CURRENT_TIMESTAMP, verified_by=excluded.verified_by, updated_at=CURRENT_TIMESTAMP
-  `).run(workerId, d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.category || '', d.notes || '', verifiedBy);
+  if (doVerify) {
+    db.prepare(`INSERT INTO work_permit_verification (worker_account_id, doc_type, doc_number, issue_date, expiry_date, category, notes, verified_at, verified_by, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id) DO UPDATE SET
+        doc_type=excluded.doc_type, doc_number=excluded.doc_number, issue_date=excluded.issue_date,
+        expiry_date=excluded.expiry_date, category=excluded.category, notes=excluded.notes,
+        verified_at=CURRENT_TIMESTAMP, verified_by=excluded.verified_by, updated_at=CURRENT_TIMESTAMP
+    `).run(workerId, d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.category || '', d.notes || '', verifiedBy);
+  } else {
+    db.prepare(`INSERT INTO work_permit_verification (worker_account_id, doc_type, doc_number, issue_date, expiry_date, category, notes, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id) DO UPDATE SET
+        doc_type=excluded.doc_type, doc_number=excluded.doc_number, issue_date=excluded.issue_date,
+        expiry_date=excluded.expiry_date, category=excluded.category, notes=excluded.notes,
+        updated_at=CURRENT_TIMESTAMP
+    `).run(workerId, d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.category || '', d.notes || '');
+  }
 
   // Log to history
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-    .run(workerId, verifiedBy, 'work_permit', '', d.doc_type, `工作许可验证: ${d.doc_type}${d.doc_number ? ' #' + d.doc_number : ''}${d.expiry_date ? ' Exp: ' + d.expiry_date : ''}`);
+    .run(workerId, verifiedBy, 'work_permit', '', d.doc_type, `${doVerify ? '工作许可验证' : '工作许可保存'}: ${d.doc_type}${d.doc_number ? ' #' + d.doc_number : ''}${d.expiry_date ? ' Exp: ' + d.expiry_date : ''}`);
 
-  syncOnboardedStatus(workerId);
+  if (doVerify) syncOnboardedStatus(workerId);
   res.json({ success: true });
 });
 
 // ─── Work Permit Document Uploads ───
 app.get('/api/admin/worker-accounts/:id/work-permit-docs', requireAdmin, (req, res) => {
-  const docs = db.prepare('SELECT id, doc_label, file_name, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
+  const docs = db.prepare('SELECT id, doc_label, file_name, doc_number, issue_date, expiry_date, notes, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
   res.json(docs);
 });
 
@@ -5306,6 +5323,28 @@ app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
   if (!doc) return res.status(404).json({ error: 'Not found' });
   if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
   db.prepare('DELETE FROM work_permit_docs WHERE id=?').run(req.params.docId);
+  res.json({ success: true });
+});
+
+// Update per-doc metadata (doc_number, issue_date, expiry_date, notes)
+app.patch('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  const d = req.body;
+  db.prepare('UPDATE work_permit_docs SET doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=?')
+    .run(d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', req.params.docId);
+  res.json({ success: true });
+});
+
+// Save all per-doc metadata in batch for a worker's work permit docs
+app.put('/api/admin/worker-accounts/:id/work-permit-docs-meta', requireAdmin, (req, res) => {
+  const docs = req.body.docs;
+  if (!Array.isArray(docs)) return res.status(400).json({ error: 'Invalid data' });
+  const stmt = db.prepare('UPDATE work_permit_docs SET doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=? AND worker_account_id=?');
+  const workerId = parseInt(req.params.id);
+  docs.forEach(d => {
+    stmt.run(d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', d.id, workerId);
+  });
   res.json({ success: true });
 });
 
