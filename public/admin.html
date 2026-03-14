@@ -14180,8 +14180,8 @@ function trStep3Next() {
     if (_trDaysValidationError()) return showToast(_trDaysValidationError(), 'error');
     if (!document.getElementById('trSptCitizenship').value) return showToast('请选择 Country of Citizenship', 'error');
   }
-  // Work permit category is required
-  if (!document.getElementById('trWorkPermitCategory').value) return showToast('请选择工作许可类型 Work Permit Category', 'error');
+  // Work permit category is required only if user has been present in the US
+  if (present === 'yes' && !document.getElementById('trWorkPermitCategory').value) return showToast('请选择工作许可类型 Work Permit Category', 'error');
   // Hide Step 3, show Step 4
   document.getElementById('trStep3').style.display = 'none';
   document.getElementById('trStep4').style.display = '';
@@ -14227,6 +14227,7 @@ function trResidentToggle() {
   const present = document.getElementById('trPresentInUs').value;
   document.getElementById('trNeverInUs').style.display = present === 'no' ? '' : 'none';
   document.getElementById('trSptBlock').style.display = present === 'yes' ? '' : 'none';
+  document.getElementById('trWorkPermitCatBlock').style.display = present === 'yes' ? '' : 'none';
   const exempt = document.getElementById('trSptExempt').value;
   document.getElementById('trSptExemptDetail').style.display = exempt === 'yes' ? '' : 'none';
   // Auto-add first row if switching to yes and no rows exist
