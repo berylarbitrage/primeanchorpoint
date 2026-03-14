@@ -4956,22 +4956,20 @@ function calculateTaxResidency(data) {
   }
 
   // Rule 4-7: Foreign individual form routing
-  if (result.tax_status === 'likely_nonresident_alien') {
+  // Treaty claim can override SPT result (treaty tie-breaker rules)
+  if (claim_treaty_benefit === 'yes') {
+    result.needs_manual_review = true;
+    if (treaty_income_type === 'personal_services' && (services_location === 'all_in_us' || services_location === 'partly_in_us')) {
+      result.recommended_form = 'Form 8233';
+    } else {
+      result.recommended_form = 'W-8BEN';
+    }
+  } else if (result.tax_status === 'likely_nonresident_alien') {
     if (services_location === 'all_outside_us') {
-      // Rule 5: all services outside U.S.
       result.recommended_form = 'W-8BEN';
     } else if (services_location === 'all_in_us' || services_location === 'partly_in_us') {
-      // Rule 5: services in U.S. - needs manual review
+      result.recommended_form = 'W-8BEN';
       result.needs_manual_review = true;
-      // Rule 6: check for 8233 candidacy
-      if (claim_treaty_benefit === 'yes' && treaty_income_type === 'personal_services') {
-        result.recommended_form = 'Form 8233';
-      } else if (claim_treaty_benefit === 'yes') {
-        result.recommended_form = 'W-8BEN';
-      } else {
-        result.recommended_form = 'W-8BEN';
-        result.needs_manual_review = true;
-      }
     } else {
       result.recommended_form = 'W-8BEN';
     }
