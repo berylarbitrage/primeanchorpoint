@@ -5443,6 +5443,8 @@ async function openWorkerContractSign() {
     const r = await wApi('/contract-sign-url');
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
     if (r.dsStatus === 'sent') {
+      const spinnerElSent = loading.querySelector('div');
+      if (spinnerElSent) spinnerElSent.style.display = 'none';
       msgEl.innerHTML = '⏳ 请等待公司方先完成签署，签署完成后系统将通知您。<br><br><button onclick="closeWorkerContractSign()" style="padding:.5rem 1.5rem;background:#9333ea;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭</button>';
       return;
     }
@@ -5463,7 +5465,11 @@ async function openWorkerContractSign() {
     loading.style.display = 'none';
     formDiv.style.display = '';
   } catch (e) {
-    msgEl.innerHTML = `❌ ${e.message}<br><br><button onclick="closeWorkerContractSign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭</button>`;
+    // Hide spinner before showing message
+    const spinnerEl = loading.querySelector('div');
+    if (spinnerEl) spinnerEl.style.display = 'none';
+    const isAlreadySigned = e.message && e.message.includes('合同已完成签署');
+    msgEl.innerHTML = `${isAlreadySigned ? '✅' : '❌'} ${e.message}<br><br><button onclick="closeWorkerContractSign()" style="padding:.5rem 1.5rem;background:#64748b;color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer">关闭</button>`;
   }
 }
 
@@ -5479,7 +5485,7 @@ function closeWorkerContractSign() {
     <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1.1rem;border-bottom:1px solid #e2e8f0;flex-shrink:0">
       <span style="font-weight:700;font-size:.95rem;color:#065f46">📄 已签署合同</span>
       <div style="display:flex;gap:.5rem;align-items:center">
-        <a id="signedContractDownloadLink" href="/api/worker/contract-signed-pdf" download="signed-contract.pdf" style="font-size:.82rem;padding:.25rem .75rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0;border-radius:6px;text-decoration:none">⬇ 下载</a>
+        <a id="signedContractDownloadLink" href="#" download="signed-contract.pdf" style="font-size:.82rem;padding:.25rem .75rem;background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0;border-radius:6px;text-decoration:none">⬇ 下载</a>
         <button onclick="closeSignedContractViewer()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#64748b;line-height:1">&times;</button>
       </div>
     </div>
@@ -5492,26 +5498,35 @@ function closeWorkerContractSign() {
 </div>
 
 <script>
-function openSignedContractViewer() {
+let _signedContractBlobUrl = null;
+async function openSignedContractViewer() {
   const modal = document.getElementById('signedContractViewerModal');
   const loading = document.getElementById('signedContractViewerLoading');
   const frame = document.getElementById('signedContractViewerFrame');
+  const dlLink = document.getElementById('signedContractDownloadLink');
   modal.style.display = 'flex';
   loading.style.display = 'flex';
   frame.style.display = 'none';
   frame.src = '';
-  frame.onload = function() {
+  try {
+    const r = await fetch('/api/worker/contract-signed-pdf', {
+      headers: { 'Authorization': 'Bearer ' + WORKER_TOKEN }
+    });
+    if (r.status === 401) { workerLogout(); return; }
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || '加载失败'); }
+    const blob = await r.blob();
+    if (_signedContractBlobUrl) URL.revokeObjectURL(_signedContractBlobUrl);
+    _signedContractBlobUrl = URL.createObjectURL(blob);
+    dlLink.href = _signedContractBlobUrl;
+    frame.src = _signedContractBlobUrl;
     loading.style.display = 'none';
     frame.style.display = '';
-  };
-  frame.onerror = function() {
-    loading.innerHTML = '❌ 加载失败，请点击下载按钮查看合同。';
-  };
-  frame.src = '/api/worker/contract-signed-pdf';
+  } catch (e) {
+    loading.innerHTML = `❌ ${e.message}，请稍后重试。`;
+  }
 }
 function closeSignedContractViewer() {
-  const modal = document.getElementById('signedContractViewerModal');
-  modal.style.display = 'none';
+  document.getElementById('signedContractViewerModal').style.display = 'none';
   document.getElementById('signedContractViewerFrame').src = '';
 }
 </script>
