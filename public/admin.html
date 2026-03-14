@@ -3123,13 +3123,9 @@ tr:hover td{background:var(--sky-light)}
         <div class="field" style="margin-bottom:0">
           <label style="font-size:.78rem;font-weight:600">Expected service dates</label>
           <div style="display:flex;align-items:center;gap:.4rem">
-            <select id="trServiceDateFrom" onchange="trSyncServiceDates()" style="flex:1;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-              <option value="">起始月</option>
-            </select>
+            <input id="trServiceDateFrom" type="date" onchange="trSyncServiceDates()" style="flex:1;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="起始日">
             <span style="font-size:.85rem;color:var(--gray-500)">~</span>
-            <select id="trServiceDateTo" onchange="trSyncServiceDates()" style="flex:1;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-              <option value="">结束月</option>
-            </select>
+            <input id="trServiceDateTo" type="date" onchange="trSyncServiceDates()" style="flex:1;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="结束日">
           </div>
           <input id="trServiceDates" type="hidden">
         </div>
@@ -14080,7 +14076,7 @@ function trClearDownstream() {
   document.getElementById('trNeverInUs').style.display = 'none';
   // Clear Step 4
   ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  ['trWorkLoc','trServiceDates','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   // Clear work auth fields
   const _waTypeEl = document.getElementById('trWorkAuthType'); if (_waTypeEl) _waTypeEl.value = '';
   const _waOtherEl = document.getElementById('trWorkAuthOther'); if (_waOtherEl) _waOtherEl.value = '';
@@ -14126,7 +14122,7 @@ function trSelectIndStatus(s) {
   document.getElementById('trSptBlock').style.display = 'none';
   document.getElementById('trNeverInUs').style.display = 'none';
   ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  ['trWorkLoc','trServiceDates','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trFinalResult').style.display = 'none';
   // Auto-show/hide steps based on status
   if (s === 'citizen' || s === 'green_card') {
@@ -14234,7 +14230,7 @@ function trEntityToggle() {
   _trPath = 'entity';
   // Clear Step 4 fields when changing entity type
   ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  ['trWorkLoc','trServiceDates','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trFinalResult').style.display = 'none';
   if (v === 'yes') {
     document.getElementById('trStep4').style.display = 'none';
@@ -14517,19 +14513,7 @@ function trSptCalc() {
 }
 
 function trInitServiceDateDropdowns() {
-  const fromEl = document.getElementById('trServiceDateFrom');
-  const toEl = document.getElementById('trServiceDateTo');
-  if (!fromEl || !toEl) return;
-  const now = new Date();
-  const startYear = now.getFullYear();
-  const endYear = startYear + 2;
-  for (let y = startYear; y <= endYear; y++) {
-    for (let m = 1; m <= 12; m++) {
-      const val = y + '-' + String(m).padStart(2, '0');
-      fromEl.insertAdjacentHTML('beforeend', `<option value="${val}">${val}</option>`);
-      toEl.insertAdjacentHTML('beforeend', `<option value="${val}">${val}</option>`);
-    }
-  }
+  // Date inputs are now native <input type="date">, no population needed
 }
 function trSyncServiceDates() {
   const f = document.getElementById('trServiceDateFrom').value;
@@ -14700,9 +14684,12 @@ function trCalcFinalResult() {
         if (s) filled.push(['SSN / ITIN', s]);
         if (iaParts.length) filled.push(['U.S. Address', iaParts.join(', ')]);
       } else {
+        filled.push(['__section__', 'Step 3: Resident Test 居民身份判定']);
         const present = document.getElementById('trPresentInUs').value;
         if (present) filled.push(['是否在美居留', present === 'yes' ? '是 Yes' : '否 No']);
         if (present === 'yes') {
+          const firstEntry = document.getElementById('trSptFirstEntry').value;
+          if (firstEntry) filled.push(['第一次进入美国日期', firstEntry]);
           const cy = document.getElementById('trSptDaysCY').value;
           const ly = document.getElementById('trSptDaysLY').value;
           const ty = document.getElementById('trSptDays2Y').value;
@@ -14757,6 +14744,9 @@ function trCalcFinalResult() {
   const servDates = document.getElementById('trServiceDates').value.trim();
   const treatyClaim = document.getElementById('trTreatyClaim').value;
   const treatyIncType = document.getElementById('trTreatyIncomeType').value;
+  if (servLoc || workLoc || servDates || tc || treatyClaim) {
+    filled.push(['__section__', 'Step 4: Services & Treaty 服务地点']);
+  }
   if (servLoc) {
     const locLabels = { all_in_us: '全部在美国', partly_in_us: '部分在美国', all_outside_us: '全在美国外' };
     filled.push(['服务地点', locLabels[servLoc] || servLoc]);
@@ -14899,7 +14889,11 @@ function trCalcFinalResult() {
     html += `<div style="font-weight:700;margin-bottom:.3rem">📝 已填写内容:</div>`;
     html += `<table style="width:100%;font-size:.78rem;border-collapse:collapse">`;
     filled.forEach(([k, v]) => {
-      html += `<tr><td style="padding:.15rem .4rem .15rem 0;color:#6b7280;white-space:nowrap;vertical-align:top">${k}</td><td style="padding:.15rem 0;font-weight:600">${v}</td></tr>`;
+      if (k === '__section__') {
+        html += `<tr><td colspan="2" style="padding:.4rem 0 .2rem 0;font-weight:700;font-size:.8rem;color:#854d0e;border-top:1px solid #e5e7eb">${v}</td></tr>`;
+      } else {
+        html += `<tr><td style="padding:.15rem .4rem .15rem 0;color:#6b7280;white-space:nowrap;vertical-align:top">${k}</td><td style="padding:.15rem 0;font-weight:600">${v}</td></tr>`;
+      }
     });
     html += `</table></div>`;
   }
@@ -15089,7 +15083,7 @@ function trWizardReset() {
   trClearExemptRows();
   document.getElementById('trSptPreview').style.display = 'none';
   ['trServicesLoc','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  ['trWorkLoc','trServiceDates','trTreatyCountry','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trTreatyCountry','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trDocType').value = '';
   document.getElementById('trEntDocType').value = '';
   const waTypeEl = document.getElementById('trWorkAuthType'); if (waTypeEl) waTypeEl.value = '';
@@ -15208,10 +15202,18 @@ async function openTaxResidencyModal() {
     if (trData.primary_work_locations) { const el = document.getElementById('trWorkLoc'); if (el) el.value = trData.primary_work_locations; }
     if (trData.expected_service_dates) {
       const el = document.getElementById('trServiceDates'); if (el) el.value = trData.expected_service_dates;
-      const parts = trData.expected_service_dates.match(/^(\d{4}-\d{2})\s*~\s*(\d{4}-\d{2})$/);
+      const parts = trData.expected_service_dates.match(/^(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})$/);
       if (parts) {
         const fromEl = document.getElementById('trServiceDateFrom'); if (fromEl) fromEl.value = parts[1];
         const toEl = document.getElementById('trServiceDateTo'); if (toEl) toEl.value = parts[2];
+      } else {
+        // Backwards compatibility: try YYYY-MM format
+        const monthParts = trData.expected_service_dates.match(/^(\d{4}-\d{2})\s*~\s*(\d{4}-\d{2})$/);
+        if (monthParts) {
+          const fromEl = document.getElementById('trServiceDateFrom'); if (fromEl) fromEl.value = monthParts[1] + '-01';
+          const toEl = document.getElementById('trServiceDateTo'); if (toEl) toEl.value = monthParts[2] + '-01';
+          trSyncServiceDates();
+        }
       }
     }
     if (trData.treaty_country) { const el = document.getElementById('trTreatyCountry'); if (el) { el.value = trData.treaty_country; trOnTreatyCountryChange(); } }
