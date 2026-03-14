@@ -3174,6 +3174,54 @@ tr:hover td{background:var(--sky-light)}
           </div>
         </div>
       </div>
+      <!-- Work Authorization Type (for non-citizen non-green-card individuals) -->
+      <div id="trWorkAuthBlock" style="display:none;margin-top:.6rem;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:.6rem .8rem">
+        <div style="font-size:.82rem;font-weight:700;color:#854d0e;margin-bottom:.4rem">🛂 工作许可类型 Work Authorization Type</div>
+        <div class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">当前持有的工作许可/签证类型</label>
+          <select id="trWorkAuthType" onchange="trWorkAuthTypeChange()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <option value="">— 请选择 Select —</option>
+            <optgroup label="Employment Visa 工作签证">
+              <option value="H-1B">H-1B — 专业人员工作签证</option>
+              <option value="H-1B1">H-1B1 — 新加坡/智利专业人员</option>
+              <option value="L-1">L-1 — 跨国公司调派</option>
+              <option value="O-1">O-1 — 杰出人才</option>
+              <option value="TN">TN — NAFTA 专业人员 (加拿大/墨西哥)</option>
+              <option value="E-1">E-1 — 条约贸易商</option>
+              <option value="E-2">E-2 — 条约投资者</option>
+              <option value="E-3">E-3 — 澳大利亚专业人员</option>
+              <option value="R-1">R-1 — 宗教工作者</option>
+              <option value="P-1">P-1 — 运动员/演艺人员</option>
+            </optgroup>
+            <optgroup label="EAD 工卡 (Employment Authorization Document)">
+              <option value="EAD-C08">庇护 EAD (C08) — Asylum Pending</option>
+              <option value="EAD-A05">庇护获批 EAD (A05) — Asylee</option>
+              <option value="EAD-C09">婚姻/家庭 EAD (C09) — Adjustment Applicant</option>
+              <option value="EAD-C10">家庭 EAD (C10) — Adjustment Applicant (dependent)</option>
+              <option value="EAD-A10">难民 EAD (A10) — Refugee</option>
+              <option value="EAD-C26">H-4 EAD (C26) — H-4 配偶</option>
+              <option value="EAD-A18">L-2 EAD (A18) — L-2 配偶</option>
+              <option value="EAD-C33">DACA EAD (C33) — Deferred Action</option>
+              <option value="EAD-A12">TPS EAD (A12) — Temporary Protected Status</option>
+              <option value="EAD-C03A">OPT EAD (C03A) — F-1 Optional Practical Training</option>
+              <option value="EAD-C03B">STEM OPT EAD (C03B) — F-1 STEM Extension</option>
+              <option value="EAD-OTHER">其他 EAD — Other EAD Category</option>
+            </optgroup>
+            <optgroup label="Student/Exchange 学生/交流">
+              <option value="F-1-CPT">F-1 CPT — Curricular Practical Training</option>
+              <option value="J-1">J-1 — 交流访问学者</option>
+            </optgroup>
+            <optgroup label="Other 其他">
+              <option value="OTHER">其他 Other — 请在备注中说明</option>
+            </optgroup>
+          </select>
+        </div>
+        <div id="trWorkAuthOtherField" style="display:none" class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">请说明工作许可类型</label>
+          <input id="trWorkAuthOther" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="Please specify work authorization type">
+        </div>
+        <div id="trWorkAuthDocsHint" style="display:none;margin-top:.4rem;font-size:.78rem;color:#78350f;background:#fef3c7;border-radius:5px;padding:.4rem .6rem"></div>
+      </div>
       <input type="hidden" id="trDocImmStatus" value="">
       <input type="hidden" id="trDocI94" value="">
       <input type="hidden" id="trDocExpiry" value="">
@@ -14033,6 +14081,12 @@ function trClearDownstream() {
   // Clear Step 4
   ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['trWorkLoc','trServiceDates','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  // Clear work auth fields
+  const _waTypeEl = document.getElementById('trWorkAuthType'); if (_waTypeEl) _waTypeEl.value = '';
+  const _waOtherEl = document.getElementById('trWorkAuthOther'); if (_waOtherEl) _waOtherEl.value = '';
+  const _waOtherField = document.getElementById('trWorkAuthOtherField'); if (_waOtherField) _waOtherField.style.display = 'none';
+  const _waDocsHint = document.getElementById('trWorkAuthDocsHint'); if (_waDocsHint) { _waDocsHint.style.display = 'none'; _waDocsHint.innerHTML = ''; }
+  const _waBlock = document.getElementById('trWorkAuthBlock'); if (_waBlock) _waBlock.style.display = 'none';
   // Hide Steps 3 & 4
   document.getElementById('trStep3').style.display = 'none';
   document.getElementById('trStep4').style.display = 'none';
@@ -14498,13 +14552,55 @@ function trStep4Toggle() {
   // Treaty fields (income type): only if claim = yes
   document.getElementById('trTreatyFields').style.display = treatyClaim === 'yes' ? '' : 'none';
 
-  // 8233 hint: NRA individual + US personal services + treaty claim
+  // Work authorization block: show for non-citizen non-green-card individuals with US services
   const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
+  const workAuthBlock = document.getElementById('trWorkAuthBlock');
+  if (workAuthBlock) workAuthBlock.style.display = (isIndForeign && servInUs) ? '' : 'none';
+
+  // 8233 hint: NRA individual + US personal services + treaty claim
   const is8233 = isIndForeign && servInUs && treatyClaim === 'yes' && treatyIncType === 'personal_services';
   const hint8233 = document.getElementById('tr8233Hint');
   if (hint8233) hint8233.style.display = is8233 ? '' : 'none';
 
   // Final result
+  trCalcFinalResult();
+}
+
+function trWorkAuthTypeChange() {
+  const val = document.getElementById('trWorkAuthType').value;
+  const otherField = document.getElementById('trWorkAuthOtherField');
+  if (otherField) otherField.style.display = (val === 'OTHER' || val === 'EAD-OTHER') ? '' : 'none';
+  // Sync to hidden immigration_status field
+  const immStatus = document.getElementById('trDocImmStatus');
+  if (immStatus) {
+    if (val === 'OTHER') immStatus.value = document.getElementById('trWorkAuthOther').value.trim() || 'Other';
+    else immStatus.value = val;
+  }
+  // Show minimum required docs hint per type
+  const hint = document.getElementById('trWorkAuthDocsHint');
+  if (!hint) return;
+  const VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
+  const EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-C03A','EAD-C03B','EAD-OTHER'];
+  if (VISA_TYPES.includes(val)) {
+    hint.style.display = '';
+    hint.innerHTML = '📋 最少需提交: <b>护照</b> + <b>I-797 批准通知 (或有效签证页)</b> + <b>I-94</b>';
+  } else if (EAD_TYPES.includes(val)) {
+    hint.style.display = '';
+    if (val === 'EAD-C03A' || val === 'EAD-C03B') {
+      hint.innerHTML = '📋 最少需提交: <b>EAD 工卡 (I-766) 正反面</b> + <b>I-20 (含 OPT endorsement)</b> + <b>护照</b>';
+    } else {
+      hint.innerHTML = '📋 最少需提交: <b>EAD 工卡 (I-766) 正反面</b> + <b>护照</b>';
+    }
+  } else if (val === 'F-1-CPT') {
+    hint.style.display = '';
+    hint.innerHTML = '📋 最少需提交: <b>I-20 (含 CPT 授权页)</b> + <b>护照</b>';
+  } else if (val === 'J-1') {
+    hint.style.display = '';
+    hint.innerHTML = '📋 最少需提交: <b>DS-2019</b> + <b>护照</b>';
+  } else {
+    hint.style.display = 'none';
+    hint.innerHTML = '';
+  }
   trCalcFinalResult();
 }
 
@@ -14673,19 +14769,43 @@ function trCalcFinalResult() {
     const incLabels = { personal_services: 'Personal Services 个人劳务报酬', other_income: 'Other Income 其他收入' };
     filled.push(['Income Type', incLabels[treatyIncType] || treatyIncType]);
   }
+  // Work authorization type
+  const waType = document.getElementById('trWorkAuthType').value;
+  if (waType) {
+    const waEl = document.getElementById('trWorkAuthType');
+    const waLabel = waEl.options[waEl.selectedIndex].text;
+    filled.push(['工作许可类型 Work Auth', waLabel]);
+  }
 
   // Build materials/documents needed list
   let docs = [];
   const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
+  const workAuthType = document.getElementById('trWorkAuthType').value;
+  const _VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
+  const _EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-C03A','EAD-C03B','EAD-OTHER'];
+
   if (form === 'W-9') {
     docs.push('📄 W-9 表格（由承包商签署）');
-    if (status === 'U.S. Entity') docs.push('📋 公司注册文件 (Articles / Certificate of Formation)');
-    if (status === 'Likely Resident Alien (SPT)') {
+    if (status === 'U.S. Citizen') {
+      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 身份证明（以下任一即可）:</div>');
+      docs.push('&nbsp;&nbsp;• 美国护照 U.S. Passport');
+      docs.push('&nbsp;&nbsp;• 美国出生证明 U.S. Birth Certificate');
+      docs.push('&nbsp;&nbsp;• 入籍证书 Certificate of Naturalization (N-550/N-570)');
+      docs.push('&nbsp;&nbsp;• 公民证书 Certificate of Citizenship (N-560/N-561)');
+      docs.push('&nbsp;&nbsp;• 海外出生领事报告 Consular Report of Birth Abroad (FS-240)');
+    } else if (status === 'Resident Alien (Green Card)') {
+      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 身份证明（以下任一即可）:</div>');
+      docs.push('&nbsp;&nbsp;• 绿卡正反面 Permanent Resident Card (I-551) front & back');
+      docs.push('&nbsp;&nbsp;• 护照 + I-551 临时绿卡章 Foreign Passport with I-551 stamp/MRIV');
+      docs.push('&nbsp;&nbsp;• 过期绿卡 + I-797 延期通知 Expired Green Card + I-797 Extension Notice');
+    } else if (status === 'U.S. Entity') {
+      docs.push('📋 公司注册文件 (Articles / Certificate of Formation)');
+      docs.push('📋 EIN 确认函 IRS EIN Confirmation Letter (CP 575 / 147C)');
+    } else if (status === 'Likely Resident Alien (SPT)') {
       docs.push('🛂 护照复印件');
       docs.push('📋 签证复印件 Visa Copy');
       docs.push('📋 I-94 入境记录 Arrival/Departure Record');
       docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN）');
-      docs.push('📄 Form 1040-NR — 非居民外国人报税表（年度报税时使用）');
       docs.push('⚠️ 需人工复核 SPT 计算结果');
     }
   } else if (form === 'W-8BEN') {
@@ -14693,9 +14813,29 @@ function trCalcFinalResult() {
     docs.push('🛂 护照复印件');
     docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN/ITIN，需随首次报税一起提交）');
     if (servInUs) {
-      docs.push('📋 签证复印件 Visa Copy');
-      docs.push('📋 I-94 入境记录 Arrival/Departure Record');
-      docs.push('📋 工作授权文件 Work Authorization');
+      // Work authorization docs based on specific type
+      if (workAuthType && _VISA_TYPES.includes(workAuthType)) {
+        docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (' + workAuthType + '):</div>');
+        docs.push('&nbsp;&nbsp;• I-797 批准通知 Approval Notice (或有效签证页 Visa stamp)');
+        docs.push('&nbsp;&nbsp;• I-94 入境记录 Arrival/Departure Record');
+      } else if (workAuthType && _EAD_TYPES.includes(workAuthType)) {
+        docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (' + workAuthType + '):</div>');
+        docs.push('&nbsp;&nbsp;• EAD 工卡正反面 (I-766) front & back');
+        if (workAuthType === 'EAD-C03A' || workAuthType === 'EAD-C03B') {
+          docs.push('&nbsp;&nbsp;• I-20 (含 OPT endorsement)');
+        }
+      } else if (workAuthType === 'F-1-CPT') {
+        docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (F-1 CPT):</div>');
+        docs.push('&nbsp;&nbsp;• I-20 (含 CPT 授权页 CPT authorization)');
+      } else if (workAuthType === 'J-1') {
+        docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (J-1):</div>');
+        docs.push('&nbsp;&nbsp;• DS-2019');
+        docs.push('&nbsp;&nbsp;• I-94 入境记录 Arrival/Departure Record');
+      } else {
+        docs.push('📋 签证复印件 Visa Copy');
+        docs.push('📋 I-94 入境记录 Arrival/Departure Record');
+        docs.push('📋 工作授权文件 Work Authorization');
+      }
       docs.push('⚠️ 美国境内服务需代扣 30% withholding（或适用条约税率）');
     }
     if (treatyClaim === 'yes') {
@@ -14703,11 +14843,12 @@ function trCalcFinalResult() {
     }
     docs.push('📄 Form 1042-S — 外国人收入及预扣税凭证（由付款方年终出具）');
     docs.push('📄 Form 1040-NR — 非居民外国人年度报税表');
-    docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
+    const exempt = document.getElementById('trSptExempt').value;
+    if (exempt === 'yes') docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
   } else if (form === 'W-8BEN-E') {
     docs.push('📄 W-8BEN-E 表格（外国实体，预扣税声明）');
     docs.push('📋 实体注册证明 (Certificate of Incorporation / Formation)');
-    docs.push('📋 授权签署人证明 (Signing Authority)');
+    docs.push('📋 授权签署人证明 (Signing Authority / Board Resolution)');
     docs.push('📄 Form W-7 / Form SS-4 — ITIN 或 EIN 申请（如无美国税号）');
     const entTreaty = document.getElementById('trEntTreaty').value;
     if (entTreaty === 'yes') {
@@ -14718,14 +14859,35 @@ function trCalcFinalResult() {
   } else if (form === 'Form 8233') {
     docs.push('📄 Form 8233 — 个人服务条约豁免申请（Exemption from Withholding）');
     docs.push('🛂 护照复印件');
-    docs.push('📋 签证复印件 Visa Copy');
-    docs.push('📋 I-94 入境记录 Arrival/Departure Record');
     docs.push('📋 条约条款声明 (Treaty Statement / Attachment)');
     docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN/ITIN）');
     docs.push('📄 Form 8833 — 条约申报声明 (Treaty-Based Return Position Disclosure)');
+    // Work authorization docs based on specific type
+    if (workAuthType && _VISA_TYPES.includes(workAuthType)) {
+      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (' + workAuthType + '):</div>');
+      docs.push('&nbsp;&nbsp;• I-797 批准通知 Approval Notice (或有效签证页 Visa stamp)');
+      docs.push('&nbsp;&nbsp;• I-94 入境记录 Arrival/Departure Record');
+    } else if (workAuthType && _EAD_TYPES.includes(workAuthType)) {
+      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (' + workAuthType + '):</div>');
+      docs.push('&nbsp;&nbsp;• EAD 工卡正反面 (I-766) front & back');
+      if (workAuthType === 'EAD-C03A' || workAuthType === 'EAD-C03B') {
+        docs.push('&nbsp;&nbsp;• I-20 (含 OPT endorsement)');
+      }
+    } else if (workAuthType === 'F-1-CPT') {
+      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (F-1 CPT):</div>');
+      docs.push('&nbsp;&nbsp;• I-20 (含 CPT 授权页)');
+    } else if (workAuthType === 'J-1') {
+      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (J-1):</div>');
+      docs.push('&nbsp;&nbsp;• DS-2019');
+      docs.push('&nbsp;&nbsp;• I-94 入境记录');
+    } else {
+      docs.push('📋 签证复印件 Visa Copy');
+      docs.push('📋 I-94 入境记录 Arrival/Departure Record');
+    }
     docs.push('📄 Form 1042-S — 外国人收入及预扣税凭证（由付款方年终出具）');
     docs.push('📄 Form 1040-NR — 非居民外国人年度报税表');
-    docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
+    const exempt8233 = document.getElementById('trSptExempt').value;
+    if (exempt8233 === 'yes') docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
     docs.push('⚠️ 需人工复核，提交 IRS 前需 10 天审查期');
   }
 
@@ -14893,7 +15055,11 @@ function trWizardCollectData() {
   d.claim_treaty_benefit = d.claim_treaty_benefit || document.getElementById('trTreatyClaim').value;
   d.treaty_country = document.getElementById('trTreatyCountry').value.trim();
   d.treaty_income_type = document.getElementById('trTreatyIncomeType').value;
-  d.immigration_status = document.getElementById('trDocImmStatus').value.trim();
+  // Work auth type → immigration_status field
+  const waVal = document.getElementById('trWorkAuthType').value;
+  if (waVal === 'OTHER') d.immigration_status = 'OTHER:' + (document.getElementById('trWorkAuthOther').value.trim() || '');
+  else if (waVal) d.immigration_status = waVal;
+  else d.immigration_status = document.getElementById('trDocImmStatus').value.trim();
   d.i94_admission_date = document.getElementById('trDocI94').value;
   d.status_expiration = document.getElementById('trDocExpiry').value;
   return d;
@@ -14926,6 +15092,11 @@ function trWizardReset() {
   ['trWorkLoc','trServiceDates','trTreatyCountry','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trDocType').value = '';
   document.getElementById('trEntDocType').value = '';
+  const waTypeEl = document.getElementById('trWorkAuthType'); if (waTypeEl) waTypeEl.value = '';
+  const waOtherEl = document.getElementById('trWorkAuthOther'); if (waOtherEl) waOtherEl.value = '';
+  const waOtherField = document.getElementById('trWorkAuthOtherField'); if (waOtherField) waOtherField.style.display = 'none';
+  const waDocsHint = document.getElementById('trWorkAuthDocsHint'); if (waDocsHint) { waDocsHint.style.display = 'none'; waDocsHint.innerHTML = ''; }
+  const waBlock = document.getElementById('trWorkAuthBlock'); if (waBlock) waBlock.style.display = 'none';
   document.getElementById('trFinalResult').style.display = 'none';
   document.getElementById('trEntUsFields').style.display = 'none';
   document.getElementById('trEntForeignFields').style.display = 'none';
@@ -15046,7 +15217,21 @@ async function openTaxResidencyModal() {
     if (trData.treaty_country) { const el = document.getElementById('trTreatyCountry'); if (el) { el.value = trData.treaty_country; trOnTreatyCountryChange(); } }
     if (trData.claim_treaty_benefit && (trData.claim_treaty_benefit === 'yes' || trData.claim_treaty_benefit === 'no')) { trSetTreatyClaim(trData.claim_treaty_benefit); }
     if (trData.treaty_income_type) { const el = document.getElementById('trTreatyIncomeType'); if (el) el.value = trData.treaty_income_type; }
-    if (trData.immigration_status) { const el = document.getElementById('trDocImmStatus'); if (el) el.value = trData.immigration_status; }
+    if (trData.immigration_status) {
+      const el = document.getElementById('trDocImmStatus'); if (el) el.value = trData.immigration_status;
+      // Restore work auth type dropdown
+      const waEl = document.getElementById('trWorkAuthType');
+      if (waEl) {
+        if (trData.immigration_status.startsWith('OTHER:')) {
+          waEl.value = 'OTHER';
+          const waOther = document.getElementById('trWorkAuthOther');
+          if (waOther) waOther.value = trData.immigration_status.replace('OTHER:', '');
+        } else {
+          waEl.value = trData.immigration_status;
+        }
+        trWorkAuthTypeChange();
+      }
+    }
     if (trData.i94_admission_date) { const el = document.getElementById('trDocI94'); if (el) el.value = trData.i94_admission_date; }
     if (trData.status_expiration) { const el = document.getElementById('trDocExpiry'); if (el) el.value = trData.status_expiration; }
     trSptCalc();
