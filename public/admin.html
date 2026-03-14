@@ -3183,54 +3183,6 @@ tr:hover td{background:var(--sky-light)}
           </div>
         </div>
       </div>
-      <!-- Work Authorization Type (for non-citizen non-green-card individuals) -->
-      <div id="trWorkAuthBlock" style="display:none;margin-top:.6rem;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:.6rem .8rem">
-        <div style="font-size:.82rem;font-weight:700;color:#854d0e;margin-bottom:.4rem">🛂 工作许可类型 Work Authorization Type</div>
-        <div class="field" style="margin-bottom:.5rem">
-          <label style="font-size:.78rem;font-weight:600">当前持有的工作许可/签证类型</label>
-          <select id="trWorkAuthType" onchange="trWorkAuthTypeChange()" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-            <option value="">— 请选择 Select —</option>
-            <optgroup label="Employment Visa 工作签证">
-              <option value="H-1B">H-1B — 专业人员工作签证</option>
-              <option value="H-1B1">H-1B1 — 新加坡/智利专业人员</option>
-              <option value="L-1">L-1 — 跨国公司调派</option>
-              <option value="O-1">O-1 — 杰出人才</option>
-              <option value="TN">TN — NAFTA 专业人员 (加拿大/墨西哥)</option>
-              <option value="E-1">E-1 — 条约贸易商</option>
-              <option value="E-2">E-2 — 条约投资者</option>
-              <option value="E-3">E-3 — 澳大利亚专业人员</option>
-              <option value="R-1">R-1 — 宗教工作者</option>
-              <option value="P-1">P-1 — 运动员/演艺人员</option>
-            </optgroup>
-            <optgroup label="EAD 工卡 (Employment Authorization Document)">
-              <option value="EAD-C08">庇护 EAD (C08) — Asylum Pending</option>
-              <option value="EAD-A05">庇护获批 EAD (A05) — Asylee</option>
-              <option value="EAD-C09">婚姻/家庭 EAD (C09) — Adjustment Applicant</option>
-              <option value="EAD-C10">家庭 EAD (C10) — Adjustment Applicant (dependent)</option>
-              <option value="EAD-A10">难民 EAD (A10) — Refugee</option>
-              <option value="EAD-C26">H-4 EAD (C26) — H-4 配偶</option>
-              <option value="EAD-A18">L-2 EAD (A18) — L-2 配偶</option>
-              <option value="EAD-C33">DACA EAD (C33) — Deferred Action</option>
-              <option value="EAD-A12">TPS EAD (A12) — Temporary Protected Status</option>
-              <option value="EAD-C03A">OPT EAD (C03A) — F-1 Optional Practical Training</option>
-              <option value="EAD-C03B">STEM OPT EAD (C03B) — F-1 STEM Extension</option>
-              <option value="EAD-OTHER">其他 EAD — Other EAD Category</option>
-            </optgroup>
-            <optgroup label="Student/Exchange 学生/交流">
-              <option value="F-1-CPT">F-1 CPT — Curricular Practical Training</option>
-              <option value="J-1">J-1 — 交流访问学者</option>
-            </optgroup>
-            <optgroup label="Other 其他">
-              <option value="OTHER">其他 Other — 请在备注中说明</option>
-            </optgroup>
-          </select>
-        </div>
-        <div id="trWorkAuthOtherField" style="display:none" class="field" style="margin-bottom:.5rem">
-          <label style="font-size:.78rem;font-weight:600">请说明工作许可类型</label>
-          <input id="trWorkAuthOther" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="Please specify work authorization type">
-        </div>
-        <div id="trWorkAuthDocsHint" style="display:none;margin-top:.4rem;font-size:.78rem;color:#78350f;background:#fef3c7;border-radius:5px;padding:.4rem .6rem"></div>
-      </div>
       <input type="hidden" id="trDocImmStatus" value="">
       <input type="hidden" id="trDocI94" value="">
       <input type="hidden" id="trDocExpiry" value="">
@@ -14090,12 +14042,6 @@ function trClearDownstream() {
   // Clear Step 4
   ['trServicesLoc','trTreatyCountry','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  // Clear work auth fields
-  const _waTypeEl = document.getElementById('trWorkAuthType'); if (_waTypeEl) _waTypeEl.value = '';
-  const _waOtherEl = document.getElementById('trWorkAuthOther'); if (_waOtherEl) _waOtherEl.value = '';
-  const _waOtherField = document.getElementById('trWorkAuthOtherField'); if (_waOtherField) _waOtherField.style.display = 'none';
-  const _waDocsHint = document.getElementById('trWorkAuthDocsHint'); if (_waDocsHint) { _waDocsHint.style.display = 'none'; _waDocsHint.innerHTML = ''; }
-  const _waBlock = document.getElementById('trWorkAuthBlock'); if (_waBlock) _waBlock.style.display = 'none';
   // Hide Steps 3 & 4
   document.getElementById('trStep3').style.display = 'none';
   document.getElementById('trStep4').style.display = 'none';
@@ -14305,57 +14251,6 @@ function trWorkPermitCategoryChange() {
   if (info) {
     if (hint) { hint.style.display = ''; hint.innerHTML = info.docs; }
     if (visaInfo) { visaInfo.style.display = ''; visaInfo.innerHTML = info.types; }
-  }
-  // Pre-filter Step 4 work auth type dropdown based on category
-  trSyncWorkAuthFromCategory(cat);
-}
-
-function trSyncWorkAuthFromCategory(cat) {
-  const waEl = document.getElementById('trWorkAuthType');
-  if (!waEl) return;
-  // Show all optgroups and options first
-  waEl.querySelectorAll('optgroup, option').forEach(el => el.style.display = '');
-  // Map category to optgroup labels and specific options
-  const catMap = {
-    work_visa: { groups: ['Employment Visa 工作签证'], options: [] },
-    ead: { groups: ['EAD 工卡 (Employment Authorization Document)'], options: [], exclude: ['EAD-C03A', 'EAD-C03B'] },
-    opt: { groups: [], options: ['EAD-C03A', 'EAD-C03B'] },
-    f1_cpt: { groups: [], options: ['F-1-CPT'] },
-    j1: { groups: [], options: ['J-1'] }
-  };
-  const mapping = catMap[cat];
-  if (!mapping) return;
-  // Hide non-matching optgroups and their options
-  waEl.querySelectorAll('optgroup').forEach(og => {
-    const label = og.getAttribute('label') || '';
-    const isMatch = mapping.groups.some(g => label.includes(g));
-    if (!isMatch && mapping.groups.length > 0) {
-      og.style.display = 'none';
-    } else if (mapping.groups.length === 0) {
-      // Only specific options mode: hide all optgroups except ones containing target options
-      const hasTarget = Array.from(og.querySelectorAll('option')).some(opt => mapping.options.includes(opt.value));
-      if (!hasTarget) og.style.display = 'none';
-    }
-    // Handle exclude list (e.g., hide OPT from EAD category)
-    if (mapping.exclude) {
-      og.querySelectorAll('option').forEach(opt => {
-        if (mapping.exclude.includes(opt.value)) opt.style.display = 'none';
-      });
-    }
-  });
-  // Also hide the "Other 其他" optgroup unless category is not specific
-  if (cat !== 'work_visa') {
-    waEl.querySelectorAll('optgroup').forEach(og => {
-      const label = og.getAttribute('label') || '';
-      if (label.includes('Other 其他') && cat !== 'ead') og.style.display = 'none';
-    });
-  }
-  // Reset current selection if it doesn't match the category
-  const currentVal = waEl.value;
-  if (currentVal) {
-    const opt = waEl.querySelector(`option[value="${currentVal}"]`);
-    if (opt && opt.style.display === 'none') waEl.value = '';
-    if (opt && opt.parentElement && opt.parentElement.style.display === 'none') waEl.value = '';
   }
 }
 
@@ -14702,60 +14597,13 @@ function trStep4Toggle() {
   // Treaty fields (income type): only if claim = yes
   document.getElementById('trTreatyFields').style.display = treatyClaim === 'yes' ? '' : 'none';
 
-  // Work authorization block: show for non-citizen non-green-card individuals with US services
-  const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
-  const workAuthBlock = document.getElementById('trWorkAuthBlock');
-  if (workAuthBlock) {
-    workAuthBlock.style.display = (isIndForeign && servInUs) ? '' : 'none';
-    // Apply Step 3 category filter to work auth type dropdown
-    const cat = document.getElementById('trWorkPermitCategory').value;
-    if (cat) trSyncWorkAuthFromCategory(cat);
-  }
-
   // 8233 hint: NRA individual + US personal services + treaty claim
+  const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
   const is8233 = isIndForeign && servInUs && treatyClaim === 'yes' && treatyIncType === 'personal_services';
   const hint8233 = document.getElementById('tr8233Hint');
   if (hint8233) hint8233.style.display = is8233 ? '' : 'none';
 
   // Final result
-  trCalcFinalResult();
-}
-
-function trWorkAuthTypeChange() {
-  const val = document.getElementById('trWorkAuthType').value;
-  const otherField = document.getElementById('trWorkAuthOtherField');
-  if (otherField) otherField.style.display = (val === 'OTHER' || val === 'EAD-OTHER') ? '' : 'none';
-  // Sync to hidden immigration_status field
-  const immStatus = document.getElementById('trDocImmStatus');
-  if (immStatus) {
-    if (val === 'OTHER') immStatus.value = document.getElementById('trWorkAuthOther').value.trim() || 'Other';
-    else immStatus.value = val;
-  }
-  // Show minimum required docs hint per type
-  const hint = document.getElementById('trWorkAuthDocsHint');
-  if (!hint) return;
-  const VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
-  const EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-C03A','EAD-C03B','EAD-OTHER'];
-  if (VISA_TYPES.includes(val)) {
-    hint.style.display = '';
-    hint.innerHTML = '📋 最少需提交: <b>护照</b> + <b>I-797 批准通知 (或有效签证页)</b> + <b>I-94</b>';
-  } else if (EAD_TYPES.includes(val)) {
-    hint.style.display = '';
-    if (val === 'EAD-C03A' || val === 'EAD-C03B') {
-      hint.innerHTML = '📋 最少需提交: <b>EAD 工卡 (I-766) 正反面</b> + <b>I-20 (含 OPT endorsement)</b> + <b>护照</b>';
-    } else {
-      hint.innerHTML = '📋 最少需提交: <b>EAD 工卡 (I-766) 正反面</b> + <b>护照</b>';
-    }
-  } else if (val === 'F-1-CPT') {
-    hint.style.display = '';
-    hint.innerHTML = '📋 最少需提交: <b>I-20 (含 CPT 授权页)</b> + <b>护照</b>';
-  } else if (val === 'J-1') {
-    hint.style.display = '';
-    hint.innerHTML = '📋 最少需提交: <b>DS-2019</b> + <b>护照</b>';
-  } else {
-    hint.style.display = 'none';
-    hint.innerHTML = '';
-  }
   trCalcFinalResult();
 }
 
@@ -14936,20 +14784,11 @@ function trCalcFinalResult() {
     const incLabels = { personal_services: 'Personal Services 个人劳务报酬', other_income: 'Other Income 其他收入' };
     filled.push(['Income Type', incLabels[treatyIncType] || treatyIncType]);
   }
-  // Work authorization type
-  const waType = document.getElementById('trWorkAuthType').value;
-  if (waType) {
-    const waEl = document.getElementById('trWorkAuthType');
-    const waLabel = waEl.options[waEl.selectedIndex].text;
-    filled.push(['工作许可类型 Work Auth', waLabel]);
-  }
 
   // Build materials/documents needed list
   let docs = [];
   const servInUs = servLoc === 'all_in_us' || servLoc === 'partly_in_us';
-  const workAuthType = document.getElementById('trWorkAuthType').value;
-  const _VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
-  const _EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-C03A','EAD-C03B','EAD-OTHER'];
+  const _wpc = document.getElementById('trWorkPermitCategory').value;
 
   if (form === 'W-9') {
     docs.push('📄 W-9 表格（由承包商签署）');
@@ -14980,21 +14819,22 @@ function trCalcFinalResult() {
     docs.push('🛂 护照复印件');
     docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN/ITIN，需随首次报税一起提交）');
     if (servInUs) {
-      // Work authorization docs based on specific type
-      if (workAuthType && _VISA_TYPES.includes(workAuthType)) {
-        docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (' + workAuthType + '):</div>');
+      // Work authorization docs based on Step 3 category
+      if (_wpc === 'work_visa') {
+        docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (工作签证):</div>');
         docs.push('&nbsp;&nbsp;• I-797 批准通知 Approval Notice (或有效签证页 Visa stamp)');
         docs.push('&nbsp;&nbsp;• I-94 入境记录 Arrival/Departure Record');
-      } else if (workAuthType && _EAD_TYPES.includes(workAuthType)) {
-        docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (' + workAuthType + '):</div>');
+      } else if (_wpc === 'ead') {
+        docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (EAD 工卡):</div>');
         docs.push('&nbsp;&nbsp;• EAD 工卡正反面 (I-766) front & back');
-        if (workAuthType === 'EAD-C03A' || workAuthType === 'EAD-C03B') {
-          docs.push('&nbsp;&nbsp;• I-20 (含 OPT endorsement)');
-        }
-      } else if (workAuthType === 'F-1-CPT') {
+      } else if (_wpc === 'opt') {
+        docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (OPT / STEM OPT):</div>');
+        docs.push('&nbsp;&nbsp;• EAD 工卡正反面 (I-766) front & back');
+        docs.push('&nbsp;&nbsp;• I-20 (含 OPT endorsement)');
+      } else if (_wpc === 'f1_cpt') {
         docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (F-1 CPT):</div>');
         docs.push('&nbsp;&nbsp;• I-20 (含 CPT 授权页 CPT authorization)');
-      } else if (workAuthType === 'J-1') {
+      } else if (_wpc === 'j1') {
         docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (J-1):</div>');
         docs.push('&nbsp;&nbsp;• DS-2019');
         docs.push('&nbsp;&nbsp;• I-94 入境记录 Arrival/Departure Record');
@@ -15029,21 +14869,22 @@ function trCalcFinalResult() {
     docs.push('📋 条约条款声明 (Treaty Statement / Attachment)');
     docs.push('📄 Form W-7 — ITIN 申请表（如无 SSN/ITIN）');
     docs.push('📄 Form 8833 — 条约申报声明 (Treaty-Based Return Position Disclosure)');
-    // Work authorization docs based on specific type
-    if (workAuthType && _VISA_TYPES.includes(workAuthType)) {
-      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (' + workAuthType + '):</div>');
+    // Work authorization docs based on Step 3 category
+    if (_wpc === 'work_visa') {
+      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (工作签证):</div>');
       docs.push('&nbsp;&nbsp;• I-797 批准通知 Approval Notice (或有效签证页 Visa stamp)');
       docs.push('&nbsp;&nbsp;• I-94 入境记录 Arrival/Departure Record');
-    } else if (workAuthType && _EAD_TYPES.includes(workAuthType)) {
-      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (' + workAuthType + '):</div>');
+    } else if (_wpc === 'ead') {
+      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (EAD 工卡):</div>');
       docs.push('&nbsp;&nbsp;• EAD 工卡正反面 (I-766) front & back');
-      if (workAuthType === 'EAD-C03A' || workAuthType === 'EAD-C03B') {
-        docs.push('&nbsp;&nbsp;• I-20 (含 OPT endorsement)');
-      }
-    } else if (workAuthType === 'F-1-CPT') {
+    } else if (_wpc === 'opt') {
+      docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (OPT / STEM OPT):</div>');
+      docs.push('&nbsp;&nbsp;• EAD 工卡正反面 (I-766) front & back');
+      docs.push('&nbsp;&nbsp;• I-20 (含 OPT endorsement)');
+    } else if (_wpc === 'f1_cpt') {
       docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (F-1 CPT):</div>');
       docs.push('&nbsp;&nbsp;• I-20 (含 CPT 授权页)');
-    } else if (workAuthType === 'J-1') {
+    } else if (_wpc === 'j1') {
       docs.push('<div style="font-weight:600;margin-top:.3rem;color:#854d0e">🛂 工作许可证明 (J-1):</div>');
       docs.push('&nbsp;&nbsp;• DS-2019');
       docs.push('&nbsp;&nbsp;• I-94 入境记录');
@@ -15227,11 +15068,7 @@ function trWizardCollectData() {
   d.claim_treaty_benefit = d.claim_treaty_benefit || document.getElementById('trTreatyClaim').value;
   d.treaty_country = document.getElementById('trTreatyCountry').value.trim();
   d.treaty_income_type = document.getElementById('trTreatyIncomeType').value;
-  // Work auth type → immigration_status field
-  const waVal = document.getElementById('trWorkAuthType').value;
-  if (waVal === 'OTHER') d.immigration_status = 'OTHER:' + (document.getElementById('trWorkAuthOther').value.trim() || '');
-  else if (waVal) d.immigration_status = waVal;
-  else d.immigration_status = document.getElementById('trDocImmStatus').value.trim();
+  d.immigration_status = document.getElementById('trDocImmStatus').value.trim();
   d.i94_admission_date = document.getElementById('trDocI94').value;
   d.status_expiration = document.getElementById('trDocExpiry').value;
   return d;
@@ -15267,11 +15104,6 @@ function trWizardReset() {
   ['trWorkLoc','trServiceDates','trServiceDateFrom','trServiceDateTo','trTreatyCountry','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trDocType').value = '';
   document.getElementById('trEntDocType').value = '';
-  const waTypeEl = document.getElementById('trWorkAuthType'); if (waTypeEl) waTypeEl.value = '';
-  const waOtherEl = document.getElementById('trWorkAuthOther'); if (waOtherEl) waOtherEl.value = '';
-  const waOtherField = document.getElementById('trWorkAuthOtherField'); if (waOtherField) waOtherField.style.display = 'none';
-  const waDocsHint = document.getElementById('trWorkAuthDocsHint'); if (waDocsHint) { waDocsHint.style.display = 'none'; waDocsHint.innerHTML = ''; }
-  const waBlock = document.getElementById('trWorkAuthBlock'); if (waBlock) waBlock.style.display = 'none';
   document.getElementById('trFinalResult').style.display = 'none';
   document.getElementById('trEntUsFields').style.display = 'none';
   document.getElementById('trEntForeignFields').style.display = 'none';
@@ -15405,18 +15237,6 @@ async function openTaxResidencyModal() {
     }
     if (trData.immigration_status) {
       const el = document.getElementById('trDocImmStatus'); if (el) el.value = trData.immigration_status;
-      // Restore work auth type dropdown
-      const waEl = document.getElementById('trWorkAuthType');
-      if (waEl) {
-        if (trData.immigration_status.startsWith('OTHER:')) {
-          waEl.value = 'OTHER';
-          const waOther = document.getElementById('trWorkAuthOther');
-          if (waOther) waOther.value = trData.immigration_status.replace('OTHER:', '');
-        } else {
-          waEl.value = trData.immigration_status;
-        }
-        trWorkAuthTypeChange();
-      }
     }
     if (trData.i94_admission_date) { const el = document.getElementById('trDocI94'); if (el) el.value = trData.i94_admission_date; }
     if (trData.status_expiration) { const el = document.getElementById('trDocExpiry'); if (el) el.value = trData.status_expiration; }
