@@ -1377,6 +1377,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS work_permit_verification (
   UNIQUE(worker_account_id)
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS work_permit_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  doc_label TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Add structured address columns to tax_residency_questionnaire
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street2 TEXT DEFAULT ''"); } catch {}
@@ -5258,6 +5268,44 @@ app.post('/api/admin/worker-accounts/:id/work-permit', requireAdmin, (req, res) 
     .run(workerId, verifiedBy, 'work_permit', '', d.doc_type, `工作许可验证: ${d.doc_type}${d.doc_number ? ' #' + d.doc_number : ''}${d.expiry_date ? ' Exp: ' + d.expiry_date : ''}`);
 
   syncOnboardedStatus(workerId);
+  res.json({ success: true });
+});
+
+// ─── Work Permit Document Uploads ───
+app.get('/api/admin/worker-accounts/:id/work-permit-docs', requireAdmin, (req, res) => {
+  const docs = db.prepare('SELECT id, doc_label, file_name, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
+  res.json(docs);
+});
+
+app.post('/api/admin/worker-accounts/:id/work-permit-docs', requireAdmin, docUpload.single('file'), (req, res) => {
+  const workerId = parseInt(req.params.id);
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const docLabel = req.body.doc_label || '';
+  const filePath = req.file.path;
+  const fileName = req.file.originalname;
+  const uploadedBy = (req.session && req.session.username) || 'admin';
+
+  const result = db.prepare('INSERT INTO work_permit_docs (worker_account_id, doc_label, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?)')
+    .run(workerId, docLabel, filePath, fileName, uploadedBy);
+
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, uploadedBy, 'work_permit_doc', '', docLabel, `上传工作许可文件: ${docLabel} · ${fileName}`);
+
+  res.json({ success: true, id: result.lastInsertRowid, file_name: fileName });
+});
+
+app.get('/api/admin/work-permit-docs/:docId/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
+  if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
+  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
+  res.download(doc.file_path, doc.file_name || 'document');
+});
+
+app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+  db.prepare('DELETE FROM work_permit_docs WHERE id=?').run(req.params.docId);
   res.json({ success: true });
 });
 
