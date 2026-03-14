@@ -2786,36 +2786,36 @@ tr:hover td{background:var(--sky-light)}
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
     <div class="field">
-      <label style="font-size:.78rem;font-weight:600">证件类型 Document Type</label>
+      <label style="font-size:.78rem;font-weight:600">证件类型 DOCUMENT TYPE</label>
       <select id="wpDocType" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
         <option value="">— 请选择 —</option>
       </select>
     </div>
     <div class="field">
-      <label style="font-size:.78rem;font-weight:600">证件编号 Document Number</label>
+      <label style="font-size:.78rem;font-weight:600">证件编号 DOCUMENT NUMBER</label>
       <input id="wpDocNumber" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. SRC2190012345">
     </div>
   </div>
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
     <div class="field">
-      <label style="font-size:.78rem;font-weight:600">签发日期 Issue Date</label>
+      <label style="font-size:.78rem;font-weight:600">签发日期 ISSUE DATE</label>
       <input type="date" id="wpIssueDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
     </div>
     <div class="field">
-      <label style="font-size:.78rem;font-weight:600">到期日期 Expiry Date</label>
+      <label style="font-size:.78rem;font-weight:600">到期日期 EXPIRY DATE</label>
       <input type="date" id="wpExpiryDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
     </div>
   </div>
 
   <div class="field" style="margin-bottom:.75rem">
-    <label style="font-size:.78rem;font-weight:600">签证类别 / USCIS Category</label>
+    <label style="font-size:.78rem;font-weight:600">签证类别 / USCIS CATEGORY</label>
     <input id="wpCategory" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. C09, H-1B, F-1 OPT">
   </div>
 
   <div class="field" style="margin-bottom:.75rem">
-    <label style="font-size:.78rem;font-weight:600">备注 Notes</label>
-    <textarea id="wpNotes" rows="2" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="审核备注、附加信息..."></textarea>
+    <label style="font-size:.78rem;font-weight:600">备注 NOTES</label>
+    <textarea id="wpNotes" rows="3" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="审核备注、附加信息..."></textarea>
   </div>
 
   <div id="wpDocUploads" style="margin-bottom:.75rem">
@@ -2827,9 +2827,9 @@ tr:hover td{background:var(--sky-light)}
 
   <div id="wpCurrentInfo" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem 1rem;margin-bottom:.75rem;font-size:.82rem"></div>
 
-  <div class="modal-actions" style="margin-top:1rem">
-    <button class="btn" onclick="closeModal('workPermitModal')">关闭</button>
-    <button class="btn btn-blue" onclick="saveWorkPermit(false)">💾 保存</button>
+  <div class="modal-actions" style="margin-top:1rem;gap:.5rem">
+    <button class="btn" style="background:#ef4444;color:#fff" onclick="closeModal('workPermitModal')">关闭</button>
+    <button class="btn btn-green" onclick="saveWorkPermit(false)">💾 保存</button>
     <button class="btn btn-green" onclick="saveWorkPermit(true)">🛂 验证通过</button>
   </div>
 </div></div>
@@ -15223,6 +15223,11 @@ async function saveTaxResidency() {
     });
   }
 
+  // Warn if work permit verification was reset due to category change
+  if (trResult && trResult.wp_reset) {
+    showToast(`⚠️ 税务身份变更 (${trResult.old_wp_category} → ${trResult.new_wp_category})，工作许可验证已重置，需要重新验证`, 'warning', 5000);
+  }
+
   showToast(`✅ 税务身份判定已保存 · 推荐表格: ${recommendedForm}`, 'success', 3000);
 
   // Re-capture snapshot so closing after save won't trigger unsaved warning
@@ -15661,19 +15666,51 @@ function wpRenderUploadZones(category) {
   docs.forEach((label, idx) => {
     const zoneId = `wpUploadZone_${idx}`;
     container.insertAdjacentHTML('beforeend', `
-      <div id="${zoneId}" style="border:2px dashed var(--gray-200);border-radius:8px;padding:.6rem .8rem;margin-bottom:.5rem;background:#fafafa;transition:border-color .2s,background .2s">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
-          <span style="font-size:.78rem;color:#555;flex:1">📄 ${label}</span>
+      <div id="${zoneId}" style="border:2px dashed var(--gray-200);border-radius:8px;padding:.8rem;margin-bottom:.75rem;background:#fafafa;transition:border-color .2s,background .2s">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.5rem">
+          <span style="font-size:.82rem;font-weight:700;color:#374151;flex:1">📄 ${label}</span>
           <div id="${zoneId}_status" style="font-size:.78rem;color:#999;flex-shrink:0">未上传</div>
         </div>
-        <div id="${zoneId}_file" style="margin-top:.4rem;display:flex;align-items:center;gap:.5rem">
+        <div id="${zoneId}_file" style="display:flex;align-items:center;gap:.5rem;margin-bottom:.5rem">
           <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="font-size:.78rem;flex:1"
             onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
         </div>
-        <div id="${zoneId}_existing" style="margin-top:.3rem"></div>
+        <div id="${zoneId}_existing" style="margin-bottom:.4rem"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.4rem">
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:.72rem;font-weight:600;color:#6b7280">证件编号 Doc Number</label>
+            <input id="${zoneId}_docNumber" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem" placeholder="证件编号...">
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:.72rem;font-weight:600;color:#6b7280">备注 Notes</label>
+            <input id="${zoneId}_notes" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem" placeholder="备注...">
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem">
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:.72rem;font-weight:600;color:#6b7280">签发日期 Issue Date</label>
+            <input type="date" id="${zoneId}_issueDate" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem">
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:.72rem;font-weight:600;color:#6b7280">到期日期 Expiry Date</label>
+            <input type="date" id="${zoneId}_expiryDate" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem"
+              onchange="wpCheckDocExpiry(this, '${zoneId}')">
+          </div>
+        </div>
+        <div id="${zoneId}_expiryWarn" style="display:none;font-size:.75rem;color:#dc2626;font-weight:600;margin-top:.3rem"></div>
       </div>
     `);
   });
+}
+
+function wpCheckDocExpiry(input, zoneId) {
+  const warn = document.getElementById(zoneId + '_expiryWarn');
+  if (input.value) {
+    const days = Math.ceil((new Date(input.value) - new Date()) / 86400000);
+    if (days <= 0) { warn.textContent = '⚠️ 该证件已过期！'; warn.style.color = '#dc2626'; warn.style.display = 'block'; }
+    else if (days <= 30) { warn.textContent = '⚠️ 该证件将在 ' + days + ' 天内到期'; warn.style.color = '#92400e'; warn.style.display = 'block'; }
+    else { warn.style.display = 'none'; }
+  } else { warn.style.display = 'none'; }
 }
 
 async function wpHandleFileSelect(idx, label, input) {
@@ -15705,6 +15742,9 @@ async function wpHandleFileSelect(idx, label, input) {
       const existingEl = document.getElementById(`${zoneId}_existing`);
       existingEl.insertAdjacentHTML('beforeend', wpDocFileHtml(data.id, data.file_name));
       _wpUploadedDocs.push(data.id);
+      // Store doc id on zone for per-doc metadata save
+      const zoneEl = document.getElementById(zoneId);
+      if (zoneEl) zoneEl.dataset.docId = data.id;
     } else {
       statusEl.textContent = '上传失败';
       statusEl.style.color = '#dc2626';
@@ -15764,6 +15804,21 @@ async function wpLoadExistingDocs(category) {
           if (statusEl) statusEl.innerHTML = `<span style="color:#059669">✅ 已上传</span>`;
         }
       }
+      // Populate per-doc metadata fields
+      const docNumEl = document.getElementById(`${zoneId}_docNumber`);
+      const issueDateEl = document.getElementById(`${zoneId}_issueDate`);
+      const expiryDateEl = document.getElementById(`${zoneId}_expiryDate`);
+      const notesEl = document.getElementById(`${zoneId}_notes`);
+      if (docNumEl && doc.doc_number) docNumEl.value = doc.doc_number;
+      if (issueDateEl && doc.issue_date) issueDateEl.value = doc.issue_date;
+      if (expiryDateEl && doc.expiry_date) {
+        expiryDateEl.value = doc.expiry_date;
+        wpCheckDocExpiry(expiryDateEl, zoneId);
+      }
+      if (notesEl && doc.notes) notesEl.value = doc.notes;
+      // Store doc id on zone for later save
+      const zoneEl = document.getElementById(zoneId);
+      if (zoneEl) zoneEl.dataset.docId = doc.id;
     });
   } catch(e) { /* no existing docs */ }
 }
@@ -15772,11 +15827,11 @@ function wpDetectCategory(trData) {
   if (!trData) return 'generic';
   const appType = trData.applicant_type;
   if (appType === 'entity') {
-    return trData.entity_us === 'yes' ? 'us_entity' : 'foreign_entity';
+    return (trData.entity_us === 'yes' || trData.is_us_person === 'yes') ? 'us_entity' : 'foreign_entity';
   }
-  const indStatus = trData.individual_status;
-  if (indStatus === 'citizen') return 'citizen';
-  if (indStatus === 'green_card') return 'green_card';
+  // Derive individual status from DB fields (is_us_citizen, has_green_card)
+  if (trData.is_us_citizen === 'yes') return 'citizen';
+  if (trData.has_green_card === 'yes') return 'green_card';
   // Neither: use work_permit_category from Step 3 if available, else fallback to immigration_status
   if (trData.work_permit_category) {
     const catMap = { work_visa: 'work_visa', ead: 'ead', opt: 'opt', f1_cpt: 'cpt', j1: 'j1' };
@@ -15856,8 +15911,16 @@ async function openWorkPermitModal() {
       const info = document.getElementById('wpCurrentInfo');
       const selOpt = sel.options[sel.selectedIndex];
       const typeLabel = selOpt && selOpt.value ? selOpt.text : data.doc_type;
-      info.innerHTML = `<div style="font-weight:700;color:#065f46;margin-bottom:.3rem">📋 已有记录:</div>
-        <div>类型: <b>${typeLabel}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}${data.verified_at?' · 验证时间: <b>'+new Date(data.verified_at).toLocaleString('zh-CN')+'</b>':''}</div>`;
+      if (data.doc_type && !data.verified_at) {
+        // Data exists but verification was reset (likely due to tax residency change)
+        info.innerHTML = `<div style="font-weight:700;color:#92400e;margin-bottom:.3rem">⚠️ 验证已重置 — 税务身份发生变更，需重新验证</div>
+          <div>类型: <b>${typeLabel}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}</div>`;
+        info.style.background = '#fef3c7';
+        info.style.borderColor = '#fde68a';
+      } else {
+        info.innerHTML = `<div style="font-weight:700;color:#065f46;margin-bottom:.3rem">📋 已有记录:</div>
+          <div>类型: <b>${typeLabel}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}${data.verified_at?' · 验证时间: <b>'+new Date(data.verified_at).toLocaleString('zh-CN')+'</b>':''}</div>`;
+      }
       info.style.display = 'block';
       // Expiry warning
       if (data.expiry_date) {
@@ -15884,7 +15947,7 @@ async function openWorkPermitModal() {
   document.getElementById('workPermitModal').classList.add('show');
 }
 
-async function saveWorkPermit(verify = false) {
+async function saveWorkPermit(doVerify) {
   const docType = document.getElementById('wpDocType').value;
   const docNumber = document.getElementById('wpDocNumber').value.trim();
   const issueDate = document.getElementById('wpIssueDate').value;
@@ -15894,23 +15957,55 @@ async function saveWorkPermit(verify = false) {
 
   if (!docType) return showToast('请选择证件类型', 'error');
 
-  await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`, {
-    method: 'POST',
-    body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: issueDate, expiry_date: expiryDate, category, notes })
+  // Save per-doc metadata for each upload zone that has a doc id
+  const docsMeta = [];
+  document.querySelectorAll('[id^="wpUploadZone_"]').forEach(zone => {
+    if (!zone.id.match(/^wpUploadZone_\d+$/)) return;
+    const docId = zone.dataset.docId;
+    if (!docId) return;
+    const zoneId = zone.id;
+    docsMeta.push({
+      id: parseInt(docId),
+      doc_number: (document.getElementById(zoneId + '_docNumber') || {}).value || '',
+      issue_date: (document.getElementById(zoneId + '_issueDate') || {}).value || '',
+      expiry_date: (document.getElementById(zoneId + '_expiryDate') || {}).value || '',
+      notes: (document.getElementById(zoneId + '_notes') || {}).value || ''
+    });
   });
 
-  if (verify) {
-    // Mark onboarding task as completed only when explicitly verifying
+  // Save per-doc metadata in batch
+  if (docsMeta.length > 0) {
+    await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit-docs-meta`, {
+      method: 'PUT',
+      body: JSON.stringify({ docs: docsMeta })
+    });
+  }
+
+  // Save main work permit record
+  await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`, {
+    method: 'POST',
+    body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: issueDate, expiry_date: expiryDate, category, notes, verified: doVerify })
+  });
+
+  if (doVerify) {
+    // Mark onboarding task as completed
     const sel = document.getElementById('wpDocType');
     const selOpt = sel.options[sel.selectedIndex];
     const typeLabel = selOpt ? selOpt.text : docType;
     const noteText = `${typeLabel}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}${notes?' · '+notes:''}`;
     await updateOnboardingTask('work_permit', 'completed', noteText);
     closeModal('workPermitModal');
-    showToast('✅ 工作许可验证通过', 'success');
+    showToast('✅ 工作许可验证已通过', 'success');
   } else {
-    refreshOnboardingModal();
     showToast('💾 工作许可信息已保存', 'success');
+    // Refresh current info display
+    const info = document.getElementById('wpCurrentInfo');
+    const sel = document.getElementById('wpDocType');
+    const selOpt = sel.options[sel.selectedIndex];
+    const typeLabel = selOpt && selOpt.value ? selOpt.text : docType;
+    info.innerHTML = `<div style="font-weight:700;color:#065f46;margin-bottom:.3rem">📋 已有记录:</div>
+      <div>类型: <b>${typeLabel}</b>${docNumber?' · 编号: <b>'+docNumber+'</b>':''}${expiryDate?' · 到期: <b>'+expiryDate+'</b>':''}</div>`;
+    info.style.display = 'block';
   }
 }
 

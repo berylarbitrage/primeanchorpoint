@@ -1387,6 +1387,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS work_permit_docs (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// Add per-doc metadata columns to work_permit_docs
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN doc_number TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN issue_date TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN expiry_date TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN notes TEXT DEFAULT ''"); } catch {}
+
 // Add structured address columns to tax_residency_questionnaire
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street2 TEXT DEFAULT ''"); } catch {}
@@ -5107,10 +5113,43 @@ app.get('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res)
   res.json(row || null);
 });
 
+// Helper: derive work permit category key from tax residency data (mirrors frontend wpDetectCategory)
+function _wpCategoryKey(tr) {
+  if (!tr) return 'generic';
+  if (tr.applicant_type === 'entity') return (tr.is_us_person === 'yes') ? 'us_entity' : 'foreign_entity';
+  if (tr.is_us_citizen === 'yes') return 'citizen';
+  if (tr.has_green_card === 'yes') return 'green_card';
+  if (tr.work_permit_category) {
+    const catMap = { work_visa: 'work_visa', ead: 'ead', opt: 'opt', f1_cpt: 'cpt', j1: 'j1' };
+    if (catMap[tr.work_permit_category]) return catMap[tr.work_permit_category];
+  }
+  const wa = tr.immigration_status || '';
+  const VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
+  const EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-OTHER'];
+  if (VISA_TYPES.includes(wa)) return 'work_visa';
+  if (wa === 'EAD-C03A' || wa === 'EAD-C03B') return 'opt';
+  if (EAD_TYPES.includes(wa)) return 'ead';
+  if (wa === 'F-1-CPT') return 'cpt';
+  if (wa === 'J-1') return 'j1';
+  return 'generic';
+}
+
 // Save tax residency questionnaire
 app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res) => {
   const workerId = parseInt(req.params.id);
   const d = req.body;
+
+  // Check if tax residency category changed compared to existing data
+  const oldTr = db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId);
+  const oldCategoryKey = oldTr ? _wpCategoryKey(oldTr) : '';
+  const newCategoryKey = _wpCategoryKey({
+    applicant_type: d.applicant_type || 'individual',
+    is_us_person: d.is_us_person || '',
+    is_us_citizen: d.is_us_citizen || '',
+    has_green_card: d.has_green_card || '',
+    work_permit_category: d.work_permit_category || '',
+    immigration_status: d.immigration_status || ''
+  });
 
   // Calculate SPT and determine form routing
   const calc = calculateTaxResidency(d);
@@ -5241,7 +5280,32 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     .run(workerId, fields.completed_by, 'tax_residency', '', calc.recommended_form,
       `税务居民判定完成: ${calc.tax_status} → 推荐表格: ${calc.recommended_form}${calc.recommended_form === 'Form 8233' ? ' + W-8BEN(备选)' : ''}${calc.needs_manual_review ? ' (需人工复核)' : ''}`);
 
-  res.json({ success: true, ...calc, taxTasks, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
+  // If work permit category changed, reset work permit verification and onboarding task
+  let wpReset = false;
+  if (oldCategoryKey && newCategoryKey && oldCategoryKey !== newCategoryKey) {
+    const existingWp = db.prepare('SELECT * FROM work_permit_verification WHERE worker_account_id=?').get(workerId);
+    if (existingWp && existingWp.verified_at) {
+      // Clear verified status - keep data but mark as needing re-verification
+      db.prepare(`UPDATE work_permit_verification SET verified_at=NULL, verified_by='', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=?`).run(workerId);
+      // Reset work_permit onboarding task back to pending
+      db.prepare(`UPDATE worker_onboarding SET status='pending', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='work_permit'`).run(workerId);
+      // Log the reset
+      db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+        .run(workerId, fields.completed_by, 'work_permit_reset', oldCategoryKey, newCategoryKey,
+          `税务身份变更 (${oldCategoryKey} → ${newCategoryKey})，工作许可验证已重置为待验证`);
+      wpReset = true;
+    }
+    // Delete old uploaded work permit docs since category changed and required docs differ
+    const oldDocs = db.prepare('SELECT * FROM work_permit_docs WHERE worker_account_id=?').all(workerId);
+    for (const doc of oldDocs) {
+      if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+    }
+    db.prepare('DELETE FROM work_permit_docs WHERE worker_account_id=?').run(workerId);
+  }
+
+  syncOnboardedStatus(workerId);
+
+  res.json({ success: true, ...calc, taxTasks, wp_reset: wpReset, old_wp_category: oldCategoryKey, new_wp_category: newCategoryKey, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
 });
 
 // ─── Work Permit Verification ───
@@ -5254,26 +5318,37 @@ app.post('/api/admin/worker-accounts/:id/work-permit', requireAdmin, (req, res) 
   const workerId = parseInt(req.params.id);
   const d = req.body;
   const verifiedBy = (req.session && req.session.username) || 'admin';
+  const doVerify = d.verified !== false; // default true for backward compat
 
-  db.prepare(`INSERT INTO work_permit_verification (worker_account_id, doc_type, doc_number, issue_date, expiry_date, category, notes, verified_at, verified_by, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(worker_account_id) DO UPDATE SET
-      doc_type=excluded.doc_type, doc_number=excluded.doc_number, issue_date=excluded.issue_date,
-      expiry_date=excluded.expiry_date, category=excluded.category, notes=excluded.notes,
-      verified_at=CURRENT_TIMESTAMP, verified_by=excluded.verified_by, updated_at=CURRENT_TIMESTAMP
-  `).run(workerId, d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.category || '', d.notes || '', verifiedBy);
+  if (doVerify) {
+    db.prepare(`INSERT INTO work_permit_verification (worker_account_id, doc_type, doc_number, issue_date, expiry_date, category, notes, verified_at, verified_by, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id) DO UPDATE SET
+        doc_type=excluded.doc_type, doc_number=excluded.doc_number, issue_date=excluded.issue_date,
+        expiry_date=excluded.expiry_date, category=excluded.category, notes=excluded.notes,
+        verified_at=CURRENT_TIMESTAMP, verified_by=excluded.verified_by, updated_at=CURRENT_TIMESTAMP
+    `).run(workerId, d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.category || '', d.notes || '', verifiedBy);
+  } else {
+    db.prepare(`INSERT INTO work_permit_verification (worker_account_id, doc_type, doc_number, issue_date, expiry_date, category, notes, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id) DO UPDATE SET
+        doc_type=excluded.doc_type, doc_number=excluded.doc_number, issue_date=excluded.issue_date,
+        expiry_date=excluded.expiry_date, category=excluded.category, notes=excluded.notes,
+        updated_at=CURRENT_TIMESTAMP
+    `).run(workerId, d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.category || '', d.notes || '');
+  }
 
   // Log to history
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-    .run(workerId, verifiedBy, 'work_permit', '', d.doc_type, `工作许可验证: ${d.doc_type}${d.doc_number ? ' #' + d.doc_number : ''}${d.expiry_date ? ' Exp: ' + d.expiry_date : ''}`);
+    .run(workerId, verifiedBy, 'work_permit', '', d.doc_type, `${doVerify ? '工作许可验证' : '工作许可保存'}: ${d.doc_type}${d.doc_number ? ' #' + d.doc_number : ''}${d.expiry_date ? ' Exp: ' + d.expiry_date : ''}`);
 
-  syncOnboardedStatus(workerId);
+  if (doVerify) syncOnboardedStatus(workerId);
   res.json({ success: true });
 });
 
 // ─── Work Permit Document Uploads ───
 app.get('/api/admin/worker-accounts/:id/work-permit-docs', requireAdmin, (req, res) => {
-  const docs = db.prepare('SELECT id, doc_label, file_name, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
+  const docs = db.prepare('SELECT id, doc_label, file_name, doc_number, issue_date, expiry_date, notes, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
   res.json(docs);
 });
 
@@ -5306,6 +5381,28 @@ app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
   if (!doc) return res.status(404).json({ error: 'Not found' });
   if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
   db.prepare('DELETE FROM work_permit_docs WHERE id=?').run(req.params.docId);
+  res.json({ success: true });
+});
+
+// Update per-doc metadata (doc_number, issue_date, expiry_date, notes)
+app.patch('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  const d = req.body;
+  db.prepare('UPDATE work_permit_docs SET doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=?')
+    .run(d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', req.params.docId);
+  res.json({ success: true });
+});
+
+// Save all per-doc metadata in batch for a worker's work permit docs
+app.put('/api/admin/worker-accounts/:id/work-permit-docs-meta', requireAdmin, (req, res) => {
+  const docs = req.body.docs;
+  if (!Array.isArray(docs)) return res.status(400).json({ error: 'Invalid data' });
+  const stmt = db.prepare('UPDATE work_permit_docs SET doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=? AND worker_account_id=?');
+  const workerId = parseInt(req.params.id);
+  docs.forEach(d => {
+    stmt.run(d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', d.id, workerId);
+  });
   res.json({ success: true });
 });
 
