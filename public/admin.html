@@ -2824,7 +2824,8 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="modal-actions" style="margin-top:1rem">
     <button class="btn" onclick="closeModal('workPermitModal')">关闭</button>
-    <button class="btn btn-green" onclick="saveWorkPermit()">🛂 保存并验证通过</button>
+    <button class="btn btn-blue" onclick="saveWorkPermit(false)">💾 保存</button>
+    <button class="btn btn-green" onclick="saveWorkPermit(true)">🛂 验证通过</button>
   </div>
 </div></div>
 
@@ -15718,7 +15719,7 @@ async function openWorkPermitModal() {
   document.getElementById('workPermitModal').classList.add('show');
 }
 
-async function saveWorkPermit() {
+async function saveWorkPermit(verify = false) {
   const docType = document.getElementById('wpDocType').value;
   const docNumber = document.getElementById('wpDocNumber').value.trim();
   const issueDate = document.getElementById('wpIssueDate').value;
@@ -15733,15 +15734,19 @@ async function saveWorkPermit() {
     body: JSON.stringify({ doc_type: docType, doc_number: docNumber, issue_date: issueDate, expiry_date: expiryDate, category, notes })
   });
 
-  // Mark onboarding task as completed
-  const sel = document.getElementById('wpDocType');
-  const selOpt = sel.options[sel.selectedIndex];
-  const typeLabel = selOpt ? selOpt.text : docType;
-  const noteText = `${typeLabel}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}${notes?' · '+notes:''}`;
-  await updateOnboardingTask('work_permit', 'completed', noteText);
-
-  closeModal('workPermitModal');
-  showToast('✅ 工作许可验证已保存', 'success');
+  if (verify) {
+    // Mark onboarding task as completed only when explicitly verifying
+    const sel = document.getElementById('wpDocType');
+    const selOpt = sel.options[sel.selectedIndex];
+    const typeLabel = selOpt ? selOpt.text : docType;
+    const noteText = `${typeLabel}${docNumber?' #'+docNumber:''}${expiryDate?' · Exp: '+expiryDate:''}${notes?' · '+notes:''}`;
+    await updateOnboardingTask('work_permit', 'completed', noteText);
+    closeModal('workPermitModal');
+    showToast('✅ 工作许可验证通过', 'success');
+  } else {
+    refreshOnboardingModal();
+    showToast('💾 工作许可信息已保存', 'success');
+  }
 }
 
 function confirmSendPersona() {
