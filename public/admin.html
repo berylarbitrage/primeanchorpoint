@@ -3021,16 +3021,44 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.5rem">
           <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">今年在美天数</label>
-            <input type="number" id="trSptDaysCY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
+            <label style="font-size:.78rem;font-weight:600" id="trLabelCY">今年在美天数</label>
+            <select id="trSptModeCY" onchange="trDaysMode('CY')" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.75rem;margin-bottom:.3rem;color:#6b7280">
+              <option value="manual">手动输入</option>
+              <option value="full">全年都在美国</option>
+              <option value="ytd">从年初至今</option>
+              <option value="range">选择日期范围</option>
+            </select>
+            <input type="number" id="trSptDaysCY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trDaysModeReset('CY'); trSptCalc()">
+            <div id="trSptRangeCY" style="display:none;margin-top:.3rem">
+              <input type="date" id="trSptFromCY" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem;margin-bottom:.2rem" onchange="trDaysRange('CY')">
+              <input type="date" id="trSptToCY" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem" onchange="trDaysRange('CY')">
+            </div>
           </div>
           <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">去年在美天数</label>
-            <input type="number" id="trSptDaysLY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
+            <label style="font-size:.78rem;font-weight:600" id="trLabelLY">去年在美天数</label>
+            <select id="trSptModeLY" onchange="trDaysMode('LY')" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.75rem;margin-bottom:.3rem;color:#6b7280">
+              <option value="manual">手动输入</option>
+              <option value="full">全年都在美国</option>
+              <option value="range">选择日期范围</option>
+            </select>
+            <input type="number" id="trSptDaysLY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trDaysModeReset('LY'); trSptCalc()">
+            <div id="trSptRangeLY" style="display:none;margin-top:.3rem">
+              <input type="date" id="trSptFromLY" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem;margin-bottom:.2rem" onchange="trDaysRange('LY')">
+              <input type="date" id="trSptToLY" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem" onchange="trDaysRange('LY')">
+            </div>
           </div>
           <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">前年在美天数</label>
-            <input type="number" id="trSptDays2Y" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
+            <label style="font-size:.78rem;font-weight:600" id="trLabel2Y">前年在美天数</label>
+            <select id="trSptMode2Y" onchange="trDaysMode('2Y')" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.75rem;margin-bottom:.3rem;color:#6b7280">
+              <option value="manual">手动输入</option>
+              <option value="full">全年都在美国</option>
+              <option value="range">选择日期范围</option>
+            </select>
+            <input type="number" id="trSptDays2Y" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trDaysModeReset('2Y'); trSptCalc()">
+            <div id="trSptRange2Y" style="display:none;margin-top:.3rem">
+              <input type="date" id="trSptFrom2Y" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem;margin-bottom:.2rem" onchange="trDaysRange('2Y')">
+              <input type="date" id="trSptTo2Y" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem" onchange="trDaysRange('2Y')">
+            </div>
           </div>
         </div>
         <div id="trSptPreview" style="display:none;padding:.4rem .7rem;border-radius:6px;font-size:.8rem;font-weight:600;margin-bottom:.5rem"></div>
@@ -13917,6 +13945,7 @@ function trClearDownstream() {
   document.getElementById('trPresentInUs').value = '';
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
+  ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
   document.getElementById('trSptPreview').style.display = 'none';
   document.getElementById('trSptBlock').style.display = 'none';
   document.getElementById('trNeverInUs').style.display = 'none';
@@ -13956,6 +13985,7 @@ function trSelectIndStatus(s) {
   document.getElementById('trPresentInUs').value = '';
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
+  ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
   document.getElementById('trSptPreview').style.display = 'none';
   document.getElementById('trSptBlock').style.display = 'none';
   document.getElementById('trNeverInUs').style.display = 'none';
@@ -14086,6 +14116,79 @@ function trResidentToggle() {
   const exempt = document.getElementById('trSptExempt').value;
   document.getElementById('trSptExemptDetail').style.display = exempt === 'yes' ? '' : 'none';
   trCalcFinalResult();
+}
+
+// Helper: get year offset (CY=0, LY=1, 2Y=2)
+function _trYearFor(suffix) {
+  const now = new Date();
+  const y = now.getFullYear();
+  if (suffix === 'CY') return y;
+  if (suffix === 'LY') return y - 1;
+  return y - 2;
+}
+function _trDaysInYear(y) { return ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365; }
+function _trDayOfYear(d) { const s = new Date(d.getFullYear(), 0, 1); return Math.floor((d - s) / 86400000) + 1; }
+
+function trDaysMode(suffix) {
+  const mode = document.getElementById('trSptMode' + suffix).value;
+  const inp = document.getElementById('trSptDays' + suffix);
+  const rangeDiv = document.getElementById('trSptRange' + suffix);
+  const y = _trYearFor(suffix);
+  rangeDiv.style.display = mode === 'range' ? '' : 'none';
+  if (mode === 'full') {
+    inp.value = _trDaysInYear(y);
+    inp.readOnly = true; inp.style.background = '#f3f4f6';
+    trSptCalc();
+  } else if (mode === 'ytd') {
+    const now = new Date();
+    const days = (now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
+    inp.value = days;
+    inp.readOnly = true; inp.style.background = '#f3f4f6';
+    trSptCalc();
+  } else if (mode === 'range') {
+    // Set date constraints for this year
+    const fromEl = document.getElementById('trSptFrom' + suffix);
+    const toEl = document.getElementById('trSptTo' + suffix);
+    fromEl.min = y + '-01-01'; fromEl.max = y + '-12-31';
+    toEl.min = y + '-01-01'; toEl.max = y + '-12-31';
+    if (!fromEl.value) fromEl.value = y + '-01-01';
+    if (!toEl.value) toEl.value = (suffix === 'CY') ? new Date().toISOString().slice(0,10) : y + '-12-31';
+    inp.readOnly = true; inp.style.background = '#f3f4f6';
+    trDaysRange(suffix);
+  } else {
+    inp.readOnly = false; inp.style.background = '';
+  }
+}
+
+function trDaysModeReset(suffix) {
+  // If user manually types in the input, reset mode to manual
+  const sel = document.getElementById('trSptMode' + suffix);
+  if (sel.value !== 'manual') { sel.value = 'manual'; }
+  const inp = document.getElementById('trSptDays' + suffix);
+  inp.readOnly = false; inp.style.background = '';
+  document.getElementById('trSptRange' + suffix).style.display = 'none';
+}
+
+function trDaysRange(suffix) {
+  const fromEl = document.getElementById('trSptFrom' + suffix);
+  const toEl = document.getElementById('trSptTo' + suffix);
+  if (!fromEl.value || !toEl.value) return;
+  const from = new Date(fromEl.value + 'T00:00:00');
+  const to = new Date(toEl.value + 'T00:00:00');
+  const diff = Math.max(0, Math.round((to - from) / 86400000) + 1);
+  document.getElementById('trSptDays' + suffix).value = diff;
+  trSptCalc();
+}
+
+// Initialize year labels on load
+function trInitYearLabels() {
+  const y = new Date().getFullYear();
+  const lCY = document.getElementById('trLabelCY');
+  const lLY = document.getElementById('trLabelLY');
+  const l2Y = document.getElementById('trLabel2Y');
+  if (lCY) lCY.textContent = `今年在美天数 (${y})`;
+  if (lLY) lLY.textContent = `去年在美天数 (${y-1})`;
+  if (l2Y) l2Y.textContent = `前年在美天数 (${y-2})`;
 }
 
 function trSptCalc() {
@@ -14532,6 +14635,7 @@ function trWizardCollectData() {
 function trWizardReset() {
   _trStep = 1;
   _trPath = '';
+  trInitYearLabels();
   trSelectType('');
   document.getElementById('trTypeInd').checked = false;
   document.getElementById('trTypeEnt').checked = false;
@@ -14548,6 +14652,7 @@ function trWizardReset() {
   document.getElementById('trPresentInUs').value = '';
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
+  ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
   document.getElementById('trSptPreview').style.display = 'none';
   ['trServicesLoc','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['trWorkLoc','trServiceDates','trTreatyCountry','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
