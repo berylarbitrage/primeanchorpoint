@@ -3069,24 +3069,25 @@ tr:hover td{background:var(--sky-light)}
           </select>
         </div>
         <div id="trSptExemptDetail" style="display:none">
-          <div class="field" style="margin-bottom:.5rem">
-            <label style="font-size:.78rem;font-weight:600">签证/身份类型与日期范围</label>
-            <input id="trSptExemptVisa" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="F-1, 2023-01 ~ 2024-06">
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+          <input type="hidden" id="trSptExemptVisa" value="">
+          <label style="font-size:.78rem;font-weight:600;margin-bottom:.3rem;display:block">签证/身份类型与日期范围</label>
+          <div id="trExemptRows"></div>
+          <button type="button" onclick="trAddExemptRow()" style="font-size:.72rem;padding:.2rem .6rem;border:1px dashed var(--gray-300);border-radius:5px;background:#fff;cursor:pointer;color:#6b7280;margin-bottom:.5rem">+ 添加一条签证记录</button>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.3rem">
             <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">今年排除天数</label>
+              <label style="font-size:.78rem;font-weight:600" id="trExLabelCY">今年排除天数</label>
               <input type="number" id="trExemptDaysCY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
             </div>
             <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">去年排除天数</label>
+              <label style="font-size:.78rem;font-weight:600" id="trExLabelLY">去年排除天数</label>
               <input type="number" id="trExemptDaysLY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
             </div>
             <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600">前年排除天数</label>
+              <label style="font-size:.78rem;font-weight:600" id="trExLabel2Y">前年排除天数</label>
               <input type="number" id="trExemptDays2Y" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
             </div>
           </div>
+          <div id="trExemptAutoCalcHint" style="display:none;font-size:.7rem;color:#6b7280;margin-bottom:.5rem"></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
           <div class="field" style="margin-bottom:0">
@@ -13946,6 +13947,7 @@ function trClearDownstream() {
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
   ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
+  trClearExemptRows();
   document.getElementById('trSptPreview').style.display = 'none';
   document.getElementById('trSptBlock').style.display = 'none';
   document.getElementById('trNeverInUs').style.display = 'none';
@@ -13986,6 +13988,7 @@ function trSelectIndStatus(s) {
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
   ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
+  trClearExemptRows();
   document.getElementById('trSptPreview').style.display = 'none';
   document.getElementById('trSptBlock').style.display = 'none';
   document.getElementById('trNeverInUs').style.display = 'none';
@@ -14115,7 +14118,99 @@ function trResidentToggle() {
   document.getElementById('trSptBlock').style.display = present === 'yes' ? '' : 'none';
   const exempt = document.getElementById('trSptExempt').value;
   document.getElementById('trSptExemptDetail').style.display = exempt === 'yes' ? '' : 'none';
+  // Auto-add first row if switching to yes and no rows exist
+  if (exempt === 'yes' && !document.querySelectorAll('#trExemptRows > div').length) trAddExemptRow();
   trCalcFinalResult();
+}
+
+// ─── Exempt visa rows (multi-entry) ───
+let _trExemptRowId = 0;
+function trAddExemptRow(visa, from, to) {
+  const container = document.getElementById('trExemptRows');
+  const id = _trExemptRowId++;
+  const div = document.createElement('div');
+  div.id = 'trExRow' + id;
+  div.style.cssText = 'display:grid;grid-template-columns:auto 1fr 1fr 24px;gap:.3rem;align-items:center;margin-bottom:.4rem';
+  div.innerHTML = `
+    <select data-field="visa" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem;min-width:70px" onchange="trExemptCalcDays()">
+      <option value="">—</option>
+      <option value="F-1"${visa==='F-1'?' selected':''}>F-1</option>
+      <option value="F-2"${visa==='F-2'?' selected':''}>F-2</option>
+      <option value="J-1"${visa==='J-1'?' selected':''}>J-1</option>
+      <option value="J-2"${visa==='J-2'?' selected':''}>J-2</option>
+      <option value="M-1"${visa==='M-1'?' selected':''}>M-1</option>
+      <option value="M-2"${visa==='M-2'?' selected':''}>M-2</option>
+      <option value="Q-1"${visa==='Q-1'?' selected':''}>Q-1</option>
+      <option value="Q-2"${visa==='Q-2'?' selected':''}>Q-2</option>
+    </select>
+    <input type="date" data-field="from" value="${from||''}" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.75rem" onchange="trExemptCalcDays()">
+    <input type="date" data-field="to" value="${to||''}" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.75rem" onchange="trExemptCalcDays()">
+    <button type="button" onclick="trRemoveExemptRow(${id})" style="border:none;background:none;cursor:pointer;font-size:.85rem;color:#dc2626;padding:0;line-height:1" title="删除">✕</button>
+  `;
+  container.appendChild(div);
+  trSyncExemptVisa();
+  if (visa && from && to) trExemptCalcDays();
+}
+function trRemoveExemptRow(id) {
+  const el = document.getElementById('trExRow' + id);
+  if (el) el.remove();
+  trSyncExemptVisa();
+  trExemptCalcDays();
+}
+function trSyncExemptVisa() {
+  // Serialize rows to hidden field for backward compat
+  const rows = document.querySelectorAll('#trExemptRows > div');
+  const parts = [];
+  rows.forEach(r => {
+    const v = r.querySelector('[data-field="visa"]').value;
+    const f = r.querySelector('[data-field="from"]').value;
+    const t = r.querySelector('[data-field="to"]').value;
+    if (v || f || t) parts.push(`${v}, ${f} ~ ${t}`);
+  });
+  document.getElementById('trSptExemptVisa').value = parts.join(' | ');
+}
+function trExemptCalcDays() {
+  trSyncExemptVisa();
+  const rows = document.querySelectorAll('#trExemptRows > div');
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  // Accumulate exempt days per year (CY, LY, 2Y)
+  const years = [thisYear, thisYear - 1, thisYear - 2];
+  const totals = [0, 0, 0];
+  rows.forEach(r => {
+    const v = r.querySelector('[data-field="visa"]').value;
+    const fStr = r.querySelector('[data-field="from"]').value;
+    const tStr = r.querySelector('[data-field="to"]').value;
+    if (!v || !fStr || !tStr) return;
+    const from = new Date(fStr + 'T00:00:00');
+    const to = new Date(tStr + 'T00:00:00');
+    if (to < from) return;
+    for (let i = 0; i < 3; i++) {
+      const yStart = new Date(years[i], 0, 1);
+      const yEnd = new Date(years[i], 11, 31);
+      const overlapStart = from > yStart ? from : yStart;
+      const overlapEnd = to < yEnd ? to : yEnd;
+      if (overlapEnd >= overlapStart) {
+        totals[i] += Math.round((overlapEnd - overlapStart) / 86400000) + 1;
+      }
+    }
+  });
+  document.getElementById('trExemptDaysCY').value = totals[0] || '';
+  document.getElementById('trExemptDaysLY').value = totals[1] || '';
+  document.getElementById('trExemptDays2Y').value = totals[2] || '';
+  // Show hint
+  const hint = document.getElementById('trExemptAutoCalcHint');
+  if (totals[0] || totals[1] || totals[2]) {
+    hint.style.display = '';
+    hint.textContent = `自动计算排除天数: ${thisYear}年=${totals[0]}天, ${thisYear-1}年=${totals[1]}天, ${thisYear-2}年=${totals[2]}天`;
+  } else { hint.style.display = 'none'; }
+  trSptCalc();
+}
+function trClearExemptRows() {
+  document.getElementById('trExemptRows').innerHTML = '';
+  _trExemptRowId = 0;
+  document.getElementById('trSptExemptVisa').value = '';
+  document.getElementById('trExemptAutoCalcHint').style.display = 'none';
 }
 
 // Helper: get year offset (CY=0, LY=1, 2Y=2)
@@ -14136,7 +14231,9 @@ function trDaysMode(suffix) {
   const y = _trYearFor(suffix);
   rangeDiv.style.display = mode === 'range' ? '' : 'none';
   if (mode === 'full') {
-    inp.value = _trDaysInYear(y);
+    const now = new Date();
+    // Current year hasn't ended yet — cap at today
+    inp.value = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
     inp.readOnly = true; inp.style.background = '#f3f4f6';
     trSptCalc();
   } else if (mode === 'ytd') {
@@ -14189,6 +14286,12 @@ function trInitYearLabels() {
   if (lCY) lCY.textContent = `今年在美天数 (${y})`;
   if (lLY) lLY.textContent = `去年在美天数 (${y-1})`;
   if (l2Y) l2Y.textContent = `前年在美天数 (${y-2})`;
+  const eCY = document.getElementById('trExLabelCY');
+  const eLY = document.getElementById('trExLabelLY');
+  const e2Y = document.getElementById('trExLabel2Y');
+  if (eCY) eCY.textContent = `${y} 排除天数`;
+  if (eLY) eLY.textContent = `${y-1} 排除天数`;
+  if (e2Y) e2Y.textContent = `${y-2} 排除天数`;
 }
 
 function trSptCalc() {
@@ -14653,6 +14756,7 @@ function trWizardReset() {
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
   ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
+  trClearExemptRows();
   document.getElementById('trSptPreview').style.display = 'none';
   ['trServicesLoc','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['trWorkLoc','trServiceDates','trTreatyCountry','trDocImmStatus','trDocI94','trDocExpiry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -14742,7 +14846,19 @@ async function openTaxResidencyModal() {
     if (trData.days_two_years_ago) { const el = document.getElementById('trSptDays2Y'); if (el) el.value = trData.days_two_years_ago; }
     if (trData.first_entry_date) { const el = document.getElementById('trSptFirstEntry'); if (el) el.value = trData.first_entry_date; }
     if (trData.has_exempt_days) { const el = document.getElementById('trSptExempt'); if (el) el.value = trData.has_exempt_days; }
-    if (trData.exempt_visa_status) { const el = document.getElementById('trSptExemptVisa'); if (el) el.value = trData.exempt_visa_status; }
+    if (trData.exempt_visa_status) {
+      // Parse stored visa entries back into rows: "F-1, 2023-01-01 ~ 2024-06-30 | J-1, ..."
+      trClearExemptRows();
+      const entries = trData.exempt_visa_status.split('|').map(s => s.trim()).filter(Boolean);
+      if (entries.length) {
+        entries.forEach(entry => {
+          const m = entry.match(/^([A-Z]-\d),?\s*(\d{4}-\d{2}-\d{2})?\s*~\s*(\d{4}-\d{2}-\d{2})?$/);
+          if (m) { trAddExemptRow(m[1], m[2] || '', m[3] || ''); }
+          else { trAddExemptRow('', '', ''); } // fallback: add empty row for manual fix
+        });
+      }
+      document.getElementById('trSptExemptVisa').value = trData.exempt_visa_status;
+    }
     if (trData.exempt_days_cy) { const el = document.getElementById('trExemptDaysCY'); if (el) el.value = trData.exempt_days_cy; }
     if (trData.exempt_days_ly) { const el = document.getElementById('trExemptDaysLY'); if (el) el.value = trData.exempt_days_ly; }
     if (trData.exempt_days_2y) { const el = document.getElementById('trExemptDays2Y'); if (el) el.value = trData.exempt_days_2y; }
