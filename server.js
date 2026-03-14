@@ -1339,6 +1339,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS tax_residency_questionnaire (
   treaty_country TEXT DEFAULT '',
   treaty_income_type TEXT DEFAULT '',
   -- Section E: Supporting documents (flags, not files)
+  work_permit_category TEXT DEFAULT '',
   immigration_status TEXT DEFAULT '',
   i94_admission_date TEXT DEFAULT '',
   status_expiration TEXT DEFAULT '',
@@ -1383,6 +1384,7 @@ try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_zip TEXT 
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_cy INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_ly INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_2y INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN work_permit_category TEXT DEFAULT ''"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -5123,6 +5125,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     claim_treaty_benefit: d.claim_treaty_benefit || '',
     treaty_country: d.treaty_country || '',
     treaty_income_type: d.treaty_income_type || '',
+    work_permit_category: d.work_permit_category || '',
     immigration_status: d.immigration_status || '',
     i94_admission_date: d.i94_admission_date || '',
     status_expiration: d.status_expiration || '',
@@ -5148,7 +5151,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     has_exempt_days, exempt_visa_status, exempt_date_range, exempt_days_cy, exempt_days_ly, exempt_days_2y,
     services_location, primary_work_locations, expected_service_dates, will_travel_to_us,
     claim_treaty_benefit, treaty_country, treaty_income_type,
-    immigration_status, i94_admission_date, status_expiration, docs_requested,
+    work_permit_category, immigration_status, i94_admission_date, status_expiration, docs_requested,
     spt_weighted_days, spt_result, tax_status, recommended_form, needs_manual_review,
     admin_override, admin_notes, completed_by,
     addr_street, addr_street2, addr_city, addr_state, addr_zip, updated_at
@@ -5158,7 +5161,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     @has_exempt_days, @exempt_visa_status, @exempt_date_range, @exempt_days_cy, @exempt_days_ly, @exempt_days_2y,
     @services_location, @primary_work_locations, @expected_service_dates, @will_travel_to_us,
     @claim_treaty_benefit, @treaty_country, @treaty_income_type,
-    @immigration_status, @i94_admission_date, @status_expiration, @docs_requested,
+    @work_permit_category, @immigration_status, @i94_admission_date, @status_expiration, @docs_requested,
     @spt_weighted_days, @spt_result, @tax_status, @recommended_form, @needs_manual_review,
     @admin_override, @admin_notes, @completed_by,
     @addr_street, @addr_street2, @addr_city, @addr_state, @addr_zip, CURRENT_TIMESTAMP
@@ -5177,6 +5180,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     expected_service_dates=excluded.expected_service_dates, will_travel_to_us=excluded.will_travel_to_us,
     claim_treaty_benefit=excluded.claim_treaty_benefit, treaty_country=excluded.treaty_country,
     treaty_income_type=excluded.treaty_income_type,
+    work_permit_category=excluded.work_permit_category,
     immigration_status=excluded.immigration_status, i94_admission_date=excluded.i94_admission_date,
     status_expiration=excluded.status_expiration, docs_requested=excluded.docs_requested,
     spt_weighted_days=excluded.spt_weighted_days, spt_result=excluded.spt_result,
