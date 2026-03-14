@@ -3121,7 +3121,16 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div class="field" style="margin-bottom:0">
           <label style="font-size:.78rem;font-weight:600">Expected service dates</label>
-          <input id="trServiceDates" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="2026-04 ~ 2026-12">
+          <div style="display:flex;align-items:center;gap:.4rem">
+            <select id="trServiceDateFrom" onchange="trSyncServiceDates()" style="flex:1;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+              <option value="">起始月</option>
+            </select>
+            <span style="font-size:.85rem;color:var(--gray-500)">~</span>
+            <select id="trServiceDateTo" onchange="trSyncServiceDates()" style="flex:1;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+              <option value="">结束月</option>
+            </select>
+          </div>
+          <input id="trServiceDates" type="hidden">
         </div>
       </div>
       <div id="trTreatyBlock" style="display:none;margin-bottom:.6rem">
@@ -13785,6 +13794,7 @@ function _trPopulateCountrySelect(sel) {
 (function() {
   document.querySelectorAll('.tr-country-select').forEach(sel => _trPopulateCountrySelect(sel));
   _trPopulateCountrySelect(document.getElementById('trTreatyCountry'));
+  trInitServiceDateDropdowns();
 })();
 
 // Entity country change → auto-detect treaty for entity
@@ -14412,6 +14422,27 @@ function trSptCalc() {
   trCalcFinalResult();
 }
 
+function trInitServiceDateDropdowns() {
+  const fromEl = document.getElementById('trServiceDateFrom');
+  const toEl = document.getElementById('trServiceDateTo');
+  if (!fromEl || !toEl) return;
+  const now = new Date();
+  const startYear = now.getFullYear();
+  const endYear = startYear + 2;
+  for (let y = startYear; y <= endYear; y++) {
+    for (let m = 1; m <= 12; m++) {
+      const val = y + '-' + String(m).padStart(2, '0');
+      fromEl.insertAdjacentHTML('beforeend', `<option value="${val}">${val}</option>`);
+      toEl.insertAdjacentHTML('beforeend', `<option value="${val}">${val}</option>`);
+    }
+  }
+}
+function trSyncServiceDates() {
+  const f = document.getElementById('trServiceDateFrom').value;
+  const t = document.getElementById('trServiceDateTo').value;
+  document.getElementById('trServiceDates').value = (f && t) ? f + ' ~ ' + t : (f || t || '');
+}
+
 function trStep4Toggle() {
   const type = document.getElementById('trTypeInd').checked ? 'individual' : 'entity';
   const entityUs = document.getElementById('trEntityUs').value;
@@ -14471,16 +14502,19 @@ function trCalcFinalResult() {
         else { status = 'Likely Nonresident Alien'; }
         if (isExempt) review = true;
       }
-      if (!form) {
-        const servLoc = document.getElementById('trServicesLoc').value;
-        const treaty = document.getElementById('trTreatyClaim').value;
-        const incType = document.getElementById('trTreatyIncomeType').value;
-        if (treaty === 'yes' && incType === 'personal_services' && (servLoc === 'all_in_us' || servLoc === 'partly_in_us')) {
+      // Treaty claim can override SPT result (treaty tie-breaker rules)
+      const servLoc = document.getElementById('trServicesLoc').value;
+      const treaty = document.getElementById('trTreatyClaim').value;
+      const incType = document.getElementById('trTreatyIncomeType').value;
+      if (treaty === 'yes') {
+        if (incType === 'personal_services' && (servLoc === 'all_in_us' || servLoc === 'partly_in_us')) {
           form = 'Form 8233'; review = true;
         } else {
-          form = 'W-8BEN';
-          if (servLoc === 'all_in_us' || servLoc === 'partly_in_us') review = true;
+          form = 'W-8BEN'; review = true;
         }
+      } else if (!form) {
+        form = 'W-8BEN';
+        if (servLoc === 'all_in_us' || servLoc === 'partly_in_us') review = true;
       }
     }
   }
@@ -14961,7 +14995,14 @@ async function openTaxResidencyModal() {
     // Step 4: services & treaty
     if (trData.services_location) { const el = document.getElementById('trServicesLoc'); if (el) el.value = trData.services_location; }
     if (trData.primary_work_locations) { const el = document.getElementById('trWorkLoc'); if (el) el.value = trData.primary_work_locations; }
-    if (trData.expected_service_dates) { const el = document.getElementById('trServiceDates'); if (el) el.value = trData.expected_service_dates; }
+    if (trData.expected_service_dates) {
+      const el = document.getElementById('trServiceDates'); if (el) el.value = trData.expected_service_dates;
+      const parts = trData.expected_service_dates.match(/^(\d{4}-\d{2})\s*~\s*(\d{4}-\d{2})$/);
+      if (parts) {
+        const fromEl = document.getElementById('trServiceDateFrom'); if (fromEl) fromEl.value = parts[1];
+        const toEl = document.getElementById('trServiceDateTo'); if (toEl) toEl.value = parts[2];
+      }
+    }
     if (trData.treaty_country) { const el = document.getElementById('trTreatyCountry'); if (el) { el.value = trData.treaty_country; trOnTreatyCountryChange(); } }
     if (trData.claim_treaty_benefit && (trData.claim_treaty_benefit === 'yes' || trData.claim_treaty_benefit === 'no')) { trSetTreatyClaim(trData.claim_treaty_benefit); }
     if (trData.treaty_income_type) { const el = document.getElementById('trTreatyIncomeType'); if (el) el.value = trData.treaty_income_type; }
