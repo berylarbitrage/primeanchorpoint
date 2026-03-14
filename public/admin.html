@@ -2914,14 +2914,15 @@ tr:hover td{background:var(--sky-light)}
             <option value="">— 选择国家 —</option>
           </select>
         </div>
-        <div class="field" style="margin-bottom:.5rem">
-          <label style="font-size:.78rem;font-weight:600">Country of Tax Residence <span style="font-size:.72rem;color:#6b7280;font-weight:400">(默认同注册国 defaults to org country)</span></label>
+        <div class="field" style="margin-bottom:.5rem" id="trEntForeignTaxCountryRow">
+          <label style="font-size:.78rem;font-weight:600">Country of Tax Residence <span style="font-size:.72rem;color:#6b7280;font-weight:400">(离岸注册地需单独填写 required for offshore jurisdictions)</span></label>
           <select id="trEntForeignTaxCountry" onchange="trEntCountryChange()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
             <option value="">— 选择国家 —</option>
           </select>
         </div>
         <div class="field" style="margin-bottom:.5rem">
           <label style="font-size:.78rem;font-weight:600">Entity Address</label>
+          <div id="trEntForeignAddrCountryLabel" style="display:none;padding:.4rem .6rem;background:#f9fafb;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem;color:#374151;font-weight:600"></div>
           <input id="trEntForeignAddrStreet" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Street Address" oninput="document.getElementById('trEntForeignAddrStatus').textContent=''">
           <input id="trEntForeignAddrSuite" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Suite / Unit # (optional)" oninput="document.getElementById('trEntForeignAddrStatus').textContent=''">
           <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.4rem;margin-bottom:.4rem">
@@ -13893,16 +13894,55 @@ function trSetTreatyClaim(val) {
   trStep4Toggle();
 }
 
+// Offshore / tax-haven jurisdictions where Country of Tax Residence often differs from Country of Organization
+const TR_OFFSHORE_COUNTRIES = [
+  'Cayman Islands','British Virgin Islands','Bermuda','Bahamas','Jersey','Guernsey',
+  'Isle of Man','Luxembourg','Liechtenstein','Monaco','Panama','Mauritius','Seychelles',
+  'Samoa','Marshall Islands','Vanuatu','Belize','Anguilla','Turks and Caicos Islands',
+  'Sint Maarten','Curaçao','Aruba','Barbados','Antigua and Barbuda','Dominica',
+  'Saint Kitts and Nevis','Saint Lucia','Saint Vincent and the Grenadines','Gibraltar',
+  'Nauru','Niue','Cook Islands','Palau','Tonga','Brunei'
+];
+
 // Auto-populate treaty country from citizenship/tax-residence entered in Step 2B/3
 // Auto-derive Country of Tax Residence based on wizard state
 function trSyncTaxCountry() {
   const type = document.getElementById('trTypeInd').checked ? 'individual' : 'entity';
   if (type === 'entity') {
-    // Entity: default tax residence to Country of Organization (user can override)
     const orgCountry = document.getElementById('trEntForeignCountry').value;
     const taxCountrySel = document.getElementById('trEntForeignTaxCountry');
-    if (orgCountry && !taxCountrySel.value) {
+    const taxRow = document.getElementById('trEntForeignTaxCountryRow');
+    const addrCountryLabel = document.getElementById('trEntForeignAddrCountryLabel');
+
+    // Update address country display
+    if (addrCountryLabel) {
+      addrCountryLabel.textContent = orgCountry || '';
+      addrCountryLabel.style.display = orgCountry ? '' : 'none';
+    }
+
+    if (!orgCountry) {
+      // No org country selected — show tax country field as normal
+      if (taxRow) { taxRow.style.display = ''; }
+      taxCountrySel.disabled = false;
+      taxCountrySel.value = '';
+      return;
+    }
+
+    const isOffshore = TR_OFFSHORE_COUNTRIES.includes(orgCountry);
+    if (isOffshore) {
+      // Offshore: show tax residence separately, let user pick
+      if (taxRow) { taxRow.style.display = ''; }
+      taxCountrySel.disabled = false;
+      if (!taxCountrySel.value) {
+        taxCountrySel.value = orgCountry;
+      }
+    } else {
+      // Normal country: auto-fill and lock tax residence = org country
       taxCountrySel.value = orgCountry;
+      taxCountrySel.disabled = true;
+      if (taxRow) {
+        taxRow.style.display = 'none';
+      }
     }
     return;
   }
