@@ -3005,9 +3005,15 @@ tr:hover td{background:var(--sky-light)}
         </div>
       </div>
       <div id="trSptBlock" style="display:none">
-        <div class="field" style="margin-bottom:.5rem">
-          <label style="font-size:.78rem;font-weight:600">第一次进入美国日期</label>
-          <input type="date" id="trSptFirstEntry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" onchange="trFirstEntryChanged()">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:.78rem;font-weight:600">第一次进入美国日期</label>
+            <input type="date" id="trSptFirstEntry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" onchange="trFirstEntryChanged()">
+          </div>
+          <div class="field" style="margin-bottom:0">
+            <label style="font-size:.78rem;font-weight:600">最近一次入境美国日期</label>
+            <input type="date" id="trSptLastEntry" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.5rem">
           <div class="field" style="margin-bottom:0">
@@ -14032,7 +14038,7 @@ function trClearDownstream() {
   ['trEntLegalName','trEntTaxClass','trEntEin','trEntAddrStreet','trEntAddrSuite','trEntAddrCity','trEntAddrState','trEntAddrZip','trEntForeignName','trEntForeignCountry','trEntForeignTaxCountry','trEntForeignAddrStreet','trEntForeignAddrSuite','trEntForeignAddrCity','trEntForeignAddrState','trEntForeignAddrZip','trEntTreaty'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   // Clear Step 3
   document.getElementById('trPresentInUs').value = '';
-  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptLastEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
   ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
   trClearExemptRows();
@@ -14073,7 +14079,7 @@ function trSelectIndStatus(s) {
   document.getElementById('trIndUsFields').style.display = (s === 'citizen' || s === 'green_card') ? '' : 'none';
   // Clear Steps 3 & 4 fields when changing identity status
   document.getElementById('trPresentInUs').value = '';
-  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptLastEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
   ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
   trClearExemptRows();
@@ -14709,6 +14715,8 @@ function trCalcFinalResult() {
         if (present === 'yes') {
           const firstEntry = document.getElementById('trSptFirstEntry').value;
           if (firstEntry) filled.push(['第一次进入美国日期', firstEntry]);
+          const lastEntry = document.getElementById('trSptLastEntry').value;
+          if (lastEntry) filled.push(['最近一次入境美国日期', lastEntry]);
           const cy = document.getElementById('trSptDaysCY').value;
           const ly = document.getElementById('trSptDaysLY').value;
           const ty = document.getElementById('trSptDays2Y').value;
@@ -15048,6 +15056,7 @@ function trWizardCollectData() {
         d.country_tax_residence = document.getElementById('trNrTaxCountry').value.trim();
       } else {
         d.first_entry_date = document.getElementById('trSptFirstEntry').value;
+        d.last_entry_date = document.getElementById('trSptLastEntry').value;
         d.days_current_year = document.getElementById('trSptDaysCY').value || '0';
         d.days_last_year = document.getElementById('trSptDaysLY').value || '0';
         d.days_two_years_ago = document.getElementById('trSptDays2Y').value || '0';
@@ -15092,7 +15101,7 @@ function trWizardReset() {
   ['trIndLegalName','trIndSsn','trIndAddrStreet','trIndAddrSuite','trIndAddrCity','trIndAddrState','trIndAddrZip'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trIndUsFields').style.display = 'none';
   document.getElementById('trPresentInUs').value = '';
-  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptLastEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
   ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
   trClearExemptRows();
@@ -15187,6 +15196,7 @@ async function openTaxResidencyModal() {
     if (trData.days_last_year) { const el = document.getElementById('trSptDaysLY'); if (el) el.value = trData.days_last_year; }
     if (trData.days_two_years_ago) { const el = document.getElementById('trSptDays2Y'); if (el) el.value = trData.days_two_years_ago; }
     if (trData.first_entry_date) { const el = document.getElementById('trSptFirstEntry'); if (el) el.value = trData.first_entry_date; }
+    if (trData.last_entry_date) { const el = document.getElementById('trSptLastEntry'); if (el) el.value = trData.last_entry_date; }
     if (trData.has_exempt_days) { const el = document.getElementById('trSptExempt'); if (el) el.value = trData.has_exempt_days; }
     if (trData.exempt_visa_status) {
       // Parse stored visa entries back into rows: "F-1, 2023-01-01 ~ 2024-06-30 | J-1, ..."
