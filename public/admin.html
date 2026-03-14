@@ -15223,6 +15223,11 @@ async function saveTaxResidency() {
     });
   }
 
+  // Warn if work permit verification was reset due to category change
+  if (trResult && trResult.wp_reset) {
+    showToast(`⚠️ 税务身份变更 (${trResult.old_wp_category} → ${trResult.new_wp_category})，工作许可验证已重置，需要重新验证`, 'warning', 5000);
+  }
+
   showToast(`✅ 税务身份判定已保存 · 推荐表格: ${recommendedForm}`, 'success', 3000);
 
   // Re-capture snapshot so closing after save won't trigger unsaved warning
@@ -15822,11 +15827,11 @@ function wpDetectCategory(trData) {
   if (!trData) return 'generic';
   const appType = trData.applicant_type;
   if (appType === 'entity') {
-    return trData.entity_us === 'yes' ? 'us_entity' : 'foreign_entity';
+    return (trData.entity_us === 'yes' || trData.is_us_person === 'yes') ? 'us_entity' : 'foreign_entity';
   }
-  const indStatus = trData.individual_status;
-  if (indStatus === 'citizen') return 'citizen';
-  if (indStatus === 'green_card') return 'green_card';
+  // Derive individual status from DB fields (is_us_citizen, has_green_card)
+  if (trData.is_us_citizen === 'yes') return 'citizen';
+  if (trData.has_green_card === 'yes') return 'green_card';
   // Neither: use work_permit_category from Step 3 if available, else fallback to immigration_status
   if (trData.work_permit_category) {
     const catMap = { work_visa: 'work_visa', ead: 'ead', opt: 'opt', f1_cpt: 'cpt', j1: 'j1' };
@@ -15906,8 +15911,16 @@ async function openWorkPermitModal() {
       const info = document.getElementById('wpCurrentInfo');
       const selOpt = sel.options[sel.selectedIndex];
       const typeLabel = selOpt && selOpt.value ? selOpt.text : data.doc_type;
-      info.innerHTML = `<div style="font-weight:700;color:#065f46;margin-bottom:.3rem">📋 已有记录:</div>
-        <div>类型: <b>${typeLabel}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}${data.verified_at?' · 验证时间: <b>'+new Date(data.verified_at).toLocaleString('zh-CN')+'</b>':''}</div>`;
+      if (data.doc_type && !data.verified_at) {
+        // Data exists but verification was reset (likely due to tax residency change)
+        info.innerHTML = `<div style="font-weight:700;color:#92400e;margin-bottom:.3rem">⚠️ 验证已重置 — 税务身份发生变更，需重新验证</div>
+          <div>类型: <b>${typeLabel}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}</div>`;
+        info.style.background = '#fef3c7';
+        info.style.borderColor = '#fde68a';
+      } else {
+        info.innerHTML = `<div style="font-weight:700;color:#065f46;margin-bottom:.3rem">📋 已有记录:</div>
+          <div>类型: <b>${typeLabel}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}${data.verified_at?' · 验证时间: <b>'+new Date(data.verified_at).toLocaleString('zh-CN')+'</b>':''}</div>`;
+      }
       info.style.display = 'block';
       // Expiry warning
       if (data.expiry_date) {

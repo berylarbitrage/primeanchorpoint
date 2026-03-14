@@ -5113,10 +5113,43 @@ app.get('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res)
   res.json(row || null);
 });
 
+// Helper: derive work permit category key from tax residency data (mirrors frontend wpDetectCategory)
+function _wpCategoryKey(tr) {
+  if (!tr) return 'generic';
+  if (tr.applicant_type === 'entity') return (tr.is_us_person === 'yes') ? 'us_entity' : 'foreign_entity';
+  if (tr.is_us_citizen === 'yes') return 'citizen';
+  if (tr.has_green_card === 'yes') return 'green_card';
+  if (tr.work_permit_category) {
+    const catMap = { work_visa: 'work_visa', ead: 'ead', opt: 'opt', f1_cpt: 'cpt', j1: 'j1' };
+    if (catMap[tr.work_permit_category]) return catMap[tr.work_permit_category];
+  }
+  const wa = tr.immigration_status || '';
+  const VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
+  const EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-OTHER'];
+  if (VISA_TYPES.includes(wa)) return 'work_visa';
+  if (wa === 'EAD-C03A' || wa === 'EAD-C03B') return 'opt';
+  if (EAD_TYPES.includes(wa)) return 'ead';
+  if (wa === 'F-1-CPT') return 'cpt';
+  if (wa === 'J-1') return 'j1';
+  return 'generic';
+}
+
 // Save tax residency questionnaire
 app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res) => {
   const workerId = parseInt(req.params.id);
   const d = req.body;
+
+  // Check if tax residency category changed compared to existing data
+  const oldTr = db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId);
+  const oldCategoryKey = oldTr ? _wpCategoryKey(oldTr) : '';
+  const newCategoryKey = _wpCategoryKey({
+    applicant_type: d.applicant_type || 'individual',
+    is_us_person: d.is_us_person || '',
+    is_us_citizen: d.is_us_citizen || '',
+    has_green_card: d.has_green_card || '',
+    work_permit_category: d.work_permit_category || '',
+    immigration_status: d.immigration_status || ''
+  });
 
   // Calculate SPT and determine form routing
   const calc = calculateTaxResidency(d);
@@ -5247,7 +5280,32 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     .run(workerId, fields.completed_by, 'tax_residency', '', calc.recommended_form,
       `税务居民判定完成: ${calc.tax_status} → 推荐表格: ${calc.recommended_form}${calc.recommended_form === 'Form 8233' ? ' + W-8BEN(备选)' : ''}${calc.needs_manual_review ? ' (需人工复核)' : ''}`);
 
-  res.json({ success: true, ...calc, taxTasks, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
+  // If work permit category changed, reset work permit verification and onboarding task
+  let wpReset = false;
+  if (oldCategoryKey && newCategoryKey && oldCategoryKey !== newCategoryKey) {
+    const existingWp = db.prepare('SELECT * FROM work_permit_verification WHERE worker_account_id=?').get(workerId);
+    if (existingWp && existingWp.verified_at) {
+      // Clear verified status - keep data but mark as needing re-verification
+      db.prepare(`UPDATE work_permit_verification SET verified_at=NULL, verified_by='', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=?`).run(workerId);
+      // Reset work_permit onboarding task back to pending
+      db.prepare(`UPDATE worker_onboarding SET status='pending', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='work_permit'`).run(workerId);
+      // Log the reset
+      db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+        .run(workerId, fields.completed_by, 'work_permit_reset', oldCategoryKey, newCategoryKey,
+          `税务身份变更 (${oldCategoryKey} → ${newCategoryKey})，工作许可验证已重置为待验证`);
+      wpReset = true;
+    }
+    // Delete old uploaded work permit docs since category changed and required docs differ
+    const oldDocs = db.prepare('SELECT * FROM work_permit_docs WHERE worker_account_id=?').all(workerId);
+    for (const doc of oldDocs) {
+      if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+    }
+    db.prepare('DELETE FROM work_permit_docs WHERE worker_account_id=?').run(workerId);
+  }
+
+  syncOnboardedStatus(workerId);
+
+  res.json({ success: true, ...calc, taxTasks, wp_reset: wpReset, old_wp_category: oldCategoryKey, new_wp_category: newCategoryKey, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
 });
 
 // ─── Work Permit Verification ───
