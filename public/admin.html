@@ -2908,19 +2908,17 @@ tr:hover td{background:var(--sky-light)}
           <label style="font-size:.78rem;font-weight:600">Legal Entity Name</label>
           <input id="trEntForeignName" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">Country of Organization</label>
-            <select id="trEntForeignCountry" onchange="trEntCountryChange()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-              <option value="">— 选择国家 —</option>
-            </select>
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">Country of Tax Residence</label>
-            <select id="trEntForeignTaxCountry" onchange="trEntCountryChange()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-              <option value="">— 选择国家 —</option>
-            </select>
-          </div>
+        <div class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">Country of Organization</label>
+          <select id="trEntForeignCountry" onchange="trSyncTaxCountry(); trEntCountryChange()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <option value="">— 选择国家 —</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">Country of Tax Residence <span style="font-size:.72rem;color:#6b7280;font-weight:400">(默认同注册国 defaults to org country)</span></label>
+          <select id="trEntForeignTaxCountry" onchange="trEntCountryChange()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <option value="">— 选择国家 —</option>
+          </select>
         </div>
         <div class="field" style="margin-bottom:.5rem">
           <label style="font-size:.78rem;font-weight:600">Entity Address</label>
@@ -2999,19 +2997,15 @@ tr:hover td{background:var(--sky-light)}
         </select>
       </div>
       <div id="trNeverInUs" style="display:none">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">Country of Citizenship</label>
-            <select id="trNrCitizenship" onchange="trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-              <option value="">— 选择国家 —</option>
-            </select>
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">Country of Tax Residence</label>
-            <select id="trNrTaxCountry" onchange="trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-              <option value="">— 选择国家 —</option>
-            </select>
-          </div>
+        <div class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">Country of Citizenship</label>
+          <select id="trNrCitizenship" onchange="trSyncTaxCountry(); trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <option value="">— 选择国家 —</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">Country of Tax Residence <span style="font-size:.72rem;color:#6b7280;font-weight:400">(自动推导 auto-derived)</span></label>
+          <input id="trNrTaxCountry" readonly style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#f3f4f6;color:#374151;cursor:not-allowed" value="">
         </div>
       </div>
       <div id="trSptBlock" style="display:none">
@@ -3089,19 +3083,15 @@ tr:hover td{background:var(--sky-light)}
           </div>
           <div id="trExemptAutoCalcHint" style="display:none;font-size:.7rem;color:#6b7280;margin-bottom:.5rem"></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">Country of Citizenship</label>
-            <select id="trSptCitizenship" onchange="trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-              <option value="">— 选择国家 —</option>
-            </select>
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">Country of Tax Residence</label>
-            <select id="trSptTaxCountry" onchange="trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-              <option value="">— 选择国家 —</option>
-            </select>
-          </div>
+        <div class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">Country of Citizenship</label>
+          <select id="trSptCitizenship" onchange="trSyncTaxCountry(); trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+            <option value="">— 选择国家 —</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">Country of Tax Residence <span style="font-size:.72rem;color:#6b7280;font-weight:400">(自动推导 auto-derived)</span></label>
+          <input id="trSptTaxCountry" readonly style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;background:#f3f4f6;color:#374151;cursor:not-allowed" value="">
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:.6rem">
@@ -13894,6 +13884,45 @@ function trSetTreatyClaim(val) {
 }
 
 // Auto-populate treaty country from citizenship/tax-residence entered in Step 2B/3
+// Auto-derive Country of Tax Residence based on wizard state
+function trSyncTaxCountry() {
+  const type = document.getElementById('trTypeInd').checked ? 'individual' : 'entity';
+  if (type === 'entity') {
+    // Entity: default tax residence to Country of Organization (user can override)
+    const orgCountry = document.getElementById('trEntForeignCountry').value;
+    const taxCountrySel = document.getElementById('trEntForeignTaxCountry');
+    if (orgCountry && !taxCountrySel.value) {
+      taxCountrySel.value = orgCountry;
+    }
+    return;
+  }
+  // Individual path: determine based on SPT result
+  const present = document.getElementById('trPresentInUs').value;
+  if (present === 'no') {
+    // Never in US → NRA → tax residence = citizenship country
+    const cit = document.getElementById('trNrCitizenship').value;
+    document.getElementById('trNrTaxCountry').value = cit || '';
+  } else if (present === 'yes') {
+    // Was in US → check SPT
+    const cy = parseInt(document.getElementById('trSptDaysCY').value) || 0;
+    const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
+    const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
+    const isExempt = document.getElementById('trSptExempt').value === 'yes';
+    const exCY = isExempt ? Math.min(parseInt(document.getElementById('trExemptDaysCY').value) || 0, cy) : 0;
+    const exLY = isExempt ? Math.min(parseInt(document.getElementById('trExemptDaysLY').value) || 0, ly) : 0;
+    const ex2Y = isExempt ? Math.min(parseInt(document.getElementById('trExemptDays2Y').value) || 0, ty) : 0;
+    const adjCY = cy - exCY, adjLY = ly - exLY, adj2Y = ty - ex2Y;
+    const w = adjCY + (adjLY / 3) + (adj2Y / 6);
+    const meetsSpt = adjCY >= 31 && w >= 183;
+    const cit = document.getElementById('trSptCitizenship').value;
+    if (meetsSpt) {
+      document.getElementById('trSptTaxCountry').value = 'United States';
+    } else {
+      document.getElementById('trSptTaxCountry').value = cit || '';
+    }
+  }
+}
+
 function trAutoDetectTreatyCountry() {
   if (document.getElementById('trTreatyCountry').value) return; // already set
   const countryFields = ['trSptCitizenship','trSptTaxCountry','trNrCitizenship','trNrTaxCountry','trEntForeignCountry','trEntForeignTaxCountry'];
@@ -14121,6 +14150,7 @@ function trResidentToggle() {
   document.getElementById('trSptExemptDetail').style.display = exempt === 'yes' ? '' : 'none';
   // Auto-add first row if switching to yes and no rows exist
   if (exempt === 'yes' && !document.querySelectorAll('#trExemptRows > div').length) trAddExemptRow();
+  trSyncTaxCountry();
   trCalcFinalResult();
 }
 
@@ -14378,6 +14408,7 @@ function trSptCalc() {
       el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${cy}+${ly}/3+${ty}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`;
     }
   }
+  trSyncTaxCountry();
   trCalcFinalResult();
 }
 
@@ -14925,10 +14956,8 @@ async function openTaxResidencyModal() {
       const el1 = document.getElementById('trSptCitizenship'); if (el1) el1.value = trData.country_citizenship;
       const el2 = document.getElementById('trNrCitizenship'); if (el2) el2.value = trData.country_citizenship;
     }
-    if (trData.country_tax_residence) {
-      const el1 = document.getElementById('trSptTaxCountry'); if (el1) el1.value = trData.country_tax_residence;
-      const el2 = document.getElementById('trNrTaxCountry'); if (el2) el2.value = trData.country_tax_residence;
-    }
+    // Country of Tax Residence is now auto-derived; sync it from citizenship/SPT
+    trSyncTaxCountry();
     // Step 4: services & treaty
     if (trData.services_location) { const el = document.getElementById('trServicesLoc'); if (el) el.value = trData.services_location; }
     if (trData.primary_work_locations) { const el = document.getElementById('trWorkLoc'); if (el) el.value = trData.primary_work_locations; }
