@@ -15192,6 +15192,7 @@ async function openTaxResidencyModal() {
   }
 
   document.getElementById('taxResidencyModal').classList.add('show');
+  captureModalState('taxResidencyModal');
 }
 
 // Save tax residency from standalone modal
@@ -15217,6 +15218,9 @@ async function saveTaxResidency() {
   }
 
   showToast(`✅ 税务身份判定已保存 · 推荐表格: ${recommendedForm}`, 'success', 3000);
+
+  // Re-capture snapshot so closing after save won't trigger unsaved warning
+  captureModalState('taxResidencyModal');
 
   // Refresh onboarding task list to show new tax doc tasks
   refreshOnboardingModal();
