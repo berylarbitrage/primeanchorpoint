@@ -2924,7 +2924,17 @@ tr:hover td{background:var(--sky-light)}
         </div>
         <div class="field" style="margin-bottom:.5rem">
           <label style="font-size:.78rem;font-weight:600">Entity Address</label>
-          <input id="trEntForeignAddr" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <input id="trEntForeignAddrStreet" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Street Address" oninput="document.getElementById('trEntForeignAddrStatus').textContent=''">
+          <input id="trEntForeignAddrSuite" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Suite / Unit # (optional)" oninput="document.getElementById('trEntForeignAddrStatus').textContent=''">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.4rem;margin-bottom:.4rem">
+            <input id="trEntForeignAddrCity" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="City" oninput="document.getElementById('trEntForeignAddrStatus').textContent=''">
+            <input id="trEntForeignAddrState" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="State / Province" oninput="document.getElementById('trEntForeignAddrStatus').textContent=''">
+            <input id="trEntForeignAddrZip" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="ZIP / Postal Code" oninput="document.getElementById('trEntForeignAddrStatus').textContent=''">
+          </div>
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyTrEntForeignAddr()">🔍 验证地址 Verify</button>
+            <span id="trEntForeignAddrStatus" style="font-size:.78rem;font-weight:600"></span>
+          </div>
         </div>
         <div id="trEntTreatyInfo" style="display:none;border-radius:6px;padding:.5rem .8rem;margin-bottom:.5rem;font-size:.8rem"></div>
         <input type="hidden" id="trEntTreaty" value="">
@@ -2956,14 +2966,22 @@ tr:hover td{background:var(--sky-light)}
           <label style="font-size:.78rem;font-weight:600">Legal Name</label>
           <input id="trIndLegalName" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">SSN / ITIN</label>
-            <input id="trIndSsn" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="XXX-XX-XXXX">
+        <div class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">SSN / ITIN</label>
+          <input id="trIndSsn" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="XXX-XX-XXXX">
+        </div>
+        <div class="field" style="margin-bottom:.5rem">
+          <label style="font-size:.78rem;font-weight:600">U.S. Address</label>
+          <input id="trIndAddrStreet" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Street Address" oninput="document.getElementById('trIndAddrStatus').textContent=''">
+          <input id="trIndAddrSuite" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Suite / Apt # (optional)" oninput="document.getElementById('trIndAddrStatus').textContent=''">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.4rem;margin-bottom:.4rem">
+            <input id="trIndAddrCity" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="City" oninput="document.getElementById('trIndAddrStatus').textContent=''">
+            <input id="trIndAddrState" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;text-transform:uppercase" placeholder="State" maxlength="2" oninput="document.getElementById('trIndAddrStatus').textContent=''">
+            <input id="trIndAddrZip" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="ZIP Code" maxlength="10" oninput="document.getElementById('trIndAddrStatus').textContent=''">
           </div>
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600">U.S. Address</label>
-            <input id="trIndAddress" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <button type="button" class="btn btn-outline" style="font-size:.78rem;padding:3px 10px" onclick="verifyTrIndAddr()">🔍 验证地址 Verify</button>
+            <span id="trIndAddrStatus" style="font-size:.78rem;font-weight:600"></span>
           </div>
         </div>
       </div>
@@ -13870,11 +13888,11 @@ function trClearDownstream() {
   // Clear Step 2B individual status
   document.querySelectorAll('input[name="trIndStatus"]').forEach(r => r.checked = false);
   ['trIndCitizenLabel','trIndGcLabel','trIndNeitherLabel'].forEach(id => { const el = document.getElementById(id); if (el) { el.style.borderColor = 'var(--gray-200)'; el.style.background = '#fff'; } });
-  ['trIndLegalName','trIndSsn','trIndAddress'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trIndLegalName','trIndSsn','trIndAddrStreet','trIndAddrSuite','trIndAddrCity','trIndAddrState','trIndAddrZip'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trIndUsFields').style.display = 'none';
   // Clear Step 2A entity fields
   document.getElementById('trEntityUs').value = '';
-  ['trEntLegalName','trEntTaxClass','trEntEin','trEntAddrStreet','trEntAddrSuite','trEntAddrCity','trEntAddrState','trEntAddrZip','trEntForeignName','trEntForeignCountry','trEntForeignTaxCountry','trEntForeignAddr','trEntTreaty'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trEntLegalName','trEntTaxClass','trEntEin','trEntAddrStreet','trEntAddrSuite','trEntAddrCity','trEntAddrState','trEntAddrZip','trEntForeignName','trEntForeignCountry','trEntForeignTaxCountry','trEntForeignAddrStreet','trEntForeignAddrSuite','trEntForeignAddrCity','trEntForeignAddrState','trEntForeignAddrZip','trEntTreaty'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   // Clear Step 3
   document.getElementById('trPresentInUs').value = '';
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -13971,7 +13989,8 @@ function trEntNext() {
     // Validate foreign entity fields
     if (!document.getElementById('trEntForeignName').value.trim()) return showToast('请填写 Legal Entity Name', 'error');
     if (!document.getElementById('trEntForeignCountry').value) return showToast('请选择 Country of Organization', 'error');
-    if (!document.getElementById('trEntForeignAddr').value.trim()) return showToast('请填写 Entity Address', 'error');
+    if (!document.getElementById('trEntForeignAddrStreet').value.trim()) return showToast('请填写 Street Address', 'error');
+    if (!document.getElementById('trEntForeignAddrCity').value.trim()) return showToast('请填写 City', 'error');
     _trPath = 'entity';
     trShowStep(4);
   }
@@ -14135,11 +14154,11 @@ function trCalcFinalResult() {
       const n = document.getElementById('trEntForeignName').value.trim();
       const co = document.getElementById('trEntForeignCountry').value;
       const tc2 = document.getElementById('trEntForeignTaxCountry').value;
-      const a = document.getElementById('trEntForeignAddr').value.trim();
+      const faParts = [document.getElementById('trEntForeignAddrStreet').value.trim(), document.getElementById('trEntForeignAddrSuite').value.trim(), document.getElementById('trEntForeignAddrCity').value.trim(), document.getElementById('trEntForeignAddrState').value.trim(), document.getElementById('trEntForeignAddrZip').value.trim()].filter(Boolean);
       if (n) filled.push(['Legal Entity Name', n]);
       if (co) filled.push(['Country of Organization', co]);
       if (tc2) filled.push(['Country of Tax Residence', tc2]);
-      if (a) filled.push(['Entity Address', a]);
+      if (faParts.length) filled.push(['Entity Address', faParts.join(', ')]);
     }
   } else {
     const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
@@ -14149,10 +14168,10 @@ function trCalcFinalResult() {
       if (indStatus.value === 'citizen' || indStatus.value === 'green_card') {
         const n = document.getElementById('trIndLegalName').value.trim();
         const s = document.getElementById('trIndSsn').value.trim();
-        const a = document.getElementById('trIndAddress').value.trim();
+        const iaParts = [document.getElementById('trIndAddrStreet').value.trim(), document.getElementById('trIndAddrSuite').value.trim(), document.getElementById('trIndAddrCity').value.trim(), document.getElementById('trIndAddrState').value.trim().toUpperCase(), document.getElementById('trIndAddrZip').value.trim()].filter(Boolean);
         if (n) filled.push(['Legal Name', n]);
         if (s) filled.push(['SSN / ITIN', s]);
-        if (a) filled.push(['U.S. Address', a]);
+        if (iaParts.length) filled.push(['U.S. Address', iaParts.join(', ')]);
       } else {
         const present = document.getElementById('trPresentInUs').value;
         if (present) filled.push(['是否在美居留', present === 'yes' ? '是 Yes' : '否 No']);
@@ -14310,6 +14329,60 @@ async function verifyTrEntAddr() {
   }
 }
 
+async function verifyTrEntForeignAddr() {
+  const street = document.getElementById('trEntForeignAddrStreet').value.trim();
+  const street2 = document.getElementById('trEntForeignAddrSuite').value.trim();
+  const city = document.getElementById('trEntForeignAddrCity').value.trim();
+  const state = document.getElementById('trEntForeignAddrState').value.trim();
+  const zip = document.getElementById('trEntForeignAddrZip').value.trim();
+  const statusEl = document.getElementById('trEntForeignAddrStatus');
+  if (!street) { statusEl.textContent = '❌ 请先填写街道地址'; statusEl.style.color = '#dc2626'; return; }
+  statusEl.textContent = '⏳ 验证中...'; statusEl.style.color = '#854d0e';
+  const result = await validateAddress({ street, street2, city, state, zip });
+  if (result.verified && result.standardized) {
+    const s = result.standardized;
+    document.getElementById('trEntForeignAddrStreet').value = s.street || '';
+    document.getElementById('trEntForeignAddrSuite').value = s.street2 || '';
+    document.getElementById('trEntForeignAddrCity').value = s.city || '';
+    document.getElementById('trEntForeignAddrState').value = s.state || '';
+    document.getElementById('trEntForeignAddrZip').value = s.zip || '';
+    statusEl.textContent = '✅ 已验证并更新'; statusEl.style.color = '#16a34a';
+  } else if (result.verified) {
+    statusEl.textContent = '✅ 地址已验证'; statusEl.style.color = '#16a34a';
+  } else if (result.proceed) {
+    statusEl.textContent = '⚠️ 未验证，已跳过'; statusEl.style.color = '#d97706';
+  } else {
+    statusEl.textContent = '';
+  }
+}
+
+async function verifyTrIndAddr() {
+  const street = document.getElementById('trIndAddrStreet').value.trim();
+  const street2 = document.getElementById('trIndAddrSuite').value.trim();
+  const city = document.getElementById('trIndAddrCity').value.trim();
+  const state = document.getElementById('trIndAddrState').value.trim();
+  const zip = document.getElementById('trIndAddrZip').value.trim();
+  const statusEl = document.getElementById('trIndAddrStatus');
+  if (!street) { statusEl.textContent = '❌ 请先填写街道地址'; statusEl.style.color = '#dc2626'; return; }
+  statusEl.textContent = '⏳ 验证中...'; statusEl.style.color = '#854d0e';
+  const result = await validateAddress({ street, street2, city, state, zip });
+  if (result.verified && result.standardized) {
+    const s = result.standardized;
+    document.getElementById('trIndAddrStreet').value = s.street || '';
+    document.getElementById('trIndAddrSuite').value = s.street2 || '';
+    document.getElementById('trIndAddrCity').value = s.city || '';
+    document.getElementById('trIndAddrState').value = s.state || '';
+    document.getElementById('trIndAddrZip').value = s.zip || '';
+    statusEl.textContent = '✅ 已验证并更新'; statusEl.style.color = '#16a34a';
+  } else if (result.verified) {
+    statusEl.textContent = '✅ 地址已验证'; statusEl.style.color = '#16a34a';
+  } else if (result.proceed) {
+    statusEl.textContent = '⚠️ 未验证，已跳过'; statusEl.style.color = '#d97706';
+  } else {
+    statusEl.textContent = '';
+  }
+}
+
 function trWizardCollectData() {
   const type = document.getElementById('trTypeInd').checked ? 'individual' : 'entity';
   const d = { applicant_type: type };
@@ -14318,11 +14391,31 @@ function trWizardCollectData() {
     d.entity_country_org = document.getElementById('trEntForeignCountry').value.trim();
     d.country_tax_residence = document.getElementById('trEntForeignTaxCountry').value.trim();
     d.claim_treaty_benefit = document.getElementById('trEntTreaty').value || document.getElementById('trTreatyClaim').value;
+    if (d.is_us_person === 'yes') {
+      d.addr_street = document.getElementById('trEntAddrStreet').value.trim();
+      d.addr_street2 = document.getElementById('trEntAddrSuite').value.trim();
+      d.addr_city = document.getElementById('trEntAddrCity').value.trim();
+      d.addr_state = document.getElementById('trEntAddrState').value.trim();
+      d.addr_zip = document.getElementById('trEntAddrZip').value.trim();
+    } else {
+      d.addr_street = document.getElementById('trEntForeignAddrStreet').value.trim();
+      d.addr_street2 = document.getElementById('trEntForeignAddrSuite').value.trim();
+      d.addr_city = document.getElementById('trEntForeignAddrCity').value.trim();
+      d.addr_state = document.getElementById('trEntForeignAddrState').value.trim();
+      d.addr_zip = document.getElementById('trEntForeignAddrZip').value.trim();
+    }
   } else {
     const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
     if (indStatus && indStatus.value === 'citizen') { d.is_us_citizen = 'yes'; d.is_us_person = 'yes'; }
     else if (indStatus && indStatus.value === 'green_card') { d.has_green_card = 'yes'; d.is_us_person = 'yes'; }
-    else {
+    if (indStatus && (indStatus.value === 'citizen' || indStatus.value === 'green_card')) {
+      d.addr_street = document.getElementById('trIndAddrStreet').value.trim();
+      d.addr_street2 = document.getElementById('trIndAddrSuite').value.trim();
+      d.addr_city = document.getElementById('trIndAddrCity').value.trim();
+      d.addr_state = document.getElementById('trIndAddrState').value.trim();
+      d.addr_zip = document.getElementById('trIndAddrZip').value.trim();
+    }
+    if (indStatus && indStatus.value !== 'citizen' && indStatus.value !== 'green_card') {
       d.is_us_person = 'no';
       const present = document.getElementById('trPresentInUs').value;
       if (present === 'no') {
@@ -14363,10 +14456,10 @@ function trWizardReset() {
   document.getElementById('trTypeEntLabel').style.borderColor = 'var(--gray-200)';
   document.getElementById('trTypeEntLabel').style.background = '#fff';
   document.getElementById('trEntityUs').value = '';
-  ['trEntLegalName','trEntTaxClass','trEntEin','trEntAddrStreet','trEntAddrSuite','trEntAddrCity','trEntAddrState','trEntAddrZip','trEntForeignName','trEntForeignCountry','trEntForeignTaxCountry','trEntForeignAddr','trEntTreaty'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trEntLegalName','trEntTaxClass','trEntEin','trEntAddrStreet','trEntAddrSuite','trEntAddrCity','trEntAddrState','trEntAddrZip','trEntForeignName','trEntForeignCountry','trEntForeignTaxCountry','trEntForeignAddrStreet','trEntForeignAddrSuite','trEntForeignAddrCity','trEntForeignAddrState','trEntForeignAddrZip','trEntTreaty'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.querySelectorAll('input[name="trIndStatus"]').forEach(r => r.checked = false);
   ['trIndCitizenLabel','trIndGcLabel','trIndNeitherLabel'].forEach(id => { const el = document.getElementById(id); if (el) { el.style.borderColor = 'var(--gray-200)'; el.style.background = '#fff'; } });
-  ['trIndLegalName','trIndSsn','trIndAddress'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trIndLegalName','trIndSsn','trIndAddrStreet','trIndAddrSuite','trIndAddrCity','trIndAddrState','trIndAddrZip'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trIndUsFields').style.display = 'none';
   document.getElementById('trPresentInUs').value = '';
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -14418,11 +14511,21 @@ async function openTaxResidencyModal() {
       if (trData.is_us_person === 'yes') {
         const el = document.getElementById('trEntLegalName'); if (el) el.value = trData.entity_name || '';
         const ein = document.getElementById('trEntEin'); if (ein) ein.value = trData.ein || '';
+        if (trData.addr_street) document.getElementById('trEntAddrStreet').value = trData.addr_street;
+        if (trData.addr_street2) document.getElementById('trEntAddrSuite').value = trData.addr_street2;
+        if (trData.addr_city) document.getElementById('trEntAddrCity').value = trData.addr_city;
+        if (trData.addr_state) document.getElementById('trEntAddrState').value = trData.addr_state;
+        if (trData.addr_zip) document.getElementById('trEntAddrZip').value = trData.addr_zip;
       } else {
         const fn = document.getElementById('trEntForeignName'); if (fn) fn.value = trData.entity_name || '';
         const fc = document.getElementById('trEntForeignCountry'); if (fc) fc.value = trData.entity_country_org || '';
         const ftc = document.getElementById('trEntForeignTaxCountry'); if (ftc) ftc.value = trData.country_tax_residence || '';
         trEntCountryChange();
+        if (trData.addr_street) document.getElementById('trEntForeignAddrStreet').value = trData.addr_street;
+        if (trData.addr_street2) document.getElementById('trEntForeignAddrSuite').value = trData.addr_street2;
+        if (trData.addr_city) document.getElementById('trEntForeignAddrCity').value = trData.addr_city;
+        if (trData.addr_state) document.getElementById('trEntForeignAddrState').value = trData.addr_state;
+        if (trData.addr_zip) document.getElementById('trEntForeignAddrZip').value = trData.addr_zip;
       }
     }
     // Step 2B: individual path
@@ -14430,6 +14533,12 @@ async function openTaxResidencyModal() {
       if (trData.is_us_citizen === 'yes') trSelectIndStatus('citizen');
       else if (trData.has_green_card === 'yes') trSelectIndStatus('green_card');
       else if (trData.is_us_person === 'no') trSelectIndStatus('neither');
+      // Load individual address fields
+      if (trData.addr_street) { const el = document.getElementById('trIndAddrStreet'); if (el) el.value = trData.addr_street; }
+      if (trData.addr_street2) { const el = document.getElementById('trIndAddrSuite'); if (el) el.value = trData.addr_street2; }
+      if (trData.addr_city) { const el = document.getElementById('trIndAddrCity'); if (el) el.value = trData.addr_city; }
+      if (trData.addr_state) { const el = document.getElementById('trIndAddrState'); if (el) el.value = trData.addr_state; }
+      if (trData.addr_zip) { const el = document.getElementById('trIndAddrZip'); if (el) el.value = trData.addr_zip; }
     }
     // Step 3: SPT data — set "present in US" toggle based on saved data
     if (trData.is_us_person === 'no' && (trData.days_current_year > 0 || trData.days_last_year > 0 || trData.days_two_years_ago > 0 || trData.first_entry_date)) {
