@@ -2818,6 +2818,11 @@ tr:hover td{background:var(--sky-light)}
     <textarea id="wpNotes" rows="2" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical" placeholder="审核备注、附加信息..."></textarea>
   </div>
 
+  <div id="wpDocUploads" style="margin-bottom:.75rem">
+    <label style="font-size:.78rem;font-weight:600;display:block;margin-bottom:.5rem">📎 上传证件文件 Upload Documents (PDF / 图片)</label>
+    <div id="wpUploadZones"></div>
+  </div>
+
   <div id="wpExpiryWarning" style="display:none;background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:.5rem .8rem;margin-bottom:.75rem;font-size:.82rem;color:#92400e;font-weight:600"></div>
 
   <div id="wpCurrentInfo" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:.75rem 1rem;margin-bottom:.75rem;font-size:.82rem"></div>
@@ -15633,6 +15638,136 @@ function wpShowRequiredDocs(category) {
   el.style.display = '';
 }
 
+// ─── Work Permit File Upload Logic ───
+const WP_UPLOAD_DOCS = {
+  citizen: ['美国护照 U.S. Passport 或其他身份证明'],
+  green_card: ['绿卡正反面 Green Card (I-551) front & back', '护照 Passport'],
+  work_visa: ['护照 Passport', 'I-797 批准通知 Approval Notice', 'I-94 入境记录'],
+  ead: ['EAD 工卡 (I-766) 正反面 front & back', '护照 Passport'],
+  opt: ['EAD 工卡 (I-766) 正反面 front & back', 'I-20（含 OPT endorsement）', '护照 Passport'],
+  cpt: ['I-20（含 CPT 授权页）', '护照 Passport'],
+  j1: ['DS-2019', '护照 Passport'],
+  us_entity: ['公司注册文件 Articles of Formation', 'EIN 确认函 IRS EIN Letter'],
+  foreign_entity: ['实体注册证明 Certificate of Incorporation', '授权签署人证明 Signing Authority'],
+  generic: ['证件文件 Document']
+};
+
+let _wpUploadedDocs = []; // track uploaded docs for current session
+
+function wpRenderUploadZones(category) {
+  const container = document.getElementById('wpUploadZones');
+  const docs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
+  container.innerHTML = '';
+  docs.forEach((label, idx) => {
+    const zoneId = `wpUploadZone_${idx}`;
+    container.insertAdjacentHTML('beforeend', `
+      <div id="${zoneId}" style="border:2px dashed var(--gray-200);border-radius:8px;padding:.6rem .8rem;margin-bottom:.5rem;background:#fafafa;transition:border-color .2s,background .2s">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:.5rem">
+          <span style="font-size:.78rem;color:#555;flex:1">📄 ${label}</span>
+          <div id="${zoneId}_status" style="font-size:.78rem;color:#999;flex-shrink:0">未上传</div>
+        </div>
+        <div id="${zoneId}_file" style="margin-top:.4rem;display:flex;align-items:center;gap:.5rem">
+          <input type="file" id="${zoneId}_input" accept=".pdf,.jpg,.jpeg,.png,.gif,.heic,.heif" style="font-size:.78rem;flex:1"
+            onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
+        </div>
+        <div id="${zoneId}_existing" style="margin-top:.3rem"></div>
+      </div>
+    `);
+  });
+}
+
+async function wpHandleFileSelect(idx, label, input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  const maxSize = 20 * 1024 * 1024;
+  if (file.size > maxSize) { showToast('文件大小不能超过 20MB', 'error'); input.value = ''; return; }
+
+  const zoneId = `wpUploadZone_${idx}`;
+  const statusEl = document.getElementById(`${zoneId}_status`);
+  statusEl.textContent = '上传中...';
+  statusEl.style.color = '#d97706';
+
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('doc_label', label);
+
+  try {
+    const res = await fetch(API + `/admin/worker-accounts/${_onboardingWorkerId}/work-permit-docs`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
+      body: fd
+    });
+    const data = await res.json();
+    if (data.success) {
+      statusEl.innerHTML = `<span style="color:#059669">✅ 已上传</span>`;
+      input.style.display = 'none';
+      // Show the uploaded file info
+      const existingEl = document.getElementById(`${zoneId}_existing`);
+      existingEl.insertAdjacentHTML('beforeend', wpDocFileHtml(data.id, data.file_name));
+      _wpUploadedDocs.push(data.id);
+    } else {
+      statusEl.textContent = '上传失败';
+      statusEl.style.color = '#dc2626';
+      showToast(data.error || '上传失败', 'error');
+    }
+  } catch(e) {
+    statusEl.textContent = '上传失败';
+    statusEl.style.color = '#dc2626';
+    showToast('上传失败: ' + e.message, 'error');
+  }
+}
+
+function wpDocFileHtml(docId, fileName) {
+  const isImage = /\.(jpg|jpeg|png|gif|heic|heif)$/i.test(fileName);
+  return `<div id="wpDoc_${docId}" style="display:flex;align-items:center;gap:.4rem;padding:.25rem 0;font-size:.78rem">
+    <span style="color:#6b7280">${isImage ? '🖼️' : '📄'}</span>
+    <a href="${API}/admin/work-permit-docs/${docId}/download" target="_blank" style="color:var(--sky);text-decoration:underline;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fileName}</a>
+    <button onclick="wpDeleteDoc(${docId})" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:.75rem;padding:2px 4px" title="删除">✕</button>
+  </div>`;
+}
+
+async function wpDeleteDoc(docId) {
+  if (!confirm('确认删除此文件？')) return;
+  try {
+    const res = await fetch(API + `/admin/work-permit-docs/${docId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${TOKEN}` }
+    });
+    const data = await res.json();
+    if (data.success) {
+      const el = document.getElementById(`wpDoc_${docId}`);
+      if (el) el.remove();
+      _wpUploadedDocs = _wpUploadedDocs.filter(id => id !== docId);
+      showToast('文件已删除', 'success');
+    }
+  } catch(e) { showToast('删除失败', 'error'); }
+}
+
+async function wpLoadExistingDocs(category) {
+  try {
+    const docs = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit-docs`);
+    if (!docs || !Array.isArray(docs) || docs.length === 0) return;
+    _wpUploadedDocs = docs.map(d => d.id);
+    const uploadDocs = WP_UPLOAD_DOCS[category] || WP_UPLOAD_DOCS.generic;
+    // Match existing docs to zones by label, or show remaining in first zone
+    const matched = new Set();
+    docs.forEach(doc => {
+      let zoneIdx = uploadDocs.findIndex(label => label === doc.doc_label);
+      if (zoneIdx < 0) zoneIdx = 0; // fallback to first zone
+      const zoneId = `wpUploadZone_${zoneIdx}`;
+      const existingEl = document.getElementById(`${zoneId}_existing`);
+      if (existingEl) {
+        existingEl.insertAdjacentHTML('beforeend', wpDocFileHtml(doc.id, doc.file_name));
+        if (!matched.has(zoneIdx)) {
+          matched.add(zoneIdx);
+          const statusEl = document.getElementById(`${zoneId}_status`);
+          if (statusEl) statusEl.innerHTML = `<span style="color:#059669">✅ 已上传</span>`;
+        }
+      }
+    });
+  } catch(e) { /* no existing docs */ }
+}
+
 function wpDetectCategory(trData) {
   if (!trData) return 'generic';
   const appType = trData.applicant_type;
@@ -15669,6 +15804,8 @@ async function openWorkPermitModal() {
   document.getElementById('wpExpiryWarning').style.display = 'none';
   document.getElementById('wpCurrentInfo').style.display = 'none';
   document.getElementById('wpRequiredDocs').style.display = 'none';
+  document.getElementById('wpUploadZones').innerHTML = '';
+  _wpUploadedDocs = [];
 
   // Load questionnaire data to determine category
   let wpCategory = 'generic';
@@ -15697,6 +15834,8 @@ async function openWorkPermitModal() {
   // Populate dropdown and show required docs
   wpPopulateDocType(wpCategory);
   wpShowRequiredDocs(wpCategory);
+  wpRenderUploadZones(wpCategory);
+  wpLoadExistingDocs(wpCategory);
 
   // Load existing work permit data
   try {
