@@ -3005,98 +3005,25 @@ tr:hover td{background:var(--sky-light)}
         </div>
       </div>
       <div id="trSptBlock" style="display:none">
-        <!-- Entry/Exit Records 出入境记录 -->
+        <!-- Status Timeline 身份时间线 -->
         <div style="margin-bottom:.6rem;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:.6rem .8rem">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
-            <div style="font-size:.82rem;font-weight:700;color:#0369a1">出入境记录 Entry/Exit Records</div>
-            <button type="button" onclick="trAddEntryExitRow()" style="font-size:.72rem;padding:.2rem .6rem;border:1px dashed #0ea5e9;border-radius:5px;background:#fff;cursor:pointer;color:#0369a1;font-weight:600">+ 添加记录</button>
+            <div style="font-size:.82rem;font-weight:700;color:#0369a1">📋 身份时间线 Immigration Status Timeline</div>
+            <button type="button" onclick="trAddStatusPeriod()" style="font-size:.72rem;padding:.2rem .6rem;border:1px dashed #0ea5e9;border-radius:5px;background:#fff;cursor:pointer;color:#0369a1;font-weight:600">+ 添加阶段 Add Period</button>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 120px 24px;gap:.3rem;margin-bottom:.3rem;font-size:.7rem;color:#6b7280;font-weight:600">
-            <div>入境日期 Entry</div><div>出境日期 Exit</div><div>签证类型 Visa</div><div></div>
+          <div style="font-size:.72rem;color:#6b7280;line-height:1.5;margin-bottom:.4rem">
+            请按时间顺序添加在美期间各身份阶段。身份变更（如 F-1→H-1B）请分段添加。<br>
+            每段可选填出境记录，未填则视为全程在美。系统自动计算在美天数、豁免天数及 SPT。
           </div>
-          <div id="trEntryExitRows"></div>
-          <div id="trEntryExitSummary" style="display:none;font-size:.75rem;color:#0369a1;margin-top:.3rem;padding:.3rem .5rem;background:#e0f2fe;border-radius:4px"></div>
+          <div style="display:grid;grid-template-columns:140px 1fr 1fr 24px;gap:.3rem;font-size:.68rem;color:#6b7280;font-weight:600;margin-bottom:.3rem;padding:0 .1rem">
+            <div>身份/签证 Status</div><div>开始日期 Start</div><div>结束日期 End</div><div></div>
+          </div>
+          <div id="trStatusPeriods"></div>
+          <div id="trTimelineSummary" style="display:none;font-size:.78rem;color:#0369a1;margin-top:.4rem;padding:.5rem .7rem;background:#e0f2fe;border-radius:5px;line-height:1.7"></div>
         </div>
         <input type="hidden" id="trSptFirstEntry" value="">
         <input type="hidden" id="trSptLastEntry" value="">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.5rem">
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600" id="trLabelCY">今年在美天数</label>
-            <select id="trSptModeCY" onchange="trDaysMode('CY')" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.75rem;margin-bottom:.3rem;color:#6b7280">
-              <option value="manual">手动输入</option>
-              <option value="records">按出入境记录计算</option>
-              <option value="full">全年都在美国</option>
-              <option value="ytd">从年初至今</option>
-              <option value="range">选择日期范围</option>
-            </select>
-            <input type="number" id="trSptDaysCY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trDaysModeReset('CY'); trSptCalc()">
-            <div id="trSptRangeCY" style="display:none;margin-top:.3rem">
-              <input type="date" id="trSptFromCY" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem;margin-bottom:.2rem" onchange="trDaysRange('CY')">
-              <input type="date" id="trSptToCY" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem" onchange="trDaysRange('CY')">
-            </div>
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600" id="trLabelLY">去年在美天数</label>
-            <select id="trSptModeLY" onchange="trDaysMode('LY')" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.75rem;margin-bottom:.3rem;color:#6b7280">
-              <option value="manual">手动输入</option>
-              <option value="records">按出入境记录计算</option>
-              <option value="full">全年都在美国</option>
-              <option value="range">选择日期范围</option>
-            </select>
-            <input type="number" id="trSptDaysLY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trDaysModeReset('LY'); trSptCalc()">
-            <div id="trSptRangeLY" style="display:none;margin-top:.3rem">
-              <input type="date" id="trSptFromLY" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem;margin-bottom:.2rem" onchange="trDaysRange('LY')">
-              <input type="date" id="trSptToLY" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem" onchange="trDaysRange('LY')">
-            </div>
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.78rem;font-weight:600" id="trLabel2Y">前年在美天数</label>
-            <select id="trSptMode2Y" onchange="trDaysMode('2Y')" style="width:100%;padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.75rem;margin-bottom:.3rem;color:#6b7280">
-              <option value="manual">手动输入</option>
-              <option value="records">按出入境记录计算</option>
-              <option value="full">全年都在美国</option>
-              <option value="range">选择日期范围</option>
-            </select>
-            <input type="number" id="trSptDays2Y" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trDaysModeReset('2Y'); trSptCalc()">
-            <div id="trSptRange2Y" style="display:none;margin-top:.3rem">
-              <input type="date" id="trSptFrom2Y" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem;margin-bottom:.2rem" onchange="trDaysRange('2Y')">
-              <input type="date" id="trSptTo2Y" style="width:100%;padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.72rem" onchange="trDaysRange('2Y')">
-            </div>
-          </div>
-        </div>
         <div id="trSptPreview" style="display:none;padding:.4rem .7rem;border-radius:6px;font-size:.8rem;font-weight:600;margin-bottom:.5rem"></div>
-        <div class="field" style="margin-bottom:.5rem">
-          <label style="font-size:.78rem;font-weight:600">是否有 F/J/M/Q 身份的排除天数？</label>
-          <div style="font-size:.72rem;color:#6b7280;line-height:1.5;margin-bottom:.3rem;background:#f9fafb;border-radius:4px;padding:.3rem .5rem">
-            F-1 学生最多可豁免 <b>5 个日曆年</b>（累计终身），J-1 学者最多 <b>2 年</b>（最近 6 年内）。<br>
-            只有持 F/J/M/Q 签证期间的天数可以排除，<b>H-1B 等工作签证期间的天数不能排除，也不占用豁免额度</b>。<br>
-            例: F-1 三年 → H-1B 两年 → 再回 F-1，已用 3 年豁免额度，还剩 2 年可用。
-          </div>
-          <select id="trSptExempt" onchange="trResidentToggle()" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-            <option value="">—</option><option value="yes">Yes</option><option value="no">No</option>
-          </select>
-        </div>
-        <div id="trSptExemptDetail" style="display:none">
-          <input type="hidden" id="trSptExemptVisa" value="">
-          <label style="font-size:.78rem;font-weight:600;margin-bottom:.3rem;display:block">签证/身份类型与日期范围</label>
-          <div id="trExemptRows"></div>
-          <button type="button" onclick="trAddExemptRow()" style="font-size:.72rem;padding:.2rem .6rem;border:1px dashed var(--gray-300);border-radius:5px;background:#fff;cursor:pointer;color:#6b7280;margin-bottom:.5rem">+ 添加一条签证记录</button>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.3rem">
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600" id="trExLabelCY">今年排除天数</label>
-              <input type="number" id="trExemptDaysCY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
-            </div>
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600" id="trExLabelLY">去年排除天数</label>
-              <input type="number" id="trExemptDaysLY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
-            </div>
-            <div class="field" style="margin-bottom:0">
-              <label style="font-size:.78rem;font-weight:600" id="trExLabel2Y">前年排除天数</label>
-              <input type="number" id="trExemptDays2Y" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
-            </div>
-          </div>
-          <div id="trExemptAutoCalcHint" style="display:none;font-size:.7rem;color:#6b7280;margin-bottom:.5rem"></div>
-        </div>
         <div class="field" style="margin-bottom:.5rem">
           <label style="font-size:.78rem;font-weight:600">Country of Citizenship</label>
           <select id="trSptCitizenship" onchange="trSyncTaxCountry(); trCalcFinalResult()" class="tr-country-select" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
@@ -13980,15 +13907,10 @@ function trSyncTaxCountry() {
     const cit = document.getElementById('trNrCitizenship').value;
     document.getElementById('trNrTaxCountry').value = cit || '';
   } else if (present === 'yes') {
-    // Was in US → check SPT
-    const cy = parseInt(document.getElementById('trSptDaysCY').value) || 0;
-    const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
-    const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
-    const isExempt = document.getElementById('trSptExempt').value === 'yes';
-    const exCY = isExempt ? Math.min(parseInt(document.getElementById('trExemptDaysCY').value) || 0, cy) : 0;
-    const exLY = isExempt ? Math.min(parseInt(document.getElementById('trExemptDaysLY').value) || 0, ly) : 0;
-    const ex2Y = isExempt ? Math.min(parseInt(document.getElementById('trExemptDays2Y').value) || 0, ty) : 0;
-    const adjCY = cy - exCY, adjLY = ly - exLY, adj2Y = ty - ex2Y;
+    // Was in US → check SPT using timeline data
+    const diu = window._trTimelineDaysInUs || [0,0,0];
+    const exd = window._trTimelineExemptDays || [0,0,0];
+    const adjCY = diu[0]-exd[0], adjLY = diu[1]-exd[1], adj2Y = diu[2]-exd[2];
     const w = adjCY + (adjLY / 3) + (adj2Y / 6);
     const meetsSpt = adjCY >= 31 && w >= 183;
     const cit = document.getElementById('trSptCitizenship').value;
@@ -14051,7 +13973,7 @@ function trClearDownstream() {
   // Clear Step 3
   document.getElementById('trPresentInUs').value = '';
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptLastEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  document.getElementById('trSptExempt').value = '';
+  const _trSE = document.getElementById('trSptExempt'); if (_trSE) _trSE.value = '';
   ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
   trClearExemptRows();
   trClearEntryExitRows();
@@ -14093,7 +14015,7 @@ function trSelectIndStatus(s) {
   // Clear Steps 3 & 4 fields when changing identity status
   document.getElementById('trPresentInUs').value = '';
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptLastEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  document.getElementById('trSptExempt').value = '';
+  const _trSE = document.getElementById('trSptExempt'); if (_trSE) _trSE.value = '';
   ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
   trClearExemptRows();
   trClearEntryExitRows();
@@ -14173,15 +14095,12 @@ function trStep3Next() {
   if (present === 'no') {
     if (!document.getElementById('trNrCitizenship').value) return showToast('请选择 Country of Citizenship', 'error');
   } else {
-    const cy = parseInt(document.getElementById('trSptDaysCY').value) || 0;
-    const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
-    const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
-    if (!cy && !ly && !ty) return showToast('请填写在美天数', 'error');
-    if (_trDaysValidationError()) return showToast(_trDaysValidationError(), 'error');
+    const periods = trGetStatusPeriods();
+    if (!periods.length || !periods.some(p => p.visa && p.start)) return showToast('请至少添加一个身份阶段并填写日期', 'error');
     if (!document.getElementById('trSptCitizenship').value) return showToast('请选择 Country of Citizenship', 'error');
   }
-  // Work permit category is required
-  if (!document.getElementById('trWorkPermitCategory').value) return showToast('请选择工作许可类型 Work Permit Category', 'error');
+  // Work permit category is required only if user has been present in the US
+  if (present === 'yes' && !document.getElementById('trWorkPermitCategory').value) return showToast('请选择工作许可类型 Work Permit Category', 'error');
   // Hide Step 3, show Step 4
   document.getElementById('trStep3').style.display = 'none';
   document.getElementById('trStep4').style.display = '';
@@ -14227,10 +14146,7 @@ function trResidentToggle() {
   const present = document.getElementById('trPresentInUs').value;
   document.getElementById('trNeverInUs').style.display = present === 'no' ? '' : 'none';
   document.getElementById('trSptBlock').style.display = present === 'yes' ? '' : 'none';
-  const exempt = document.getElementById('trSptExempt').value;
-  document.getElementById('trSptExemptDetail').style.display = exempt === 'yes' ? '' : 'none';
-  // Auto-add first row if switching to yes and no rows exist
-  if (exempt === 'yes' && !document.querySelectorAll('#trExemptRows > div').length) trAddExemptRow();
+  document.getElementById('trWorkPermitCatBlock').style.display = present === 'yes' ? '' : 'none';
   trSyncTaxCountry();
   trCalcFinalResult();
 }
@@ -14275,438 +14191,240 @@ function trWorkPermitCategoryChange() {
 }
 
 // ─── Entry/Exit Records (出入境记录) ───
-let _trEntryExitId = 0;
-function trAddEntryExitRow(entry, exit, visa) {
-  const container = document.getElementById('trEntryExitRows');
-  const id = _trEntryExitId++;
+// ─── Status Timeline (身份时间线) ───
+let _trStatusPeriodId = 0;
+let _trTripRowId = 0;
+const _trVisaOptions = [
+  ['', '— 身份/签证 —'],
+  ['F-1', 'F-1 学生'], ['F-2', 'F-2'], ['J-1', 'J-1 学者'], ['J-2', 'J-2'],
+  ['M-1', 'M-1'], ['M-2', 'M-2'], ['Q-1', 'Q-1'], ['Q-2', 'Q-2'],
+  ['H-1B', 'H-1B'], ['H-4', 'H-4'], ['L-1', 'L-1'], ['L-2', 'L-2'],
+  ['O-1', 'O-1'], ['TN', 'TN'], ['E-2', 'E-2'],
+  ['OPT', 'OPT/STEM OPT'], ['CPT', 'CPT'],
+  ['B-1/B-2', 'B-1/B-2'], ['OTHER', '其他 Other']
+];
+function _trIsExemptVisa(visa) {
+  return ['F-1','F-2','J-1','J-2','M-1','M-2','Q-1','Q-2'].includes(visa);
+}
+function trAddStatusPeriod(visa, start, end, trips) {
+  const container = document.getElementById('trStatusPeriods');
+  const id = _trStatusPeriodId++;
   const div = document.createElement('div');
-  div.id = 'trEERow' + id;
-  div.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 120px 24px;gap:.3rem;align-items:center;margin-bottom:.3rem';
+  div.id = 'trSP' + id;
+  div.className = 'tr-status-period';
+  div.style.cssText = 'border:1px solid #e5e7eb;border-radius:6px;padding:.5rem .6rem;margin-bottom:.4rem;background:#fff';
+  const optHtml = _trVisaOptions.map(([v, l]) =>
+    `<option value="${v}"${visa === v ? ' selected' : ''}>${l}</option>`
+  ).join('');
   div.innerHTML = `
-    <input type="date" data-field="entry" value="${entry||''}" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem" onchange="trEntryExitChanged()">
-    <input type="date" data-field="exit" value="${exit||''}" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem" placeholder="至今仍在美" onchange="trEntryExitChanged()">
-    <select data-field="visa" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.75rem">
-      <option value=""${!visa?' selected':''}>—</option>
-      <option value="F-1"${visa==='F-1'?' selected':''}>F-1</option>
-      <option value="F-2"${visa==='F-2'?' selected':''}>F-2</option>
-      <option value="J-1"${visa==='J-1'?' selected':''}>J-1</option>
-      <option value="J-2"${visa==='J-2'?' selected':''}>J-2</option>
-      <option value="M-1"${visa==='M-1'?' selected':''}>M-1</option>
-      <option value="H-1B"${visa==='H-1B'?' selected':''}>H-1B</option>
-      <option value="L-1"${visa==='L-1'?' selected':''}>L-1</option>
-      <option value="O-1"${visa==='O-1'?' selected':''}>O-1</option>
-      <option value="OPT"${visa==='OPT'?' selected':''}>OPT</option>
-      <option value="CPT"${visa==='CPT'?' selected':''}>CPT</option>
-      <option value="B-1/B-2"${visa==='B-1/B-2'?' selected':''}>B-1/B-2</option>
-      <option value="OTHER"${visa==='OTHER'?' selected':''}>其他</option>
-    </select>
-    <button type="button" onclick="trRemoveEntryExitRow(${id})" style="border:none;background:none;cursor:pointer;font-size:.85rem;color:#dc2626;padding:0;line-height:1" title="删除">✕</button>
+    <div style="display:grid;grid-template-columns:140px 1fr 1fr 24px;gap:.3rem;align-items:center">
+      <select data-field="visa" onchange="trTimelineChanged()" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem">${optHtml}</select>
+      <input type="date" data-field="start" value="${start||''}" onchange="trTimelineChanged()" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem">
+      <input type="date" data-field="end" value="${end||''}" onchange="trTimelineChanged()" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem" placeholder="至今">
+      <button type="button" onclick="trRemoveStatusPeriod(${id})" style="border:none;background:none;cursor:pointer;font-size:.85rem;color:#dc2626;padding:0;line-height:1" title="删除">✕</button>
+    </div>
+    <div style="margin-top:.3rem;padding-left:.2rem">
+      <button type="button" onclick="trTogglePeriodTrips(${id})" data-trips-btn style="font-size:.68rem;padding:.15rem .5rem;border:1px dashed var(--gray-300);border-radius:4px;background:#fff;cursor:pointer;color:#6b7280">+ 此期间有出境记录 Add trips</button>
+      <div data-trips-container style="display:none;margin-top:.3rem;background:#fefce8;border:1px solid #fde68a;border-radius:5px;padding:.4rem .5rem">
+        <div style="font-size:.68rem;color:#92400e;font-weight:600;margin-bottom:.3rem">此身份期间的出境记录（离开美国的日期）</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 24px;gap:.2rem;font-size:.66rem;color:#6b7280;font-weight:600;margin-bottom:.2rem">
+          <div>离开日期 Left</div><div>返回日期 Returned</div><div></div>
+        </div>
+        <div data-trips-rows></div>
+        <button type="button" onclick="trAddTripRow(${id})" style="font-size:.68rem;padding:.15rem .5rem;border:1px dashed #d97706;border-radius:4px;background:#fff;cursor:pointer;color:#92400e;margin-top:.2rem">+ 添加出境 Add trip</button>
+      </div>
+    </div>
   `;
   container.appendChild(div);
-  if (entry) trEntryExitChanged();
+  if (trips && trips.length) {
+    const tc = div.querySelector('[data-trips-container]');
+    tc.style.display = '';
+    div.querySelector('[data-trips-btn]').style.display = 'none';
+    trips.forEach(t => trAddTripRow(id, t.left, t.returned));
+  }
+  if (start) trTimelineChanged();
 }
-function trRemoveEntryExitRow(id) {
-  const el = document.getElementById('trEERow' + id);
+function trRemoveStatusPeriod(id) {
+  const el = document.getElementById('trSP' + id);
   if (el) el.remove();
-  trEntryExitChanged();
+  trTimelineChanged();
 }
-function trGetEntryExitRecords() {
-  const rows = document.querySelectorAll('#trEntryExitRows > div');
-  const records = [];
-  rows.forEach(r => {
-    const entry = r.querySelector('[data-field="entry"]').value;
-    const exit = r.querySelector('[data-field="exit"]').value;
-    const visa = r.querySelector('[data-field="visa"]').value;
-    if (entry) records.push({ entry, exit: exit || null, visa: visa || '' });
+function trTogglePeriodTrips(id) {
+  const period = document.getElementById('trSP' + id);
+  if (!period) return;
+  const container = period.querySelector('[data-trips-container]');
+  const btn = period.querySelector('[data-trips-btn]');
+  container.style.display = '';
+  btn.style.display = 'none';
+  if (!period.querySelectorAll('[data-trips-rows] > div').length) trAddTripRow(id);
+}
+function trAddTripRow(periodId, left, returned) {
+  const period = document.getElementById('trSP' + periodId);
+  if (!period) return;
+  const container = period.querySelector('[data-trips-rows]');
+  const tid = _trTripRowId++;
+  const row = document.createElement('div');
+  row.id = 'trTrip' + tid;
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 24px;gap:.2rem;align-items:center;margin-bottom:.2rem';
+  row.innerHTML = `
+    <input type="date" data-field="left" value="${left||''}" onchange="trTimelineChanged()" style="padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.75rem">
+    <input type="date" data-field="returned" value="${returned||''}" onchange="trTimelineChanged()" style="padding:.25rem .4rem;border:1px solid var(--gray-200);border-radius:4px;font-size:.75rem">
+    <button type="button" onclick="trRemoveTripRow(${tid})" style="border:none;background:none;cursor:pointer;font-size:.8rem;color:#dc2626;padding:0;line-height:1">✕</button>
+  `;
+  container.appendChild(row);
+  if (left || returned) trTimelineChanged();
+}
+function trRemoveTripRow(id) {
+  const el = document.getElementById('trTrip' + id);
+  if (el) el.remove();
+  trTimelineChanged();
+}
+function trGetStatusPeriods() {
+  const periods = [];
+  document.querySelectorAll('#trStatusPeriods > div.tr-status-period').forEach(div => {
+    const visa = div.querySelector('[data-field="visa"]').value;
+    const start = div.querySelector('[data-field="start"]').value;
+    const end = div.querySelector('[data-field="end"]').value;
+    const trips = [];
+    div.querySelectorAll('[data-trips-rows] > div').forEach(tr => {
+      const left = tr.querySelector('[data-field="left"]').value;
+      const returned = tr.querySelector('[data-field="returned"]').value;
+      if (left || returned) trips.push({ left, returned });
+    });
+    if (visa || start || end) periods.push({ visa, start, end: end || null, trips });
   });
-  // Sort by entry date
-  records.sort((a, b) => a.entry.localeCompare(b.entry));
-  return records;
+  periods.sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  return periods;
 }
-function trCalcDaysFromRecords(year) {
-  const records = trGetEntryExitRecords();
-  if (!records.length) return 0;
+function trClearStatusPeriods() {
+  document.getElementById('trStatusPeriods').innerHTML = '';
+  _trStatusPeriodId = 0;
+  _trTripRowId = 0;
+  const sum = document.getElementById('trTimelineSummary');
+  if (sum) sum.style.display = 'none';
+  window._trTimelineDaysInUs = [0,0,0];
+  window._trTimelineExemptDays = [0,0,0];
+  window._trTimelineHasExempt = false;
+  window._trTimelineExemptParts = [];
+}
+function _trCalcPeriodDaysInYear(period, year, exemptOnly) {
+  if (!period.start) return 0;
+  if (exemptOnly && !_trIsExemptVisa(period.visa)) return 0;
   const yearStart = new Date(year, 0, 1);
   const now = new Date();
   const yearEnd = (year === now.getFullYear()) ? now : new Date(year, 11, 31);
-  let totalDays = 0;
-  for (const rec of records) {
-    const recEntry = new Date(rec.entry + 'T00:00:00');
-    const recExit = rec.exit ? new Date(rec.exit + 'T00:00:00') : now;
-    // Clamp to year boundaries
-    const start = recEntry < yearStart ? yearStart : recEntry;
-    const end = recExit > yearEnd ? yearEnd : recExit;
-    if (start > end) continue; // No overlap with this year
-    const days = Math.round((end - start) / 86400000) + 1;
-    totalDays += days;
+  const pStart = new Date(period.start + 'T00:00:00');
+  const pEnd = period.end ? new Date(period.end + 'T00:00:00') : now;
+  const start = pStart < yearStart ? yearStart : pStart;
+  const end = pEnd > yearEnd ? yearEnd : pEnd;
+  if (start > end) return 0;
+  let days = Math.round((end - start) / 86400000) + 1;
+  if (period.trips && period.trips.length) {
+    for (const trip of period.trips) {
+      if (!trip.left || !trip.returned) continue;
+      const tLeft = new Date(trip.left + 'T00:00:00');
+      const tRet = new Date(trip.returned + 'T00:00:00');
+      const tStart = tLeft < start ? start : tLeft;
+      const tEnd = tRet > end ? end : tRet;
+      if (tStart <= tEnd) days -= Math.round((tEnd - tStart) / 86400000) + 1;
+    }
   }
-  return totalDays;
+  return Math.max(0, days);
 }
-function trEntryExitChanged() {
-  const records = trGetEntryExitRecords();
-  // Sync first/last entry hidden fields
-  const firstEl = document.getElementById('trSptFirstEntry');
-  const lastEl = document.getElementById('trSptLastEntry');
-  if (records.length) {
-    firstEl.value = records[0].entry;
-    lastEl.value = records[records.length - 1].entry;
-  } else {
-    firstEl.value = '';
-    lastEl.value = '';
+function trTimelineChanged() {
+  const periods = trGetStatusPeriods();
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const years = [thisYear, thisYear - 1, thisYear - 2];
+  const daysInUs = [0, 0, 0];
+  const exemptDays = [0, 0, 0];
+  let firstEntry = null, lastEnd = null;
+  let hasExemptVisa = false;
+  for (const p of periods) {
+    if (!p.start) continue;
+    if (!firstEntry || p.start < firstEntry) firstEntry = p.start;
+    const pEnd = p.end || now.toISOString().slice(0, 10);
+    if (!lastEnd || pEnd > lastEnd) lastEnd = pEnd;
+    if (_trIsExemptVisa(p.visa)) hasExemptVisa = true;
+    for (let i = 0; i < 3; i++) {
+      daysInUs[i] += _trCalcPeriodDaysInYear(p, years[i], false);
+      exemptDays[i] += _trCalcPeriodDaysInYear(p, years[i], true);
+    }
   }
+  // Populate hidden compat fields
+  document.getElementById('trSptFirstEntry').value = firstEntry || '';
+  document.getElementById('trSptLastEntry').value = lastEnd || '';
+  // Build exempt visa string for compat
+  const exemptParts = periods.filter(p => _trIsExemptVisa(p.visa) && p.start)
+    .map(p => `${p.visa}, ${p.start} ~ ${p.end || '至今'}`);
   // Update summary
-  const sumEl = document.getElementById('trEntryExitSummary');
-  if (records.length) {
-    const thisYear = new Date().getFullYear();
-    const d0 = trCalcDaysFromRecords(thisYear);
-    const d1 = trCalcDaysFromRecords(thisYear - 1);
-    const d2 = trCalcDaysFromRecords(thisYear - 2);
+  const sumEl = document.getElementById('trTimelineSummary');
+  if (periods.length && periods.some(p => p.start)) {
+    const adjCY = daysInUs[0] - exemptDays[0];
+    const adjLY = daysInUs[1] - exemptDays[1];
+    const adj2Y = daysInUs[2] - exemptDays[2];
+    const wRaw = daysInUs[0] + (daysInUs[1] / 3) + (daysInUs[2] / 6);
+    const wAdj = adjCY + (adjLY / 3) + (adj2Y / 6);
+    const meetsSpt = adjCY >= 31 && wAdj >= 183;
+    let html = `<b>自动计算结果:</b><br>`;
+    html += `📅 在美天数: ${years[0]}年=<b>${daysInUs[0]}</b>天, ${years[1]}年=<b>${daysInUs[1]}</b>天, ${years[2]}年=<b>${daysInUs[2]}</b>天<br>`;
+    if (hasExemptVisa && (exemptDays[0] || exemptDays[1] || exemptDays[2])) {
+      html += `🎓 F/J/M/Q 豁免天数: ${years[0]}年=${exemptDays[0]}天, ${years[1]}年=${exemptDays[1]}天, ${years[2]}年=${exemptDays[2]}天<br>`;
+      html += `📊 SPT (排除后): <b>${wAdj.toFixed(1)}</b> (${adjCY}+${adjLY}/3+${adj2Y}/6)`;
+      if (Math.abs(wRaw - wAdj) > 0.01) html += ` <span style="font-size:.72rem;opacity:.7">[排除前: ${wRaw.toFixed(1)}]</span>`;
+    } else {
+      html += `📊 SPT: <b>${wRaw.toFixed(1)}</b> (${daysInUs[0]}+${daysInUs[1]}/3+${daysInUs[2]}/6)`;
+    }
+    html += ` → <b style="color:${meetsSpt ? '#dc2626' : '#16a34a'}">${meetsSpt ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`;
     sumEl.style.display = '';
-    sumEl.innerHTML = `共 ${records.length} 条记录 · 第一次入境: ${records[0].entry} · 最近入境: ${records[records.length-1].entry}<br>` +
-      `按记录计算在美天数: ${thisYear}年=${d0}天, ${thisYear-1}年=${d1}天, ${thisYear-2}年=${d2}天`;
+    sumEl.innerHTML = html;
+  } else if (periods.length) {
+    sumEl.style.display = '';
+    sumEl.innerHTML = `共 ${periods.length} 个身份阶段，请填写日期以计算 SPT`;
   } else {
     sumEl.style.display = 'none';
   }
-  // Auto-update day fields if mode is "records"
-  ['CY', 'LY', '2Y'].forEach(s => {
-    if (document.getElementById('trSptMode' + s).value === 'records') {
-      trDaysMode(s);
-    }
-  });
-  // Also trigger first entry changed logic for other modes
-  trFirstEntryChanged();
-}
-function trClearEntryExitRows() {
-  document.getElementById('trEntryExitRows').innerHTML = '';
-  _trEntryExitId = 0;
-  document.getElementById('trEntryExitSummary').style.display = 'none';
-  document.getElementById('trSptFirstEntry').value = '';
-  document.getElementById('trSptLastEntry').value = '';
-}
-
-// ─── Exempt visa rows (multi-entry) ───
-let _trExemptRowId = 0;
-function trAddExemptRow(visa, from, to) {
-  const container = document.getElementById('trExemptRows');
-  const id = _trExemptRowId++;
-  const div = document.createElement('div');
-  div.id = 'trExRow' + id;
-  div.style.cssText = 'display:grid;grid-template-columns:auto 1fr 1fr 24px;gap:.3rem;align-items:center;margin-bottom:.4rem';
-  div.innerHTML = `
-    <select data-field="visa" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.78rem;min-width:70px" onchange="trExemptCalcDays()">
-      <option value="">—</option>
-      <option value="F-1"${visa==='F-1'?' selected':''}>F-1</option>
-      <option value="F-2"${visa==='F-2'?' selected':''}>F-2</option>
-      <option value="J-1"${visa==='J-1'?' selected':''}>J-1</option>
-      <option value="J-2"${visa==='J-2'?' selected':''}>J-2</option>
-      <option value="M-1"${visa==='M-1'?' selected':''}>M-1</option>
-      <option value="M-2"${visa==='M-2'?' selected':''}>M-2</option>
-      <option value="Q-1"${visa==='Q-1'?' selected':''}>Q-1</option>
-      <option value="Q-2"${visa==='Q-2'?' selected':''}>Q-2</option>
-    </select>
-    <input type="date" data-field="from" value="${from||''}" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.75rem" onchange="trExemptCalcDays()">
-    <input type="date" data-field="to" value="${to||''}" style="padding:.3rem .4rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.75rem" onchange="trExemptCalcDays()">
-    <button type="button" onclick="trRemoveExemptRow(${id})" style="border:none;background:none;cursor:pointer;font-size:.85rem;color:#dc2626;padding:0;line-height:1" title="删除">✕</button>
-  `;
-  container.appendChild(div);
-  trSyncExemptVisa();
-  if (visa && from && to) trExemptCalcDays();
-}
-function trRemoveExemptRow(id) {
-  const el = document.getElementById('trExRow' + id);
-  if (el) el.remove();
-  trSyncExemptVisa();
-  trExemptCalcDays();
-}
-function trSyncExemptVisa() {
-  // Serialize rows to hidden field for backward compat
-  const rows = document.querySelectorAll('#trExemptRows > div');
-  const parts = [];
-  rows.forEach(r => {
-    const v = r.querySelector('[data-field="visa"]').value;
-    const f = r.querySelector('[data-field="from"]').value;
-    const t = r.querySelector('[data-field="to"]').value;
-    if (v || f || t) parts.push(`${v}, ${f} ~ ${t}`);
-  });
-  document.getElementById('trSptExemptVisa').value = parts.join(' | ');
-}
-function trExemptCalcDays() {
-  trSyncExemptVisa();
-  const rows = document.querySelectorAll('#trExemptRows > div');
-  const now = new Date();
-  const thisYear = now.getFullYear();
-  // Accumulate exempt days per year (CY, LY, 2Y)
-  const years = [thisYear, thisYear - 1, thisYear - 2];
-  const totals = [0, 0, 0];
-  rows.forEach(r => {
-    const v = r.querySelector('[data-field="visa"]').value;
-    const fStr = r.querySelector('[data-field="from"]').value;
-    const tStr = r.querySelector('[data-field="to"]').value;
-    if (!v || !fStr || !tStr) return;
-    const from = new Date(fStr + 'T00:00:00');
-    const to = new Date(tStr + 'T00:00:00');
-    if (to < from) return;
-    for (let i = 0; i < 3; i++) {
-      const yStart = new Date(years[i], 0, 1);
-      const yEnd = new Date(years[i], 11, 31);
-      const overlapStart = from > yStart ? from : yStart;
-      const overlapEnd = to < yEnd ? to : yEnd;
-      if (overlapEnd >= overlapStart) {
-        totals[i] += Math.round((overlapEnd - overlapStart) / 86400000) + 1;
-      }
-    }
-  });
-  document.getElementById('trExemptDaysCY').value = totals[0] || '';
-  document.getElementById('trExemptDaysLY').value = totals[1] || '';
-  document.getElementById('trExemptDays2Y').value = totals[2] || '';
-  // Show hint
-  const hint = document.getElementById('trExemptAutoCalcHint');
-  if (totals[0] || totals[1] || totals[2]) {
-    hint.style.display = '';
-    hint.textContent = `自动计算排除天数: ${thisYear}年=${totals[0]}天, ${thisYear-1}年=${totals[1]}天, ${thisYear-2}年=${totals[2]}天`;
-  } else { hint.style.display = 'none'; }
-  trSptCalc();
-}
-function trClearExemptRows() {
-  document.getElementById('trExemptRows').innerHTML = '';
-  _trExemptRowId = 0;
-  document.getElementById('trSptExemptVisa').value = '';
-  document.getElementById('trExemptAutoCalcHint').style.display = 'none';
-}
-
-// ─── Day count validation ───
-function _trFirstEntryDate() {
-  const v = document.getElementById('trSptFirstEntry').value;
-  if (!v) return null;
-  return new Date(v + 'T00:00:00');
-}
-function _trMaxDaysFor(suffix) {
-  const y = _trYearFor(suffix);
-  const now = new Date();
-  const fe = _trFirstEntryDate();
-  // If first entry is after this entire year, max = 0
-  if (fe && fe.getFullYear() > y) return 0;
-  // Base max: current year = days elapsed; past years = full year
-  let max = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
-  // If first entry is in this year, cap at days from entry to year end (or today for CY)
-  if (fe && fe.getFullYear() === y) {
-    const entryDoy = _trDayOfYear(fe); // day-of-year of first entry
-    const yearEnd = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
-    max = Math.max(0, yearEnd - entryDoy + 1);
-  }
-  return max;
-}
-function _trDaysValidationError() {
-  const suffixes = ['CY', 'LY', '2Y'];
-  const labels = { CY: '今年', LY: '去年', '2Y': '前年' };
-  const fe = _trFirstEntryDate();
-  for (const s of suffixes) {
-    const v = parseInt(document.getElementById('trSptDays' + s).value) || 0;
-    const max = _trMaxDaysFor(s);
-    const y = _trYearFor(s);
-    if (fe && fe.getFullYear() > y && v > 0) {
-      return `第一次入境日期在 ${y} 年之后 (${fe.toISOString().slice(0,10)})，${labels[s]} (${y}) 在美天数应为 0`;
-    }
-    if (fe && fe.getFullYear() === y && v > max) {
-      return `第一次入境日期为 ${fe.toISOString().slice(0,10)}，${labels[s]} (${y}) 在美天数最多 ${max} 天`;
-    }
-    if (v > max) return `${labels[s]} (${y}) 在美天数不能超过 ${max} 天`;
-  }
-  return '';
-}
-function _trValidateDaysInputs() {
-  const suffixes = ['CY', 'LY', '2Y'];
-  const fe = _trFirstEntryDate();
-  let hasError = false;
-  for (const s of suffixes) {
-    const inp = document.getElementById('trSptDays' + s);
-    const v = parseInt(inp.value) || 0;
-    const max = _trMaxDaysFor(s);
-    const y = _trYearFor(s);
-    const errId = 'trDaysErr' + s;
-    let errEl = document.getElementById(errId);
-    const isOverMax = v > max;
-    const isAfterEntry = fe && fe.getFullYear() > y && v > 0;
-    if (isOverMax || isAfterEntry) {
-      hasError = true;
-      inp.style.borderColor = '#dc2626';
-      inp.style.background = '#fef2f2';
-      if (!errEl) {
-        errEl = document.createElement('div');
-        errEl.id = errId;
-        errEl.style.cssText = 'font-size:.7rem;color:#dc2626;margin-top:.15rem;font-weight:600';
-        inp.parentNode.insertBefore(errEl, inp.nextSibling);
-      }
-      if (isAfterEntry) {
-        errEl.textContent = `首次入境在 ${y} 年之后，应为 0`;
-      } else {
-        errEl.textContent = `最多 ${max} 天`;
-      }
-    } else {
-      // Restore style based on mode
-      const mode = document.getElementById('trSptMode' + s).value;
-      inp.style.borderColor = '';
-      inp.style.background = (mode !== 'manual') ? '#f3f4f6' : '';
-      if (errEl) errEl.remove();
-    }
-  }
-  return hasError;
-}
-
-// Helper: get year offset (CY=0, LY=1, 2Y=2)
-function _trYearFor(suffix) {
-  const now = new Date();
-  const y = now.getFullYear();
-  if (suffix === 'CY') return y;
-  if (suffix === 'LY') return y - 1;
-  return y - 2;
-}
-function _trDaysInYear(y) { return ((y % 4 === 0 && y % 100 !== 0) || y % 400 === 0) ? 366 : 365; }
-function _trDayOfYear(d) { const s = new Date(d.getFullYear(), 0, 1); return Math.floor((d - s) / 86400000) + 1; }
-
-function trDaysMode(suffix) {
-  const mode = document.getElementById('trSptMode' + suffix).value;
-  const inp = document.getElementById('trSptDays' + suffix);
-  const rangeDiv = document.getElementById('trSptRange' + suffix);
-  const y = _trYearFor(suffix);
-  rangeDiv.style.display = mode === 'range' ? '' : 'none';
-  if (mode === 'records') {
-    const days = trCalcDaysFromRecords(y);
-    inp.value = days;
-    inp.readOnly = true; inp.style.background = '#f3f4f6';
-    trSptCalc();
-  } else if (mode === 'full') {
-    const now = new Date();
-    const fe = _trFirstEntryDate();
-    // If first entry is after this year, 0 days
-    if (fe && fe.getFullYear() > y) {
-      inp.value = 0;
-    } else if (fe && fe.getFullYear() === y) {
-      // First entry in this year: from entry date to end of year (or today for CY)
-      const entryDoy = _trDayOfYear(fe);
-      const yearEnd = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
-      inp.value = Math.max(0, yearEnd - entryDoy + 1);
-    } else {
-      // No first entry or entry before this year: full year or year-to-date
-      inp.value = (suffix === 'CY' && now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
-    }
-    inp.readOnly = true; inp.style.background = '#f3f4f6';
-    trSptCalc();
-  } else if (mode === 'ytd') {
-    const now = new Date();
-    const fe = _trFirstEntryDate();
-    let days;
-    if (fe && fe.getFullYear() > y) {
-      days = 0;
-    } else if (fe && fe.getFullYear() === y) {
-      const entryDoy = _trDayOfYear(fe);
-      const todayDoy = (now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
-      days = Math.max(0, todayDoy - entryDoy + 1);
-    } else {
-      days = (now.getFullYear() === y) ? _trDayOfYear(now) : _trDaysInYear(y);
-    }
-    inp.value = days;
-    inp.readOnly = true; inp.style.background = '#f3f4f6';
-    trSptCalc();
-  } else if (mode === 'range') {
-    // Set date constraints for this year
-    const fromEl = document.getElementById('trSptFrom' + suffix);
-    const toEl = document.getElementById('trSptTo' + suffix);
-    fromEl.min = y + '-01-01'; fromEl.max = y + '-12-31';
-    toEl.min = y + '-01-01'; toEl.max = y + '-12-31';
-    if (!fromEl.value) fromEl.value = y + '-01-01';
-    if (!toEl.value) toEl.value = (suffix === 'CY') ? new Date().toISOString().slice(0,10) : y + '-12-31';
-    inp.readOnly = true; inp.style.background = '#f3f4f6';
-    trDaysRange(suffix);
+  // Update SPT preview
+  const previewEl = document.getElementById('trSptPreview');
+  if (periods.length && (daysInUs[0] || daysInUs[1] || daysInUs[2])) {
+    const adjCY = daysInUs[0] - exemptDays[0];
+    const adjLY = daysInUs[1] - exemptDays[1];
+    const adj2Y = daysInUs[2] - exemptDays[2];
+    const wAdj = adjCY + (adjLY / 3) + (adj2Y / 6);
+    const meetsSpt = adjCY >= 31 && wAdj >= 183;
+    previewEl.style.display = '';
+    previewEl.style.background = meetsSpt ? '#fef2f2' : '#f0fdf4';
+    previewEl.style.color = meetsSpt ? '#991b1b' : '#166534';
+    previewEl.style.border = meetsSpt ? '1px solid #fecaca' : '1px solid #bbf7d0';
+    previewEl.innerHTML = `SPT: <b>${wAdj.toFixed(1)}</b> → <b>${meetsSpt ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`;
   } else {
-    inp.readOnly = false; inp.style.background = '';
+    previewEl.style.display = 'none';
   }
-}
-
-function trDaysModeReset(suffix) {
-  // If user manually types in the input, reset mode to manual
-  const sel = document.getElementById('trSptMode' + suffix);
-  if (sel.value !== 'manual') { sel.value = 'manual'; }
-  const inp = document.getElementById('trSptDays' + suffix);
-  inp.readOnly = false; inp.style.background = '';
-  document.getElementById('trSptRange' + suffix).style.display = 'none';
-}
-
-function trDaysRange(suffix) {
-  const fromEl = document.getElementById('trSptFrom' + suffix);
-  const toEl = document.getElementById('trSptTo' + suffix);
-  if (!fromEl.value || !toEl.value) return;
-  const from = new Date(fromEl.value + 'T00:00:00');
-  const to = new Date(toEl.value + 'T00:00:00');
-  const diff = Math.max(0, Math.round((to - from) / 86400000) + 1);
-  document.getElementById('trSptDays' + suffix).value = diff;
-  trSptCalc();
-}
-
-// When first entry date changes, recalculate all auto-mode days and revalidate
-function trFirstEntryChanged() {
-  const suffixes = ['CY', 'LY', '2Y'];
-  for (const s of suffixes) {
-    const mode = document.getElementById('trSptMode' + s).value;
-    if (mode === 'full' || mode === 'ytd') {
-      trDaysMode(s); // recalculate with new first entry date
-    }
-  }
-  trSptCalc(); // revalidate and recalculate SPT
-}
-
-// Initialize year labels on load
-function trInitYearLabels() {
-  const y = new Date().getFullYear();
-  const lCY = document.getElementById('trLabelCY');
-  const lLY = document.getElementById('trLabelLY');
-  const l2Y = document.getElementById('trLabel2Y');
-  if (lCY) lCY.textContent = `今年在美天数 (${y})`;
-  if (lLY) lLY.textContent = `去年在美天数 (${y-1})`;
-  if (l2Y) l2Y.textContent = `前年在美天数 (${y-2})`;
-  const eCY = document.getElementById('trExLabelCY');
-  const eLY = document.getElementById('trExLabelLY');
-  const e2Y = document.getElementById('trExLabel2Y');
-  if (eCY) eCY.textContent = `${y} 排除天数`;
-  if (eLY) eLY.textContent = `${y-1} 排除天数`;
-  if (e2Y) e2Y.textContent = `${y-2} 排除天数`;
-}
-
-function trSptCalc() {
-  const cy = parseInt(document.getElementById('trSptDaysCY').value) || 0;
-  const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
-  const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
-  const el = document.getElementById('trSptPreview');
-  // Validate day counts
-  const hasValidationErr = _trValidateDaysInputs();
-  if (!cy && !ly && !ty) { el.style.display = 'none'; trCalcFinalResult(); return; }
-  // Check for F/J/M/Q exempt days
-  const hasExempt = document.getElementById('trSptExempt').value === 'yes';
-  const exCY = hasExempt ? Math.min(parseInt(document.getElementById('trExemptDaysCY').value) || 0, cy) : 0;
-  const exLY = hasExempt ? Math.min(parseInt(document.getElementById('trExemptDaysLY').value) || 0, ly) : 0;
-  const ex2Y = hasExempt ? Math.min(parseInt(document.getElementById('trExemptDays2Y').value) || 0, ty) : 0;
-  const adjCY = cy - exCY, adjLY = ly - exLY, adj2Y = ty - ex2Y;
-  const wRaw = cy + (ly / 3) + (ty / 6);
-  const w = adjCY + (adjLY / 3) + (adj2Y / 6);
-  const meets = adjCY >= 31 && w >= 183;
-  el.style.display = '';
-  if (hasValidationErr) {
-    el.style.background = '#fef2f2'; el.style.color = '#dc2626'; el.style.border = '1px solid #fecaca';
-    el.innerHTML = `<b>⛔ 天数有误，请检查上方标红的输入</b>`;
-  } else {
-    el.style.background = meets ? '#fef2f2' : '#f0fdf4';
-    el.style.color = meets ? '#991b1b' : '#166534';
-    el.style.border = meets ? '1px solid #fecaca' : '1px solid #bbf7d0';
-    if (hasExempt && (exCY || exLY || ex2Y)) {
-      el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${adjCY}+${adjLY}/3+${adj2Y}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`
-        + `<br><span style="font-size:.72rem;opacity:.7">排除前: ${wRaw.toFixed(1)} (${cy}+${ly}/3+${ty}/6) · 已排除 F/J/M/Q 天数: ${exCY}/${exLY}/${ex2Y}</span>`;
-    } else {
-      el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${cy}+${ly}/3+${ty}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`;
-    }
-  }
+  // Store computed values for trCalcFinalResult compatibility
+  window._trTimelineDaysInUs = daysInUs;
+  window._trTimelineExemptDays = exemptDays;
+  window._trTimelineHasExempt = hasExemptVisa;
+  window._trTimelineExemptParts = exemptParts;
   trSyncTaxCountry();
   trCalcFinalResult();
 }
+// Legacy compat stubs
+function trClearEntryExitRows() { trClearStatusPeriods(); }
+function trGetEntryExitRecords() { return []; }
+function trEntryExitChanged() { trTimelineChanged(); }
+function trClearExemptRows() {}
+
+// ─── Legacy stubs for removed day-mode functions ───
+function _trDaysValidationError() { return ''; }
+function _trValidateDaysInputs() { return false; }
+
+function trDaysMode() {}
+function trDaysModeReset() {}
+function trDaysRange() {}
+function trFirstEntryChanged() { trTimelineChanged(); }
+function trInitYearLabels() {}
+// trSptCalc now delegates to timeline-based calculation
+function trSptCalc() { trTimelineChanged(); }
 
 function trInitServiceDateDropdowns() {
   // Date inputs are now native <input type="date">, no population needed
@@ -14763,18 +14481,15 @@ function trCalcFinalResult() {
       const present = document.getElementById('trPresentInUs').value;
       if (present === 'no') { status = 'Nonresident Alien'; }
       else {
-        const cy = parseInt(document.getElementById('trSptDaysCY').value) || 0;
-        const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
-        const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
-        const isExempt = document.getElementById('trSptExempt').value === 'yes';
-        const exCY = isExempt ? Math.min(parseInt(document.getElementById('trExemptDaysCY').value) || 0, cy) : 0;
-        const exLY = isExempt ? Math.min(parseInt(document.getElementById('trExemptDaysLY').value) || 0, ly) : 0;
-        const ex2Y = isExempt ? Math.min(parseInt(document.getElementById('trExemptDays2Y').value) || 0, ty) : 0;
+        const diu = window._trTimelineDaysInUs || [0,0,0];
+        const exd = window._trTimelineExemptDays || [0,0,0];
+        const cy = diu[0], ly = diu[1], ty = diu[2];
+        const exCY = exd[0], exLY = exd[1], ex2Y = exd[2];
         const adjCY = cy - exCY, adjLY = ly - exLY, adj2Y = ty - ex2Y;
         const w = adjCY + (adjLY / 3) + (adj2Y / 6);
         if (adjCY >= 31 && w >= 183) { status = 'Likely Resident Alien (SPT)'; form = 'W-9'; review = true; }
         else { status = 'Likely Nonresident Alien'; }
-        if (isExempt) review = true;
+        if (window._trTimelineHasExempt) review = true;
       }
       // Treaty claim can override SPT result (treaty tie-breaker rules)
       const servLoc = document.getElementById('trServicesLoc').value;
@@ -14842,47 +14557,26 @@ function trCalcFinalResult() {
         const present = document.getElementById('trPresentInUs').value;
         if (present) filled.push(['是否在美居留', present === 'yes' ? '是 Yes' : '否 No']);
         if (present === 'yes') {
-          const eeRecords = trGetEntryExitRecords();
-          if (eeRecords.length) {
-            filled.push(['出入境记录', eeRecords.map(r => r.entry + ' ~ ' + (r.exit || '至今') + (r.visa ? ' (' + r.visa + ')' : '')).join('<br>')]);
+          const periods = trGetStatusPeriods();
+          if (periods.length) {
+            filled.push(['身份时间线', periods.map(p => {
+              let s = `${p.visa}: ${p.start} ~ ${p.end || '至今'}`;
+              if (p.trips && p.trips.length) s += ` (${p.trips.length}次出境)`;
+              return s;
+            }).join('<br>')]);
           }
-          const firstEntry = document.getElementById('trSptFirstEntry').value;
-          if (firstEntry) filled.push(['第一次进入美国日期', firstEntry]);
-          const lastEntry = document.getElementById('trSptLastEntry').value;
-          if (lastEntry) filled.push(['最近一次入境美国日期', lastEntry]);
-          const cy = document.getElementById('trSptDaysCY').value;
-          const ly = document.getElementById('trSptDaysLY').value;
-          const ty = document.getElementById('trSptDays2Y').value;
-          if (cy) filled.push(['今年在美天数', cy]);
-          if (ly) filled.push(['去年在美天数', ly]);
-          if (ty) filled.push(['前年在美天数', ty]);
-          const cyN = parseInt(cy)||0, lyN = parseInt(ly)||0, tyN = parseInt(ty)||0;
-          if (cyN || lyN || tyN) {
-            const exempt = document.getElementById('trSptExempt').value;
-            const exCYN = exempt === 'yes' ? Math.min(parseInt(document.getElementById('trExemptDaysCY').value) || 0, cyN) : 0;
-            const exLYN = exempt === 'yes' ? Math.min(parseInt(document.getElementById('trExemptDaysLY').value) || 0, lyN) : 0;
-            const ex2YN = exempt === 'yes' ? Math.min(parseInt(document.getElementById('trExemptDays2Y').value) || 0, tyN) : 0;
-            const aCY = cyN - exCYN, aLY = lyN - exLYN, a2Y = tyN - ex2YN;
-            const wAdj = aCY + (aLY / 3) + (a2Y / 6);
-            if (exempt === 'yes' && (exCYN || exLYN || ex2YN)) {
-              const wRaw = cyN + (lyN / 3) + (tyN / 6);
-              filled.push(['SPT 加权天数 (排除后)', wAdj.toFixed(1) + (aCY >= 31 && wAdj >= 183 ? ' (≥183, Likely Resident)' : ' (<183, Likely Nonresident)')]);
-              filled.push(['SPT 排除前', wRaw.toFixed(1) + ` (${cyN}+${lyN}/3+${tyN}/6)`]);
-              filled.push(['排除天数 (今/去/前年)', `${exCYN}/${exLYN}/${ex2YN}`]);
+          const diu = window._trTimelineDaysInUs || [0,0,0];
+          const exd = window._trTimelineExemptDays || [0,0,0];
+          const thisYear = new Date().getFullYear();
+          if (diu[0] || diu[1] || diu[2]) {
+            filled.push(['在美天数', `${thisYear}年=${diu[0]}天, ${thisYear-1}年=${diu[1]}天, ${thisYear-2}年=${diu[2]}天`]);
+            const adjCY = diu[0]-exd[0], adjLY = diu[1]-exd[1], adj2Y = diu[2]-exd[2];
+            const wAdj = adjCY + (adjLY/3) + (adj2Y/6);
+            if (window._trTimelineHasExempt && (exd[0]||exd[1]||exd[2])) {
+              filled.push(['F/J/M/Q 豁免天数', `${thisYear}年=${exd[0]}天, ${thisYear-1}年=${exd[1]}天, ${thisYear-2}年=${exd[2]}天`]);
+              filled.push(['SPT 加权天数 (排除后)', wAdj.toFixed(1) + (adjCY >= 31 && wAdj >= 183 ? ' (≥183, Likely Resident)' : ' (<183, Likely Nonresident)')]);
             } else {
-              filled.push(['SPT 加权天数', wAdj.toFixed(1) + (aCY >= 31 && wAdj >= 183 ? ' (≥183, Likely Resident)' : ' (<183, Likely Nonresident)')]);
-            }
-            if (exempt) filled.push(['F/J/M/Q 排除天数', exempt === 'yes' ? '是' : '否']);
-            if (exempt === 'yes') {
-              const visa = document.getElementById('trSptExemptVisa').value.trim();
-              if (visa) filled.push(['签证/身份类型', visa]);
-            }
-          } else {
-            const exempt = document.getElementById('trSptExempt').value;
-            if (exempt) filled.push(['F/J/M/Q 排除天数', exempt === 'yes' ? '是' : '否']);
-            if (exempt === 'yes') {
-              const visa = document.getElementById('trSptExemptVisa').value.trim();
-              if (visa) filled.push(['签证/身份类型', visa]);
+              filled.push(['SPT 加权天数', wAdj.toFixed(1) + (adjCY >= 31 && wAdj >= 183 ? ' (≥183, Likely Resident)' : ' (<183, Likely Nonresident)')]);
             }
           }
           const cit = document.getElementById('trSptCitizenship').value;
@@ -14991,8 +14685,7 @@ function trCalcFinalResult() {
     }
     docs.push('📄 Form 1042-S — 外国人收入及预扣税凭证（由付款方年终出具）');
     docs.push('📄 Form 1040-NR — 非居民外国人年度报税表');
-    const exempt = document.getElementById('trSptExempt').value;
-    if (exempt === 'yes') docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
+    if (window._trTimelineHasExempt) docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
   } else if (form === 'W-8BEN-E') {
     docs.push('📄 W-8BEN-E 表格（外国实体，预扣税声明）');
     docs.push('📋 实体注册证明 (Certificate of Incorporation / Formation)');
@@ -15035,8 +14728,7 @@ function trCalcFinalResult() {
     }
     docs.push('📄 Form 1042-S — 外国人收入及预扣税凭证（由付款方年终出具）');
     docs.push('📄 Form 1040-NR — 非居民外国人年度报税表');
-    const exempt8233 = document.getElementById('trSptExempt').value;
-    if (exempt8233 === 'yes') docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
+    if (window._trTimelineHasExempt) docs.push('📄 Form 8843 — 豁免个人声明（F/J/M/Q 签证持有者必填）');
     docs.push('⚠️ 需人工复核，提交 IRS 前需 10 天审查期');
   }
 
@@ -15188,17 +14880,20 @@ function trWizardCollectData() {
         d.country_citizenship = document.getElementById('trNrCitizenship').value.trim();
         d.country_tax_residence = document.getElementById('trNrTaxCountry').value.trim();
       } else {
+        const periods = trGetStatusPeriods();
         d.first_entry_date = document.getElementById('trSptFirstEntry').value;
         d.last_entry_date = document.getElementById('trSptLastEntry').value;
-        d.entry_exit_records = JSON.stringify(trGetEntryExitRecords());
-        d.days_current_year = document.getElementById('trSptDaysCY').value || '0';
-        d.days_last_year = document.getElementById('trSptDaysLY').value || '0';
-        d.days_two_years_ago = document.getElementById('trSptDays2Y').value || '0';
-        d.has_exempt_days = document.getElementById('trSptExempt').value;
-        d.exempt_visa_status = document.getElementById('trSptExemptVisa').value.trim();
-        d.exempt_days_cy = document.getElementById('trExemptDaysCY').value || '0';
-        d.exempt_days_ly = document.getElementById('trExemptDaysLY').value || '0';
-        d.exempt_days_2y = document.getElementById('trExemptDays2Y').value || '0';
+        d.entry_exit_records = JSON.stringify({ version: 2, status_periods: periods });
+        const diu = window._trTimelineDaysInUs || [0,0,0];
+        const exd = window._trTimelineExemptDays || [0,0,0];
+        d.days_current_year = String(diu[0]);
+        d.days_last_year = String(diu[1]);
+        d.days_two_years_ago = String(diu[2]);
+        d.has_exempt_days = window._trTimelineHasExempt ? 'yes' : 'no';
+        d.exempt_visa_status = (window._trTimelineExemptParts || []).join(' | ');
+        d.exempt_days_cy = String(exd[0]);
+        d.exempt_days_ly = String(exd[1]);
+        d.exempt_days_2y = String(exd[2]);
         d.country_citizenship = document.getElementById('trSptCitizenship').value.trim();
         d.country_tax_residence = document.getElementById('trSptTaxCountry').value.trim();
       }
@@ -15236,7 +14931,7 @@ function trWizardReset() {
   document.getElementById('trIndUsFields').style.display = 'none';
   document.getElementById('trPresentInUs').value = '';
   ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptLastEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  document.getElementById('trSptExempt').value = '';
+  const _trSE = document.getElementById('trSptExempt'); if (_trSE) _trSE.value = '';
   ['CY','LY','2Y'].forEach(s => { const sel = document.getElementById('trSptMode' + s); if (sel) sel.value = 'manual'; const inp = document.getElementById('trSptDays' + s); if (inp) { inp.readOnly = false; inp.style.background = ''; } const rng = document.getElementById('trSptRange' + s); if (rng) rng.style.display = 'none'; ['trSptFrom' + s, 'trSptTo' + s].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; }); });
   trClearExemptRows();
   trClearEntryExitRows();
@@ -15253,7 +14948,7 @@ function trWizardReset() {
   document.getElementById('trEntForeignFields').style.display = 'none';
   document.getElementById('trNeverInUs').style.display = 'none';
   document.getElementById('trSptBlock').style.display = 'none';
-  document.getElementById('trSptExemptDetail').style.display = 'none';
+  const _trSED = document.getElementById('trSptExemptDetail'); if (_trSED) _trSED.style.display = 'none';
   document.getElementById('trTreatyInfo').style.display = 'none';
   document.getElementById('trTreatyConfirmBlock').style.display = 'none';
   document.getElementById('trNoTreatyMsg').style.display = 'none';
@@ -15335,27 +15030,18 @@ async function openTaxResidencyModal() {
     if (trData.entry_exit_records) {
       try {
         const eeRecs = typeof trData.entry_exit_records === 'string' ? JSON.parse(trData.entry_exit_records) : trData.entry_exit_records;
-        trClearEntryExitRows();
-        eeRecs.forEach(r => trAddEntryExitRow(r.entry, r.exit || '', r.visa || ''));
+        trClearStatusPeriods();
+        if (eeRecs && eeRecs.version === 2 && eeRecs.status_periods) {
+          // New format: status periods with optional trips
+          eeRecs.status_periods.forEach(p => trAddStatusPeriod(p.visa, p.start, p.end || '', p.trips || []));
+        } else if (Array.isArray(eeRecs)) {
+          // Legacy format: [{entry, exit, visa}] → convert to status periods
+          eeRecs.forEach(r => {
+            if (r.entry) trAddStatusPeriod(r.visa || '', r.entry, r.exit || '', []);
+          });
+        }
       } catch(e) { console.warn('Failed to parse entry_exit_records', e); }
     }
-    if (trData.has_exempt_days) { const el = document.getElementById('trSptExempt'); if (el) el.value = trData.has_exempt_days; }
-    if (trData.exempt_visa_status) {
-      // Parse stored visa entries back into rows: "F-1, 2023-01-01 ~ 2024-06-30 | J-1, ..."
-      trClearExemptRows();
-      const entries = trData.exempt_visa_status.split('|').map(s => s.trim()).filter(Boolean);
-      if (entries.length) {
-        entries.forEach(entry => {
-          const m = entry.match(/^([A-Z]-\d),?\s*(\d{4}-\d{2}-\d{2})?\s*~\s*(\d{4}-\d{2}-\d{2})?$/);
-          if (m) { trAddExemptRow(m[1], m[2] || '', m[3] || ''); }
-          else { trAddExemptRow('', '', ''); } // fallback: add empty row for manual fix
-        });
-      }
-      document.getElementById('trSptExemptVisa').value = trData.exempt_visa_status;
-    }
-    if (trData.exempt_days_cy) { const el = document.getElementById('trExemptDaysCY'); if (el) el.value = trData.exempt_days_cy; }
-    if (trData.exempt_days_ly) { const el = document.getElementById('trExemptDaysLY'); if (el) el.value = trData.exempt_days_ly; }
-    if (trData.exempt_days_2y) { const el = document.getElementById('trExemptDays2Y'); if (el) el.value = trData.exempt_days_2y; }
     if (trData.country_citizenship) {
       const el1 = document.getElementById('trSptCitizenship'); if (el1) el1.value = trData.country_citizenship;
       const el2 = document.getElementById('trNrCitizenship'); if (el2) el2.value = trData.country_citizenship;
