@@ -14337,8 +14337,10 @@ async function verifyTrEntForeignAddr() {
   const zip = document.getElementById('trEntForeignAddrZip').value.trim();
   const statusEl = document.getElementById('trEntForeignAddrStatus');
   if (!street) { statusEl.textContent = '❌ 请先填写街道地址'; statusEl.style.color = '#dc2626'; return; }
+  const countryName = document.getElementById('trEntForeignCountry').value;
+  if (!countryName) { statusEl.textContent = '❌ 请先选择 Country of Organization'; statusEl.style.color = '#dc2626'; return; }
   statusEl.textContent = '⏳ 验证中...'; statusEl.style.color = '#854d0e';
-  const result = await validateAddress({ street, street2, city, state, zip });
+  const result = await validateAddress({ street, street2, city, state, zip, countryName });
   if (result.verified && result.standardized) {
     const s = result.standardized;
     document.getElementById('trEntForeignAddrStreet').value = s.street || '';

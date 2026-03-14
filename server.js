@@ -11938,15 +11938,40 @@ app.post('/api/validate-address', async (req, res) => {
   if (!apiKey) {
     return res.json({ skipped: true });
   }
-  const { street, street2, city, state, zip } = req.body || {};
+  const { street, street2, city, state, zip, regionCode, countryName } = req.body || {};
   if (!street) return res.status(400).json({ error: 'street is required' });
 
   const addressLines = [street];
   if (street2) addressLines.push(street2);
 
+  // Resolve region code from ISO code or country name
+  const COUNTRY_TO_ISO = {
+    'Armenia':'AM','Australia':'AU','Austria':'AT','Azerbaijan':'AZ','Bangladesh':'BD','Barbados':'BB',
+    'Belarus':'BY','Belgium':'BE','Bulgaria':'BG','Canada':'CA','China':'CN','Cyprus':'CY',
+    'Czech Republic':'CZ','Denmark':'DK','Egypt':'EG','Estonia':'EE','Finland':'FI','France':'FR',
+    'Georgia':'GE','Germany':'DE','Greece':'GR','Hungary':'HU','Iceland':'IS','India':'IN',
+    'Indonesia':'ID','Ireland':'IE','Israel':'IL','Italy':'IT','Jamaica':'JM','Japan':'JP',
+    'Kazakhstan':'KZ','Korea':'KR','South Korea':'KR','Kyrgyzstan':'KG','Latvia':'LV','Lithuania':'LT',
+    'Luxembourg':'LU','Malta':'MT','Mexico':'MX','Moldova':'MD','Morocco':'MA','Netherlands':'NL',
+    'New Zealand':'NZ','Norway':'NO','Pakistan':'PK','Philippines':'PH','Poland':'PL','Portugal':'PT',
+    'Romania':'RO','Russia':'RU','Slovak Republic':'SK','Slovakia':'SK','Slovenia':'SI',
+    'South Africa':'ZA','Spain':'ES','Sri Lanka':'LK','Sweden':'SE','Switzerland':'CH',
+    'Tajikistan':'TJ','Thailand':'TH','Trinidad and Tobago':'TT','Tunisia':'TN','Turkey':'TR',
+    'Turkmenistan':'TM','Ukraine':'UA','United Kingdom':'GB','UK':'GB','Uzbekistan':'UZ','Venezuela':'VE',
+    'Afghanistan':'AF','Algeria':'DZ','Argentina':'AR','Brazil':'BR','Cambodia':'KH','Chile':'CL',
+    'Colombia':'CO','Cuba':'CU','Dominican Republic':'DO','Ecuador':'EC','El Salvador':'SV',
+    'Ethiopia':'ET','Ghana':'GH','Guatemala':'GT','Haiti':'HT','Honduras':'HN','Hong Kong':'HK',
+    'Iran':'IR','Iraq':'IQ','Jordan':'JO','Kenya':'KE','Laos':'LA','Lebanon':'LB','Libya':'LY',
+    'Malaysia':'MY','Myanmar':'MM','Nepal':'NP','Nicaragua':'NI','Nigeria':'NG','Panama':'PA',
+    'Paraguay':'PY','Peru':'PE','Saudi Arabia':'SA','Singapore':'SG','Syria':'SY','Taiwan':'TW',
+    'Tanzania':'TZ','Uganda':'UG','Uruguay':'UY','Vietnam':'VN','Yemen':'YE','Zimbabwe':'ZW'
+  };
+  let region = (regionCode || '').toUpperCase();
+  if (!region && countryName) region = COUNTRY_TO_ISO[countryName] || '';
+  if (!region) region = 'US';
   const payload = {
     address: {
-      regionCode: 'US',
+      regionCode: region,
       addressLines,
       ...(city  && { locality: city }),
       ...(state && { administrativeArea: state }),
@@ -11986,7 +12011,12 @@ app.post('/api/validate-address', async (req, res) => {
 
     const dpv = uspsData.dpvConfirmation;
     const granularity = verdict.validationGranularity;
-    const undeliverable = dpv === 'N' || granularity === 'OTHER' || granularity === 'ROUTE';
+
+    // For US addresses, use USPS DPV; for international, use Google granularity
+    const isUs = region === 'US';
+    const undeliverable = isUs
+      ? (dpv === 'N' || granularity === 'OTHER' || granularity === 'ROUTE')
+      : (granularity === 'OTHER');
 
     if (undeliverable) {
       return res.json({ valid: false });
