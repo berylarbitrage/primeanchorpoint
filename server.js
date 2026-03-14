@@ -4297,18 +4297,18 @@ app.get('/api/admin/worker-accounts/:id/interview-info', requireAdmin, (req, res
 
 // ── Worker Onboarding ──
 // W-2: 申请/筛选 → 面试 → 条件offer/合同 → 背景调查+Checkr → 身份验证 → I-9 → 看证件(EAD) → E-Verify → Gusto/上岗
-// 1099: 申请/筛选 → contractor agreement → W-9 → 背景调查(如需) → 证件/资质核验 → 可接单
+// 1099: 申请/筛选 → contractor agreement → 税务居民判定 → 背景调查(如需) → 证件/资质核验 → 可接单
 const ONBOARDING_STEPS = [
   { key: 'phone_verify',    title: '手机号验证',           desc: '必须通过手机号验证才能继续',                     required: true  },
   { key: 'email_verify',    title: '邮箱验证',             desc: '必须通过邮箱验证才能继续',                       required: true  },
   { key: 'interview',       title: '完成面试',             desc: '预约并参加 HR 面试',                              required: true  },
   { key: 'contract',        title: '签署合同 / Offer',     desc: '电子签署雇佣协议 / Contractor Agreement',         required: true  },
+  { key: 'tax_residency',   title: '税务居民身份判定',      desc: '1099 承包商税务居民预判 / 表格分流（Resident Test）', required: false },
   { key: 'background_check',title: '背景调查 (Checkr)',    desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台',    required: false },
   { key: 'persona_verify',  title: '身份验证 (Stripe Identity)',   desc: '驾照/ID + 自拍核验 · 由 HR 发起 · 通过 Stripe Identity', required: true },
   { key: 'i9',              title: 'I-9 就业资格',         desc: 'I-9 Section 1 & 2 就业资格验证',                  required: true  },
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
   { key: 'work_permit',     title: '工作许可验证',          desc: '工作许可 / 签证授权状态核实（如适用）',            required: false },
-  { key: 'tax_residency',   title: '税务居民身份判定',      desc: '1099 承包商税务居民预判 / 表格分流（Resident Test）', required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
   { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
   // Tax document tasks (auto-created by tax residency questionnaire)
