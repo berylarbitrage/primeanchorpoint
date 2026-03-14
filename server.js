@@ -1326,6 +1326,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS tax_residency_questionnaire (
   has_exempt_days TEXT DEFAULT '',
   exempt_visa_status TEXT DEFAULT '',
   exempt_date_range TEXT DEFAULT '',
+  exempt_days_cy INTEGER DEFAULT 0,
+  exempt_days_ly INTEGER DEFAULT 0,
+  exempt_days_2y INTEGER DEFAULT 0,
   -- Section C: Service location & income source
   services_location TEXT DEFAULT '',
   primary_work_locations TEXT DEFAULT '',
@@ -1377,6 +1380,9 @@ try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street2 T
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_city TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_state TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_zip TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_cy INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_ly INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_2y INTEGER DEFAULT 0"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -4928,14 +4934,18 @@ function calculateTaxResidency(data) {
     return result;
   }
 
-  // Rule 3: SPT calculation
+  // Rule 3: SPT calculation (with F/J/M/Q exempt day exclusion)
   const cy = parseInt(days_current_year) || 0;
   const ly = parseInt(days_last_year) || 0;
   const ty = parseInt(days_two_years_ago) || 0;
-  const weighted = cy + (ly / 3) + (ty / 6);
+  const exCY = has_exempt_days === 'yes' ? Math.min(parseInt(data.exempt_days_cy) || 0, cy) : 0;
+  const exLY = has_exempt_days === 'yes' ? Math.min(parseInt(data.exempt_days_ly) || 0, ly) : 0;
+  const ex2Y = has_exempt_days === 'yes' ? Math.min(parseInt(data.exempt_days_2y) || 0, ty) : 0;
+  const adjCY = cy - exCY, adjLY = ly - exLY, adj2Y = ty - ex2Y;
+  const weighted = adjCY + (adjLY / 3) + (adj2Y / 6);
   result.spt_weighted_days = Math.round(weighted * 100) / 100;
 
-  if (cy >= 31 && weighted >= 183) {
+  if (adjCY >= 31 && weighted >= 183) {
     result.spt_result = 'meets_spt';
     result.tax_status = 'likely_resident_alien';
     result.recommended_form = 'W-9';
@@ -5050,6 +5060,9 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     has_exempt_days: d.has_exempt_days || '',
     exempt_visa_status: d.exempt_visa_status || '',
     exempt_date_range: d.exempt_date_range || '',
+    exempt_days_cy: parseInt(d.exempt_days_cy) || 0,
+    exempt_days_ly: parseInt(d.exempt_days_ly) || 0,
+    exempt_days_2y: parseInt(d.exempt_days_2y) || 0,
     services_location: d.services_location || '',
     primary_work_locations: d.primary_work_locations || '',
     expected_service_dates: d.expected_service_dates || '',
@@ -5079,7 +5092,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
   db.prepare(`INSERT INTO tax_residency_questionnaire (
     worker_account_id, applicant_type, is_us_person, country_tax_residence, country_citizenship, entity_country_org,
     is_us_citizen, has_green_card, first_entry_date, days_current_year, days_last_year, days_two_years_ago,
-    has_exempt_days, exempt_visa_status, exempt_date_range,
+    has_exempt_days, exempt_visa_status, exempt_date_range, exempt_days_cy, exempt_days_ly, exempt_days_2y,
     services_location, primary_work_locations, expected_service_dates, will_travel_to_us,
     claim_treaty_benefit, treaty_country, treaty_income_type,
     immigration_status, i94_admission_date, status_expiration, docs_requested,
@@ -5089,7 +5102,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
   ) VALUES (
     @worker_account_id, @applicant_type, @is_us_person, @country_tax_residence, @country_citizenship, @entity_country_org,
     @is_us_citizen, @has_green_card, @first_entry_date, @days_current_year, @days_last_year, @days_two_years_ago,
-    @has_exempt_days, @exempt_visa_status, @exempt_date_range,
+    @has_exempt_days, @exempt_visa_status, @exempt_date_range, @exempt_days_cy, @exempt_days_ly, @exempt_days_2y,
     @services_location, @primary_work_locations, @expected_service_dates, @will_travel_to_us,
     @claim_treaty_benefit, @treaty_country, @treaty_income_type,
     @immigration_status, @i94_admission_date, @status_expiration, @docs_requested,
@@ -5106,6 +5119,7 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     days_two_years_ago=excluded.days_two_years_ago,
     has_exempt_days=excluded.has_exempt_days, exempt_visa_status=excluded.exempt_visa_status,
     exempt_date_range=excluded.exempt_date_range,
+    exempt_days_cy=excluded.exempt_days_cy, exempt_days_ly=excluded.exempt_days_ly, exempt_days_2y=excluded.exempt_days_2y,
     services_location=excluded.services_location, primary_work_locations=excluded.primary_work_locations,
     expected_service_dates=excluded.expected_service_dates, will_travel_to_us=excluded.will_travel_to_us,
     claim_treaty_benefit=excluded.claim_treaty_benefit, treaty_country=excluded.treaty_country,

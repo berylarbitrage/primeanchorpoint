@@ -3045,6 +3045,20 @@ tr:hover td{background:var(--sky-light)}
             <label style="font-size:.78rem;font-weight:600">签证/身份类型与日期范围</label>
             <input id="trSptExemptVisa" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="F-1, 2023-01 ~ 2024-06">
           </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+            <div class="field" style="margin-bottom:0">
+              <label style="font-size:.78rem;font-weight:600">今年排除天数</label>
+              <input type="number" id="trExemptDaysCY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label style="font-size:.78rem;font-weight:600">去年排除天数</label>
+              <input type="number" id="trExemptDaysLY" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label style="font-size:.78rem;font-weight:600">前年排除天数</label>
+              <input type="number" id="trExemptDays2Y" min="0" max="366" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="0" oninput="trSptCalc()">
+            </div>
+          </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
           <div class="field" style="margin-bottom:0">
@@ -13901,7 +13915,7 @@ function trClearDownstream() {
   ['trEntLegalName','trEntTaxClass','trEntEin','trEntAddrStreet','trEntAddrSuite','trEntAddrCity','trEntAddrState','trEntAddrZip','trEntForeignName','trEntForeignCountry','trEntForeignTaxCountry','trEntForeignAddrStreet','trEntForeignAddrSuite','trEntForeignAddrCity','trEntForeignAddrState','trEntForeignAddrZip','trEntTreaty'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   // Clear Step 3
   document.getElementById('trPresentInUs').value = '';
-  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
   document.getElementById('trSptPreview').style.display = 'none';
   document.getElementById('trSptBlock').style.display = 'none';
@@ -13940,7 +13954,7 @@ function trSelectIndStatus(s) {
   document.getElementById('trIndUsFields').style.display = (s === 'citizen' || s === 'green_card') ? '' : 'none';
   // Clear Steps 3 & 4 fields when changing identity status
   document.getElementById('trPresentInUs').value = '';
-  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
   document.getElementById('trSptPreview').style.display = 'none';
   document.getElementById('trSptBlock').style.display = 'none';
@@ -14080,13 +14094,25 @@ function trSptCalc() {
   const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
   const el = document.getElementById('trSptPreview');
   if (!cy && !ly && !ty) { el.style.display = 'none'; trCalcFinalResult(); return; }
-  const w = cy + (ly / 3) + (ty / 6);
-  const meets = cy >= 31 && w >= 183;
+  // Check for F/J/M/Q exempt days
+  const hasExempt = document.getElementById('trSptExempt').value === 'yes';
+  const exCY = hasExempt ? Math.min(parseInt(document.getElementById('trExemptDaysCY').value) || 0, cy) : 0;
+  const exLY = hasExempt ? Math.min(parseInt(document.getElementById('trExemptDaysLY').value) || 0, ly) : 0;
+  const ex2Y = hasExempt ? Math.min(parseInt(document.getElementById('trExemptDays2Y').value) || 0, ty) : 0;
+  const adjCY = cy - exCY, adjLY = ly - exLY, adj2Y = ty - ex2Y;
+  const wRaw = cy + (ly / 3) + (ty / 6);
+  const w = adjCY + (adjLY / 3) + (adj2Y / 6);
+  const meets = adjCY >= 31 && w >= 183;
   el.style.display = '';
   el.style.background = meets ? '#fef2f2' : '#f0fdf4';
   el.style.color = meets ? '#991b1b' : '#166534';
   el.style.border = meets ? '1px solid #fecaca' : '1px solid #bbf7d0';
-  el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${cy}+${ly}/3+${ty}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`;
+  if (hasExempt && (exCY || exLY || ex2Y)) {
+    el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${adjCY}+${adjLY}/3+${adj2Y}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`
+      + `<br><span style="font-size:.72rem;opacity:.7">排除前: ${wRaw.toFixed(1)} (${cy}+${ly}/3+${ty}/6) · 已排除 F/J/M/Q 天数: ${exCY}/${exLY}/${ex2Y}</span>`;
+  } else {
+    el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${cy}+${ly}/3+${ty}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`;
+  }
   trCalcFinalResult();
 }
 
@@ -14139,10 +14165,15 @@ function trCalcFinalResult() {
         const cy = parseInt(document.getElementById('trSptDaysCY').value) || 0;
         const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
         const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
-        const w = cy + (ly / 3) + (ty / 6);
-        if (cy >= 31 && w >= 183) { status = 'Likely Resident Alien (SPT)'; form = 'W-9'; review = true; }
+        const isExempt = document.getElementById('trSptExempt').value === 'yes';
+        const exCY = isExempt ? Math.min(parseInt(document.getElementById('trExemptDaysCY').value) || 0, cy) : 0;
+        const exLY = isExempt ? Math.min(parseInt(document.getElementById('trExemptDaysLY').value) || 0, ly) : 0;
+        const ex2Y = isExempt ? Math.min(parseInt(document.getElementById('trExemptDays2Y').value) || 0, ty) : 0;
+        const adjCY = cy - exCY, adjLY = ly - exLY, adj2Y = ty - ex2Y;
+        const w = adjCY + (adjLY / 3) + (adj2Y / 6);
+        if (adjCY >= 31 && w >= 183) { status = 'Likely Resident Alien (SPT)'; form = 'W-9'; review = true; }
         else { status = 'Likely Nonresident Alien'; }
-        if (document.getElementById('trSptExempt').value === 'yes') review = true;
+        if (isExempt) review = true;
       }
       if (!form) {
         const servLoc = document.getElementById('trServicesLoc').value;
@@ -14214,14 +14245,32 @@ function trCalcFinalResult() {
           if (ty) filled.push(['前年在美天数', ty]);
           const cyN = parseInt(cy)||0, lyN = parseInt(ly)||0, tyN = parseInt(ty)||0;
           if (cyN || lyN || tyN) {
-            const w = cyN + (lyN / 3) + (tyN / 6);
-            filled.push(['SPT 加权天数', w.toFixed(1) + (cyN >= 31 && w >= 183 ? ' (≥183, Likely Resident)' : ' (<183, Likely Nonresident)')]);
-          }
-          const exempt = document.getElementById('trSptExempt').value;
-          if (exempt) filled.push(['F/J/M/Q 排除天数', exempt === 'yes' ? '是' : '否']);
-          if (exempt === 'yes') {
-            const visa = document.getElementById('trSptExemptVisa').value.trim();
-            if (visa) filled.push(['签证/身份类型', visa]);
+            const exempt = document.getElementById('trSptExempt').value;
+            const exCYN = exempt === 'yes' ? Math.min(parseInt(document.getElementById('trExemptDaysCY').value) || 0, cyN) : 0;
+            const exLYN = exempt === 'yes' ? Math.min(parseInt(document.getElementById('trExemptDaysLY').value) || 0, lyN) : 0;
+            const ex2YN = exempt === 'yes' ? Math.min(parseInt(document.getElementById('trExemptDays2Y').value) || 0, tyN) : 0;
+            const aCY = cyN - exCYN, aLY = lyN - exLYN, a2Y = tyN - ex2YN;
+            const wAdj = aCY + (aLY / 3) + (a2Y / 6);
+            if (exempt === 'yes' && (exCYN || exLYN || ex2YN)) {
+              const wRaw = cyN + (lyN / 3) + (tyN / 6);
+              filled.push(['SPT 加权天数 (排除后)', wAdj.toFixed(1) + (aCY >= 31 && wAdj >= 183 ? ' (≥183, Likely Resident)' : ' (<183, Likely Nonresident)')]);
+              filled.push(['SPT 排除前', wRaw.toFixed(1) + ` (${cyN}+${lyN}/3+${tyN}/6)`]);
+              filled.push(['排除天数 (今/去/前年)', `${exCYN}/${exLYN}/${ex2YN}`]);
+            } else {
+              filled.push(['SPT 加权天数', wAdj.toFixed(1) + (aCY >= 31 && wAdj >= 183 ? ' (≥183, Likely Resident)' : ' (<183, Likely Nonresident)')]);
+            }
+            if (exempt) filled.push(['F/J/M/Q 排除天数', exempt === 'yes' ? '是' : '否']);
+            if (exempt === 'yes') {
+              const visa = document.getElementById('trSptExemptVisa').value.trim();
+              if (visa) filled.push(['签证/身份类型', visa]);
+            }
+          } else {
+            const exempt = document.getElementById('trSptExempt').value;
+            if (exempt) filled.push(['F/J/M/Q 排除天数', exempt === 'yes' ? '是' : '否']);
+            if (exempt === 'yes') {
+              const visa = document.getElementById('trSptExemptVisa').value.trim();
+              if (visa) filled.push(['签证/身份类型', visa]);
+            }
           }
           const cit = document.getElementById('trSptCitizenship').value;
           const taxC = document.getElementById('trSptTaxCountry').value;
@@ -14460,6 +14509,9 @@ function trWizardCollectData() {
         d.days_two_years_ago = document.getElementById('trSptDays2Y').value || '0';
         d.has_exempt_days = document.getElementById('trSptExempt').value;
         d.exempt_visa_status = document.getElementById('trSptExemptVisa').value.trim();
+        d.exempt_days_cy = document.getElementById('trExemptDaysCY').value || '0';
+        d.exempt_days_ly = document.getElementById('trExemptDaysLY').value || '0';
+        d.exempt_days_2y = document.getElementById('trExemptDays2Y').value || '0';
         d.country_citizenship = document.getElementById('trSptCitizenship').value.trim();
         d.country_tax_residence = document.getElementById('trSptTaxCountry').value.trim();
       }
@@ -14494,7 +14546,7 @@ function trWizardReset() {
   ['trIndLegalName','trIndSsn','trIndAddrStreet','trIndAddrSuite','trIndAddrCity','trIndAddrState','trIndAddrZip'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trIndUsFields').style.display = 'none';
   document.getElementById('trPresentInUs').value = '';
-  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['trNrCitizenship','trNrTaxCountry','trSptFirstEntry','trSptDaysCY','trSptDaysLY','trSptDays2Y','trSptExemptVisa','trExemptDaysCY','trExemptDaysLY','trExemptDays2Y','trSptCitizenship','trSptTaxCountry'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   document.getElementById('trSptExempt').value = '';
   document.getElementById('trSptPreview').style.display = 'none';
   ['trServicesLoc','trTreatyClaim','trTreatyIncomeType'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
@@ -14586,6 +14638,9 @@ async function openTaxResidencyModal() {
     if (trData.first_entry_date) { const el = document.getElementById('trSptFirstEntry'); if (el) el.value = trData.first_entry_date; }
     if (trData.has_exempt_days) { const el = document.getElementById('trSptExempt'); if (el) el.value = trData.has_exempt_days; }
     if (trData.exempt_visa_status) { const el = document.getElementById('trSptExemptVisa'); if (el) el.value = trData.exempt_visa_status; }
+    if (trData.exempt_days_cy) { const el = document.getElementById('trExemptDaysCY'); if (el) el.value = trData.exempt_days_cy; }
+    if (trData.exempt_days_ly) { const el = document.getElementById('trExemptDaysLY'); if (el) el.value = trData.exempt_days_ly; }
+    if (trData.exempt_days_2y) { const el = document.getElementById('trExemptDays2Y'); if (el) el.value = trData.exempt_days_2y; }
     if (trData.country_citizenship) {
       const el1 = document.getElementById('trSptCitizenship'); if (el1) el1.value = trData.country_citizenship;
       const el2 = document.getElementById('trNrCitizenship'); if (el2) el2.value = trData.country_citizenship;
