@@ -14069,6 +14069,7 @@ function trStep3Next() {
     const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
     const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
     if (!cy && !ly && !ty) return showToast('请填写在美天数', 'error');
+    if (_trDaysValidationError()) return showToast(_trDaysValidationError(), 'error');
     if (!document.getElementById('trSptCitizenship').value) return showToast('请选择 Country of Citizenship', 'error');
   }
   // Hide Step 3, show Step 4
@@ -14213,6 +14214,57 @@ function trClearExemptRows() {
   document.getElementById('trExemptAutoCalcHint').style.display = 'none';
 }
 
+// ─── Day count validation ───
+function _trMaxDaysFor(suffix) {
+  const y = _trYearFor(suffix);
+  const now = new Date();
+  // Current year: max = days elapsed so far; past years: full year
+  if (suffix === 'CY' && now.getFullYear() === y) return _trDayOfYear(now);
+  return _trDaysInYear(y);
+}
+function _trDaysValidationError() {
+  const suffixes = ['CY', 'LY', '2Y'];
+  const labels = { CY: '今年', LY: '去年', '2Y': '前年' };
+  for (const s of suffixes) {
+    const v = parseInt(document.getElementById('trSptDays' + s).value) || 0;
+    const max = _trMaxDaysFor(s);
+    const y = _trYearFor(s);
+    if (v > max) return `${labels[s]} (${y}) 在美天数不能超过 ${max} 天`;
+  }
+  return '';
+}
+function _trValidateDaysInputs() {
+  const suffixes = ['CY', 'LY', '2Y'];
+  let hasError = false;
+  for (const s of suffixes) {
+    const inp = document.getElementById('trSptDays' + s);
+    const v = parseInt(inp.value) || 0;
+    const max = _trMaxDaysFor(s);
+    const y = _trYearFor(s);
+    const errId = 'trDaysErr' + s;
+    let errEl = document.getElementById(errId);
+    if (v > max) {
+      hasError = true;
+      inp.style.borderColor = '#dc2626';
+      inp.style.background = '#fef2f2';
+      if (!errEl) {
+        errEl = document.createElement('div');
+        errEl.id = errId;
+        errEl.style.cssText = 'font-size:.7rem;color:#dc2626;margin-top:.15rem;font-weight:600';
+        inp.parentNode.insertBefore(errEl, inp.nextSibling);
+      }
+      errEl.textContent = `最多 ${max} 天`;
+    } else {
+      // Restore style based on mode
+      const mode = document.getElementById('trSptMode' + s).value;
+      inp.style.borderColor = '';
+      inp.style.background = (mode !== 'manual') ? '#f3f4f6' : '';
+      if (errEl) errEl.remove();
+    }
+  }
+  return hasError;
+}
+
 // Helper: get year offset (CY=0, LY=1, 2Y=2)
 function _trYearFor(suffix) {
   const now = new Date();
@@ -14299,6 +14351,8 @@ function trSptCalc() {
   const ly = parseInt(document.getElementById('trSptDaysLY').value) || 0;
   const ty = parseInt(document.getElementById('trSptDays2Y').value) || 0;
   const el = document.getElementById('trSptPreview');
+  // Validate day counts
+  const hasValidationErr = _trValidateDaysInputs();
   if (!cy && !ly && !ty) { el.style.display = 'none'; trCalcFinalResult(); return; }
   // Check for F/J/M/Q exempt days
   const hasExempt = document.getElementById('trSptExempt').value === 'yes';
@@ -14310,14 +14364,19 @@ function trSptCalc() {
   const w = adjCY + (adjLY / 3) + (adj2Y / 6);
   const meets = adjCY >= 31 && w >= 183;
   el.style.display = '';
-  el.style.background = meets ? '#fef2f2' : '#f0fdf4';
-  el.style.color = meets ? '#991b1b' : '#166534';
-  el.style.border = meets ? '1px solid #fecaca' : '1px solid #bbf7d0';
-  if (hasExempt && (exCY || exLY || ex2Y)) {
-    el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${adjCY}+${adjLY}/3+${adj2Y}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`
-      + `<br><span style="font-size:.72rem;opacity:.7">排除前: ${wRaw.toFixed(1)} (${cy}+${ly}/3+${ty}/6) · 已排除 F/J/M/Q 天数: ${exCY}/${exLY}/${ex2Y}</span>`;
+  if (hasValidationErr) {
+    el.style.background = '#fef2f2'; el.style.color = '#dc2626'; el.style.border = '1px solid #fecaca';
+    el.innerHTML = `<b>⛔ 天数有误，请检查上方标红的输入</b>`;
   } else {
-    el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${cy}+${ly}/3+${ty}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`;
+    el.style.background = meets ? '#fef2f2' : '#f0fdf4';
+    el.style.color = meets ? '#991b1b' : '#166534';
+    el.style.border = meets ? '1px solid #fecaca' : '1px solid #bbf7d0';
+    if (hasExempt && (exCY || exLY || ex2Y)) {
+      el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${adjCY}+${adjLY}/3+${adj2Y}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`
+        + `<br><span style="font-size:.72rem;opacity:.7">排除前: ${wRaw.toFixed(1)} (${cy}+${ly}/3+${ty}/6) · 已排除 F/J/M/Q 天数: ${exCY}/${exLY}/${ex2Y}</span>`;
+    } else {
+      el.innerHTML = `SPT: <b>${w.toFixed(1)}</b> (${cy}+${ly}/3+${ty}/6) → <b>${meets ? '⚠️ Likely Resident Alien → W-9' : '✅ Likely Nonresident Alien'}</b>`;
+    }
   }
   trCalcFinalResult();
 }
