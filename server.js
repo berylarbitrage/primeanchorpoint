@@ -3436,9 +3436,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
 </div>`;
 }
 // Convenience wrappers for each language variant
-function generateContractorInvoiceHtmlTemplate_EN() { return generateContractorInvoiceHtmlTemplate('en'); }
 function generateContractorInvoiceHtmlTemplate_ZH() { return generateContractorInvoiceHtmlTemplate('zh'); }
-function generateContractorInvoiceHtmlTemplate_ES() { return generateContractorInvoiceHtmlTemplate('es'); }
 
 // ── Invoice Approval Form — shared builder (3 language editions) ──
 // lang: 'zh-en' (Chinese+English) | 'en' (English only) | 'en-es' (English+Spanish)
@@ -4061,10 +4059,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   zelle_auth: { name: 'Zelle Payment Authorization / Zelle 账号授权', configKey: 'zelle_auth_template_id', category: 'zelle_auth', generator: generateZelleAuthHtmlTemplate },
   third_party_pay: { name: 'Third-Party Payment Authorization (PayPal/Venmo/CashApp)', configKey: 'third_party_pay_template_id', category: 'third_party_pay', generator: generateThirdPartyPayHtmlTemplate },
   cash_receipt: { name: 'Cash Payment Receipt / 现金付款签收', configKey: 'cash_receipt_template_id', category: 'cash_receipt', generator: generateCashReceiptHtmlTemplate },
-  contractor_invoice: { name: '1099 Contractor Invoice (EN+ZH)', configKey: 'contractor_invoice_template_id', category: 'contractor_invoice', generator: generateContractorInvoiceHtmlTemplate_ZH },
-  contractor_invoice_en: { name: '1099 Contractor Invoice (EN)', configKey: 'contractor_invoice_en_template_id', category: 'contractor_invoice_en', generator: generateContractorInvoiceHtmlTemplate_EN },
+  contractor_invoice:    { name: '1099 Contractor Invoice (EN+ZH)', configKey: 'contractor_invoice_template_id',    category: 'contractor_invoice',    generator: generateContractorInvoiceHtmlTemplate_ZH },
+  contractor_invoice_en: { name: '1099 Contractor Invoice (EN)',    configKey: 'contractor_invoice_en_template_id', category: 'contractor_invoice_en', generator: generateContractorInvoiceHtmlTemplate_EN },
   contractor_invoice_es: { name: '1099 Contractor Invoice (EN+ES)', configKey: 'contractor_invoice_es_template_id', category: 'contractor_invoice_es', generator: generateContractorInvoiceHtmlTemplate_ES },
-  third_party_pay: { name: 'Third-Party Payment Authorization (PayPal/Venmo/CashApp) / 第三方平台付款授权', configKey: 'third_party_pay_template_id', category: 'third_party_pay', generator: generateThirdPartyPayHtmlTemplate },
   invoice_approval:    { name: 'Invoice Approval Form / 发票审批表 (内部)',                          configKey: 'invoice_approval_template_id',    category: 'invoice_approval',    generator: generateInvoiceApprovalHtmlTemplate },
   invoice_approval_en: { name: 'Invoice Approval Form (EN)',                                        configKey: 'invoice_approval_en_template_id', category: 'invoice_approval_en', generator: generateInvoiceApprovalHtmlTemplate_EN },
   invoice_approval_es: { name: 'Invoice Approval Form (EN+ES) / Formulario de Aprobación (EN+ES)', configKey: 'invoice_approval_es_template_id', category: 'invoice_approval_es', generator: generateInvoiceApprovalHtmlTemplate_ES },
@@ -7674,16 +7671,15 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id, lang } = req.body;
-    if (!worker_account_id) return res.status(400).json({ error: '请选择员工' });
+    const { worker_account_id, worker_email, worker_phone } = req.body;
+    if (!worker_account_id) return res.status(400).json({ error: '请选择承包商' });
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
-    if (!w) return res.status(404).json({ error: '员工不存在' });
+    if (!w) return res.status(404).json({ error: '承包商不存在' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    // Pick template by language: 'en' → EN-only, 'es' → EN+ES, default → EN+ZH
-    const invoiceLang = lang === 'en' ? 'contractor_invoice_en' : lang === 'es' ? 'contractor_invoice_es' : 'contractor_invoice';
-    const templateId = getDsealConfigTemplateId(invoiceLang) || getDsealConfigTemplateId('contractor_invoice');
-    if (!templateId) return res.status(400).json({ error: '未配置员工 Invoice 模板，请到 DocuSeal 模板管理中设置' });
-    const workerEmail = w.email || `worker-${w.id}@placeholder.local`;
+    const templateId = getDsealConfigTemplateId('contractor_invoice');
+    if (!templateId) return res.status(400).json({ error: '未配置承包商發票模板，请到 DocuSeal 模板管理中设置' });
+    const workerEmail = worker_email || w.email || `worker-${w.id}@placeholder.local`;
+    const workerPhone = worker_phone || w.phone || '';
     const workerName = w.name || w.username || `Worker #${w.id}`;
     const todayDate = new Date().toISOString().slice(0, 10);
     const dueDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
@@ -7724,11 +7720,22 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     db.prepare(`INSERT INTO contractor_invoices
       (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, ds_envelope_id, ds_status, sent_by)
       VALUES (?,?,?,?,?,?,?,?,?)`)
-      .run(worker_account_id, invoiceNumber, todayDate, 'DocuSeal Invoice (待员工填写)', 0, 'ds_pending', submissionId, 'sent', sentBy);
+      .run(worker_account_id, invoiceNumber, todayDate, '承包商發票 (待填写)', 0, 'ds_pending', submissionId, 'sent', sentBy);
     // Log to worker history
     db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已发送 DocuSeal Invoice 模板给 ${workerName}`);
-    res.json({ success: true, submission_id: submissionId, invoice_number: invoiceNumber });
+      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已發送承包商發票给 ${workerName}`);
+    // Send SMS notification if phone number provided
+    let smsSent = false, emailSent = true; // DocuSeal sends email automatically
+    const warnings = [];
+    if (workerPhone) {
+      try {
+        smsSent = await sendSMS(workerPhone, `[Prime Anchorpoint] ${workerName}，请查收并填写承包商發票 / Please check your email and complete the Contractor Invoice.\nReply STOP to opt out.`);
+      } catch(e) { console.error('[Invoice SMS]', e.message); }
+      if (!smsSent) warnings.push('短信发送失败，请检查手机号');
+    } else {
+      warnings.push('未提供手机号，未发送短信通知');
+    }
+    res.json({ success: true, submission_id: submissionId, invoice_number: invoiceNumber, emailSent, smsSent, warnings });
   } catch (e) {
     console.error('[Send DocuSeal Invoice]', e.message);
     res.status(500).json({ error: e.message });
