@@ -15755,9 +15755,14 @@ async function saveTaxResidency() {
   // Based on result, auto-waive the opposite tax form
   const recommendedForm = (trResult && trResult.recommended_form) || 'W-9';
   if (recommendedForm !== 'W-9') {
-    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
-      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
-    });
+    if (trResult && trResult.wp_conflict) {
+      const wpCatLabel = trResult.wp_conflict_category === 'citizen' ? '美国公民 U.S. Citizen' : '绿卡持有者 Green Card Holder';
+      showToast(`⚠️ 税务身份与工作许可验证冲突：工作许可已验证为【${wpCatLabel}】，但税务判定推荐 ${recommendedForm}。W-9 未自动豁免，请重新核查税务身份填写是否正确。`, 'warning', 8000);
+    } else {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
+        method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
+      });
+    }
   }
 
   // Warn if work permit verification was reset due to category change
@@ -15832,9 +15837,14 @@ async function completeTaxResidency() {
 
   const recommendedForm = (trResult && trResult.recommended_form) || 'W-9';
   if (recommendedForm !== 'W-9') {
-    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
-      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
-    });
+    if (trResult && trResult.wp_conflict) {
+      const wpCatLabel = trResult.wp_conflict_category === 'citizen' ? '美国公民 U.S. Citizen' : '绿卡持有者 Green Card Holder';
+      showToast(`⚠️ 税务身份与工作许可验证冲突：工作许可已验证为【${wpCatLabel}】，但税务判定推荐 ${recommendedForm}。W-9 未自动豁免，请重新核查税务身份填写是否正确。`, 'warning', 8000);
+    } else {
+      await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
+        method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
+      });
+    }
   }
 
   if (trResult && trResult.wp_reset) {

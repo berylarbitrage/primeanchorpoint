@@ -6456,7 +6456,11 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
 
   syncOnboardedStatus(workerId);
 
-  res.json({ success: true, ...calc, taxTasks, wp_reset: wpReset, old_wp_category: oldCategoryKey, new_wp_category: newCategoryKey, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
+  // Cross-check: if work permit verification shows citizen/green_card but tax residency recommends non-W-9 form, flag conflict
+  const wpVerif = db.prepare('SELECT category FROM work_permit_verification WHERE worker_account_id=?').get(workerId);
+  const wpConflict = wpVerif && (wpVerif.category === 'citizen' || wpVerif.category === 'green_card') && calc.recommended_form !== 'W-9';
+
+  res.json({ success: true, ...calc, taxTasks, wp_reset: wpReset, old_wp_category: oldCategoryKey, new_wp_category: newCategoryKey, wp_conflict: wpConflict || false, wp_conflict_category: wpConflict ? wpVerif.category : null, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
 });
 
 // ─── Work Permit Verification ───
