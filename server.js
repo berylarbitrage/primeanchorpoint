@@ -1387,6 +1387,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS work_permit_docs (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS worker_tax_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  doc_label TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Add per-doc metadata columns to work_permit_docs
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN doc_number TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN issue_date TEXT DEFAULT ''"); } catch {}
@@ -4189,7 +4199,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   `);
   const getContractInfo = db.prepare("SELECT ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'");
   const getContractVersionCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_contract_versions WHERE worker_account_id=?");
-  const getTaxResidency = db.prepare("SELECT recommended_form, tax_status FROM tax_residency_questionnaire WHERE worker_account_id=?");
+  const getTaxResidency = db.prepare("SELECT tax_status, recommended_form, country_citizenship, country_tax_residence, treaty_country, claim_treaty_benefit, services_location FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY id DESC LIMIT 1");
   const getTaxFilingDocCount = db.prepare("SELECT COUNT(*) as cnt FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? AND file_path!=''");
   const currentTaxYear = new Date().getFullYear() - 1; // filing for prior year
 
@@ -4201,7 +4211,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const qualCount = getQualifiedReferrals.get(w.id, refConfig.min_hours_to_qualify);
     const contractInfo = getContractInfo.get(w.id);
     const contractVerCount = getContractVersionCount.get(w.id);
-    const taxResidency = getTaxResidency.get(w.id);
+    const taxRes = getTaxResidency.get(w.id);
     const taxFilingDocCount = getTaxFilingDocCount.get(w.id, currentTaxYear);
 
     const complianceMap = {};
@@ -4217,8 +4227,11 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral,
       contract_ds_status: contractInfo?.ds_status || '',
       contract_version_count: contractVerCount?.cnt || 0,
-      recommended_form: taxResidency?.recommended_form || '',
-      tax_status: taxResidency?.tax_status || '',
+      recommended_form: taxRes?.recommended_form || '',
+      tax_status: taxRes?.tax_status || '',
+      tax_treaty_country: taxRes?.treaty_country || '',
+      tax_claim_treaty: taxRes?.claim_treaty_benefit || '',
+      tax_services_location: taxRes?.services_location || '',
       tax_filing_doc_count: taxFilingDocCount?.cnt || 0,
       current_tax_year: currentTaxYear
     };
@@ -4465,6 +4478,10 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
   // Get old status for history logging
   const oldTask = db.prepare("SELECT status, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key=?").get(req.params.id, req.params.key);
   const oldStatus = oldTask ? oldTask.status : '';
+  // Prevent marking contract as completed unless both parties have signed
+  if (req.params.key === 'contract' && status === 'completed' && oldTask && oldTask.ds_status && oldTask.ds_status !== 'completed') {
+    return res.status(400).json({ error: '合同尚未双方签署完成，无法标记为已完成。Contract requires both parties to sign before marking complete.' });
+  }
   // When resetting contract to pending, also clear DocuSeal signing data and archive submission
   if (req.params.key === 'contract' && status === 'pending' && oldTask && oldTask.ds_status) {
     const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(req.params.id);
@@ -10125,6 +10142,91 @@ app.get('/api/worker/compliance', requireWorker, (req, res) => {
     assigned_tasks: assignedTasks,
     doc_types: ['i9', 'drivers_license', 'w9', 'ssn_card', 'work_permit', 'other'],
     expiring_docs: expiringDocs
+  });
+});
+
+// ─── Worker: Form Submission Summary ───
+app.get('/api/worker/submission-summary', requireWorker, (req, res) => {
+  const w = db.prepare('SELECT id, username, name, phone, email, work_status, employment_type, entity_type, employee_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!w) return res.status(404).json({ error: 'Account not found' });
+
+  // Get onboarding tasks
+  const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.workerId);
+  if (!existing) initWorkerOnboarding(req.workerId);
+  const tasks = getOnboardingTasks(req.workerId).filter(t => t.visible_to_worker !== 0);
+
+  // Get compliance docs
+  const docs = db.prepare('SELECT id, doc_type, status, file_name, expires_at, created_at, updated_at, reviewer_notes FROM worker_compliance_docs WHERE worker_account_id=? ORDER BY created_at DESC').all(req.workerId);
+  const docsByType = {};
+  for (const d of docs) { if (!docsByType[d.doc_type]) docsByType[d.doc_type] = d; }
+
+  // Get I-9 form data (citizenship status)
+  const i9Doc = db.prepare("SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='i9' ORDER BY created_at DESC LIMIT 1").get(req.workerId);
+  let citizenshipStatus = '';
+  if (i9Doc && i9Doc.form_data) {
+    try { citizenshipStatus = JSON.parse(i9Doc.form_data).citizenship_status || ''; } catch {}
+  }
+
+  // Get tax residency info
+  const taxRes = db.prepare('SELECT applicant_type, is_us_citizen, has_green_card, country_citizenship, immigration_status, work_permit_category, tax_status, recommended_form FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY updated_at DESC LIMIT 1').get(req.workerId);
+
+  // Get assignment/contract info
+  const assignment = req.workerEmployeeId
+    ? db.prepare('SELECT contract_type, status, start_date FROM assignments WHERE worker_account_id=? ORDER BY id DESC LIMIT 1').get(req.workerId)
+    : null;
+
+  // Derive work authorization category
+  let workAuthCategory = '';
+  if (citizenshipStatus === 'citizen' || (taxRes && taxRes.is_us_citizen === 'yes')) {
+    workAuthCategory = 'us_citizen';
+  } else if (citizenshipStatus === 'permanent_resident' || (taxRes && taxRes.has_green_card === 'yes')) {
+    workAuthCategory = 'green_card';
+  } else if (taxRes && taxRes.work_permit_category) {
+    const cat = taxRes.work_permit_category;
+    if (cat.startsWith('EAD')) workAuthCategory = 'ead';
+    else if (cat === 'H-1B' || cat === 'H-1B1') workAuthCategory = 'h1b';
+    else if (cat === 'F-1-OPT' || cat.includes('OPT')) workAuthCategory = 'opt';
+    else if (cat === 'F-1-CPT') workAuthCategory = 'cpt';
+    else workAuthCategory = cat.toLowerCase();
+  } else if (citizenshipStatus === 'work_authorized') {
+    workAuthCategory = 'work_authorized';
+  }
+
+  // Derive employment type
+  let empType = w.employment_type || '';
+  if (!empType && assignment) empType = assignment.contract_type || '';
+
+  // Compute completion stats
+  const visibleTasks = tasks;
+  const completedTasks = visibleTasks.filter(t => ['completed', 'waived'].includes(t.status));
+  const submittedTasks = visibleTasks.filter(t => t.status === 'submitted');
+  const pendingTasks = visibleTasks.filter(t => t.status === 'pending');
+
+  // Key form statuses
+  const formStatuses = {};
+  for (const t of tasks) {
+    formStatuses[t.key] = { status: t.status, completed_at: t.completed_at };
+  }
+
+  res.json({
+    worker: { name: w.name, username: w.username },
+    work_auth_category: workAuthCategory,
+    citizenship_status: citizenshipStatus,
+    employment_type: empType,
+    tax_residency: taxRes ? {
+      tax_status: taxRes.tax_status,
+      recommended_form: taxRes.recommended_form,
+      immigration_status: taxRes.immigration_status,
+      work_permit_category: taxRes.work_permit_category
+    } : null,
+    form_statuses: formStatuses,
+    compliance_docs: docsByType,
+    stats: {
+      total: visibleTasks.length,
+      completed: completedTasks.length,
+      submitted: submittedTasks.length,
+      pending: pendingTasks.length
+    }
   });
 });
 

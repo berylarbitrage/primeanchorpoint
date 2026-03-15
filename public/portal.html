@@ -754,6 +754,12 @@ function googleTranslateElementInit() {
         <div class="compliance-grid" id="complianceOverview"></div>
       </div>
 
+      <!-- Submission Summary -->
+      <div class="card" id="submissionSummaryCard" style="display:none">
+        <h2 id="sumTitleEl"></h2>
+        <div id="submissionSummaryContent"></div>
+      </div>
+
       <!-- I-9 Form -->
       <div class="card" id="i9FormCard" style="display:none">
         <h2>I-9 表格 / Employment Eligibility Verification</h2>
@@ -1384,6 +1390,13 @@ const PORTAL_I18N = {
     obActionGusto: '填写 Gusto 信息 →', obActionContract: '查看/签署合同 →', obActionW9: '填写 W-9 税表 →', obContractWaiting: '⏳ 合同已创建，等待公司签署后即可签署', obActionSubmit: '标记已提交',
     obSubmittedNote: '已提交，等待 HR 审核中…',
     obOptional: '(可豁免)',
+    sumTitle: '提交概览', sumWorkAuth: '工作授权', sumEmpType: '雇佣类型', sumForms: '关联表格', sumProgress: '入职进度',
+    sumAuthLabels: { us_citizen: '🇺🇸 美国公民', green_card: '🟢 绿卡 (永久居民)', ead: 'EAD 工卡', h1b: 'H-1B 签证', opt: 'OPT (F-1)', cpt: 'CPT (F-1)', work_authorized: '工作授权外国人', unknown: '待确认' },
+    sumEmpLabels: { W2: 'W-2 员工', '1099': '1099 承包商', '': '待确认' },
+    sumFormMap: { W2: 'I-9 就业资格验证', '1099': 'W-9 纳税人信息' },
+    sumCompleted: '已完成', sumOf: '/', sumRemaining: '项待处理',
+    sumI9Done: 'I-9 表格已提交', sumW9Done: 'W-9 表格已提交', sumI9Pending: 'I-9 待提交', sumW9Pending: 'W-9 待提交',
+    sumNextSteps: '下一步', sumAllDone: '所有表格已提交，等待HR审核。',
     obTaskTitles: { phone_verify:'手机号验证', email_verify:'邮箱验证', interview:'完成面试', persona_verify:'身份证件验证', background_check:'背景调查', id_verify:'身份证件上传', ssn_verify:'SSN 验证', ead_upload:'EAD 文件上传', i9:'I-9 表格', w9:'W-9 表格', contract:'合同签署', gusto:'Gusto 薪资信息', work_auth:'Work Authorization 认证' },
     obSubmitSuccess: '已提交，等待 HR 审核', obSubmitFail: '提交失败',
     ccTitlePhone: '更换手机号', ccTitleEmail: '更换邮箱',
@@ -1535,6 +1548,13 @@ const PORTAL_I18N = {
     obActionGusto: 'Complete Gusto Setup →', obActionContract: 'View/Sign Contract →', obActionW9: 'Complete W-9 Form →', obContractWaiting: '⏳ Contract created, waiting for company to sign first', obActionSubmit: 'Mark as Submitted',
     obSubmittedNote: 'Submitted — awaiting HR review…',
     obOptional: '(Optional)',
+    sumTitle: 'Submission Summary', sumWorkAuth: 'Work Authorization', sumEmpType: 'Employment Type', sumForms: 'Associated Forms', sumProgress: 'Onboarding Progress',
+    sumAuthLabels: { us_citizen: '🇺🇸 U.S. Citizen', green_card: '🟢 Green Card (LPR)', ead: 'EAD Card', h1b: 'H-1B Visa', opt: 'OPT (F-1)', cpt: 'CPT (F-1)', work_authorized: 'Alien Authorized to Work', unknown: 'Pending' },
+    sumEmpLabels: { W2: 'W-2 Employee', '1099': '1099 Contractor', '': 'Pending' },
+    sumFormMap: { W2: 'I-9 Employment Eligibility', '1099': 'W-9 Taxpayer Information' },
+    sumCompleted: 'completed', sumOf: '/', sumRemaining: 'remaining',
+    sumI9Done: 'I-9 Form Submitted', sumW9Done: 'W-9 Form Submitted', sumI9Pending: 'I-9 Pending', sumW9Pending: 'W-9 Pending',
+    sumNextSteps: 'Next Steps', sumAllDone: 'All forms submitted. Awaiting HR review.',
     obTaskTitles: { phone_verify:'Phone Verification', email_verify:'Email Verification', interview:'Complete Interview', persona_verify:'Identity Verification', background_check:'Background Check', id_verify:'ID Document Upload', ssn_verify:'SSN Verification', ead_upload:'EAD Upload', i9:'I-9 Form', w9:'W-9 Form', contract:'Sign Contract', gusto:'Gusto Payroll Setup', work_auth:'Work Authorization' },
     obSubmitSuccess: 'Submitted — awaiting HR review', obSubmitFail: 'Submission failed',
     ccTitlePhone: 'Change Phone', ccTitleEmail: 'Change Email',
@@ -1686,6 +1706,13 @@ const PORTAL_I18N = {
     obActionGusto: 'Completar Gusto →', obActionContract: 'Ver/Firmar Contrato →', obActionW9: 'Completar Formulario W-9 →', obContractWaiting: '⏳ Contrato creado, esperando la firma de la empresa', obActionSubmit: 'Marcar como Enviado',
     obSubmittedNote: 'Enviado — esperando revisión de RR.HH.…',
     obOptional: '(Opcional)',
+    sumTitle: 'Resumen de Envío', sumWorkAuth: 'Autorización de Trabajo', sumEmpType: 'Tipo de Empleo', sumForms: 'Formularios Asociados', sumProgress: 'Progreso de Incorporación',
+    sumAuthLabels: { us_citizen: '🇺🇸 Ciudadano de EE.UU.', green_card: '🟢 Tarjeta Verde (Residente)', ead: 'Tarjeta EAD', h1b: 'Visa H-1B', opt: 'OPT (F-1)', cpt: 'CPT (F-1)', work_authorized: 'Extranjero Autorizado', unknown: 'Pendiente' },
+    sumEmpLabels: { W2: 'Empleado W-2', '1099': 'Contratista 1099', '': 'Pendiente' },
+    sumFormMap: { W2: 'I-9 Elegibilidad de Empleo', '1099': 'W-9 Información Fiscal' },
+    sumCompleted: 'completados', sumOf: '/', sumRemaining: 'pendientes',
+    sumI9Done: 'Formulario I-9 Enviado', sumW9Done: 'Formulario W-9 Enviado', sumI9Pending: 'I-9 Pendiente', sumW9Pending: 'W-9 Pendiente',
+    sumNextSteps: 'Próximos Pasos', sumAllDone: 'Todos los formularios enviados. Esperando revisión de RR.HH.',
     obTaskTitles: { phone_verify:'Verificación de Teléfono', email_verify:'Verificación de Correo', interview:'Completar Entrevista', persona_verify:'Verificación de Identidad', background_check:'Verificación de Antecedentes', id_verify:'Carga de Documento ID', ssn_verify:'Verificación de SSN', ead_upload:'Carga de EAD', i9:'Formulario I-9', w9:'Formulario W-9', contract:'Firmar Contrato', gusto:'Configuración de Nómina Gusto', work_auth:'Autorización de Trabajo' },
     obSubmitSuccess: 'Enviado — esperando revisión de RR.HH.', obSubmitFail: 'Error al enviar',
     ccTitlePhone: 'Cambiar Teléfono', ccTitleEmail: 'Cambiar Correo',
@@ -4305,6 +4332,7 @@ const STATUS_LABELS = { pending: '审核中', approved: '已通过', rejected: '
 const STATUS_CLASS = { pending: 'ci-pending', approved: 'ci-approved', rejected: 'ci-rejected', not_submitted: 'ci-not-submitted', ordered: 'ci-pending', completed: 'ci-approved', clear: 'ci-approved', flagged: 'ci-rejected' };
 
 async function loadCompliance() {
+  loadSubmissionSummary();
   const grid = document.getElementById('complianceOverview');
   // Check if persona verification has been initiated
   let pStatus = await wApi('/persona/status');
@@ -4912,7 +4940,7 @@ async function submitI9(e) {
       body: fd
     });
     const data = await r.json();
-    if (data.success) { showToast('✅ I-9 已提交，等待审核'); form.reset(); loadCompliance(); }
+    if (data.success) { showToast('✅ I-9 已提交，等待审核'); form.reset(); loadCompliance(); loadSubmissionSummary(); }
     else customAlert(data.error || '提交失败', '提交失败', '❌');
   } catch { customAlert('网络错误', '错误', '❌'); }
 }
@@ -4980,6 +5008,90 @@ async function submitW9(e) {
     else customAlert(data.error || '提交失败', '提交失败', '❌');
   } catch { customAlert('网络错误', '错误', '❌'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '提交 W-9 / Submit'; } }
+}
+
+// ─── Submission Summary ───
+async function loadSubmissionSummary() {
+  const card = document.getElementById('submissionSummaryCard');
+  const content = document.getElementById('submissionSummaryContent');
+  const titleEl = document.getElementById('sumTitleEl');
+  if (!card || !content) return;
+  try {
+    const data = await wApi('/submission-summary');
+    if (!data || data.error) { card.style.display = 'none'; return; }
+
+    titleEl.textContent = _t('sumTitle');
+    const authLabels = _t('sumAuthLabels') || {};
+    const empLabels = _t('sumEmpLabels') || {};
+    const formMap = _t('sumFormMap') || {};
+
+    const authCat = data.work_auth_category || 'unknown';
+    const empType = data.employment_type || '';
+    const authLabel = authLabels[authCat] || authLabels.unknown || authCat;
+    const empLabel = empLabels[empType] || empLabels[''] || empType;
+
+    // Determine associated form based on employment type
+    const assocForm = formMap[empType] || '';
+
+    // Form status badges
+    const fs = data.form_statuses || {};
+    const i9s = fs.i9?.status || 'pending';
+    const w9s = fs.w9?.status || 'pending';
+    const i9Done = ['completed','submitted','waived'].includes(i9s);
+    const w9Done = ['completed','submitted','waived'].includes(w9s);
+
+    // Stats
+    const stats = data.stats || {};
+    const pct = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+
+    // Next steps
+    let nextStepsHtml = '';
+    const pendingForms = [];
+    if (!i9Done && (empType === 'W2' || !empType)) pendingForms.push(_t('sumI9Pending'));
+    if (!w9Done && (empType === '1099' || !empType)) pendingForms.push(_t('sumW9Pending'));
+    if (pendingForms.length === 0) {
+      nextStepsHtml = `<div style="padding:.6rem .8rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.82rem;color:#065f46">${_t('sumAllDone')}</div>`;
+    } else {
+      nextStepsHtml = `<div style="font-size:.82rem;color:var(--gray-500)">${_t('sumNextSteps')}：${pendingForms.join('、')}</div>`;
+    }
+
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+        <!-- Work Auth Status -->
+        <div style="border:1.5px solid #e9d5ff;border-radius:10px;padding:1rem;background:#faf5ff">
+          <div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem">${esc(_t('sumWorkAuth'))}</div>
+          <div style="font-size:1.05rem;font-weight:700;color:var(--blue)">${esc(authLabel)}</div>
+          ${data.tax_residency?.work_permit_category ? `<div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem">${esc(data.tax_residency.work_permit_category)}</div>` : ''}
+        </div>
+        <!-- Employment Type -->
+        <div style="border:1.5px solid #bae6fd;border-radius:10px;padding:1rem;background:#f0f9ff">
+          <div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem">${esc(_t('sumEmpType'))}</div>
+          <div style="font-size:1.05rem;font-weight:700;color:var(--blue)">${esc(empLabel)}</div>
+          ${assocForm ? `<div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem">${esc(assocForm)}</div>` : ''}
+        </div>
+      </div>
+      <!-- Form Status Badges -->
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem">
+        ${empType === 'W2' || !empType ? `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .75rem;border-radius:20px;font-size:.8rem;font-weight:600;${i9Done ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a'}">${i9Done ? '✅' : '⏳'} ${i9Done ? _t('sumI9Done') : _t('sumI9Pending')}</span>` : ''}
+        ${empType === '1099' || !empType ? `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .75rem;border-radius:20px;font-size:.8rem;font-weight:600;${w9Done ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a'}">${w9Done ? '✅' : '⏳'} ${w9Done ? _t('sumW9Done') : _t('sumW9Pending')}</span>` : ''}
+      </div>
+      <!-- Progress Bar -->
+      <div style="margin-bottom:.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+          <span style="font-size:.78rem;font-weight:600;color:var(--blue)">${esc(_t('sumProgress'))}</span>
+          <span style="font-size:.78rem;color:var(--gray-500)">${stats.completed}${_t('sumOf')}${stats.total} ${_t('sumCompleted')}${stats.pending > 0 ? ` · ${stats.pending} ${_t('sumRemaining')}` : ''}</span>
+        </div>
+        <div style="background:var(--gray-100);border-radius:6px;height:8px;overflow:hidden">
+          <div style="background:linear-gradient(90deg,#10b981,#34d399);height:100%;border-radius:6px;width:${pct}%;transition:width .5s ease"></div>
+        </div>
+      </div>
+      ${nextStepsHtml}
+    `;
+    card.style.display = '';
+  } catch (e) {
+    console.error('[loadSubmissionSummary]', e);
+    card.style.display = 'none';
+  }
 }
 
 // ─── Onboarding / 待办事项 ───
