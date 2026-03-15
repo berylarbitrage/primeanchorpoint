@@ -13454,8 +13454,11 @@ function renderOnboardingTasks(tasks) {
     if (assignedTasks.length) return assignedTasks.includes(t.key);
     return true;
   }).map(t => {
-    const s = t.status;
-    const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
+    // For contract tasks: override status based on ds_status (signing must be completed by both parties)
+    const s = (t.key === 'contract' && t.ds_status && t.ds_status !== 'completed' && t.status === 'completed') ? 'submitted' : t.status;
+    // For contract tasks: prevent manual completion unless both parties have signed
+    const contractNotFullySigned = t.key === 'contract' && t.ds_status && t.ds_status !== 'completed';
+    const canComplete = (s === 'pending' || s === 'submitted' || s === 'locked') && !contractNotFullySigned;
     const canWaive = s !== 'completed' && s !== 'waived';
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';

@@ -4456,6 +4456,10 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
   // Get old status for history logging
   const oldTask = db.prepare("SELECT status, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key=?").get(req.params.id, req.params.key);
   const oldStatus = oldTask ? oldTask.status : '';
+  // Prevent marking contract as completed unless both parties have signed
+  if (req.params.key === 'contract' && status === 'completed' && oldTask && oldTask.ds_status && oldTask.ds_status !== 'completed') {
+    return res.status(400).json({ error: '合同尚未双方签署完成，无法标记为已完成。Contract requires both parties to sign before marking complete.' });
+  }
   // When resetting contract to pending, also clear DocuSeal signing data and archive submission
   if (req.params.key === 'contract' && status === 'pending' && oldTask && oldTask.ds_status) {
     const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(req.params.id);
