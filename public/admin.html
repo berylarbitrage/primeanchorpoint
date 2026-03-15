@@ -2175,7 +2175,7 @@ tr:hover td{background:var(--sky-light)}
   <div style="max-width:960px;margin:1.5rem auto;padding:0 1rem 3rem">
 
     <!-- Connection status -->
-    <div id="ds-conn-badge" style="margin-bottom:1rem"></div>
+    <div id="ds-conn-badge" style="margin-bottom:1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap"></div>
 
     <!-- Current config -->
     <div style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1.5rem">
@@ -19767,14 +19767,24 @@ async function loadDocusealTemplatesPage() {
 async function _dsLoadConfig() {
   try {
     _dsConfig = await api('/api/admin/docuseal/config');
-    const badge = document.getElementById('ds-conn-badge');
-    if (_dsConfig.connected) {
-      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#d1fae5;color:#065f46">✓ 已连接 DocuSeal</span>${_dsConfig.url ? ` <span style="font-size:.78rem;color:#94a3b8">${_dsEsc(_dsConfig.url)}</span>` : ''}`;
-    } else {
-      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#fee2e2;color:#991b1b">✗ 未连接 — 请在 Render 环境变量中配置 DOCUSEAL_API_KEY / DOCUSEAL_URL</span>`;
-    }
     _dsRefreshSelects();
   } catch(e) { showToast(e.message, 'error'); }
+  await _dsTestConnection();
+}
+
+async function _dsTestConnection() {
+  const badge = document.getElementById('ds-conn-badge');
+  badge.innerHTML = `<span style="font-size:.82rem;color:#94a3b8">检测连接中…</span>`;
+  try {
+    const r = await api('/api/admin/docuseal/test');
+    if (r.ok) {
+      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#d1fae5;color:#065f46">✓ 已连接 DocuSeal</span>${r.url ? `<span style="font-size:.78rem;color:#94a3b8">${_dsEsc(r.url)}</span>` : ''}<button onclick="_dsTestConnection()" style="font-size:.75rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0">重新检测</button>`;
+    } else {
+      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#fee2e2;color:#991b1b">✗ 未连接</span><span style="font-size:.82rem;color:#b91c1c">${_dsEsc(r.detail || '')}</span><button onclick="_dsTestConnection()" style="font-size:.75rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0">重新检测</button>`;
+    }
+  } catch(e) {
+    badge.innerHTML = `<span style="font-size:.82rem;color:#ef4444">${_dsEsc(e.message)}</span><button onclick="_dsTestConnection()" style="font-size:.75rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0">重新检测</button>`;
+  }
 }
 
 async function _dsLoadMyTemplates() {

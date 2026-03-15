@@ -12974,6 +12974,22 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   res.json(out);
 });
 
+// GET /api/admin/docuseal/test — test actual connectivity to DocuSeal
+app.get('/api/admin/docuseal/test', requireAdmin, async (req, res) => {
+  const { apiKey, baseUrl } = dsealGetCreds();
+  if (!apiKey && !baseUrl) return res.json({ ok: false, reason: 'missing_both', detail: 'DOCUSEAL_API_KEY 和 DOCUSEAL_URL 均未设置' });
+  if (!apiKey) return res.json({ ok: false, reason: 'missing_key', detail: 'DOCUSEAL_API_KEY 未设置' });
+  if (!baseUrl) return res.json({ ok: false, reason: 'missing_url', detail: 'DOCUSEAL_URL 未设置' });
+  try {
+    const r = await dsealApiCall('GET', '/api/templates', null);
+    if (r.status === 200 || r.status === 201) return res.json({ ok: true, url: baseUrl });
+    if (r.status === 401) return res.json({ ok: false, reason: 'invalid_key', detail: 'API Key 无效（401 Unauthorized）' });
+    return res.json({ ok: false, reason: 'api_error', detail: `DocuSeal 返回 ${r.status}` });
+  } catch (e) {
+    return res.json({ ok: false, reason: 'network', detail: `无法连接到 ${baseUrl}：${e.message}` });
+  }
+});
+
 // POST /api/admin/docuseal/config — save template IDs
 app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
