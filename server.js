@@ -2578,6 +2578,18 @@ function getDsealConfigTemplateId(type) {
       company_contract: cfg.company_contract_template_id || cfg.contract_template_id,
       worker_1099: cfg.worker_1099_template_id,
       worker_w2: cfg.worker_w2_template_id,
+      w4: cfg.w4_template_id,
+      w8ben: cfg.w8ben_template_id,
+      w8bene: cfg.w8bene_template_id,
+      form8233: cfg.form8233_template_id,
+      i9: cfg.i9_template_id,
+      w7: cfg.w7_template_id,
+      ach_auth: cfg.ach_auth_template_id,
+      wire_auth: cfg.wire_auth_template_id,
+      check_instruction: cfg.check_instruction_template_id,
+      zelle_auth: cfg.zelle_auth_template_id,
+      third_party_pay: cfg.third_party_pay_template_id,
+      cash_receipt: cfg.cash_receipt_template_id,
     };
     return map[type] || '';
   } catch { return ''; }
@@ -12762,27 +12774,28 @@ app.delete('/api/admin/invoices/:id', requireAdmin, blockManager, (req, res) => 
 app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const row = db.prepare("SELECT * FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
-  res.json({
-    connected: dsealEnabled(),
-    url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, ''),
-    company_contract_template_id: cfg.company_contract_template_id || cfg.contract_template_id || null,
-    worker_1099_template_id: cfg.worker_1099_template_id || null,
-    worker_w2_template_id: cfg.worker_w2_template_id || null,
-    w9_template_id: cfg.w9_template_id || null,
-  });
+  const allKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
+    'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
+    'i9_template_id','w7_template_id',
+    'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
+    'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id'];
+  const out = { connected: dsealEnabled(), url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '') };
+  allKeys.forEach(k => { out[k] = cfg[k] || null; });
+  out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
+  res.json(out);
 });
 
 // POST /api/admin/docuseal/config — save template IDs
 app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
-  const { company_contract_template_id, worker_1099_template_id, worker_w2_template_id, w9_template_id,
-          contract_template_id /* legacy */ } = req.body;
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
-  if (company_contract_template_id !== undefined) cfg.company_contract_template_id = company_contract_template_id || null;
-  if (worker_1099_template_id !== undefined) cfg.worker_1099_template_id = worker_1099_template_id || null;
-  if (worker_w2_template_id !== undefined) cfg.worker_w2_template_id = worker_w2_template_id || null;
-  if (w9_template_id !== undefined) cfg.w9_template_id = w9_template_id || null;
-  if (contract_template_id !== undefined) cfg.contract_template_id = contract_template_id || null; // legacy
+  const _configKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
+    'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
+    'i9_template_id','w7_template_id',
+    'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
+    'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
+    'contract_template_id' /* legacy */];
+  _configKeys.forEach(k => { if (req.body[k] !== undefined) cfg[k] = req.body[k] || null; });
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
     .run(JSON.stringify(cfg));
   res.json({ success: true });
@@ -12811,11 +12824,7 @@ app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) =
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
     const cfg = JSON.parse(row?.config || '{}');
     const tid = parseInt(req.params.id);
-    if (cfg.contract_template_id == tid) cfg.contract_template_id = null;
-    if (cfg.company_contract_template_id == tid) cfg.company_contract_template_id = null;
-    if (cfg.worker_1099_template_id == tid) cfg.worker_1099_template_id = null;
-    if (cfg.worker_w2_template_id == tid) cfg.worker_w2_template_id = null;
-    if (cfg.w9_template_id == tid) cfg.w9_template_id = null;
+    Object.keys(cfg).forEach(k => { if (k.endsWith('_template_id') && cfg[k] == tid) cfg[k] = null; });
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
       .run(JSON.stringify(cfg));
     res.json({ success: true });
@@ -12866,11 +12875,7 @@ app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
   const _tid = local.docuseal_template_id;
-  if (cfg.contract_template_id == _tid) cfg.contract_template_id = null;
-  if (cfg.company_contract_template_id == _tid) cfg.company_contract_template_id = null;
-  if (cfg.worker_1099_template_id == _tid) cfg.worker_1099_template_id = null;
-  if (cfg.worker_w2_template_id == _tid) cfg.worker_w2_template_id = null;
-  if (cfg.w9_template_id == _tid) cfg.w9_template_id = null;
+  Object.keys(cfg).forEach(k => { if (k.endsWith('_template_id') && cfg[k] == _tid) cfg[k] = null; });
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
     .run(JSON.stringify(cfg));
   // Delete from local DB
