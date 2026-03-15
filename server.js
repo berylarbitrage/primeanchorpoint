@@ -1607,6 +1607,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
   reject_reason TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// Add DocuSeal columns to contractor_invoices
+['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_signed_at DATETIME','sent_by TEXT DEFAULT \'\''].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -2337,6 +2339,7 @@ async function dsealApiCall(method, apiPath, body) {
       let d = ''; res.on('data', c => d += c);
       res.on('end', () => { try { resolve({ status: res.statusCode, data: JSON.parse(d) }); } catch { resolve({ status: res.statusCode, data: d }); } });
     });
+    req.setTimeout(15000, () => { req.destroy(new Error('连接超时（15s）')); });
     req.on('error', reject); if (bodyStr) req.write(bodyStr); req.end();
   });
 }
@@ -2610,6 +2613,631 @@ function generateW9HtmlTemplate(workerName) {
 </div>`;
 }
 
+// ── W-4 Employee's Withholding Certificate ──
+function generateW4HtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;max-width:720px;margin:0 auto;padding:16px;color:#111">
+<div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
+  <div style="font-size:1.3rem;font-weight:900;line-height:1">W-4</div>
+  <div>
+    <div style="font-size:8.5pt;font-weight:700">Employee's Withholding Certificate</div>
+    <div style="font-size:7.5pt;color:#555">▶ Complete Form W-4 so that your employer can withhold the correct federal income tax from your pay.</div>
+  </div>
+  <div style="margin-left:auto;font-size:7.5pt;text-align:right">
+    <div>Form W-4</div><div>(Rev. 2024)</div>
+    <div>Department of the Treasury</div><div>Internal Revenue Service</div>
+    <div style="margin-top:2px">OMB No. 1545-0074</div>
+  </div>
+</div>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin-bottom:6px">Step 1: Enter Personal Information</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt">
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>(a)</strong> First name and middle initial</div>
+    <text-field name="w4_first_name" role="Signer" required="true" style="${tf}"></text-field>
+  </td><td style="padding:3px 0 3px 8px;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">Last name</div>
+    <text-field name="w4_last_name" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>(b)</strong> Social security number</div>
+    <text-field name="w4_ssn" role="Signer" required="true" style="${fs}width:180px;text-align:center" placeholder="XXX-XX-XXXX"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>(c)</strong> Address</div>
+    <text-field name="w4_address" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">City or town, state, and ZIP code</div>
+    <text-field name="w4_city_state_zip" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>(d)</strong> Filing Status (check only one box):</div>
+    <text-field name="w4_filing_status" role="Signer" required="true" style="${fs}width:300px" placeholder="Single / Married filing jointly / Head of household"></text-field>
+  </td></tr>
+</table>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Step 2: Multiple Jobs or Spouse Works</div>
+<div style="font-size:8pt;padding:4px 0">Complete this step if you (1) hold more than one job at a time, or (2) are married filing jointly and your spouse also works.</div>
+<text-field name="w4_step2" role="Signer" style="${tf}" placeholder="Check here if applicable, or leave blank"></text-field>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Step 3: Claim Dependents</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt">
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div>Number of qualifying children under age 17 × $2,000 = $</div>
+    <text-field name="w4_dependents_children" role="Signer" style="${fs}width:100px" placeholder="0"></text-field>
+  </td></tr>
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div>Number of other dependents × $500 = $</div>
+    <text-field name="w4_dependents_other" role="Signer" style="${fs}width:100px" placeholder="0"></text-field>
+  </td></tr>
+</table>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Step 4: Other Adjustments (Optional)</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt">
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>(a)</strong> Other income (not from jobs) $</div>
+    <text-field name="w4_other_income" role="Signer" style="${fs}width:100px" placeholder="0"></text-field>
+  </td></tr>
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>(b)</strong> Deductions $</div>
+    <text-field name="w4_deductions" role="Signer" style="${fs}width:100px" placeholder="0"></text-field>
+  </td></tr>
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>(c)</strong> Extra withholding per pay period $</div>
+    <text-field name="w4_extra_withholding" role="Signer" style="${fs}width:100px" placeholder="0"></text-field>
+  </td></tr>
+</table>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Step 5: Sign Here</div>
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;font-size:8.5pt">
+  <div style="font-size:7.5pt;margin-bottom:4px">Under penalties of perjury, I declare that this certificate, to the best of my knowledge and belief, is true, correct, and complete.</div>
+  <table style="width:100%;margin-top:6px"><tr>
+    <td style="width:65%">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Employee's signature ▶</strong></div>
+      <signature-field name="w4_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+    </td>
+    <td style="width:35%;padding-left:10px">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Date ▶</strong></div>
+      <date-field name="w4_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+</div>
+<div style="font-size:7pt;color:#555;margin-top:6px;border-top:1px solid #999;padding-top:4px">
+  <strong>Employers Only</strong> — Employer's name and address / First date of employment / EIN — to be completed by employer.
+</div>
+</div>`;
+}
+
+// ── W-8BEN Certificate of Foreign Status (Individual) ──
+function generateW8BENHtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;max-width:720px;margin:0 auto;padding:16px;color:#111">
+<div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
+  <div style="font-size:1.1rem;font-weight:900;line-height:1">W-8BEN</div>
+  <div>
+    <div style="font-size:8.5pt;font-weight:700">Certificate of Foreign Status of Beneficial Owner for United States Tax Withholding and Reporting (Individuals)</div>
+    <div style="font-size:7.5pt;color:#555">▶ For use by individuals. Entities must use Form W-8BEN-E.</div>
+  </div>
+  <div style="margin-left:auto;font-size:7.5pt;text-align:right">
+    <div>Form W-8BEN</div><div>(Rev. Oct 2021)</div>
+    <div>Department of the Treasury</div><div>Internal Revenue Service</div>
+    <div style="margin-top:2px">OMB No. 1545-1621</div>
+  </div>
+</div>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin-bottom:6px">Part I — Identification of Beneficial Owner</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt">
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>1</strong> Name of individual who is the beneficial owner</div>
+    <text-field name="w8ben_name" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>2</strong> Country of citizenship</div>
+    <text-field name="w8ben_country" role="Signer" required="true" style="${fs}width:250px"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>3</strong> Permanent residence address (street, apt. or suite no., or rural route)</div>
+    <text-field name="w8ben_address" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">City or town, state or province. Include postal code where appropriate.</div>
+    <text-field name="w8ben_city" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">Country</div>
+    <text-field name="w8ben_address_country" role="Signer" required="true" style="${fs}width:250px"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>4</strong> Mailing address (if different from above)</div>
+    <text-field name="w8ben_mailing" role="Signer" style="${tf}" placeholder="Leave blank if same as above"></text-field>
+  </td></tr>
+  <tr><td style="width:50%;padding:3px 4px 3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>5</strong> U.S. taxpayer identification number (SSN or ITIN), if required</div>
+    <text-field name="w8ben_us_tin" role="Signer" style="${fs}width:180px" placeholder="If applicable"></text-field>
+  </td><td style="width:50%;padding:3px 0 3px 8px;border-left:1px solid #ccc;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>6</strong> Foreign tax identifying number (FTIN)</div>
+    <text-field name="w8ben_ftin" role="Signer" style="${fs}width:180px"></text-field>
+  </td></tr>
+  <tr><td style="padding:3px 4px 3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>7</strong> Reference number(s)</div>
+    <text-field name="w8ben_ref" role="Signer" style="${fs}width:180px" placeholder="Optional"></text-field>
+  </td><td style="padding:3px 0 3px 8px;border-left:1px solid #ccc;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>8</strong> Date of birth (MM-DD-YYYY)</div>
+    <text-field name="w8ben_dob" role="Signer" required="true" style="${fs}width:140px" placeholder="MM-DD-YYYY"></text-field>
+  </td></tr>
+</table>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Part II — Claim of Tax Treaty Benefits (if applicable)</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt">
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>9</strong> I certify that the beneficial owner is a resident of <text-field name="w8ben_treaty_country" role="Signer" style="${fs}width:180px" placeholder="Country"></text-field> within the meaning of the income tax treaty between the United States and that country.</div>
+  </td></tr>
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>10</strong> Special rates and conditions: The beneficial owner claims the provisions of Article <text-field name="w8ben_article" role="Signer" style="${fs}width:80px"></text-field> of the treaty to claim a <text-field name="w8ben_rate" role="Signer" style="${fs}width:60px" placeholder="%"></text-field> rate of withholding on (specify type of income): <text-field name="w8ben_income_type" role="Signer" style="${fs}width:200px"></text-field></div>
+  </td></tr>
+</table>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Part III — Certification</div>
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;font-size:8.5pt">
+  <div style="font-size:7.5pt;margin:4px 0">Under penalties of perjury, I declare that I have examined the information on this form and to the best of my knowledge and belief it is true, correct, and complete. I further certify under penalties of perjury that:<br>
+  • I am the individual that is the beneficial owner (or am authorized to sign for the individual that is the beneficial owner) of all the income or proceeds to which this form relates<br>
+  • The person named on line 1 of this form is not a U.S. person<br>
+  • This form relates to income not effectively connected with the conduct of a trade or business in the United States</div>
+  <table style="width:100%;margin-top:6px"><tr>
+    <td style="width:65%">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Sign Here ▶</strong></div>
+      <signature-field name="w8ben_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+    </td>
+    <td style="width:35%;padding-left:10px">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Date (MM-DD-YYYY) ▶</strong></div>
+      <date-field name="w8ben_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+</div>
+</div>`;
+}
+
+// ── W-8BEN-E Certificate of Foreign Status (Entity) ──
+function generateW8BENEHtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;max-width:720px;margin:0 auto;padding:16px;color:#111">
+<div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
+  <div style="font-size:1rem;font-weight:900;line-height:1">W-8BEN-E</div>
+  <div>
+    <div style="font-size:8.5pt;font-weight:700">Certificate of Status of Beneficial Owner for United States Tax Withholding and Reporting (Entities)</div>
+    <div style="font-size:7.5pt;color:#555">▶ For use by entities. Individuals must use Form W-8BEN.</div>
+  </div>
+  <div style="margin-left:auto;font-size:7.5pt;text-align:right">
+    <div>Form W-8BEN-E</div><div>(Rev. Oct 2021)</div>
+    <div>Department of the Treasury</div><div>Internal Revenue Service</div>
+    <div style="margin-top:2px">OMB No. 1545-1621</div>
+  </div>
+</div>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin-bottom:6px">Part I — Identification of Beneficial Owner</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt">
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>1</strong> Name of organization that is the beneficial owner</div>
+    <text-field name="w8bene_org_name" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>2</strong> Country of incorporation or organization</div>
+    <text-field name="w8bene_country" role="Signer" required="true" style="${fs}width:250px"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>3</strong> Name of disregarded entity receiving the payment (if applicable)</div>
+    <text-field name="w8bene_disregarded" role="Signer" style="${tf}" placeholder="If applicable"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>4</strong> Chapter 3 Status (entity type)</div>
+    <text-field name="w8bene_ch3_status" role="Signer" required="true" style="${fs}width:350px" placeholder="Corporation / Partnership / Simple trust / Grantor trust / etc."></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>5</strong> Chapter 4 Status (FATCA status)</div>
+    <text-field name="w8bene_ch4_status" role="Signer" style="${fs}width:350px" placeholder="Active NFFE / Passive NFFE / etc."></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>6</strong> Permanent residence address (street, apt. or suite no., or rural route)</div>
+    <text-field name="w8bene_address" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">City or town, state or province. Include postal code. Country.</div>
+    <text-field name="w8bene_city" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td style="width:50%;padding:3px 4px 3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>9a</strong> U.S. taxpayer identification number (TIN)</div>
+    <text-field name="w8bene_us_tin" role="Signer" style="${fs}width:180px" placeholder="If applicable"></text-field>
+  </td><td style="width:50%;padding:3px 0 3px 8px;border-left:1px solid #ccc;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>9b</strong> Foreign TIN</div>
+    <text-field name="w8bene_ftin" role="Signer" style="${fs}width:180px"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>10</strong> Reference number(s)</div>
+    <text-field name="w8bene_ref" role="Signer" style="${fs}width:250px" placeholder="Optional"></text-field>
+  </td></tr>
+</table>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Part III — Claim of Tax Treaty Benefits (if applicable)</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt">
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>14a</strong> The beneficial owner is a resident of <text-field name="w8bene_treaty_country" role="Signer" style="${fs}width:180px" placeholder="Country"></text-field> within the meaning of the income tax treaty.</div>
+  </td></tr>
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>14b</strong> The beneficial owner derives the item of income for which treaty benefits are claimed, and meets the limitation on benefits provisions if applicable.</div>
+  </td></tr>
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>15</strong> Special rates: Article <text-field name="w8bene_article" role="Signer" style="${fs}width:80px"></text-field> — Rate: <text-field name="w8bene_rate" role="Signer" style="${fs}width:60px" placeholder="%"></text-field> — Type of income: <text-field name="w8bene_income_type" role="Signer" style="${fs}width:200px"></text-field></div>
+  </td></tr>
+</table>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Part XXX — Certification</div>
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;font-size:8.5pt">
+  <div style="font-size:7.5pt;margin:4px 0">Under penalties of perjury, I declare that I have examined the information on this form and to the best of my knowledge and belief it is true, correct, and complete. I further certify under penalties of perjury that the entity identified on line 1 of this form is the beneficial owner of all the income or proceeds to which this form relates, is not a U.S. person, and the entity identified on line 1 is not engaged in the conduct of a trade or business in the United States.</div>
+  <table style="width:100%;margin-top:6px"><tr>
+    <td style="width:65%">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Sign Here ▶</strong></div>
+      <signature-field name="w8bene_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+    </td>
+    <td style="width:35%;padding-left:10px">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Date (MM-DD-YYYY) ▶</strong></div>
+      <date-field name="w8bene_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+  <div style="font-size:8pt;margin-top:6px">
+    <div style="margin-bottom:2px"><strong>Print name of signer ▶</strong></div>
+    <text-field name="w8bene_print_name" role="Signer" required="true" style="${tf}"></text-field>
+  </div>
+</div>
+</div>`;
+}
+
+// ── Form 8233 Exemption From Withholding (Foreign Persons) ──
+function generateForm8233HtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;max-width:720px;margin:0 auto;padding:16px;color:#111">
+<div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
+  <div style="font-size:1.1rem;font-weight:900;line-height:1">8233</div>
+  <div>
+    <div style="font-size:8.5pt;font-weight:700">Exemption From Withholding on Compensation for Independent (and Certain Dependent) Personal Services of a Nonresident Alien Individual</div>
+    <div style="font-size:7.5pt;color:#555">▶ For use by nonresident alien individuals to claim exemption from withholding under a tax treaty.</div>
+  </div>
+  <div style="margin-left:auto;font-size:7.5pt;text-align:right">
+    <div>Form 8233</div><div>(Rev. Sep 2018)</div>
+    <div>Department of the Treasury</div><div>Internal Revenue Service</div>
+    <div style="margin-top:2px">OMB No. 1545-0795</div>
+  </div>
+</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt">
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>1</strong> Name of nonresident alien individual</div>
+    <text-field name="f8233_name" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td style="width:50%;padding:3px 4px 3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>2</strong> U.S. taxpayer identification number (ITIN or SSN)</div>
+    <text-field name="f8233_tin" role="Signer" style="${fs}width:180px"></text-field>
+  </td><td style="width:50%;padding:3px 0 3px 8px;border-left:1px solid #ccc;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>3</strong> Country of nationality</div>
+    <text-field name="f8233_nationality" role="Signer" required="true" style="${fs}width:200px"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>4</strong> Permanent residence address (in home country)</div>
+    <text-field name="f8233_home_address" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>5</strong> Address in the United States</div>
+    <text-field name="f8233_us_address" role="Signer" required="true" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td style="padding:3px 4px 3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>6</strong> U.S. visa type</div>
+    <text-field name="f8233_visa_type" role="Signer" required="true" style="${fs}width:120px" placeholder="F-1, J-1, etc."></text-field>
+  </td><td style="padding:3px 0 3px 8px;border-left:1px solid #ccc;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>7</strong> Date of entry into U.S.</div>
+    <text-field name="f8233_entry_date" role="Signer" style="${fs}width:140px" placeholder="MM-DD-YYYY"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px"><strong>8</strong> Country of residence for tax purposes</div>
+    <text-field name="f8233_tax_country" role="Signer" required="true" style="${fs}width:250px"></text-field>
+  </td></tr>
+</table>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Tax Treaty Claim</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt">
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>11</strong> I claim the tax treaty between the U.S. and <text-field name="f8233_treaty_country" role="Signer" style="${fs}width:180px"></text-field>. I claim exemption under Article <text-field name="f8233_article" role="Signer" style="${fs}width:80px"></text-field>.</div>
+  </td></tr>
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>12</strong> I arrived in the U.S. on <text-field name="f8233_arrival" role="Signer" style="${fs}width:120px" placeholder="MM-DD-YYYY"></text-field> and my compensation is exempt for tax year(s) <text-field name="f8233_tax_years" role="Signer" style="${fs}width:120px" placeholder="2025, 2026"></text-field></div>
+  </td></tr>
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>13</strong> Total compensation expected this tax year: $ <text-field name="f8233_compensation" role="Signer" style="${fs}width:120px"></text-field></div>
+  </td></tr>
+  <tr><td style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div><strong>14</strong> Sufficient facts to justify the exemption from withholding claimed on line 11:</div>
+    <text-field name="f8233_justification" role="Signer" style="${tf}"></text-field>
+  </td></tr>
+</table>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin:8px 0 6px">Certification</div>
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;font-size:8.5pt">
+  <div style="font-size:7.5pt;margin:4px 0">Under penalties of perjury, I declare that I have examined the information on this form and to the best of my knowledge and belief it is true, correct, and complete. I further certify that I am not a U.S. citizen or U.S. resident, and I am the beneficial owner of the compensation for which I am claiming an exemption from withholding.</div>
+  <table style="width:100%;margin-top:6px"><tr>
+    <td style="width:65%">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Signature ▶</strong></div>
+      <signature-field name="f8233_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+    </td>
+    <td style="width:35%;padding-left:10px">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Date ▶</strong></div>
+      <date-field name="f8233_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+</div>
+</div>`;
+}
+
+// ── I-9 Employment Eligibility Verification ──
+function generateI9HtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:9.5pt;max-width:720px;margin:0 auto;padding:16px;color:#111">
+<div style="display:flex;align-items:center;gap:12px;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
+  <div style="font-size:1.3rem;font-weight:900;line-height:1">I-9</div>
+  <div>
+    <div style="font-size:8.5pt;font-weight:700">Employment Eligibility Verification</div>
+    <div style="font-size:7.5pt;color:#555">Department of Homeland Security — U.S. Citizenship and Immigration Services</div>
+  </div>
+  <div style="margin-left:auto;font-size:7.5pt;text-align:right">
+    <div>Form I-9</div><div>(Rev. 08/01/23)</div>
+    <div>USCIS</div>
+    <div style="margin-top:2px">OMB No. 1615-0047</div>
+  </div>
+</div>
+<div style="font-size:8pt;font-weight:700;background:#e5e7eb;padding:4px 6px;margin-bottom:6px">Section 1. Employee Information and Attestation (to be completed by employee)</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt">
+  <tr><td style="width:40%;padding:3px 4px 3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">Last Name (Family Name)</div>
+    <text-field name="i9_last_name" role="Signer" required="true" style="${tf}"></text-field>
+  </td><td style="width:35%;padding:3px 4px;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">First Name (Given Name)</div>
+    <text-field name="i9_first_name" role="Signer" required="true" style="${tf}"></text-field>
+  </td><td style="width:25%;padding:3px 0 3px 4px;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">Middle Initial</div>
+    <text-field name="i9_middle" role="Signer" style="${fs}width:40px"></text-field>
+  </td></tr>
+  <tr><td colspan="2" style="padding:3px 4px 3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">Address (Street Number and Name)</div>
+    <text-field name="i9_address" role="Signer" required="true" style="${tf}"></text-field>
+  </td><td style="padding:3px 0 3px 4px;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">Apt. Number</div>
+    <text-field name="i9_apt" role="Signer" style="${fs}width:60px"></text-field>
+  </td></tr>
+  <tr><td style="padding:3px 4px 3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">City or Town</div>
+    <text-field name="i9_city" role="Signer" required="true" style="${tf}"></text-field>
+  </td><td style="padding:3px 4px;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">State</div>
+    <text-field name="i9_state" role="Signer" required="true" style="${fs}width:60px"></text-field>
+  </td><td style="padding:3px 0 3px 4px;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">ZIP Code</div>
+    <text-field name="i9_zip" role="Signer" required="true" style="${fs}width:80px"></text-field>
+  </td></tr>
+  <tr><td style="padding:3px 4px 3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">Date of Birth (mm/dd/yyyy)</div>
+    <text-field name="i9_dob" role="Signer" required="true" style="${fs}width:120px" placeholder="MM/DD/YYYY"></text-field>
+  </td><td colspan="2" style="padding:3px 0 3px 4px;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">U.S. Social Security Number</div>
+    <text-field name="i9_ssn" role="Signer" style="${fs}width:160px" placeholder="XXX-XX-XXXX"></text-field>
+  </td></tr>
+  <tr><td colspan="3" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">Employee's E-mail Address</div>
+    <text-field name="i9_email" role="Signer" style="${tf}"></text-field>
+  </td></tr>
+  <tr><td colspan="3" style="padding:3px 0;border-bottom:1px solid #ccc">
+    <div style="font-size:8pt;margin-bottom:2px">Employee's Telephone Number</div>
+    <text-field name="i9_phone" role="Signer" style="${fs}width:180px"></text-field>
+  </td></tr>
+</table>
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;margin:8px 0;font-size:8pt">
+  <strong>Citizenship / Immigration Status (check one):</strong>
+  <div style="margin-top:4px">
+    <text-field name="i9_status" role="Signer" required="true" style="${tf}" placeholder="1. A citizen of the United States / 2. A noncitizen national / 3. A lawful permanent resident (Alien Registration Number/USCIS Number: ___) / 4. An alien authorized to work until (expiration date: ___)"></text-field>
+  </div>
+  <div style="margin-top:6px;font-size:8pt">
+    If you selected #3 or #4, provide additional information:<br>
+    Alien Registration Number/USCIS Number: <text-field name="i9_alien_number" role="Signer" style="${fs}width:180px" placeholder="If applicable"></text-field><br>
+    Form I-94 Admission Number: <text-field name="i9_i94" role="Signer" style="${fs}width:180px" placeholder="If applicable"></text-field><br>
+    Foreign Passport Number and Country: <text-field name="i9_passport" role="Signer" style="${fs}width:250px" placeholder="If applicable"></text-field>
+  </div>
+</div>
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px 8px;font-size:8.5pt">
+  <div style="font-size:7.5pt;margin-bottom:4px">I attest, under penalty of perjury, that I am (check one of the above), that I have examined the document(s) presented by the employee, that the above information is true and correct, and that I am aware that providing false information may subject me to fines and/or imprisonment.</div>
+  <table style="width:100%;margin-top:6px"><tr>
+    <td style="width:65%">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Signature of Employee ▶</strong></div>
+      <signature-field name="i9_signature" role="Signer" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+    </td>
+    <td style="width:35%;padding-left:10px">
+      <div style="font-size:8pt;margin-bottom:2px"><strong>Today's Date ▶</strong></div>
+      <date-field name="i9_date" role="Signer" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+</div>
+<div style="font-size:7pt;color:#555;margin-top:6px;border-top:1px solid #999;padding-top:4px">
+  <strong>Section 2 &amp; 3</strong> — Employer or Authorized Representative review and verification, and Reverification and Rehires — to be completed and signed by employer.
+</div>
+</div>`;
+}
+
+// ── Company Contract Template ──
+function generateCompanyContractHtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
+  <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">SERVICE AGREEMENT</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">Company Contract / 公司合同</div>
+</div>
+<p style="font-size:9pt">This Service Agreement ("Agreement") is entered into as of <date-field name="contract_date" role="First Party" style="${fs}width:140px"></date-field> by and between:</p>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+    <div style="font-weight:700;margin-bottom:4px">First Party (Company):</div>
+    <div>${companyName}</div>
+  </td><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+    <div style="font-weight:700;margin-bottom:4px">Second Party (Client/Partner):</div>
+    <text-field name="contract_party2_name" role="Second Party" required="true" style="${tf}"></text-field>
+    <div style="font-size:8pt;margin-top:4px">Company/Organization:</div>
+    <text-field name="contract_party2_company" role="Second Party" style="${tf}"></text-field>
+  </td></tr>
+</table>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">1. SCOPE OF SERVICES</div>
+<p style="font-size:9pt">The parties agree to collaborate on the following services:</p>
+<text-field name="contract_scope" role="First Party" required="true" style="${tf};min-height:60px" placeholder="Description of services to be provided..."></text-field>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">2. TERM</div>
+<p style="font-size:9pt">This Agreement shall commence on <text-field name="contract_start_date" role="First Party" style="${fs}width:120px" placeholder="Start date"></text-field> and continue until <text-field name="contract_end_date" role="First Party" style="${fs}width:120px" placeholder="End date"></text-field>, unless terminated earlier in accordance with this Agreement.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">3. COMPENSATION</div>
+<p style="font-size:9pt">In consideration of the services provided, the payment terms shall be:</p>
+<text-field name="contract_compensation" role="First Party" required="true" style="${tf}" placeholder="Payment amount, schedule, and terms..."></text-field>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">4. CONFIDENTIALITY</div>
+<p style="font-size:9pt">Both parties agree to maintain the confidentiality of any proprietary information disclosed during the course of this Agreement. This obligation shall survive the termination of this Agreement.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">5. TERMINATION</div>
+<p style="font-size:9pt">Either party may terminate this Agreement with 30 days' written notice. Upon termination, all outstanding payments for services rendered shall become due.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">6. GOVERNING LAW</div>
+<p style="font-size:9pt">This Agreement shall be governed by the laws of the State of <text-field name="contract_state" role="First Party" style="${fs}width:140px" placeholder="State"></text-field>.</p>
+<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
+  <div style="font-weight:700;margin-bottom:8px">SIGNATURES</div>
+  <table style="width:100%"><tr>
+    <td style="width:50%;padding-right:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">First Party (${companyName}):</div>
+      <signature-field name="sig1" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="margin-top:4px"><date-field name="date1" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
+    </td>
+    <td style="width:50%;padding-left:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Second Party:</div>
+      <signature-field name="sig2" role="Second Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="margin-top:4px"><date-field name="date2" role="Second Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
+    </td>
+  </tr></table>
+</div>
+</div>`;
+}
+
+// ── Independent Contractor Agreement (1099) ──
+function generateContractor1099HtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
+  <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">INDEPENDENT CONTRACTOR AGREEMENT</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">1099 Contractor / 劳务合同 — 1099</div>
+</div>
+<p style="font-size:9pt">This Independent Contractor Agreement ("Agreement") is made and entered into as of <date-field name="contract_date" role="First Party" style="${fs}width:140px"></date-field>, by and between:</p>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+    <div style="font-weight:700;margin-bottom:4px">Company (First Party):</div>
+    <div>${companyName}</div>
+  </td><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+    <div style="font-weight:700;margin-bottom:4px">Independent Contractor (Second Party):</div>
+    <text-field name="contractor_name" role="Second Party" required="true" style="${tf}"></text-field>
+  </td></tr>
+</table>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">1. INDEPENDENT CONTRACTOR STATUS</div>
+<p style="font-size:9pt">The Contractor is an independent contractor and not an employee, agent, or partner of the Company. The Contractor shall be responsible for all federal and state taxes, including self-employment tax, and the Company will issue a Form 1099-NEC for annual compensation of $600 or more.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">2. SERVICES</div>
+<p style="font-size:9pt">The Contractor agrees to perform the following services:</p>
+<text-field name="contractor_services" role="First Party" required="true" style="${tf};min-height:60px" placeholder="Description of services..."></text-field>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">3. COMPENSATION</div>
+<p style="font-size:9pt">The Company shall pay the Contractor:</p>
+<text-field name="contractor_pay" role="First Party" required="true" style="${tf}" placeholder="Rate/amount and payment schedule..."></text-field>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">4. TERM AND TERMINATION</div>
+<p style="font-size:9pt">This Agreement begins on <text-field name="contractor_start" role="First Party" style="${fs}width:120px" placeholder="Start date"></text-field> and may be terminated by either party with <text-field name="contractor_notice" role="First Party" style="${fs}width:80px" placeholder="14"></text-field> days' written notice.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">5. CONFIDENTIALITY &amp; NON-DISCLOSURE</div>
+<p style="font-size:9pt">The Contractor agrees to keep confidential all proprietary information, trade secrets, and business processes of the Company, both during and after the term of this Agreement.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">6. INTELLECTUAL PROPERTY</div>
+<p style="font-size:9pt">All work product created by the Contractor in the performance of services under this Agreement shall be the sole property of the Company.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">7. INDEMNIFICATION</div>
+<p style="font-size:9pt">The Contractor shall indemnify and hold harmless the Company from any claims, damages, or expenses arising from the Contractor's performance of services.</p>
+<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
+  <div style="font-weight:700;margin-bottom:8px">SIGNATURES</div>
+  <table style="width:100%"><tr>
+    <td style="width:50%;padding-right:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Company (${companyName}):</div>
+      <signature-field name="sig1" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="margin-top:4px"><date-field name="date1" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
+    </td>
+    <td style="width:50%;padding-left:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Independent Contractor:</div>
+      <signature-field name="sig2" role="Second Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="margin-top:4px"><date-field name="date2" role="Second Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
+    </td>
+  </tr></table>
+</div>
+</div>`;
+}
+
+// ── W-2 Employment Agreement ──
+function generateW2EmploymentHtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
+  <div style="font-size:1.2rem;font-weight:900;letter-spacing:1px">EMPLOYMENT AGREEMENT</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">W-2 Employee / 劳务合同 — W2</div>
+</div>
+<p style="font-size:9pt">This Employment Agreement ("Agreement") is made and entered into as of <date-field name="contract_date" role="First Party" style="${fs}width:140px"></date-field>, by and between:</p>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+    <div style="font-weight:700;margin-bottom:4px">Employer (First Party):</div>
+    <div>${companyName}</div>
+  </td><td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+    <div style="font-weight:700;margin-bottom:4px">Employee (Second Party):</div>
+    <text-field name="employee_name" role="Second Party" required="true" style="${tf}"></text-field>
+  </td></tr>
+</table>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">1. POSITION AND DUTIES</div>
+<p style="font-size:9pt">The Employee is hired for the position of:</p>
+<text-field name="employee_position" role="First Party" required="true" style="${tf}" placeholder="Job title"></text-field>
+<p style="font-size:9pt;margin-top:4px">Job duties and responsibilities:</p>
+<text-field name="employee_duties" role="First Party" required="true" style="${tf};min-height:60px" placeholder="Description of duties..."></text-field>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">2. EMPLOYMENT TYPE</div>
+<p style="font-size:9pt">Employment type: <text-field name="employee_type" role="First Party" style="${fs}width:200px" placeholder="Full-time / Part-time"></text-field></p>
+<p style="font-size:9pt">Work schedule: <text-field name="employee_schedule" role="First Party" style="${fs}width:250px" placeholder="Monday-Friday, 9am-5pm"></text-field></p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">3. COMPENSATION AND BENEFITS</div>
+<p style="font-size:9pt">Base salary/wage: $ <text-field name="employee_salary" role="First Party" required="true" style="${fs}width:120px"></text-field> per <text-field name="employee_pay_period" role="First Party" style="${fs}width:100px" placeholder="year/hour"></text-field></p>
+<p style="font-size:9pt">Pay frequency: <text-field name="employee_pay_freq" role="First Party" style="${fs}width:150px" placeholder="Bi-weekly / Monthly"></text-field></p>
+<p style="font-size:9pt">Benefits: The Employee shall be entitled to participate in the Company's benefit programs as described in the Employee Handbook, including health insurance, paid time off, and retirement plans, subject to eligibility requirements.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">4. START DATE</div>
+<p style="font-size:9pt">Employment shall commence on <text-field name="employee_start" role="First Party" required="true" style="${fs}width:140px" placeholder="Start date"></text-field>.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">5. AT-WILL EMPLOYMENT</div>
+<p style="font-size:9pt">This employment is at-will. Either party may terminate this Agreement at any time, with or without cause or notice, subject to applicable law.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">6. CONFIDENTIALITY</div>
+<p style="font-size:9pt">The Employee agrees to maintain the confidentiality of all proprietary information and trade secrets, both during and after employment.</p>
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">7. TAX WITHHOLDING</div>
+<p style="font-size:9pt">The Employer shall withhold all applicable federal, state, and local taxes from the Employee's compensation, including income tax, Social Security, and Medicare, and shall issue Form W-2 annually.</p>
+<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
+  <div style="font-weight:700;margin-bottom:8px">SIGNATURES</div>
+  <table style="width:100%"><tr>
+    <td style="width:50%;padding-right:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Employer (${companyName}):</div>
+      <signature-field name="sig1" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="margin-top:4px"><date-field name="date1" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
+    </td>
+    <td style="width:50%;padding-left:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Employee:</div>
+      <signature-field name="sig2" role="Second Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+      <div style="margin-top:4px"><date-field name="date2" role="Second Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field></div>
+    </td>
+  </tr></table>
+</div>
+</div>`;
+}
+
+// ── Map of all auto-creatable templates ──
+const DOCUSEAL_AUTO_TEMPLATES = {
+  company_contract: { name: 'Company Contract / 公司合同', configKey: 'company_contract_template_id', generator: generateCompanyContractHtmlTemplate },
+  worker_1099: { name: 'Independent Contractor Agreement (1099) / 劳务合同—1099', configKey: 'worker_1099_template_id', generator: generateContractor1099HtmlTemplate },
+  worker_w2: { name: 'Employment Agreement (W-2) / 劳务合同—W2', configKey: 'worker_w2_template_id', generator: generateW2EmploymentHtmlTemplate },
+  w4: { name: 'W-4 Employee Withholding Certificate', configKey: 'w4_template_id', generator: generateW4HtmlTemplate },
+  w9: { name: 'W-9 Request for TIN', configKey: 'w9_template_id', generator: generateW9HtmlTemplate },
+  w8ben: { name: 'W-8BEN Certificate of Foreign Status (Individual)', configKey: 'w8ben_template_id', generator: generateW8BENHtmlTemplate },
+  w8bene: { name: 'W-8BEN-E Certificate of Foreign Status (Entity)', configKey: 'w8bene_template_id', generator: generateW8BENEHtmlTemplate },
+  form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', generator: generateForm8233HtmlTemplate },
+  i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', generator: generateI9HtmlTemplate },
+};
+
 function getDsealConfigTemplateId(type) {
   try {
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
@@ -2632,6 +3260,7 @@ function getDsealConfigTemplateId(type) {
       zelle_auth: cfg.zelle_auth_template_id,
       third_party_pay: cfg.third_party_pay_template_id,
       cash_receipt: cfg.cash_receipt_template_id,
+      contractor_invoice: cfg.contractor_invoice_template_id,
     };
     return map[type] || '';
   } catch { return ''; }
@@ -6169,7 +6798,8 @@ app.delete('/api/admin/worker-accounts/:id/payments/:pid', requireAdmin, require
 // ─── Admin: Contractor Invoice Review ───
 app.get('/api/admin/contractor-invoices', requireAdmin, (req, res) => {
   const rows = db.prepare(`
-    SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username, wa.phone AS worker_phone, wa.email AS worker_email
+    SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username, wa.phone AS worker_phone, wa.email AS worker_email,
+      ci.ds_envelope_id, ci.ds_status, ci.ds_signed_at, ci.sent_by
     FROM contractor_invoices ci
     LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id
     ORDER BY ci.created_at DESC
@@ -6195,6 +6825,53 @@ app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin')
 app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM contractor_invoices WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Admin: Send DocuSeal Invoice to Worker ───
+app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { worker_account_id } = req.body;
+    if (!worker_account_id) return res.status(400).json({ error: '请选择员工' });
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
+    if (!w) return res.status(404).json({ error: '员工不存在' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const templateId = getDsealConfigTemplateId('contractor_invoice');
+    if (!templateId) return res.status(400).json({ error: '未配置员工 Invoice 模板，请到 DocuSeal 模板管理中设置' });
+    const workerEmail = w.email || `worker-${w.id}@placeholder.local`;
+    const workerName = w.name || w.username || `Worker #${w.id}`;
+    const todayDate = new Date().toISOString().slice(0, 10);
+    // Create DocuSeal submission — single signer (worker fills amount + signs)
+    const subRes = await dsealApiCall('POST', '/api/submissions', {
+      template_id: parseInt(templateId),
+      send_email: true,
+      submitters: [
+        { role: 'First Party', name: workerName, email: workerEmail, fields: [
+          { name: 'invoice_date', default_value: todayDate, readonly: false }
+        ] }
+      ]
+    });
+    console.log(`[DocuSeal Invoice] submission status=${subRes.status}`);
+    const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+    if (subRes.status >= 400 || !submitters.length) {
+      return res.status(500).json({ error: `DocuSeal 提交失败: ${JSON.stringify(subRes.data)}` });
+    }
+    const submitter = submitters[0];
+    const submissionId = String(subRes.data?.id || submitter?.submission_id || '');
+    // Create contractor_invoices record with pending status
+    const invoiceNumber = `DSINV-${worker_account_id}-${todayDate.replace(/-/g, '')}-${submissionId.slice(-4)}`;
+    const sentBy = req.session?.username || 'admin';
+    db.prepare(`INSERT INTO contractor_invoices
+      (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, ds_envelope_id, ds_status, sent_by)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(worker_account_id, invoiceNumber, todayDate, 'DocuSeal Invoice (待员工填写)', 0, 'ds_pending', submissionId, 'sent', sentBy);
+    // Log to worker history
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已发送 DocuSeal Invoice 模板给 ${workerName}`);
+    res.json({ success: true, submission_id: submissionId, invoice_number: invoiceNumber });
+  } catch (e) {
+    console.error('[Send DocuSeal Invoice]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Admin: resend verification codes to unverified worker
@@ -11833,8 +12510,52 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
     const wo = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='contract'").get(submissionId);
     // Check worker_onboarding W-9
     const w9o = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='w9'").get(submissionId);
+    // Check contractor_invoices (DocuSeal invoices)
+    const cinv = db.prepare("SELECT id, worker_account_id FROM contractor_invoices WHERE ds_envelope_id=?").get(submissionId);
 
-    if (!pf && !wo && !w9o) { res.json({ received: true }); return; }
+    if (!pf && !wo && !w9o && !cinv) { res.json({ received: true }); return; }
+
+    // ── Handle Contractor Invoice (DocuSeal) completion ──
+    if (cinv) {
+      if (isCompleted || isSubmitterCompleted) {
+        try {
+          // Fetch submission details to extract field values
+          const subData = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+          const submitters = subData.data?.submitters || [];
+          const workerSub = submitters[0];
+          const signedAt = workerSub?.completed_at || new Date().toISOString();
+          // Try to extract total_amount from filled fields
+          let totalAmount = 0;
+          let serviceDesc = '';
+          const fields = workerSub?.fields || workerSub?.values || [];
+          if (Array.isArray(fields)) {
+            for (const f of fields) {
+              const fname = (f.name || '').toLowerCase();
+              const fval = f.value || f.default_value || '';
+              if (fname.includes('amount') || fname.includes('total') || fname.includes('金额')) {
+                const parsed = parseFloat(String(fval).replace(/[^0-9.]/g, ''));
+                if (!isNaN(parsed) && parsed > 0) totalAmount = parsed;
+              }
+              if (fname.includes('description') || fname.includes('服务') || fname.includes('service')) {
+                serviceDesc = String(fval);
+              }
+            }
+          }
+          const updates = { ds_status: 'completed', ds_signed_at: signedAt, status: 'submitted' };
+          if (totalAmount > 0) updates.total_amount = totalAmount;
+          if (serviceDesc) updates.service_description = serviceDesc;
+          db.prepare(`UPDATE contractor_invoices SET ds_status='completed', ds_signed_at=?, status='submitted',
+            total_amount=CASE WHEN ?> 0 THEN ? ELSE total_amount END,
+            service_description=CASE WHEN ? != '' THEN ? ELSE service_description END
+            WHERE id=?`)
+            .run(signedAt, totalAmount, totalAmount, serviceDesc, serviceDesc, cinv.id);
+          console.log(`[DocuSeal webhook] Contractor invoice ${cinv.id} completed, amount=${totalAmount}`);
+        } catch (e) { console.error('[DocuSeal webhook] contractor invoice error:', e.message); }
+      } else if (isDeclined) {
+        db.prepare("UPDATE contractor_invoices SET ds_status='declined', status='rejected', reject_reason=? WHERE id=?")
+          .run(data.decline_reason || '员工拒签', cinv.id);
+      }
+    }
 
     // ── Handle W-9 completion ──
     if (w9o) {
@@ -12871,11 +13592,28 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
-    'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id'];
+    'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
+    'contractor_invoice_template_id'];
   const out = { connected: dsealEnabled(), url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '') };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
   res.json(out);
+});
+
+// GET /api/admin/docuseal/test — test actual connectivity to DocuSeal
+app.get('/api/admin/docuseal/test', requireAdmin, async (req, res) => {
+  const { apiKey, baseUrl } = dsealGetCreds();
+  if (!apiKey && !baseUrl) return res.json({ ok: false, reason: 'missing_both', detail: 'DOCUSEAL_API_KEY 和 DOCUSEAL_URL 均未设置' });
+  if (!apiKey) return res.json({ ok: false, reason: 'missing_key', detail: 'DOCUSEAL_API_KEY 未设置' });
+  if (!baseUrl) return res.json({ ok: false, reason: 'missing_url', detail: 'DOCUSEAL_URL 未设置' });
+  try {
+    const r = await dsealApiCall('GET', '/api/templates', null);
+    if (r.status === 200 || r.status === 201) return res.json({ ok: true, url: baseUrl });
+    if (r.status === 401) return res.json({ ok: false, reason: 'invalid_key', detail: 'API Key 无效（401 Unauthorized）' });
+    return res.json({ ok: false, reason: 'api_error', detail: `DocuSeal 返回 ${r.status}` });
+  } catch (e) {
+    return res.json({ ok: false, reason: 'network', detail: `无法连接到 ${baseUrl}：${e.message}` });
+  }
 });
 
 // POST /api/admin/docuseal/config — save template IDs
@@ -12887,6 +13625,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
+    'contractor_invoice_template_id',
     'contract_template_id' /* legacy */];
   _configKeys.forEach(k => { if (req.body[k] !== undefined) cfg[k] = req.body[k] || null; });
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
@@ -12974,6 +13713,79 @@ app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res
   // Delete from local DB
   db.prepare('DELETE FROM docuseal_templates WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// POST /api/admin/docuseal/create-html-template — create a single template from HTML via DocuSeal API
+app.post('/api/admin/docuseal/create-html-template', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const { type } = req.body;
+  const tmplDef = DOCUSEAL_AUTO_TEMPLATES[type];
+  if (!tmplDef) return res.status(400).json({ error: `Unknown template type: ${type}` });
+  try {
+    const html = tmplDef.generator();
+    const r = await dsealApiCall('POST', '/api/templates/html', {
+      name: tmplDef.name,
+      documents: [{ name: tmplDef.name, html, size: 'Letter' }]
+    });
+    if (r.status >= 400) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
+    const dsId = r.data?.id || r.data?.template_id;
+    if (dsId) {
+      db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id) VALUES (?, ?)').run(tmplDef.name, dsId);
+      // Auto-set config
+      const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+      const cfg = JSON.parse(row?.config || '{}');
+      cfg[tmplDef.configKey] = dsId;
+      db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+        .run(JSON.stringify(cfg));
+    }
+    res.json({ success: true, template_id: dsId, name: tmplDef.name });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/admin/docuseal/create-all-templates — create all templates at once
+app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, res) => {
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  const { types } = req.body; // optional: array of types to create; if empty, create all
+  const targetTypes = (types && types.length) ? types : Object.keys(DOCUSEAL_AUTO_TEMPLATES);
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  const results = [];
+  for (const type of targetTypes) {
+    const tmplDef = DOCUSEAL_AUTO_TEMPLATES[type];
+    if (!tmplDef) { results.push({ type, error: 'Unknown type' }); continue; }
+    // Skip if already configured
+    if (cfg[tmplDef.configKey]) { results.push({ type, skipped: true, template_id: cfg[tmplDef.configKey] }); continue; }
+    try {
+      const html = tmplDef.generator();
+      const r = await dsealApiCall('POST', '/api/templates/html', {
+        name: tmplDef.name,
+        documents: [{ name: tmplDef.name, html, size: 'Letter' }]
+      });
+      if (r.status >= 400) { results.push({ type, error: `DocuSeal ${r.status}` }); continue; }
+      const dsId = r.data?.id || r.data?.template_id;
+      if (dsId) {
+        db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id) VALUES (?, ?)').run(tmplDef.name, dsId);
+        cfg[tmplDef.configKey] = dsId;
+      }
+      results.push({ type, success: true, template_id: dsId, name: tmplDef.name });
+    } catch (e) {
+      results.push({ type, error: e.message });
+    }
+  }
+  // Save updated config
+  db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+    .run(JSON.stringify(cfg));
+  res.json({ results });
+});
+
+// GET /api/admin/docuseal/auto-template-types — list available auto-creatable template types
+app.get('/api/admin/docuseal/auto-template-types', requireAdmin, (req, res) => {
+  const types = Object.entries(DOCUSEAL_AUTO_TEMPLATES).map(([key, val]) => ({
+    type: key, name: val.name, configKey: val.configKey
+  }));
+  res.json(types);
 });
 
 // Graceful shutdown: checkpoint WAL and close database
