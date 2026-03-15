@@ -2155,8 +2155,8 @@ tr:hover td{background:var(--sky-light)}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
         <div>
           <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">DocuSeal URL <span style="color:#ef4444">*</span></label>
-          <input type="text" id="ds-conn-url" placeholder="https://docuseal.yourdomain.com" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
-          <div style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">自托管实例地址（不含末尾 /）</div>
+          <input type="text" id="ds-conn-url" placeholder="https://api.docuseal.com" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
+          <div id="ds-conn-url-hint" style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">Cloud 版：https://api.docuseal.com｜自托管：https://your-domain.com</div>
         </div>
         <div>
           <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">API Key <span style="color:#ef4444">*</span></label>
@@ -2167,6 +2167,9 @@ tr:hover td{background:var(--sky-light)}
       <div style="display:flex;align-items:center;gap:.75rem">
         <button class="btn btn-sm" style="background:#10b981;color:#fff;padding:.45rem 1rem;border-radius:7px;font-size:.85rem;font-weight:600;cursor:pointer;border:none" onclick="_dsSaveConnection()">保存连接</button>
         <span id="ds-conn-save-status" style="font-size:.83rem;color:#64748b"></span>
+      </div>
+      <div style="margin-top:.75rem;font-size:.75rem;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:.75rem">
+        💡 也可通过 Render / Railway 环境变量配置：<code style="background:#f8fafc;padding:.1rem .3rem;border-radius:3px">DOCUSEAL_API_KEY</code> 和 <code style="background:#f8fafc;padding:.1rem .3rem;border-radius:3px">DOCUSEAL_URL</code>（优先级高于此处保存的值）
       </div>
     </div>
 
@@ -19352,10 +19355,12 @@ async function _dsLoadConfig() {
   try {
     const conn = await api('/api/admin/docuseal/connection');
     const urlEl = document.getElementById('ds-conn-url');
+    const urlHint = document.getElementById('ds-conn-url-hint');
     const keyHint = document.getElementById('ds-conn-key-hint');
     if (urlEl && conn.url) urlEl.value = conn.url;
+    if (urlHint && conn.url_source === 'env') urlHint.textContent = '✓ 当前通过环境变量 DOCUSEAL_URL 设置';
     if (keyHint) {
-      if (conn.api_key_source === 'env') keyHint.textContent = '当前通过环境变量设置，输入新值可覆盖到数据库';
+      if (conn.api_key_source === 'env') keyHint.textContent = '✓ 当前通过环境变量 DOCUSEAL_API_KEY 设置';
       else if (conn.api_key_preview) keyHint.textContent = `当前值：${conn.api_key_preview}（留空保持不变）`;
       else keyHint.textContent = '尚未设置';
     }
