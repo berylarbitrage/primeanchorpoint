@@ -1529,8 +1529,30 @@ db.exec(`CREATE TABLE IF NOT EXISTS docuseal_templates (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   docuseal_template_id INTEGER NOT NULL,
+  category TEXT DEFAULT 'contract',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// Migrate: add category column if missing, and backfill categories from config
+try {
+  db.exec("ALTER TABLE docuseal_templates ADD COLUMN category TEXT DEFAULT 'contract'");
+  // Backfill: set category based on existing config assignments
+  const _dsRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  if (_dsRow) {
+    const _dsCfg = JSON.parse(_dsRow.config || '{}');
+    const _catMap = {
+      company_contract_template_id: 'contract', worker_1099_template_id: 'contract', worker_w2_template_id: 'contract',
+      w4_template_id: 'tax', w9_template_id: 'tax', w8ben_template_id: 'tax', w8bene_template_id: 'tax',
+      form8233_template_id: 'tax', i9_template_id: 'tax', w7_template_id: 'tax',
+      ach_auth_template_id: 'payment', wire_auth_template_id: 'payment', check_instruction_template_id: 'payment',
+      zelle_auth_template_id: 'payment', third_party_pay_template_id: 'payment', cash_receipt_template_id: 'payment',
+      contractor_invoice_template_id: 'invoice'
+    };
+    for (const [cfgKey, cat] of Object.entries(_catMap)) {
+      const tid = _dsCfg[cfgKey];
+      if (tid) db.prepare("UPDATE docuseal_templates SET category=? WHERE docuseal_template_id=? AND category='contract'").run(cat, tid);
+    }
+  }
+} catch(e) { /* column already exists */ }
 
 // Seed default integration rows if not present
 const intProviders = ['workbright','checkr','gusto','twilio','docuseal'];
@@ -3227,15 +3249,15 @@ function generateW2EmploymentHtmlTemplate() {
 
 // ── Map of all auto-creatable templates ──
 const DOCUSEAL_AUTO_TEMPLATES = {
-  company_contract: { name: 'Company Contract / 公司合同', configKey: 'company_contract_template_id', generator: generateCompanyContractHtmlTemplate },
-  worker_1099: { name: 'Independent Contractor Agreement (1099) / 劳务合同—1099', configKey: 'worker_1099_template_id', generator: generateContractor1099HtmlTemplate },
-  worker_w2: { name: 'Employment Agreement (W-2) / 劳务合同—W2', configKey: 'worker_w2_template_id', generator: generateW2EmploymentHtmlTemplate },
-  w4: { name: 'W-4 Employee Withholding Certificate', configKey: 'w4_template_id', generator: generateW4HtmlTemplate },
-  w9: { name: 'W-9 Request for TIN', configKey: 'w9_template_id', generator: generateW9HtmlTemplate },
-  w8ben: { name: 'W-8BEN Certificate of Foreign Status (Individual)', configKey: 'w8ben_template_id', generator: generateW8BENHtmlTemplate },
-  w8bene: { name: 'W-8BEN-E Certificate of Foreign Status (Entity)', configKey: 'w8bene_template_id', generator: generateW8BENEHtmlTemplate },
-  form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', generator: generateForm8233HtmlTemplate },
-  i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', generator: generateI9HtmlTemplate },
+  company_contract: { name: 'Company Contract / 公司合同', configKey: 'company_contract_template_id', category: 'contract', generator: generateCompanyContractHtmlTemplate },
+  worker_1099: { name: 'Independent Contractor Agreement (1099) / 劳务合同—1099', configKey: 'worker_1099_template_id', category: 'contract', generator: generateContractor1099HtmlTemplate },
+  worker_w2: { name: 'Employment Agreement (W-2) / 劳务合同—W2', configKey: 'worker_w2_template_id', category: 'contract', generator: generateW2EmploymentHtmlTemplate },
+  w4: { name: 'W-4 Employee Withholding Certificate', configKey: 'w4_template_id', category: 'tax', generator: generateW4HtmlTemplate },
+  w9: { name: 'W-9 Request for TIN', configKey: 'w9_template_id', category: 'tax', generator: generateW9HtmlTemplate },
+  w8ben: { name: 'W-8BEN Certificate of Foreign Status (Individual)', configKey: 'w8ben_template_id', category: 'tax', generator: generateW8BENHtmlTemplate },
+  w8bene: { name: 'W-8BEN-E Certificate of Foreign Status (Entity)', configKey: 'w8bene_template_id', category: 'tax', generator: generateW8BENEHtmlTemplate },
+  form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', category: 'tax', generator: generateForm8233HtmlTemplate },
+  i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'tax', generator: generateI9HtmlTemplate },
 };
 
 function getDsealConfigTemplateId(type) {
@@ -13668,8 +13690,9 @@ app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) =
 // POST /api/admin/docuseal/upload-template — upload PDF to DocuSeal as a new template
 app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ limit: '20mb' }), async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-  const { name, file } = req.body; // file = data:application/pdf;base64,...
+  const { name, file, category } = req.body; // file = data:application/pdf;base64,...
   if (!name || !file) return res.status(400).json({ error: '缺少 name 或 file' });
+  const cat = category || 'contract';
   try {
     const r = await dsealApiCall('POST', '/api/templates/pdf', {
       name,
@@ -13679,7 +13702,7 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
     // Save to local DB
     const dsId = r.data?.id || r.data?.template_id;
     if (dsId) {
-      db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id) VALUES (?, ?)').run(name, dsId);
+      db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(name, dsId, cat);
     }
     res.json(r.data);
   } catch (e) {
@@ -13730,7 +13753,7 @@ app.post('/api/admin/docuseal/create-html-template', requireAdmin, async (req, r
     if (r.status >= 400) return res.status(r.status).json({ error: `DocuSeal 返回 ${r.status}`, detail: r.data });
     const dsId = r.data?.id || r.data?.template_id;
     if (dsId) {
-      db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id) VALUES (?, ?)').run(tmplDef.name, dsId);
+      db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, dsId, tmplDef.category || 'contract');
       // Auto-set config
       const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
       const cfg = JSON.parse(row?.config || '{}');
@@ -13766,7 +13789,7 @@ app.post('/api/admin/docuseal/create-all-templates', requireAdmin, async (req, r
       if (r.status >= 400) { results.push({ type, error: `DocuSeal ${r.status}` }); continue; }
       const dsId = r.data?.id || r.data?.template_id;
       if (dsId) {
-        db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id) VALUES (?, ?)').run(tmplDef.name, dsId);
+        db.prepare('INSERT OR IGNORE INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(tmplDef.name, dsId, tmplDef.category || 'contract');
         cfg[tmplDef.configKey] = dsId;
       }
       results.push({ type, success: true, template_id: dsId, name: tmplDef.name });
