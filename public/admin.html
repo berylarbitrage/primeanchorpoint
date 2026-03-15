@@ -1964,7 +1964,6 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" style="background:#f0fff4;color:#2f9e44;border:1px solid #b2f2bb" onclick="openEmailCodeTestModal()">✉️ 测试邮箱</button>
       <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
       <button class="btn" style="background:#fefce8;color:#92400e;border:1px solid #fde68a" onclick="toggleInvitePanel()">🔗 生成邀请链接</button>
-      <button class="btn" style="background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd" onclick="openContractorInvoicesModal()">📄 Contractor Invoices</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
     </div>
   </div>
@@ -2000,7 +1999,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
-      <th>协议</th><th>税务</th><th>身份Reverify日期</th><th>支付方式</th><th>薪资</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>协议/Invoice</th><th>税务</th><th>身份Reverify日期</th><th>支付方式</th><th>薪资</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -13333,9 +13332,11 @@ async function loadWorkerAccounts() {
       if (et === 'cash') return '<span style="padding:2px 6px;border-radius:6px;background:#ecfdf5;color:#065f46;font-weight:600">💵 现金</span>';
       return '<span style="color:var(--gray-300)">— 待确认 —</span>';
     })()}</td>
-    <td style="text-align:center">${w.contract_version_count > 0
+    <td style="text-align:center;white-space:nowrap">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
-      : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
+      : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}${w.cinv_total > 0
+      ? ` <span style="cursor:pointer;padding:1px 6px;border-radius:6px;font-size:.72rem;font-weight:600;${w.cinv_pending>0?'background:#fef3c7;color:#92400e':'background:#dcfce7;color:#15803d'}" onclick="event.stopPropagation();openContractorInvoicesModal()" title="Contractor Invoices">📄${w.cinv_total}${w.cinv_pending>0?' ('+w.cinv_pending+'⏳)':''}</span>`
+      : ''}</td>
     <td style="text-align:center;vertical-align:middle">${(() => {
       const emp = w.employment_type || '';
       if (!w.onboarded || !emp || emp==='cash') return '<span style="color:var(--gray-400);font-size:.78rem;white-space:nowrap">— 不确定 —</span>';
