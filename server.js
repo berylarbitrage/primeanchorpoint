@@ -12799,6 +12799,35 @@ app.delete('/api/admin/invoices/:id', requireAdmin, blockManager, (req, res) => 
 
 // ─── DocuSeal Template Management ───
 
+// GET /api/admin/docuseal/connection — return connection settings (key masked)
+app.get('/api/admin/docuseal/connection', requireAdmin, (req, res) => {
+  const row = db.prepare("SELECT api_key, config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  const storedKey = row?.api_key || '';
+  const storedUrl = cfg.url || '';
+  const envKey = process.env.DOCUSEAL_API_KEY || '';
+  const envUrl = process.env.DOCUSEAL_URL || '';
+  res.json({
+    connected: dsealEnabled(),
+    api_key_set: !!(envKey || storedKey),
+    api_key_source: envKey ? 'env' : (storedKey ? 'db' : 'none'),
+    api_key_preview: storedKey ? storedKey.slice(0, 4) + '****' + storedKey.slice(-4) : (envKey ? 'set via environment' : ''),
+    url: envUrl || storedUrl || '',
+    url_source: envUrl ? 'env' : (storedUrl ? 'db' : 'none')
+  });
+});
+
+// POST /api/admin/docuseal/connection — save api_key and url
+app.post('/api/admin/docuseal/connection', requireAdmin, (req, res) => {
+  const { api_key, url } = req.body;
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  if (url !== undefined) cfg.url = url || '';
+  db.prepare("UPDATE integration_settings SET api_key=COALESCE(?,api_key), config=?, enabled=1, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+    .run(api_key || null, JSON.stringify(cfg));
+  res.json({ success: true, connected: dsealEnabled() });
+});
+
 // GET /api/admin/docuseal/config — return stored template config
 app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const row = db.prepare("SELECT * FROM integration_settings WHERE provider='docuseal'").get();
