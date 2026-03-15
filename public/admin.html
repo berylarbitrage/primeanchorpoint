@@ -13508,7 +13508,7 @@ function renderOnboardingTasks(tasks) {
   const taxResDone = taxResTask && ['completed','waived'].includes(taxResTask.status);
   // Tax form/doc tasks only show after tax residency is completed
   const taxDocKeys = ['tax_doc_w8ben', 'tax_doc_w8bene', 'tax_doc_8233', 'tax_doc_passport', 'tax_doc_visa', 'tax_doc_i94', 'tax_doc_work_auth', 'tax_doc_w7_itin', 'tax_doc_8833', 'tax_doc_corp_cert', 'tax_doc_sign_auth', 'tax_doc_treaty_docs', 'tax_doc_treaty_stmt'];
-  const taxGatedKeys = ['w9', 'tin_verify', ...taxDocKeys];
+  const taxGatedKeys = ['w9', 'tin_verify', ...(taxResTask ? ['work_permit'] : []), ...taxDocKeys];
 
   document.getElementById('onboardingTaskList').innerHTML = tasks.filter((t, idx) => {
     // Always show pre-interview steps
