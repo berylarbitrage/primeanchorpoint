@@ -13379,12 +13379,20 @@ async function openOnboardingModalById(workerId) {
 let _onboardingInterviewInfo = null;
 
 async function refreshOnboardingModal() {
-  const [tasks, rows, intvInfo] = await Promise.all([
-    api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`),
-    api('/admin/worker-accounts'),
-    api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`)
-  ]);
-  const w = rows && rows.find(r => r.id === _onboardingWorkerId);
+  let tasks, rows, intvInfo;
+  try {
+    [tasks, rows, intvInfo] = await Promise.all([
+      api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`),
+      api('/admin/worker-accounts'),
+      api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`)
+    ]);
+  } catch (e) {
+    console.error('[onboarding] API error:', e);
+    document.getElementById('onboardingTaskList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:#dc2626">加载失败，请刷新页面重试。<br><span style="font-size:.78rem;color:var(--gray-400)">' + e.message + '</span></div>';
+    return;
+  }
+  if (!Array.isArray(rows)) rows = [];
+  const w = rows.find(r => r.id === _onboardingWorkerId);
   _onboardingDispatchReady = !!(w && w.dispatch_ready);
   _onboardingWorkerData = w || null;
   _onboardingInterviewInfo = intvInfo || null;
