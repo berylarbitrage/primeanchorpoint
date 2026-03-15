@@ -3383,9 +3383,7 @@ function generateContractorInvoiceHtmlTemplate(lang) {
 </div>`;
 }
 // Convenience wrappers for each language variant
-function generateContractorInvoiceHtmlTemplate_EN() { return generateContractorInvoiceHtmlTemplate('en'); }
 function generateContractorInvoiceHtmlTemplate_ZH() { return generateContractorInvoiceHtmlTemplate('zh'); }
-function generateContractorInvoiceHtmlTemplate_ES() { return generateContractorInvoiceHtmlTemplate('es'); }
 
 // ── Invoice Approval Form (internal, Letter-size single page) ──
 function generateInvoiceApprovalHtmlTemplate() {
@@ -3857,9 +3855,7 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   zelle_auth: { name: 'Zelle Payment Authorization / Zelle 账号授权', configKey: 'zelle_auth_template_id', category: 'zelle_auth', generator: generateZelleAuthHtmlTemplate },
   third_party_pay: { name: 'Third-Party Payment Authorization (PayPal/Venmo/CashApp)', configKey: 'third_party_pay_template_id', category: 'third_party_pay', generator: generateThirdPartyPayHtmlTemplate },
   cash_receipt: { name: 'Cash Payment Receipt / 现金付款签收', configKey: 'cash_receipt_template_id', category: 'cash_receipt', generator: generateCashReceiptHtmlTemplate },
-  contractor_invoice: { name: '1099 Contractor Invoice (EN+ZH)', configKey: 'contractor_invoice_template_id', category: 'contractor_invoice', generator: generateContractorInvoiceHtmlTemplate_ZH },
-  contractor_invoice_en: { name: '1099 Contractor Invoice (EN)', configKey: 'contractor_invoice_en_template_id', category: 'contractor_invoice_en', generator: generateContractorInvoiceHtmlTemplate_EN },
-  contractor_invoice_es: { name: '1099 Contractor Invoice (EN+ES)', configKey: 'contractor_invoice_es_template_id', category: 'contractor_invoice_es', generator: generateContractorInvoiceHtmlTemplate_ES },
+  contractor_invoice: { name: '承包商發票 / Contractor Invoice', configKey: 'contractor_invoice_template_id', category: 'contractor_invoice', generator: generateContractorInvoiceHtmlTemplate_ZH },
   invoice_approval: { name: 'Invoice Approval Form / 发票审批表 (内部)', configKey: 'invoice_approval_template_id', category: 'invoice_approval', generator: generateInvoiceApprovalHtmlTemplate },
 };
 
@@ -3886,8 +3882,6 @@ function getDsealConfigTemplateId(type) {
       third_party_pay: cfg.third_party_pay_template_id,
       cash_receipt: cfg.cash_receipt_template_id,
       contractor_invoice: cfg.contractor_invoice_template_id,
-      contractor_invoice_en: cfg.contractor_invoice_en_template_id,
-      contractor_invoice_es: cfg.contractor_invoice_es_template_id,
       invoice_approval: cfg.invoice_approval_template_id,
     };
     return map[type] || '';
@@ -7458,14 +7452,12 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id, lang } = req.body;
+    const { worker_account_id } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择员工' });
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
     if (!w) return res.status(404).json({ error: '员工不存在' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    // Pick template by language: 'en' → EN-only, 'es' → EN+ES, default → EN+ZH
-    const invoiceLang = lang === 'en' ? 'contractor_invoice_en' : lang === 'es' ? 'contractor_invoice_es' : 'contractor_invoice';
-    const templateId = getDsealConfigTemplateId(invoiceLang) || getDsealConfigTemplateId('contractor_invoice');
+    const templateId = getDsealConfigTemplateId('contractor_invoice');
     if (!templateId) return res.status(400).json({ error: '未配置员工 Invoice 模板，请到 DocuSeal 模板管理中设置' });
     const workerEmail = w.email || `worker-${w.id}@placeholder.local`;
     const workerName = w.name || w.username || `Worker #${w.id}`;
@@ -14307,7 +14299,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id'];
+    'contractor_invoice_template_id','invoice_approval_template_id'];
   const out = { connected: dsealEnabled(), url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '') };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
