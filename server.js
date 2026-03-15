@@ -1403,6 +1403,19 @@ try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN issue_date TEXT DEFAULT '
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN expiry_date TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN notes TEXT DEFAULT ''"); } catch {}
 
+// ─── Tax Filing Documents (year-end 1099-NEC / W-2 / 1042-S etc.) ───
+db.exec(`CREATE TABLE IF NOT EXISTS tax_filing_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  tax_year INTEGER NOT NULL DEFAULT 2025,
+  form_type TEXT NOT NULL,
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_tax_filing_docs_worker ON tax_filing_docs(worker_account_id, tax_year)"); } catch {}
+
 // Add structured address columns to tax_residency_questionnaire
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street2 TEXT DEFAULT ''"); } catch {}
@@ -4170,6 +4183,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent_at TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN identity_reverify_date TEXT DEFAULT ''"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -4186,8 +4200,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   `);
   const getContractInfo = db.prepare("SELECT ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'");
   const getContractVersionCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_contract_versions WHERE worker_account_id=?");
-  const getTaxDocCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_tax_docs WHERE worker_account_id=?");
   const getTaxResidency = db.prepare("SELECT tax_status, recommended_form, country_citizenship, country_tax_residence, treaty_country, claim_treaty_benefit, services_location FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY id DESC LIMIT 1");
+  const getTaxFilingDocCount = db.prepare("SELECT COUNT(*) as cnt FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? AND file_path!=''");
+  const currentTaxYear = new Date().getFullYear() - 1; // filing for prior year
 
   const enriched = workers.map(w => {
     const interview = getInterview.get(w.id);
@@ -4197,8 +4212,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const qualCount = getQualifiedReferrals.get(w.id, refConfig.min_hours_to_qualify);
     const contractInfo = getContractInfo.get(w.id);
     const contractVerCount = getContractVersionCount.get(w.id);
-    const taxDocCount = getTaxDocCount.get(w.id);
     const taxRes = getTaxResidency.get(w.id);
+    const taxFilingDocCount = getTaxFilingDocCount.get(w.id, currentTaxYear);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -4213,12 +4228,13 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral,
       contract_ds_status: contractInfo?.ds_status || '',
       contract_version_count: contractVerCount?.cnt || 0,
-      tax_doc_count: taxDocCount?.cnt || 0,
+      recommended_form: taxRes?.recommended_form || '',
       tax_status: taxRes?.tax_status || '',
-      tax_form: taxRes?.recommended_form || '',
       tax_treaty_country: taxRes?.treaty_country || '',
       tax_claim_treaty: taxRes?.claim_treaty_benefit || '',
-      tax_services_location: taxRes?.services_location || ''
+      tax_services_location: taxRes?.services_location || '',
+      tax_filing_doc_count: taxFilingDocCount?.cnt || 0,
+      current_tax_year: currentTaxYear
     };
   });
 
@@ -4302,6 +4318,16 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   res.json({ success: true });
 });
 
+app.patch('/api/admin/worker-accounts/:id/identity-reverify-date', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { date } = req.body;
+  const w = db.prepare('SELECT identity_reverify_date FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  const changedBy = (req.session && req.session.username) || 'admin';
+  db.prepare('UPDATE worker_accounts SET identity_reverify_date=? WHERE id=?').run(date || '', req.params.id);
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value) VALUES (?,?,?,?,?)').run(req.params.id, changedBy, 'identity_reverify_date', w.identity_reverify_date || '', date || '');
+  res.json({ success: true });
+});
+
 app.get('/api/admin/worker-accounts/:id/assignments', requireAdmin, (req, res) => {
   const w = db.prepare('SELECT linked_inquiry_id FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w || !w.linked_inquiry_id) return res.json([]);
@@ -4346,8 +4372,8 @@ const ONBOARDING_STEPS = [
   { key: 'interview',       title: '完成面试',             desc: '预约并参加 HR 面试',                              required: true  },
   { key: 'contract',        title: '签署合同 / Offer',     desc: '电子签署雇佣协议 / Contractor Agreement',         required: true  },
   { key: 'tax_residency',   title: '税务居民身份判定',      desc: '1099 承包商税务居民预判 / 表格分流（Resident Test）', required: false },
-  { key: 'background_check',title: '背景调查 (Checkr)',    desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台',    required: false },
   { key: 'work_permit',     title: '工作许可验证',          desc: '工作许可 / 签证授权状态核实（如适用）',            required: false },
+  { key: 'background_check',title: '背景调查 (Checkr)',    desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台',    required: false },
   { key: 'persona_verify',  title: '身份验证 (Stripe Identity)',   desc: '驾照/ID + 自拍核验 · 由 HR 发起 · 通过 Stripe Identity', required: true },
   { key: 'i9',              title: 'I-9 就业资格',         desc: 'I-9 Section 1 & 2 就业资格验证',                  required: true  },
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
@@ -5274,11 +5300,10 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     updated_at=CURRENT_TIMESTAMP
   `).run(fields);
 
-  // Auto-update onboarding task status
-  db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
-    WHERE worker_account_id=? AND task_key='tax_residency' AND status IN ('pending','submitted')`)
+  // Mark as submitted (data saved) but NOT completed — admin must explicitly confirm completion
+  db.prepare(`UPDATE worker_onboarding SET status='submitted', updated_at=CURRENT_TIMESTAMP
+    WHERE worker_account_id=? AND task_key='tax_residency' AND status='pending'`)
     .run(workerId);
-  syncOnboardedStatus(workerId);
 
   // Auto-create onboarding tasks for required tax documents based on recommended form
   const taxTasks = getTaxDocTasks(calc.recommended_form, d);
@@ -5430,45 +5455,42 @@ app.put('/api/admin/worker-accounts/:id/work-permit-docs-meta', requireAdmin, (r
   res.json({ success: true });
 });
 
-// ─── Tax Document Upload (报税文件) ───
-app.get('/api/admin/worker-accounts/:id/tax-docs', requireAdmin, (req, res) => {
-  const docs = db.prepare('SELECT id, doc_label, file_name, uploaded_by, created_at FROM worker_tax_docs WHERE worker_account_id=? ORDER BY created_at DESC').all(req.params.id);
+// ─── Tax Filing Documents (年度报税表 1099-NEC / W-2 / 1042-S) ───
+
+app.get('/api/admin/worker-accounts/:id/tax-filing-docs', requireAdmin, (req, res) => {
+  const year = parseInt(req.query.year) || (new Date().getFullYear() - 1);
+  const docs = db.prepare('SELECT id, form_type, file_name, uploaded_by, created_at FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? ORDER BY form_type, created_at').all(req.params.id, year);
   res.json(docs);
 });
 
-app.post('/api/admin/worker-accounts/:id/tax-docs', requireAdmin, docUpload.single('file'), (req, res) => {
+app.post('/api/admin/worker-accounts/:id/tax-filing-docs', requireAdmin, docUpload.single('file'), (req, res) => {
   const workerId = parseInt(req.params.id);
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  const docLabel = req.body.doc_label || '';
-  const filePath = req.file.path;
-  const fileName = req.file.originalname;
+  const formType = req.body.form_type || '';
+  const taxYear = parseInt(req.body.tax_year) || (new Date().getFullYear() - 1);
+  if (!formType) return res.status(400).json({ error: 'form_type required' });
+  const filePath = req.file ? req.file.path : '';
+  const fileName = req.file ? req.file.originalname : '';
   const uploadedBy = (req.session && req.session.username) || 'admin';
-
-  const result = db.prepare('INSERT INTO worker_tax_docs (worker_account_id, doc_label, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?)')
-    .run(workerId, docLabel, filePath, fileName, uploadedBy);
-
+  const result = db.prepare('INSERT INTO tax_filing_docs (worker_account_id, tax_year, form_type, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?,?)')
+    .run(workerId, taxYear, formType, filePath, fileName, uploadedBy);
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-    .run(workerId, uploadedBy, 'tax_doc', '', docLabel, `上传报税文件: ${docLabel} · ${fileName}`);
-
+    .run(workerId, uploadedBy, 'tax_filing_doc', '', formType, `上传报税文件: ${formType} (${taxYear}) · ${fileName}`);
   res.json({ success: true, id: result.lastInsertRowid, file_name: fileName });
 });
 
-app.get('/api/admin/tax-docs/:docId/download', requireAdmin, (req, res) => {
-  const doc = db.prepare('SELECT * FROM worker_tax_docs WHERE id=?').get(req.params.docId);
+app.delete('/api/admin/tax-filing-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM tax_filing_docs WHERE id=?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+  db.prepare('DELETE FROM tax_filing_docs WHERE id=?').run(req.params.docId);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/tax-filing-docs/:docId/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM tax_filing_docs WHERE id=?').get(req.params.docId);
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
   if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
   res.download(doc.file_path, doc.file_name || 'document');
-});
-
-app.delete('/api/admin/tax-docs/:docId', requireAdmin, (req, res) => {
-  const doc = db.prepare('SELECT * FROM worker_tax_docs WHERE id=?').get(req.params.docId);
-  if (!doc) return res.status(404).json({ error: 'Not found' });
-  if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
-  db.prepare('DELETE FROM worker_tax_docs WHERE id=?').run(req.params.docId);
-  const changedBy = (req.session && req.session.username) || 'admin';
-  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-    .run(doc.worker_account_id, changedBy, 'tax_doc', doc.file_name, '', `删除报税文件: ${doc.doc_label} · ${doc.file_name}`);
-  res.json({ success: true });
 });
 
 // ─── ID Document Upload (admin uploads for worker during interview) ───
