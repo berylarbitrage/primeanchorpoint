@@ -15892,27 +15892,16 @@ async function openWorkPermitModal() {
   wpRenderUploadZones(wpCategory);
   wpLoadExistingDocs(wpCategory);
 
-  // Load existing work permit data
+  // Load existing work permit data — display info only, do NOT pre-fill form fields
   try {
     const data = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`);
     if (data && data.doc_type) {
-      // Ensure the saved doc_type option exists in current dropdown; if not, add it
-      const sel = document.getElementById('wpDocType');
-      if (!sel.querySelector(`option[value="${data.doc_type}"]`)) {
-        sel.insertAdjacentHTML('beforeend', `<option value="${data.doc_type}">${data.doc_type}</option>`);
-      }
-      sel.value = data.doc_type || '';
-      document.getElementById('wpDocNumber').value = data.doc_number || '';
-      document.getElementById('wpIssueDate').value = data.issue_date || '';
-      document.getElementById('wpExpiryDate').value = data.expiry_date || '';
-      document.getElementById('wpCategory').value = data.category || '';
-      document.getElementById('wpNotes').value = data.notes || '';
-      // Show current info
+      // Show current info summary (read-only)
       const info = document.getElementById('wpCurrentInfo');
-      const selOpt = sel.options[sel.selectedIndex];
-      const typeLabel = selOpt && selOpt.value ? selOpt.text : data.doc_type;
+      const opts = WP_DOC_OPTIONS[wpCategory] || WP_DOC_OPTIONS.generic;
+      const optMatch = opts.find(o => o.value === data.doc_type);
+      const typeLabel = optMatch ? optMatch.label : data.doc_type;
       if (data.doc_type && !data.verified_at) {
-        // Data exists but verification was reset (likely due to tax residency change)
         info.innerHTML = `<div style="font-weight:700;color:#92400e;margin-bottom:.3rem">⚠️ 验证已重置 — 税务身份发生变更，需重新验证</div>
           <div>类型: <b>${typeLabel}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}</div>`;
         info.style.background = '#fef3c7';
