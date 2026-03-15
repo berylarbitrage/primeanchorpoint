@@ -13305,13 +13305,18 @@ async function loadWorkerAccounts() {
       <option value="1099" ${w.employment_type==='1099'?'selected':''}>1099</option>
       <option value="cash" ${w.employment_type==='cash'?'selected':''}>💵 现金</option>
     </select></td>
-    <td><div class="wa-compliance">
-      ${complianceBadge2('EAD', w.work_status==='ead'||w.work_status==='green_card'?'approved':null)}
-      ${complianceBadge2('SSN', c.ssn_card)}
-      ${complianceBadge2('DL', c.drivers_license)}
-      ${complianceBadge2('W9', c.w9)}
-      ${complianceBadge2('I9', c.i9)}
-    </div></td>
+    <td><div class="wa-compliance">${(()=>{
+      const needsEAD = ['ead','h1b','opt','other'].includes(w.work_status);
+      const isW2 = w.employment_type === 'w2';
+      const is1099 = w.employment_type === '1099';
+      let badges = '';
+      if (needsEAD) badges += complianceBadge2('EAD', c.ead || (w.work_status==='ead'?'approved':null));
+      badges += complianceBadge2('SSN', c.ssn_card);
+      badges += complianceBadge2('DL', c.drivers_license);
+      if (is1099) badges += complianceBadge2('W9', c.w9);
+      if (isW2) badges += complianceBadge2('I9', c.i9);
+      return badges || '<span style="color:var(--gray-300);font-size:.75rem">待定</span>';
+    })()}</div></td>
     <td style="text-align:center">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
