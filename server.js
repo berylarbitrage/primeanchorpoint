@@ -2339,6 +2339,7 @@ async function dsealApiCall(method, apiPath, body) {
       let d = ''; res.on('data', c => d += c);
       res.on('end', () => { try { resolve({ status: res.statusCode, data: JSON.parse(d) }); } catch { resolve({ status: res.statusCode, data: d }); } });
     });
+    req.setTimeout(15000, () => { req.destroy(new Error('连接超时（15s）')); });
     req.on('error', reject); if (bodyStr) req.write(bodyStr); req.end();
   });
 }

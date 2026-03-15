@@ -19777,13 +19777,16 @@ async function _dsTestConnection() {
   badge.innerHTML = `<span style="font-size:.82rem;color:#94a3b8">检测连接中…</span>`;
   try {
     const r = await api('/api/admin/docuseal/test');
+    const retestBtn = `<button onclick="_dsTestConnection()" style="font-size:.75rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">重新检测</button>`;
     if (r.ok) {
-      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#d1fae5;color:#065f46">✓ 已连接 DocuSeal</span>${r.url ? `<span style="font-size:.78rem;color:#94a3b8">${_dsEsc(r.url)}</span>` : ''}<button onclick="_dsTestConnection()" style="font-size:.75rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0">重新检测</button>`;
+      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#d1fae5;color:#065f46">✓ 已连接 DocuSeal</span>${r.url ? `<span style="font-size:.78rem;color:#94a3b8">${_dsEsc(r.url)}</span>` : ''}${retestBtn}`;
     } else {
-      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#fee2e2;color:#991b1b">✗ 未连接</span><span style="font-size:.82rem;color:#b91c1c">${_dsEsc(r.detail || '')}</span><button onclick="_dsTestConnection()" style="font-size:.75rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0">重新检测</button>`;
+      const msg = r.detail || r.error || '连接失败，请检查 Render 后台日志';
+      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#fee2e2;color:#991b1b">✗ 未连接</span><span style="font-size:.82rem;color:#b91c1c">${_dsEsc(msg)}</span>${retestBtn}`;
     }
   } catch(e) {
-    badge.innerHTML = `<span style="font-size:.82rem;color:#ef4444">${_dsEsc(e.message)}</span><button onclick="_dsTestConnection()" style="font-size:.75rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0">重新检测</button>`;
+    const retestBtn = `<button onclick="_dsTestConnection()" style="font-size:.75rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">重新检测</button>`;
+    badge.innerHTML = `<span style="font-size:.82rem;color:#ef4444">${_dsEsc(e.message || '请求失败')}</span>${retestBtn}`;
   }
 }
 
