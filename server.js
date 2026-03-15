@@ -13758,6 +13758,29 @@ app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res
   res.json({ success: true });
 });
 
+// PUT /api/admin/docuseal/my-templates/:id/rename — rename a template in local DB
+app.put('/api/admin/docuseal/my-templates/:id/rename', requireAdmin, (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: '模板名称不能为空' });
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  db.prepare('UPDATE docuseal_templates SET name=? WHERE id=?').run(name.trim(), req.params.id);
+  res.json({ success: true, name: name.trim() });
+});
+
+// PUT /api/admin/docuseal/templates/:dsId/rename — rename a template via DocuSeal API + local DB
+app.put('/api/admin/docuseal/templates/:dsId/rename', requireAdmin, async (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: '模板名称不能为空' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    await dsealApiCall('PUT', `/api/templates/${req.params.dsId}`, { name: name.trim() });
+    // Also update local DB if template exists there
+    db.prepare('UPDATE docuseal_templates SET name=? WHERE docuseal_template_id=?').run(name.trim(), parseInt(req.params.dsId));
+    res.json({ success: true, name: name.trim() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/admin/docuseal/create-html-template — create a single template from HTML via DocuSeal API
 app.post('/api/admin/docuseal/create-html-template', requireAdmin, async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
