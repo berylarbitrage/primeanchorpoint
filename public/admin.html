@@ -15316,11 +15316,36 @@ function confirmSaveTaxResidency() {
   if (!_onboardingWorkerId) return;
   const hasType = document.getElementById('trTypeInd').checked || document.getElementById('trTypeEnt').checked;
   if (!hasType) return showToast('❌ 请选择申请主体类型（个人或实体）', 'error');
-  const resultEl = document.getElementById('trFinalResultContent');
-  const summary = resultEl && resultEl.textContent.trim() ? resultEl.textContent.trim() : '税务身份判定';
+
+  // Build a concise summary from key fields only
+  const type = document.getElementById('trTypeInd').checked ? 'individual' : 'entity';
+  const lines = [];
+  if (type === 'individual') {
+    const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
+    if (indStatus) {
+      const statusMap = { citizen: '美国公民 U.S. Citizen → W-9', green_card: '绿卡持有者 Green Card → W-9', neither: '非居民外国人 Nonresident Alien' };
+      lines.push('申请主体: 个人 Individual');
+      lines.push('身份类型: ' + (statusMap[indStatus.value] || indStatus.value));
+      if (indStatus.value === 'citizen' || indStatus.value === 'green_card') {
+        const name = document.getElementById('trIndLegalName').value.trim();
+        const ssn = document.getElementById('trIndSsn').value.trim();
+        if (name) lines.push('Legal Name: ' + name);
+        if (ssn) lines.push('SSN / ITIN: ' + ssn);
+      }
+    }
+  } else {
+    const eu = document.getElementById('trEntityUs').value;
+    const typeLabel = eu === 'yes' ? '美国实体 U.S. Entity → W-9' : eu === 'no' ? '外国实体 Foreign Entity → W-8BEN-E' : '—';
+    lines.push('申请主体: 实体 Entity');
+    lines.push('实体类型: ' + typeLabel);
+    const entNameEl = document.getElementById('trEntLegalName');
+    const entName = entNameEl ? entNameEl.value.trim() : '';
+    if (entName) lines.push('Legal Name: ' + entName);
+  }
+  const summary = lines.join('\n') || '税务身份判定';
   showConfirmModal(
     '确认保存税务身份判定',
-    `请确认税务身份判定信息核验无误并保存：\n\n${summary}`,
+    `请确认以下税务身份判定信息无误后保存：\n\n${summary}`,
     '✅ 确认保存',
     'btn-green',
     saveTaxResidency,
@@ -15379,8 +15404,25 @@ async function saveTaxResidency() {
 // Explicit confirmation step to mark tax_residency as completed
 function confirmCompleteTaxResidency() {
   if (!_onboardingWorkerId) return;
-  const resultEl = document.getElementById('trFinalResultContent');
-  const summary = resultEl && resultEl.textContent.trim() ? resultEl.textContent.trim() : '税务身份判定';
+  const type = document.getElementById('trTypeInd').checked ? 'individual' : 'entity';
+  const lines = [];
+  if (type === 'individual') {
+    const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
+    if (indStatus) {
+      const statusMap = { citizen: '美国公民 U.S. Citizen → W-9', green_card: '绿卡持有者 Green Card → W-9', neither: '非居民外国人 Nonresident Alien' };
+      lines.push('申请主体: 个人 Individual');
+      lines.push('身份类型: ' + (statusMap[indStatus.value] || indStatus.value));
+      if (indStatus.value === 'citizen' || indStatus.value === 'green_card') {
+        const name = document.getElementById('trIndLegalName').value.trim();
+        if (name) lines.push('Legal Name: ' + name);
+      }
+    }
+  } else {
+    const eu = document.getElementById('trEntityUs').value;
+    lines.push('申请主体: 实体 Entity');
+    lines.push('实体类型: ' + (eu === 'yes' ? '美国实体 U.S. Entity → W-9' : eu === 'no' ? '外国实体 Foreign Entity → W-8BEN-E' : '—'));
+  }
+  const summary = lines.join('\n') || '税务身份判定';
   showConfirmModal(
     '确认判定完成',
     `请确认已审核以下税务身份判定结果，并将任务标记为完成：\n\n${summary}`,
