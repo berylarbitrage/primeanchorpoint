@@ -19805,6 +19805,7 @@ async function _dsLoadConfig() {
   try {
     _dsConfig = await api('/admin/docuseal/config');
     _dsRefreshSelects();
+    if (_dsMyTemplates.length) _dsRenderMyTemplates();
   } catch(e) { showToast(e.message, 'error'); }
   await _dsTestConnection();
 }
@@ -19908,10 +19909,13 @@ function _dsRenderMyTemplates() {
     contractor_invoice_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
   };
   const rows = _dsMyTemplates.map(t => {
+    const _seenBadgeLabels = new Set();
     const badges = Object.entries(_BADGE_STYLES).map(([k, s]) => {
       const cfgVal = _dsConfig[k];
       const inSlot = Array.isArray(cfgVal) ? cfgVal.some(id => id == t.docuseal_template_id) : cfgVal == t.docuseal_template_id;
-      return inSlot ? `<span style="display:inline-block;background:${s.bg};color:${s.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${s.label}</span>` : '';
+      if (!inSlot || _seenBadgeLabels.has(s.label)) return '';
+      _seenBadgeLabels.add(s.label);
+      return `<span style="display:inline-block;background:${s.bg};color:${s.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${s.label}</span>`;
     }).filter(Boolean).join('');
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
@@ -19940,13 +19944,35 @@ async function dsSetTemplate(type, id) {
   } catch(e) { showToast(e.message, 'error'); }
 }
 
-async function dsRenameMyTemplate(localId, currentName) {
-  const newName = prompt('请输入新的模板名称：', currentName);
-  if (!newName || newName.trim() === currentName) return;
+function dsRenameMyTemplate(localId, currentName) {
+  const modalHtml = `<div id="ds-rename-modal-overlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:1.5rem;width:380px;box-shadow:0 20px 60px rgba(0,0,0,.2);margin:auto">
+      <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">改名</div>
+      <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为此模板输入新名称</div>
+      <input id="ds-rename-input" type="text" value="${_dsEsc(currentName)}" style="width:100%;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:8px;padding:.5rem .75rem;font-size:.88rem;outline:none;margin-bottom:1rem" onkeydown="if(event.key==='Enter')dsRenameMyTemplateConfirm(${localId})">
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button onclick="document.getElementById('ds-rename-modal-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
+        <button onclick="dsRenameMyTemplateConfirm(${localId})" style="padding:.4rem 1rem;border-radius:7px;border:none;background:#0ea5e9;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">保存</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+  const input = document.getElementById('ds-rename-input');
+  input.focus();
+  input.select();
+}
+
+async function dsRenameMyTemplateConfirm(localId) {
+  const overlay = document.getElementById('ds-rename-modal-overlay');
+  const input = document.getElementById('ds-rename-input');
+  const newName = input ? input.value.trim() : '';
+  if (!newName) { showToast('名称不能为空', 'error'); return; }
+  const t = _dsMyTemplates.find(t => t.id === localId);
+  if (t && newName === t.name) { overlay && overlay.remove(); return; }
   try {
-    await api(`/admin/docuseal/my-templates/${localId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName.trim() }) });
-    const t = _dsMyTemplates.find(t => t.id === localId);
-    if (t) t.name = newName.trim();
+    await api(`/admin/docuseal/my-templates/${localId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName }) });
+    if (t) t.name = newName;
+    overlay && overlay.remove();
     _dsRenderMyTemplates();
     _dsRefreshSelects();
     showToast('模板已改名', 'success');
