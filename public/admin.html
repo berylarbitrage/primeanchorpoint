@@ -13327,7 +13327,7 @@ async function loadWorkerAccounts() {
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
     <td style="text-align:center;vertical-align:middle">${(() => {
       const emp = w.employment_type || '';
-      if (!w.onboarded || !emp || emp==='cash') return '<span style="color:var(--gray-400);font-size:.78rem">— 不确定 —</span>';
+      if (!w.onboarded || !emp || emp==='cash') return '<span style="color:var(--gray-400);font-size:.78rem;white-space:nowrap">— 不确定 —</span>';
       const hasDoc = (w.tax_filing_doc_count || 0) > 0;
       const rf = w.recommended_form || '';
       const filingLabel = emp==='1099'&&(rf==='W-8BEN'||rf==='W-8BEN-E') ? '1042-S'
