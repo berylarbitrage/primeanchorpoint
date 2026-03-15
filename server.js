@@ -791,6 +791,35 @@ db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   UNIQUE(inquiry_id, position_key)
 )`);
 
+// ─── Fix existing invoices with XX state placeholder ───
+try {
+  const xxInvoices = db.prepare("SELECT id, invoice_number, company_name FROM invoices WHERE invoice_number LIKE 'INV-XX-%'").all();
+  for (const inv of xxInvoices) {
+    const partner = db.prepare("SELECT addresses, address FROM partners WHERE name = ?").get(inv.company_name);
+    if (!partner) continue;
+    let state = null;
+    // Try structured addresses
+    try {
+      const addrs = JSON.parse(partner.addresses || '[]');
+      if (addrs.length && addrs[0].state) state = addrs[0].state.toUpperCase().slice(0, 2);
+      if (!state && addrs.length && addrs[0].address) {
+        const m = addrs[0].address.match(/,\s*([A-Z]{2})\s+\d{5}/);
+        if (m) state = m[1];
+      }
+    } catch {}
+    // Fallback: parse from plain address field
+    if (!state && partner.address) {
+      const m = partner.address.match(/,\s*([A-Z]{2})\s+\d{5}/);
+      if (m) state = m[1];
+    }
+    if (state && state !== 'XX') {
+      const newNum = inv.invoice_number.replace('INV-XX-', `INV-${state}-`);
+      db.prepare("UPDATE invoices SET invoice_number = ? WHERE id = ?").run(newNum, inv.id);
+      console.log(`[migration] Fixed invoice ${inv.invoice_number} → ${newNum}`);
+    }
+  }
+} catch(e) { console.error('[migration] Fix XX invoices error:', e.message); }
+
 // ─── New tables for worker / customer / job-application portals ───
 db.exec(`
   CREATE TABLE IF NOT EXISTS worker_accounts (
