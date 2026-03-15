@@ -557,7 +557,8 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
-      <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 Invoice</a>
+      <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
+      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 员工 Invoice</a>
     </div>
   </div>
 
@@ -1203,7 +1204,7 @@ tr:hover td{background:var(--sky-light)}
 
 <div id="tab-ts-invoice" style="display:none">
   <div class="top">
-    <h1>🧾 Invoice 管理</h1>
+    <h1>🧾 公司 Invoice 管理</h1>
     <div class="top-actions">
       <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
       <button class="btn btn-outline" onclick="loadInvpList()">刷新</button>
@@ -1268,6 +1269,22 @@ tr:hover td{background:var(--sky-light)}
         </div>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- ════════ 员工 Invoice Tab ════════ -->
+<div id="tab-ts-emp-invoice" style="display:none">
+  <div class="top">
+    <h1>📄 员工 Invoice / Payment Requests</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadEmpInvoiceTab()">刷新</button>
+    </div>
+  </div>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商提交的 Invoice，用于 FWPA 合规（合同—服务完成—付款）链条记录</p>
+  <div class="card">
+    <div id="empInvoiceListWrap">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
     </div>
   </div>
 </div>
@@ -2146,33 +2163,6 @@ tr:hover td{background:var(--sky-light)}
     <!-- Connection status -->
     <div id="ds-conn-badge" style="margin-bottom:1rem"></div>
 
-    <!-- Connection Settings Panel -->
-    <div id="ds-conn-card" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1.5rem">
-      <div style="font-size:1rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        DocuSeal 连接设置
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
-        <div>
-          <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">DocuSeal URL <span style="color:#ef4444">*</span></label>
-          <input type="text" id="ds-conn-url" placeholder="https://api.docuseal.com" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
-          <div id="ds-conn-url-hint" style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">Cloud 版：https://api.docuseal.com｜自托管：https://your-domain.com</div>
-        </div>
-        <div>
-          <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">API Key <span style="color:#ef4444">*</span></label>
-          <input type="text" id="ds-conn-apikey" placeholder="留空则保持现有值不变" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
-          <div id="ds-conn-key-hint" style="font-size:.75rem;color:#94a3b8;margin-top:.3rem"></div>
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:.75rem">
-        <button class="btn btn-sm" style="background:#10b981;color:#fff;padding:.45rem 1rem;border-radius:7px;font-size:.85rem;font-weight:600;cursor:pointer;border:none" onclick="_dsSaveConnection()">保存连接</button>
-        <span id="ds-conn-save-status" style="font-size:.83rem;color:#64748b"></span>
-      </div>
-      <div style="margin-top:.75rem;font-size:.75rem;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:.75rem">
-        💡 也可通过 Render / Railway 环境变量配置：<code style="background:#f8fafc;padding:.1rem .3rem;border-radius:3px">DOCUSEAL_API_KEY</code> 和 <code style="background:#f8fafc;padding:.1rem .3rem;border-radius:3px">DOCUSEAL_URL</code>（优先级高于此处保存的值）
-      </div>
-    </div>
-
     <!-- Current config -->
     <div style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1.5rem">
       <div style="font-size:1rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem">
@@ -3032,7 +3022,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
+  <div id="wpDateRow" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
     <div class="field">
       <label style="font-size:.78rem;font-weight:600">签发日期 ISSUE DATE</label>
       <input type="date" id="wpIssueDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
@@ -3043,7 +3033,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="field" style="margin-bottom:.75rem">
+  <div id="wpCategoryRow" class="field" style="margin-bottom:.75rem">
     <label style="font-size:.78rem;font-weight:600">签证类别 / USCIS CATEGORY</label>
     <input id="wpCategory" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. C09, H-1B, F-1 OPT">
   </div>
@@ -4892,7 +4882,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="bg_check">背景调查报告</option>
       <option value="other">其他</option>
     </select></div>
-    <div class="field"><label>到期日期 (如适用)</label><input id="docExpiry" type="date"></div>
+    <div class="field" id="docExpiryField"><label>到期日期 (如适用)</label><input id="docExpiry" type="date"></div>
   </div>
   <div class="field"><label>标签/描述</label><input id="docLabel" placeholder="例：驾照 - Illinois"></div>
   <div class="field"><label>文件 (PDF/JPG/PNG/DOC, 最大 20MB)</label>
@@ -5632,7 +5622,7 @@ const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
-  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time',
   approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
   'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
@@ -5667,6 +5657,7 @@ function showTab(t) {
   if (t === 'ts-dividend') loadTsDividend();
   if (t === 'ts-history')  loadTsHistory();
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
+  if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -12965,6 +12956,14 @@ async function loadDocuments() {
   </tr>`).join('') : '<tr><td colspan="7" class="empty">该员工暂无文件</td></tr>';
 }
 
+function docToggleExpiry(docType) {
+  const field = document.getElementById('docExpiryField');
+  if (!field) return;
+  const hide = WP_NO_EXPIRY_DOCS.has(docType);
+  field.style.display = hide ? 'none' : '';
+  if (hide) document.getElementById('docExpiry').value = '';
+}
+
 function openDocModal() {
   document.getElementById('docEmpSel').value = document.getElementById('docEmpFilter').value || '';
   document.getElementById('docType').value   = 'ssn';
@@ -12972,6 +12971,9 @@ function openDocModal() {
   document.getElementById('docLabel').value  = '';
   document.getElementById('docNotes').value  = '';
   document.getElementById('docFile').value   = '';
+  const docTypeSel = document.getElementById('docType');
+  docTypeSel.onchange = function() { docToggleExpiry(this.value); };
+  docToggleExpiry(docTypeSel.value);
   document.getElementById('docModal').classList.add('show');
   captureModalState('docModal');
 }
@@ -15971,6 +15973,54 @@ const WP_DOC_OPTIONS = {
   ]
 };
 
+// Document types that do NOT have expiration dates (permanent / one-time documents)
+const WP_NO_EXPIRY_DOCS = new Set([
+  // Citizen identity docs (permanent, never expire)
+  'birth_cert',           // U.S. Birth Certificate
+  'naturalization',       // Certificate of Naturalization (N-550/N-570)
+  'citizenship_cert',     // Certificate of Citizenship (N-560/N-561)
+  'consular_report',      // Consular Report of Birth Abroad (FS-240)
+  // U.S. Entity docs (permanent)
+  'entity_formation',     // Articles / Certificate of Formation
+  'ein_letter',           // IRS EIN Confirmation Letter (CP 575/147C)
+  // Foreign Entity docs (permanent)
+  'foreign_cert',         // Certificate of Incorporation / Formation
+  'signing_auth',         // Signing Authority / Board Resolution
+  // HR document types (permanent / no expiry)
+  'ssn',                  // Social Security Card
+  'i9',                   // I-9 Form
+  'w4',                   // W-4 Form
+  'bg_check'              // Background Check Report
+]);
+
+// Document types that don't need USCIS category field
+const WP_NO_CATEGORY_DOCS = new Set([
+  'birth_cert', 'naturalization', 'citizenship_cert', 'consular_report',
+  'us_passport',
+  'entity_formation', 'ein_letter',
+  'foreign_cert', 'signing_auth',
+  'ssn', 'i9', 'w4', 'bg_check'
+]);
+
+function wpToggleDateFields(docType) {
+  const dateRow = document.getElementById('wpDateRow');
+  if (dateRow) {
+    const hideDate = WP_NO_EXPIRY_DOCS.has(docType);
+    dateRow.style.display = hideDate ? 'none' : '';
+    if (hideDate) {
+      document.getElementById('wpIssueDate').value = '';
+      document.getElementById('wpExpiryDate').value = '';
+      document.getElementById('wpExpiryWarning').style.display = 'none';
+    }
+  }
+  const catRow = document.getElementById('wpCategoryRow');
+  if (catRow) {
+    const hideCat = WP_NO_CATEGORY_DOCS.has(docType);
+    catRow.style.display = hideCat ? 'none' : '';
+    if (hideCat) document.getElementById('wpCategory').value = '';
+  }
+}
+
 // Required documents info by category
 const WP_REQUIRED_DOCS = {
   citizen: { title: 'U.S. Citizen → W-9', docs: ['身份证明（以下任一即可）:', '• 美国护照 U.S. Passport', '• 美国出生证明 U.S. Birth Certificate', '• 入籍证书 Certificate of Naturalization (N-550/N-570)', '• 公民证书 Certificate of Citizenship (N-560/N-561)', '• 海外出生领事报告 Consular Report of Birth Abroad (FS-240)'] },
@@ -15992,6 +16042,9 @@ function wpPopulateDocType(category, existingValue) {
     sel.insertAdjacentHTML('beforeend', `<option value="${o.value}">${o.label}</option>`);
   });
   if (existingValue) sel.value = existingValue;
+  // Toggle date fields based on selected doc type
+  sel.onchange = function() { wpToggleDateFields(this.value); };
+  wpToggleDateFields(existingValue || '');
 }
 
 function wpShowRequiredDocs(category) {
@@ -17316,7 +17369,50 @@ async function reviewContractorInvoice(id, status) {
   if (r && r.success) {
     showToast(status === 'approved' ? '✅ Invoice 已批准' : '❌ Invoice 已拒绝');
     openContractorInvoicesModal();
+    // Also refresh the tab view if it's visible
+    if (document.getElementById('tab-ts-emp-invoice')?.style.display !== 'none') loadEmpInvoiceTab();
   }
+}
+
+// ─── 员工 Invoice Tab (standalone page) ───
+async function loadEmpInvoiceTab() {
+  const el = document.getElementById('empInvoiceListWrap');
+  el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
+  const rows = await api('/admin/contractor-invoices');
+  if (!Array.isArray(rows) || !rows.length) {
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无员工 Invoice 记录</div>';
+    return;
+  }
+  const STATUS_BADGE = {
+    submitted: '<span style="padding:2px 8px;border-radius:6px;background:#fffbeb;color:#92400e;font-size:.75rem;font-weight:600">⏳ 待审核</span>',
+    approved: '<span style="padding:2px 8px;border-radius:6px;background:#dcfce7;color:#15803d;font-size:.75rem;font-weight:600">✅ 已批准</span>',
+    rejected: '<span style="padding:2px 8px;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:.75rem;font-weight:600">❌ 已拒绝</span>'
+  };
+  el.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
+    <thead><tr style="border-bottom:2px solid var(--gray-200)">
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">Invoice #</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">工人</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">日期</th>
+      <th style="padding:.4rem .5rem;text-align:left">服务描述</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">服务周期</th>
+      <th style="padding:.4rem .5rem;text-align:right;white-space:nowrap">金额</th>
+      <th style="padding:.4rem .5rem;text-align:center">状态</th>
+      <th style="padding:.4rem .5rem;text-align:center">操作</th>
+    </tr></thead>
+    <tbody>${rows.map(r => `<tr style="border-bottom:1px solid var(--gray-100)">
+      <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
+      <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}</td>
+      <td style="padding:.5rem;white-space:nowrap;color:var(--gray-500)">${esc(r.invoice_date)}</td>
+      <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.service_description)}">${esc(r.service_description)}</td>
+      <td style="padding:.5rem;white-space:nowrap;font-size:.78rem;color:var(--gray-500)">${r.service_period_start&&r.service_period_end ? esc(r.service_period_start)+' ~ '+esc(r.service_period_end) : '—'}</td>
+      <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">$${(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
+      <td style="padding:.5rem;text-align:center">${STATUS_BADGE[r.status]||r.status}</td>
+      <td style="padding:.5rem;text-align:center;white-space:nowrap">${r.status === 'submitted' ? `
+        <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
+        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
+      ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}</td>
+    </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`).join('')}</tbody>
+  </table>`;
 }
 
 // ─── Tax Document Modal (报税文件) ───
@@ -19347,41 +19443,10 @@ async function _dsLoadConfig() {
     if (_dsConfig.connected) {
       badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#d1fae5;color:#065f46">✓ 已连接 DocuSeal</span>${_dsConfig.url ? ` <span style="font-size:.78rem;color:#94a3b8">${_dsEsc(_dsConfig.url)}</span>` : ''}`;
     } else {
-      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#fee2e2;color:#991b1b">✗ 未连接 — 请在下方填写 API Key 和 URL</span>`;
+      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#fee2e2;color:#991b1b">✗ 未连接 — 请在 Render 环境变量中配置 DOCUSEAL_API_KEY / DOCUSEAL_URL</span>`;
     }
     _dsRefreshSelects();
   } catch(e) { showToast(e.message, 'error'); }
-  // Load connection field values
-  try {
-    const conn = await api('/api/admin/docuseal/connection');
-    const urlEl = document.getElementById('ds-conn-url');
-    const urlHint = document.getElementById('ds-conn-url-hint');
-    const keyHint = document.getElementById('ds-conn-key-hint');
-    if (urlEl && conn.url) urlEl.value = conn.url;
-    if (urlHint && conn.url_source === 'env') urlHint.textContent = '✓ 当前通过环境变量 DOCUSEAL_URL 设置';
-    if (keyHint) {
-      if (conn.api_key_source === 'env') keyHint.textContent = '✓ 当前通过环境变量 DOCUSEAL_API_KEY 设置';
-      else if (conn.api_key_preview) keyHint.textContent = `当前值：${conn.api_key_preview}（留空保持不变）`;
-      else keyHint.textContent = '尚未设置';
-    }
-  } catch(e) { /* ignore */ }
-}
-
-async function _dsSaveConnection() {
-  const url = (document.getElementById('ds-conn-url').value || '').trim().replace(/\/+$/, '');
-  const api_key = (document.getElementById('ds-conn-apikey').value || '').trim();
-  const status = document.getElementById('ds-conn-save-status');
-  if (!url) { showToast('请填写 DocuSeal URL', 'error'); return; }
-  try {
-    status.textContent = '保存中…';
-    const body = { url };
-    if (api_key) body.api_key = api_key;
-    const r = await api('/api/admin/docuseal/connection', { method: 'POST', body: JSON.stringify(body) });
-    status.textContent = r.connected ? '✓ 已连接' : '已保存（连接验证失败，请检查 API Key）';
-    document.getElementById('ds-conn-apikey').value = '';
-    await loadDocusealTemplatesPage();
-    showToast('✅ 连接设置已保存');
-  } catch(e) { status.textContent = ''; showToast(e.message, 'error'); }
 }
 
 async function _dsLoadMyTemplates() {

@@ -80,32 +80,6 @@
 
 <div class="page">
 
-  <!-- Connection Settings -->
-  <div class="card" id="connCard">
-    <div class="card-title">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      DocuSeal 连接设置
-    </div>
-    <div id="connSettingsBody">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem" class="cfg-grid">
-        <div>
-          <label>DocuSeal URL <span style="color:var(--red)">*</span></label>
-          <input type="text" id="connUrl" placeholder="https://docuseal.yourdomain.com">
-          <div style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem">自托管实例地址（不含末尾 /）</div>
-        </div>
-        <div>
-          <label>API Key <span style="color:var(--red)">*</span></label>
-          <input type="text" id="connApiKey" placeholder="留空则保持现有值不变">
-          <div id="connKeyHint" style="font-size:.75rem;color:var(--gray-400);margin-top:.3rem"></div>
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:.75rem">
-        <button class="btn btn-green" onclick="saveConnection()">保存连接</button>
-        <span id="connSaveStatus" style="font-size:.83rem;color:var(--gray-500)"></span>
-      </div>
-    </div>
-  </div>
-
   <!-- Current config -->
   <div class="card">
     <div class="card-title">
@@ -207,40 +181,10 @@ async function loadConfig() {
       connBadge.innerHTML = `<span class="badge badge-green">✓ 已连接 DocuSeal</span>`;
       if (_config.url) connBadge.innerHTML += ` <span style="font-size:.78rem;color:var(--gray-400)">${escHtml(_config.url)}</span>`;
     } else {
-      connBadge.innerHTML = `<span class="badge badge-red">✗ 未连接 — 请在下方填写 API Key 和 URL</span>`;
+      connBadge.innerHTML = `<span class="badge badge-red">✗ 未连接 — 请检查 .env 中 DOCUSEAL_API_KEY / DOCUSEAL_URL</span>`;
     }
     refreshSelects();
   } catch(e) { toast(e.message, 'error'); }
-  // Load connection settings
-  try {
-    const conn = await api('/api/admin/docuseal/connection');
-    const urlEl = document.getElementById('connUrl');
-    const keyHint = document.getElementById('connKeyHint');
-    if (urlEl && conn.url) urlEl.value = conn.url;
-    if (keyHint) {
-      if (conn.api_key_source === 'env') keyHint.textContent = '当前通过环境变量设置，输入新值可覆盖到数据库';
-      else if (conn.api_key_preview) keyHint.textContent = `当前值：${conn.api_key_preview}（留空保持不变）`;
-      else keyHint.textContent = '尚未设置';
-    }
-  } catch(e) { /* ignore */ }
-}
-
-async function saveConnection() {
-  const url = (document.getElementById('connUrl').value || '').trim().replace(/\/+$/, '');
-  const api_key = (document.getElementById('connApiKey').value || '').trim();
-  const status = document.getElementById('connSaveStatus');
-  if (!url) { toast('请填写 DocuSeal URL', 'error'); return; }
-  try {
-    status.textContent = '保存中…';
-    const body = { url };
-    if (api_key) body.api_key = api_key;
-    const r = await api('/api/admin/docuseal/connection', { method: 'POST', body: JSON.stringify(body) });
-    status.textContent = r.connected ? '✓ 已连接' : '已保存（连接验证失败，请检查 API Key）';
-    document.getElementById('connApiKey').value = '';
-    await loadConfig();
-    await loadMyTemplates();
-    toast('连接设置已保存', 'success');
-  } catch(e) { status.textContent = ''; toast(e.message, 'error'); }
 }
 
 // ── Load my templates (from our DB) ──
