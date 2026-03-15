@@ -496,7 +496,7 @@ async function uploadTemplate() {
   try {
     const result = await api('/api/admin/docuseal/upload-template', {
       method: 'POST',
-      body: JSON.stringify({ name, file: _fileData })
+      body: JSON.stringify({ name, file: _fileData, category })
     });
     if (category && result.id) {
       try {
