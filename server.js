@@ -1403,6 +1403,19 @@ try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN issue_date TEXT DEFAULT '
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN expiry_date TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN notes TEXT DEFAULT ''"); } catch {}
 
+// ─── Tax Filing Documents (year-end 1099-NEC / W-2 / 1042-S etc.) ───
+db.exec(`CREATE TABLE IF NOT EXISTS tax_filing_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  tax_year INTEGER NOT NULL DEFAULT 2025,
+  form_type TEXT NOT NULL,
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_tax_filing_docs_worker ON tax_filing_docs(worker_account_id, tax_year)"); } catch {}
+
 // Add structured address columns to tax_residency_questionnaire
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street2 TEXT DEFAULT ''"); } catch {}
@@ -4186,8 +4199,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   `);
   const getContractInfo = db.prepare("SELECT ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'");
   const getContractVersionCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_contract_versions WHERE worker_account_id=?");
-  const getTaxDocCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_tax_docs WHERE worker_account_id=?");
   const getTaxResidency = db.prepare("SELECT tax_status, recommended_form, country_citizenship, country_tax_residence, treaty_country, claim_treaty_benefit, services_location FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY id DESC LIMIT 1");
+  const getTaxFilingDocCount = db.prepare("SELECT COUNT(*) as cnt FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? AND file_path!=''");
+  const currentTaxYear = new Date().getFullYear() - 1; // filing for prior year
 
   const enriched = workers.map(w => {
     const interview = getInterview.get(w.id);
@@ -4197,8 +4211,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const qualCount = getQualifiedReferrals.get(w.id, refConfig.min_hours_to_qualify);
     const contractInfo = getContractInfo.get(w.id);
     const contractVerCount = getContractVersionCount.get(w.id);
-    const taxDocCount = getTaxDocCount.get(w.id);
     const taxRes = getTaxResidency.get(w.id);
+    const taxFilingDocCount = getTaxFilingDocCount.get(w.id, currentTaxYear);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -4213,12 +4227,13 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral,
       contract_ds_status: contractInfo?.ds_status || '',
       contract_version_count: contractVerCount?.cnt || 0,
-      tax_doc_count: taxDocCount?.cnt || 0,
+      recommended_form: taxRes?.recommended_form || '',
       tax_status: taxRes?.tax_status || '',
-      tax_form: taxRes?.recommended_form || '',
       tax_treaty_country: taxRes?.treaty_country || '',
       tax_claim_treaty: taxRes?.claim_treaty_benefit || '',
-      tax_services_location: taxRes?.services_location || ''
+      tax_services_location: taxRes?.services_location || '',
+      tax_filing_doc_count: taxFilingDocCount?.cnt || 0,
+      current_tax_year: currentTaxYear
     };
   });
 
@@ -5429,45 +5444,42 @@ app.put('/api/admin/worker-accounts/:id/work-permit-docs-meta', requireAdmin, (r
   res.json({ success: true });
 });
 
-// ─── Tax Document Upload (报税文件) ───
-app.get('/api/admin/worker-accounts/:id/tax-docs', requireAdmin, (req, res) => {
-  const docs = db.prepare('SELECT id, doc_label, file_name, uploaded_by, created_at FROM worker_tax_docs WHERE worker_account_id=? ORDER BY created_at DESC').all(req.params.id);
+// ─── Tax Filing Documents (年度报税表 1099-NEC / W-2 / 1042-S) ───
+
+app.get('/api/admin/worker-accounts/:id/tax-filing-docs', requireAdmin, (req, res) => {
+  const year = parseInt(req.query.year) || (new Date().getFullYear() - 1);
+  const docs = db.prepare('SELECT id, form_type, file_name, uploaded_by, created_at FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? ORDER BY form_type, created_at').all(req.params.id, year);
   res.json(docs);
 });
 
-app.post('/api/admin/worker-accounts/:id/tax-docs', requireAdmin, docUpload.single('file'), (req, res) => {
+app.post('/api/admin/worker-accounts/:id/tax-filing-docs', requireAdmin, docUpload.single('file'), (req, res) => {
   const workerId = parseInt(req.params.id);
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-  const docLabel = req.body.doc_label || '';
-  const filePath = req.file.path;
-  const fileName = req.file.originalname;
+  const formType = req.body.form_type || '';
+  const taxYear = parseInt(req.body.tax_year) || (new Date().getFullYear() - 1);
+  if (!formType) return res.status(400).json({ error: 'form_type required' });
+  const filePath = req.file ? req.file.path : '';
+  const fileName = req.file ? req.file.originalname : '';
   const uploadedBy = (req.session && req.session.username) || 'admin';
-
-  const result = db.prepare('INSERT INTO worker_tax_docs (worker_account_id, doc_label, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?)')
-    .run(workerId, docLabel, filePath, fileName, uploadedBy);
-
+  const result = db.prepare('INSERT INTO tax_filing_docs (worker_account_id, tax_year, form_type, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?,?)')
+    .run(workerId, taxYear, formType, filePath, fileName, uploadedBy);
   db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-    .run(workerId, uploadedBy, 'tax_doc', '', docLabel, `上传报税文件: ${docLabel} · ${fileName}`);
-
+    .run(workerId, uploadedBy, 'tax_filing_doc', '', formType, `上传报税文件: ${formType} (${taxYear}) · ${fileName}`);
   res.json({ success: true, id: result.lastInsertRowid, file_name: fileName });
 });
 
-app.get('/api/admin/tax-docs/:docId/download', requireAdmin, (req, res) => {
-  const doc = db.prepare('SELECT * FROM worker_tax_docs WHERE id=?').get(req.params.docId);
+app.delete('/api/admin/tax-filing-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM tax_filing_docs WHERE id=?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+  db.prepare('DELETE FROM tax_filing_docs WHERE id=?').run(req.params.docId);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/tax-filing-docs/:docId/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM tax_filing_docs WHERE id=?').get(req.params.docId);
   if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
   if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
   res.download(doc.file_path, doc.file_name || 'document');
-});
-
-app.delete('/api/admin/tax-docs/:docId', requireAdmin, (req, res) => {
-  const doc = db.prepare('SELECT * FROM worker_tax_docs WHERE id=?').get(req.params.docId);
-  if (!doc) return res.status(404).json({ error: 'Not found' });
-  if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
-  db.prepare('DELETE FROM worker_tax_docs WHERE id=?').run(req.params.docId);
-  const changedBy = (req.session && req.session.username) || 'admin';
-  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
-    .run(doc.worker_account_id, changedBy, 'tax_doc', doc.file_name, '', `删除报税文件: ${doc.doc_label} · ${doc.file_name}`);
-  res.json({ success: true });
 });
 
 // ─── ID Document Upload (admin uploads for worker during interview) ───

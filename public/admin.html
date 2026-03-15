@@ -1999,7 +1999,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
-      <th>协议</th><th>税务</th><th>报税文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>合规文件</th><th>协议</th><th>税务</th><th>报税文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -2369,9 +2369,7 @@ tr:hover td{background:var(--sky-light)}
     <span id="onboardingDispatchBadge"></span>
     <button class="btn btn-sm" id="onboardingDispatchBtn" onclick="toggleDispatchReady()" style="margin-left:auto"></button>
   </div>
-  <div id="onboardingTaxSection" style="display:none;padding:.75rem 0;border-top:1px solid var(--gray-200);margin-top:.5rem">
-    <button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openTaxInfoModal()">🏛️ 税务信息</button>
-  </div>
+
   <div class="modal-actions" style="margin-top:.5rem">
     <button class="btn" onclick="closeModal('onboardingModal')">关闭</button>
   </div>
@@ -2426,6 +2424,15 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" onclick="closeModal('contractVersionsModal')">关闭</button>
   </div>
   <div id="contractVersionsContent" style="margin-top:.75rem;max-height:70vh;overflow:auto"></div>
+</div></div>
+
+<!-- Tax Filing Docs Modal -->
+<div class="modal-bg" id="taxFilingDocsModal"><div class="modal" style="max-width:700px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+    <h2 style="margin:0">📋 报税文件 — <span id="taxFilingWorkerName" style="color:var(--sky)"></span></h2>
+    <button class="btn" onclick="closeModal('taxFilingDocsModal')">关闭</button>
+  </div>
+  <div id="taxFilingDocsContent" style="max-height:75vh;overflow-y:auto"></div>
 </div></div>
 
 <!-- W-9 Send Modal -->
@@ -13308,20 +13315,25 @@ async function loadWorkerAccounts() {
     <td style="text-align:center">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
-    <td style="font-size:.75rem;white-space:nowrap">${w.tax_form
-      ? `<div style="display:flex;flex-direction:column;gap:.15rem">
-          <span style="padding:1px 5px;border-radius:4px;font-weight:700;${w.tax_form==='W-9'?'background:#dbeafe;color:#1d4ed8':'background:#fef3c7;color:#92400e'}">${esc(w.tax_form)}</span>
-          <span style="color:var(--gray-500);font-size:.7rem">${w.tax_status==='resident_alien'?'RA 居民':w.tax_status==='nonresident_alien'?'NRA 非居民':w.tax_status==='us_citizen'?'🇺🇸 公民':esc(w.tax_status||'')}</span>
-          ${w.employment_type==='1099'?'<span style="color:#854d0e;font-size:.68rem">'+(w.tax_form==='W-9'?'1099-NEC':'1042-S')+'</span>':''}
-          ${w.tax_claim_treaty==='yes'&&w.tax_treaty_country?'<span style="color:#7c3aed;font-size:.68rem">🤝 '+esc(w.tax_treaty_country)+'</span>':''}
-        </div>`
-      : '<span style="color:var(--gray-300)">—</span>'}</td>
-    <td style="text-align:center;white-space:nowrap">
-      ${w.tax_doc_count > 0
-        ? `<span style="cursor:pointer;font-size:.8rem;color:#065f46;background:#d1fae5;padding:.15rem .5rem;border-radius:6px;border:1px solid #6ee7b7" onclick="openTaxDocModal(${w.id},'${esc(w.name||w.username)}')">📄 ${w.tax_doc_count} 份</span>`
-        : `<span style="cursor:pointer;font-size:.8rem;color:#92400e;background:#fffbeb;padding:.15rem .5rem;border-radius:6px;border:1px solid #fde68a" onclick="openTaxDocModal(${w.id},'${esc(w.name||w.username)}')">📤 上传</span>`
-      }
-    </td>
+    <td style="font-size:.78rem;white-space:nowrap;vertical-align:middle">${(() => {
+      const rf = w.recommended_form || '';
+      const ts = w.tax_status || '';
+      const emp = w.employment_type || '';
+      const parts = [];
+      if (rf) parts.push(`<span style="background:${rf==='W-9'?'#dbeafe':rf==='W-8BEN'?'#fce7f3':rf==='W-8BEN-E'?'#fef9c3':'#f3e8ff'};color:${rf==='W-9'?'#1d4ed8':rf==='W-8BEN'?'#9d174d':rf==='W-8BEN-E'?'#713f12':'#6b21a8'};font-size:.7rem;padding:1px 5px;border-radius:8px;font-weight:700">${esc(rf)}</span>`);
+      if (ts==='us_person'||ts==='resident_alien') parts.push('<span style="font-size:.72rem;color:#065f46">us 公民</span>');
+      else if (ts==='nonresident_alien') parts.push('<span style="font-size:.72rem;color:#9a3412">NRA</span>');
+      const filingForm = emp==='1099'&&(rf==='W-8BEN'||rf==='W-8BEN-E')?'1042-S':emp==='1099'?'1099-NEC':emp==='w2'&&(rf==='W-8BEN'||rf==='W-8BEN-E')?'W-2+1042-S':emp==='w2'?'W-2':'';
+      if (filingForm) parts.push(`<span style="font-size:.7rem;color:#92400e;font-weight:600">${filingForm}</span>`);
+      if (w.tax_claim_treaty==='yes'&&w.tax_treaty_country) parts.push(`<span style="font-size:.68rem;color:#7c3aed">🤝 ${esc(w.tax_treaty_country)}</span>`);
+      return parts.length ? `<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start">${parts.join('')}</div>` : '<span style="color:var(--gray-300)">—</span>';
+    })()}</td>
+    <td style="text-align:center;vertical-align:middle">${(() => {
+      const emp = w.employment_type || '';
+      if (!emp || emp==='cash') return '<span style="color:var(--gray-300);font-size:.78rem">—</span>';
+      const hasDoc = (w.tax_filing_doc_count || 0) > 0;
+      return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${hasDoc?'✅ 已上传':'📤 上传'}</button>`;
+    })()}</td>
     <td style="font-size:.8rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer" onchange="updateWorkerPayMethod(${w.id},this.value)">
       <option value="cash" ${(w.payment_method||'cash')==='cash'?'selected':''}>💵 现金</option>
       <option value="check" ${w.payment_method==='check'?'selected':''}>✅ 支票</option>
@@ -16552,6 +16564,175 @@ async function showContractVersions(workerId, workerName) {
 
 // (openW9SendModal and doSendW9 are defined above)
 
+// ─── Tax Filing Docs Modal ───
+let _taxFilingWorkerId = null;
+let _taxFilingYear = null;
+let _taxFilingWorkerRow = null; // cached worker data
+
+function getTaxFilingForms(employmentType, recommendedForm) {
+  const rf = recommendedForm || '';
+  const emp = employmentType || '';
+  const isNRA = rf === 'W-8BEN' || rf === 'W-8BEN-E';
+  if (emp === '1099') return isNRA ? ['1042-S'] : ['1099-NEC'];
+  if (emp === 'w2') return isNRA ? ['W-2', '1042-S'] : ['W-2'];
+  return [];
+}
+
+function taxFilingFormAdvice(formType) {
+  const advice = {
+    '1099-NEC': {
+      title: 'Form 1099-NEC — 非雇员薪酬',
+      due: '每年 1月31日 前寄出/电子提交',
+      threshold: '全年支付 ≥ $600 时需出具',
+      workerAdvice: '收到 1099-NEC 后，需在个人税表（Form 1040）附 Schedule C 申报自雇收入，并缴纳自雇税（Self-Employment Tax，约 15.3%）。建议全年按季度预缴税款，避免罚款。'
+    },
+    'W-2': {
+      title: 'Form W-2 — 工资及税务报告',
+      due: '每年 1月31日 前寄出/电子提交',
+      threshold: '所有 W-2 员工均需出具（无最低金额限制）',
+      workerAdvice: '收到 W-2 后，使用 Form 1040 申报。如需帮助，可咨询会计师。'
+    },
+    '1042-S': {
+      title: 'Form 1042-S — 外国人收入及预扣税凭证',
+      due: '每年 3月15日 前（电子申报延至 3月15日）',
+      threshold: '支付给非居民外国人（NRA）的收入均需出具',
+      workerAdvice: '收到 1042-S 后，需在美国申报 Form 1040-NR（非居民外国人年度税表），申报截止日为 6月15日。如适用税收条约优惠，需附 Form 8833。如无 SSN/ITIN，需提交 Form W-7 申请 ITIN。'
+    }
+  };
+  return advice[formType] || null;
+}
+
+async function openTaxFilingDocsModal(workerId, workerName, taxYear) {
+  _taxFilingWorkerId = workerId;
+  _taxFilingYear = taxYear;
+  document.getElementById('taxFilingWorkerName').textContent = workerName;
+  document.getElementById('taxFilingDocsModal').classList.add('show');
+  await refreshTaxFilingDocsModal();
+}
+
+async function refreshTaxFilingDocsModal() {
+  const wid = _taxFilingWorkerId;
+  const year = _taxFilingYear;
+  const content = document.getElementById('taxFilingDocsContent');
+  content.innerHTML = '<div style="color:var(--gray-400);text-align:center;padding:1rem">加载中…</div>';
+  try {
+    // Get worker info for employment type
+    const [allWorkers, existingDocs] = await Promise.all([
+      api('/admin/worker-accounts'),
+      api(`/admin/worker-accounts/${wid}/tax-filing-docs?year=${year}`)
+    ]);
+    const w = (allWorkers || []).find(r => r.id === wid) || {};
+    const emp = w.employment_type || '';
+    const rf = w.recommended_form || '';
+    const requiredForms = getTaxFilingForms(emp, rf);
+
+    // Map existing docs by form_type
+    const docsByForm = {};
+    (existingDocs || []).forEach(d => {
+      if (!docsByForm[d.form_type]) docsByForm[d.form_type] = [];
+      docsByForm[d.form_type].push(d);
+    });
+
+    let html = '';
+
+    // Year selector
+    html += `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+      <span style="font-size:.85rem;font-weight:700;color:var(--gray-600)">申报年度：</span>
+      <select id="taxFilingYearSel" style="font-size:.85rem;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:6px" onchange="_taxFilingYear=parseInt(this.value);refreshTaxFilingDocsModal()">
+        ${[year-1,year,year+1].map(y=>`<option value="${y}" ${y===year?'selected':''}>${y}</option>`).join('')}
+      </select>
+      <span style="font-size:.78rem;color:var(--gray-400)">（税务年度）</span>
+    </div>`;
+
+    if (!emp || emp === 'cash') {
+      html += `<div style="background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:.75rem 1rem;font-size:.85rem;color:#713f12">
+        <b>无需报税表</b>：该工人雇佣类型为现金支付或未设置，暂无需出具年度报税表。
+      </div>`;
+    } else if (!requiredForms.length) {
+      html += `<div style="color:var(--gray-400);text-align:center;padding:1rem">无需出具年度报税表</div>`;
+    } else {
+      html += `<div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.75rem">以下为 ${year} 税务年度需由公司出具给该工人的报税表。上传完成后将标记为绿色。</div>`;
+      requiredForms.forEach(formType => {
+        const docs = docsByForm[formType] || [];
+        const uploaded = docs.length > 0;
+        const advice = taxFilingFormAdvice(formType);
+        html += `<div style="border:1px solid ${uploaded?'#86efac':'#fde68a'};background:${uploaded?'#f0fdf4':'#fffbeb'};border-radius:10px;padding:.75rem 1rem;margin-bottom:.75rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem">
+            <div>
+              <span style="font-weight:700;font-size:.95rem">${formType}</span>
+              ${uploaded ? '<span style="background:#dcfce7;color:#166534;font-size:.7rem;padding:1px 7px;border-radius:10px;margin-left:.4rem;font-weight:700">✅ 已上传</span>' : '<span style="background:#fef9c3;color:#713f12;font-size:.7rem;padding:1px 7px;border-radius:10px;margin-left:.4rem">待上传</span>'}
+              ${advice ? `<div style="font-size:.78rem;color:var(--gray-500);margin-top:.15rem">${esc(advice.title)}</div>` : ''}
+            </div>
+            <label style="cursor:pointer">
+              <input type="file" style="display:none" accept=".pdf,.jpg,.jpeg,.png" onchange="uploadTaxFilingDoc(${wid},'${formType}',${year},this)">
+              <span class="btn btn-sm" style="font-size:.75rem;${uploaded?'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7':'background:#fef3c7;color:#92400e;border:1px solid #fcd34d'}">📤 ${uploaded?'重新上传':'上传文件'}</span>
+            </label>
+          </div>
+          ${advice ? `<div style="margin-top:.5rem;font-size:.78rem;display:flex;gap:.75rem;flex-wrap:wrap">
+            <span style="color:var(--gray-500)">📅 截止：${advice.due}</span>
+            <span style="color:var(--gray-500)">💰 ${advice.threshold}</span>
+          </div>` : ''}
+          ${docs.length ? `<div style="margin-top:.5rem;display:flex;flex-direction:column;gap:.3rem">
+            ${docs.map(d=>`<div style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--gray-200);border-radius:6px;padding:.3rem .6rem;font-size:.8rem">
+              <span>📄 ${esc(d.file_name)}</span>
+              <div style="display:flex;gap:.4rem">
+                <a href="/api/admin/tax-filing-docs/${d.id}/download" target="_blank" class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe">⬇ 下载</a>
+                <button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca" onclick="deleteTaxFilingDoc(${d.id})">🗑</button>
+              </div>
+            </div>`).join('')}
+          </div>` : ''}
+        </div>`;
+      });
+    }
+
+    // Worker tax advice section
+    if (requiredForms.length) {
+      html += `<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:.75rem 1rem;margin-top:.5rem">
+        <div style="font-weight:700;color:#0369a1;font-size:.85rem;margin-bottom:.5rem">📝 给工人的报税建议</div>`;
+      requiredForms.forEach(formType => {
+        const advice = taxFilingFormAdvice(formType);
+        if (advice && advice.workerAdvice) {
+          html += `<div style="margin-bottom:.5rem">
+            <span style="font-weight:700;font-size:.82rem">${formType}：</span>
+            <span style="font-size:.82rem;color:var(--gray-700)">${esc(advice.workerAdvice)}</span>
+          </div>`;
+        }
+      });
+      html += `</div>`;
+    }
+
+    content.innerHTML = html;
+  } catch(e) {
+    content.innerHTML = `<div style="color:#dc2626;padding:1rem">加载失败: ${esc(e.message)}</div>`;
+  }
+}
+
+async function uploadTaxFilingDoc(workerId, formType, taxYear, input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  if (file.size > 20 * 1024 * 1024) { alert('文件不能超过 20MB'); return; }
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('form_type', formType);
+  fd.append('tax_year', taxYear);
+  try {
+    await fetch(`/api/admin/worker-accounts/${workerId}/tax-filing-docs`, {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    }).then(r => r.json());
+    await refreshTaxFilingDocsModal();
+    loadWorkerAccounts(); // refresh table to update green/yellow button
+  } catch(e) { alert('上传失败: ' + e.message); }
+}
+
+async function deleteTaxFilingDoc(docId) {
+  if (!await showConfirm('确定删除此报税文件？')) return;
+  await api(`/admin/tax-filing-docs/${docId}`, { method: 'DELETE' });
+  await refreshTaxFilingDocsModal();
+  loadWorkerAccounts();
+}
+
 async function toggleDispatchReady() {
   const newVal = _onboardingDispatchReady ? 0 : 1;
   if (newVal && !await showConfirm('确定将此工人标记为"可派工"？')) return;
@@ -16755,29 +16936,29 @@ async function showWorkerHistory(id, name) {
       content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无变更记录</div>';
       return;
     }
-    content.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.83rem;white-space:nowrap">
+    content.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.83rem">
       <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.75rem">
-        <th style="text-align:left;padding:.4rem .5rem">时间</th>
-        <th style="text-align:left;padding:.4rem .5rem">操作人</th>
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">时间</th>
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">操作人</th>
         <th style="text-align:left;padding:.4rem .5rem">字段</th>
-        <th style="text-align:left;padding:.4rem .5rem">原值</th>
-        <th style="text-align:left;padding:.4rem .5rem">新值</th>
-        <th style="text-align:left;padding:.4rem .5rem;max-width:240px">备注</th>
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">原值</th>
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">新值</th>
       </tr></thead>
       <tbody>${rows.map(r => {
         const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
-        const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
+        const rawField = r.field_name || '';
+        const field = WD_FIELD_LABELS[rawField] || rawField;
         const oldV = fmtWdVal(r.old_value);
         const newV = fmtWdVal(r.new_value);
         const note = r.note || '';
-        return `<tr style="border-bottom:1px solid var(--gray-100)">
-          <td style="padding:.45rem .5rem;color:var(--gray-400)">${ts}</td>
-          <td style="padding:.45rem .5rem;color:var(--sky)">${esc(r.changed_by||'—')}</td>
-          <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}</td>
-          <td style="padding:.45rem .5rem;color:#dc2626">${esc(oldV)}</td>
-          <td style="padding:.45rem .5rem;color:#16a34a">${esc(newV)}</td>
-          <td style="padding:.45rem .5rem;color:var(--gray-500);font-size:.8rem;max-width:240px;overflow:hidden;text-overflow:ellipsis" title="${esc(note)}">${esc(note)}</td>
-        </tr>`;
+        const noteRow = note ? `<tr><td colspan="5" style="padding:.1rem .5rem .5rem 2rem;color:var(--gray-500);font-size:.78rem;border-bottom:1px solid var(--gray-100)">💬 ${esc(note)}</td></tr>` : '';
+        return `<tr style="border-bottom:${note?'none':'1px solid var(--gray-100)'}">
+          <td style="padding:.45rem .5rem;color:var(--gray-400);white-space:nowrap">${ts}</td>
+          <td style="padding:.45rem .5rem;color:var(--sky);white-space:nowrap">${esc(r.changed_by||'—')}</td>
+          <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${rawField !== field ? esc(rawField) : ''}</span></td>
+          <td style="padding:.45rem .5rem;color:#dc2626;white-space:nowrap">${esc(oldV)}</td>
+          <td style="padding:.45rem .5rem;color:#16a34a;white-space:nowrap">${esc(newV)}</td>
+        </tr>${noteRow}`;
       }).join('')}</tbody>
     </table></div>`;
   } catch { content.innerHTML = '<div style="color:#dc2626;padding:1rem 0">加载失败，请重试</div>'; }
@@ -17010,8 +17191,37 @@ async function saveWorkerDetail() {
   loadWorkerAccounts();
 }
 
-const WD_FIELD_LABELS = { active:'账户状态', suspended:'暂停状态', work_status:'身份', expected_salary:'期望薪资', our_salary_rating:'评分', payment_method:'支付方式', employee_id:'绑定员工', password:'密码', contract:'合同签署', onboarding_contract:'合同任务', onboarding_interview:'面试任务', onboarding_phone_verify:'电话验证', onboarding_email_verify:'邮箱验证', onboarding_persona_verify:'身份验证', onboarding_background_check:'背调任务', onboarding_tax_form:'税表任务', onboarding_direct_deposit:'银行信息' };
-const WD_VALUE_LABELS = { '0':'否/禁用','1':'是/启用', cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直接存款', citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他', '':'（未填写）' };
+const WD_FIELD_LABELS = {
+  // 账户基本信息
+  active: '账户状态', suspended: '暂停状态', password: '密码', employee_id: '绑定员工',
+  // 个人信息
+  work_status: '身份证件类型', employment_type: '雇佣类型', payment_method: '支付方式',
+  expected_salary: '期望薪资', our_salary_rating: '评分', preferred_lang: '语言偏好',
+  sms_consent: '短信授权',
+  // 入职任务状态
+  onboarding_contract: '入职任务 · 签署合同', onboarding_interview: '入职任务 · 面试',
+  onboarding_phone_verify: '入职任务 · 手机验证', onboarding_email_verify: '入职任务 · 邮箱验证',
+  onboarding_persona_verify: '入职任务 · 身份验证 (Stripe)', onboarding_background_check: '入职任务 · 背景调查 (Checkr)',
+  onboarding_tax_form: '入职任务 · 税表', onboarding_direct_deposit: '入职任务 · 银行信息',
+  onboarding_work_permit: '入职任务 · 工作许可验证', onboarding_tax_residency: '入职任务 · 税务居民判定',
+  onboarding_i9: '入职任务 · I-9 就业资格', onboarding_w9: '入职任务 · W-9 税表',
+  // 业务数据
+  contract: '合同签署状态', tax_residency: '税务居民身份判定', work_permit: '工作许可验证类别',
+  work_permit_doc: '工作许可文件', tax_filing_doc: '报税文件上传', identity_status: '身份核验状态',
+  bgcheck_status: '背调状态', dispatch_ready: '可派工状态', worker_code: '工人编码'
+};
+const WD_VALUE_LABELS = {
+  '0':'否/禁用', '1':'是/启用',
+  cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直接存款',
+  citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他',
+  pending:'待处理', completed:'已完成', waived:'已豁免', skipped:'已跳过', in_progress:'进行中',
+  sent:'已发送', company_signed:'公司已签', worker_signed:'工人已签', voided:'已作废', declined:'已拒签',
+  w2:'W-2 员工', '1099':'1099 承包商',
+  us_person:'美国税务居民', resident_alien:'居民外国人', nonresident_alien:'非居民外国人 (NRA)',
+  active:'正常', suspended:'已暂停', inactive:'未激活',
+  clear:'通过', consider:'需审核', dispute:'争议中',
+  '':'（未填写）'
+};
 function fmtWdVal(v) { return WD_VALUE_LABELS[v] !== undefined ? WD_VALUE_LABELS[v] : (v || '（空）'); }
 
 async function loadWorkerHistory(id) {
