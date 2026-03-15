@@ -14036,6 +14036,16 @@ app.put('/api/admin/docuseal/my-templates/:id/rename', requireAdmin, (req, res) 
   res.json({ success: true, name: name.trim() });
 });
 
+// PUT /api/admin/docuseal/my-templates/:id/category — update category of a template in local DB
+app.put('/api/admin/docuseal/my-templates/:id/category', requireAdmin, (req, res) => {
+  const { category } = req.body;
+  if (!category || !category.trim()) return res.status(400).json({ error: '分类不能为空' });
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  db.prepare('UPDATE docuseal_templates SET category=? WHERE id=?').run(category.trim(), req.params.id);
+  res.json({ success: true, category: category.trim() });
+});
+
 // PUT /api/admin/docuseal/templates/:dsId/rename — rename a template via DocuSeal API + local DB
 app.put('/api/admin/docuseal/templates/:dsId/rename', requireAdmin, async (req, res) => {
   const { name } = req.body;
