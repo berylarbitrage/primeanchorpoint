@@ -14141,8 +14141,8 @@ async function openWorkerDetailModal(id) {
   document.getElementById('wdPaymentMethod').value = w.payment_method || 'cash';
   renderWdSkills();
   renderWdTasks();
-  await renderWdPositionInterests();
   modal.classList.add('show');
+  renderWdPositionInterests();
   loadWorkerHistory(id);
   loadWorkerAssignments(id);
 }
