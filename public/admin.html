@@ -13340,6 +13340,8 @@ async function loadWorkerAccounts() {
       return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${hasDoc?'✅ 已上传':'📤 上传'}</button>`;
     })()}</td>
     <td style="font-size:.78rem;white-space:nowrap;text-align:center">${(() => {
+      const isCitizen = w.tax_status === 'citizen' || w.work_status === 'citizen';
+      if (isCitizen) return '<span style="color:var(--gray-400);font-size:.75rem">🇺🇸 不需要</span>';
       const d = w.identity_reverify_date || '';
       const today = new Date().toISOString().slice(0,10);
       const overdue = d && d < today;
