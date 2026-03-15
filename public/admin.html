@@ -16259,11 +16259,20 @@ async function openWorkPermitModal() {
   wpRenderUploadZones(wpCategory);
   wpLoadExistingDocs(wpCategory);
 
-  // Load existing work permit data — display info only, do NOT pre-fill form fields
+  // Load existing work permit data — pre-fill form fields from saved record
   try {
     const data = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`);
     if (data && data.doc_type) {
-      // Show current info summary (read-only)
+      // Pre-fill form fields so user can directly verify or edit
+      const dtEl = document.getElementById('wpDocType');
+      if (dtEl) { dtEl.value = data.doc_type; }
+      if (data.doc_number) document.getElementById('wpDocNumber').value = data.doc_number;
+      if (data.issue_date) document.getElementById('wpIssueDate').value = data.issue_date;
+      if (data.expiry_date) document.getElementById('wpExpiryDate').value = data.expiry_date;
+      if (data.category) document.getElementById('wpCategory').value = data.category;
+      if (data.notes) document.getElementById('wpNotes').value = data.notes;
+
+      // Show current info summary
       const info = document.getElementById('wpCurrentInfo');
       const opts = WP_DOC_OPTIONS[wpCategory] || WP_DOC_OPTIONS.generic;
       const optMatch = opts.find(o => o.value === data.doc_type);
