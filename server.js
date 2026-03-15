@@ -1428,6 +1428,10 @@ try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_2y
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN work_permit_category TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN last_entry_date TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN entry_exit_records TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_legal_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_ssn_masked TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_ssn_encrypted TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_ssn_iv TEXT DEFAULT ''"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -5338,8 +5342,29 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     addr_street2: d.addr_street2 || '',
     addr_city: d.addr_city || '',
     addr_state: d.addr_state || '',
-    addr_zip: d.addr_zip || ''
+    addr_zip: d.addr_zip || '',
+    ind_legal_name: d.ind_legal_name || '',
+    ind_ssn_masked: '',
+    ind_ssn_encrypted: '',
+    ind_ssn_iv: ''
   };
+
+  // Handle ind_ssn: encrypt if a new (unmasked) value is provided; preserve existing if masked placeholder is sent back
+  const rawIndSsn = d.ind_ssn || '';
+  if (rawIndSsn && !rawIndSsn.includes('*')) {
+    fields.ind_ssn_masked = rawIndSsn.replace(/\d(?=\d{4})/g, '*');
+    const enc = encryptSSN(rawIndSsn);
+    fields.ind_ssn_encrypted = enc.encrypted;
+    fields.ind_ssn_iv = enc.iv;
+  } else if (rawIndSsn.includes('*')) {
+    // Masked value sent back — preserve existing encrypted SSN from DB
+    const existingTr = db.prepare('SELECT ind_ssn_masked, ind_ssn_encrypted, ind_ssn_iv FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId);
+    if (existingTr) {
+      fields.ind_ssn_masked = existingTr.ind_ssn_masked || '';
+      fields.ind_ssn_encrypted = existingTr.ind_ssn_encrypted || '';
+      fields.ind_ssn_iv = existingTr.ind_ssn_iv || '';
+    }
+  }
 
   db.prepare(`INSERT INTO tax_residency_questionnaire (
     worker_account_id, applicant_type, is_us_person, country_tax_residence, country_citizenship, entity_country_org,
@@ -5350,7 +5375,8 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     work_permit_category, immigration_status, i94_admission_date, status_expiration, docs_requested,
     spt_weighted_days, spt_result, tax_status, recommended_form, needs_manual_review,
     admin_override, admin_notes, completed_by,
-    addr_street, addr_street2, addr_city, addr_state, addr_zip, updated_at
+    addr_street, addr_street2, addr_city, addr_state, addr_zip,
+    ind_legal_name, ind_ssn_masked, ind_ssn_encrypted, ind_ssn_iv, updated_at
   ) VALUES (
     @worker_account_id, @applicant_type, @is_us_person, @country_tax_residence, @country_citizenship, @entity_country_org,
     @is_us_citizen, @has_green_card, @first_entry_date, @last_entry_date, @entry_exit_records, @days_current_year, @days_last_year, @days_two_years_ago,
@@ -5360,7 +5386,8 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     @work_permit_category, @immigration_status, @i94_admission_date, @status_expiration, @docs_requested,
     @spt_weighted_days, @spt_result, @tax_status, @recommended_form, @needs_manual_review,
     @admin_override, @admin_notes, @completed_by,
-    @addr_street, @addr_street2, @addr_city, @addr_state, @addr_zip, CURRENT_TIMESTAMP
+    @addr_street, @addr_street2, @addr_city, @addr_state, @addr_zip,
+    @ind_legal_name, @ind_ssn_masked, @ind_ssn_encrypted, @ind_ssn_iv, CURRENT_TIMESTAMP
   ) ON CONFLICT(worker_account_id) DO UPDATE SET
     applicant_type=excluded.applicant_type, is_us_person=excluded.is_us_person,
     country_tax_residence=excluded.country_tax_residence, country_citizenship=excluded.country_citizenship,
@@ -5386,6 +5413,8 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     completed_by=excluded.completed_by,
     addr_street=excluded.addr_street, addr_street2=excluded.addr_street2,
     addr_city=excluded.addr_city, addr_state=excluded.addr_state, addr_zip=excluded.addr_zip,
+    ind_legal_name=excluded.ind_legal_name, ind_ssn_masked=excluded.ind_ssn_masked,
+    ind_ssn_encrypted=excluded.ind_ssn_encrypted, ind_ssn_iv=excluded.ind_ssn_iv,
     updated_at=CURRENT_TIMESTAMP
   `).run(fields);
 
