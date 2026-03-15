@@ -1999,7 +1999,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
-      <th>合规文件</th><th>协议</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>合规文件</th><th>协议</th><th>报税文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -3483,6 +3483,28 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn btn-sm btn-outline" onclick="document.getElementById('workerHistoryModal').classList.remove('show')">关闭</button>
     </div>
     <div id="workerHistoryContent" style="max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<!-- Tax Document Modal 报税文件 -->
+<div class="modal-bg" id="taxDocModal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal modal-lg" style="max-width:600px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+      <div>
+        <h2 id="taxDocTitle" style="margin:0;font-size:1.1rem">报税文件</h2>
+        <div id="taxDocSubtitle" style="font-size:.8rem;color:var(--gray-400);margin-top:.2rem"></div>
+      </div>
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('taxDocModal').classList.remove('show')">关闭</button>
+    </div>
+    <div style="background:#f9fafb;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem">
+      <div style="font-size:.85rem;font-weight:600;margin-bottom:.5rem">上传报税文件</div>
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <input type="text" id="taxDocLabel" placeholder="文件标签（如 W-2, 1099 等）" style="flex:1;min-width:140px;padding:.35rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.82rem">
+        <input type="file" id="taxDocFile" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" style="font-size:.8rem;max-width:200px">
+        <button class="btn btn-sm" style="background:#d97706;color:#fff;border:none;white-space:nowrap" onclick="uploadTaxDoc()">📤 上传</button>
+      </div>
+    </div>
+    <div id="taxDocList" style="max-height:45vh;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -13292,6 +13314,12 @@ async function loadWorkerAccounts() {
     <td style="text-align:center">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
+    <td style="text-align:center;white-space:nowrap">
+      ${w.tax_doc_count > 0
+        ? `<span style="cursor:pointer;font-size:.8rem;color:#065f46;background:#d1fae5;padding:.15rem .5rem;border-radius:6px;border:1px solid #6ee7b7" onclick="openTaxDocModal(${w.id},'${esc(w.name||w.username)}')">📄 ${w.tax_doc_count} 份</span>`
+        : `<span style="cursor:pointer;font-size:.8rem;color:#92400e;background:#fffbeb;padding:.15rem .5rem;border-radius:6px;border:1px solid #fde68a" onclick="openTaxDocModal(${w.id},'${esc(w.name||w.username)}')">📤 上传</span>`
+      }
+    </td>
     <td style="font-size:.8rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer" onchange="updateWorkerPayMethod(${w.id},this.value)">
       <option value="cash" ${(w.payment_method||'cash')==='cash'?'selected':''}>💵 现金</option>
       <option value="check" ${w.payment_method==='check'?'selected':''}>✅ 支票</option>
@@ -13313,7 +13341,7 @@ async function loadWorkerAccounts() {
         ${extraBtns}
       </div>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="14" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="16" class="empty">暂无工人账户</td></tr>';
 }
 
 // ─── Onboarding Progress Modal ───
@@ -16724,6 +16752,80 @@ async function showWorkerHistory(id, name) {
       }).join('')}</tbody>
     </table></div>`;
   } catch { content.innerHTML = '<div style="color:#dc2626;padding:1rem 0">加载失败，请重试</div>'; }
+}
+
+// ─── Tax Document Modal (报税文件) ───
+let _taxDocWorkerId = null;
+let _taxDocWorkerName = '';
+
+async function openTaxDocModal(workerId, workerName) {
+  _taxDocWorkerId = workerId;
+  _taxDocWorkerName = workerName;
+  document.getElementById('taxDocTitle').textContent = `报税文件 — ${workerName}`;
+  document.getElementById('taxDocSubtitle').textContent = `Worker ID: ${workerId}`;
+  document.getElementById('taxDocLabel').value = '';
+  document.getElementById('taxDocFile').value = '';
+  document.getElementById('taxDocModal').classList.add('show');
+  await loadTaxDocs();
+}
+
+async function loadTaxDocs() {
+  const list = document.getElementById('taxDocList');
+  list.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">加载中…</div>';
+  try {
+    const docs = await api(`/admin/worker-accounts/${_taxDocWorkerId}/tax-docs`);
+    if (!docs || !docs.length) {
+      list.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无报税文件</div>';
+      return;
+    }
+    list.innerHTML = docs.map(d => {
+      const ts = new Date(d.created_at).toLocaleString('zh-CN', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', timeZone: localTz() });
+      return `<div style="display:flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border:1px solid var(--gray-100);border-radius:6px;margin-bottom:.4rem;font-size:.82rem">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(d.file_name)}">
+          📄 ${d.doc_label ? '<strong>' + esc(d.doc_label) + '</strong> · ' : ''}${esc(d.file_name)}
+        </span>
+        <span style="color:var(--gray-400);font-size:.75rem;white-space:nowrap">${ts}</span>
+        <a href="${API}/admin/tax-docs/${d.id}/download" target="_blank" style="font-size:.78rem;color:var(--sky);text-decoration:none;white-space:nowrap" title="下载">⬇️ 下载</a>
+        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.75rem;padding:.15rem .4rem" onclick="deleteTaxDoc(${d.id})">🗑️</button>
+      </div>`;
+    }).join('');
+  } catch { list.innerHTML = '<div style="color:#dc2626;padding:1rem 0;text-align:center">加载失败</div>'; }
+}
+
+async function uploadTaxDoc() {
+  const file = document.getElementById('taxDocFile').files[0];
+  if (!file) return alert('请选择文件');
+  const label = document.getElementById('taxDocLabel').value.trim();
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('doc_label', label);
+  try {
+    const res = await fetch(API + `/admin/worker-accounts/${_taxDocWorkerId}/tax-docs`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${TOKEN}` },
+      body: fd
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('taxDocLabel').value = '';
+      document.getElementById('taxDocFile').value = '';
+      showToast('✅ 报税文件已上传');
+      await loadTaxDocs();
+      loadWorkerAccounts();
+    } else {
+      showToast(data.error || '上传失败', 'error');
+    }
+  } catch (e) {
+    showToast('上传失败: ' + e.message, 'error');
+  }
+}
+
+async function deleteTaxDoc(docId) {
+  if (!await showConfirm('确定删除此报税文件？', { danger: true })) return;
+  await api(`/admin/tax-docs/${docId}`, { method: 'DELETE' });
+  showToast('✅ 已删除');
+  await loadTaxDocs();
+  loadWorkerAccounts();
 }
 
 async function deleteWorkerAccount(id, name) {
