@@ -3946,8 +3946,8 @@ function getDsealConfigTemplateId(type) {
 }
 
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
-async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip, ssn, tinType, businessName, taxClassification }) {
-  const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
+async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip, ssn, tinType, businessName, taxClassification, overrideTemplateId }) {
+  const templateId = overrideTemplateId || getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
   if (templateId) {
@@ -7048,8 +7048,9 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     if (dsealEnabled()) {
       try {
         const address = w.work_address || '';
+        const overrideTemplateId = req.body.template_id ? String(req.body.template_id) : '';
         const { submissionId, workerSignUrl } = await dsealSendW9Html({
-          workerName, workerEmail, address
+          workerName, workerEmail, address, overrideTemplateId
         });
         w9SubmissionId = submissionId || '';
         w9SignUrl = workerSignUrl || '';
