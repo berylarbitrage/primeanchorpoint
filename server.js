@@ -3272,66 +3272,112 @@ function generateW2EmploymentHtmlTemplate() {
 }
 
 // ── 1099 Contractor Invoice Template (Letter-size single page) ──
-function generateContractorInvoiceHtmlTemplate() {
-  // Pre-filled invoice template: system fills most fields via DocuSeal submission API,
-  // contractor only fills: service_period_start/end, hours_worked, reimbursable_amount, signature
-  const ro = 'border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;'; // readonly style
-  const ed = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';  // editable style (amber)
+// lang: 'en' | 'zh' | 'es' — secondary language paired with English
+function generateContractorInvoiceHtmlTemplate(lang) {
+  lang = lang || 'zh'; // default to EN+ZH for backwards compat
+  const L = {
+    en: { subtitle: '1099 Contractor Invoice', amberHint: 'Amber fields = you fill &nbsp;|&nbsp; Grey fields = pre-filled',
+      date: 'Date', periodFrom: 'Period From *', periodTo: 'Period To *',
+      fromContractor: 'FROM — Contractor', prefilled: '(pre-filled)', name: 'Name',
+      billTo: 'BILL TO — Company', serviceDesc: 'SERVICE DESCRIPTION', serviceHint: '(pre-filled by company, editable)',
+      compMethod: 'Compensation Method', quotedAmt: 'Quoted Amount', reimbursable: 'Reimbursable Expenses',
+      totalDue: 'TOTAL DUE', payTerms: 'PAYMENT TERMS', dueDate: 'Due Date',
+      certTitle: 'CONTRACTOR CERTIFICATION',
+      certBody: 'I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.',
+      sigLabel: 'Contractor Signature *', dateLabel: 'Date',
+      footer: 'Independent contractor arrangement — contractor responsible for all applicable taxes and retains control over manner and means of service delivery.',
+      ilFwpa: 'Payment due within 30 days of completion if contract is silent.',
+      legend: 'Contractor fills', legendGrey: 'Pre-filled by system' },
+    zh: { subtitle: '承包商发票', amberHint: '橙色栏位 = 请您填写 &nbsp;|&nbsp; 灰色 = 系统自动带出',
+      date: '日期', periodFrom: '起始 *', periodTo: '截止 *',
+      fromContractor: '承包商', prefilled: '系统带出', name: '姓名',
+      billTo: '公司', serviceDesc: '服务内容', serviceHint: '公司预填，可修改',
+      compMethod: '补偿方式', quotedAmt: '报价金额', reimbursable: '可报销费用',
+      totalDue: '应付总额', payTerms: '付款条件', dueDate: '到期日',
+      certTitle: '承包商声明',
+      certBody: '本人确认服务已完成、金额准确。承包商保留自行决定服务执行方式与方法的权利。',
+      sigLabel: '承包商签名 *', dateLabel: '日期',
+      footer: '独立承包商协议，承包商自行负责税款并保留对服务交付方式的控制权。',
+      ilFwpa: 'IL FWPA: 合同未注明付款日→完工后30天内付款',
+      legend: '承包商填写', legendGrey: '系统自动带出' },
+    es: { subtitle: 'Factura de Contratista', amberHint: 'Campos ámbar = usted completa &nbsp;|&nbsp; Campos grises = prellenado',
+      date: 'Fecha', periodFrom: 'Período Desde *', periodTo: 'Período Hasta *',
+      fromContractor: 'Contratista', prefilled: '(prellenado)', name: 'Nombre',
+      billTo: 'Empresa', serviceDesc: 'Descripción del Servicio', serviceHint: 'prellenado por la empresa, editable',
+      compMethod: 'Método de Compensación', quotedAmt: 'Monto Cotizado', reimbursable: 'Gastos Reembolsables',
+      totalDue: 'TOTAL A PAGAR', payTerms: 'Términos de Pago', dueDate: 'Fecha de Vencimiento',
+      certTitle: 'CERTIFICACIÓN DEL CONTRATISTA',
+      certBody: 'Certifico que los servicios anteriores fueron realizados y los montos son correctos. El contratista retiene el derecho de determinar la manera y los medios de realizar los servicios.',
+      sigLabel: 'Firma del Contratista *', dateLabel: 'Fecha',
+      footer: 'Acuerdo de contratista independiente — el contratista es responsable de todos los impuestos aplicables y retiene el control sobre la manera y los medios de la prestación del servicio.',
+      ilFwpa: 'IL FWPA: Pago dentro de 30 días de finalización si el contrato no lo especifica.',
+      legend: 'Contratista completa', legendGrey: 'Prellenado por el sistema' }
+  };
+  const en = L.en;
+  const t = lang === 'en' ? null : L[lang]; // secondary language (null if EN-only)
+  const bi = (enText, locText) => t ? `${enText} ${locText}` : enText; // bilingual helper
+
+  const ro = 'border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;';
+  const ed = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
   const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
   const companyAddr = process.env.COMPANY_ADDRESS || '';
   const companyEmail = process.env.COMPANY_EMAIL || '';
   const c = 'padding:3px 5px;border:1px solid #ccc;vertical-align:top;';
-  const hi = `${c}background:#fffbeb;`; // highlighted cell (contractor fills)
+  const hi = `${c}background:#fffbeb;`;
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8pt;max-width:680px;margin:0 auto;padding:10px 16px;color:#111;line-height:1.35">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
   <div style="font-size:14pt;font-weight:900;letter-spacing:2px">INVOICE</div>
-  <div style="font-size:7.5pt;color:#555">1099 Contractor Invoice / 承包商发票</div>
-  <div style="font-size:6.5pt;color:#f59e0b;margin-top:2px">Amber fields = you fill / 橙色栏位 = 请您填写 &nbsp;|&nbsp; Grey fields = pre-filled / 灰色 = 系统自动带出</div>
+  <div style="font-size:7.5pt;color:#555">1099 ${bi(en.subtitle, t ? t.subtitle : '')}</div>
+  <div style="font-size:6.5pt;color:#f59e0b;margin-top:2px">${bi(en.amberHint, t ? t.amberHint : '')}</div>
 </div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
     <td style="${c}width:25%"><b>Invoice #</b><br><text-field name="invoice_number" role="First Party" required="true" readonly="true" style="${ro}width:130px" placeholder="(auto)"></text-field></td>
-    <td style="${c}width:25%"><b>Date 日期</b><br><date-field name="invoice_date" role="First Party" required="true" readonly="true" style="${ro}width:120px"></date-field></td>
-    <td style="${hi}width:25%"><b>Period From 起始 *</b><br><text-field name="service_period_start" role="First Party" required="true" style="${ed}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
-    <td style="${hi}width:25%"><b>Period To 截止 *</b><br><text-field name="service_period_end" role="First Party" required="true" style="${ed}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="${c}width:25%"><b>${bi('Date', t ? t.date : '')}</b><br><date-field name="invoice_date" role="First Party" required="true" readonly="true" style="${ro}width:120px"></date-field></td>
+    <td style="${hi}width:25%"><b>${bi('Period From', t ? t.periodFrom : 'Period From *')}</b><br><text-field name="service_period_start" role="First Party" required="true" style="${ed}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="${hi}width:25%"><b>${bi('Period To', t ? t.periodTo : 'Period To *')}</b><br><text-field name="service_period_end" role="First Party" required="true" style="${ed}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
   </tr>
 </table>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
     <td style="${c}width:50%">
-      <b>FROM — Contractor 承包商</b> <span style="font-size:6.5pt;color:#999">(pre-filled / 系统带出)</span><br>
-      Name 姓名: <text-field name="contractor_name" role="First Party" required="true" readonly="true" style="${ro}width:100%;min-height:16px" placeholder="(pre-filled)"></text-field>
+      <b>${bi('FROM — Contractor', t ? t.fromContractor : '')}</b> <span style="font-size:6.5pt;color:#999">${bi(en.prefilled, t ? t.prefilled : '')}</span><br>
+      ${bi('Name', t ? t.name : '')}: <text-field name="contractor_name" role="First Party" required="true" readonly="true" style="${ro}width:100%;min-height:16px" placeholder="${en.prefilled}"></text-field>
     </td>
     <td style="${c}width:50%">
-      <b>BILL TO — Company 公司</b><br>
+      <b>${bi('BILL TO — Company', t ? t.billTo : '')}</b><br>
       <div style="font-weight:600">${companyName}</div>
       ${companyAddr ? `<div>${companyAddr}</div>` : ''}
       ${companyEmail ? `<div>${companyEmail}</div>` : ''}
     </td>
   </tr>
 </table>
-<div style="font-weight:700;margin:4px 0 2px">SERVICE DESCRIPTION 服务内容 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled by company, editable / 公司预填，可修改)</span></div>
+<div style="font-weight:700;margin:4px 0 2px">${bi('SERVICE DESCRIPTION', t ? t.serviceDesc : '')} <span style="font-weight:400;color:#999;font-size:7pt">(${bi(en.serviceHint, t ? t.serviceHint : '')})</span></div>
 <text-field name="service_description" role="First Party" required="true" style="${ed}width:100%;min-height:48px" placeholder="e.g. Warehouse sorting and loading services for the period of [Start Date] to [End Date]"></text-field>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin:6px 0">
-  <tr><td style="${c}width:65%"><b>Compensation Method 补偿方式</b></td><td style="${c}text-align:right"><text-field name="compensation_method" role="First Party" readonly="true" style="${ro}width:200px" placeholder="Contractor-proposed flat fee">Contractor-proposed flat fee</text-field></td></tr>
-  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>Quoted Amount 报价金额</b></td><td style="${hi}text-align:right">$ <text-field name="quoted_amount" role="First Party" required="true" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
-  <tr style="background:#fffbeb"><td style="${hi}">Reimbursable Expenses 可报销费用</td><td style="${hi}text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
-  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">TOTAL DUE 应付总额</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" required="true" style="${ed}width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></text-field></td></tr>
+  <tr><td style="${c}width:65%"><b>${bi('Compensation Method', t ? t.compMethod : '')}</b></td><td style="${c}text-align:right"><text-field name="compensation_method" role="First Party" readonly="true" style="${ro}width:200px" placeholder="Contractor-proposed flat fee">Contractor-proposed flat fee</text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>${bi('Quoted Amount', t ? t.quotedAmt : '')}</b></td><td style="${hi}text-align:right">$ <text-field name="quoted_amount" role="First Party" required="true" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="${hi}">${bi('Reimbursable Expenses', t ? t.reimbursable : '')}</td><td style="${hi}text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
+  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">${bi('TOTAL DUE', t ? t.totalDue : '')}</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" required="true" style="${ed}width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></text-field></td></tr>
 </table>
-<div style="font-weight:700;margin:4px 0 2px">PAYMENT TERMS 付款条件 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled)</span></div>
+<div style="font-weight:700;margin:4px 0 2px">${bi('PAYMENT TERMS', t ? t.payTerms : '')} <span style="font-weight:400;color:#999;font-size:7pt">(${en.prefilled})</span></div>
 <text-field name="payment_terms" role="First Party" readonly="true" style="${ro}width:200px" placeholder="Net 30"></text-field>
-<span style="font-size:7pt;color:#999;margin-left:6px">Due Date 到期日: </span><text-field name="payment_due_date" role="First Party" readonly="true" style="${ro}width:100px"></text-field>
+<span style="font-size:7pt;color:#999;margin-left:6px">${bi('Due Date', t ? t.dueDate : '')}: </span><text-field name="payment_due_date" role="First Party" readonly="true" style="${ro}width:100px"></text-field>
 <div style="background:#fffbeb;border:2px solid #f59e0b;padding:6px;font-size:8pt;margin-top:6px;border-radius:4px">
-  <b>CONTRACTOR CERTIFICATION 承包商声明</b>
-  <div style="font-size:7.5pt;margin:3px 0">I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.<br>本人确认服务已完成、金额准确。承包商保留自行决定服务执行方式与方法的权利。</div>
+  <b>${bi(en.certTitle, t ? t.certTitle : '')}</b>
+  <div style="font-size:7.5pt;margin:3px 0">${en.certBody}${t ? `<br>${t.certBody}` : ''}</div>
   <table style="width:100%;margin-top:4px"><tr>
-    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Contractor Signature 承包商签名 *:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:2px solid #f59e0b;border-radius:2px;background:#fff"></signature-field></td>
-    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Date 日期:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
+    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.sigLabel, t ? t.sigLabel : '')}:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:2px solid #f59e0b;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">${bi(en.dateLabel, t ? t.dateLabel : '')}:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">Independent contractor arrangement — contractor responsible for all applicable taxes and retains control over manner and means of service delivery. 独立承包商协议，承包商自行负责税款并保留对服务交付方式的控制权。<br>IL FWPA: 合同未注明付款日→完工后30天内付款 / Payment due within 30 days of completion if contract is silent.</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">${en.footer}${t ? ` ${t.footer}` : ''}<br>${t ? `${t.ilFwpa} / ` : ''}${en.ilFwpa}<br><span style="color:#f59e0b">■</span> = ${bi(en.legend, t ? t.legend : '')} &nbsp; <span style="color:#ddd">■</span> = ${bi(en.legendGrey, t ? t.legendGrey : '')}</div>
 </div>`;
 }
+// Convenience wrappers for each language variant
+function generateContractorInvoiceHtmlTemplate_EN() { return generateContractorInvoiceHtmlTemplate('en'); }
+function generateContractorInvoiceHtmlTemplate_ZH() { return generateContractorInvoiceHtmlTemplate('zh'); }
+function generateContractorInvoiceHtmlTemplate_ES() { return generateContractorInvoiceHtmlTemplate('es'); }
 
 // ── Invoice Approval Form (internal, Letter-size single page) ──
 function generateInvoiceApprovalHtmlTemplate() {
@@ -3427,7 +3473,9 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   w8bene: { name: 'W-8BEN-E Certificate of Foreign Status (Entity)', configKey: 'w8bene_template_id', category: 'w8bene', generator: generateW8BENEHtmlTemplate },
   form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', category: 'form8233', generator: generateForm8233HtmlTemplate },
   i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'i9', generator: generateI9HtmlTemplate },
-  contractor_invoice: { name: '1099 Contractor Invoice / 承包商发票', configKey: 'contractor_invoice_template_id', category: 'contractor_invoice', generator: generateContractorInvoiceHtmlTemplate },
+  contractor_invoice: { name: '1099 Contractor Invoice (EN+ZH)', configKey: 'contractor_invoice_template_id', category: 'contractor_invoice', generator: generateContractorInvoiceHtmlTemplate_ZH },
+  contractor_invoice_en: { name: '1099 Contractor Invoice (EN)', configKey: 'contractor_invoice_en_template_id', category: 'contractor_invoice_en', generator: generateContractorInvoiceHtmlTemplate_EN },
+  contractor_invoice_es: { name: '1099 Contractor Invoice (EN+ES)', configKey: 'contractor_invoice_es_template_id', category: 'contractor_invoice_es', generator: generateContractorInvoiceHtmlTemplate_ES },
   invoice_approval: { name: 'Invoice Approval Form / 发票审批表 (内部)', configKey: 'invoice_approval_template_id', category: 'invoice_approval', generator: generateInvoiceApprovalHtmlTemplate },
 };
 
@@ -3454,6 +3502,8 @@ function getDsealConfigTemplateId(type) {
       third_party_pay: cfg.third_party_pay_template_id,
       cash_receipt: cfg.cash_receipt_template_id,
       contractor_invoice: cfg.contractor_invoice_template_id,
+      contractor_invoice_en: cfg.contractor_invoice_en_template_id,
+      contractor_invoice_es: cfg.contractor_invoice_es_template_id,
       invoice_approval: cfg.invoice_approval_template_id,
     };
     const val = map[type];
@@ -7026,12 +7076,14 @@ app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admi
 // ─── Admin: Send DocuSeal Invoice to Worker ───
 app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   try {
-    const { worker_account_id } = req.body;
+    const { worker_account_id, lang } = req.body;
     if (!worker_account_id) return res.status(400).json({ error: '请选择员工' });
     const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
     if (!w) return res.status(404).json({ error: '员工不存在' });
     if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
-    const templateId = getDsealConfigTemplateId('contractor_invoice');
+    // Pick template by language: 'en' → EN-only, 'es' → EN+ES, default → EN+ZH
+    const invoiceLang = lang === 'en' ? 'contractor_invoice_en' : lang === 'es' ? 'contractor_invoice_es' : 'contractor_invoice';
+    const templateId = getDsealConfigTemplateId(invoiceLang) || getDsealConfigTemplateId('contractor_invoice');
     if (!templateId) return res.status(400).json({ error: '未配置员工 Invoice 模板，请到 DocuSeal 模板管理中设置' });
     const workerEmail = w.email || `worker-${w.id}@placeholder.local`;
     const workerName = w.name || w.username || `Worker #${w.id}`;
@@ -7055,7 +7107,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
           { name: 'invoice_date', default_value: todayDate, readonly: true },
           { name: 'contractor_name', default_value: workerName, readonly: true },
           { name: 'service_description', default_value: jobTitle || '', readonly: false },
-          { name: 'rate_description', default_value: rateDesc, readonly: false },
+          { name: 'compensation_method', default_value: 'Contractor-proposed flat fee', readonly: true },
           { name: 'payment_terms', default_value: 'Net 30', readonly: true },
           { name: 'payment_due_date', default_value: dueDate, readonly: true }
         ] }
@@ -13873,7 +13925,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id','invoice_approval_template_id'];
+    'contractor_invoice_template_id','contractor_invoice_en_template_id','contractor_invoice_es_template_id','invoice_approval_template_id'];
   const out = { connected: dsealEnabled(), url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '') };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
