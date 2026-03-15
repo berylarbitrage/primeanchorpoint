@@ -1964,6 +1964,7 @@ tr:hover td{background:var(--sky-light)}
       <button class="btn" style="background:#f0fff4;color:#2f9e44;border:1px solid #b2f2bb" onclick="openEmailCodeTestModal()">✉️ 测试邮箱</button>
       <button class="btn" style="background:#f0f4ff;color:#3b5bdb;border:1px solid #bac8ff" onclick="openSmsTestModal()">📡 测试短信</button>
       <button class="btn" style="background:#fefce8;color:#92400e;border:1px solid #fde68a" onclick="toggleInvitePanel()">🔗 生成邀请链接</button>
+      <button class="btn" style="background:#eff6ff;color:#1d4ed8;border:1px solid #93c5fd" onclick="openContractorInvoicesModal()">📄 Contractor Invoices</button>
       <button class="btn btn-green" onclick="openAccModalForTab()">+ 新建账户</button>
     </div>
   </div>
@@ -2386,6 +2387,16 @@ tr:hover td{background:var(--sky-light)}
   <div class="modal-actions" style="margin-top:.75rem">
     <button class="btn" onclick="closeModal('workerPayHistoryModal')">关闭</button>
   </div>
+</div></div>
+
+<!-- Contractor Invoices Review Modal -->
+<div class="modal-bg" id="contractorInvoicesModal"><div class="modal" style="max-width:900px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+    <h2 style="margin:0">📄 Contractor Invoices / Payment Requests</h2>
+    <button class="btn" onclick="closeModal('contractorInvoicesModal')">关闭</button>
+  </div>
+  <p style="font-size:.8rem;color:var(--gray-500);margin:0 0 .75rem">1099 承包商提交的 Invoice，用于 FWPA 合规（合同—服务完成—付款）链条记录</p>
+  <div id="contractorInvoicesList" style="max-height:65vh;overflow-y:auto"></div>
 </div></div>
 
 <!-- Contract Send Modal -->
@@ -17006,6 +17017,62 @@ async function showWorkerHistory(id, name) {
   } catch { content.innerHTML = '<div style="color:#dc2626;padding:1rem 0">加载失败，请重试</div>'; }
 }
 
+// ─── Contractor Invoices Review ───
+async function openContractorInvoicesModal() {
+  document.getElementById('contractorInvoicesModal').classList.add('show');
+  const el = document.getElementById('contractorInvoicesList');
+  el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
+  const rows = await api('/admin/contractor-invoices');
+  if (!Array.isArray(rows) || !rows.length) {
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无 Contractor Invoice 记录</div>';
+    return;
+  }
+  const STATUS_BADGE = {
+    submitted: '<span style="padding:2px 8px;border-radius:6px;background:#fffbeb;color:#92400e;font-size:.75rem;font-weight:600">⏳ 待审核</span>',
+    approved: '<span style="padding:2px 8px;border-radius:6px;background:#dcfce7;color:#15803d;font-size:.75rem;font-weight:600">✅ 已批准</span>',
+    rejected: '<span style="padding:2px 8px;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:.75rem;font-weight:600">❌ 已拒绝</span>'
+  };
+  el.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
+    <thead><tr style="border-bottom:2px solid var(--gray-200)">
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">Invoice #</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">工人</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">日期</th>
+      <th style="padding:.4rem .5rem;text-align:left">服务描述</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">服务周期</th>
+      <th style="padding:.4rem .5rem;text-align:right;white-space:nowrap">金额</th>
+      <th style="padding:.4rem .5rem;text-align:center">状态</th>
+      <th style="padding:.4rem .5rem;text-align:center">操作</th>
+    </tr></thead>
+    <tbody>${rows.map(r => `<tr style="border-bottom:1px solid var(--gray-100)" id="cinv-row-${r.id}">
+      <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
+      <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}</td>
+      <td style="padding:.5rem;white-space:nowrap;color:var(--gray-500)">${esc(r.invoice_date)}</td>
+      <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.service_description)}">${esc(r.service_description)}</td>
+      <td style="padding:.5rem;white-space:nowrap;font-size:.78rem;color:var(--gray-500)">${r.service_period_start&&r.service_period_end ? esc(r.service_period_start)+' ~ '+esc(r.service_period_end) : '—'}</td>
+      <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">$${(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
+      <td style="padding:.5rem;text-align:center">${STATUS_BADGE[r.status]||r.status}</td>
+      <td style="padding:.5rem;text-align:center;white-space:nowrap">${r.status === 'submitted' ? `
+        <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
+        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
+      ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}</td>
+    </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`).join('')}</tbody>
+  </table>`;
+}
+
+async function reviewContractorInvoice(id, status) {
+  let reject_reason = '';
+  if (status === 'rejected') {
+    reject_reason = prompt('请输入拒绝原因 / Rejection reason:');
+    if (reject_reason === null) return;
+  }
+  if (!await showConfirm(`确认${status==='approved'?'批准':'拒绝'}该 Invoice？`)) return;
+  const r = await api(`/admin/contractor-invoices/${id}`, { method:'PUT', body:JSON.stringify({ status, reject_reason }) });
+  if (r && r.success) {
+    showToast(status === 'approved' ? '✅ Invoice 已批准' : '❌ Invoice 已拒绝');
+    openContractorInvoicesModal();
+  }
+}
+
 // ─── Tax Document Modal (报税文件) ───
 let _taxDocWorkerId = null;
 let _taxDocWorkerName = '';
@@ -17261,7 +17328,7 @@ async function saveWorkerDetail() {
 
 const WD_FIELD_LABELS = {
   // 账户基本信息
-  account_created: '账户创建', active: '账户状态', suspended: '暂停状态', password: '密码', employee_id: '绑定员工',
+  account_created: '账户创建', contractor_invoice: 'Invoice 审核', active: '账户状态', suspended: '暂停状态', password: '密码', employee_id: '绑定员工',
   // 个人信息
   work_status: '身份证件类型', employment_type: '雇佣类型', payment_method: '支付方式',
   expected_salary: '期望薪资', our_salary_rating: '评分', preferred_lang: '语言偏好',

@@ -744,6 +744,70 @@ function googleTranslateElementInit() {
         <h2 data-i18n="paymentsTitle">打款记录</h2>
         <div id="paymentsTable"></div>
       </div>
+
+      <!-- Contractor Invoice / Payment Request (1099 only) -->
+      <div class="card" id="contractorInvoiceCard" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h2 style="margin:0">📄 Invoice / Payment Request</h2>
+          <button onclick="toggleInvoiceForm()" id="btnToggleInvForm" style="padding:.45rem 1rem;border:1px solid var(--blue);background:#fff;color:var(--blue);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer">+ 新建 Invoice</button>
+        </div>
+
+        <!-- Invoice submission form (hidden by default) -->
+        <div id="invoiceFormWrap" style="display:none;border:1px solid var(--gray-200);border-radius:10px;padding:1.2rem;margin-bottom:1rem;background:#fafbfc">
+          <h3 style="margin:0 0 1rem;font-size:.95rem;color:var(--gray-700)">Invoice / Payment Request Form</h3>
+          <form id="contractorInvoiceForm" onsubmit="submitContractorInvoice(event)">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Service Period Start / 服务开始日期 *</label>
+                <input type="date" name="service_period_start" required style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Service Period End / 服务结束日期 *</label>
+                <input type="date" name="service_period_end" required style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+            </div>
+            <div style="margin-top:.8rem">
+              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Description of Services / 服务描述 *</label>
+              <textarea name="service_description" required rows="3" placeholder="Describe the services performed during this period..." style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-top:.8rem">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Hours Worked / 工时</label>
+                <input type="number" name="hours_worked" step="0.5" min="0" placeholder="0" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Hourly Rate / 时薪 ($)</label>
+                <input type="number" name="hourly_rate" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Or Flat Amount / 固定金额 ($)</label>
+                <input type="number" name="flat_amount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:.8rem">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Total Amount / 总金额 ($) *</label>
+                <input type="number" name="total_amount" step="0.01" min="0.01" required placeholder="0.00" id="invTotalAmount" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem;font-weight:700">
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Payment Due Date / 付款到期日</label>
+                <input type="date" name="payment_due_date" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+            </div>
+            <div style="margin-top:.8rem">
+              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Notes / 备注</label>
+              <input type="text" name="notes" placeholder="Optional notes..." style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+            </div>
+            <div style="display:flex;gap:.6rem;margin-top:1rem;justify-content:flex-end">
+              <button type="button" onclick="toggleInvoiceForm()" style="padding:.5rem 1.2rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-600);border-radius:8px;font-size:.85rem;cursor:pointer">取消</button>
+              <button type="submit" style="padding:.5rem 1.5rem;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">📤 Submit Invoice</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Invoice history list -->
+        <div id="contractorInvoiceList"></div>
+      </div>
     </div>
 
     <!-- Compliance 合规文件 -->
@@ -1744,6 +1808,7 @@ const PORTAL_I18N = {
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
 let _activeTab = 'jobs';
+let _workerEmploymentType = '';
 function _t(key) { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh)[key] || key; }
 const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -1806,7 +1871,7 @@ function setPortalLang(lang) {
   // Save language preference to server
   fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang }) }).catch(() => {});
   if (_activeTab === 'profile') loadProfile();
-  else if (_activeTab === 'payments') loadPayments();
+  else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
   else if (_activeTab === 'todos') loadOnboarding();
   else if (_activeTab === 'referral') loadReferrals();
   else if (_activeTab === 'interview') loadInterview();
@@ -2053,6 +2118,7 @@ async function showApp() {
   const [me, interview, personaStatus] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status')]);
   if (!me) return;
   _workerInfo = me;
+  _workerEmploymentType = me.account?.employment_type || '';
   const firstName = me.employee
     ? me.employee.first_name
     : (me.account.first_name || (me.account.name || '').split(' ')[0] || '');
@@ -2107,7 +2173,7 @@ async function showApp() {
     _lastAutoRefresh = now;
     if (_activeTab === 'applications') loadApplications();
     else if (_activeTab === 'timeclock') loadTimeclock();
-    else if (_activeTab === 'payments') loadPayments();
+    else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
     else if (_activeTab === 'compliance') loadCompliance();
     else if (_activeTab === 'profile') loadProfile();
     else if (_activeTab === 'interview') loadInterview();
@@ -2140,7 +2206,7 @@ function showTab(tab) {
   closeSidebar();
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
-  else if (tab === 'payments') loadPayments();
+  else if (tab === 'payments') loadPayments(); loadContractorInvoices();
   else if (tab === 'compliance') loadCompliance();
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
@@ -3812,6 +3878,82 @@ async function loadPayments() {
       ${p.notes ? `<div style="font-size:.8rem;color:var(--gray-400);margin-top:.4rem;border-top:1px solid var(--gray-100);padding-top:.4rem">${esc(p.notes)}</div>` : ''}
     </div>`;
   }).join('');
+}
+
+// ─── Contractor Invoice / Payment Request ───
+function toggleInvoiceForm() {
+  const wrap = document.getElementById('invoiceFormWrap');
+  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+}
+
+// Auto-calculate total from hours * rate
+document.addEventListener('input', e => {
+  if (!e.target.closest('#contractorInvoiceForm')) return;
+  const form = document.getElementById('contractorInvoiceForm');
+  if (!form) return;
+  const h = parseFloat(form.hours_worked?.value) || 0;
+  const r = parseFloat(form.hourly_rate?.value) || 0;
+  const f = parseFloat(form.flat_amount?.value) || 0;
+  const calc = h * r + f;
+  if (calc > 0) document.getElementById('invTotalAmount').value = calc.toFixed(2);
+});
+
+async function submitContractorInvoice(e) {
+  e.preventDefault();
+  const form = e.target;
+  const body = {};
+  new FormData(form).forEach((v, k) => { body[k] = ['hours_worked','hourly_rate','flat_amount','total_amount'].includes(k) ? parseFloat(v) || 0 : v; });
+  if (!body.total_amount) { alert('请填写总金额 / Total amount required'); return; }
+  const r = await wApi('/contractor-invoices', { method: 'POST', body: JSON.stringify(body) });
+  if (r && r.success) {
+    form.reset();
+    toggleInvoiceForm();
+    showToast('✅ Invoice submitted: ' + r.invoice_number);
+    loadContractorInvoices();
+  } else {
+    alert(r?.error || '提交失败');
+  }
+}
+
+async function loadContractorInvoices() {
+  const card = document.getElementById('contractorInvoiceCard');
+  if (!card) return;
+  // Only show for 1099 contractors
+  const is1099 = _workerEmploymentType === '1099';
+  card.style.display = is1099 ? 'block' : 'none';
+  if (!is1099) return;
+
+  const invoices = await wApi('/contractor-invoices');
+  const el = document.getElementById('contractorInvoiceList');
+  if (!invoices || !Array.isArray(invoices) || !invoices.length) {
+    el.innerHTML = '<p style="color:var(--gray-400);font-size:.85rem;text-align:center;padding:.5rem 0">暂无 Invoice 记录 / No invoices yet</p>';
+    return;
+  }
+  const STATUS_STYLE = {
+    submitted: 'background:#fffbeb;color:#92400e;border:1px solid #fde68a',
+    approved: 'background:#dcfce7;color:#15803d;border:1px solid #86efac',
+    rejected: 'background:#fee2e2;color:#dc2626;border:1px solid #fca5a5'
+  };
+  const STATUS_LABEL = { submitted: '⏳ Pending Review', approved: '✅ Approved', rejected: '❌ Rejected' };
+  el.innerHTML = invoices.map(inv => `
+    <div style="border:1px solid var(--gray-200);border-radius:10px;padding:.85rem 1rem;margin-bottom:.65rem;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+        <span style="font-family:monospace;font-size:.78rem;color:var(--sky);font-weight:600">${esc(inv.invoice_number)}</span>
+        <span style="font-size:1.1rem;font-weight:700;color:var(--green)">$${(+inv.total_amount).toFixed(2)}</span>
+      </div>
+      <div style="font-size:.85rem;font-weight:600;margin-bottom:.3rem">${esc(inv.service_description)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:.35rem .9rem;font-size:.78rem;color:var(--gray-500)">
+        <span>📅 ${esc(inv.service_period_start||'')} ~ ${esc(inv.service_period_end||'')}</span>
+        ${inv.hours_worked ? `<span>⏱ ${inv.hours_worked}h × $${(+inv.hourly_rate).toFixed(2)}</span>` : ''}
+        ${inv.payment_due_date ? `<span>💳 Due: ${esc(inv.payment_due_date)}</span>` : ''}
+      </div>
+      <div style="margin-top:.5rem;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:.75rem;padding:2px 8px;border-radius:6px;font-weight:600;${STATUS_STYLE[inv.status]||''}">${STATUS_LABEL[inv.status]||inv.status}</span>
+        <span style="font-size:.72rem;color:var(--gray-400)">${esc(inv.invoice_date)}</span>
+      </div>
+      ${inv.status === 'rejected' && inv.reject_reason ? `<div style="font-size:.78rem;color:#dc2626;margin-top:.4rem;padding:.4rem .6rem;background:#fef2f2;border-radius:6px">❌ ${esc(inv.reject_reason)}</div>` : ''}
+    </div>
+  `).join('');
 }
 
 const WORK_STATUS_LABELS = { citizen:'🇺🇸 美国公民', green_card:'🟢 绿卡', ead:'📄 EAD工卡', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'其他' };
