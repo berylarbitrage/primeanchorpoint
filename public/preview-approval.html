@@ -1,132 +1,75 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice Approval Preview</title></head><body style="background:#f5f5f5;padding:20px"><div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
-<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
-  <div style="font-size:1.4rem;font-weight:900;letter-spacing:2px">INVOICE APPROVAL FORM</div>
-  <div style="font-size:9pt;color:#555;margin-top:4px">Internal Use Only — 公司内部审批专用 (Prime Anchorpoint LLC)</div>
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Approval</title><style>@page{size:letter;margin:0.5in}</style></head><body style="background:#fff;padding:0;margin:0"><div style="font-family:Arial,Helvetica,sans-serif;font-size:8pt;max-width:680px;margin:0 auto;padding:10px 16px;color:#111;line-height:1.35">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:6px">
+  <div style="font-size:14pt;font-weight:900;letter-spacing:2px">INVOICE APPROVAL FORM</div>
+  <div style="font-size:7.5pt;color:#555">Internal Use Only — 公司内部审批专用 (Prime Anchorpoint LLC)</div>
 </div>
-<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:8px 12px;font-size:8pt;color:#856404;margin-bottom:12px">
-  <strong>CONFIDENTIAL / 机密:</strong> This form is for internal company approval only. Do not share with the contractor.<br>
-  本表仅供公司内部审批使用，请勿分享给承包商。
+<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:3px;padding:4px 8px;font-size:7.5pt;color:#856404;margin-bottom:8px">
+  <b>CONFIDENTIAL 机密:</b> Internal company approval only. Do not share with contractor. 本表仅供公司内部审批，请勿分享给承包商。
 </div>
 
-<!-- Linked Invoice Info -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">1. INVOICE REFERENCE / 关联发票信息</div>
-<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">1. INVOICE REFERENCE 关联发票</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Linked Invoice # / 关联发票编号:</div>
-      <text-field name="linked_invoice_number" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:220px" placeholder="INV-2026-001"></text-field>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Invoice # 发票编号</b><br><text-field name="linked_invoice_number" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:150px" placeholder="INV-2026-001"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Invoice Date 发票日期</b><br><text-field name="linked_invoice_date" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:110px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Contractor 承包商</b><br><text-field name="contractor_name" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Service Period 服务期间</b><br><text-field name="service_period" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;" placeholder="May 1–7, 2026"></text-field></td>
+  </tr>
+</table>
+
+<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">2. AMOUNT REVIEW 金额审核</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
+  <tr>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%"><b>Requested Amount (per invoice) 发票请求金额</b><br>$ <text-field name="requested_amount" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:120px" placeholder="0.00"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%"><b>Service Description Summary 服务内容摘要</b><br><text-field name="service_description" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;" placeholder="Brief summary of services"></text-field></td>
+  </tr>
+</table>
+
+<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">3. APPROVAL DECISION 审批决定</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
+  <tr>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:34%">
+      <b>Decision 审批结果</b><br>
+      <text-field name="approval_decision" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;" placeholder="Approved / Partially Approved / Rejected"></text-field>
+      <div style="font-size:6.5pt;color:#666">Approved 批准 / Partially Approved 部分批准 / Rejected 拒绝</div>
     </td>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Invoice Date / 发票日期:</div>
-      <text-field name="linked_invoice_date" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:160px" placeholder="MM/DD/YYYY"></text-field>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:33%;background:#f9f9f0">
+      <b>Approved Amount 批准金额</b><br>
+      <div style="font-size:11pt;font-weight:700">$ <text-field name="approved_amount" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:110px;font-size:11pt;font-weight:700" placeholder="0.00"></text-field></div>
+    </td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:33%">
+      <b>Adjustment Reason 调整原因</b><br>
+      <text-field name="adjustment_reason" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;" placeholder="If different from requested"></text-field>
     </td>
   </tr>
 </table>
 
-<!-- Contractor Info -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">2. CONTRACTOR / 承包商</div>
-<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">4. PAYMENT SCHEDULE 付款安排</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:4px">
   <tr>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Contractor Name / 承包商姓名:</div>
-      <text-field name="contractor_name" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;"></text-field>
-    </td>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Service Period / 服务期间:</div>
-      <text-field name="service_period" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;" placeholder="May 1 – May 7, 2026"></text-field>
-    </td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:33%"><b>Payment Date 付款日期</b><br><text-field name="payment_date" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:120px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:33%"><b>Payment Method 付款方式</b><br><text-field name="payment_method" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:140px" placeholder="ACH / Check / Zelle"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:34%"><b>Reviewer 审批人</b><br><text-field name="reviewer_name" role="First Party" required="true" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;" placeholder="Name"></text-field></td>
+  </tr>
+  <tr>
+    <td colspan="3" style="font-size:7pt;color:#888;padding:2px 5px;border:1px solid #ccc">IL FWPA: 合同未注明付款日→完工后30天内付款 / Payment due within 30 days of completion if contract is silent.</td>
   </tr>
 </table>
 
-<!-- Requested vs Approved Amount -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">3. AMOUNT REVIEW / 金额审核</div>
-<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+<div style="font-weight:700;margin:6px 0 3px;font-size:8.5pt">5. REVIEWER &amp; NOTES 审批人 &amp; 备注</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Requested Amount (per invoice) / 发票请求金额:</div>
-      <div>$ <text-field name="requested_amount" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:140px" placeholder="0.00"></text-field></div>
-    </td>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Service Description Summary / 服务内容摘要:</div>
-      <text-field name="service_description" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;" placeholder="Brief summary of services"></text-field>
-    </td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:30%"><b>Title 职位</b><br><text-field name="reviewer_title" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;" placeholder="Operations Manager"></text-field></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:70%"><b>Internal Notes 内部备注</b> <span style="font-size:6.5pt;color:#888">(not shared with contractor 不分享给承包商)</span><br><text-field name="internal_notes" role="First Party" style="border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;width:100%;min-height:16px;;min-height:36px" placeholder="Internal notes..."></text-field></td>
   </tr>
 </table>
 
-<!-- Approval Decision -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">4. APPROVAL DECISION / 审批决定</div>
-<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
-  <tr>
-    <td style="padding:8px;border:1px solid #ccc;width:40%">
-      <div style="font-weight:700;margin-bottom:4px">Decision / 审批结果:</div>
-      <text-field name="approval_decision" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;" placeholder="Approved / Partially Approved / Rejected"></text-field>
-      <div style="font-size:7pt;color:#666;margin-top:2px">Options: Approved（批准）/ Partially Approved（部分批准）/ Rejected（拒绝）</div>
-    </td>
-    <td style="padding:8px;border:1px solid #ccc;width:30%">
-      <div style="font-weight:700;margin-bottom:4px">Approved Amount / 批准金额:</div>
-      <div style="font-size:12pt;font-weight:700">$ <text-field name="approved_amount" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:130px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div>
-    </td>
-    <td style="padding:8px;border:1px solid #ccc;width:30%">
-      <div style="font-weight:700;margin-bottom:4px">Adjustment Reason / 调整原因:</div>
-      <text-field name="adjustment_reason" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;" placeholder="If different from requested"></text-field>
-    </td>
-  </tr>
-</table>
-
-<!-- Payment Schedule -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">5. PAYMENT SCHEDULE / 付款安排</div>
-<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
-  <tr>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Payment Date or Expected Pay Date / 付款日期:</div>
-      <text-field name="payment_date" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:160px" placeholder="MM/DD/YYYY"></text-field>
-    </td>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Payment Method / 付款方式:</div>
-      <text-field name="payment_method" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:200px" placeholder="ACH / Check / Zelle / Wire"></text-field>
-    </td>
-  </tr>
-</table>
-<p style="font-size:8pt;color:#555">Per Illinois FWPA: if the contract does not specify a payment date, payment is generally due within 30 days of service completion.<br>
-依据 Illinois FWPA：若合同未注明付款日期，通常应在服务完成后 30 天内付款。</p>
-
-<!-- Reviewer Info -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">6. REVIEWER / 审批人信息</div>
-<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
-  <tr>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Reviewer Name / 审批人姓名:</div>
-      <text-field name="reviewer_name" role="First Party" required="true" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;"></text-field>
-    </td>
-    <td style="padding:6px;border:1px solid #ccc;width:50%">
-      <div style="font-weight:700;margin-bottom:4px">Title / 职位:</div>
-      <text-field name="reviewer_title" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;" placeholder="e.g. Operations Manager"></text-field>
-    </td>
-  </tr>
-</table>
-
-<!-- Internal Notes -->
-<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">7. INTERNAL NOTES / 内部备注</div>
-<text-field name="internal_notes" role="First Party" style="border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;width:100%;min-height:22px;;min-height:60px" placeholder="Any internal notes regarding this approval (not shared with contractor)..."></text-field>
-
-<!-- Company Signature -->
-<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
-  <div style="font-weight:700;margin-bottom:4px">COMPANY APPROVAL SIGNATURE / 公司审批签名</div>
-  <p style="font-size:8pt;margin-bottom:8px">I authorize the above payment on behalf of Prime Anchorpoint LLC.<br>本人代表 Prime Anchorpoint LLC 授权上述付款。</p>
-  <table style="width:100%"><tr>
-    <td style="width:60%;padding-right:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Signature / 签名:</div>
-      <signature-field name="approval_signature" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
-    </td>
-    <td style="width:40%;padding-left:12px;vertical-align:top">
-      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Approval Date / 审批日期:</div>
-      <date-field name="approval_date" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
-    </td>
+<div style="background:#f5f5f5;border:1px solid #999;padding:6px;font-size:8pt">
+  <b>COMPANY APPROVAL SIGNATURE 公司审批签名</b> — I authorize the above payment on behalf of Prime Anchorpoint LLC. 本人代表公司授权上述付款。
+  <table style="width:100%;margin-top:4px"><tr>
+    <td style="width:60%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Signature 签名:</div><signature-field name="approval_signature" role="First Party" style="width:100%;height:48px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:40%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Approval Date 审批日期:</div><date-field name="approval_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
-
-<div style="text-align:center;font-size:7pt;color:#999;margin-top:12px;border-top:1px solid #ddd;padding-top:6px">
-  INTERNAL DOCUMENT — Prime Anchorpoint LLC — This approval form is a company record and should not be shared with the contractor.<br>
-  内部文件 — 本审批表为公司内部记录，不应分享给承包商。Invoice 仅证明承包商提出了付款请求，本审批表证明公司同意付款。
-</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">INTERNAL DOCUMENT — Prime Anchorpoint LLC — Invoice proves the contractor's request; this form proves the company's approval. 内部文件——发票证明请求，本表证明批准。</div>
 </div></body></html>
