@@ -27,6 +27,9 @@
   label{display:block;font-size:.83rem;font-weight:600;color:var(--gray-600);margin-bottom:.35rem}
   input[type=text]{width:100%;border:1px solid var(--gray-200);border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none;transition:border .15s}
   input[type=text]:focus{border-color:var(--sky)}
+  select{border:1px solid var(--gray-200);border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none;background:#fff}
+  select:focus{border-color:var(--sky)}
+
   .btn{display:inline-flex;align-items:center;gap:.4rem;padding:.5rem 1.1rem;border-radius:7px;font-size:.85rem;font-weight:600;cursor:pointer;border:none;transition:opacity .15s}
   .btn:disabled{opacity:.5;cursor:not-allowed}
   .btn-sky{background:var(--sky);color:#fff}
@@ -37,16 +40,20 @@
   .btn-outline:hover:not(:disabled){background:var(--gray-50)}
   .btn-green{background:var(--green);color:#fff}
   .btn-green:hover:not(:disabled){opacity:.88}
+  .btn-orange{background:var(--orange);color:#fff}
+  .btn-orange:hover:not(:disabled){opacity:.88}
+  .btn-link{background:none;border:none;color:var(--sky);font-size:.83rem;cursor:pointer;padding:0;font-weight:600}
+  .btn-link:hover{text-decoration:underline}
 
-  .cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
-  @media(max-width:640px){.cfg-grid{grid-template-columns:1fr}}
-  .cfg-card{border:1px solid var(--gray-200);border-radius:8px;padding:1rem;position:relative}
-  .cfg-card-title{font-size:.88rem;font-weight:700;margin-bottom:.5rem}
-  .cfg-card-id{font-family:monospace;font-size:.9rem;color:var(--sky);font-weight:600}
-  .cfg-card-name{font-size:.82rem;color:var(--gray-500);margin-top:.2rem}
-  .cfg-card-actions{margin-top:.6rem;display:flex;gap:.5rem;flex-wrap:wrap}
-  .cfg-card .clear-btn{font-size:.75rem;padding:.2rem .5rem;border-radius:5px;border:1px solid #fca5a5;background:#fff;color:var(--red);cursor:pointer}
-  .cfg-card .clear-btn:hover{background:#fef2f2}
+  .cat-label{font-size:.78rem;font-weight:700;color:var(--gray-500);letter-spacing:.05em;text-transform:uppercase;margin:1.25rem 0 .6rem;display:flex;align-items:center;gap:.4rem}
+  .cat-label:first-child{margin-top:0}
+  .cfg-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.85rem}
+  @media(max-width:700px){.cfg-grid{grid-template-columns:1fr}}
+  @media(min-width:701px) and (max-width:900px){.cfg-grid{grid-template-columns:1fr 1fr}}
+  .cfg-card{border:1px solid var(--gray-200);border-radius:8px;padding:.85rem}
+  .cfg-card-title{font-size:.88rem;font-weight:700;margin-bottom:.2rem}
+  .cfg-card-sub{font-size:.75rem;color:var(--orange);margin-bottom:.5rem}
+  .cfg-card-info{font-size:.75rem;color:var(--gray-400);margin-top:.35rem}
 
   .dropzone{border:2px dashed var(--gray-200);border-radius:8px;padding:2rem;text-align:center;color:var(--gray-400);transition:all .2s;cursor:pointer;position:relative}
   .dropzone.drag-over{border-color:var(--sky);background:#f0f9ff;color:var(--sky)}
@@ -57,13 +64,32 @@
   .spin{display:inline-block;width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
 
-  #toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#1e293b;color:#fff;padding:.7rem 1.2rem;border-radius:8px;font-size:.85rem;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;max-width:320px}
+  #toast{position:fixed;bottom:1.5rem;right:1.5rem;background:#1e293b;color:#fff;padding:.7rem 1.2rem;border-radius:8px;font-size:.85rem;opacity:0;transition:opacity .3s;pointer-events:none;z-index:9999;max-width:360px}
   #toast.show{opacity:1}
   #toast.error{background:#ef4444}
   #toast.success{background:#10b981}
 
   select.tmpl-select{width:100%;border:1px solid var(--gray-200);border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none}
   select.tmpl-select:focus{border-color:var(--sky)}
+
+  .tmpl-row{display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid var(--gray-100)}
+  .tmpl-row:last-child{border-bottom:none}
+  .tmpl-row-info{flex:1;min-width:0}
+  .tmpl-row-name{font-weight:600;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tmpl-row-meta{font-size:.75rem;color:var(--gray-400);margin-top:.1rem}
+  .tmpl-row-actions{display:flex;gap:.4rem;flex-shrink:0;margin-left:.75rem}
+
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+  @media(max-width:560px){.form-row{grid-template-columns:1fr}}
+
+  .create-all-bar{display:flex;align-items:center;gap:1rem;margin-bottom:1rem;padding:.75rem 1rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px}
+  .create-all-bar .info{flex:1;font-size:.85rem;color:#92400e}
+
+  .progress-log{margin-top:.75rem;font-size:.8rem;color:var(--gray-500);max-height:200px;overflow-y:auto}
+  .progress-log div{padding:2px 0}
+  .progress-log .ok{color:var(--green)}
+  .progress-log .err{color:var(--red)}
+  .progress-log .skip{color:var(--gray-400)}
 </style>
 </head>
 <body>
@@ -75,38 +101,32 @@
   </a>
   <span style="color:var(--gray-200)">|</span>
   <div class="topbar-title">📄 DocuSeal 模板管理</div>
-  <div style="margin-left:auto" id="connBadge"></div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:.75rem" id="connBadge"></div>
 </div>
 
 <div class="page">
 
-  <!-- Current config -->
+  <!-- One-click create all -->
+  <div class="create-all-bar" id="createAllBar">
+    <div class="info">
+      <strong>一键创建所有模板</strong> — 自动在 DocuSeal 中创建合同和税务表格模板，并完成配置。已有模板不会重复创建。
+    </div>
+    <button class="btn btn-orange" id="createAllBtn" onclick="createAllTemplates()">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+      一键创建
+    </button>
+  </div>
+  <div class="progress-log" id="createLog" style="display:none"></div>
+
+  <!-- Current config — all 16 template types in categories -->
   <div class="card">
     <div class="card-title">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg>
       当前使用的模板
     </div>
-    <div class="cfg-grid">
-      <div class="cfg-card">
-        <div class="cfg-card-title">员工合同模板</div>
-        <div>
-          <select class="tmpl-select" id="selContract" onchange="setTemplate('contract', this.value)">
-            <option value="">— 未设置 —</option>
-          </select>
-        </div>
-        <div class="cfg-card-name" id="cfgContractInfo"></div>
-      </div>
-      <div class="cfg-card">
-        <div class="cfg-card-title">W-9 表格模板</div>
-        <div>
-          <select class="tmpl-select" id="selW9" onchange="setTemplate('w9', this.value)">
-            <option value="">— 未设置 —</option>
-          </select>
-        </div>
-        <div class="cfg-card-name" id="cfgW9Info"></div>
-      </div>
+    <div id="cfgBody">
+      <div style="text-align:center;padding:1.5rem;color:var(--gray-400);font-size:.9rem">正在加载…</div>
     </div>
-    <p style="font-size:.8rem;color:var(--gray-400);margin-top:.75rem">从下拉菜单中选择已上传的模板。发送合同或 W-9 时将使用对应模板。</p>
   </div>
 
   <!-- Upload new template -->
@@ -115,10 +135,38 @@
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
       上传新模板 PDF
     </div>
-    <div style="display:grid;grid-template-columns:1fr auto;gap:1rem;align-items:end;margin-bottom:1rem">
+    <div class="form-row">
       <div>
         <label>模板名称 <span style="color:var(--red)">*</span></label>
         <input type="text" id="uploadName" placeholder="如：Employee Contract Template 2026">
+      </div>
+      <div>
+        <label>类别（上传后自动设置）</label>
+        <select id="uploadCategory" style="width:100%">
+          <option value="">— 不自动分配 —</option>
+          <optgroup label="合同">
+            <option value="company_contract_template_id">公司合同</option>
+            <option value="worker_1099_template_id">劳务合同 — 1099</option>
+            <option value="worker_w2_template_id">劳务合同 — W2</option>
+          </optgroup>
+          <optgroup label="税务表格">
+            <option value="w4_template_id">W-4</option>
+            <option value="w9_template_id">W-9</option>
+            <option value="w8ben_template_id">W-8BEN</option>
+            <option value="w8bene_template_id">W-8BEN-E</option>
+            <option value="form8233_template_id">8233</option>
+            <option value="i9_template_id">I-9</option>
+            <option value="w7_template_id">W-7</option>
+          </optgroup>
+          <optgroup label="付款授权表格">
+            <option value="ach_auth_template_id">ACH / Direct Deposit</option>
+            <option value="wire_auth_template_id">Wire Transfer</option>
+            <option value="check_instruction_template_id">Check / 支票</option>
+            <option value="zelle_auth_template_id">Zelle</option>
+            <option value="third_party_pay_template_id">PayPal / Venmo / CashApp</option>
+            <option value="cash_receipt_template_id">现金签收</option>
+          </optgroup>
+        </select>
       </div>
     </div>
     <div class="dropzone" id="dropzone">
@@ -136,13 +184,16 @@
     </div>
   </div>
 
-  <!-- My templates (only user-uploaded ones stored in our DB) -->
+  <!-- All templates from DocuSeal -->
   <div class="card">
-    <div class="card-title">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-      我的模板
+    <div class="card-title" style="justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+        所有模板
+      </div>
+      <button class="btn btn-outline" style="font-size:.78rem;padding:.3rem .7rem" onclick="loadAllTemplates()">↺ 刷新</button>
     </div>
-    <div id="myTemplatesWrap">
+    <div id="allTemplatesWrap">
       <div style="text-align:center;padding:1.5rem;color:var(--gray-400);font-size:.9rem">正在加载…</div>
     </div>
   </div>
@@ -152,8 +203,31 @@
 <div id="toast"></div>
 
 <script>
+const TEMPLATE_DEFS = [
+  // 合同
+  { key: 'company_contract_template_id', label: '公司合同',            desc: '与客户/合作方签署',       cat: '合同',      catIcon: '📋' },
+  { key: 'worker_1099_template_id',       label: '劳务合同 — 1099',    desc: '独立承包商',              cat: '合同',      catIcon: '📋' },
+  { key: 'worker_w2_template_id',         label: '劳务合同 — W2',      desc: '正式雇员',                cat: '合同',      catIcon: '📋' },
+  // 税务表格
+  { key: 'w4_template_id',               label: 'W-4',               desc: 'W2员工预扣税申报表',       cat: '税务表格',  catIcon: '🧾' },
+  { key: 'w9_template_id',               label: 'W-9',               desc: '美国居民/实体税务信息',     cat: '税务表格',  catIcon: '🧾' },
+  { key: 'w8ben_template_id',            label: 'W-8BEN',            desc: '外籍个人预扣税身份证明',    cat: '税务表格',  catIcon: '🧾' },
+  { key: 'w8bene_template_id',           label: 'W-8BEN-E',          desc: '外籍实体预扣税身份证明',    cat: '税务表格',  catIcon: '🧾' },
+  { key: 'form8233_template_id',         label: '8233',              desc: '外籍个人税收协定豁免申请',  cat: '税务表格',  catIcon: '🧾' },
+  { key: 'i9_template_id',              label: 'I-9',               desc: '就业资格验证表',           cat: '税务表格',  catIcon: '🧾' },
+  { key: 'w7_template_id',              label: 'W-7',               desc: '外籍人 ITIN 申请表',       cat: '税务表格',  catIcon: '🧾' },
+  // 付款授权表格
+  { key: 'ach_auth_template_id',         label: 'ACH / Direct Deposit', desc: '银行直接转账授权',      cat: '付款授权表格', catIcon: '💳' },
+  { key: 'wire_auth_template_id',        label: 'Wire Transfer',        desc: '电汇付款授权',          cat: '付款授权表格', catIcon: '💳' },
+  { key: 'check_instruction_template_id',label: 'Check / 支票',         desc: '支票邮寄地址确认',       cat: '付款授权表格', catIcon: '💳' },
+  { key: 'zelle_auth_template_id',       label: 'Zelle',               desc: 'Zelle 账号授权确认',     cat: '付款授权表格', catIcon: '💳' },
+  { key: 'third_party_pay_template_id',  label: 'PayPal / Venmo / CashApp', desc: '第三方平台付款授权', cat: '付款授权表格', catIcon: '💳' },
+  { key: 'cash_receipt_template_id',     label: '现金签收',             desc: 'Cash Payment Receipt',  cat: '付款授权表格', catIcon: '💳' },
+];
+
 let _config = {};
-let _myTemplates = [];
+let _allTemplates = []; // all templates from DocuSeal API
+let _dsUrl = '';
 
 async function api(path, opts={}) {
   const r = await fetch(path, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(opts.headers||{}) }, ...opts });
@@ -167,7 +241,7 @@ function toast(msg, type='') {
   el.textContent = msg;
   el.className = 'show' + (type ? ' ' + type : '');
   clearTimeout(el._t);
-  el._t = setTimeout(() => el.className = '', 3000);
+  el._t = setTimeout(() => el.className = '', 3500);
 }
 
 function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -176,68 +250,110 @@ function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
 async function loadConfig() {
   try {
     _config = await api('/api/admin/docuseal/config');
+    _dsUrl = _config.url || '';
     const connBadge = document.getElementById('connBadge');
     if (_config.connected) {
-      connBadge.innerHTML = `<span class="badge badge-green">✓ 已连接 DocuSeal</span>`;
-      if (_config.url) connBadge.innerHTML += ` <span style="font-size:.78rem;color:var(--gray-400)">${escHtml(_config.url)}</span>`;
+      connBadge.innerHTML = `<span class="badge badge-green">✓ 已连接 DocuSeal</span>`
+        + (_dsUrl ? ` <span style="font-size:.78rem;color:var(--gray-400)">${escHtml(_dsUrl)}</span>` : '')
+        + ` <button class="btn-link" onclick="recheckConn()">重新检测</button>`;
     } else {
-      connBadge.innerHTML = `<span class="badge badge-red">✗ 未连接 — 请检查 .env 中 DOCUSEAL_API_KEY / DOCUSEAL_URL</span>`;
+      connBadge.innerHTML = `<span class="badge badge-red">✗ 未连接</span>`
+        + ` <button class="btn-link" onclick="recheckConn()">重新检测</button>`;
     }
-    refreshSelects();
+    renderCfgBody();
   } catch(e) { toast(e.message, 'error'); }
 }
 
-// ── Load my templates (from our DB) ──
-async function loadMyTemplates() {
-  const wrap = document.getElementById('myTemplatesWrap');
+async function recheckConn() {
+  toast('正在检测连接…');
+  await loadConfig();
+  await loadAllTemplates();
+  toast('检测完成', 'success');
+}
+
+// ── Render config body (all 16 types in categories) ──
+function renderCfgBody() {
+  const cats = [...new Set(TEMPLATE_DEFS.map(t => t.cat))];
+  let html = '';
+  for (const cat of cats) {
+    const items = TEMPLATE_DEFS.filter(t => t.cat === cat);
+    const icon = items[0].catIcon;
+    html += `<div class="cat-label"><span>${icon}</span> ${escHtml(cat)}</div>`;
+    html += `<div class="cfg-grid">`;
+    for (const def of items) {
+      const curId = _config[def.key];
+      const curTmpl = curId ? _allTemplates.find(t => t.id == curId) : null;
+      const optHtml = _allTemplates.map(t =>
+        `<option value="${t.id}"${t.id == curId ? ' selected' : ''}>#${t.id} — ${escHtml(t.name||'')}</option>`
+      ).join('');
+      const infoText = curId
+        ? (curTmpl ? `发送${escHtml(def.label)}时使用此模板` : `已设置 #${curId}（未在列表中）`)
+        : '';
+      html += `<div class="cfg-card">
+        <div class="cfg-card-title">${escHtml(def.label)}</div>
+        <div class="cfg-card-sub">${escHtml(def.desc)}</div>
+        <select class="tmpl-select" onchange="setTemplate('${def.key}', this.value)">
+          <option value="">— 未设置 —</option>
+          ${optHtml}
+        </select>
+        <div class="cfg-card-info">${infoText}</div>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+  document.getElementById('cfgBody').innerHTML = html;
+}
+
+// ── Load all templates from DocuSeal ──
+async function loadAllTemplates() {
+  const wrap = document.getElementById('allTemplatesWrap');
   try {
-    _myTemplates = await api('/api/admin/docuseal/my-templates');
-    renderMyTemplates();
-    refreshSelects();
+    _allTemplates = await api('/api/admin/docuseal/templates');
+    if (!Array.isArray(_allTemplates)) _allTemplates = [];
+    renderCfgBody();
+    renderAllTemplates();
   } catch(e) {
+    _allTemplates = [];
+    renderCfgBody();
     wrap.innerHTML = `<div style="text-align:center;padding:1.5rem;color:var(--red);font-size:.88rem">${escHtml(e.message)}</div>`;
   }
 }
 
-function refreshSelects() {
-  const selC = document.getElementById('selContract');
-  const selW = document.getElementById('selW9');
-  const optHtml = _myTemplates.map(t =>
-    `<option value="${t.docuseal_template_id}">#${t.docuseal_template_id} — ${escHtml(t.name)}</option>`
-  ).join('');
-  selC.innerHTML = '<option value="">— 未设置 —</option>' + optHtml;
-  selW.innerHTML = '<option value="">— 未设置 —</option>' + optHtml;
-  if (_config.contract_template_id) selC.value = _config.contract_template_id;
-  if (_config.w9_template_id) selW.value = _config.w9_template_id;
-  // Info text
-  const cName = _myTemplates.find(t => t.docuseal_template_id == _config.contract_template_id);
-  const wName = _myTemplates.find(t => t.docuseal_template_id == _config.w9_template_id);
-  document.getElementById('cfgContractInfo').textContent = cName ? `发送合同时使用此模板` : '';
-  document.getElementById('cfgW9Info').textContent = wName ? `发送 W-9 时使用此模板` : '';
-}
-
-function renderMyTemplates() {
-  const wrap = document.getElementById('myTemplatesWrap');
-  if (!_myTemplates.length) {
-    wrap.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400);font-size:.9rem">暂无模板，请在上方上传</div>';
+function renderAllTemplates() {
+  const wrap = document.getElementById('allTemplatesWrap');
+  if (!_allTemplates.length) {
+    wrap.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400);font-size:.9rem">暂无模板 — 请在上方上传或使用「一键创建」</div>';
     return;
   }
-  const docusealUrl = (_config.url || '');
-  const rows = _myTemplates.map(t => {
-    const isContract = _config.contract_template_id == t.docuseal_template_id;
-    const isW9 = _config.w9_template_id == t.docuseal_template_id;
-    const badges = [
-      isContract ? '<span style="display:inline-block;background:#d1fae5;color:#065f46;border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">合同</span>' : '',
-      isW9 ? '<span style="display:inline-block;background:#fff7ed;color:#9a3412;border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">W-9</span>' : '',
-    ].filter(Boolean).join('');
-    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid var(--gray-100)">
-      <div>
-        <span style="font-weight:600;font-size:.88rem">${escHtml(t.name)}</span>${badges}
-        <div style="font-size:.78rem;color:var(--gray-400);margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
+
+  // Build a map of which keys use each template ID
+  const usedBy = {};
+  TEMPLATE_DEFS.forEach(def => {
+    const id = _config[def.key];
+    if (id) {
+      if (!usedBy[id]) usedBy[id] = [];
+      usedBy[id].push(def.label);
+    }
+  });
+
+  const editBase = _dsUrl ? _dsUrl.replace(/\/$/, '') : '';
+
+  const rows = _allTemplates.map(t => {
+    const labels = (usedBy[t.id] || []).map(l =>
+      `<span style="display:inline-block;background:#e0f2fe;color:#0369a1;border-radius:4px;padding:1px 7px;font-size:.72rem;font-weight:600;margin-left:.3rem">${escHtml(l)}</span>`
+    ).join('');
+    const createdAt = t.created_at ? String(t.created_at).slice(0,10) : '—';
+    return `<div class="tmpl-row">
+      <div class="tmpl-row-info">
+        <div class="tmpl-row-name">${escHtml(t.name||'(无名称)')}${labels}</div>
+        <div class="tmpl-row-meta">DocuSeal #${t.id} · ${createdAt}</div>
       </div>
-      <div style="display:flex;gap:.4rem;flex-shrink:0">
-        ${docusealUrl ? `<a href="${docusealUrl}/templates/${t.docuseal_template_id}/edit" target="_blank" class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem">编辑 ↗</a>` : ''}
-        <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem;color:var(--red);border-color:#fca5a5" onclick="deleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${escHtml(t.name).replace(/'/g,'\\&#39;')}')">删除</button>
+      <div class="tmpl-row-actions">
+        <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem"
+          onclick="renameTemplate(${t.id}, '${escHtml(String(t.name||'')).replace(/'/g,"\\'")}')">改名</button>
+        ${editBase ? `<a href="${editBase}/templates/${t.id}/edit" target="_blank" class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem">编辑 ↗</a>` : ''}
+        <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem;color:var(--red);border-color:#fca5a5"
+          onclick="deleteTemplate(${t.id}, '${escHtml(String(t.name||'')).replace(/'/g,"\\'")}')">删除</button>
       </div>
     </div>`;
   }).join('');
@@ -245,27 +361,79 @@ function renderMyTemplates() {
 }
 
 // ── Set template ──
-async function setTemplate(type, id) {
+async function setTemplate(key, id) {
   try {
-    const body = type === 'contract' ? { contract_template_id: id || null } : { w9_template_id: id || null };
+    const body = { [key]: id || null };
     await api('/api/admin/docuseal/config', { method: 'POST', body: JSON.stringify(body) });
-    if (type === 'contract') _config.contract_template_id = id || null;
-    else _config.w9_template_id = id || null;
-    renderMyTemplates();
-    toast(`已${id ? '设置' : '清除'} ${type === 'contract' ? '员工合同' : 'W-9'} 模板`, 'success');
+    _config[key] = id || null;
+    renderCfgBody();
+    renderAllTemplates();
+    toast('已保存', 'success');
   } catch(e) { toast(e.message, 'error'); }
 }
 
-// ── Delete my template ──
-async function deleteMyTemplate(localId, dsId, name) {
-  if (!confirm(`确定要删除模板「${name}」吗？\n\n这会同时从 DocuSeal 中删除此模板，不可撤销。`)) return;
+// ── Create all templates ──
+async function createAllTemplates() {
+  const btn = document.getElementById('createAllBtn');
+  const log = document.getElementById('createLog');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> 创建中…';
+  log.style.display = 'block';
+  log.innerHTML = '<div>开始创建模板…</div>';
   try {
-    await api(`/api/admin/docuseal/my-templates/${localId}`, { method: 'DELETE' });
-    if (_config.contract_template_id == dsId) _config.contract_template_id = null;
-    if (_config.w9_template_id == dsId) _config.w9_template_id = null;
-    _myTemplates = _myTemplates.filter(t => t.id !== localId);
-    refreshSelects();
-    renderMyTemplates();
+    const result = await api('/api/admin/docuseal/create-all-templates', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    let okCount = 0, skipCount = 0, errCount = 0;
+    (result.results || []).forEach(r => {
+      if (r.success) {
+        log.innerHTML += `<div class="ok">✓ ${escHtml(r.name)} — 创建成功 (ID: ${r.template_id})</div>`;
+        okCount++;
+      } else if (r.skipped) {
+        log.innerHTML += `<div class="skip">⏭ ${escHtml(r.type)} — 已存在 (ID: ${r.template_id})</div>`;
+        skipCount++;
+      } else {
+        log.innerHTML += `<div class="err">✗ ${escHtml(r.type)} — ${escHtml(r.error)}</div>`;
+        errCount++;
+      }
+    });
+    log.innerHTML += `<div style="margin-top:4px;font-weight:600">完成: ${okCount} 个新建, ${skipCount} 个已存在, ${errCount} 个失败</div>`;
+    toast(`模板创建完成: ${okCount} 个新建`, 'success');
+    await loadConfig();
+    await loadAllTemplates();
+  } catch(e) {
+    log.innerHTML += `<div class="err">✗ 创建失败: ${escHtml(e.message)}</div>`;
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> 一键创建`;
+  }
+}
+
+// ── Rename template (via DocuSeal API + local DB) ──
+async function renameTemplate(dsId, currentName) {
+  const newName = prompt('请输入新的模板名称：', currentName);
+  if (!newName || newName.trim() === currentName) return;
+  try {
+    await api(`/api/admin/docuseal/templates/${dsId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName.trim() }) });
+    const t = _allTemplates.find(t => t.id === dsId);
+    if (t) t.name = newName.trim();
+    renderCfgBody();
+    renderAllTemplates();
+    toast('模板已改名', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ── Delete template (from DocuSeal + config) ──
+async function deleteTemplate(dsId, name) {
+  if (!confirm(`确定要删除模板「${name}」吗？\n\n这会从 DocuSeal 中永久删除此模板，不可撤销。`)) return;
+  try {
+    await api(`/api/admin/docuseal/templates/${dsId}`, { method: 'DELETE' });
+    TEMPLATE_DEFS.forEach(def => { if (_config[def.key] == dsId) _config[def.key] = null; });
+    _allTemplates = _allTemplates.filter(t => t.id !== dsId);
+    renderCfgBody();
+    renderAllTemplates();
     toast('模板已删除', 'success');
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -304,6 +472,7 @@ dz.addEventListener('drop', e => {
 
 async function uploadTemplate() {
   const name = document.getElementById('uploadName').value.trim();
+  const category = document.getElementById('uploadCategory').value;
   if (!name) { toast('请填写模板名称', 'error'); return; }
   if (!_fileData) { toast('请选择 PDF 文件', 'error'); return; }
   const btn = document.getElementById('uploadBtn');
@@ -316,14 +485,29 @@ async function uploadTemplate() {
       method: 'POST',
       body: JSON.stringify({ name, file: _fileData })
     });
-    toast(`模板「${name}」上传成功`, 'success');
-    status.textContent = `✓ 上传成功`;
+    if (category && result.id) {
+      try {
+        await api('/api/admin/docuseal/config', {
+          method: 'POST',
+          body: JSON.stringify({ [category]: result.id })
+        });
+        _config[category] = result.id;
+        const def = TEMPLATE_DEFS.find(d => d.key === category);
+        toast(`模板「${name}」上传成功，已分配至「${def ? def.label : category}」`, 'success');
+      } catch(e2) {
+        toast(`上传成功，但分配类别失败: ${e2.message}`, 'error');
+      }
+    } else {
+      toast(`模板「${name}」上传成功`, 'success');
+    }
+    status.textContent = '✓ 上传成功';
     document.getElementById('uploadName').value = '';
+    document.getElementById('uploadCategory').value = '';
     document.getElementById('fileInput').value = '';
     document.getElementById('fileName').style.display = 'none';
     _fileData = null;
     btn.disabled = true;
-    await loadMyTemplates();
+    await loadAllTemplates();
   } catch(e) {
     toast(e.message, 'error');
     status.textContent = '✗ ' + e.message;
@@ -334,8 +518,11 @@ async function uploadTemplate() {
 }
 
 // ── Init ──
-loadConfig();
-loadMyTemplates();
+async function init() {
+  await loadConfig();
+  await loadAllTemplates();
+}
+init();
 </script>
 </body>
 </html>

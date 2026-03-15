@@ -2310,9 +2310,40 @@ tr:hover td{background:var(--sky-light)}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         上传新模板 PDF
       </div>
-      <div style="margin-bottom:1rem">
-        <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">模板名称 <span style="color:#ef4444">*</span></label>
-        <input type="text" id="ds-upload-name" placeholder="如：Employee Contract Template 2026" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+        <div>
+          <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">模板名称 <span style="color:#ef4444">*</span></label>
+          <input type="text" id="ds-upload-name" placeholder="如：Employee Contract Template 2026" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
+        </div>
+        <div>
+          <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">类别（上传后自动设置）</label>
+          <select id="ds-upload-category" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none;background:#fff">
+            <option value="">— 不自动分配 —</option>
+            <optgroup label="合同">
+              <option value="company_contract">公司合同</option>
+              <option value="worker_1099">劳务合同 — 1099</option>
+              <option value="worker_w2">劳务合同 — W2</option>
+            </optgroup>
+            <optgroup label="税务表格">
+              <option value="w4">W-4</option>
+              <option value="w9">W-9</option>
+              <option value="w8ben">W-8BEN</option>
+              <option value="w8bene">W-8BEN-E</option>
+              <option value="form8233">8233</option>
+              <option value="i9">I-9</option>
+              <option value="w7">W-7</option>
+            </optgroup>
+            <optgroup label="付款授权表格">
+              <option value="ach_auth">ACH / Direct Deposit</option>
+              <option value="wire_auth">Wire Transfer</option>
+              <option value="check_instruction">Check / 支票</option>
+              <option value="zelle_auth">Zelle</option>
+              <option value="third_party_pay">PayPal / Venmo / CashApp</option>
+              <option value="cash_receipt">现金签收</option>
+              <option value="contractor_invoice">员工 Invoice</option>
+            </optgroup>
+          </select>
+        </div>
       </div>
       <div id="ds-dropzone" style="border:2px dashed #e2e8f0;border-radius:8px;padding:2rem;text-align:center;color:#94a3b8;cursor:pointer;position:relative;transition:all .2s">
         <input type="file" accept=".pdf,application/pdf" id="ds-file-input" onchange="dsOnFileSelect(this)" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%">
@@ -10214,6 +10245,9 @@ async function openDsCompanySign(type, id) {
     form.setAttribute('data-src', r.signUrl);
     form.setAttribute('data-expand', 'false');
     form.setAttribute('data-order-as-on-page', 'true');
+    form.setAttribute('data-with-draw-signature', 'true');
+    form.setAttribute('data-with-typed-signature', 'true');
+    form.setAttribute('data-with-upload-signature', 'true');
     if (r.companyName) form.setAttribute('data-signature', r.companyName);
     // Pre-fill date with today
     const today = new Date().toISOString().slice(0, 10);
@@ -16632,6 +16666,9 @@ async function openCompanySign() {
     // Show fields directly on the document (not step-by-step wizard)
     form.setAttribute('data-expand', 'false');
     form.setAttribute('data-order-as-on-page', 'true');
+    form.setAttribute('data-with-draw-signature', 'true');
+    form.setAttribute('data-with-typed-signature', 'true');
+    form.setAttribute('data-with-upload-signature', 'true');
     // Pre-fill company signature (typed) so admin just clicks "Complete"
     if (r.companyName) form.setAttribute('data-signature', r.companyName);
     // Pre-fill date field with today's date
@@ -19803,35 +19840,38 @@ async function _dsLoadMyTemplates() {
 
 const _DS_SELECTORS = [
   // 合同
-  { key: 'company_contract_template_id',  selId: 'ds-sel-company-contract',  infoId: 'ds-cfg-company-contract-info',  label: '公司合同' },
-  { key: 'worker_1099_template_id',       selId: 'ds-sel-worker-1099',        infoId: 'ds-cfg-worker-1099-info',       label: '劳务合同 1099' },
-  { key: 'worker_w2_template_id',         selId: 'ds-sel-worker-w2',          infoId: 'ds-cfg-worker-w2-info',         label: '劳务合同 W2' },
+  { key: 'company_contract_template_id',  selId: 'ds-sel-company-contract',  infoId: 'ds-cfg-company-contract-info',  label: '公司合同',      doc_type: 'company_contract' },
+  { key: 'worker_1099_template_id',       selId: 'ds-sel-worker-1099',        infoId: 'ds-cfg-worker-1099-info',       label: '劳务合同 1099', doc_type: 'worker_1099' },
+  { key: 'worker_w2_template_id',         selId: 'ds-sel-worker-w2',          infoId: 'ds-cfg-worker-w2-info',         label: '劳务合同 W2',   doc_type: 'worker_w2' },
   // 税务表格
-  { key: 'w4_template_id',               selId: 'ds-sel-w4',                 infoId: 'ds-cfg-w4-info',                label: 'W-4' },
-  { key: 'w9_template_id',               selId: 'ds-sel-w9',                 infoId: 'ds-cfg-w9-info',                label: 'W-9' },
-  { key: 'w8ben_template_id',            selId: 'ds-sel-w8ben',              infoId: 'ds-cfg-w8ben-info',             label: 'W-8BEN' },
-  { key: 'w8bene_template_id',           selId: 'ds-sel-w8bene',             infoId: 'ds-cfg-w8bene-info',            label: 'W-8BEN-E' },
-  { key: 'form8233_template_id',         selId: 'ds-sel-8233',               infoId: 'ds-cfg-8233-info',              label: '8233' },
-  { key: 'i9_template_id',               selId: 'ds-sel-i9',                 infoId: 'ds-cfg-i9-info',                label: 'I-9' },
-  { key: 'w7_template_id',               selId: 'ds-sel-w7',                 infoId: 'ds-cfg-w7-info',                label: 'W-7' },
+  { key: 'w4_template_id',               selId: 'ds-sel-w4',                 infoId: 'ds-cfg-w4-info',                label: 'W-4',          doc_type: 'w4' },
+  { key: 'w9_template_id',               selId: 'ds-sel-w9',                 infoId: 'ds-cfg-w9-info',                label: 'W-9',          doc_type: 'w9' },
+  { key: 'w8ben_template_id',            selId: 'ds-sel-w8ben',              infoId: 'ds-cfg-w8ben-info',             label: 'W-8BEN',       doc_type: 'w8ben' },
+  { key: 'w8bene_template_id',           selId: 'ds-sel-w8bene',             infoId: 'ds-cfg-w8bene-info',            label: 'W-8BEN-E',     doc_type: 'w8bene' },
+  { key: 'form8233_template_id',         selId: 'ds-sel-8233',               infoId: 'ds-cfg-8233-info',              label: '8233',         doc_type: 'form8233' },
+  { key: 'i9_template_id',               selId: 'ds-sel-i9',                 infoId: 'ds-cfg-i9-info',                label: 'I-9',          doc_type: 'i9' },
+  { key: 'w7_template_id',               selId: 'ds-sel-w7',                 infoId: 'ds-cfg-w7-info',                label: 'W-7',          doc_type: 'w7' },
   // 付款授权
-  { key: 'ach_auth_template_id',         selId: 'ds-sel-ach',                infoId: 'ds-cfg-ach-info',               label: 'ACH授权' },
-  { key: 'wire_auth_template_id',        selId: 'ds-sel-wire',               infoId: 'ds-cfg-wire-info',              label: '电汇授权' },
-  { key: 'check_instruction_template_id',selId: 'ds-sel-check',              infoId: 'ds-cfg-check-info',             label: '支票指引' },
-  { key: 'zelle_auth_template_id',       selId: 'ds-sel-zelle',              infoId: 'ds-cfg-zelle-info',             label: 'Zelle授权' },
-  { key: 'third_party_pay_template_id',  selId: 'ds-sel-third-party',        infoId: 'ds-cfg-third-party-info',       label: '第三方平台' },
-  { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收' },
-  { key: 'contractor_invoice_template_id', selId: 'ds-sel-contractor-inv',   infoId: 'ds-cfg-contractor-inv-info',    label: '员工Invoice' },
+  { key: 'ach_auth_template_id',         selId: 'ds-sel-ach',                infoId: 'ds-cfg-ach-info',               label: 'ACH授权',      doc_type: 'ach_auth' },
+  { key: 'wire_auth_template_id',        selId: 'ds-sel-wire',               infoId: 'ds-cfg-wire-info',              label: '电汇授权',     doc_type: 'wire_auth' },
+  { key: 'check_instruction_template_id',selId: 'ds-sel-check',              infoId: 'ds-cfg-check-info',             label: '支票指引',     doc_type: 'check_instruction' },
+  { key: 'zelle_auth_template_id',       selId: 'ds-sel-zelle',              infoId: 'ds-cfg-zelle-info',             label: 'Zelle授权',    doc_type: 'zelle_auth' },
+  { key: 'third_party_pay_template_id',  selId: 'ds-sel-third-party',        infoId: 'ds-cfg-third-party-info',       label: '第三方平台',   doc_type: 'third_party_pay' },
+  { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收',     doc_type: 'cash_receipt' },
+  // 员工 Invoice
+  { key: 'contractor_invoice_template_id', selId: 'ds-sel-contractor-inv',   infoId: 'ds-cfg-contractor-inv-info',    label: '员工Invoice',  doc_type: 'contractor_invoice' },
 ];
 
 function _dsRefreshSelects() {
-  const optHtml = _dsMyTemplates.map(t =>
-    `<option value="${t.docuseal_template_id}">#${t.docuseal_template_id} — ${_dsEsc(t.name)}</option>`
-  ).join('');
   for (const s of _DS_SELECTORS) {
     const el = document.getElementById(s.selId);
     const info = document.getElementById(s.infoId);
     if (!el) continue;
+    // Filter templates by specific doc_type — only show templates matching this exact document type
+    const catTemplates = _dsMyTemplates.filter(t => t.category === s.doc_type);
+    const optHtml = catTemplates.map(t =>
+      `<option value="${t.docuseal_template_id}">#${t.docuseal_template_id} — ${_dsEsc(t.name)}</option>`
+    ).join('');
     el.innerHTML = '<option value="">— 未设置 —</option>' + optHtml;
     if (_dsConfig[s.key]) el.value = _dsConfig[s.key];
     const matched = _dsMyTemplates.find(t => t.docuseal_template_id == _dsConfig[s.key]);
@@ -19874,10 +19914,10 @@ function _dsRenderMyTemplates() {
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
         <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${badges}
-        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
+        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${({company_contract:'合同',worker_1099:'合同',worker_w2:'合同',w4:'税务表格',w9:'税务表格',w8ben:'税务表格',w8bene:'税务表格',form8233:'税务表格',i9:'税务表格',w7:'税务表格',ach_auth:'付款授权',wire_auth:'付款授权',check_instruction:'付款授权',zelle_auth:'付款授权',third_party_pay:'付款授权',cash_receipt:'付款授权',contractor_invoice:'员工Invoice',contract:'合同',tax:'税务表格',payment:'付款授权',invoice:'员工Invoice'})[t.category]||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0">
-        <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155" onclick="dsRenameTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
+        <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
         <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
         ${dsUrl ? `<a href="${dsUrl}/templates/${t.docuseal_template_id}/edit" target="_blank" style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;text-decoration:none">编辑 ↗</a>` : ''}
         <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
@@ -19898,6 +19938,19 @@ async function dsSetTemplate(type, id) {
   } catch(e) { showToast(e.message, 'error'); }
 }
 
+async function dsRenameMyTemplate(localId, currentName) {
+  const newName = prompt('请输入新的模板名称：', currentName);
+  if (!newName || newName.trim() === currentName) return;
+  try {
+    await api(`/admin/docuseal/my-templates/${localId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName.trim() }) });
+    const t = _dsMyTemplates.find(t => t.id === localId);
+    if (t) t.name = newName.trim();
+    _dsRenderMyTemplates();
+    _dsRefreshSelects();
+    showToast('模板已改名', 'success');
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
 async function dsDeleteMyTemplate(localId, dsId, name) {
   if (!confirm(`确定要删除模板「${name}」吗？\n\n这会同时从 DocuSeal 中删除此模板，不可撤销。`)) return;
   try {
@@ -19907,19 +19960,6 @@ async function dsDeleteMyTemplate(localId, dsId, name) {
     _dsRefreshSelects();
     _dsRenderMyTemplates();
     showToast('模板已删除', 'success');
-  } catch(e) { showToast(e.message, 'error'); }
-}
-
-async function dsRenameTemplate(localId, currentName) {
-  const newName = prompt('请输入新的模板名称：', currentName);
-  if (!newName || !newName.trim() || newName.trim() === currentName) return;
-  try {
-    await api(`/admin/docuseal/my-templates/${localId}`, { method: 'PATCH', body: JSON.stringify({ name: newName.trim() }) });
-    const tpl = _dsMyTemplates.find(t => t.id === localId);
-    if (tpl) tpl.name = newName.trim();
-    _dsRefreshSelects();
-    _dsRenderMyTemplates();
-    showToast('模板名称已更新', 'success');
   } catch(e) { showToast(e.message, 'error'); }
 }
 
@@ -20029,6 +20069,7 @@ function dsOnFileSelect(inp) {
 
 async function dsUploadTemplate() {
   const name = document.getElementById('ds-upload-name').value.trim();
+  const category = document.getElementById('ds-upload-category').value;
   if (!name) { showToast('请填写模板名称', 'error'); return; }
   if (!_dsFileData) { showToast('请选择 PDF 文件', 'error'); return; }
   const btn = document.getElementById('ds-upload-btn');
@@ -20037,10 +20078,11 @@ async function dsUploadTemplate() {
   btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite"></span> 上传中…';
   status.textContent = '';
   try {
-    await api('/admin/docuseal/upload-template', { method: 'POST', body: JSON.stringify({ name, file: _dsFileData }) });
+    await api('/api/admin/docuseal/upload-template', { method: 'POST', body: JSON.stringify({ name, file: _dsFileData, category }) });
     showToast(`模板「${name}」上传成功`, 'success');
     status.textContent = '✓ 上传成功';
     document.getElementById('ds-upload-name').value = '';
+    document.getElementById('ds-upload-category').value = '';
     document.getElementById('ds-file-input').value = '';
     document.getElementById('ds-file-name').style.display = 'none';
     _dsFileData = null;
