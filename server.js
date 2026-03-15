@@ -1607,6 +1607,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
   reject_reason TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
+// Add DocuSeal columns to contractor_invoices
+['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_signed_at DATETIME','sent_by TEXT DEFAULT \'\''].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -2632,6 +2634,7 @@ function getDsealConfigTemplateId(type) {
       zelle_auth: cfg.zelle_auth_template_id,
       third_party_pay: cfg.third_party_pay_template_id,
       cash_receipt: cfg.cash_receipt_template_id,
+      contractor_invoice: cfg.contractor_invoice_template_id,
     };
     return map[type] || '';
   } catch { return ''; }
@@ -6169,7 +6172,8 @@ app.delete('/api/admin/worker-accounts/:id/payments/:pid', requireAdmin, require
 // ─── Admin: Contractor Invoice Review ───
 app.get('/api/admin/contractor-invoices', requireAdmin, (req, res) => {
   const rows = db.prepare(`
-    SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username, wa.phone AS worker_phone, wa.email AS worker_email
+    SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username, wa.phone AS worker_phone, wa.email AS worker_email,
+      ci.ds_envelope_id, ci.ds_status, ci.ds_signed_at, ci.sent_by
     FROM contractor_invoices ci
     LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id
     ORDER BY ci.created_at DESC
@@ -6195,6 +6199,53 @@ app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin')
 app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM contractor_invoices WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// ─── Admin: Send DocuSeal Invoice to Worker ───
+app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
+  try {
+    const { worker_account_id } = req.body;
+    if (!worker_account_id) return res.status(400).json({ error: '请选择员工' });
+    const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(worker_account_id);
+    if (!w) return res.status(404).json({ error: '员工不存在' });
+    if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+    const templateId = getDsealConfigTemplateId('contractor_invoice');
+    if (!templateId) return res.status(400).json({ error: '未配置员工 Invoice 模板，请到 DocuSeal 模板管理中设置' });
+    const workerEmail = w.email || `worker-${w.id}@placeholder.local`;
+    const workerName = w.name || w.username || `Worker #${w.id}`;
+    const todayDate = new Date().toISOString().slice(0, 10);
+    // Create DocuSeal submission — single signer (worker fills amount + signs)
+    const subRes = await dsealApiCall('POST', '/api/submissions', {
+      template_id: parseInt(templateId),
+      send_email: true,
+      submitters: [
+        { role: 'First Party', name: workerName, email: workerEmail, fields: [
+          { name: 'invoice_date', default_value: todayDate, readonly: false }
+        ] }
+      ]
+    });
+    console.log(`[DocuSeal Invoice] submission status=${subRes.status}`);
+    const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+    if (subRes.status >= 400 || !submitters.length) {
+      return res.status(500).json({ error: `DocuSeal 提交失败: ${JSON.stringify(subRes.data)}` });
+    }
+    const submitter = submitters[0];
+    const submissionId = String(subRes.data?.id || submitter?.submission_id || '');
+    // Create contractor_invoices record with pending status
+    const invoiceNumber = `DSINV-${worker_account_id}-${todayDate.replace(/-/g, '')}-${submissionId.slice(-4)}`;
+    const sentBy = req.session?.username || 'admin';
+    db.prepare(`INSERT INTO contractor_invoices
+      (worker_account_id, invoice_number, invoice_date, service_description, total_amount, status, ds_envelope_id, ds_status, sent_by)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(worker_account_id, invoiceNumber, todayDate, 'DocuSeal Invoice (待员工填写)', 0, 'ds_pending', submissionId, 'sent', sentBy);
+    // Log to worker history
+    db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+      .run(worker_account_id, sentBy, 'contractor_invoice', '', 'ds_pending', `已发送 DocuSeal Invoice 模板给 ${workerName}`);
+    res.json({ success: true, submission_id: submissionId, invoice_number: invoiceNumber });
+  } catch (e) {
+    console.error('[Send DocuSeal Invoice]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // Admin: resend verification codes to unverified worker
@@ -11833,8 +11884,52 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
     const wo = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='contract'").get(submissionId);
     // Check worker_onboarding W-9
     const w9o = db.prepare("SELECT worker_account_id FROM worker_onboarding WHERE ds_envelope_id=? AND task_key='w9'").get(submissionId);
+    // Check contractor_invoices (DocuSeal invoices)
+    const cinv = db.prepare("SELECT id, worker_account_id FROM contractor_invoices WHERE ds_envelope_id=?").get(submissionId);
 
-    if (!pf && !wo && !w9o) { res.json({ received: true }); return; }
+    if (!pf && !wo && !w9o && !cinv) { res.json({ received: true }); return; }
+
+    // ── Handle Contractor Invoice (DocuSeal) completion ──
+    if (cinv) {
+      if (isCompleted || isSubmitterCompleted) {
+        try {
+          // Fetch submission details to extract field values
+          const subData = await dsealApiCall('GET', `/api/submissions/${submissionId}`, null);
+          const submitters = subData.data?.submitters || [];
+          const workerSub = submitters[0];
+          const signedAt = workerSub?.completed_at || new Date().toISOString();
+          // Try to extract total_amount from filled fields
+          let totalAmount = 0;
+          let serviceDesc = '';
+          const fields = workerSub?.fields || workerSub?.values || [];
+          if (Array.isArray(fields)) {
+            for (const f of fields) {
+              const fname = (f.name || '').toLowerCase();
+              const fval = f.value || f.default_value || '';
+              if (fname.includes('amount') || fname.includes('total') || fname.includes('金额')) {
+                const parsed = parseFloat(String(fval).replace(/[^0-9.]/g, ''));
+                if (!isNaN(parsed) && parsed > 0) totalAmount = parsed;
+              }
+              if (fname.includes('description') || fname.includes('服务') || fname.includes('service')) {
+                serviceDesc = String(fval);
+              }
+            }
+          }
+          const updates = { ds_status: 'completed', ds_signed_at: signedAt, status: 'submitted' };
+          if (totalAmount > 0) updates.total_amount = totalAmount;
+          if (serviceDesc) updates.service_description = serviceDesc;
+          db.prepare(`UPDATE contractor_invoices SET ds_status='completed', ds_signed_at=?, status='submitted',
+            total_amount=CASE WHEN ?> 0 THEN ? ELSE total_amount END,
+            service_description=CASE WHEN ? != '' THEN ? ELSE service_description END
+            WHERE id=?`)
+            .run(signedAt, totalAmount, totalAmount, serviceDesc, serviceDesc, cinv.id);
+          console.log(`[DocuSeal webhook] Contractor invoice ${cinv.id} completed, amount=${totalAmount}`);
+        } catch (e) { console.error('[DocuSeal webhook] contractor invoice error:', e.message); }
+      } else if (isDeclined) {
+        db.prepare("UPDATE contractor_invoices SET ds_status='declined', status='rejected', reject_reason=? WHERE id=?")
+          .run(data.decline_reason || '员工拒签', cinv.id);
+      }
+    }
 
     // ── Handle W-9 completion ──
     if (w9o) {
@@ -12871,7 +12966,8 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
-    'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id'];
+    'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
+    'contractor_invoice_template_id'];
   const out = { connected: dsealEnabled(), url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '') };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
@@ -12887,6 +12983,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
+    'contractor_invoice_template_id',
     'contract_template_id' /* legacy */];
   _configKeys.forEach(k => { if (req.body[k] !== undefined) cfg[k] = req.body[k] || null; });
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
