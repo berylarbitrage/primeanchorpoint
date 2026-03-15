@@ -14082,6 +14082,22 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
     const dsId = r.data?.id || r.data?.template_id;
     if (dsId) {
       db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(name, dsId, cat);
+      // Auto-update integration_settings config if a valid config key was provided as category
+      const validConfigKeys = [
+        'company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
+        'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
+        'i9_template_id','w7_template_id',
+        'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
+        'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
+        'contractor_invoice_template_id','invoice_approval_template_id'
+      ];
+      if (cat && validConfigKeys.includes(cat)) {
+        const cfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+        const cfg = JSON.parse(cfgRow?.config || '{}');
+        cfg[cat] = dsId;
+        db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+          .run(JSON.stringify(cfg));
+      }
     }
     res.json(r.data);
   } catch (e) {
