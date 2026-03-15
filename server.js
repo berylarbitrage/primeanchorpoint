@@ -4254,6 +4254,8 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
   const hash = hashPassword(password, salt);
   const r = db.prepare('INSERT INTO worker_accounts (username, password_hash, salt, employee_id) VALUES (?,?,?,?)')
     .run(username, hash, salt, employee_id || null);
+  const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)').run(r.lastInsertRowid, changedBy, 'account_created', '', username, '管理员创建账户');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
@@ -11215,6 +11217,7 @@ app.post('/api/register/worker', async (req, res) => {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, registrationSource, referredBy, inviteEmployeeId);
   const accountId = r.lastInsertRowid;
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)').run(accountId, name || phone, 'account_created', '', phone, registrationSource === 'invite' ? '通过邀请链接注册' : '在线自助注册');
 
   // Store SMS consent
   if (sms_consent) {

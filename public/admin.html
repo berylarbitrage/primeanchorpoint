@@ -16905,7 +16905,11 @@ async function showWorkerHistory(id, name) {
   document.getElementById('workerHistoryModal').classList.add('show');
   try {
     const rows = await api(`/admin/worker-accounts/${id}/history`);
-    if (!rows || !rows.length) {
+    if (!rows || rows.error) {
+      content.innerHTML = `<div style="color:#dc2626;padding:1rem 0;text-align:center">${rows && rows.error ? esc(rows.error) : '加载失败'}</div>`;
+      return;
+    }
+    if (!Array.isArray(rows) || !rows.length) {
       content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无变更记录</div>';
       return;
     }
@@ -17166,7 +17170,7 @@ async function saveWorkerDetail() {
 
 const WD_FIELD_LABELS = {
   // 账户基本信息
-  active: '账户状态', suspended: '暂停状态', password: '密码', employee_id: '绑定员工',
+  account_created: '账户创建', active: '账户状态', suspended: '暂停状态', password: '密码', employee_id: '绑定员工',
   // 个人信息
   work_status: '身份证件类型', employment_type: '雇佣类型', payment_method: '支付方式',
   expected_salary: '期望薪资', our_salary_rating: '评分', preferred_lang: '语言偏好',
