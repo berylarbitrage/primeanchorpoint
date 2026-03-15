@@ -16918,29 +16918,29 @@ async function showWorkerHistory(id, name) {
       content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无变更记录</div>';
       return;
     }
-    content.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.83rem;white-space:nowrap">
+    content.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.83rem">
       <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.75rem">
-        <th style="text-align:left;padding:.4rem .5rem">时间</th>
-        <th style="text-align:left;padding:.4rem .5rem">操作人</th>
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">时间</th>
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">操作人</th>
         <th style="text-align:left;padding:.4rem .5rem">字段</th>
-        <th style="text-align:left;padding:.4rem .5rem">原值</th>
-        <th style="text-align:left;padding:.4rem .5rem">新值</th>
-        <th style="text-align:left;padding:.4rem .5rem;max-width:240px">备注</th>
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">原值</th>
+        <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">新值</th>
       </tr></thead>
       <tbody>${rows.map(r => {
         const ts = new Date(r.created_at).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:localTz(),timeZoneName:'short'});
-        const field = WD_FIELD_LABELS[r.field_name] || r.field_name;
+        const rawField = r.field_name || '';
+        const field = WD_FIELD_LABELS[rawField] || rawField;
         const oldV = fmtWdVal(r.old_value);
         const newV = fmtWdVal(r.new_value);
         const note = r.note || '';
-        return `<tr style="border-bottom:1px solid var(--gray-100)">
-          <td style="padding:.45rem .5rem;color:var(--gray-400)">${ts}</td>
-          <td style="padding:.45rem .5rem;color:var(--sky)">${esc(r.changed_by||'—')}</td>
-          <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}</td>
-          <td style="padding:.45rem .5rem;color:#dc2626">${esc(oldV)}</td>
-          <td style="padding:.45rem .5rem;color:#16a34a">${esc(newV)}</td>
-          <td style="padding:.45rem .5rem;color:var(--gray-500);font-size:.8rem;max-width:240px;overflow:hidden;text-overflow:ellipsis" title="${esc(note)}">${esc(note)}</td>
-        </tr>`;
+        const noteRow = note ? `<tr><td colspan="5" style="padding:.1rem .5rem .5rem 2rem;color:var(--gray-500);font-size:.78rem;border-bottom:1px solid var(--gray-100)">💬 ${esc(note)}</td></tr>` : '';
+        return `<tr style="border-bottom:${note?'none':'1px solid var(--gray-100)'}">
+          <td style="padding:.45rem .5rem;color:var(--gray-400);white-space:nowrap">${ts}</td>
+          <td style="padding:.45rem .5rem;color:var(--sky);white-space:nowrap">${esc(r.changed_by||'—')}</td>
+          <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${rawField !== field ? esc(rawField) : ''}</span></td>
+          <td style="padding:.45rem .5rem;color:#dc2626;white-space:nowrap">${esc(oldV)}</td>
+          <td style="padding:.45rem .5rem;color:#16a34a;white-space:nowrap">${esc(newV)}</td>
+        </tr>${noteRow}`;
       }).join('')}</tbody>
     </table></div>`;
   } catch { content.innerHTML = '<div style="color:#dc2626;padding:1rem 0">加载失败，请重试</div>'; }
@@ -17099,8 +17099,37 @@ async function saveWorkerDetail() {
   loadWorkerAccounts();
 }
 
-const WD_FIELD_LABELS = { active:'账户状态', suspended:'暂停状态', work_status:'身份', expected_salary:'期望薪资', our_salary_rating:'评分', payment_method:'支付方式', employee_id:'绑定员工', password:'密码', contract:'合同签署', onboarding_contract:'合同任务', onboarding_interview:'面试任务', onboarding_phone_verify:'电话验证', onboarding_email_verify:'邮箱验证', onboarding_persona_verify:'身份验证', onboarding_background_check:'背调任务', onboarding_tax_form:'税表任务', onboarding_direct_deposit:'银行信息' };
-const WD_VALUE_LABELS = { '0':'否/禁用','1':'是/启用', cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直接存款', citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他', '':'（未填写）' };
+const WD_FIELD_LABELS = {
+  // 账户基本信息
+  active: '账户状态', suspended: '暂停状态', password: '密码', employee_id: '绑定员工',
+  // 个人信息
+  work_status: '身份证件类型', employment_type: '雇佣类型', payment_method: '支付方式',
+  expected_salary: '期望薪资', our_salary_rating: '评分', preferred_lang: '语言偏好',
+  sms_consent: '短信授权',
+  // 入职任务状态
+  onboarding_contract: '入职任务 · 签署合同', onboarding_interview: '入职任务 · 面试',
+  onboarding_phone_verify: '入职任务 · 手机验证', onboarding_email_verify: '入职任务 · 邮箱验证',
+  onboarding_persona_verify: '入职任务 · 身份验证 (Stripe)', onboarding_background_check: '入职任务 · 背景调查 (Checkr)',
+  onboarding_tax_form: '入职任务 · 税表', onboarding_direct_deposit: '入职任务 · 银行信息',
+  onboarding_work_permit: '入职任务 · 工作许可验证', onboarding_tax_residency: '入职任务 · 税务居民判定',
+  onboarding_i9: '入职任务 · I-9 就业资格', onboarding_w9: '入职任务 · W-9 税表',
+  // 业务数据
+  contract: '合同签署状态', tax_residency: '税务居民身份判定', work_permit: '工作许可验证类别',
+  work_permit_doc: '工作许可文件', tax_filing_doc: '报税文件上传', identity_status: '身份核验状态',
+  bgcheck_status: '背调状态', dispatch_ready: '可派工状态', worker_code: '工人编码'
+};
+const WD_VALUE_LABELS = {
+  '0':'否/禁用', '1':'是/启用',
+  cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直接存款',
+  citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他',
+  pending:'待处理', completed:'已完成', waived:'已豁免', skipped:'已跳过', in_progress:'进行中',
+  sent:'已发送', company_signed:'公司已签', worker_signed:'工人已签', voided:'已作废', declined:'已拒签',
+  w2:'W-2 员工', '1099':'1099 承包商',
+  us_person:'美国税务居民', resident_alien:'居民外国人', nonresident_alien:'非居民外国人 (NRA)',
+  active:'正常', suspended:'已暂停', inactive:'未激活',
+  clear:'通过', consider:'需审核', dispute:'争议中',
+  '':'（未填写）'
+};
 function fmtWdVal(v) { return WD_VALUE_LABELS[v] !== undefined ? WD_VALUE_LABELS[v] : (v || '（空）'); }
 
 async function loadWorkerHistory(id) {
