@@ -13320,6 +13320,15 @@ async function loadWorkerAccounts() {
     <td style="text-align:center">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
+    <td style="text-align:center;font-size:.78rem;white-space:nowrap">${(()=>{
+      if (w.employment_type==='1099') {
+        let parts = [];
+        if (w.tax_form==='W-9') parts.push('<span style="padding:1px 5px;border-radius:4px;font-weight:700;background:#dbeafe;color:#1d4ed8">W-9</span>');
+        parts.push('<span style="color:#1d4ed8;font-weight:600;font-size:.78rem">1099-NEC</span>');
+        return parts.join('<br>');
+      }
+      return '<span style="color:var(--gray-300)">—</span>';
+    })()}</td>
     <td style="font-size:.78rem;white-space:nowrap;vertical-align:middle">${(() => {
       const rf = w.recommended_form || '';
       const ts = w.tax_status || '';
@@ -13395,13 +13404,21 @@ let _onboardingInterviewInfo = null;
 let _onboardingRecommendedForm = null;
 
 async function refreshOnboardingModal() {
-  const [tasks, rows, intvInfo, taxResData] = await Promise.all([
-    api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`),
-    api('/admin/worker-accounts'),
-    api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`),
-    api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`)
-  ]);
-  const w = rows && rows.find(r => r.id === _onboardingWorkerId);
+  let tasks, rows, intvInfo, taxResData;
+  try {
+    [tasks, rows, intvInfo, taxResData] = await Promise.all([
+      api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`),
+      api('/admin/worker-accounts'),
+      api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`),
+      api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`)
+    ]);
+  } catch (e) {
+    console.error('[onboarding] API error:', e);
+    document.getElementById('onboardingTaskList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:#dc2626">加载失败，请刷新页面重试。<br><span style="font-size:.78rem;color:var(--gray-400)">' + e.message + '</span></div>';
+    return;
+  }
+  if (!Array.isArray(rows)) rows = [];
+  const w = rows.find(r => r.id === _onboardingWorkerId);
   _onboardingDispatchReady = !!(w && w.dispatch_ready);
   _onboardingWorkerData = w || null;
   _onboardingInterviewInfo = intvInfo || null;
