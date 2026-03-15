@@ -558,7 +558,7 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
       <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
-      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 员工 Invoice</a>
+      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 承包商發票</a>
     </div>
   </div>
 
@@ -1273,27 +1273,27 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
-<!-- ════════ 员工 Invoice Tab ════════ -->
+<!-- ════════ 承包商發票 Tab ════════ -->
 <div id="tab-ts-emp-invoice" style="display:none">
   <div class="top">
-    <h1>📄 员工 Invoice / Payment Requests</h1>
+    <h1>📄 承包商發票</h1>
     <div class="top-actions">
       <button class="btn btn-outline" onclick="loadEmpInvoiceTab()">刷新</button>
     </div>
   </div>
-  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商提交的 Invoice，用于 FWPA 合规（合同—服务完成—付款）链条记录</p>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商提交的發票，用于 FWPA 合规（合同—服务完成—付款）链条记录</p>
 
-  <!-- Send DocuSeal Invoice -->
+  <!-- Send Invoice -->
   <div class="card" style="margin-bottom:1rem;padding:1rem">
     <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
-      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 发送 DocuSeal Invoice：</label>
+      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 發送承包商發票：</label>
       <select id="empInvWorkerSelect" style="min-width:220px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
-        <option value="">— 选择员工 —</option>
+        <option value="">— 选择承包商 —</option>
       </select>
-      <button class="btn btn-green" onclick="sendDocuSealInvoice()" style="white-space:nowrap">📄 发送 Invoice 模板</button>
+      <button class="btn btn-green" onclick="openInvSendModal()" style="white-space:nowrap">📄 發送發票</button>
       <span id="empInvSendStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
     </div>
-    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择员工后发送 DocuSeal Invoice 模板，员工需填写金额、签字后提交回来。</div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择承包商后发送發票模板，承包商需填写金额、签字后提交回来。</div>
   </div>
 
   <div class="card">
@@ -2711,6 +2711,30 @@ tr:hover td{background:var(--sky-light)}
     <button class="btn" id="w9RefreshBtn" style="display:none;background:#f0f9ff;color:#0ea5e9;border:1px solid #bae6fd" onclick="refreshW9Status()">🔄 刷新签署状态</button>
     <button class="btn" id="w9DownloadBtn" style="display:none;background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0" onclick="downloadSignedW9()">📥 下载已签 W-9</button>
     <button class="btn" onclick="closeModal('w9SendModal')">关闭</button>
+  </div>
+</div></div>
+
+<!-- 承包商發票 Send Modal -->
+<div class="modal-bg" id="invSendModal"><div class="modal" style="max-width:720px">
+  <h2>📄 發送承包商發票 — <span id="invSendWorkerName" style="color:var(--sky)"></span></h2>
+  <div style="margin:.5rem 0;font-size:.85rem;color:var(--gray-500)">
+    系统将向承包商发送發票模板（邮件+短信），承包商填写金额并签字后提交回来。
+  </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">承包商邮箱：</label>
+    <input id="invSendEmail" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="contractor@email.com">
+  </div>
+  <div style="margin:.5rem 0">
+    <label style="font-weight:700;font-size:.85rem;display:block;margin-bottom:.3rem">手機號（可选，发送短信通知）：</label>
+    <input id="invSendPhone" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="+1 (xxx) xxx-xxxx">
+  </div>
+  <div id="invSendStatus" style="display:none;margin:.5rem 0;padding:.4rem .6rem;border-radius:6px;font-size:.82rem"></div>
+  <div style="margin:.75rem 0;padding:.6rem .75rem;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:.82rem;color:#92400e">
+    <b>流程：</b>点击「发送」后，承包商收到邮件+短信通知 → 填写金额与服务描述 → 签字确认 → 提交回来待审核。
+  </div>
+  <div class="modal-actions" style="margin-top:.75rem;gap:.5rem;flex-wrap:wrap">
+    <button class="btn btn-green" id="invSendBtn" onclick="doSendInvoice()">📤 發送發票</button>
+    <button class="btn" onclick="closeModal('invSendModal')">关闭</button>
   </div>
 </div></div>
 
@@ -17702,7 +17726,7 @@ async function reviewContractorInvoice(id, status) {
   }
 }
 
-// ─── 员工 Invoice Tab (standalone page) ───
+// ─── 承包商發票 Tab ───
 let _empInvWorkersLoaded = false;
 async function loadEmpInvoiceTab() {
   // Load worker dropdown (once)
@@ -17711,7 +17735,7 @@ async function loadEmpInvoiceTab() {
       const workers = await api('/admin/worker-accounts');
       const sel = document.getElementById('empInvWorkerSelect');
       if (sel && Array.isArray(workers)) {
-        sel.innerHTML = '<option value="">— 选择员工 —</option>' +
+        sel.innerHTML = '<option value="">— 选择承包商 —</option>' +
           workers.filter(w => w.active).map(w =>
             `<option value="${w.id}">${esc(w.name || w.username)} ${w.emp_type === '1099' ? '(1099)' : w.emp_type === 'w2' ? '(W2)' : ''}</option>`
           ).join('');
@@ -17724,7 +17748,7 @@ async function loadEmpInvoiceTab() {
   el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
   const rows = await api('/admin/contractor-invoices');
   if (!Array.isArray(rows) || !rows.length) {
-    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无员工 Invoice 记录</div>';
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无承包商發票记录</div>';
     return;
   }
   const STATUS_BADGE = {
@@ -17764,25 +17788,59 @@ async function loadEmpInvoiceTab() {
   </table>`;
 }
 
-async function sendDocuSealInvoice() {
+function openInvSendModal() {
   const sel = document.getElementById('empInvWorkerSelect');
   const workerId = sel.value;
-  if (!workerId) return showToast('请先选择员工', 'error');
+  if (!workerId) return showToast('请先选择承包商', 'error');
   const workerName = sel.options[sel.selectedIndex].text;
-  if (!await showConfirm(`确认向 ${workerName} 发送 DocuSeal Invoice 模板？\n员工需填写金额并签字后提交。`)) return;
-  const statusEl = document.getElementById('empInvSendStatus');
-  statusEl.textContent = '发送中…';
-  statusEl.style.color = 'var(--sky)';
+  _invSendWorkerId = parseInt(workerId);
+  _invSendWorkerName = workerName;
+  document.getElementById('invSendWorkerName').textContent = workerName;
+  document.getElementById('invSendEmail').value = '';
+  document.getElementById('invSendPhone').value = '';
+  document.getElementById('invSendStatus').style.display = 'none';
+  document.getElementById('invSendBtn').textContent = '📤 發送發票';
+  document.getElementById('invSendBtn').disabled = false;
+  // Pre-fill email and phone from worker data
+  (async () => {
+    try {
+      const w = await api(`/admin/worker-accounts/${workerId}`);
+      if (w) {
+        document.getElementById('invSendEmail').value = w.email || '';
+        document.getElementById('invSendPhone').value = w.phone || '';
+      }
+    } catch(e) {}
+  })();
+  document.getElementById('invSendModal').classList.add('show');
+}
+let _invSendWorkerId = null, _invSendWorkerName = '';
+
+async function doSendInvoice() {
+  if (!_invSendWorkerId) return;
+  const email = document.getElementById('invSendEmail').value.trim();
+  const phone = document.getElementById('invSendPhone').value.trim();
+  if (!email) { showToast('请填写承包商邮箱', 'error'); return; }
+  if (!await showConfirm(`确认向 ${_invSendWorkerName} 發送承包商發票？\n\n邮箱: ${email}${phone ? '\n手機: ' + phone : ''}\n\n承包商将收到邮件${phone ? '+短信' : ''}通知，填写金额并签字后提交。`)) return;
+  const btn = document.getElementById('invSendBtn');
+  btn.disabled = true; btn.textContent = '发送中…';
   const r = await api('/admin/contractor-invoices/send-docuseal', {
-    method: 'POST', body: JSON.stringify({ worker_account_id: parseInt(workerId) })
+    method: 'POST', body: JSON.stringify({ worker_account_id: _invSendWorkerId, worker_email: email, worker_phone: phone || undefined })
   });
+  btn.disabled = false; btn.textContent = '📤 重新發送';
   if (r && r.success) {
-    showToast(`✅ Invoice 模板已发送给 ${workerName}`);
-    statusEl.textContent = `✅ 已发送 ${r.invoice_number}`;
-    statusEl.style.color = '#15803d';
+    const statusEl = document.getElementById('invSendStatus');
+    statusEl.style.display = 'block';
+    statusEl.style.cssText = 'display:block;margin:.5rem 0;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;font-weight:600;background:#d1fae5;color:#065f46;border:1px solid #6ee7b7';
+    let msg = `✅ 發票已發送 (${r.invoice_number})`;
+    if (r.emailSent) msg += '　📧 邮件已送达';
+    if (r.smsSent) msg += '　📱 短信已送达';
+    if (r.warnings && r.warnings.length) msg += `<br><span style="font-size:.78rem;color:#92400e">${r.warnings.join('；')}</span>`;
+    statusEl.innerHTML = msg;
+    const tabStatus = document.getElementById('empInvSendStatus');
+    tabStatus.textContent = `✅ 已发送 ${r.invoice_number}`;
+    tabStatus.style.color = '#15803d';
     loadEmpInvoiceTab();
   } else {
-    statusEl.textContent = '';
     showToast(r?.error || '发送失败', 'error');
   }
 }
@@ -19923,7 +19981,7 @@ function _dsRenderMyTemplates() {
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
         <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${badges}
-        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${({company_contract:'合同',worker_1099:'合同',worker_w2:'合同',w4:'税务表格',w9:'税务表格',w8ben:'税务表格',w8bene:'税务表格',form8233:'税务表格',i9:'税务表格',w7:'税务表格',ach_auth:'付款授权',wire_auth:'付款授权',check_instruction:'付款授权',zelle_auth:'付款授权',third_party_pay:'付款授权',cash_receipt:'付款授权',contractor_invoice:'员工Invoice',invoice_approval:'发票审批(内部)',contract:'合同',tax:'税务表格',payment:'付款授权',invoice:'员工Invoice'})[t.category]||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
+        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${({company_contract:'合同',worker_1099:'合同',worker_w2:'合同',w4:'税务表格',w9:'税务表格',w8ben:'税务表格',w8bene:'税务表格',form8233:'税务表格',i9:'税务表格',w7:'税务表格',ach_auth:'付款授权',wire_auth:'付款授权',check_instruction:'付款授权',zelle_auth:'付款授权',third_party_pay:'付款授权',cash_receipt:'付款授权',contractor_invoice:'承包商發票',invoice_approval:'发票审批(内部)',contract:'合同',tax:'税务表格',payment:'付款授权',invoice:'承包商發票'})[t.category]||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0">
         <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
