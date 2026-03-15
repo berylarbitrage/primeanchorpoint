@@ -2153,78 +2153,118 @@ tr:hover td{background:var(--sky-light)}
         当前使用的模板
       </div>
 
-      <!-- Row 1: Company contracts -->
-      <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">🏢 与公司签署</div>
-      <div style="display:grid;grid-template-columns:1fr;gap:1rem;margin-bottom:1.25rem">
+      <!-- 合同 -->
+      <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">🏢 合同</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.5rem">
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">公司合同模板</div>
-          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">公司与客户/合作方签署的合同</div>
-          <select id="ds-sel-company-contract" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('company_contract', this.value)">
-            <option value="">— 未设置 —</option>
-          </select>
-          <div id="ds-cfg-company-contract-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">公司合同</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">与客户/合作方签署</div>
+          <select id="ds-sel-company-contract" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('company_contract', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-company-contract-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">劳务合同 — 1099</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">独立承包商</div>
+          <select id="ds-sel-worker-1099" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_1099', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-worker-1099-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">劳务合同 — W2</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">正式雇员</div>
+          <select id="ds-sel-worker-w2" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('worker_w2', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-worker-w2-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
       </div>
 
-      <!-- Row 2: Worker contracts -->
-      <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">👷 与劳务签署</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
-        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">劳务合同模板 — 1099</div>
-          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">独立承包商 (1099) 劳务合同</div>
-          <select id="ds-sel-worker-1099" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('worker_1099', this.value)">
-            <option value="">— 未设置 —</option>
-          </select>
-          <div id="ds-cfg-worker-1099-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
-        </div>
-        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">劳务合同模板 — W2</div>
-          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">正式雇员 (W2) 劳动合同</div>
-          <select id="ds-sel-worker-w2" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('worker_w2', this.value)">
-            <option value="">— 未设置 —</option>
-          </select>
-          <div id="ds-cfg-worker-w2-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
-        </div>
-      </div>
-
-      <!-- Row 3: W-9 -->
+      <!-- 税务表格 -->
       <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">📋 税务表格</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1.5rem">
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">W-9</div>
-          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">美国居民税务信息表</div>
-          <select id="ds-sel-w9" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('w9', this.value)">
-            <option value="">— 未设置 —</option>
-          </select>
-          <div id="ds-cfg-w9-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">W-4</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">W2员工预扣税申报表</div>
+          <select id="ds-sel-w4" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('w4', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-w4-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">W-8BEN</div>
-          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">外籍个人预扣税身份证明</div>
-          <select id="ds-sel-w8ben" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('w8ben', this.value)">
-            <option value="">— 未设置 —</option>
-          </select>
-          <div id="ds-cfg-w8ben-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">W-9</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">美国居民/实体税务信息</div>
+          <select id="ds-sel-w9" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('w9', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-w9-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">W-8BEN-E</div>
-          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">外籍实体预扣税身份证明</div>
-          <select id="ds-sel-w8bene" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('w8bene', this.value)">
-            <option value="">— 未设置 —</option>
-          </select>
-          <div id="ds-cfg-w8bene-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">W-8BEN</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">外籍个人预扣税身份证明</div>
+          <select id="ds-sel-w8ben" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('w8ben', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-w8ben-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">8233</div>
-          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">外籍个人税收协定豁免申请</div>
-          <select id="ds-sel-8233" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('form8233', this.value)">
-            <option value="">— 未设置 —</option>
-          </select>
-          <div id="ds-cfg-8233-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">W-8BEN-E</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">外籍实体预扣税身份证明</div>
+          <select id="ds-sel-w8bene" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('w8bene', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-w8bene-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">8233</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">外籍个人税收协定豁免申请</div>
+          <select id="ds-sel-8233" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('form8233', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-8233-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">I-9</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">就业资格验证表</div>
+          <select id="ds-sel-i9" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('i9', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-i9-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">W-7</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">外籍人 ITIN 申请表</div>
+          <select id="ds-sel-w7" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('w7', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-w7-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
       </div>
 
-      <p style="font-size:.8rem;color:#94a3b8;margin-top:.75rem">从下拉菜单中选择已上传的模板。发送合同或税务表格时将使用对应模板。</p>
+      <!-- 付款授权表格 -->
+      <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">💳 付款授权表格</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem">
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">ACH / Direct Deposit</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">银行直接转账授权</div>
+          <select id="ds-sel-ach" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('ach_auth', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-ach-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">Wire Transfer</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">电汇付款授权</div>
+          <select id="ds-sel-wire" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('wire_auth', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-wire-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">Check / 支票</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">支票邮寄地址确认</div>
+          <select id="ds-sel-check" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('check_instruction', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-check-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">Zelle</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Zelle 账号授权确认</div>
+          <select id="ds-sel-zelle" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('zelle_auth', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-zelle-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">PayPal / Venmo / CashApp</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">第三方平台付款授权</div>
+          <select id="ds-sel-third-party" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('third_party_pay', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-third-party-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">现金签收</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Cash Payment Receipt</div>
+          <select id="ds-sel-cash" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('cash_receipt', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-cash-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+      </div>
+
+      <p style="font-size:.8rem;color:#94a3b8;margin-top:.75rem">从下拉菜单中选择已上传的模板，对应场景发送时将自动使用。</p>
     </div>
 
     <!-- Upload new template -->
@@ -16054,13 +16094,25 @@ async function _dsLoadMyTemplates() {
 }
 
 const _DS_SELECTORS = [
-  { key: 'company_contract_template_id', selId: 'ds-sel-company-contract', infoId: 'ds-cfg-company-contract-info', label: '公司合同' },
-  { key: 'worker_1099_template_id',      selId: 'ds-sel-worker-1099',       infoId: 'ds-cfg-worker-1099-info',       label: '劳务合同 1099' },
-  { key: 'worker_w2_template_id',        selId: 'ds-sel-worker-w2',         infoId: 'ds-cfg-worker-w2-info',         label: '劳务合同 W2' },
-  { key: 'w9_template_id',               selId: 'ds-sel-w9',                infoId: 'ds-cfg-w9-info',                label: 'W-9' },
-  { key: 'w8ben_template_id',            selId: 'ds-sel-w8ben',             infoId: 'ds-cfg-w8ben-info',             label: 'W-8BEN' },
-  { key: 'w8bene_template_id',           selId: 'ds-sel-w8bene',            infoId: 'ds-cfg-w8bene-info',            label: 'W-8BEN-E' },
-  { key: 'form8233_template_id',         selId: 'ds-sel-8233',              infoId: 'ds-cfg-8233-info',              label: '8233' },
+  // 合同
+  { key: 'company_contract_template_id',  selId: 'ds-sel-company-contract',  infoId: 'ds-cfg-company-contract-info',  label: '公司合同' },
+  { key: 'worker_1099_template_id',       selId: 'ds-sel-worker-1099',        infoId: 'ds-cfg-worker-1099-info',       label: '劳务合同 1099' },
+  { key: 'worker_w2_template_id',         selId: 'ds-sel-worker-w2',          infoId: 'ds-cfg-worker-w2-info',         label: '劳务合同 W2' },
+  // 税务表格
+  { key: 'w4_template_id',               selId: 'ds-sel-w4',                 infoId: 'ds-cfg-w4-info',                label: 'W-4' },
+  { key: 'w9_template_id',               selId: 'ds-sel-w9',                 infoId: 'ds-cfg-w9-info',                label: 'W-9' },
+  { key: 'w8ben_template_id',            selId: 'ds-sel-w8ben',              infoId: 'ds-cfg-w8ben-info',             label: 'W-8BEN' },
+  { key: 'w8bene_template_id',           selId: 'ds-sel-w8bene',             infoId: 'ds-cfg-w8bene-info',            label: 'W-8BEN-E' },
+  { key: 'form8233_template_id',         selId: 'ds-sel-8233',               infoId: 'ds-cfg-8233-info',              label: '8233' },
+  { key: 'i9_template_id',               selId: 'ds-sel-i9',                 infoId: 'ds-cfg-i9-info',                label: 'I-9' },
+  { key: 'w7_template_id',               selId: 'ds-sel-w7',                 infoId: 'ds-cfg-w7-info',                label: 'W-7' },
+  // 付款授权
+  { key: 'ach_auth_template_id',         selId: 'ds-sel-ach',                infoId: 'ds-cfg-ach-info',               label: 'ACH授权' },
+  { key: 'wire_auth_template_id',        selId: 'ds-sel-wire',               infoId: 'ds-cfg-wire-info',              label: '电汇授权' },
+  { key: 'check_instruction_template_id',selId: 'ds-sel-check',              infoId: 'ds-cfg-check-info',             label: '支票指引' },
+  { key: 'zelle_auth_template_id',       selId: 'ds-sel-zelle',              infoId: 'ds-cfg-zelle-info',             label: 'Zelle授权' },
+  { key: 'third_party_pay_template_id',  selId: 'ds-sel-third-party',        infoId: 'ds-cfg-third-party-info',       label: '第三方平台' },
+  { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收' },
 ];
 
 function _dsRefreshSelects() {
@@ -16086,13 +16138,22 @@ function _dsRenderMyTemplates() {
   }
   const dsUrl = _dsConfig.url || '';
   const _BADGE_STYLES = {
-    company_contract_template_id: { bg:'#dbeafe', color:'#1e40af', label:'公司合同' },
-    worker_1099_template_id:      { bg:'#d1fae5', color:'#065f46', label:'1099' },
-    worker_w2_template_id:        { bg:'#fef9c3', color:'#854d0e', label:'W2' },
-    w9_template_id:               { bg:'#fff7ed', color:'#9a3412', label:'W-9' },
-    w8ben_template_id:            { bg:'#fae8ff', color:'#6b21a8', label:'W-8BEN' },
-    w8bene_template_id:           { bg:'#ede9fe', color:'#5b21b6', label:'W-8BEN-E' },
-    form8233_template_id:         { bg:'#fce7f3', color:'#9d174d', label:'8233' },
+    company_contract_template_id:  { bg:'#dbeafe', color:'#1e40af', label:'公司合同' },
+    worker_1099_template_id:       { bg:'#d1fae5', color:'#065f46', label:'1099' },
+    worker_w2_template_id:         { bg:'#fef9c3', color:'#854d0e', label:'W2' },
+    w4_template_id:                { bg:'#e0f2fe', color:'#0369a1', label:'W-4' },
+    w9_template_id:                { bg:'#fff7ed', color:'#9a3412', label:'W-9' },
+    w8ben_template_id:             { bg:'#fae8ff', color:'#6b21a8', label:'W-8BEN' },
+    w8bene_template_id:            { bg:'#ede9fe', color:'#5b21b6', label:'W-8BEN-E' },
+    form8233_template_id:          { bg:'#fce7f3', color:'#9d174d', label:'8233' },
+    i9_template_id:                { bg:'#dcfce7', color:'#166534', label:'I-9' },
+    w7_template_id:                { bg:'#f0fdf4', color:'#15803d', label:'W-7' },
+    ach_auth_template_id:          { bg:'#f0f9ff', color:'#0c4a6e', label:'ACH' },
+    wire_auth_template_id:         { bg:'#fffbeb', color:'#78350f', label:'电汇' },
+    check_instruction_template_id: { bg:'#fafaf9', color:'#292524', label:'支票' },
+    zelle_auth_template_id:        { bg:'#fdf4ff', color:'#86198f', label:'Zelle' },
+    third_party_pay_template_id:   { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
+    cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金' },
   };
   const rows = _dsMyTemplates.map(t => {
     const badges = Object.entries(_BADGE_STYLES).map(([k, s]) =>
