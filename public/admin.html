@@ -557,7 +557,8 @@ tr:hover td{background:var(--sky-light)}
       <a onclick="showTab('ts-payment')" data-tab="ts-payment" data-role="admin,staff">💰 待付款</a>
       <a onclick="showTab('ts-dividend')" data-tab="ts-dividend" data-role="staff">🎯 待分红</a>
       <a onclick="showTab('ts-history')" data-tab="ts-history" data-role="admin,staff">📚 工时历史</a>
-      <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 Invoice</a>
+      <a onclick="showTab('ts-invoice')" data-tab="ts-invoice" data-role="admin,staff">🧾 公司 Invoice</a>
+      <a onclick="showTab('ts-emp-invoice')" data-tab="ts-emp-invoice" data-role="admin,staff">📄 员工 Invoice</a>
     </div>
   </div>
 
@@ -1203,7 +1204,7 @@ tr:hover td{background:var(--sky-light)}
 
 <div id="tab-ts-invoice" style="display:none">
   <div class="top">
-    <h1>🧾 Invoice 管理</h1>
+    <h1>🧾 公司 Invoice 管理</h1>
     <div class="top-actions">
       <button class="btn btn-green" onclick="openInvpBuilderModal()">+ 新建 Invoice</button>
       <button class="btn btn-outline" onclick="loadInvpList()">刷新</button>
@@ -1268,6 +1269,22 @@ tr:hover td{background:var(--sky-light)}
         </div>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- ════════ 员工 Invoice Tab ════════ -->
+<div id="tab-ts-emp-invoice" style="display:none">
+  <div class="top">
+    <h1>📄 员工 Invoice / Payment Requests</h1>
+    <div class="top-actions">
+      <button class="btn btn-outline" onclick="loadEmpInvoiceTab()">刷新</button>
+    </div>
+  </div>
+  <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商提交的 Invoice，用于 FWPA 合规（合同—服务完成—付款）链条记录</p>
+  <div class="card">
+    <div id="empInvoiceListWrap">
+      <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
     </div>
   </div>
 </div>
@@ -5605,7 +5622,7 @@ const _TAB_TO_SEC = {
   inquiries:'sec-customer', 'client-inquiries':'sec-customer', quotes:'sec-customer', partners:'sec-customer',
   'worker-inquiries':'sec-worker', employees:'sec-worker', bgchecks:'sec-worker', compliance:'sec-worker', documents:'sec-worker', referrals:'sec-worker',
   jobs:'sec-jobs', assignments:'sec-jobs', interviews:'sec-jobs', jobsites:'sec-jobs',
-  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time',
+  time:'sec-time', 'ts-verify':'sec-time', 'ts-payment':'sec-time', 'ts-dividend':'sec-time', 'ts-history':'sec-time', 'ts-invoice':'sec-time', 'ts-emp-invoice':'sec-time',
   approvals:'sec-system', accounts:'sec-system', integrations:'sec-system', 'skill-settings':'sec-system', backups:'sec-system', 'docuseal-templates':'sec-system',
   'mgr-workers':'sec-manager', 'mgr-assignments':'sec-manager', 'mgr-interviews':'sec-manager',
   'admin-mgr-list':'sec-mgr-admin', 'admin-mgr-punch':'sec-mgr-admin', 'admin-mgr-dispatch':'sec-mgr-admin', 'admin-mgr-staff':'sec-mgr-admin', 'admin-mgr-assign':'sec-mgr-admin'
@@ -5640,6 +5657,7 @@ function showTab(t) {
   if (t === 'ts-dividend') loadTsDividend();
   if (t === 'ts-history')  loadTsHistory();
   if (t === 'ts-invoice')  { initInvoicePage(); loadInvpList(); }
+  if (t === 'ts-emp-invoice') loadEmpInvoiceTab();
   if (t === 'documents')  { populateDocEmpFilter(); loadDocuments(); }
   if (t === 'bgchecks')   { populateBgEmpFilter(); loadBgChecks(); }
   if (t === 'accounts')        loadAccounts();
@@ -17351,7 +17369,50 @@ async function reviewContractorInvoice(id, status) {
   if (r && r.success) {
     showToast(status === 'approved' ? '✅ Invoice 已批准' : '❌ Invoice 已拒绝');
     openContractorInvoicesModal();
+    // Also refresh the tab view if it's visible
+    if (document.getElementById('tab-ts-emp-invoice')?.style.display !== 'none') loadEmpInvoiceTab();
   }
+}
+
+// ─── 员工 Invoice Tab (standalone page) ───
+async function loadEmpInvoiceTab() {
+  const el = document.getElementById('empInvoiceListWrap');
+  el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
+  const rows = await api('/admin/contractor-invoices');
+  if (!Array.isArray(rows) || !rows.length) {
+    el.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--gray-400)">暂无员工 Invoice 记录</div>';
+    return;
+  }
+  const STATUS_BADGE = {
+    submitted: '<span style="padding:2px 8px;border-radius:6px;background:#fffbeb;color:#92400e;font-size:.75rem;font-weight:600">⏳ 待审核</span>',
+    approved: '<span style="padding:2px 8px;border-radius:6px;background:#dcfce7;color:#15803d;font-size:.75rem;font-weight:600">✅ 已批准</span>',
+    rejected: '<span style="padding:2px 8px;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:.75rem;font-weight:600">❌ 已拒绝</span>'
+  };
+  el.innerHTML = `<table style="width:100%;font-size:.82rem;border-collapse:collapse">
+    <thead><tr style="border-bottom:2px solid var(--gray-200)">
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">Invoice #</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">工人</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">日期</th>
+      <th style="padding:.4rem .5rem;text-align:left">服务描述</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">服务周期</th>
+      <th style="padding:.4rem .5rem;text-align:right;white-space:nowrap">金额</th>
+      <th style="padding:.4rem .5rem;text-align:center">状态</th>
+      <th style="padding:.4rem .5rem;text-align:center">操作</th>
+    </tr></thead>
+    <tbody>${rows.map(r => `<tr style="border-bottom:1px solid var(--gray-100)">
+      <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
+      <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}</td>
+      <td style="padding:.5rem;white-space:nowrap;color:var(--gray-500)">${esc(r.invoice_date)}</td>
+      <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.service_description)}">${esc(r.service_description)}</td>
+      <td style="padding:.5rem;white-space:nowrap;font-size:.78rem;color:var(--gray-500)">${r.service_period_start&&r.service_period_end ? esc(r.service_period_start)+' ~ '+esc(r.service_period_end) : '—'}</td>
+      <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">$${(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
+      <td style="padding:.5rem;text-align:center">${STATUS_BADGE[r.status]||r.status}</td>
+      <td style="padding:.5rem;text-align:center;white-space:nowrap">${r.status === 'submitted' ? `
+        <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
+        <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
+      ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}</td>
+    </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`).join('')}</tbody>
+  </table>`;
 }
 
 // ─── Tax Document Modal (报税文件) ───
