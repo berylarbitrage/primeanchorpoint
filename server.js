@@ -3328,8 +3328,10 @@ function generateContractorInvoiceHtmlTemplate(lang) {
     en: { subtitle: '1099 Contractor Invoice', amberHint: 'Amber fields = you fill &nbsp;|&nbsp; Grey fields = pre-filled',
       date: 'Date', periodFrom: 'Period From *', periodTo: 'Period To *',
       fromContractor: 'FROM — Contractor', prefilled: '(pre-filled)', name: 'Name',
-      billTo: 'BILL TO — Company', serviceDesc: 'SERVICE DESCRIPTION', serviceHint: '(pre-filled by company, editable)',
-      compMethod: 'Compensation Method', quotedAmt: 'Quoted Amount', reimbursable: 'Reimbursable Expenses',
+      billTo: 'BILL TO — Company', serviceDesc: 'SERVICE DESCRIPTION', serviceHint: 'Pre-filled by company',
+      compMethod: 'Compensation Method', compValue: 'Contractor-proposed flat project fee',
+      quotedAmt: 'Quoted Amount', reimbursable: 'Reimbursable Expenses',
+      additionalNotes: 'Additional Notes', notesHint: '(optional)',
       totalDue: 'TOTAL DUE', payTerms: 'PAYMENT TERMS', dueDate: 'Due Date',
       certTitle: 'CONTRACTOR CERTIFICATION',
       certBody: 'I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.',
@@ -3340,8 +3342,10 @@ function generateContractorInvoiceHtmlTemplate(lang) {
     zh: { subtitle: '承包商发票', amberHint: '橙色栏位 = 请您填写 &nbsp;|&nbsp; 灰色 = 系统自动带出',
       date: '日期', periodFrom: '起始 *', periodTo: '截止 *',
       fromContractor: '承包商', prefilled: '系统带出', name: '姓名',
-      billTo: '公司', serviceDesc: '服务内容', serviceHint: '公司预填，可修改',
-      compMethod: '补偿方式', quotedAmt: '报价金额', reimbursable: '可报销费用',
+      billTo: '公司', serviceDesc: '服务内容', serviceHint: '系统自动带出，不可修改',
+      compMethod: '补偿方式', compValue: '承包商报价固定项目费用',
+      quotedAmt: '报价金额', reimbursable: '可报销费用',
+      additionalNotes: '补充说明', notesHint: '（选填）',
       totalDue: '应付总额', payTerms: '付款条件', dueDate: '到期日',
       certTitle: '承包商声明',
       certBody: '本人确认服务已完成、金额准确。承包商保留自行决定服务执行方式与方法的权利。',
@@ -3352,8 +3356,10 @@ function generateContractorInvoiceHtmlTemplate(lang) {
     es: { subtitle: 'Factura de Contratista', amberHint: 'Campos ámbar = usted completa &nbsp;|&nbsp; Campos grises = prellenado',
       date: 'Fecha', periodFrom: 'Período Desde *', periodTo: 'Período Hasta *',
       fromContractor: 'Contratista', prefilled: '(prellenado)', name: 'Nombre',
-      billTo: 'Empresa', serviceDesc: 'Descripción del Servicio', serviceHint: 'prellenado por la empresa, editable',
-      compMethod: 'Método de Compensación', quotedAmt: 'Monto Cotizado', reimbursable: 'Gastos Reembolsables',
+      billTo: 'Empresa', serviceDesc: 'Descripción del Servicio', serviceHint: 'Prellenado por la empresa, no editable',
+      compMethod: 'Método de Compensación', compValue: 'Tarifa fija de proyecto propuesta por el contratista',
+      quotedAmt: 'Monto Cotizado', reimbursable: 'Gastos Reembolsables',
+      additionalNotes: 'Notas Adicionales', notesHint: '(opcional)',
       totalDue: 'TOTAL A PAGAR', payTerms: 'Términos de Pago', dueDate: 'Fecha de Vencimiento',
       certTitle: 'CERTIFICACIÓN DEL CONTRATISTA',
       certBody: 'Certifico que los servicios anteriores fueron realizados y los montos son correctos. El contratista retiene el derecho de determinar la manera y los medios de realizar los servicios.',
@@ -3402,9 +3408,11 @@ function generateContractorInvoiceHtmlTemplate(lang) {
   </tr>
 </table>
 <div style="font-weight:700;margin:4px 0 2px">${bi('SERVICE DESCRIPTION', t ? t.serviceDesc : '')} <span style="font-weight:400;color:#999;font-size:7pt">(${bi(en.serviceHint, t ? t.serviceHint : '')})</span></div>
-<text-field name="service_description" role="First Party" required="true" style="${ed}width:100%;min-height:48px" placeholder="e.g. Warehouse sorting and loading services for the period of [Start Date] to [End Date]"></text-field>
+<text-field name="service_description" role="First Party" required="true" readonly="true" style="${ro}width:100%;min-height:48px" placeholder="e.g. Warehouse sorting and loading services for the period of [Start Date] to [End Date]"></text-field>
+<div style="font-weight:700;margin:4px 0 2px">${bi(en.additionalNotes, t ? t.additionalNotes : '')} <span style="font-weight:400;color:#999;font-size:7pt">${bi(en.notesHint, t ? t.notesHint : '')}</span></div>
+<text-field name="additional_notes" role="First Party" style="${ed}width:100%;min-height:32px" placeholder="${t ? bi('Additional details or clarifications', t.additionalNotes) : 'Additional details or clarifications'}"></text-field>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin:6px 0">
-  <tr><td style="${c}width:65%"><b>${bi('Compensation Method', t ? t.compMethod : '')}</b></td><td style="${c}text-align:right"><text-field name="compensation_method" role="First Party" readonly="true" style="${ro}width:200px" placeholder="Contractor-proposed flat fee">Contractor-proposed flat fee</text-field></td></tr>
+  <tr><td style="${c}width:65%"><b>${bi('Compensation Method', t ? t.compMethod : '')}</b></td><td style="${c}text-align:right"><text-field name="compensation_method" role="First Party" readonly="true" style="${ro}width:240px" placeholder="${en.compValue}">${bi(en.compValue, t ? t.compValue : '')}</text-field></td></tr>
   <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>${bi('Quoted Amount', t ? t.quotedAmt : '')}</b></td><td style="${hi}text-align:right">$ <text-field name="quoted_amount" role="First Party" required="true" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
   <tr style="background:#fffbeb"><td style="${hi}">${bi('Reimbursable Expenses', t ? t.reimbursable : '')}</td><td style="${hi}text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
   <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">${bi('TOTAL DUE', t ? t.totalDue : '')}</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" required="true" style="${ed}width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></text-field></td></tr>
@@ -7155,8 +7163,8 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
         { role: 'First Party', name: workerName, email: workerEmail, fields: [
           { name: 'invoice_date', default_value: todayDate, readonly: true },
           { name: 'contractor_name', default_value: workerName, readonly: true },
-          { name: 'service_description', default_value: jobTitle || '', readonly: false },
-          { name: 'compensation_method', default_value: 'Contractor-proposed flat fee', readonly: true },
+          { name: 'service_description', default_value: jobTitle || '', readonly: true },
+          { name: 'compensation_method', default_value: 'Contractor-proposed flat project fee', readonly: true },
           { name: 'payment_terms', default_value: 'Net 30', readonly: true },
           { name: 'payment_due_date', default_value: dueDate, readonly: true }
         ] }
