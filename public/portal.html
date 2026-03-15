@@ -744,6 +744,70 @@ function googleTranslateElementInit() {
         <h2 data-i18n="paymentsTitle">打款记录</h2>
         <div id="paymentsTable"></div>
       </div>
+
+      <!-- Contractor Invoice / Payment Request (1099 only) -->
+      <div class="card" id="contractorInvoiceCard" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h2 style="margin:0">📄 Invoice / Payment Request</h2>
+          <button onclick="toggleInvoiceForm()" id="btnToggleInvForm" style="padding:.45rem 1rem;border:1px solid var(--blue);background:#fff;color:var(--blue);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer">+ 新建 Invoice</button>
+        </div>
+
+        <!-- Invoice submission form (hidden by default) -->
+        <div id="invoiceFormWrap" style="display:none;border:1px solid var(--gray-200);border-radius:10px;padding:1.2rem;margin-bottom:1rem;background:#fafbfc">
+          <h3 style="margin:0 0 1rem;font-size:.95rem;color:var(--gray-700)">Invoice / Payment Request Form</h3>
+          <form id="contractorInvoiceForm" onsubmit="submitContractorInvoice(event)">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Service Period Start / 服务开始日期 *</label>
+                <input type="date" name="service_period_start" required style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Service Period End / 服务结束日期 *</label>
+                <input type="date" name="service_period_end" required style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+            </div>
+            <div style="margin-top:.8rem">
+              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Description of Services / 服务描述 *</label>
+              <textarea name="service_description" required rows="3" placeholder="Describe the services performed during this period..." style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-top:.8rem">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Hours Worked / 工时</label>
+                <input type="number" name="hours_worked" step="0.5" min="0" placeholder="0" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Hourly Rate / 时薪 ($)</label>
+                <input type="number" name="hourly_rate" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Or Flat Amount / 固定金额 ($)</label>
+                <input type="number" name="flat_amount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:.8rem">
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Total Amount / 总金额 ($) *</label>
+                <input type="number" name="total_amount" step="0.01" min="0.01" required placeholder="0.00" id="invTotalAmount" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem;font-weight:700">
+              </div>
+              <div>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Payment Due Date / 付款到期日</label>
+                <input type="date" name="payment_due_date" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+              </div>
+            </div>
+            <div style="margin-top:.8rem">
+              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Notes / 备注</label>
+              <input type="text" name="notes" placeholder="Optional notes..." style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+            </div>
+            <div style="display:flex;gap:.6rem;margin-top:1rem;justify-content:flex-end">
+              <button type="button" onclick="toggleInvoiceForm()" style="padding:.5rem 1.2rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-600);border-radius:8px;font-size:.85rem;cursor:pointer">取消</button>
+              <button type="submit" style="padding:.5rem 1.5rem;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">📤 Submit Invoice</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Invoice history list -->
+        <div id="contractorInvoiceList"></div>
+      </div>
     </div>
 
     <!-- Compliance 合规文件 -->
@@ -752,6 +816,12 @@ function googleTranslateElementInit() {
       <div class="card">
         <h2>合规文件概览 / Compliance Overview</h2>
         <div class="compliance-grid" id="complianceOverview"></div>
+      </div>
+
+      <!-- Submission Summary -->
+      <div class="card" id="submissionSummaryCard" style="display:none">
+        <h2 id="sumTitleEl"></h2>
+        <div id="submissionSummaryContent"></div>
       </div>
 
       <!-- I-9 Form -->
@@ -1327,7 +1397,7 @@ const PORTAL_I18N = {
     thDate: '日期', thJob: '工作', thClockIn: '上班', thBreakStart: '休息开始', thBreakEnd: '休息结束',
     thClockOut: '下班', thHours: '工时', thRegular: '正常', thOvertime: '加班', thStatus: '状态', thLocation: '位置',
     paymentsTitle: '打款记录', paymentsEmpty: '暂无打款记录', paymentsNoEmployee: '⚠️ 账号未关联员工档案', paymentsPeriod: '📅 周期：',
-    payMethodCash: '💵 现金', payMethodCheck: '📄 支票', payMethodDeposit: '🏦 直接存款', payMethodOther: '其他',
+    payMethodCash: '💵 现金', payMethodCheck: '📄 支票', payMethodDeposit: '🏦 ACH直存', payMethodWire: '🔁 电汇', payMethodZelle: '📱 Zelle', payMethodThirdParty: '💳 第三方', payMethodOther: '其他',
     todoTitle: '📋 我的入职待办事项', todoDesc: '请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。',
     refTitle: '🎁 推荐奖励', refDesc: '把您的专属链接分享给朋友，朋友成功注册并完成规定工时后，您可获得奖励！',
     refLinkLabel: '您的专属邀请链接', refCopy: '复制', refShareLabel: '分享给朋友', refNativeShare: '📤 分享', refSMS: '💬 短信 SMS', refScanLabel: '扫码注册',
@@ -1384,6 +1454,13 @@ const PORTAL_I18N = {
     obActionGusto: '填写 Gusto 信息 →', obActionContract: '查看/签署合同 →', obActionW9: '填写 W-9 税表 →', obContractWaiting: '⏳ 合同已创建，等待公司签署后即可签署', obActionSubmit: '标记已提交',
     obSubmittedNote: '已提交，等待 HR 审核中…',
     obOptional: '(可豁免)',
+    sumTitle: '提交概览', sumWorkAuth: '工作授权', sumEmpType: '雇佣类型', sumForms: '关联表格', sumProgress: '入职进度',
+    sumAuthLabels: { us_citizen: '🇺🇸 美国公民', green_card: '🟢 绿卡 (永久居民)', ead: 'EAD 工卡', h1b: 'H-1B 签证', opt: 'OPT (F-1)', cpt: 'CPT (F-1)', work_authorized: '工作授权外国人', unknown: '待确认' },
+    sumEmpLabels: { W2: 'W-2 员工', '1099': '1099 承包商', '': '待确认' },
+    sumFormMap: { W2: 'I-9 就业资格验证', '1099': 'W-9 纳税人信息' },
+    sumCompleted: '已完成', sumOf: '/', sumRemaining: '项待处理',
+    sumI9Done: 'I-9 表格已提交', sumW9Done: 'W-9 表格已提交', sumI9Pending: 'I-9 待提交', sumW9Pending: 'W-9 待提交',
+    sumNextSteps: '下一步', sumAllDone: '所有表格已提交，等待HR审核。',
     obTaskTitles: { phone_verify:'手机号验证', email_verify:'邮箱验证', interview:'完成面试', persona_verify:'身份证件验证', background_check:'背景调查', id_verify:'身份证件上传', ssn_verify:'SSN 验证', ead_upload:'EAD 文件上传', i9:'I-9 表格', w9:'W-9 表格', contract:'合同签署', gusto:'Gusto 薪资信息', work_auth:'Work Authorization 认证' },
     obSubmitSuccess: '已提交，等待 HR 审核', obSubmitFail: '提交失败',
     ccTitlePhone: '更换手机号', ccTitleEmail: '更换邮箱',
@@ -1478,7 +1555,7 @@ const PORTAL_I18N = {
     thDate: 'Date', thJob: 'Job', thClockIn: 'In', thBreakStart: 'Break Start', thBreakEnd: 'Break End',
     thClockOut: 'Out', thHours: 'Hours', thRegular: 'Regular', thOvertime: 'OT', thStatus: 'Status', thLocation: 'Location',
     paymentsTitle: 'Payment History', paymentsEmpty: 'No payment records', paymentsNoEmployee: '⚠️ Account not linked to employee record', paymentsPeriod: '📅 Period: ',
-    payMethodCash: '💵 Cash', payMethodCheck: '📄 Check', payMethodDeposit: '🏦 Direct Deposit', payMethodOther: 'Other',
+    payMethodCash: '💵 Cash', payMethodCheck: '📄 Check', payMethodDeposit: '🏦 ACH Direct Deposit', payMethodWire: '🔁 Wire Transfer', payMethodZelle: '📱 Zelle', payMethodThirdParty: '💳 Third-Party', payMethodOther: 'Other',
     todoTitle: '📋 My Onboarding To-Do', todoDesc: 'Complete each step in order. After each step, HR will review and unlock the next.',
     refTitle: '🎁 Referral Bonus', refDesc: 'Share your unique link with friends and earn a bonus for each one who registers and works the required hours!',
     refLinkLabel: 'Your referral link', refCopy: 'Copy', refShareLabel: 'Share with friends', refNativeShare: '📤 Share', refSMS: '💬 SMS', refScanLabel: 'Scan to Register',
@@ -1535,6 +1612,13 @@ const PORTAL_I18N = {
     obActionGusto: 'Complete Gusto Setup →', obActionContract: 'View/Sign Contract →', obActionW9: 'Complete W-9 Form →', obContractWaiting: '⏳ Contract created, waiting for company to sign first', obActionSubmit: 'Mark as Submitted',
     obSubmittedNote: 'Submitted — awaiting HR review…',
     obOptional: '(Optional)',
+    sumTitle: 'Submission Summary', sumWorkAuth: 'Work Authorization', sumEmpType: 'Employment Type', sumForms: 'Associated Forms', sumProgress: 'Onboarding Progress',
+    sumAuthLabels: { us_citizen: '🇺🇸 U.S. Citizen', green_card: '🟢 Green Card (LPR)', ead: 'EAD Card', h1b: 'H-1B Visa', opt: 'OPT (F-1)', cpt: 'CPT (F-1)', work_authorized: 'Alien Authorized to Work', unknown: 'Pending' },
+    sumEmpLabels: { W2: 'W-2 Employee', '1099': '1099 Contractor', '': 'Pending' },
+    sumFormMap: { W2: 'I-9 Employment Eligibility', '1099': 'W-9 Taxpayer Information' },
+    sumCompleted: 'completed', sumOf: '/', sumRemaining: 'remaining',
+    sumI9Done: 'I-9 Form Submitted', sumW9Done: 'W-9 Form Submitted', sumI9Pending: 'I-9 Pending', sumW9Pending: 'W-9 Pending',
+    sumNextSteps: 'Next Steps', sumAllDone: 'All forms submitted. Awaiting HR review.',
     obTaskTitles: { phone_verify:'Phone Verification', email_verify:'Email Verification', interview:'Complete Interview', persona_verify:'Identity Verification', background_check:'Background Check', id_verify:'ID Document Upload', ssn_verify:'SSN Verification', ead_upload:'EAD Upload', i9:'I-9 Form', w9:'W-9 Form', contract:'Sign Contract', gusto:'Gusto Payroll Setup', work_auth:'Work Authorization' },
     obSubmitSuccess: 'Submitted — awaiting HR review', obSubmitFail: 'Submission failed',
     ccTitlePhone: 'Change Phone', ccTitleEmail: 'Change Email',
@@ -1629,7 +1713,7 @@ const PORTAL_I18N = {
     thDate: 'Fecha', thJob: 'Trabajo', thClockIn: 'Entrada', thBreakStart: 'Inicio Desc.', thBreakEnd: 'Fin Desc.',
     thClockOut: 'Salida', thHours: 'Horas', thRegular: 'Normal', thOvertime: 'Extra', thStatus: 'Estado', thLocation: 'Ubicación',
     paymentsTitle: 'Historial de Pagos', paymentsEmpty: 'Sin registros de pago', paymentsNoEmployee: '⚠️ Cuenta sin expediente de empleado', paymentsPeriod: '📅 Período: ',
-    payMethodCash: '💵 Efectivo', payMethodCheck: '📄 Cheque', payMethodDeposit: '🏦 Depósito Directo', payMethodOther: 'Otro',
+    payMethodCash: '💵 Efectivo', payMethodCheck: '📄 Cheque', payMethodDeposit: '🏦 Depósito Directo ACH', payMethodWire: '🔁 Transferencia Wire', payMethodZelle: '📱 Zelle', payMethodThirdParty: '💳 Tercero', payMethodOther: 'Otro',
     todoTitle: '📋 Mis Tareas de Incorporación', todoDesc: 'Complete cada paso en orden. Tras cada paso, RR.HH. revisará y desbloqueará el siguiente.',
     refTitle: '🎁 Bono por Referidos', refDesc: '¡Comparte tu enlace único con amigos y gana un bono por cada uno que se registre y cumpla las horas requeridas!',
     refLinkLabel: 'Tu enlace de referido', refCopy: 'Copiar', refShareLabel: 'Compartir con amigos', refNativeShare: '📤 Compartir', refSMS: '💬 SMS', refScanLabel: 'Escanear para Registrarse',
@@ -1686,6 +1770,13 @@ const PORTAL_I18N = {
     obActionGusto: 'Completar Gusto →', obActionContract: 'Ver/Firmar Contrato →', obActionW9: 'Completar Formulario W-9 →', obContractWaiting: '⏳ Contrato creado, esperando la firma de la empresa', obActionSubmit: 'Marcar como Enviado',
     obSubmittedNote: 'Enviado — esperando revisión de RR.HH.…',
     obOptional: '(Opcional)',
+    sumTitle: 'Resumen de Envío', sumWorkAuth: 'Autorización de Trabajo', sumEmpType: 'Tipo de Empleo', sumForms: 'Formularios Asociados', sumProgress: 'Progreso de Incorporación',
+    sumAuthLabels: { us_citizen: '🇺🇸 Ciudadano de EE.UU.', green_card: '🟢 Tarjeta Verde (Residente)', ead: 'Tarjeta EAD', h1b: 'Visa H-1B', opt: 'OPT (F-1)', cpt: 'CPT (F-1)', work_authorized: 'Extranjero Autorizado', unknown: 'Pendiente' },
+    sumEmpLabels: { W2: 'Empleado W-2', '1099': 'Contratista 1099', '': 'Pendiente' },
+    sumFormMap: { W2: 'I-9 Elegibilidad de Empleo', '1099': 'W-9 Información Fiscal' },
+    sumCompleted: 'completados', sumOf: '/', sumRemaining: 'pendientes',
+    sumI9Done: 'Formulario I-9 Enviado', sumW9Done: 'Formulario W-9 Enviado', sumI9Pending: 'I-9 Pendiente', sumW9Pending: 'W-9 Pendiente',
+    sumNextSteps: 'Próximos Pasos', sumAllDone: 'Todos los formularios enviados. Esperando revisión de RR.HH.',
     obTaskTitles: { phone_verify:'Verificación de Teléfono', email_verify:'Verificación de Correo', interview:'Completar Entrevista', persona_verify:'Verificación de Identidad', background_check:'Verificación de Antecedentes', id_verify:'Carga de Documento ID', ssn_verify:'Verificación de SSN', ead_upload:'Carga de EAD', i9:'Formulario I-9', w9:'Formulario W-9', contract:'Firmar Contrato', gusto:'Configuración de Nómina Gusto', work_auth:'Autorización de Trabajo' },
     obSubmitSuccess: 'Enviado — esperando revisión de RR.HH.', obSubmitFail: 'Error al enviar',
     ccTitlePhone: 'Cambiar Teléfono', ccTitleEmail: 'Cambiar Correo',
@@ -1717,6 +1808,7 @@ const PORTAL_I18N = {
 };
 let _portalLang = localStorage.getItem('pa_portal_lang') || 'zh';
 let _activeTab = 'jobs';
+let _workerEmploymentType = '';
 function _t(key) { return (PORTAL_I18N[_portalLang] || PORTAL_I18N.zh)[key] || key; }
 const localTz = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -1779,7 +1871,7 @@ function setPortalLang(lang) {
   // Save language preference to server
   fetch('/api/worker/profile/language', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + WORKER_TOKEN }, body: JSON.stringify({ lang }) }).catch(() => {});
   if (_activeTab === 'profile') loadProfile();
-  else if (_activeTab === 'payments') loadPayments();
+  else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
   else if (_activeTab === 'todos') loadOnboarding();
   else if (_activeTab === 'referral') loadReferrals();
   else if (_activeTab === 'interview') loadInterview();
@@ -2026,6 +2118,7 @@ async function showApp() {
   const [me, interview, personaStatus] = await Promise.all([wApi('/me'), wApi('/interview'), wApi('/persona/status')]);
   if (!me) return;
   _workerInfo = me;
+  _workerEmploymentType = me.account?.employment_type || '';
   const firstName = me.employee
     ? me.employee.first_name
     : (me.account.first_name || (me.account.name || '').split(' ')[0] || '');
@@ -2080,7 +2173,7 @@ async function showApp() {
     _lastAutoRefresh = now;
     if (_activeTab === 'applications') loadApplications();
     else if (_activeTab === 'timeclock') loadTimeclock();
-    else if (_activeTab === 'payments') loadPayments();
+    else if (_activeTab === 'payments') loadPayments(); loadContractorInvoices();
     else if (_activeTab === 'compliance') loadCompliance();
     else if (_activeTab === 'profile') loadProfile();
     else if (_activeTab === 'interview') loadInterview();
@@ -2113,7 +2206,7 @@ function showTab(tab) {
   closeSidebar();
   if (tab === 'applications') loadApplications();
   else if (tab === 'timeclock') { loadTimeclock(); initGPS(); }
-  else if (tab === 'payments') loadPayments();
+  else if (tab === 'payments') loadPayments(); loadContractorInvoices();
   else if (tab === 'compliance') loadCompliance();
   else if (tab === 'profile') loadProfile();
   else if (tab === 'interview') loadInterview();
@@ -3766,7 +3859,7 @@ async function loadPayments() {
     tbody.innerHTML = `<p class="empty">${_t('paymentsEmpty')}</p>`;
     return;
   }
-  const PAY_METHOD = { cash: _t('payMethodCash'), check: _t('payMethodCheck'), direct_deposit: _t('payMethodDeposit'), zelle:'📱 Zelle', other: _t('payMethodOther') };
+  const PAY_METHOD = { cash: _t('payMethodCash'), check: _t('payMethodCheck'), direct_deposit: _t('payMethodDeposit'), wire: _t('payMethodWire'), zelle: _t('payMethodZelle'), third_party: _t('payMethodThirdParty'), other: _t('payMethodOther') };
   tbody.innerHTML = payments.map(p => {
     const period = p.period_start && p.period_end ? `${esc(p.period_start)} ~ ${esc(p.period_end)}`
                  : p.period_start ? esc(p.period_start) : '—';
@@ -3785,6 +3878,82 @@ async function loadPayments() {
       ${p.notes ? `<div style="font-size:.8rem;color:var(--gray-400);margin-top:.4rem;border-top:1px solid var(--gray-100);padding-top:.4rem">${esc(p.notes)}</div>` : ''}
     </div>`;
   }).join('');
+}
+
+// ─── Contractor Invoice / Payment Request ───
+function toggleInvoiceForm() {
+  const wrap = document.getElementById('invoiceFormWrap');
+  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+}
+
+// Auto-calculate total from hours * rate
+document.addEventListener('input', e => {
+  if (!e.target.closest('#contractorInvoiceForm')) return;
+  const form = document.getElementById('contractorInvoiceForm');
+  if (!form) return;
+  const h = parseFloat(form.hours_worked?.value) || 0;
+  const r = parseFloat(form.hourly_rate?.value) || 0;
+  const f = parseFloat(form.flat_amount?.value) || 0;
+  const calc = h * r + f;
+  if (calc > 0) document.getElementById('invTotalAmount').value = calc.toFixed(2);
+});
+
+async function submitContractorInvoice(e) {
+  e.preventDefault();
+  const form = e.target;
+  const body = {};
+  new FormData(form).forEach((v, k) => { body[k] = ['hours_worked','hourly_rate','flat_amount','total_amount'].includes(k) ? parseFloat(v) || 0 : v; });
+  if (!body.total_amount) { alert('请填写总金额 / Total amount required'); return; }
+  const r = await wApi('/contractor-invoices', { method: 'POST', body: JSON.stringify(body) });
+  if (r && r.success) {
+    form.reset();
+    toggleInvoiceForm();
+    showToast('✅ Invoice submitted: ' + r.invoice_number);
+    loadContractorInvoices();
+  } else {
+    alert(r?.error || '提交失败');
+  }
+}
+
+async function loadContractorInvoices() {
+  const card = document.getElementById('contractorInvoiceCard');
+  if (!card) return;
+  // Only show for 1099 contractors
+  const is1099 = _workerEmploymentType === '1099';
+  card.style.display = is1099 ? 'block' : 'none';
+  if (!is1099) return;
+
+  const invoices = await wApi('/contractor-invoices');
+  const el = document.getElementById('contractorInvoiceList');
+  if (!invoices || !Array.isArray(invoices) || !invoices.length) {
+    el.innerHTML = '<p style="color:var(--gray-400);font-size:.85rem;text-align:center;padding:.5rem 0">暂无 Invoice 记录 / No invoices yet</p>';
+    return;
+  }
+  const STATUS_STYLE = {
+    submitted: 'background:#fffbeb;color:#92400e;border:1px solid #fde68a',
+    approved: 'background:#dcfce7;color:#15803d;border:1px solid #86efac',
+    rejected: 'background:#fee2e2;color:#dc2626;border:1px solid #fca5a5'
+  };
+  const STATUS_LABEL = { submitted: '⏳ Pending Review', approved: '✅ Approved', rejected: '❌ Rejected' };
+  el.innerHTML = invoices.map(inv => `
+    <div style="border:1px solid var(--gray-200);border-radius:10px;padding:.85rem 1rem;margin-bottom:.65rem;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+        <span style="font-family:monospace;font-size:.78rem;color:var(--sky);font-weight:600">${esc(inv.invoice_number)}</span>
+        <span style="font-size:1.1rem;font-weight:700;color:var(--green)">$${(+inv.total_amount).toFixed(2)}</span>
+      </div>
+      <div style="font-size:.85rem;font-weight:600;margin-bottom:.3rem">${esc(inv.service_description)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:.35rem .9rem;font-size:.78rem;color:var(--gray-500)">
+        <span>📅 ${esc(inv.service_period_start||'')} ~ ${esc(inv.service_period_end||'')}</span>
+        ${inv.hours_worked ? `<span>⏱ ${inv.hours_worked}h × $${(+inv.hourly_rate).toFixed(2)}</span>` : ''}
+        ${inv.payment_due_date ? `<span>💳 Due: ${esc(inv.payment_due_date)}</span>` : ''}
+      </div>
+      <div style="margin-top:.5rem;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:.75rem;padding:2px 8px;border-radius:6px;font-weight:600;${STATUS_STYLE[inv.status]||''}">${STATUS_LABEL[inv.status]||inv.status}</span>
+        <span style="font-size:.72rem;color:var(--gray-400)">${esc(inv.invoice_date)}</span>
+      </div>
+      ${inv.status === 'rejected' && inv.reject_reason ? `<div style="font-size:.78rem;color:#dc2626;margin-top:.4rem;padding:.4rem .6rem;background:#fef2f2;border-radius:6px">❌ ${esc(inv.reject_reason)}</div>` : ''}
+    </div>
+  `).join('');
 }
 
 const WORK_STATUS_LABELS = { citizen:'🇺🇸 美国公民', green_card:'🟢 绿卡', ead:'📄 EAD工卡', h1b:'📄 H-1B', opt:'🎓 OPT/CPT', other:'其他' };
@@ -4305,6 +4474,7 @@ const STATUS_LABELS = { pending: '审核中', approved: '已通过', rejected: '
 const STATUS_CLASS = { pending: 'ci-pending', approved: 'ci-approved', rejected: 'ci-rejected', not_submitted: 'ci-not-submitted', ordered: 'ci-pending', completed: 'ci-approved', clear: 'ci-approved', flagged: 'ci-rejected' };
 
 async function loadCompliance() {
+  loadSubmissionSummary();
   const grid = document.getElementById('complianceOverview');
   // Check if persona verification has been initiated
   let pStatus = await wApi('/persona/status');
@@ -4912,7 +5082,7 @@ async function submitI9(e) {
       body: fd
     });
     const data = await r.json();
-    if (data.success) { showToast('✅ I-9 已提交，等待审核'); form.reset(); loadCompliance(); }
+    if (data.success) { showToast('✅ I-9 已提交，等待审核'); form.reset(); loadCompliance(); loadSubmissionSummary(); }
     else customAlert(data.error || '提交失败', '提交失败', '❌');
   } catch { customAlert('网络错误', '错误', '❌'); }
 }
@@ -4980,6 +5150,90 @@ async function submitW9(e) {
     else customAlert(data.error || '提交失败', '提交失败', '❌');
   } catch { customAlert('网络错误', '错误', '❌'); }
   finally { if (btn) { btn.disabled = false; btn.textContent = '提交 W-9 / Submit'; } }
+}
+
+// ─── Submission Summary ───
+async function loadSubmissionSummary() {
+  const card = document.getElementById('submissionSummaryCard');
+  const content = document.getElementById('submissionSummaryContent');
+  const titleEl = document.getElementById('sumTitleEl');
+  if (!card || !content) return;
+  try {
+    const data = await wApi('/submission-summary');
+    if (!data || data.error) { card.style.display = 'none'; return; }
+
+    titleEl.textContent = _t('sumTitle');
+    const authLabels = _t('sumAuthLabels') || {};
+    const empLabels = _t('sumEmpLabels') || {};
+    const formMap = _t('sumFormMap') || {};
+
+    const authCat = data.work_auth_category || 'unknown';
+    const empType = data.employment_type || '';
+    const authLabel = authLabels[authCat] || authLabels.unknown || authCat;
+    const empLabel = empLabels[empType] || empLabels[''] || empType;
+
+    // Determine associated form based on employment type
+    const assocForm = formMap[empType] || '';
+
+    // Form status badges
+    const fs = data.form_statuses || {};
+    const i9s = fs.i9?.status || 'pending';
+    const w9s = fs.w9?.status || 'pending';
+    const i9Done = ['completed','submitted','waived'].includes(i9s);
+    const w9Done = ['completed','submitted','waived'].includes(w9s);
+
+    // Stats
+    const stats = data.stats || {};
+    const pct = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
+
+    // Next steps
+    let nextStepsHtml = '';
+    const pendingForms = [];
+    if (!i9Done && (empType === 'W2' || !empType)) pendingForms.push(_t('sumI9Pending'));
+    if (!w9Done && (empType === '1099' || !empType)) pendingForms.push(_t('sumW9Pending'));
+    if (pendingForms.length === 0) {
+      nextStepsHtml = `<div style="padding:.6rem .8rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.82rem;color:#065f46">${_t('sumAllDone')}</div>`;
+    } else {
+      nextStepsHtml = `<div style="font-size:.82rem;color:var(--gray-500)">${_t('sumNextSteps')}：${pendingForms.join('、')}</div>`;
+    }
+
+    content.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+        <!-- Work Auth Status -->
+        <div style="border:1.5px solid #e9d5ff;border-radius:10px;padding:1rem;background:#faf5ff">
+          <div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem">${esc(_t('sumWorkAuth'))}</div>
+          <div style="font-size:1.05rem;font-weight:700;color:var(--blue)">${esc(authLabel)}</div>
+          ${data.tax_residency?.work_permit_category ? `<div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem">${esc(data.tax_residency.work_permit_category)}</div>` : ''}
+        </div>
+        <!-- Employment Type -->
+        <div style="border:1.5px solid #bae6fd;border-radius:10px;padding:1rem;background:#f0f9ff">
+          <div style="font-size:.72rem;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.4rem">${esc(_t('sumEmpType'))}</div>
+          <div style="font-size:1.05rem;font-weight:700;color:var(--blue)">${esc(empLabel)}</div>
+          ${assocForm ? `<div style="font-size:.78rem;color:var(--gray-500);margin-top:.2rem">${esc(assocForm)}</div>` : ''}
+        </div>
+      </div>
+      <!-- Form Status Badges -->
+      <div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem">
+        ${empType === 'W2' || !empType ? `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .75rem;border-radius:20px;font-size:.8rem;font-weight:600;${i9Done ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a'}">${i9Done ? '✅' : '⏳'} ${i9Done ? _t('sumI9Done') : _t('sumI9Pending')}</span>` : ''}
+        ${empType === '1099' || !empType ? `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.35rem .75rem;border-radius:20px;font-size:.8rem;font-weight:600;${w9Done ? 'background:#d1fae5;color:#065f46;border:1px solid #6ee7b7' : 'background:#fef3c7;color:#92400e;border:1px solid #fde68a'}">${w9Done ? '✅' : '⏳'} ${w9Done ? _t('sumW9Done') : _t('sumW9Pending')}</span>` : ''}
+      </div>
+      <!-- Progress Bar -->
+      <div style="margin-bottom:.75rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.35rem">
+          <span style="font-size:.78rem;font-weight:600;color:var(--blue)">${esc(_t('sumProgress'))}</span>
+          <span style="font-size:.78rem;color:var(--gray-500)">${stats.completed}${_t('sumOf')}${stats.total} ${_t('sumCompleted')}${stats.pending > 0 ? ` · ${stats.pending} ${_t('sumRemaining')}` : ''}</span>
+        </div>
+        <div style="background:var(--gray-100);border-radius:6px;height:8px;overflow:hidden">
+          <div style="background:linear-gradient(90deg,#10b981,#34d399);height:100%;border-radius:6px;width:${pct}%;transition:width .5s ease"></div>
+        </div>
+      </div>
+      ${nextStepsHtml}
+    `;
+    card.style.display = '';
+  } catch (e) {
+    console.error('[loadSubmissionSummary]', e);
+    card.style.display = 'none';
+  }
 }
 
 // ─── Onboarding / 待办事项 ───

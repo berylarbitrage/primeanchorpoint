@@ -791,6 +791,35 @@ db.exec(`CREATE TABLE IF NOT EXISTS inquiry_position_ratings (
   UNIQUE(inquiry_id, position_key)
 )`);
 
+// ─── Fix existing invoices with XX state placeholder ───
+try {
+  const xxInvoices = db.prepare("SELECT id, invoice_number, company_name FROM invoices WHERE invoice_number LIKE 'INV-XX-%'").all();
+  for (const inv of xxInvoices) {
+    const partner = db.prepare("SELECT addresses, address FROM partners WHERE name = ?").get(inv.company_name);
+    if (!partner) continue;
+    let state = null;
+    // Try structured addresses
+    try {
+      const addrs = JSON.parse(partner.addresses || '[]');
+      if (addrs.length && addrs[0].state) state = addrs[0].state.toUpperCase().slice(0, 2);
+      if (!state && addrs.length && addrs[0].address) {
+        const m = addrs[0].address.match(/,\s*([A-Z]{2})\s+\d{5}/);
+        if (m) state = m[1];
+      }
+    } catch {}
+    // Fallback: parse from plain address field
+    if (!state && partner.address) {
+      const m = partner.address.match(/,\s*([A-Z]{2})\s+\d{5}/);
+      if (m) state = m[1];
+    }
+    if (state && state !== 'XX') {
+      const newNum = inv.invoice_number.replace('INV-XX-', `INV-${state}-`);
+      db.prepare("UPDATE invoices SET invoice_number = ? WHERE id = ?").run(newNum, inv.id);
+      console.log(`[migration] Fixed invoice ${inv.invoice_number} → ${newNum}`);
+    }
+  }
+} catch(e) { console.error('[migration] Fix XX invoices error:', e.message); }
+
 // ─── New tables for worker / customer / job-application portals ───
 db.exec(`
   CREATE TABLE IF NOT EXISTS worker_accounts (
@@ -1294,6 +1323,7 @@ if (!db.prepare('SELECT id FROM display_suffix_options LIMIT 1').get()) {
 
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN onboarded INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_accounts ADD COLUMN employment_type TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE worker_accounts ADD COLUMN entity_type TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN visible_to_worker INTEGER DEFAULT 0"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN assigned_slot_ids TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_onboarding ADD COLUMN ds_envelope_id TEXT DEFAULT ''"); } catch {}
@@ -1317,6 +1347,133 @@ db.exec(`CREATE TABLE IF NOT EXISTS worker_contract_versions (
   voided_at DATETIME,
   void_reason TEXT DEFAULT ''
 )`);
+
+// ─── Tax Residency Questionnaire (1099 Resident Test) ───
+db.exec(`CREATE TABLE IF NOT EXISTS tax_residency_questionnaire (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  -- Section A: Basic identity
+  applicant_type TEXT DEFAULT 'individual',
+  is_us_person TEXT DEFAULT '',
+  country_tax_residence TEXT DEFAULT '',
+  country_citizenship TEXT DEFAULT '',
+  entity_country_org TEXT DEFAULT '',
+  -- Section B: Individual resident test
+  is_us_citizen TEXT DEFAULT '',
+  has_green_card TEXT DEFAULT '',
+  first_entry_date TEXT DEFAULT '',
+  last_entry_date TEXT DEFAULT '',
+  entry_exit_records TEXT DEFAULT '',
+  days_current_year INTEGER DEFAULT 0,
+  days_last_year INTEGER DEFAULT 0,
+  days_two_years_ago INTEGER DEFAULT 0,
+  has_exempt_days TEXT DEFAULT '',
+  exempt_visa_status TEXT DEFAULT '',
+  exempt_date_range TEXT DEFAULT '',
+  exempt_days_cy INTEGER DEFAULT 0,
+  exempt_days_ly INTEGER DEFAULT 0,
+  exempt_days_2y INTEGER DEFAULT 0,
+  -- Section C: Service location & income source
+  services_location TEXT DEFAULT '',
+  primary_work_locations TEXT DEFAULT '',
+  expected_service_dates TEXT DEFAULT '',
+  will_travel_to_us TEXT DEFAULT '',
+  -- Section D: Treaty / special claims
+  claim_treaty_benefit TEXT DEFAULT '',
+  treaty_country TEXT DEFAULT '',
+  treaty_income_type TEXT DEFAULT '',
+  -- Section E: Supporting documents (flags, not files)
+  work_permit_category TEXT DEFAULT '',
+  immigration_status TEXT DEFAULT '',
+  i94_admission_date TEXT DEFAULT '',
+  status_expiration TEXT DEFAULT '',
+  docs_requested INTEGER DEFAULT 0,
+  -- Computed results
+  spt_weighted_days REAL DEFAULT 0,
+  spt_result TEXT DEFAULT '',
+  tax_status TEXT DEFAULT '',
+  recommended_form TEXT DEFAULT '',
+  needs_manual_review INTEGER DEFAULT 0,
+  admin_override TEXT DEFAULT '',
+  admin_notes TEXT DEFAULT '',
+  completed_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(worker_account_id)
+)`);
+
+// ─── Work Permit Verification ───
+db.exec(`CREATE TABLE IF NOT EXISTS work_permit_verification (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  doc_type TEXT DEFAULT '',
+  doc_number TEXT DEFAULT '',
+  issue_date TEXT DEFAULT '',
+  expiry_date TEXT DEFAULT '',
+  category TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  verified_at DATETIME,
+  verified_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(worker_account_id)
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS work_permit_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  doc_label TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS worker_tax_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  doc_label TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// Add per-doc metadata columns to work_permit_docs
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN doc_number TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN issue_date TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN expiry_date TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN notes TEXT DEFAULT ''"); } catch {}
+
+// ─── Tax Filing Documents (year-end 1099-NEC / W-2 / 1042-S etc.) ───
+db.exec(`CREATE TABLE IF NOT EXISTS tax_filing_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  tax_year INTEGER NOT NULL DEFAULT 2025,
+  form_type TEXT NOT NULL,
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_tax_filing_docs_worker ON tax_filing_docs(worker_account_id, tax_year)"); } catch {}
+
+// Add structured address columns to tax_residency_questionnaire
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_street2 TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_city TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_state TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN addr_zip TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_cy INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_ly INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_2y INTEGER DEFAULT 0"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN work_permit_category TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN last_entry_date TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN entry_exit_records TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_legal_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_ssn_masked TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_ssn_encrypted TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_ssn_iv TEXT DEFAULT ''"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -1425,6 +1582,29 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
   subtotal REAL DEFAULT 0,
   items TEXT DEFAULT '[]',
   profile TEXT DEFAULT '{}',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
+db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL,
+  invoice_number TEXT NOT NULL,
+  invoice_date TEXT NOT NULL,
+  service_description TEXT NOT NULL,
+  service_period_start TEXT DEFAULT '',
+  service_period_end TEXT DEFAULT '',
+  hours_worked REAL DEFAULT 0,
+  hourly_rate REAL DEFAULT 0,
+  flat_amount REAL DEFAULT 0,
+  total_amount REAL NOT NULL,
+  payment_method TEXT DEFAULT '',
+  payment_due_date TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  status TEXT DEFAULT 'submitted',
+  reviewed_by TEXT DEFAULT '',
+  reviewed_at TEXT DEFAULT '',
+  reject_reason TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
@@ -1722,7 +1902,15 @@ schedule24hReminders();
 // ─── Middleware ───
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+// Redirect *.html URLs to clean URLs (e.g. /admin.html → /admin)
+app.use((req, res, next) => {
+  if (req.path.endsWith('.html') && req.method === 'GET') {
+    return res.redirect(301, req.path.slice(0, -5));
+  }
+  next();
+});
 app.use(express.static('public', {
+  extensions: ['html'],
   setHeaders(res, filePath) {
     if (filePath.endsWith('.html')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -2576,15 +2764,25 @@ async function dsealDownloadDocument(submissionId, { retries = 3, delayMs = 2000
     if (r.status !== 200) throw new Error(`DocuSeal 获取提交失败 ${r.status}`);
     const sub = r.data;
 
-    // Prefer documents from completed submitters (they have actual signatures rendered)
-    // Pick the LAST completed submitter's document — it has the most signatures applied
+    // 1) Prefer submission-level combined documents (has all signatures)
     let docUrl = null;
-    for (const s of (sub.submitters || [])) {
-      if (s.status === 'completed' && s.completed_at && s.documents && s.documents.length) {
-        docUrl = s.documents[s.documents.length - 1].url;
+    if (sub.documents && sub.documents.length) {
+      docUrl = sub.documents[sub.documents.length - 1].url;
+      console.log(`[DocuSeal] Using submission-level document for ${submissionId}`);
+    }
+    // 2) Fallback: pick the submitter who signed LAST (most recent completed_at) — their doc has the most signatures
+    if (!docUrl) {
+      let latestTime = '';
+      for (const s of (sub.submitters || [])) {
+        if (s.status === 'completed' && s.completed_at && s.documents && s.documents.length) {
+          if (s.completed_at > latestTime) {
+            latestTime = s.completed_at;
+            docUrl = s.documents[s.documents.length - 1].url;
+          }
+        }
       }
     }
-    // Fallback: any submitter with documents
+    // 3) Fallback: any submitter with documents
     if (!docUrl) {
       for (const s of (sub.submitters || [])) {
         if (s.documents && s.documents.length) { docUrl = s.documents[0].url; break; }
@@ -2592,14 +2790,14 @@ async function dsealDownloadDocument(submissionId, { retries = 3, delayMs = 2000
     }
 
     if (docUrl) {
-      console.log(`[DocuSeal] Download doc attempt ${attempt}: submissionId=${submissionId}, docUrl=${docUrl.substring(0, 100)}`);
+      console.log(`[DocuSeal] Download doc attempt ${attempt}: submissionId=${submissionId}, docUrl=${docUrl.substring(0, 100)}, submitters: ${JSON.stringify((sub.submitters || []).map(s => ({ role: s.role, status: s.status, completed_at: s.completed_at, docs: (s.documents || []).length })))}, submission_docs: ${(sub.documents || []).length}`);
       const buf = await _dsealFetchUrl(docUrl);
       // Sanity check: PDF should start with %PDF
       if (buf.length > 4 && buf.slice(0, 5).toString() === '%PDF-') return buf;
       // If not a valid PDF, it might be a placeholder; retry after delay
       console.warn(`[DocuSeal] Downloaded content is not a valid PDF (${buf.length} bytes, starts with "${buf.slice(0, 20).toString()}"), attempt ${attempt}/${retries}`);
     } else {
-      console.warn(`[DocuSeal] No documents found for submission ${submissionId}, attempt ${attempt}/${retries}, submitters: ${JSON.stringify((sub.submitters || []).map(s => ({ id: s.id, role: s.role, status: s.status, docs: (s.documents || []).length })))}`);
+      console.warn(`[DocuSeal] No documents found for submission ${submissionId}, attempt ${attempt}/${retries}, submitters: ${JSON.stringify((sub.submitters || []).map(s => ({ id: s.id, role: s.role, status: s.status, completed_at: s.completed_at, docs: (s.documents || []).length })))}, submission_docs: ${(sub.documents || []).length}`);
     }
 
     if (attempt < retries) await new Promise(ok => setTimeout(ok, delayMs * attempt));
@@ -4109,10 +4307,12 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN expected_salary TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_details TEXT DEFAULT '{}'"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN has_ssn INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent_at TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN identity_reverify_date TEXT DEFAULT ''"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -4129,6 +4329,11 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   `);
   const getContractInfo = db.prepare("SELECT ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'");
   const getContractVersionCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_contract_versions WHERE worker_account_id=?");
+  const getTaxResidency = db.prepare("SELECT tax_status, recommended_form, country_citizenship, country_tax_residence, treaty_country, claim_treaty_benefit, services_location FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY id DESC LIMIT 1");
+  const getTaxFilingDocCount = db.prepare("SELECT COUNT(*) as cnt FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? AND file_path!=''");
+  const getPaymentTotal = db.prepare("SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt FROM worker_payments WHERE employee_id=?");
+  const getContractorInvCounts = db.prepare("SELECT COUNT(*) as total, SUM(CASE WHEN status='submitted' THEN 1 ELSE 0 END) as pending FROM contractor_invoices WHERE worker_account_id=?");
+  const currentTaxYear = new Date().getFullYear() - 1; // filing for prior year
 
   const enriched = workers.map(w => {
     const interview = getInterview.get(w.id);
@@ -4138,6 +4343,10 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const qualCount = getQualifiedReferrals.get(w.id, refConfig.min_hours_to_qualify);
     const contractInfo = getContractInfo.get(w.id);
     const contractVerCount = getContractVersionCount.get(w.id);
+    const taxRes = getTaxResidency.get(w.id);
+    const taxFilingDocCount = getTaxFilingDocCount.get(w.id, currentTaxYear);
+    const payTotals = w.employee_id ? getPaymentTotal.get(w.employee_id) : null;
+    const cinvCounts = getContractorInvCounts.get(w.id);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -4151,7 +4360,18 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       qualified_referrals: qualCount?.cnt || 0,
       referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral,
       contract_ds_status: contractInfo?.ds_status || '',
-      contract_version_count: contractVerCount?.cnt || 0
+      contract_version_count: contractVerCount?.cnt || 0,
+      cinv_total: cinvCounts?.total || 0,
+      cinv_pending: cinvCounts?.pending || 0,
+      recommended_form: taxRes?.recommended_form || '',
+      tax_status: taxRes?.tax_status || '',
+      tax_treaty_country: taxRes?.treaty_country || '',
+      tax_claim_treaty: taxRes?.claim_treaty_benefit || '',
+      tax_services_location: taxRes?.services_location || '',
+      tax_filing_doc_count: taxFilingDocCount?.cnt || 0,
+      current_tax_year: currentTaxYear,
+      total_paid: payTotals?.total || 0,
+      payment_count: payTotals?.cnt || 0
     };
   });
 
@@ -4167,11 +4387,13 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
   const hash = hashPassword(password, salt);
   const r = db.prepare('INSERT INTO worker_accounts (username, password_hash, salt, employee_id) VALUES (?,?,?,?)')
     .run(username, hash, salt, employee_id || null);
+  const changedBy = req.session && req.session.username ? req.session.username : 'admin';
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)').run(r.lastInsertRowid, changedBy, 'account_created', '', username, '管理员创建账户');
   res.json({ success: true, id: r.lastInsertRowid });
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status, has_ssn, position_interests, employment_type } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -4191,6 +4413,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   const newExpectedSalary = expected_salary !== undefined ? expected_salary : w.expected_salary;
   const newOurRating = our_salary_rating !== undefined ? our_salary_rating : w.our_salary_rating;
   const newPaymentMethod = payment_method !== undefined ? payment_method : w.payment_method;
+  const newPaymentDetails = payment_details !== undefined ? JSON.stringify(payment_details) : (w.payment_details || '{}');
   const newHasSsn = has_ssn !== undefined ? (has_ssn ? 1 : 0) : (w.has_ssn || 0);
   const newPositionInterests = position_interests !== undefined ? JSON.stringify(position_interests) : (w.position_interests || '[]');
   logChange('active', w.active, newActive);
@@ -4199,7 +4422,9 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   logChange('expected_salary', w.expected_salary, newExpectedSalary);
   logChange('our_salary_rating', w.our_salary_rating, newOurRating);
   logChange('payment_method', w.payment_method, newPaymentMethod);
+  if (payment_details !== undefined) logChange('payment_details', w.payment_details||'{}', newPaymentDetails);
   logChange('has_ssn', w.has_ssn||0, newHasSsn);
+  if (entity_type !== undefined) logChange('entity_type', w.entity_type, entity_type);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
   // When reactivating a deactivated account (active 0→1), clear old interview
   // and onboarding records so the worker starts fresh
@@ -4214,21 +4439,35 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   }
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
-    payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
+    payment_method=COALESCE(?,payment_method), payment_details=COALESCE(?,payment_details),
+    assigned_tasks=COALESCE(?,assigned_tasks),
     work_status=COALESCE(?,work_status), has_ssn=?, position_interests=?,
-    employment_type=COALESCE(?,employment_type) WHERE id=?`)
+    employment_type=COALESCE(?,employment_type),
+    entity_type=COALESCE(?,entity_type) WHERE id=?`)
     .run(
       employee_id !== undefined ? employee_id : w.employee_id,
       newActive, newSuspended,
       expected_salary !== undefined ? expected_salary : null,
       our_salary_rating !== undefined ? our_salary_rating : null,
       payment_method !== undefined ? payment_method : null,
+      payment_details !== undefined ? newPaymentDetails : null,
       assigned_tasks !== undefined ? JSON.stringify(assigned_tasks) : null,
       work_status !== undefined ? work_status : null,
       newHasSsn, newPositionInterests,
       employment_type !== undefined ? employment_type : null,
+      entity_type !== undefined ? entity_type : null,
       req.params.id
     );
+  res.json({ success: true });
+});
+
+app.patch('/api/admin/worker-accounts/:id/identity-reverify-date', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { date } = req.body;
+  const w = db.prepare('SELECT identity_reverify_date FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  const changedBy = (req.session && req.session.username) || 'admin';
+  db.prepare('UPDATE worker_accounts SET identity_reverify_date=? WHERE id=?').run(date || '', req.params.id);
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value) VALUES (?,?,?,?,?)').run(req.params.id, changedBy, 'identity_reverify_date', w.identity_reverify_date || '', date || '');
   res.json({ success: true });
 });
 
@@ -4250,8 +4489,10 @@ app.get('/api/admin/worker-accounts/:id/assignments', requireAdmin, (req, res) =
 });
 
 app.get('/api/admin/worker-accounts/:id/history', requireAdmin, (req, res) => {
-  const rows = db.prepare('SELECT * FROM worker_account_history WHERE worker_account_id=? ORDER BY created_at DESC LIMIT 100').all(req.params.id);
-  res.json(rows);
+  try {
+    const rows = db.prepare('SELECT * FROM worker_account_history WHERE worker_account_id=? ORDER BY created_at DESC LIMIT 100').all(req.params.id);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Admin: get worker's most recent interview with slot info
@@ -4269,20 +4510,35 @@ app.get('/api/admin/worker-accounts/:id/interview-info', requireAdmin, (req, res
 
 // ── Worker Onboarding ──
 // W-2: 申请/筛选 → 面试 → 条件offer/合同 → 背景调查+Checkr → 身份验证 → I-9 → 看证件(EAD) → E-Verify → Gusto/上岗
-// 1099: 申请/筛选 → contractor agreement → W-9 → 背景调查(如需) → 证件/资质核验 → 可接单
+// 1099: 申请/筛选 → contractor agreement → 税务居民判定 → 背景调查(如需) → 证件/资质核验 → 可接单
 const ONBOARDING_STEPS = [
   { key: 'phone_verify',    title: '手机号验证',           desc: '必须通过手机号验证才能继续',                     required: true  },
   { key: 'email_verify',    title: '邮箱验证',             desc: '必须通过邮箱验证才能继续',                       required: true  },
   { key: 'interview',       title: '完成面试',             desc: '预约并参加 HR 面试',                              required: true  },
   { key: 'contract',        title: '签署合同 / Offer',     desc: '电子签署雇佣协议 / Contractor Agreement',         required: true  },
+  { key: 'tax_residency',   title: '税务居民身份判定',      desc: '1099 承包商税务居民预判 / 表格分流（Resident Test）', required: false },
+  { key: 'work_permit',     title: '工作许可验证',          desc: '工作许可 / 签证授权状态核实（如适用）',            required: false },
   { key: 'background_check',title: '背景调查 (Checkr)',    desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台',    required: false },
   { key: 'persona_verify',  title: '身份验证 (Stripe Identity)',   desc: '驾照/ID + 自拍核验 · 由 HR 发起 · 通过 Stripe Identity', required: true },
   { key: 'i9',              title: 'I-9 就业资格',         desc: 'I-9 Section 1 & 2 就业资格验证',                  required: true  },
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
-  { key: 'work_permit',     title: '工作许可验证',          desc: '工作许可 / 签证授权状态核实（如适用）',            required: false },
-  { key: 'work_auth',       title: 'Work Authorization 认证', desc: '独立承包商工作授权资格调查 / 认证（1099 适用）', required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
+  { key: 'tin_verify',      title: '核对税号',              desc: 'Admin 核对工人税号（SSN/EIN/ITIN）后方可入职',   required: true  },
   { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
+  // Tax document tasks (auto-created by tax residency questionnaire)
+  { key: 'tax_doc_w8ben',    title: 'W-8BEN 表格',           desc: '非居民外国个人预扣税声明',                       required: true  },
+  { key: 'tax_doc_w8bene',   title: 'W-8BEN-E 表格',         desc: '外国实体预扣税声明',                             required: true  },
+  { key: 'tax_doc_8233',     title: 'Form 8233',              desc: '个人服务条约豁免申请',                           required: true  },
+  { key: 'tax_doc_passport', title: '护照复印件',              desc: '护照信息页复印件 Passport Copy',                 required: true  },
+  { key: 'tax_doc_visa',     title: '签证复印件',              desc: '签证复印件 Visa Copy',                            required: true  },
+  { key: 'tax_doc_i94',      title: 'I-94 入境记录',           desc: 'I-94 Arrival/Departure Record',                    required: true  },
+  { key: 'tax_doc_work_auth',title: '工作授权文件',             desc: 'Work Authorization Document',                      required: true  },
+  { key: 'tax_doc_w7_itin',  title: 'W-7 ITIN 申请',         desc: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）',          required: false },
+  { key: 'tax_doc_8833',     title: 'Form 8833 条约声明',     desc: '条约申报声明 Treaty-Based Return Position',       required: false },
+  { key: 'tax_doc_corp_cert',title: '公司注册文件',            desc: 'Articles / Certificate of Incorporation',         required: true  },
+  { key: 'tax_doc_sign_auth',title: '授权签署人证明',          desc: '签署人身份及授权文件 Signing Authority',           required: true  },
+  { key: 'tax_doc_treaty_docs',title:'条约优惠文件',           desc: '条约优惠申请相关文件 Treaty Benefit Documentation', required: false },
+  { key: 'tax_doc_treaty_stmt',title:'条约条款声明',           desc: '条约条款声明 Treaty Statement / Attachment',       required: true  },
 ];
 
 function initWorkerOnboarding(workerId) {
@@ -4379,6 +4635,10 @@ app.put('/api/admin/worker-accounts/:id/onboarding/:key', requireAdmin, (req, re
   // Get old status for history logging
   const oldTask = db.prepare("SELECT status, ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key=?").get(req.params.id, req.params.key);
   const oldStatus = oldTask ? oldTask.status : '';
+  // Prevent marking contract as completed unless both parties have signed
+  if (req.params.key === 'contract' && status === 'completed' && oldTask && oldTask.ds_status && oldTask.ds_status !== 'completed') {
+    return res.status(400).json({ error: '合同尚未双方签署完成，无法标记为已完成。Contract requires both parties to sign before marking complete.' });
+  }
   // When resetting contract to pending, also clear DocuSeal signing data and archive submission
   if (req.params.key === 'contract' && status === 'pending' && oldTask && oldTask.ds_status) {
     const onb = db.prepare("SELECT ds_envelope_id FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(req.params.id);
@@ -4752,9 +5012,9 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
     if (!dsealEnabled()) return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, companySigned: onb.ds_company_signed_at });
     const { status, companySigned, partnerSigned, declineReason } = await dsealGetStatus(onb.ds_envelope_id);
-    // Determine granular status: completed only when BOTH signed
+    // Determine granular status: trust DocuSeal completed status even if timestamps are missing
     let effectiveStatus = status;
-    if (status === 'completed' && companySigned && partnerSigned) {
+    if (status === 'completed') {
       effectiveStatus = 'completed';
     } else if (companySigned && !partnerSigned) {
       effectiveStatus = 'company_signed';
@@ -4765,6 +5025,11 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
     }
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
       .run(effectiveStatus, partnerSigned, companySigned, workerId);
+    // Also sync worker_contract_versions table
+    if (onb.ds_envelope_id) {
+      db.prepare("UPDATE worker_contract_versions SET ds_status=?, ds_company_signed_at=?, ds_worker_signed_at=? WHERE worker_account_id=? AND ds_envelope_id=?")
+        .run(effectiveStatus, companySigned, partnerSigned, workerId, onb.ds_envelope_id);
+    }
     if (effectiveStatus === 'completed') {
       db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
         .run(workerId);
@@ -4860,6 +5125,576 @@ app.post('/api/admin/worker-accounts/:id/contract-void', requireAdmin, async (re
 });
 
 // ─── Admin: W-9 DocuSeal Endpoints ───
+
+// ─── Tax Residency Questionnaire (1099 Resident Test) ───
+
+// SPT calculation + form routing engine
+function calculateTaxResidency(data) {
+  const result = { spt_weighted_days: 0, spt_result: '', tax_status: '', recommended_form: '', needs_manual_review: false };
+  const { applicant_type, is_us_person, is_us_citizen, has_green_card,
+    days_current_year, days_last_year, days_two_years_ago, has_exempt_days,
+    services_location, claim_treaty_benefit, treaty_income_type } = data;
+
+  // Rule 1: Entity vs Individual
+  if (applicant_type === 'entity') {
+    if (is_us_person === 'yes') {
+      result.tax_status = 'us_entity';
+      result.recommended_form = 'W-9';
+    } else {
+      result.tax_status = 'foreign_entity';
+      result.recommended_form = 'W-8BEN-E';
+    }
+    return result;
+  }
+
+  // Rule 2: Individual - check U.S. person status
+  if (is_us_citizen === 'yes') {
+    result.tax_status = 'us_citizen';
+    result.recommended_form = 'W-9';
+    return result;
+  }
+  if (has_green_card === 'yes') {
+    result.tax_status = 'resident_alien';
+    result.recommended_form = 'W-9';
+    return result;
+  }
+
+  // Rule 3: SPT calculation (with F/J/M/Q exempt day exclusion)
+  // Validate days against first entry date
+  const firstEntry = data.first_entry_date ? new Date(data.first_entry_date + 'T00:00:00') : null;
+  const cy = parseInt(days_current_year) || 0;
+  const ly = parseInt(days_last_year) || 0;
+  const ty = parseInt(days_two_years_ago) || 0;
+  if (firstEntry && !isNaN(firstEntry.getTime())) {
+    const feYear = firstEntry.getFullYear();
+    const now = new Date();
+    const thisYear = now.getFullYear();
+    const years = [{ days: cy, year: thisYear }, { days: ly, year: thisYear - 1 }, { days: ty, year: thisYear - 2 }];
+    for (const { days, year } of years) {
+      if (days > 0 && feYear > year) {
+        result.needs_manual_review = true;
+        result.validation_warning = `First entry date (${data.first_entry_date}) is after ${year}, but ${days} days claimed for that year`;
+      }
+    }
+  }
+  const exCY = has_exempt_days === 'yes' ? Math.min(parseInt(data.exempt_days_cy) || 0, cy) : 0;
+  const exLY = has_exempt_days === 'yes' ? Math.min(parseInt(data.exempt_days_ly) || 0, ly) : 0;
+  const ex2Y = has_exempt_days === 'yes' ? Math.min(parseInt(data.exempt_days_2y) || 0, ty) : 0;
+  const adjCY = cy - exCY, adjLY = ly - exLY, adj2Y = ty - ex2Y;
+  const weighted = adjCY + (adjLY / 3) + (adj2Y / 6);
+  result.spt_weighted_days = Math.round(weighted * 100) / 100;
+
+  if (adjCY >= 31 && weighted >= 183) {
+    result.spt_result = 'meets_spt';
+    result.tax_status = 'likely_resident_alien';
+    result.recommended_form = 'W-9';
+    result.needs_manual_review = true; // closer connection exception possible
+  } else {
+    result.spt_result = 'does_not_meet_spt';
+    result.tax_status = 'likely_nonresident_alien';
+  }
+
+  // Rule 4-7: Foreign individual form routing
+  // Treaty claim only applies to nonresident aliens (not SPT residents who file W-9)
+  if (claim_treaty_benefit === 'yes' && result.tax_status !== 'likely_resident_alien') {
+    result.needs_manual_review = true;
+    if (treaty_income_type === 'personal_services' && (services_location === 'all_in_us' || services_location === 'partly_in_us')) {
+      result.recommended_form = 'Form 8233';
+    } else {
+      result.recommended_form = 'W-8BEN';
+    }
+  } else if (result.tax_status === 'likely_nonresident_alien') {
+    if (services_location === 'all_outside_us') {
+      result.recommended_form = 'W-8BEN';
+    } else if (services_location === 'all_in_us' || services_location === 'partly_in_us') {
+      result.recommended_form = 'W-8BEN';
+      result.needs_manual_review = true;
+    } else {
+      result.recommended_form = 'W-8BEN';
+    }
+  }
+
+  // If has exempt days (F/J/M/Q visa), always flag for review
+  if (has_exempt_days === 'yes') {
+    result.needs_manual_review = true;
+  }
+
+  return result;
+}
+
+// Determine onboarding tasks needed based on tax form recommendation
+function getTaxDocTasks(form, data) {
+  const tasks = [];
+  const isEntity = data.applicant_type === 'entity';
+  const servInUs = data.services_location === 'all_in_us' || data.services_location === 'partly_in_us';
+  const treatyClaim = data.claim_treaty_benefit === 'yes';
+  const immStatus = data.immigration_status || '';
+  const VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
+  const EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-C03A','EAD-C03B','EAD-OTHER'];
+
+  if (form === 'W-9') {
+    // W-9 handled by existing w9 task
+    if (isEntity) {
+      tasks.push({ key: 'tax_doc_corp_cert', note: '公司注册文件 Articles / Certificate of Formation' });
+      tasks.push({ key: 'tax_doc_ein_letter', note: 'EIN 确认函 IRS EIN Confirmation Letter (CP 575 / 147C)' });
+    }
+    if (data.is_us_citizen === 'yes') {
+      tasks.push({ key: 'tax_doc_id_proof', note: '身份证明（任一）: 美国护照 / 出生证明 / 入籍证书 N-550 / 公民证书 N-560 / FS-240' });
+    } else if (data.has_green_card === 'yes') {
+      tasks.push({ key: 'tax_doc_id_proof', note: '身份证明（任一）: 绿卡 I-551 正反面 / 护照+I-551章 / 过期绿卡+I-797延期' });
+    }
+  } else if (form === 'W-8BEN') {
+    tasks.push({ key: 'tax_doc_w8ben', note: 'W-8BEN 非居民外国个人预扣税声明' });
+    tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
+    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
+    if (servInUs) {
+      // Work authorization docs based on immigration status type
+      if (VISA_TYPES.includes(immStatus)) {
+        tasks.push({ key: 'tax_doc_i797', note: 'I-797 批准通知 Approval Notice (或有效签证页) — ' + immStatus });
+        tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
+      } else if (EAD_TYPES.includes(immStatus)) {
+        tasks.push({ key: 'tax_doc_ead', note: 'EAD 工卡 (I-766) 正反面 — ' + immStatus });
+        if (immStatus === 'EAD-C03A' || immStatus === 'EAD-C03B') {
+          tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 OPT endorsement)' });
+        }
+      } else if (immStatus === 'F-1-CPT') {
+        tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 CPT 授权页)' });
+      } else if (immStatus === 'J-1') {
+        tasks.push({ key: 'tax_doc_ds2019', note: 'DS-2019' });
+        tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
+      } else {
+        tasks.push({ key: 'tax_doc_visa', note: '签证复印件 Visa Copy' });
+        tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
+        tasks.push({ key: 'tax_doc_work_auth', note: '工作授权文件 Work Authorization' });
+      }
+    }
+    if (treatyClaim) {
+      tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
+    }
+  } else if (form === 'W-8BEN-E') {
+    tasks.push({ key: 'tax_doc_w8bene', note: 'W-8BEN-E 外国实体预扣税声明' });
+    tasks.push({ key: 'tax_doc_corp_cert', note: '实体注册证明 Certificate of Incorporation' });
+    tasks.push({ key: 'tax_doc_sign_auth', note: '授权签署人证明 Signing Authority / Board Resolution' });
+    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7/SS-4 ITIN 或 EIN 申请（如无美国税号）' });
+    if (treatyClaim) {
+      tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
+      tasks.push({ key: 'tax_doc_treaty_docs', note: '条约优惠申请文件 Treaty Benefit Documentation' });
+    }
+  } else if (form === 'Form 8233') {
+    tasks.push({ key: 'tax_doc_8233', note: 'Form 8233 个人服务条约豁免申请' });
+    // Also require W-8BEN as fallback in case treaty conditions are not met (e.g. >183 days)
+    tasks.push({ key: 'tax_doc_w8ben', note: 'W-8BEN 备选表格（如条约条件不满足则使用此表）Fallback if treaty conditions not met' });
+    tasks.push({ key: 'tax_doc_passport', note: '护照复印件 Passport Copy' });
+    tasks.push({ key: 'tax_doc_treaty_stmt', note: '条约条款声明 Treaty Statement' });
+    tasks.push({ key: 'tax_doc_w7_itin', note: 'Form W-7 ITIN 申请表（如无 SSN/ITIN）' });
+    tasks.push({ key: 'tax_doc_8833', note: 'Form 8833 条约申报声明' });
+    // Work authorization docs based on immigration status type
+    if (VISA_TYPES.includes(immStatus)) {
+      tasks.push({ key: 'tax_doc_i797', note: 'I-797 批准通知 Approval Notice (或有效签证页) — ' + immStatus });
+      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
+    } else if (EAD_TYPES.includes(immStatus)) {
+      tasks.push({ key: 'tax_doc_ead', note: 'EAD 工卡 (I-766) 正反面 — ' + immStatus });
+      if (immStatus === 'EAD-C03A' || immStatus === 'EAD-C03B') {
+        tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 OPT endorsement)' });
+      }
+    } else if (immStatus === 'F-1-CPT') {
+      tasks.push({ key: 'tax_doc_i20', note: 'I-20 (含 CPT 授权页)' });
+    } else if (immStatus === 'J-1') {
+      tasks.push({ key: 'tax_doc_ds2019', note: 'DS-2019' });
+      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
+    } else {
+      tasks.push({ key: 'tax_doc_visa', note: '签证复印件 Visa Copy' });
+      tasks.push({ key: 'tax_doc_i94', note: 'I-94 入境记录 Arrival/Departure Record' });
+    }
+  }
+  return tasks;
+}
+
+// Get tax residency questionnaire for a worker
+app.get('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(req.params.id);
+  res.json(row || null);
+});
+
+// Helper: derive work permit category key from tax residency data (mirrors frontend wpDetectCategory)
+function _wpCategoryKey(tr) {
+  if (!tr) return 'generic';
+  if (tr.applicant_type === 'entity') return (tr.is_us_person === 'yes') ? 'us_entity' : 'foreign_entity';
+  if (tr.is_us_citizen === 'yes') return 'citizen';
+  if (tr.has_green_card === 'yes') return 'green_card';
+  if (tr.work_permit_category) {
+    const catMap = { work_visa: 'work_visa', ead: 'ead', opt: 'opt', f1_cpt: 'cpt', j1: 'j1' };
+    if (catMap[tr.work_permit_category]) return catMap[tr.work_permit_category];
+  }
+  const wa = tr.immigration_status || '';
+  const VISA_TYPES = ['H-1B','H-1B1','L-1','O-1','TN','E-1','E-2','E-3','R-1','P-1'];
+  const EAD_TYPES = ['EAD-C08','EAD-A05','EAD-C09','EAD-C10','EAD-A10','EAD-C26','EAD-A18','EAD-C33','EAD-A12','EAD-OTHER'];
+  if (VISA_TYPES.includes(wa)) return 'work_visa';
+  if (wa === 'EAD-C03A' || wa === 'EAD-C03B') return 'opt';
+  if (EAD_TYPES.includes(wa)) return 'ead';
+  if (wa === 'F-1-CPT') return 'cpt';
+  if (wa === 'J-1') return 'j1';
+  return 'generic';
+}
+
+// Save tax residency questionnaire
+app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const d = req.body;
+
+  // Check if tax residency category changed compared to existing data
+  const oldTr = db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId);
+  const oldCategoryKey = oldTr ? _wpCategoryKey(oldTr) : '';
+  const newCategoryKey = _wpCategoryKey({
+    applicant_type: d.applicant_type || 'individual',
+    is_us_person: d.is_us_person || '',
+    is_us_citizen: d.is_us_citizen || '',
+    has_green_card: d.has_green_card || '',
+    work_permit_category: d.work_permit_category || '',
+    immigration_status: d.immigration_status || ''
+  });
+
+  // Calculate SPT and determine form routing
+  const calc = calculateTaxResidency(d);
+
+  const fields = {
+    worker_account_id: workerId,
+    applicant_type: d.applicant_type || 'individual',
+    is_us_person: d.is_us_person || '',
+    country_tax_residence: d.country_tax_residence || '',
+    country_citizenship: d.country_citizenship || '',
+    entity_country_org: d.entity_country_org || '',
+    is_us_citizen: d.is_us_citizen || '',
+    has_green_card: d.has_green_card || '',
+    first_entry_date: d.first_entry_date || '',
+    last_entry_date: d.last_entry_date || '',
+    entry_exit_records: d.entry_exit_records || '',
+    days_current_year: parseInt(d.days_current_year) || 0,
+    days_last_year: parseInt(d.days_last_year) || 0,
+    days_two_years_ago: parseInt(d.days_two_years_ago) || 0,
+    has_exempt_days: d.has_exempt_days || '',
+    exempt_visa_status: d.exempt_visa_status || '',
+    exempt_date_range: d.exempt_date_range || '',
+    exempt_days_cy: parseInt(d.exempt_days_cy) || 0,
+    exempt_days_ly: parseInt(d.exempt_days_ly) || 0,
+    exempt_days_2y: parseInt(d.exempt_days_2y) || 0,
+    services_location: d.services_location || '',
+    primary_work_locations: d.primary_work_locations || '',
+    expected_service_dates: d.expected_service_dates || '',
+    will_travel_to_us: d.will_travel_to_us || '',
+    claim_treaty_benefit: d.claim_treaty_benefit || '',
+    treaty_country: d.treaty_country || '',
+    treaty_income_type: d.treaty_income_type || '',
+    work_permit_category: d.work_permit_category || '',
+    immigration_status: d.immigration_status || '',
+    i94_admission_date: d.i94_admission_date || '',
+    status_expiration: d.status_expiration || '',
+    docs_requested: d.docs_requested ? 1 : 0,
+    spt_weighted_days: calc.spt_weighted_days,
+    spt_result: calc.spt_result,
+    tax_status: calc.tax_status,
+    recommended_form: calc.recommended_form,
+    needs_manual_review: calc.needs_manual_review ? 1 : 0,
+    admin_override: d.admin_override || '',
+    admin_notes: d.admin_notes || '',
+    completed_by: (req.session && req.session.username) || 'admin',
+    addr_street: d.addr_street || '',
+    addr_street2: d.addr_street2 || '',
+    addr_city: d.addr_city || '',
+    addr_state: d.addr_state || '',
+    addr_zip: d.addr_zip || '',
+    ind_legal_name: d.ind_legal_name || '',
+    ind_ssn_masked: '',
+    ind_ssn_encrypted: '',
+    ind_ssn_iv: ''
+  };
+
+  // Handle ind_ssn: encrypt if a new (unmasked) value is provided; preserve existing if masked placeholder is sent back
+  const rawIndSsn = d.ind_ssn || '';
+  if (rawIndSsn && !rawIndSsn.includes('*')) {
+    fields.ind_ssn_masked = rawIndSsn.replace(/\d(?=\d{4})/g, '*');
+    const enc = encryptSSN(rawIndSsn);
+    fields.ind_ssn_encrypted = enc.encrypted;
+    fields.ind_ssn_iv = enc.iv;
+  } else if (rawIndSsn.includes('*')) {
+    // Masked value sent back — preserve existing encrypted SSN from DB
+    const existingTr = db.prepare('SELECT ind_ssn_masked, ind_ssn_encrypted, ind_ssn_iv FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId);
+    if (existingTr) {
+      fields.ind_ssn_masked = existingTr.ind_ssn_masked || '';
+      fields.ind_ssn_encrypted = existingTr.ind_ssn_encrypted || '';
+      fields.ind_ssn_iv = existingTr.ind_ssn_iv || '';
+    }
+  }
+
+  db.prepare(`INSERT INTO tax_residency_questionnaire (
+    worker_account_id, applicant_type, is_us_person, country_tax_residence, country_citizenship, entity_country_org,
+    is_us_citizen, has_green_card, first_entry_date, last_entry_date, entry_exit_records, days_current_year, days_last_year, days_two_years_ago,
+    has_exempt_days, exempt_visa_status, exempt_date_range, exempt_days_cy, exempt_days_ly, exempt_days_2y,
+    services_location, primary_work_locations, expected_service_dates, will_travel_to_us,
+    claim_treaty_benefit, treaty_country, treaty_income_type,
+    work_permit_category, immigration_status, i94_admission_date, status_expiration, docs_requested,
+    spt_weighted_days, spt_result, tax_status, recommended_form, needs_manual_review,
+    admin_override, admin_notes, completed_by,
+    addr_street, addr_street2, addr_city, addr_state, addr_zip,
+    ind_legal_name, ind_ssn_masked, ind_ssn_encrypted, ind_ssn_iv, updated_at
+  ) VALUES (
+    @worker_account_id, @applicant_type, @is_us_person, @country_tax_residence, @country_citizenship, @entity_country_org,
+    @is_us_citizen, @has_green_card, @first_entry_date, @last_entry_date, @entry_exit_records, @days_current_year, @days_last_year, @days_two_years_ago,
+    @has_exempt_days, @exempt_visa_status, @exempt_date_range, @exempt_days_cy, @exempt_days_ly, @exempt_days_2y,
+    @services_location, @primary_work_locations, @expected_service_dates, @will_travel_to_us,
+    @claim_treaty_benefit, @treaty_country, @treaty_income_type,
+    @work_permit_category, @immigration_status, @i94_admission_date, @status_expiration, @docs_requested,
+    @spt_weighted_days, @spt_result, @tax_status, @recommended_form, @needs_manual_review,
+    @admin_override, @admin_notes, @completed_by,
+    @addr_street, @addr_street2, @addr_city, @addr_state, @addr_zip,
+    @ind_legal_name, @ind_ssn_masked, @ind_ssn_encrypted, @ind_ssn_iv, CURRENT_TIMESTAMP
+  ) ON CONFLICT(worker_account_id) DO UPDATE SET
+    applicant_type=excluded.applicant_type, is_us_person=excluded.is_us_person,
+    country_tax_residence=excluded.country_tax_residence, country_citizenship=excluded.country_citizenship,
+    entity_country_org=excluded.entity_country_org,
+    is_us_citizen=excluded.is_us_citizen, has_green_card=excluded.has_green_card,
+    first_entry_date=excluded.first_entry_date, last_entry_date=excluded.last_entry_date, entry_exit_records=excluded.entry_exit_records,
+    days_current_year=excluded.days_current_year, days_last_year=excluded.days_last_year,
+    days_two_years_ago=excluded.days_two_years_ago,
+    has_exempt_days=excluded.has_exempt_days, exempt_visa_status=excluded.exempt_visa_status,
+    exempt_date_range=excluded.exempt_date_range,
+    exempt_days_cy=excluded.exempt_days_cy, exempt_days_ly=excluded.exempt_days_ly, exempt_days_2y=excluded.exempt_days_2y,
+    services_location=excluded.services_location, primary_work_locations=excluded.primary_work_locations,
+    expected_service_dates=excluded.expected_service_dates, will_travel_to_us=excluded.will_travel_to_us,
+    claim_treaty_benefit=excluded.claim_treaty_benefit, treaty_country=excluded.treaty_country,
+    treaty_income_type=excluded.treaty_income_type,
+    work_permit_category=excluded.work_permit_category,
+    immigration_status=excluded.immigration_status, i94_admission_date=excluded.i94_admission_date,
+    status_expiration=excluded.status_expiration, docs_requested=excluded.docs_requested,
+    spt_weighted_days=excluded.spt_weighted_days, spt_result=excluded.spt_result,
+    tax_status=excluded.tax_status, recommended_form=excluded.recommended_form,
+    needs_manual_review=excluded.needs_manual_review,
+    admin_override=excluded.admin_override, admin_notes=excluded.admin_notes,
+    completed_by=excluded.completed_by,
+    addr_street=excluded.addr_street, addr_street2=excluded.addr_street2,
+    addr_city=excluded.addr_city, addr_state=excluded.addr_state, addr_zip=excluded.addr_zip,
+    ind_legal_name=excluded.ind_legal_name, ind_ssn_masked=excluded.ind_ssn_masked,
+    ind_ssn_encrypted=excluded.ind_ssn_encrypted, ind_ssn_iv=excluded.ind_ssn_iv,
+    updated_at=CURRENT_TIMESTAMP
+  `).run(fields);
+
+  // Mark as submitted (data saved) but NOT completed — admin must explicitly confirm completion
+  db.prepare(`UPDATE worker_onboarding SET status='submitted', updated_at=CURRENT_TIMESTAMP
+    WHERE worker_account_id=? AND task_key='tax_residency' AND status='pending'`)
+    .run(workerId);
+
+  // Auto-create onboarding tasks for required tax documents based on recommended form
+  const taxTasks = getTaxDocTasks(calc.recommended_form, d);
+  // Remove old tax_doc_* tasks first (in case form changed on re-save)
+  db.prepare(`DELETE FROM worker_onboarding WHERE worker_account_id=? AND task_key LIKE 'tax_doc_%'`).run(workerId);
+  const insertTask = db.prepare(`INSERT OR IGNORE INTO worker_onboarding (worker_account_id, task_key, status, admin_note, visible_to_worker, updated_at) VALUES (?,?,?,?,0,CURRENT_TIMESTAMP)`);
+  for (const t of taxTasks) {
+    insertTask.run(workerId, t.key, 'pending', t.note || '');
+  }
+  // Update assigned_tasks to include new tax doc tasks
+  const w2 = db.prepare('SELECT assigned_tasks FROM worker_accounts WHERE id=?').get(workerId);
+  if (w2) {
+    let assigned = [];
+    try { assigned = JSON.parse(w2.assigned_tasks || '[]'); } catch {}
+    // Remove old tax_doc_ entries and add new ones
+    assigned = assigned.filter(k => !k.startsWith('tax_doc_'));
+    for (const t of taxTasks) assigned.push(t.key);
+    db.prepare('UPDATE worker_accounts SET assigned_tasks=? WHERE id=?').run(JSON.stringify(assigned), workerId);
+  }
+
+  // Log to history
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, fields.completed_by, 'tax_residency', '', calc.recommended_form,
+      `税务居民判定完成: ${calc.tax_status} → 推荐表格: ${calc.recommended_form}${calc.recommended_form === 'Form 8233' ? ' + W-8BEN(备选)' : ''}${calc.needs_manual_review ? ' (需人工复核)' : ''}`);
+
+  // If work permit category changed, reset work permit verification and onboarding task
+  let wpReset = false;
+  if (oldCategoryKey && newCategoryKey && oldCategoryKey !== newCategoryKey) {
+    const existingWp = db.prepare('SELECT * FROM work_permit_verification WHERE worker_account_id=?').get(workerId);
+    if (existingWp && existingWp.verified_at) {
+      // Clear verified status - keep data but mark as needing re-verification
+      db.prepare(`UPDATE work_permit_verification SET verified_at=NULL, verified_by='', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=?`).run(workerId);
+      // Reset work_permit onboarding task back to pending
+      db.prepare(`UPDATE worker_onboarding SET status='pending', completed_at=NULL, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='work_permit'`).run(workerId);
+      // Log the reset
+      db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+        .run(workerId, fields.completed_by, 'work_permit_reset', oldCategoryKey, newCategoryKey,
+          `税务身份变更 (${oldCategoryKey} → ${newCategoryKey})，工作许可验证已重置为待验证`);
+      wpReset = true;
+    }
+    // Delete old uploaded work permit docs since category changed and required docs differ
+    const oldDocs = db.prepare('SELECT * FROM work_permit_docs WHERE worker_account_id=?').all(workerId);
+    for (const doc of oldDocs) {
+      if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+    }
+    db.prepare('DELETE FROM work_permit_docs WHERE worker_account_id=?').run(workerId);
+  }
+
+  syncOnboardedStatus(workerId);
+
+  res.json({ success: true, ...calc, taxTasks, wp_reset: wpReset, old_wp_category: oldCategoryKey, new_wp_category: newCategoryKey, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
+});
+
+// ─── Work Permit Verification ───
+app.get('/api/admin/worker-accounts/:id/work-permit', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM work_permit_verification WHERE worker_account_id=?').get(req.params.id);
+  res.json(row || null);
+});
+
+app.post('/api/admin/worker-accounts/:id/work-permit', requireAdmin, (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const d = req.body;
+  const verifiedBy = (req.session && req.session.username) || 'admin';
+  const doVerify = d.verified !== false; // default true for backward compat
+
+  if (doVerify) {
+    db.prepare(`INSERT INTO work_permit_verification (worker_account_id, doc_type, doc_number, issue_date, expiry_date, category, notes, verified_at, verified_by, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id) DO UPDATE SET
+        doc_type=excluded.doc_type, doc_number=excluded.doc_number, issue_date=excluded.issue_date,
+        expiry_date=excluded.expiry_date, category=excluded.category, notes=excluded.notes,
+        verified_at=CURRENT_TIMESTAMP, verified_by=excluded.verified_by, updated_at=CURRENT_TIMESTAMP
+    `).run(workerId, d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.category || '', d.notes || '', verifiedBy);
+  } else {
+    db.prepare(`INSERT INTO work_permit_verification (worker_account_id, doc_type, doc_number, issue_date, expiry_date, category, notes, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(worker_account_id) DO UPDATE SET
+        doc_type=excluded.doc_type, doc_number=excluded.doc_number, issue_date=excluded.issue_date,
+        expiry_date=excluded.expiry_date, category=excluded.category, notes=excluded.notes,
+        updated_at=CURRENT_TIMESTAMP
+    `).run(workerId, d.doc_type || '', d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.category || '', d.notes || '');
+  }
+
+  // Log to history
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, verifiedBy, 'work_permit', '', d.doc_type, `${doVerify ? '工作许可验证' : '工作许可保存'}: ${d.doc_type}${d.doc_number ? ' #' + d.doc_number : ''}${d.expiry_date ? ' Exp: ' + d.expiry_date : ''}`);
+
+  if (doVerify) syncOnboardedStatus(workerId);
+  res.json({ success: true });
+});
+
+// ─── Work Permit Document Uploads ───
+app.get('/api/admin/worker-accounts/:id/work-permit-docs', requireAdmin, (req, res) => {
+  const docs = db.prepare('SELECT id, doc_label, file_name, doc_number, issue_date, expiry_date, notes, created_at FROM work_permit_docs WHERE worker_account_id=? ORDER BY created_at').all(req.params.id);
+  res.json(docs);
+});
+
+app.post('/api/admin/worker-accounts/:id/work-permit-docs', requireAdmin, docUpload.single('file'), (req, res) => {
+  const workerId = parseInt(req.params.id);
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const docLabel = req.body.doc_label || '';
+  const filePath = req.file.path;
+  const fileName = req.file.originalname;
+  const uploadedBy = (req.session && req.session.username) || 'admin';
+
+  const result = db.prepare('INSERT INTO work_permit_docs (worker_account_id, doc_label, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?)')
+    .run(workerId, docLabel, filePath, fileName, uploadedBy);
+
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, uploadedBy, 'work_permit_doc', '', docLabel, `上传工作许可文件: ${docLabel} · ${fileName}`);
+
+  res.json({ success: true, id: result.lastInsertRowid, file_name: fileName });
+});
+
+app.get('/api/admin/work-permit-docs/:docId/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
+  if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
+  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
+  res.download(doc.file_path, doc.file_name || 'document');
+});
+
+app.delete('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+  db.prepare('DELETE FROM work_permit_docs WHERE id=?').run(req.params.docId);
+  res.json({ success: true });
+});
+
+// Update per-doc metadata (doc_number, issue_date, expiry_date, notes)
+app.patch('/api/admin/work-permit-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM work_permit_docs WHERE id=?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  const d = req.body;
+  db.prepare('UPDATE work_permit_docs SET doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=?')
+    .run(d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', req.params.docId);
+  res.json({ success: true });
+});
+
+// Save all per-doc metadata in batch for a worker's work permit docs
+app.put('/api/admin/worker-accounts/:id/work-permit-docs-meta', requireAdmin, (req, res) => {
+  const docs = req.body.docs;
+  if (!Array.isArray(docs)) return res.status(400).json({ error: 'Invalid data' });
+  const stmt = db.prepare('UPDATE work_permit_docs SET doc_number=?, issue_date=?, expiry_date=?, notes=? WHERE id=? AND worker_account_id=?');
+  const workerId = parseInt(req.params.id);
+  docs.forEach(d => {
+    stmt.run(d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', d.id, workerId);
+  });
+  res.json({ success: true });
+});
+
+// ─── Tax Filing Documents (年度报税表 1099-NEC / W-2 / 1042-S) ───
+
+app.get('/api/admin/worker-accounts/:id/tax-filing-docs', requireAdmin, (req, res) => {
+  const year = parseInt(req.query.year) || (new Date().getFullYear() - 1);
+  const docs = db.prepare('SELECT id, form_type, file_name, uploaded_by, created_at FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? ORDER BY form_type, created_at').all(req.params.id, year);
+  res.json(docs);
+});
+
+app.post('/api/admin/worker-accounts/:id/tax-filing-docs', requireAdmin, docUpload.single('file'), (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const formType = req.body.form_type || '';
+  const taxYear = parseInt(req.body.tax_year) || (new Date().getFullYear() - 1);
+  if (!formType) return res.status(400).json({ error: 'form_type required' });
+  const filePath = req.file ? req.file.path : '';
+  const fileName = req.file ? req.file.originalname : '';
+  const uploadedBy = (req.session && req.session.username) || 'admin';
+  const result = db.prepare('INSERT INTO tax_filing_docs (worker_account_id, tax_year, form_type, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?,?)')
+    .run(workerId, taxYear, formType, filePath, fileName, uploadedBy);
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, uploadedBy, 'tax_filing_doc', '', formType, `上传报税文件: ${formType} (${taxYear}) · ${fileName}`);
+  res.json({ success: true, id: result.lastInsertRowid, file_name: fileName });
+});
+
+app.delete('/api/admin/tax-filing-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM tax_filing_docs WHERE id=?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+  db.prepare('DELETE FROM tax_filing_docs WHERE id=?').run(req.params.docId);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/tax-filing-docs/:docId/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM tax_filing_docs WHERE id=?').get(req.params.docId);
+  if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
+  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
+  res.download(doc.file_path, doc.file_name || 'document');
+});
+
+// ─── ID Document Upload (admin uploads for worker during interview) ───
+app.get('/api/admin/worker-accounts/:id/id-docs', requireAdmin, (req, res) => {
+  const docs = db.prepare(`SELECT id, doc_type, status, file_name, doc_number, created_at FROM worker_compliance_docs
+    WHERE worker_account_id=? AND doc_type IN ('passport','drivers_license','state_id','green_card','ead_card','visa','ssn_card','itin_letter','other')
+    ORDER BY created_at DESC`).all(req.params.id);
+  res.json(docs);
+});
+
+app.post('/api/admin/worker-accounts/:id/id-docs', requireAdmin, docUpload.single('file'), (req, res) => {
+  const workerId = parseInt(req.params.id);
+  const docType = req.body.doc_type || 'other';
+  const docNumber = req.body.doc_number || '';
+  const filePath = req.file ? req.file.path : '';
+  const fileName = req.file ? req.file.originalname : '';
+
+  db.prepare(`INSERT INTO worker_compliance_docs (worker_account_id, doc_type, doc_number, file_path, file_name, status) VALUES (?,?,?,?,?,?)`)
+    .run(workerId, docType, docNumber, filePath, fileName, 'pending');
+
+  const changedBy = (req.session && req.session.username) || 'admin';
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, changedBy, 'id_doc_upload', '', docType, `上传身份证明文件: ${docType}${docNumber ? ' #' + docNumber : ''} · ${fileName}`);
+
+  res.json({ success: true });
+});
 
 // Preview W-9 HTML template (admin can see the blank form before sending)
 app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) => {
@@ -5328,6 +6163,37 @@ app.post('/api/admin/worker-accounts/:id/payments', requireAdmin, requireRole('a
 
 app.delete('/api/admin/worker-accounts/:id/payments/:pid', requireAdmin, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM worker_payments WHERE id=?').run(req.params.pid);
+  res.json({ success: true });
+});
+
+// ─── Admin: Contractor Invoice Review ───
+app.get('/api/admin/contractor-invoices', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username, wa.phone AS worker_phone, wa.email AS worker_email
+    FROM contractor_invoices ci
+    LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id
+    ORDER BY ci.created_at DESC
+  `).all();
+  res.json(rows);
+});
+
+app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { status, reject_reason } = req.body;
+  if (!['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Not found' });
+  const reviewedBy = req.session && req.session.username ? req.session.username : 'admin';
+  db.prepare('UPDATE contractor_invoices SET status=?, reviewed_by=?, reviewed_at=?, reject_reason=? WHERE id=?')
+    .run(status, reviewedBy, new Date().toISOString(), status === 'rejected' ? (reject_reason || '') : '', req.params.id);
+  // Log to worker history
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(inv.worker_account_id, reviewedBy, 'contractor_invoice', inv.status, status,
+      `Invoice ${inv.invoice_number}: $${inv.total_amount} — ${status === 'approved' ? '已批准' : '已拒绝' + (reject_reason ? ': ' + reject_reason : '')}`);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM contractor_invoices WHERE id=?').run(req.params.id);
   res.json({ success: true });
 });
 
@@ -8351,7 +9217,7 @@ app.post('/api/worker/login', (req, res) => {
 });
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
-  const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
+  const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, employment_type, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
   const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
   res.json({ account: w, employee: emp, compliance_docs: docs });
@@ -9397,6 +10263,32 @@ app.get('/api/worker/payments', requireWorker, (req, res) => {
   res.json(payments);
 });
 
+// ─── Worker Contractor Invoices ───
+app.get('/api/worker/contractor-invoices', requireWorker, (req, res) => {
+  const rows = db.prepare('SELECT * FROM contractor_invoices WHERE worker_account_id=? ORDER BY created_at DESC').all(req.workerId);
+  res.json(rows);
+});
+
+app.post('/api/worker/contractor-invoices', requireWorker, (req, res) => {
+  const { service_description, service_period_start, service_period_end, hours_worked, hourly_rate, flat_amount, total_amount, payment_due_date, notes } = req.body;
+  if (!service_description || !total_amount) return res.status(400).json({ error: '请填写服务描述和总金额 / Service description and total amount required' });
+  // Generate invoice number: INV-WORKERID-YYYYMMDD-SEQ
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const existing = db.prepare("SELECT COUNT(*) as cnt FROM contractor_invoices WHERE worker_account_id=? AND invoice_date LIKE ?").get(req.workerId, new Date().toISOString().slice(0, 10) + '%');
+  const seq = String((existing?.cnt || 0) + 1).padStart(3, '0');
+  const invoiceNumber = `INV-${req.workerId}-${today}-${seq}`;
+  const invoiceDate = new Date().toISOString().slice(0, 10);
+  const r = db.prepare(`INSERT INTO contractor_invoices
+    (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end,
+     hours_worked, hourly_rate, flat_amount, total_amount, payment_due_date, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(req.workerId, invoiceNumber, invoiceDate, service_description,
+      service_period_start || '', service_period_end || '',
+      hours_worked || 0, hourly_rate || 0, flat_amount || 0, total_amount,
+      payment_due_date || '', notes || '');
+  res.json({ success: true, id: r.lastInsertRowid, invoice_number: invoiceNumber });
+});
+
 // ─── Worker Forgot / Reset Password ───
 app.post('/api/worker/forgot-password', async (req, res) => {
   const { login } = req.body;
@@ -9496,6 +10388,91 @@ app.get('/api/worker/compliance', requireWorker, (req, res) => {
     assigned_tasks: assignedTasks,
     doc_types: ['i9', 'drivers_license', 'w9', 'ssn_card', 'work_permit', 'other'],
     expiring_docs: expiringDocs
+  });
+});
+
+// ─── Worker: Form Submission Summary ───
+app.get('/api/worker/submission-summary', requireWorker, (req, res) => {
+  const w = db.prepare('SELECT id, username, name, phone, email, work_status, employment_type, entity_type, employee_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!w) return res.status(404).json({ error: 'Account not found' });
+
+  // Get onboarding tasks
+  const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.workerId);
+  if (!existing) initWorkerOnboarding(req.workerId);
+  const tasks = getOnboardingTasks(req.workerId).filter(t => t.visible_to_worker !== 0);
+
+  // Get compliance docs
+  const docs = db.prepare('SELECT id, doc_type, status, file_name, expires_at, created_at, updated_at, reviewer_notes FROM worker_compliance_docs WHERE worker_account_id=? ORDER BY created_at DESC').all(req.workerId);
+  const docsByType = {};
+  for (const d of docs) { if (!docsByType[d.doc_type]) docsByType[d.doc_type] = d; }
+
+  // Get I-9 form data (citizenship status)
+  const i9Doc = db.prepare("SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='i9' ORDER BY created_at DESC LIMIT 1").get(req.workerId);
+  let citizenshipStatus = '';
+  if (i9Doc && i9Doc.form_data) {
+    try { citizenshipStatus = JSON.parse(i9Doc.form_data).citizenship_status || ''; } catch {}
+  }
+
+  // Get tax residency info
+  const taxRes = db.prepare('SELECT applicant_type, is_us_citizen, has_green_card, country_citizenship, immigration_status, work_permit_category, tax_status, recommended_form FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY updated_at DESC LIMIT 1').get(req.workerId);
+
+  // Get assignment/contract info
+  const assignment = req.workerEmployeeId
+    ? db.prepare('SELECT contract_type, status, start_date FROM assignments WHERE worker_account_id=? ORDER BY id DESC LIMIT 1').get(req.workerId)
+    : null;
+
+  // Derive work authorization category
+  let workAuthCategory = '';
+  if (citizenshipStatus === 'citizen' || (taxRes && taxRes.is_us_citizen === 'yes')) {
+    workAuthCategory = 'us_citizen';
+  } else if (citizenshipStatus === 'permanent_resident' || (taxRes && taxRes.has_green_card === 'yes')) {
+    workAuthCategory = 'green_card';
+  } else if (taxRes && taxRes.work_permit_category) {
+    const cat = taxRes.work_permit_category;
+    if (cat.startsWith('EAD')) workAuthCategory = 'ead';
+    else if (cat === 'H-1B' || cat === 'H-1B1') workAuthCategory = 'h1b';
+    else if (cat === 'F-1-OPT' || cat.includes('OPT')) workAuthCategory = 'opt';
+    else if (cat === 'F-1-CPT') workAuthCategory = 'cpt';
+    else workAuthCategory = cat.toLowerCase();
+  } else if (citizenshipStatus === 'work_authorized') {
+    workAuthCategory = 'work_authorized';
+  }
+
+  // Derive employment type
+  let empType = w.employment_type || '';
+  if (!empType && assignment) empType = assignment.contract_type || '';
+
+  // Compute completion stats
+  const visibleTasks = tasks;
+  const completedTasks = visibleTasks.filter(t => ['completed', 'waived'].includes(t.status));
+  const submittedTasks = visibleTasks.filter(t => t.status === 'submitted');
+  const pendingTasks = visibleTasks.filter(t => t.status === 'pending');
+
+  // Key form statuses
+  const formStatuses = {};
+  for (const t of tasks) {
+    formStatuses[t.key] = { status: t.status, completed_at: t.completed_at };
+  }
+
+  res.json({
+    worker: { name: w.name, username: w.username },
+    work_auth_category: workAuthCategory,
+    citizenship_status: citizenshipStatus,
+    employment_type: empType,
+    tax_residency: taxRes ? {
+      tax_status: taxRes.tax_status,
+      recommended_form: taxRes.recommended_form,
+      immigration_status: taxRes.immigration_status,
+      work_permit_category: taxRes.work_permit_category
+    } : null,
+    form_statuses: formStatuses,
+    compliance_docs: docsByType,
+    stats: {
+      total: visibleTasks.length,
+      completed: completedTasks.length,
+      submitted: submittedTasks.length,
+      pending: pendingTasks.length
+    }
   });
 });
 
@@ -10514,6 +11491,7 @@ app.post('/api/register/worker', async (req, res) => {
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(phone, hash, salt, name, first_name || '', middle_name || '', last_name || '', phone, email, dob || '', work_status || '', JSON.stringify(position_interests || []), city || '', state || '', needsVerification ? 0 : 1, registrationSource, referredBy, inviteEmployeeId);
   const accountId = r.lastInsertRowid;
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)').run(accountId, name || phone, 'account_created', '', phone, registrationSource === 'invite' ? '通过邀请链接注册' : '在线自助注册');
 
   // Store SMS consent
   if (sms_consent) {
@@ -10821,6 +11799,7 @@ app.get('/background-check-disclosure', (req, res) => res.sendFile(path.join(__d
 app.get('/background-check-consent', (req, res) => res.sendFile(path.join(__dirname, 'public', 'background-check-consent.html')));
 app.get('/data-deletion', (req, res) => res.sendFile(path.join(__dirname, 'public', 'data-deletion.html')));
 app.get('/sms-terms', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-terms.html')));
+app.get('/sms-consent-proof', (req, res) => res.sendFile(path.join(__dirname, 'public', 'sms-consent-proof.html')));
 
 // POST /api/docuseal/webhook — DocuSeal event notifications (partner + worker contracts)
 // Supports both self-hosted events (submission.*, submitter.*) and cloud events (form.*)
@@ -10922,9 +11901,8 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
       if (isCompleted) {
         try {
           const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
-          // Verify BOTH parties actually signed before marking as completed
-          // (DocuSeal Cloud form.completed may fire per-submitter)
-          if (status === 'completed' && companySigned && partnerSigned) {
+          // Trust DocuSeal completed status (timestamps may be missing due to API timing)
+          if (status === 'completed') {
             db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
               .run(partnerSigned, companySigned, wid);
             // Update contract version status
@@ -10949,8 +11927,11 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
             .run(partnerSigned, companySigned, wid);
           // If company just signed (First Party), notify worker to sign
           const submitterRole = data.role || data.metadata?.role || '';
-          const isCompanySigner = submitterRole === 'First Party' || (companySigned && !partnerSigned);
-          if (isCompanySigner) {
+          const isCompanySigner = submitterRole === 'First Party' || (!submitterRole && companySigned && !partnerSigned);
+          // Check if we already sent company-signed notification (avoid duplicate emails)
+          const currentOnb = db.prepare("SELECT ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(wid);
+          const alreadyNotified = currentOnb && (currentOnb.ds_status === 'company_signed' || currentOnb.ds_status === 'completed');
+          if (isCompanySigner && !alreadyNotified) {
             // Update contract version status
             db.prepare("UPDATE worker_contract_versions SET ds_status='company_signed', ds_company_signed_at=? WHERE worker_account_id=? AND ds_envelope_id=?")
               .run(companySigned, wid, submissionId);
@@ -11642,15 +12623,40 @@ app.post('/api/validate-address', async (req, res) => {
   if (!apiKey) {
     return res.json({ skipped: true });
   }
-  const { street, street2, city, state, zip } = req.body || {};
+  const { street, street2, city, state, zip, regionCode, countryName } = req.body || {};
   if (!street) return res.status(400).json({ error: 'street is required' });
 
   const addressLines = [street];
   if (street2) addressLines.push(street2);
 
+  // Resolve region code from ISO code or country name
+  const COUNTRY_TO_ISO = {
+    'Armenia':'AM','Australia':'AU','Austria':'AT','Azerbaijan':'AZ','Bangladesh':'BD','Barbados':'BB',
+    'Belarus':'BY','Belgium':'BE','Bulgaria':'BG','Canada':'CA','China':'CN','Cyprus':'CY',
+    'Czech Republic':'CZ','Denmark':'DK','Egypt':'EG','Estonia':'EE','Finland':'FI','France':'FR',
+    'Georgia':'GE','Germany':'DE','Greece':'GR','Hungary':'HU','Iceland':'IS','India':'IN',
+    'Indonesia':'ID','Ireland':'IE','Israel':'IL','Italy':'IT','Jamaica':'JM','Japan':'JP',
+    'Kazakhstan':'KZ','Korea':'KR','South Korea':'KR','Kyrgyzstan':'KG','Latvia':'LV','Lithuania':'LT',
+    'Luxembourg':'LU','Malta':'MT','Mexico':'MX','Moldova':'MD','Morocco':'MA','Netherlands':'NL',
+    'New Zealand':'NZ','Norway':'NO','Pakistan':'PK','Philippines':'PH','Poland':'PL','Portugal':'PT',
+    'Romania':'RO','Russia':'RU','Slovak Republic':'SK','Slovakia':'SK','Slovenia':'SI',
+    'South Africa':'ZA','Spain':'ES','Sri Lanka':'LK','Sweden':'SE','Switzerland':'CH',
+    'Tajikistan':'TJ','Thailand':'TH','Trinidad and Tobago':'TT','Tunisia':'TN','Turkey':'TR',
+    'Turkmenistan':'TM','Ukraine':'UA','United Kingdom':'GB','UK':'GB','Uzbekistan':'UZ','Venezuela':'VE',
+    'Afghanistan':'AF','Algeria':'DZ','Argentina':'AR','Brazil':'BR','Cambodia':'KH','Chile':'CL',
+    'Colombia':'CO','Cuba':'CU','Dominican Republic':'DO','Ecuador':'EC','El Salvador':'SV',
+    'Ethiopia':'ET','Ghana':'GH','Guatemala':'GT','Haiti':'HT','Honduras':'HN','Hong Kong':'HK',
+    'Iran':'IR','Iraq':'IQ','Jordan':'JO','Kenya':'KE','Laos':'LA','Lebanon':'LB','Libya':'LY',
+    'Malaysia':'MY','Myanmar':'MM','Nepal':'NP','Nicaragua':'NI','Nigeria':'NG','Panama':'PA',
+    'Paraguay':'PY','Peru':'PE','Saudi Arabia':'SA','Singapore':'SG','Syria':'SY','Taiwan':'TW',
+    'Tanzania':'TZ','Uganda':'UG','Uruguay':'UY','Vietnam':'VN','Yemen':'YE','Zimbabwe':'ZW'
+  };
+  let region = (regionCode || '').toUpperCase();
+  if (!region && countryName) region = COUNTRY_TO_ISO[countryName] || '';
+  if (!region) region = 'US';
   const payload = {
     address: {
-      regionCode: 'US',
+      regionCode: region,
       addressLines,
       ...(city  && { locality: city }),
       ...(state && { administrativeArea: state }),
@@ -11690,7 +12696,12 @@ app.post('/api/validate-address', async (req, res) => {
 
     const dpv = uspsData.dpvConfirmation;
     const granularity = verdict.validationGranularity;
-    const undeliverable = dpv === 'N' || granularity === 'OTHER' || granularity === 'ROUTE';
+
+    // For US addresses, use USPS DPV; for international, use Google granularity
+    const isUs = region === 'US';
+    const undeliverable = isUs
+      ? (dpv === 'N' || granularity === 'OTHER' || granularity === 'ROUTE')
+      : (granularity === 'OTHER');
 
     if (undeliverable) {
       return res.json({ valid: false });
@@ -11975,6 +12986,12 @@ function gracefulShutdown(signal) {
   } catch(e) { console.error('[Shutdown] Error:', e.message); }
   process.exit(0);
 }
+// Global error handler — return JSON instead of HTML for API errors
+app.use((err, req, res, _next) => {
+  console.error('[Global Error]', err.message);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
+
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 

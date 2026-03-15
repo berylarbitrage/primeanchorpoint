@@ -4,11 +4,11 @@
 
 /**
  * Validate structured address fields.
- * @param {{ street, street2, city, state, zip }} fields
+ * @param {{ street, street2, city, state, zip, regionCode? }} fields
  * @param {{ silent?: boolean }} opts  silent=true suppresses the "not found" dialog
  * @returns {Promise<{ proceed: boolean, skipped?: boolean, verified?: boolean, standardized?: object }>}
  */
-async function validateAddress({ street, street2, city, state, zip }, { silent = false } = {}) {
+async function validateAddress({ street, street2, city, state, zip, regionCode, countryName }, { silent = false } = {}) {
   if (!street && !city && !zip) return { proceed: true };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 12000);
@@ -16,7 +16,7 @@ async function validateAddress({ street, street2, city, state, zip }, { silent =
     const res = await fetch('/api/validate-address', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ street: street || '', street2: street2 || '', city: city || '', state: state || '', zip: zip || '' }),
+      body: JSON.stringify({ street: street || '', street2: street2 || '', city: city || '', state: state || '', zip: zip || '', ...(regionCode && { regionCode }), ...(countryName && { countryName }) }),
       signal: controller.signal
     });
     if (!res.ok) return { proceed: true };
@@ -108,7 +108,7 @@ async function _handleResult(data, original, { silent = false } = {}) {
       body:
         '<b style="color:#2D3748">输入地址 / Entered:</b><br>' +
         '<span style="color:#0F2B5B;font-weight:600">' + enteredLine + '</span>' +
-        '<br><br>该地址在 USPS 数据库中未找到匹配。<br>No match found in the USPS database.' +
+        '<br><br>该地址无法通过验证。<br>Address could not be verified.' +
         '<br><br>是否仍要继续提交？/ Continue submitting anyway?',
       confirmLabel: '继续提交 / Continue',
       cancelLabel: '取消 / Cancel',
