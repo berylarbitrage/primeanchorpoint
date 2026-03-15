@@ -13068,6 +13068,16 @@ app.get('/api/admin/docuseal/my-templates', requireAdmin, (req, res) => {
   res.json(rows);
 });
 
+// PATCH /api/admin/docuseal/my-templates/:id — rename template in local DB
+app.patch('/api/admin/docuseal/my-templates/:id', requireAdmin, (req, res) => {
+  const { name } = req.body;
+  if (!name || !String(name).trim()) return res.status(400).json({ error: '名称不能为空' });
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  db.prepare('UPDATE docuseal_templates SET name=? WHERE id=?').run(String(name).trim(), local.id);
+  res.json({ ok: true });
+});
+
 // DELETE /api/admin/docuseal/my-templates/:id — delete from local DB and DocuSeal
 app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res) => {
   const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
