@@ -1999,7 +1999,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
-      <th>协议</th><th>税务</th><th>报税文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>合规文件</th><th>协议</th><th>税务</th><th>报税文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -13311,6 +13311,15 @@ async function loadWorkerAccounts() {
     <td style="text-align:center">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
+    <td style="text-align:center;font-size:.78rem;white-space:nowrap">${(()=>{
+      if (w.employment_type==='1099') {
+        let parts = [];
+        if (w.tax_form==='W-9') parts.push('<span style="padding:1px 5px;border-radius:4px;font-weight:700;background:#dbeafe;color:#1d4ed8">W-9</span>');
+        parts.push('<span style="color:#1d4ed8;font-weight:600;font-size:.78rem">1099-NEC</span>');
+        return parts.join('<br>');
+      }
+      return '<span style="color:var(--gray-300)">—</span>';
+    })()}</td>
     <td style="font-size:.75rem;white-space:nowrap">${w.tax_form
       ? `<div style="display:flex;flex-direction:column;gap:.15rem">
           <span style="padding:1px 5px;border-radius:4px;font-weight:700;${w.tax_form==='W-9'?'background:#dbeafe;color:#1d4ed8':'background:#fef3c7;color:#92400e'}">${esc(w.tax_form)}</span>
@@ -13346,7 +13355,7 @@ async function loadWorkerAccounts() {
         ${extraBtns}
       </div>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="17" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="18" class="empty">暂无工人账户</td></tr>';
 }
 
 // ─── Onboarding Progress Modal ───
