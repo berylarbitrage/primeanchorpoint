@@ -15676,42 +15676,11 @@ function wpRenderUploadZones(category) {
             onchange="wpHandleFileSelect(${idx}, '${label.replace(/'/g, "\\'")}', this)">
         </div>
         <div id="${zoneId}_existing" style="margin-bottom:.4rem"></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin-bottom:.4rem">
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.72rem;font-weight:600;color:#6b7280">证件编号 Doc Number</label>
-            <input id="${zoneId}_docNumber" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem" placeholder="证件编号...">
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.72rem;font-weight:600;color:#6b7280">备注 Notes</label>
-            <input id="${zoneId}_notes" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem" placeholder="备注...">
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem">
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.72rem;font-weight:600;color:#6b7280">签发日期 Issue Date</label>
-            <input type="date" id="${zoneId}_issueDate" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem">
-          </div>
-          <div class="field" style="margin-bottom:0">
-            <label style="font-size:.72rem;font-weight:600;color:#6b7280">到期日期 Expiry Date</label>
-            <input type="date" id="${zoneId}_expiryDate" style="width:100%;padding:.3rem .5rem;border:1px solid var(--gray-200);border-radius:5px;font-size:.8rem"
-              onchange="wpCheckDocExpiry(this, '${zoneId}')">
-          </div>
-        </div>
-        <div id="${zoneId}_expiryWarn" style="display:none;font-size:.75rem;color:#dc2626;font-weight:600;margin-top:.3rem"></div>
       </div>
     `);
   });
 }
 
-function wpCheckDocExpiry(input, zoneId) {
-  const warn = document.getElementById(zoneId + '_expiryWarn');
-  if (input.value) {
-    const days = Math.ceil((new Date(input.value) - new Date()) / 86400000);
-    if (days <= 0) { warn.textContent = '⚠️ 该证件已过期！'; warn.style.color = '#dc2626'; warn.style.display = 'block'; }
-    else if (days <= 30) { warn.textContent = '⚠️ 该证件将在 ' + days + ' 天内到期'; warn.style.color = '#92400e'; warn.style.display = 'block'; }
-    else { warn.style.display = 'none'; }
-  } else { warn.style.display = 'none'; }
-}
 
 async function wpHandleFileSelect(idx, label, input) {
   if (!input.files || !input.files[0]) return;
@@ -15804,21 +15773,6 @@ async function wpLoadExistingDocs(category) {
           if (statusEl) statusEl.innerHTML = `<span style="color:#059669">✅ 已上传</span>`;
         }
       }
-      // Populate per-doc metadata fields
-      const docNumEl = document.getElementById(`${zoneId}_docNumber`);
-      const issueDateEl = document.getElementById(`${zoneId}_issueDate`);
-      const expiryDateEl = document.getElementById(`${zoneId}_expiryDate`);
-      const notesEl = document.getElementById(`${zoneId}_notes`);
-      if (docNumEl && doc.doc_number) docNumEl.value = doc.doc_number;
-      if (issueDateEl && doc.issue_date) issueDateEl.value = doc.issue_date;
-      if (expiryDateEl && doc.expiry_date) {
-        expiryDateEl.value = doc.expiry_date;
-        wpCheckDocExpiry(expiryDateEl, zoneId);
-      }
-      if (notesEl && doc.notes) notesEl.value = doc.notes;
-      // Store doc id on zone for later save
-      const zoneEl = document.getElementById(zoneId);
-      if (zoneEl) zoneEl.dataset.docId = doc.id;
     });
   } catch(e) { /* no existing docs */ }
 }
@@ -15956,30 +15910,6 @@ async function saveWorkPermit(doVerify) {
   const notes = document.getElementById('wpNotes').value.trim();
 
   if (!docType) return showToast('请选择证件类型', 'error');
-
-  // Save per-doc metadata for each upload zone that has a doc id
-  const docsMeta = [];
-  document.querySelectorAll('[id^="wpUploadZone_"]').forEach(zone => {
-    if (!zone.id.match(/^wpUploadZone_\d+$/)) return;
-    const docId = zone.dataset.docId;
-    if (!docId) return;
-    const zoneId = zone.id;
-    docsMeta.push({
-      id: parseInt(docId),
-      doc_number: (document.getElementById(zoneId + '_docNumber') || {}).value || '',
-      issue_date: (document.getElementById(zoneId + '_issueDate') || {}).value || '',
-      expiry_date: (document.getElementById(zoneId + '_expiryDate') || {}).value || '',
-      notes: (document.getElementById(zoneId + '_notes') || {}).value || ''
-    });
-  });
-
-  // Save per-doc metadata in batch
-  if (docsMeta.length > 0) {
-    await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit-docs-meta`, {
-      method: 'PUT',
-      body: JSON.stringify({ docs: docsMeta })
-    });
-  }
 
   // Save main work permit record
   await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`, {
