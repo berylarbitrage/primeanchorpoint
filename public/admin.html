@@ -1999,7 +1999,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
-      <th>合规文件</th><th>协议</th><th>报税文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>合规文件</th><th>协议</th><th>税务</th><th>报税文件</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -13314,6 +13314,14 @@ async function loadWorkerAccounts() {
     <td style="text-align:center">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
+    <td style="font-size:.75rem;white-space:nowrap">${w.tax_form
+      ? `<div style="display:flex;flex-direction:column;gap:.15rem">
+          <span style="padding:1px 5px;border-radius:4px;font-weight:700;${w.tax_form==='W-9'?'background:#dbeafe;color:#1d4ed8':'background:#fef3c7;color:#92400e'}">${esc(w.tax_form)}</span>
+          <span style="color:var(--gray-500);font-size:.7rem">${w.tax_status==='resident_alien'?'RA 居民':w.tax_status==='nonresident_alien'?'NRA 非居民':w.tax_status==='us_citizen'?'🇺🇸 公民':esc(w.tax_status||'')}</span>
+          ${w.employment_type==='1099'?'<span style="color:#854d0e;font-size:.68rem">'+(w.tax_form==='W-9'?'1099-NEC':'1042-S')+'</span>':''}
+          ${w.tax_claim_treaty==='yes'&&w.tax_treaty_country?'<span style="color:#7c3aed;font-size:.68rem">🤝 '+esc(w.tax_treaty_country)+'</span>':''}
+        </div>`
+      : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="text-align:center;white-space:nowrap">
       ${w.tax_doc_count > 0
         ? `<span style="cursor:pointer;font-size:.8rem;color:#065f46;background:#d1fae5;padding:.15rem .5rem;border-radius:6px;border:1px solid #6ee7b7" onclick="openTaxDocModal(${w.id},'${esc(w.name||w.username)}')">📄 ${w.tax_doc_count} 份</span>`
@@ -13341,7 +13349,7 @@ async function loadWorkerAccounts() {
         ${extraBtns}
       </div>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="16" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="17" class="empty">暂无工人账户</td></tr>';
 }
 
 // ─── Onboarding Progress Modal ───
@@ -13463,8 +13471,11 @@ function renderOnboardingTasks(tasks) {
     if (assignedTasks.length) return assignedTasks.includes(t.key);
     return true;
   }).map(t => {
-    const s = t.status;
-    const canComplete = s === 'pending' || s === 'submitted' || s === 'locked';
+    // For contract tasks: override status based on ds_status (signing must be completed by both parties)
+    const s = (t.key === 'contract' && t.ds_status && t.ds_status !== 'completed' && t.status === 'completed') ? 'submitted' : t.status;
+    // For contract tasks: prevent manual completion unless both parties have signed
+    const contractNotFullySigned = t.key === 'contract' && t.ds_status && t.ds_status !== 'completed';
+    const canComplete = (s === 'pending' || s === 'submitted' || s === 'locked') && !contractNotFullySigned;
     const canWaive = s !== 'completed' && s !== 'waived';
     const canReset = s === 'completed' || s === 'submitted' || s === 'waived';
     const needsUrl = t.key === 'contract' || t.key === 'gusto';
