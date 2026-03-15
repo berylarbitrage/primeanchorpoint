@@ -1333,7 +1333,7 @@ const PORTAL_I18N = {
     thDate: '日期', thJob: '工作', thClockIn: '上班', thBreakStart: '休息开始', thBreakEnd: '休息结束',
     thClockOut: '下班', thHours: '工时', thRegular: '正常', thOvertime: '加班', thStatus: '状态', thLocation: '位置',
     paymentsTitle: '打款记录', paymentsEmpty: '暂无打款记录', paymentsNoEmployee: '⚠️ 账号未关联员工档案', paymentsPeriod: '📅 周期：',
-    payMethodCash: '💵 现金', payMethodCheck: '📄 支票', payMethodDeposit: '🏦 直接存款', payMethodOther: '其他',
+    payMethodCash: '💵 现金', payMethodCheck: '📄 支票', payMethodDeposit: '🏦 ACH直存', payMethodWire: '🔁 电汇', payMethodZelle: '📱 Zelle', payMethodThirdParty: '💳 第三方', payMethodOther: '其他',
     todoTitle: '📋 我的入职待办事项', todoDesc: '请按顺序完成以下步骤。每一步完成后，HR 将审核并开放下一步。',
     refTitle: '🎁 推荐奖励', refDesc: '把您的专属链接分享给朋友，朋友成功注册并完成规定工时后，您可获得奖励！',
     refLinkLabel: '您的专属邀请链接', refCopy: '复制', refShareLabel: '分享给朋友', refNativeShare: '📤 分享', refSMS: '💬 短信 SMS', refScanLabel: '扫码注册',
@@ -1491,7 +1491,7 @@ const PORTAL_I18N = {
     thDate: 'Date', thJob: 'Job', thClockIn: 'In', thBreakStart: 'Break Start', thBreakEnd: 'Break End',
     thClockOut: 'Out', thHours: 'Hours', thRegular: 'Regular', thOvertime: 'OT', thStatus: 'Status', thLocation: 'Location',
     paymentsTitle: 'Payment History', paymentsEmpty: 'No payment records', paymentsNoEmployee: '⚠️ Account not linked to employee record', paymentsPeriod: '📅 Period: ',
-    payMethodCash: '💵 Cash', payMethodCheck: '📄 Check', payMethodDeposit: '🏦 Direct Deposit', payMethodOther: 'Other',
+    payMethodCash: '💵 Cash', payMethodCheck: '📄 Check', payMethodDeposit: '🏦 ACH Direct Deposit', payMethodWire: '🔁 Wire Transfer', payMethodZelle: '📱 Zelle', payMethodThirdParty: '💳 Third-Party', payMethodOther: 'Other',
     todoTitle: '📋 My Onboarding To-Do', todoDesc: 'Complete each step in order. After each step, HR will review and unlock the next.',
     refTitle: '🎁 Referral Bonus', refDesc: 'Share your unique link with friends and earn a bonus for each one who registers and works the required hours!',
     refLinkLabel: 'Your referral link', refCopy: 'Copy', refShareLabel: 'Share with friends', refNativeShare: '📤 Share', refSMS: '💬 SMS', refScanLabel: 'Scan to Register',
@@ -1649,7 +1649,7 @@ const PORTAL_I18N = {
     thDate: 'Fecha', thJob: 'Trabajo', thClockIn: 'Entrada', thBreakStart: 'Inicio Desc.', thBreakEnd: 'Fin Desc.',
     thClockOut: 'Salida', thHours: 'Horas', thRegular: 'Normal', thOvertime: 'Extra', thStatus: 'Estado', thLocation: 'Ubicación',
     paymentsTitle: 'Historial de Pagos', paymentsEmpty: 'Sin registros de pago', paymentsNoEmployee: '⚠️ Cuenta sin expediente de empleado', paymentsPeriod: '📅 Período: ',
-    payMethodCash: '💵 Efectivo', payMethodCheck: '📄 Cheque', payMethodDeposit: '🏦 Depósito Directo', payMethodOther: 'Otro',
+    payMethodCash: '💵 Efectivo', payMethodCheck: '📄 Cheque', payMethodDeposit: '🏦 Depósito Directo ACH', payMethodWire: '🔁 Transferencia Wire', payMethodZelle: '📱 Zelle', payMethodThirdParty: '💳 Tercero', payMethodOther: 'Otro',
     todoTitle: '📋 Mis Tareas de Incorporación', todoDesc: 'Complete cada paso en orden. Tras cada paso, RR.HH. revisará y desbloqueará el siguiente.',
     refTitle: '🎁 Bono por Referidos', refDesc: '¡Comparte tu enlace único con amigos y gana un bono por cada uno que se registre y cumpla las horas requeridas!',
     refLinkLabel: 'Tu enlace de referido', refCopy: 'Copiar', refShareLabel: 'Compartir con amigos', refNativeShare: '📤 Compartir', refSMS: '💬 SMS', refScanLabel: 'Escanear para Registrarse',
@@ -3793,7 +3793,7 @@ async function loadPayments() {
     tbody.innerHTML = `<p class="empty">${_t('paymentsEmpty')}</p>`;
     return;
   }
-  const PAY_METHOD = { cash: _t('payMethodCash'), check: _t('payMethodCheck'), direct_deposit: _t('payMethodDeposit'), zelle:'📱 Zelle', other: _t('payMethodOther') };
+  const PAY_METHOD = { cash: _t('payMethodCash'), check: _t('payMethodCheck'), direct_deposit: _t('payMethodDeposit'), wire: _t('payMethodWire'), zelle: _t('payMethodZelle'), third_party: _t('payMethodThirdParty'), other: _t('payMethodOther') };
   tbody.innerHTML = payments.map(p => {
     const period = p.period_start && p.period_end ? `${esc(p.period_start)} ~ ${esc(p.period_end)}`
                  : p.period_start ? esc(p.period_start) : '—';

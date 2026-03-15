@@ -4179,6 +4179,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN expected_salary TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_details TEXT DEFAULT '{}'"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN has_ssn INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent INTEGER DEFAULT 0"); } catch {}
@@ -4258,7 +4259,7 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -4278,6 +4279,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   const newExpectedSalary = expected_salary !== undefined ? expected_salary : w.expected_salary;
   const newOurRating = our_salary_rating !== undefined ? our_salary_rating : w.our_salary_rating;
   const newPaymentMethod = payment_method !== undefined ? payment_method : w.payment_method;
+  const newPaymentDetails = payment_details !== undefined ? JSON.stringify(payment_details) : (w.payment_details || '{}');
   const newHasSsn = has_ssn !== undefined ? (has_ssn ? 1 : 0) : (w.has_ssn || 0);
   const newPositionInterests = position_interests !== undefined ? JSON.stringify(position_interests) : (w.position_interests || '[]');
   logChange('active', w.active, newActive);
@@ -4286,6 +4288,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   logChange('expected_salary', w.expected_salary, newExpectedSalary);
   logChange('our_salary_rating', w.our_salary_rating, newOurRating);
   logChange('payment_method', w.payment_method, newPaymentMethod);
+  if (payment_details !== undefined) logChange('payment_details', w.payment_details||'{}', newPaymentDetails);
   logChange('has_ssn', w.has_ssn||0, newHasSsn);
   if (entity_type !== undefined) logChange('entity_type', w.entity_type, entity_type);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
@@ -4302,7 +4305,8 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   }
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
-    payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
+    payment_method=COALESCE(?,payment_method), payment_details=COALESCE(?,payment_details),
+    assigned_tasks=COALESCE(?,assigned_tasks),
     work_status=COALESCE(?,work_status), has_ssn=?, position_interests=?,
     employment_type=COALESCE(?,employment_type),
     entity_type=COALESCE(?,entity_type) WHERE id=?`)
@@ -4312,6 +4316,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       expected_salary !== undefined ? expected_salary : null,
       our_salary_rating !== undefined ? our_salary_rating : null,
       payment_method !== undefined ? payment_method : null,
+      payment_details !== undefined ? newPaymentDetails : null,
       assigned_tasks !== undefined ? JSON.stringify(assigned_tasks) : null,
       work_status !== undefined ? work_status : null,
       newHasSsn, newPositionInterests,

@@ -2634,10 +2634,19 @@ tr:hover td{background:var(--sky-light)}
   <div class="field" style="margin-bottom:1rem">
     <label style="font-size:.8rem;font-weight:600">支付方式 Payment Method</label>
     <select id="wdPaymentMethod" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
-      <option value="cash">💵 现金 Cash Only</option>
+      <option value="cash">💵 现金 Cash</option>
       <option value="check">✅ 支票 Check</option>
-      <option value="direct_deposit">🏦 直接存款 Direct Deposit</option>
+      <option value="direct_deposit">🏦 ACH 直接存款 Direct Deposit</option>
+      <option value="wire">🔁 电汇 Wire Transfer</option>
+      <option value="zelle">📱 Zelle</option>
+      <option value="third_party">💳 第三方平台 PayPal/Venmo/CashApp</option>
     </select>
+  </div>
+
+  <!-- Payment Authorization Details (dynamic per method) -->
+  <div id="wdPaymentDetailsSection" style="margin-bottom:1rem;display:none;background:#f8fafc;border:1px solid var(--gray-200);border-radius:8px;padding:.75rem 1rem">
+    <div style="font-size:.78rem;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:1px solid var(--gray-200)">付款授权信息 Payment Authorization</div>
+    <div id="wdPaymentDetailsFields"></div>
   </div>
 
   <div style="margin-bottom:1rem">
@@ -2764,7 +2773,10 @@ tr:hover td{background:var(--sky-light)}
       <select id="icPaymentMethod" style="width:100%;padding:.5rem .7rem;border:1px solid var(--gray-200);border-radius:6px">
         <option value="cash">💵 现金 Cash</option>
         <option value="check">✅ 支票 Check</option>
-        <option value="direct_deposit">🏦 直接存款 Direct Deposit</option>
+        <option value="direct_deposit">🏦 ACH 直接存款 Direct Deposit</option>
+        <option value="wire">🔁 电汇 Wire Transfer</option>
+        <option value="zelle">📱 Zelle</option>
+        <option value="third_party">💳 第三方平台 PayPal/Venmo/CashApp</option>
       </select>
     </div>
   </div>
@@ -13254,7 +13266,7 @@ function renderInternalStaffTable(rows, partners) {
 // ── Worker accounts ──
 const WORK_STATUS_MAP = { citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他' };
 const IV_STATUS_MAP = { scheduled:'⏳ 已约', completed:'✔ 面试完成', passed:'✅ 通过', failed:'❌ 未通过', cancelled:'取消' };
-const PAY_METHOD_LABELS = { check:'✅ 支票', cash:'💵 现金', direct_deposit:'🏦 直接存款' };
+const PAY_METHOD_LABELS = { check:'✅ 支票', cash:'💵 现金', direct_deposit:'🏦 ACH直存', wire:'🔁 电汇', zelle:'📱 Zelle', third_party:'💳 第三方' };
 
 // Format 10-digit US phone as +1 (XXX) XXX-XXXX
 function fmtPhone(p) {
@@ -13375,7 +13387,10 @@ async function loadWorkerAccounts() {
     <td style="font-size:.8rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer" onchange="updateWorkerPayMethod(${w.id},this.value)">
       <option value="cash" ${(w.payment_method||'cash')==='cash'?'selected':''}>💵 现金</option>
       <option value="check" ${w.payment_method==='check'?'selected':''}>✅ 支票</option>
-      <option value="direct_deposit" ${w.payment_method==='direct_deposit'?'selected':''}>🏦 直接存款</option>
+      <option value="direct_deposit" ${w.payment_method==='direct_deposit'?'selected':''}>🏦 ACH</option>
+      <option value="wire" ${w.payment_method==='wire'?'selected':''}>🔁 电汇</option>
+      <option value="zelle" ${w.payment_method==='zelle'?'selected':''}>📱 Zelle</option>
+      <option value="third_party" ${w.payment_method==='third_party'?'selected':''}>💳 第三方</option>
     </select></td>
     <td style="font-size:.78rem;white-space:nowrap;text-align:center">${(() => {
       const total = w.total_paid || 0;
@@ -17022,7 +17037,7 @@ async function openWorkerPayHistoryModal(workerId, workerName) {
   const total = payments.reduce((s, p) => s + (p.amount || 0), 0);
   document.getElementById('payHistorySummary').innerHTML =
     `共 <strong>${payments.length}</strong> 笔付款 &nbsp;·&nbsp; 累计总额：<strong style="color:#065f46;font-size:1.05rem">$${total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>`;
-  const methodLabel = { cash:'现金', check:'支票', direct_deposit:'直接存款' };
+  const methodLabel = { cash:'现金', check:'支票', direct_deposit:'ACH直存', wire:'电汇', zelle:'Zelle', third_party:'第三方' };
   document.getElementById('payHistoryList').innerHTML = `
     <table style="width:100%;font-size:.82rem;border-collapse:collapse">
       <thead><tr style="border-bottom:2px solid var(--gray-200)">
@@ -17045,7 +17060,7 @@ async function openWorkerPayHistoryModal(workerId, workerName) {
 }
 
 async function updateWorkerPayMethod(id, payment_method, sel) {
-  const label = {cash:'现金',check:'支票',direct_deposit:'直接存款'}[payment_method] || payment_method;
+  const label = {cash:'现金',check:'支票',direct_deposit:'ACH直存',wire:'电汇',zelle:'Zelle',third_party:'第三方平台'}[payment_method] || payment_method;
   if (!await showConfirm(`确认将支付方式改为「${label}」？`)) {
     // User cancelled — revert dropdown to previous value
     loadWorkerAccounts();
@@ -17219,6 +17234,85 @@ const ALL_TASK_TYPES = [
   { key: 'background_check', label: '🔍 背景调查 Background Check' }
 ];
 
+const WD_PAYMENT_FIELDS = {
+  direct_deposit: [
+    { key:'bank_name',      label:'银行名称 Bank Name',                 placeholder:'e.g. Chase, Bank of America' },
+    { key:'account_type',   label:'账户类型 Account Type',              placeholder:'Checking / Savings' },
+    { key:'routing_number', label:'路由号 Routing Number (ABA)',        placeholder:'9位数字' },
+    { key:'account_number', label:'账号 Account Number',               placeholder:'银行账号' },
+    { key:'authorized_at',  label:'授权日期 Authorization Date',        placeholder:'YYYY-MM-DD', type:'date' },
+    { key:'signature_confirm', label:'收款人确认信息正确 Signature Confirmed', type:'checkbox' }
+  ],
+  wire: [
+    { key:'bank_name',        label:'银行名称 Bank Name',                placeholder:'e.g. JPMorgan Chase' },
+    { key:'swift_code',       label:'SWIFT Code',                       placeholder:'如适用 / if applicable' },
+    { key:'aba_routing',      label:'ABA / Routing Number',             placeholder:'9位数字' },
+    { key:'account_number',   label:'账号 Account Number',              placeholder:'银行账号' },
+    { key:'bank_address',     label:'银行地址 Bank Address',             placeholder:'银行分行地址' },
+    { key:'intermediary_bank',label:'中间行 Intermediary Bank',         placeholder:'如国际电汇需要 / if applicable' },
+    { key:'fee_responsibility',label:'手续费承担方 Fee Responsibility', placeholder:'e.g. SHA / OUR / BEN' },
+    { key:'authorized_at',    label:'授权日期 Authorization Date',      placeholder:'YYYY-MM-DD', type:'date' }
+  ],
+  check: [
+    { key:'check_payable_to', label:'支票抬头 Check Payable To',        placeholder:'收款人法定名称' },
+    { key:'mailing_address',  label:'邮寄地址 Mailing Address',         placeholder:'Street, City, State, ZIP' },
+    { key:'allow_regular_mail',label:'允许普通邮寄 Allow Regular Mail', type:'checkbox' }
+  ],
+  zelle: [
+    { key:'zelle_handle',     label:'Zelle 绑定手机/邮箱 Phone or Email', placeholder:'e.g. +1 312-xxx-xxxx' },
+    { key:'zelle_display_name',label:'Zelle 显示名 Display Name',       placeholder:'Zelle 账号上的名字' },
+    { key:'authorized_at',    label:'授权日期 Authorization Date',      placeholder:'YYYY-MM-DD', type:'date' },
+    { key:'signature_confirm', label:'确认此账户由本人控制 Account Confirmed', type:'checkbox' }
+  ],
+  third_party: [
+    { key:'platform_name',    label:'平台名称 Platform',                placeholder:'e.g. PayPal, Venmo, Cash App' },
+    { key:'handle',           label:'用户名/Handle',                    placeholder:'e.g. @username or email' },
+    { key:'display_name',     label:'账户实名 Account Display Name',    placeholder:'平台上显示的名字' },
+    { key:'fee_responsibility',label:'手续费承担方 Fee Responsibility', placeholder:'e.g. Sender / Recipient' },
+    { key:'authorized_at',    label:'授权日期 Authorization Date',      placeholder:'YYYY-MM-DD', type:'date' },
+    { key:'signature_confirm', label:'确认此账户由本人控制 Account Confirmed', type:'checkbox' }
+  ],
+  cash: [
+    { key:'receipt_note',     label:'现金收款备注 Cash Receipt Note',   placeholder:'如需现金签收说明可填写' }
+  ]
+};
+
+let _wdPaymentDetails = {};
+
+function renderWdPaymentDetails(method) {
+  const section = document.getElementById('wdPaymentDetailsSection');
+  const fieldsDiv = document.getElementById('wdPaymentDetailsFields');
+  const fieldDefs = WD_PAYMENT_FIELDS[method];
+  if (!fieldDefs || !fieldDefs.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  fieldsDiv.innerHTML = fieldDefs.map(f => {
+    const val = _wdPaymentDetails[f.key] || '';
+    if (f.type === 'checkbox') {
+      return `<label style="display:flex;align-items:center;gap:.5rem;font-size:.82rem;margin-bottom:.5rem;cursor:pointer">
+        <input type="checkbox" id="wdPD_${f.key}" ${val ? 'checked' : ''} style="width:16px;height:16px">
+        <span>${f.label}</span>
+      </label>`;
+    }
+    return `<div style="margin-bottom:.5rem">
+      <label style="font-size:.78rem;color:var(--gray-500);display:block;margin-bottom:.2rem">${f.label}</label>
+      <input type="${f.type||'text'}" id="wdPD_${f.key}" value="${esc(val)}" placeholder="${f.placeholder||''}"
+        style="width:100%;padding:.35rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.83rem;box-sizing:border-box">
+    </div>`;
+  }).join('');
+}
+
+function collectWdPaymentDetails(method) {
+  const fieldDefs = WD_PAYMENT_FIELDS[method];
+  if (!fieldDefs) return {};
+  const out = {};
+  fieldDefs.forEach(f => {
+    const el = document.getElementById('wdPD_' + f.key);
+    if (!el) return;
+    out[f.key] = f.type === 'checkbox' ? (el.checked ? true : false) : el.value.trim();
+  });
+  return out;
+}
+
 async function openWorkerDetailModal(id) {
   const rows = await api('/admin/worker-accounts');
   const w = rows.find(r => r.id === id);
@@ -17226,6 +17320,7 @@ async function openWorkerDetailModal(id) {
   _workerDetailId = id;
   _workerDetailSkills = (w.skills || []).map(s => ({...s}));
   try { _workerAssignedTasks = JSON.parse(w.assigned_tasks || '[]'); } catch { _workerAssignedTasks = []; }
+  try { _wdPaymentDetails = JSON.parse(w.payment_details || '{}'); } catch { _wdPaymentDetails = {}; }
 
   const modal = document.getElementById('workerDetailModal');
   if (!modal) return;
@@ -17233,7 +17328,10 @@ async function openWorkerDetailModal(id) {
   document.getElementById('wdWorkStatus').value = w.work_status || '';
   document.getElementById('wdExpectedSalary').value = w.expected_salary || '';
   document.getElementById('wdOurRating').value = w.our_salary_rating || '';
-  document.getElementById('wdPaymentMethod').value = w.payment_method || 'cash';
+  const pm = w.payment_method || 'cash';
+  document.getElementById('wdPaymentMethod').value = pm;
+  renderWdPaymentDetails(pm);
+  document.getElementById('wdPaymentMethod').onchange = function() { renderWdPaymentDetails(this.value); };
   renderWdSkills();
   renderWdTasks();
   modal.classList.add('show');
@@ -17315,11 +17413,13 @@ function addWdSkill() {
 
 async function saveWorkerDetail() {
   if (!_workerDetailId) return;
+  const pm = document.getElementById('wdPaymentMethod').value;
   const data = {
     work_status: document.getElementById('wdWorkStatus').value,
     expected_salary: document.getElementById('wdExpectedSalary').value,
     our_salary_rating: document.getElementById('wdOurRating').value,
-    payment_method: document.getElementById('wdPaymentMethod').value,
+    payment_method: pm,
+    payment_details: collectWdPaymentDetails(pm),
     assigned_tasks: _workerAssignedTasks
   };
   await api(`/admin/worker-accounts/${_workerDetailId}`, { method:'PUT', body: JSON.stringify(data) });
@@ -17352,7 +17452,7 @@ const WD_FIELD_LABELS = {
 };
 const WD_VALUE_LABELS = {
   '0':'否/禁用', '1':'是/启用',
-  cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直接存款',
+  cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 ACH直存', wire:'🔁 电汇', zelle:'📱 Zelle', third_party:'💳 第三方',
   citizen:'🇺🇸 公民', green_card:'🟢 绿卡', ead:'📄 EAD', h1b:'H-1B', opt:'OPT/CPT', other:'其他',
   pending:'待处理', completed:'已完成', waived:'已豁免', skipped:'已跳过', in_progress:'进行中',
   sent:'已发送', company_signed:'公司已签', worker_signed:'工人已签', voided:'已作废', declined:'已拒签',
@@ -18286,7 +18386,7 @@ const ID_VERIFY_COLOR = {
   pending:'background:#fef9c3;color:#854d0e', completed:'background:#dbeafe;color:#1d4ed8',
   approved:'background:#dcfce7;color:#15803d', declined:'background:#fee2e2;color:#dc2626'
 };
-const PAY_LABEL = { '':'—', cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 直存' };
+const PAY_LABEL = { '':'—', cash:'💵 现金', check:'✅ 支票', direct_deposit:'🏦 ACH直存', wire:'🔁 电汇', zelle:'📱 Zelle', third_party:'💳 第三方' };
 
 function renderInterviews(rows) {
   const wrap = document.getElementById('ivInterviewsTable');
@@ -18296,7 +18396,7 @@ function renderInterviews(rows) {
   }
   const ivTypeOpts = [['onboarding','入职面试'],['job','工作面试'],['other','其他']];
   const idOpts  = [['','— 未设置 —'],['not_sent','未发送'],['pending','🕐 验证中'],['completed','⏳ 待审批'],['approved','✅ 已验证'],['declined','❌ 验证失败']];
-  const payOpts = [['','— 未设置 —'],['cash','💵 现金 Cash'],['check','✅ 支票 Check'],['direct_deposit','🏦 直存 Direct Deposit']];
+  const payOpts = [['','— 未设置 —'],['cash','💵 现金 Cash'],['check','✅ 支票 Check'],['direct_deposit','🏦 ACH直存'],['wire','🔁 电汇 Wire'],['zelle','📱 Zelle'],['third_party','💳 第三方']];
   const selStyle = 'padding:.28rem .5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.8rem;background:#fff;cursor:pointer';
   const mkSel = (opts, val, fn) =>
     `<select style="${selStyle}" onchange="${fn}">${opts.map(([v,l])=>`<option value="${v}"${val===v?' selected':''}>${l}</option>`).join('')}</select>`;
