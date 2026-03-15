@@ -1540,12 +1540,12 @@ try {
   if (_dsRow) {
     const _dsCfg = JSON.parse(_dsRow.config || '{}');
     const _catMap = {
-      company_contract_template_id: 'contract', worker_1099_template_id: 'contract', worker_w2_template_id: 'contract',
-      w4_template_id: 'tax', w9_template_id: 'tax', w8ben_template_id: 'tax', w8bene_template_id: 'tax',
-      form8233_template_id: 'tax', i9_template_id: 'tax', w7_template_id: 'tax',
-      ach_auth_template_id: 'payment', wire_auth_template_id: 'payment', check_instruction_template_id: 'payment',
-      zelle_auth_template_id: 'payment', third_party_pay_template_id: 'payment', cash_receipt_template_id: 'payment',
-      contractor_invoice_template_id: 'invoice'
+      company_contract_template_id: 'company_contract', worker_1099_template_id: 'worker_1099', worker_w2_template_id: 'worker_w2',
+      w4_template_id: 'w4', w9_template_id: 'w9', w8ben_template_id: 'w8ben', w8bene_template_id: 'w8bene',
+      form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
+      ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
+      zelle_auth_template_id: 'zelle_auth', third_party_pay_template_id: 'third_party_pay', cash_receipt_template_id: 'cash_receipt',
+      contractor_invoice_template_id: 'contractor_invoice'
     };
     for (const [cfgKey, cat] of Object.entries(_catMap)) {
       const tid = _dsCfg[cfgKey];
@@ -1553,6 +1553,26 @@ try {
     }
   }
 } catch(e) { /* column already exists */ }
+
+// Migrate: update broad categories (tax, contract, payment, invoice) to specific doc_types
+try {
+  const _dsRow2 = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  if (_dsRow2) {
+    const _dsCfg2 = JSON.parse(_dsRow2.config || '{}');
+    const _dtMap = {
+      company_contract_template_id: 'company_contract', worker_1099_template_id: 'worker_1099', worker_w2_template_id: 'worker_w2',
+      w4_template_id: 'w4', w9_template_id: 'w9', w8ben_template_id: 'w8ben', w8bene_template_id: 'w8bene',
+      form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
+      ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
+      zelle_auth_template_id: 'zelle_auth', third_party_pay_template_id: 'third_party_pay', cash_receipt_template_id: 'cash_receipt',
+      contractor_invoice_template_id: 'contractor_invoice'
+    };
+    for (const [cfgKey, docType] of Object.entries(_dtMap)) {
+      const tid = _dsCfg2[cfgKey];
+      if (tid) db.prepare("UPDATE docuseal_templates SET category=? WHERE docuseal_template_id=?").run(docType, tid);
+    }
+  }
+} catch(e) { /* ignore */ }
 
 // Seed default integration rows if not present
 const intProviders = ['workbright','checkr','gusto','twilio','docuseal'];
@@ -3249,15 +3269,15 @@ function generateW2EmploymentHtmlTemplate() {
 
 // ── Map of all auto-creatable templates ──
 const DOCUSEAL_AUTO_TEMPLATES = {
-  company_contract: { name: 'Company Contract / 公司合同', configKey: 'company_contract_template_id', category: 'contract', generator: generateCompanyContractHtmlTemplate },
-  worker_1099: { name: 'Independent Contractor Agreement (1099) / 劳务合同—1099', configKey: 'worker_1099_template_id', category: 'contract', generator: generateContractor1099HtmlTemplate },
-  worker_w2: { name: 'Employment Agreement (W-2) / 劳务合同—W2', configKey: 'worker_w2_template_id', category: 'contract', generator: generateW2EmploymentHtmlTemplate },
-  w4: { name: 'W-4 Employee Withholding Certificate', configKey: 'w4_template_id', category: 'tax', generator: generateW4HtmlTemplate },
-  w9: { name: 'W-9 Request for TIN', configKey: 'w9_template_id', category: 'tax', generator: generateW9HtmlTemplate },
-  w8ben: { name: 'W-8BEN Certificate of Foreign Status (Individual)', configKey: 'w8ben_template_id', category: 'tax', generator: generateW8BENHtmlTemplate },
-  w8bene: { name: 'W-8BEN-E Certificate of Foreign Status (Entity)', configKey: 'w8bene_template_id', category: 'tax', generator: generateW8BENEHtmlTemplate },
-  form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', category: 'tax', generator: generateForm8233HtmlTemplate },
-  i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'tax', generator: generateI9HtmlTemplate },
+  company_contract: { name: 'Company Contract / 公司合同', configKey: 'company_contract_template_id', category: 'company_contract', generator: generateCompanyContractHtmlTemplate },
+  worker_1099: { name: 'Independent Contractor Agreement (1099) / 劳务合同—1099', configKey: 'worker_1099_template_id', category: 'worker_1099', generator: generateContractor1099HtmlTemplate },
+  worker_w2: { name: 'Employment Agreement (W-2) / 劳务合同—W2', configKey: 'worker_w2_template_id', category: 'worker_w2', generator: generateW2EmploymentHtmlTemplate },
+  w4: { name: 'W-4 Employee Withholding Certificate', configKey: 'w4_template_id', category: 'w4', generator: generateW4HtmlTemplate },
+  w9: { name: 'W-9 Request for TIN', configKey: 'w9_template_id', category: 'w9', generator: generateW9HtmlTemplate },
+  w8ben: { name: 'W-8BEN Certificate of Foreign Status (Individual)', configKey: 'w8ben_template_id', category: 'w8ben', generator: generateW8BENHtmlTemplate },
+  w8bene: { name: 'W-8BEN-E Certificate of Foreign Status (Entity)', configKey: 'w8bene_template_id', category: 'w8bene', generator: generateW8BENEHtmlTemplate },
+  form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', category: 'form8233', generator: generateForm8233HtmlTemplate },
+  i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'i9', generator: generateI9HtmlTemplate },
 };
 
 function getDsealConfigTemplateId(type) {
@@ -13692,7 +13712,7 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   const { name, file, category } = req.body; // file = data:application/pdf;base64,...
   if (!name || !file) return res.status(400).json({ error: '缺少 name 或 file' });
-  const cat = category || 'contract';
+  const cat = category || '';
   try {
     const r = await dsealApiCall('POST', '/api/templates/pdf', {
       name,
@@ -13736,6 +13756,29 @@ app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res
   // Delete from local DB
   db.prepare('DELETE FROM docuseal_templates WHERE id=?').run(req.params.id);
   res.json({ success: true });
+});
+
+// PUT /api/admin/docuseal/my-templates/:id/rename — rename a template in local DB
+app.put('/api/admin/docuseal/my-templates/:id/rename', requireAdmin, (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: '模板名称不能为空' });
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  db.prepare('UPDATE docuseal_templates SET name=? WHERE id=?').run(name.trim(), req.params.id);
+  res.json({ success: true, name: name.trim() });
+});
+
+// PUT /api/admin/docuseal/templates/:dsId/rename — rename a template via DocuSeal API + local DB
+app.put('/api/admin/docuseal/templates/:dsId/rename', requireAdmin, async (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: '模板名称不能为空' });
+  if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
+  try {
+    await dsealApiCall('PUT', `/api/templates/${req.params.dsId}`, { name: name.trim() });
+    // Also update local DB if template exists there
+    db.prepare('UPDATE docuseal_templates SET name=? WHERE docuseal_template_id=?').run(name.trim(), parseInt(req.params.dsId));
+    res.json({ success: true, name: name.trim() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/admin/docuseal/create-html-template — create a single template from HTML via DocuSeal API
