@@ -16178,27 +16178,16 @@ async function openWorkPermitModal() {
   wpRenderUploadZones(wpCategory);
   wpLoadExistingDocs(wpCategory);
 
-  // Load existing work permit data
+  // Load existing work permit data — display info only, do NOT pre-fill form fields
   try {
     const data = await api(`/admin/worker-accounts/${_onboardingWorkerId}/work-permit`);
     if (data && data.doc_type) {
-      // Ensure the saved doc_type option exists in current dropdown; if not, add it
-      const sel = document.getElementById('wpDocType');
-      if (!sel.querySelector(`option[value="${data.doc_type}"]`)) {
-        sel.insertAdjacentHTML('beforeend', `<option value="${data.doc_type}">${data.doc_type}</option>`);
-      }
-      sel.value = data.doc_type || '';
-      document.getElementById('wpDocNumber').value = data.doc_number || '';
-      document.getElementById('wpIssueDate').value = data.issue_date || '';
-      document.getElementById('wpExpiryDate').value = data.expiry_date || '';
-      document.getElementById('wpCategory').value = data.category || '';
-      document.getElementById('wpNotes').value = data.notes || '';
-      // Show current info
+      // Show current info summary (read-only)
       const info = document.getElementById('wpCurrentInfo');
-      const selOpt = sel.options[sel.selectedIndex];
-      const typeLabel = selOpt && selOpt.value ? selOpt.text : data.doc_type;
+      const opts = WP_DOC_OPTIONS[wpCategory] || WP_DOC_OPTIONS.generic;
+      const optMatch = opts.find(o => o.value === data.doc_type);
+      const typeLabel = optMatch ? optMatch.label : data.doc_type;
       if (data.doc_type && !data.verified_at) {
-        // Data exists but verification was reset (likely due to tax residency change)
         info.innerHTML = `<div style="font-weight:700;color:#92400e;margin-bottom:.3rem">⚠️ 验证已重置 — 税务身份发生变更，需重新验证</div>
           <div>类型: <b>${typeLabel}</b>${data.doc_number?' · 编号: <b>'+data.doc_number+'</b>':''}${data.expiry_date?' · 到期: <b>'+data.expiry_date+'</b>':''}</div>`;
         info.style.background = '#fef3c7';
@@ -21111,6 +21100,12 @@ async function showInvpBuilder() {
   loadInvpPresets().then(() => renderInvpProfilePreview());
 }
 
+function _parseStateFromAddrStr(s) {
+  if (!s) return null;
+  const m = s.match(/,\s*([A-Z]{2})\s+\d{5}/);
+  return m ? m[1] : null;
+}
+
 async function _getPartnerStateFromData(billName) {
   const partners = window._invpPartners || [];
   const partner = partners.find(p => p.name === billName);
@@ -21118,7 +21113,17 @@ async function _getPartnerStateFromData(billName) {
   try {
     const addrs = JSON.parse(partner.addresses || '[]');
     if (addrs.length && addrs[0].state) return addrs[0].state.toUpperCase().slice(0,2);
+    // Fallback: try parsing from structured address string
+    if (addrs.length && addrs[0].address) {
+      const parsed = _parseStateFromAddrStr(addrs[0].address);
+      if (parsed) return parsed;
+    }
   } catch {}
+  // Fallback: try parsing from partner.address plain text field
+  if (partner.address) {
+    const parsed = _parseStateFromAddrStr(partner.address);
+    if (parsed) return parsed;
+  }
   return null;
 }
 
@@ -21128,7 +21133,9 @@ async function invpRefreshInvoiceNumber() {
   const today = new Date();
   const billName = (document.getElementById('invPageBillName').value || '').trim();
   const partnerState = await _getPartnerStateFromData(billName);
-  const state = (partnerState || window._invpSelectedPartnerState || 'XX').toUpperCase().slice(0,2);
+  const billAddr = (document.getElementById('invPageBillAddr').value || '');
+  const addrState = _parseStateFromAddrStr(billAddr);
+  const state = (partnerState || window._invpSelectedPartnerState || addrState || 'XX').toUpperCase().slice(0,2);
   const companyAbbr = billName.split(/[\s\-&,]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
   const mm = String(today.getMonth()+1).padStart(2,'0');
   const dd = String(today.getDate()).padStart(2,'0');
@@ -21255,6 +21262,8 @@ function selectInvPartner(id) {
       if (addrs[0].street) addrLine = [addrs[0].street, addrs[0].city, addrs[0].state, addrs[0].zip].filter(Boolean).join(', ');
     }
   } catch {}
+  // Fallback: parse state from address string
+  if (!stateAbbr) stateAbbr = _parseStateFromAddrStr(addrLine) || _parseStateFromAddrStr(partner.address);
   document.getElementById('invPageBillAddr').value = addrLine;
   const sugg = document.getElementById('invCompanySuggestions');
   if (sugg) sugg.style.display = 'none';
