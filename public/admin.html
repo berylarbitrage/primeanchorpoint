@@ -2146,6 +2146,30 @@ tr:hover td{background:var(--sky-light)}
     <!-- Connection status -->
     <div id="ds-conn-badge" style="margin-bottom:1rem"></div>
 
+    <!-- Connection Settings Panel -->
+    <div id="ds-conn-card" style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1.5rem">
+      <div style="font-size:1rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        DocuSeal 连接设置
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+        <div>
+          <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">DocuSeal URL <span style="color:#ef4444">*</span></label>
+          <input type="text" id="ds-conn-url" placeholder="https://docuseal.yourdomain.com" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
+          <div style="font-size:.75rem;color:#94a3b8;margin-top:.3rem">自托管实例地址（不含末尾 /）</div>
+        </div>
+        <div>
+          <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">API Key <span style="color:#ef4444">*</span></label>
+          <input type="text" id="ds-conn-apikey" placeholder="留空则保持现有值不变" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
+          <div id="ds-conn-key-hint" style="font-size:.75rem;color:#94a3b8;margin-top:.3rem"></div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.75rem">
+        <button class="btn btn-sm" style="background:#10b981;color:#fff;padding:.45rem 1rem;border-radius:7px;font-size:.85rem;font-weight:600;cursor:pointer;border:none" onclick="_dsSaveConnection()">保存连接</button>
+        <span id="ds-conn-save-status" style="font-size:.83rem;color:#64748b"></span>
+      </div>
+    </div>
+
     <!-- Current config -->
     <div style="background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1.5rem">
       <div style="font-size:1rem;font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem">
@@ -15930,7 +15954,7 @@ async function loadIntegrations() {
   }).join('');
 }
 
-function editIntegration(provider) {
+async function editIntegration(provider) {
   const info = INT_LABELS[provider] || { name: provider };
   document.getElementById('intProvider').value = provider;
   document.getElementById('integrationModalTitle').textContent = `配置 ${info.name}`;
@@ -15938,6 +15962,20 @@ function editIntegration(provider) {
   document.getElementById('intApiKey').value = '';
   document.getElementById('intApiSecret').value = '';
   document.getElementById('intConfig').value = '{}';
+  // Pre-populate with current values from server
+  try {
+    const rows = await api('/admin/integrations');
+    const row = rows && rows.find(r => r.provider === provider);
+    if (row) {
+      document.getElementById('intEnabled').value = row.enabled ? '1' : '0';
+      // api_key is masked — show placeholder so user knows it's set
+      if (row.api_key) document.getElementById('intApiKey').placeholder = `当前: ${row.api_key}（留空保持不变）`;
+      try {
+        const cfg = typeof row.config === 'string' ? JSON.parse(row.config || '{}') : (row.config || {});
+        document.getElementById('intConfig').value = JSON.stringify(cfg, null, 2);
+      } catch(e) { document.getElementById('intConfig').value = '{}'; }
+    }
+  } catch(e) { /* fallback to empty */ }
   document.getElementById('integrationModal').classList.add('show');
 }
 
@@ -16076,10 +16114,39 @@ async function _dsLoadConfig() {
     if (_dsConfig.connected) {
       badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#d1fae5;color:#065f46">✓ 已连接 DocuSeal</span>${_dsConfig.url ? ` <span style="font-size:.78rem;color:#94a3b8">${_dsEsc(_dsConfig.url)}</span>` : ''}`;
     } else {
-      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#fee2e2;color:#991b1b">✗ 未连接 — 请检查 .env 中 DOCUSEAL_API_KEY / DOCUSEAL_URL</span>`;
+      badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#fee2e2;color:#991b1b">✗ 未连接 — 请在下方填写 API Key 和 URL</span>`;
     }
     _dsRefreshSelects();
   } catch(e) { showToast(e.message, 'error'); }
+  // Load connection field values
+  try {
+    const conn = await api('/api/admin/docuseal/connection');
+    const urlEl = document.getElementById('ds-conn-url');
+    const keyHint = document.getElementById('ds-conn-key-hint');
+    if (urlEl && conn.url) urlEl.value = conn.url;
+    if (keyHint) {
+      if (conn.api_key_source === 'env') keyHint.textContent = '当前通过环境变量设置，输入新值可覆盖到数据库';
+      else if (conn.api_key_preview) keyHint.textContent = `当前值：${conn.api_key_preview}（留空保持不变）`;
+      else keyHint.textContent = '尚未设置';
+    }
+  } catch(e) { /* ignore */ }
+}
+
+async function _dsSaveConnection() {
+  const url = (document.getElementById('ds-conn-url').value || '').trim().replace(/\/+$/, '');
+  const api_key = (document.getElementById('ds-conn-apikey').value || '').trim();
+  const status = document.getElementById('ds-conn-save-status');
+  if (!url) { showToast('请填写 DocuSeal URL', 'error'); return; }
+  try {
+    status.textContent = '保存中…';
+    const body = { url };
+    if (api_key) body.api_key = api_key;
+    const r = await api('/api/admin/docuseal/connection', { method: 'POST', body: JSON.stringify(body) });
+    status.textContent = r.connected ? '✓ 已连接' : '已保存（连接验证失败，请检查 API Key）';
+    document.getElementById('ds-conn-apikey').value = '';
+    await loadDocusealTemplatesPage();
+    showToast('✅ 连接设置已保存');
+  } catch(e) { status.textContent = ''; showToast(e.message, 'error'); }
 }
 
 async function _dsLoadMyTemplates() {
