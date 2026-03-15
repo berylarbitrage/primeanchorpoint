@@ -1539,6 +1539,29 @@ db.exec(`CREATE TABLE IF NOT EXISTS invoices (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+// ─── Contractor Invoice / Payment Requests (FWPA compliance) ───
+db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL,
+  invoice_number TEXT NOT NULL,
+  invoice_date TEXT NOT NULL,
+  service_description TEXT NOT NULL,
+  service_period_start TEXT DEFAULT '',
+  service_period_end TEXT DEFAULT '',
+  hours_worked REAL DEFAULT 0,
+  hourly_rate REAL DEFAULT 0,
+  flat_amount REAL DEFAULT 0,
+  total_amount REAL NOT NULL,
+  payment_method TEXT DEFAULT '',
+  payment_due_date TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  status TEXT DEFAULT 'submitted',
+  reviewed_by TEXT DEFAULT '',
+  reviewed_at TEXT DEFAULT '',
+  reject_reason TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
   .split(',').map(d => d.trim()).filter(Boolean);
@@ -6000,6 +6023,37 @@ app.delete('/api/admin/worker-accounts/:id/payments/:pid', requireAdmin, require
   res.json({ success: true });
 });
 
+// ─── Admin: Contractor Invoice Review ───
+app.get('/api/admin/contractor-invoices', requireAdmin, (req, res) => {
+  const rows = db.prepare(`
+    SELECT ci.*, wa.name AS worker_name, wa.username AS worker_username, wa.phone AS worker_phone, wa.email AS worker_email
+    FROM contractor_invoices ci
+    LEFT JOIN worker_accounts wa ON ci.worker_account_id = wa.id
+    ORDER BY ci.created_at DESC
+  `).all();
+  res.json(rows);
+});
+
+app.put('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  const { status, reject_reason } = req.body;
+  if (!['approved', 'rejected'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  const inv = db.prepare('SELECT * FROM contractor_invoices WHERE id=?').get(req.params.id);
+  if (!inv) return res.status(404).json({ error: 'Not found' });
+  const reviewedBy = req.session && req.session.username ? req.session.username : 'admin';
+  db.prepare('UPDATE contractor_invoices SET status=?, reviewed_by=?, reviewed_at=?, reject_reason=? WHERE id=?')
+    .run(status, reviewedBy, new Date().toISOString(), status === 'rejected' ? (reject_reason || '') : '', req.params.id);
+  // Log to worker history
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(inv.worker_account_id, reviewedBy, 'contractor_invoice', inv.status, status,
+      `Invoice ${inv.invoice_number}: $${inv.total_amount} — ${status === 'approved' ? '已批准' : '已拒绝' + (reject_reason ? ': ' + reject_reason : '')}`);
+  res.json({ success: true });
+});
+
+app.delete('/api/admin/contractor-invoices/:id', requireAdmin, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM contractor_invoices WHERE id=?').run(req.params.id);
+  res.json({ success: true });
+});
+
 // Admin: resend verification codes to unverified worker
 app.post('/api/admin/worker-accounts/:id/resend-verify', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
@@ -9020,7 +9074,7 @@ app.post('/api/worker/login', (req, res) => {
 });
 
 app.get('/api/worker/me', requireWorker, (req, res) => {
-  const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
+  const w = db.prepare('SELECT id, username, name, phone, email, dob, work_status, employee_id, active, employment_type, created_at FROM worker_accounts WHERE id=?').get(req.workerId);
   const emp = req.workerEmployeeId ? db.prepare('SELECT id, first_name, last_name, employee_id, position, department, pay_rate, pay_type, status, address, street2, city, state, zip, emergency_name, emergency_phone, emergency_relation FROM employees WHERE id=?').get(req.workerEmployeeId) : null;
   const docs = db.prepare("SELECT doc_type, status, created_at FROM worker_compliance_docs WHERE worker_account_id=?").all(req.workerId);
   res.json({ account: w, employee: emp, compliance_docs: docs });
@@ -10064,6 +10118,32 @@ app.get('/api/worker/payments', requireWorker, (req, res) => {
     ORDER BY p.payment_date DESC, p.created_at DESC
   `).all(req.workerEmployeeId);
   res.json(payments);
+});
+
+// ─── Worker Contractor Invoices ───
+app.get('/api/worker/contractor-invoices', requireWorker, (req, res) => {
+  const rows = db.prepare('SELECT * FROM contractor_invoices WHERE worker_account_id=? ORDER BY created_at DESC').all(req.workerId);
+  res.json(rows);
+});
+
+app.post('/api/worker/contractor-invoices', requireWorker, (req, res) => {
+  const { service_description, service_period_start, service_period_end, hours_worked, hourly_rate, flat_amount, total_amount, payment_due_date, notes } = req.body;
+  if (!service_description || !total_amount) return res.status(400).json({ error: '请填写服务描述和总金额 / Service description and total amount required' });
+  // Generate invoice number: INV-WORKERID-YYYYMMDD-SEQ
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const existing = db.prepare("SELECT COUNT(*) as cnt FROM contractor_invoices WHERE worker_account_id=? AND invoice_date LIKE ?").get(req.workerId, new Date().toISOString().slice(0, 10) + '%');
+  const seq = String((existing?.cnt || 0) + 1).padStart(3, '0');
+  const invoiceNumber = `INV-${req.workerId}-${today}-${seq}`;
+  const invoiceDate = new Date().toISOString().slice(0, 10);
+  const r = db.prepare(`INSERT INTO contractor_invoices
+    (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end,
+     hours_worked, hourly_rate, flat_amount, total_amount, payment_due_date, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(req.workerId, invoiceNumber, invoiceDate, service_description,
+      service_period_start || '', service_period_end || '',
+      hours_worked || 0, hourly_rate || 0, flat_amount || 0, total_amount,
+      payment_due_date || '', notes || '');
+  res.json({ success: true, id: r.lastInsertRowid, invoice_number: invoiceNumber });
 });
 
 // ─── Worker Forgot / Reset Password ───
