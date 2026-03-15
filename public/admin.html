@@ -19766,7 +19766,7 @@ async function loadDocusealTemplatesPage() {
 
 async function _dsLoadConfig() {
   try {
-    _dsConfig = await api('/api/admin/docuseal/config');
+    _dsConfig = await api('/admin/docuseal/config');
     _dsRefreshSelects();
   } catch(e) { showToast(e.message, 'error'); }
   await _dsTestConnection();
@@ -19776,7 +19776,7 @@ async function _dsTestConnection() {
   const badge = document.getElementById('ds-conn-badge');
   badge.innerHTML = `<span style="font-size:.82rem;color:#94a3b8">检测连接中…</span>`;
   try {
-    const r = await api('/api/admin/docuseal/test');
+    const r = await api('/admin/docuseal/test');
     const retestBtn = `<button onclick="_dsTestConnection()" style="font-size:.75rem;color:#94a3b8;background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">重新检测</button>`;
     if (r.ok) {
       badge.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.3rem;padding:.25rem .7rem;border-radius:999px;font-size:.78rem;font-weight:600;background:#d1fae5;color:#065f46">✓ 已连接 DocuSeal</span>${r.url ? `<span style="font-size:.78rem;color:#94a3b8">${_dsEsc(r.url)}</span>` : ''}${retestBtn}`;
@@ -19793,7 +19793,7 @@ async function _dsTestConnection() {
 async function _dsLoadMyTemplates() {
   const wrap = document.getElementById('ds-my-templates-wrap');
   try {
-    _dsMyTemplates = await api('/api/admin/docuseal/my-templates');
+    _dsMyTemplates = await api('/admin/docuseal/my-templates');
     _dsRenderMyTemplates();
     _dsRefreshSelects();
   } catch(e) {
@@ -19888,7 +19888,7 @@ function _dsRenderMyTemplates() {
 async function dsSetTemplate(type, id) {
   try {
     const cfgKey = type + '_template_id';
-    await api('/api/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ [cfgKey]: id || null }) });
+    await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ [cfgKey]: id || null }) });
     _dsConfig[cfgKey] = id || null;
     _dsRenderMyTemplates();
     const label = (_DS_SELECTORS.find(s => s.key === cfgKey) || {}).label || type;
@@ -19899,7 +19899,7 @@ async function dsSetTemplate(type, id) {
 async function dsDeleteMyTemplate(localId, dsId, name) {
   if (!confirm(`确定要删除模板「${name}」吗？\n\n这会同时从 DocuSeal 中删除此模板，不可撤销。`)) return;
   try {
-    await api(`/api/admin/docuseal/my-templates/${localId}`, { method: 'DELETE' });
+    await api(`/admin/docuseal/my-templates/${localId}`, { method: 'DELETE' });
     for (const s of _DS_SELECTORS) { if (_dsConfig[s.key] == dsId) _dsConfig[s.key] = null; }
     _dsMyTemplates = _dsMyTemplates.filter(t => t.id !== localId);
     _dsRefreshSelects();
@@ -19956,7 +19956,7 @@ async function dsUploadTemplate() {
   btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite"></span> 上传中…';
   status.textContent = '';
   try {
-    await api('/api/admin/docuseal/upload-template', { method: 'POST', body: JSON.stringify({ name, file: _dsFileData }) });
+    await api('/admin/docuseal/upload-template', { method: 'POST', body: JSON.stringify({ name, file: _dsFileData }) });
     showToast(`模板「${name}」上传成功`, 'success');
     status.textContent = '✓ 上传成功';
     document.getElementById('ds-upload-name').value = '';
