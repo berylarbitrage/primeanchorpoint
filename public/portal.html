@@ -5431,6 +5431,9 @@ async function openWorkerW9Sign() {
     if (!r || !r.signUrl) throw new Error(r?.error || '获取签署链接失败');
     const form = document.createElement('docuseal-form');
     form.setAttribute('data-src', r.signUrl);
+    form.setAttribute('data-with-draw-signature', 'true');
+    form.setAttribute('data-with-typed-signature', 'true');
+    form.setAttribute('data-with-upload-signature', 'true');
     form.style.width = '100%';
     form.addEventListener('completed', () => {
       closeWorkerW9Sign();
@@ -5705,6 +5708,9 @@ async function openWorkerContractSign() {
     // Load DocuSeal form web component
     const form = document.createElement('docuseal-form');
     form.setAttribute('data-src', r.signUrl);
+    form.setAttribute('data-with-draw-signature', 'true');
+    form.setAttribute('data-with-typed-signature', 'true');
+    form.setAttribute('data-with-upload-signature', 'true');
     form.style.width = '100%';
     form.addEventListener('completed', () => {
       closeWorkerContractSign();

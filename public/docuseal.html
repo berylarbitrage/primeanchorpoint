@@ -166,6 +166,10 @@
             <option value="third_party_pay_template_id">PayPal / Venmo / CashApp</option>
             <option value="cash_receipt_template_id">现金签收</option>
           </optgroup>
+          <optgroup label="发票 / Invoice">
+            <option value="contractor_invoice_template_id">承包商发票 / Contractor Invoice</option>
+            <option value="invoice_approval_template_id">发票审批表 / Invoice Approval (内部)</option>
+          </optgroup>
         </select>
       </div>
     </div>
@@ -223,6 +227,9 @@ const TEMPLATE_DEFS = [
   { key: 'zelle_auth_template_id',       label: 'Zelle',               desc: 'Zelle 账号授权确认',     cat: '付款授权表格', catIcon: '💳' },
   { key: 'third_party_pay_template_id',  label: 'PayPal / Venmo / CashApp', desc: '第三方平台付款授权', cat: '付款授权表格', catIcon: '💳' },
   { key: 'cash_receipt_template_id',     label: '现金签收',             desc: 'Cash Payment Receipt',  cat: '付款授权表格', catIcon: '💳' },
+  // 发票
+  { key: 'contractor_invoice_template_id', label: '承包商发票',           desc: '1099 Contractor Invoice',  cat: '发票',       catIcon: '🧾' },
+  { key: 'invoice_approval_template_id',   label: '发票审批表 (内部)',     desc: '公司内部审批，不给承包商',   cat: '发票',       catIcon: '✅' },
 ];
 
 let _config = {};
@@ -349,6 +356,8 @@ function renderAllTemplates() {
         <div class="tmpl-row-meta">DocuSeal #${t.id} · ${createdAt}</div>
       </div>
       <div class="tmpl-row-actions">
+        <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem"
+          onclick="renameTemplate(${t.id}, '${escHtml(String(t.name||'')).replace(/'/g,"\\'")}')">改名</button>
         ${editBase ? `<a href="${editBase}/templates/${t.id}/edit" target="_blank" class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem">编辑 ↗</a>` : ''}
         <button class="btn btn-outline" style="font-size:.75rem;padding:.22rem .6rem;color:var(--red);border-color:#fca5a5"
           onclick="deleteTemplate(${t.id}, '${escHtml(String(t.name||'')).replace(/'/g,"\\'")}')">删除</button>
@@ -407,6 +416,20 @@ async function createAllTemplates() {
     btn.disabled = false;
     btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> 一键创建`;
   }
+}
+
+// ── Rename template (via DocuSeal API + local DB) ──
+async function renameTemplate(dsId, currentName) {
+  const newName = prompt('请输入新的模板名称：', currentName);
+  if (!newName || newName.trim() === currentName) return;
+  try {
+    await api(`/api/admin/docuseal/templates/${dsId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName.trim() }) });
+    const t = _allTemplates.find(t => t.id === dsId);
+    if (t) t.name = newName.trim();
+    renderCfgBody();
+    renderAllTemplates();
+    toast('模板已改名', 'success');
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 // ── Delete template (from DocuSeal + config) ──
