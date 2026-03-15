@@ -19943,9 +19943,9 @@ function _dsRenderMyTemplates() {
     invoice_approval_template_id:  { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
   };
   const _CAT_BADGE = {
-    company_contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'}, worker_1099:{bg:'#dbeafe',color:'#1e40af',label:'合同'}, worker_w2:{bg:'#dbeafe',color:'#1e40af',label:'合同'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
-    w4:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, w8ben:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, w8bene:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, form8233:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, i9:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, w7:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
-    ach_auth:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, wire_auth:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, check_instruction:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, zelle_auth:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, third_party_pay:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, cash_receipt:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
+    company_contract:{bg:'#dbeafe',color:'#1e40af',label:'公司合同'}, worker_1099:{bg:'#d1fae5',color:'#065f46',label:'1099'}, worker_w2:{bg:'#fef9c3',color:'#854d0e',label:'W-2'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
+    w4:{bg:'#e0f2fe',color:'#0369a1',label:'W-4'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'W-9'}, w8ben:{bg:'#fae8ff',color:'#6b21a8',label:'W-8BEN'}, w8bene:{bg:'#ede9fe',color:'#5b21b6',label:'W-8BEN-E'}, form8233:{bg:'#fce7f3',color:'#9d174d',label:'8233'}, i9:{bg:'#dcfce7',color:'#166534',label:'I-9'}, w7:{bg:'#f0fdf4',color:'#15803d',label:'W-7'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
+    ach_auth:{bg:'#f0f9ff',color:'#0c4a6e',label:'ACH'}, wire_auth:{bg:'#fffbeb',color:'#78350f',label:'电汇'}, check_instruction:{bg:'#fafaf9',color:'#292524',label:'支票'}, zelle_auth:{bg:'#fdf4ff',color:'#86198f',label:'Zelle'}, third_party_pay:{bg:'#ecfdf5',color:'#065f46',label:'第三方'}, cash_receipt:{bg:'#fff1f2',color:'#9f1239',label:'现金'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
     contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
     invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
   };
@@ -19960,7 +19960,7 @@ function _dsRenderMyTemplates() {
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
         <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}
-        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${({company_contract:'合同',worker_1099:'合同',worker_w2:'合同',w4:'税务表格',w9:'税务表格',w8ben:'税务表格',w8bene:'税务表格',form8233:'税务表格',i9:'税务表格',w7:'税务表格',ach_auth:'付款授权',wire_auth:'付款授权',check_instruction:'付款授权',zelle_auth:'付款授权',third_party_pay:'付款授权',cash_receipt:'付款授权',contractor_invoice:'员工Invoice',invoice_approval:'发票审批(内部)',contract:'合同',tax:'税务表格',payment:'付款授权',invoice:'员工Invoice'})[t.category]||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
+        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${(_CAT_BADGE[t.category]||{}).label||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
         <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
@@ -20023,38 +20023,54 @@ async function dsRenameMyTemplate(localId, currentName) {
 }
 
 function dsChangeCategoryModal(dsTemplateId) {
-  const _cfgIncludes = (key, id) => { const v = _dsConfig[key]; return Array.isArray(v) ? v.some(x => x == id) : v == id; };
-  const assigned = new Set(_DS_SELECTORS.filter(s => _cfgIncludes(s.key, dsTemplateId)).map(s => s.key));
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
   const tplName = tpl ? tpl.name : `#${dsTemplateId}`;
+  const currentCat = tpl ? (tpl.category || '') : '';
 
   const groups = [
-    { title: '合同', keys: ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id'] },
-    { title: '税务表格', keys: ['w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id','i9_template_id','w7_template_id'] },
-    { title: '付款授权', keys: ['ach_auth_template_id','wire_auth_template_id','check_instruction_template_id','zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id','contractor_invoice_template_id'] },
+    { title: '合同', items: [
+      { cat: 'company_contract', label: '公司合同', bg:'#dbeafe', color:'#1e40af' },
+      { cat: 'worker_1099',     label: '1099',    bg:'#d1fae5', color:'#065f46' },
+      { cat: 'worker_w2',       label: 'W-2',     bg:'#fef9c3', color:'#854d0e' },
+    ]},
+    { title: '税务表格', items: [
+      { cat: 'w4',       label: 'W-4',      bg:'#e0f2fe', color:'#0369a1' },
+      { cat: 'w9',       label: 'W-9',      bg:'#fff7ed', color:'#9a3412' },
+      { cat: 'w8ben',    label: 'W-8BEN',   bg:'#fae8ff', color:'#6b21a8' },
+      { cat: 'w8bene',   label: 'W-8BEN-E', bg:'#ede9fe', color:'#5b21b6' },
+      { cat: 'form8233', label: '8233',     bg:'#fce7f3', color:'#9d174d' },
+      { cat: 'i9',       label: 'I-9',      bg:'#dcfce7', color:'#166534' },
+      { cat: 'w7',       label: 'W-7',      bg:'#f0fdf4', color:'#15803d' },
+    ]},
+    { title: '付款授权', items: [
+      { cat: 'ach_auth',          label: 'ACH',   bg:'#f0f9ff', color:'#0c4a6e' },
+      { cat: 'wire_auth',         label: '电汇',  bg:'#fffbeb', color:'#78350f' },
+      { cat: 'check_instruction', label: '支票',  bg:'#fafaf9', color:'#292524' },
+      { cat: 'zelle_auth',        label: 'Zelle', bg:'#fdf4ff', color:'#86198f' },
+      { cat: 'third_party_pay',   label: '第三方',bg:'#ecfdf5', color:'#065f46' },
+      { cat: 'cash_receipt',      label: '现金',  bg:'#fff1f2', color:'#9f1239' },
+    ]},
+    { title: 'Invoice', items: [
+      { cat: 'contractor_invoice', label: '员工Invoice', bg:'#fef3c7', color:'#92400e' },
+      { cat: 'invoice_approval',   label: '发票审批',    bg:'#d1fae5', color:'#065f46' },
+    ]},
   ];
 
   const rowsHtml = groups.map(g => {
-    const items = g.keys.map(k => {
-      const sel = _DS_SELECTORS.find(s => s.key === k);
-      if (!sel) return '';
-      const cfgVal = _dsConfig[k];
-      const curIds = Array.isArray(cfgVal) ? cfgVal : (cfgVal ? [cfgVal] : []);
-      const otherOwners = _dsMyTemplates.filter(t => curIds.some(id => id == t.docuseal_template_id) && t.docuseal_template_id != dsTemplateId);
-      const occupiedNote = otherOwners.length > 0
-        ? `<span style="font-size:.71rem;color:#94a3b8;white-space:nowrap">（已有：${otherOwners.map(t => _dsEsc(t.name)).join(', ')}）</span>` : '';
-      return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .2rem;cursor:pointer">
-        <input type="checkbox" data-key="${k}" ${assigned.has(k) ? 'checked' : ''} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
-        <span style="font-size:.83rem;font-weight:600;white-space:nowrap">${sel.label}</span>${occupiedNote}
+    const items = g.items.map(it => {
+      const checked = currentCat === it.cat ? 'checked' : '';
+      return `<label style="display:flex;align-items:center;gap:.5rem;padding:.28rem .2rem;cursor:pointer">
+        <input type="radio" name="ds-cat-radio" value="${it.cat}" ${checked} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
+        <span style="display:inline-block;background:${it.bg};color:${it.color};border-radius:4px;padding:1px 9px;font-size:.78rem;font-weight:700">${it.label}</span>
       </label>`;
     }).join('');
-    return `<div style="margin-bottom:.8rem"><div style="font-size:.75rem;font-weight:700;color:#94a3b8;margin-bottom:.25rem">${g.title}</div>${items}</div>`;
+    return `<div style="margin-bottom:.9rem"><div style="font-size:.73rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:.3rem">${g.title}</div><div style="display:flex;flex-wrap:wrap;gap:.1rem">${items}</div></div>`;
   }).join('');
 
   const modalHtml = `<div id="ds-cat-modal-overlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center">
-    <div style="background:#fff;border-radius:12px;padding:1.5rem;width:360px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+    <div style="background:#fff;border-radius:12px;padding:1.5rem;width:380px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
       <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">改变分类</div>
-      <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为「${_dsEsc(tplName)}」选择所属分类（可多选）</div>
+      <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为「${_dsEsc(tplName)}」选择所属小类</div>
       <div id="ds-cat-modal-groups">${rowsHtml}</div>
       <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
         <button onclick="document.getElementById('ds-cat-modal-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
@@ -20067,28 +20083,15 @@ function dsChangeCategoryModal(dsTemplateId) {
 
 async function dsApplyCategoryChanges(dsTemplateId) {
   const overlay = document.getElementById('ds-cat-modal-overlay');
-  const checkboxes = overlay.querySelectorAll('input[type=checkbox]');
-  const updates = {};
-  const tid = Number(dsTemplateId);
-  for (const cb of checkboxes) {
-    const key = cb.dataset.key;
-    const curVal = _dsConfig[key];
-    let curArr = (Array.isArray(curVal) ? curVal : (curVal ? [curVal] : [])).map(Number);
-    const inArr = curArr.includes(tid);
-    if (cb.checked && !inArr) {
-      curArr.push(tid);
-      updates[key] = curArr;
-    } else if (!cb.checked && inArr) {
-      curArr = curArr.filter(id => id !== tid);
-      updates[key] = curArr.length > 0 ? curArr : null;
-    }
-  }
-  if (!Object.keys(updates).length) { overlay.remove(); return; }
+  const selected = overlay.querySelector('input[name="ds-cat-radio"]:checked');
+  if (!selected) { overlay.remove(); return; }
+  const newCat = selected.value;
+  const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
+  if (!tpl || tpl.category === newCat) { overlay.remove(); return; }
   try {
-    await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify(updates) });
-    Object.assign(_dsConfig, updates);
+    await api(`/admin/docuseal/my-templates/${tpl.id}/category`, { method: 'PUT', body: JSON.stringify({ category: newCat }) });
+    tpl.category = newCat;
     overlay.remove();
-    _dsRefreshSelects();
     _dsRenderMyTemplates();
     showToast('分类已更新', 'success');
   } catch(e) { showToast(e.message, 'error'); }
