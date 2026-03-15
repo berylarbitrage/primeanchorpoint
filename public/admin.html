@@ -2818,7 +2818,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
+  <div id="wpDateRow" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
     <div class="field">
       <label style="font-size:.78rem;font-weight:600">签发日期 ISSUE DATE</label>
       <input type="date" id="wpIssueDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
@@ -15657,6 +15657,25 @@ const WP_DOC_OPTIONS = {
   ]
 };
 
+// Document types that do NOT have expiration dates (permanent documents)
+const WP_NO_EXPIRY_DOCS = new Set([
+  'birth_cert', 'naturalization', 'citizenship_cert', 'consular_report',
+  'entity_formation', 'ein_letter', 'foreign_cert', 'signing_auth'
+]);
+
+function wpToggleDateFields(docType) {
+  const dateRow = document.getElementById('wpDateRow');
+  if (!dateRow) return;
+  if (WP_NO_EXPIRY_DOCS.has(docType)) {
+    dateRow.style.display = 'none';
+    document.getElementById('wpIssueDate').value = '';
+    document.getElementById('wpExpiryDate').value = '';
+    document.getElementById('wpExpiryWarning').style.display = 'none';
+  } else {
+    dateRow.style.display = '';
+  }
+}
+
 // Required documents info by category
 const WP_REQUIRED_DOCS = {
   citizen: { title: 'U.S. Citizen → W-9', docs: ['身份证明（以下任一即可）:', '• 美国护照 U.S. Passport', '• 美国出生证明 U.S. Birth Certificate', '• 入籍证书 Certificate of Naturalization (N-550/N-570)', '• 公民证书 Certificate of Citizenship (N-560/N-561)', '• 海外出生领事报告 Consular Report of Birth Abroad (FS-240)'] },
@@ -15678,6 +15697,9 @@ function wpPopulateDocType(category, existingValue) {
     sel.insertAdjacentHTML('beforeend', `<option value="${o.value}">${o.label}</option>`);
   });
   if (existingValue) sel.value = existingValue;
+  // Toggle date fields based on selected doc type
+  sel.onchange = function() { wpToggleDateFields(this.value); };
+  wpToggleDateFields(existingValue || '');
 }
 
 function wpShowRequiredDocs(category) {
