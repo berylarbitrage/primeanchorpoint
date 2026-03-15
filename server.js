@@ -4865,9 +4865,9 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
     if (!onb || !onb.ds_envelope_id) return res.status(404).json({ error: 'No submission' });
     if (!dsealEnabled()) return res.json({ status: onb.ds_status, workerSigned: onb.ds_worker_signed_at, companySigned: onb.ds_company_signed_at });
     const { status, companySigned, partnerSigned, declineReason } = await dsealGetStatus(onb.ds_envelope_id);
-    // Determine granular status: completed only when BOTH signed
+    // Determine granular status: trust DocuSeal completed status even if timestamps are missing
     let effectiveStatus = status;
-    if (status === 'completed' && companySigned && partnerSigned) {
+    if (status === 'completed') {
       effectiveStatus = 'completed';
     } else if (companySigned && !partnerSigned) {
       effectiveStatus = 'company_signed';
@@ -4878,6 +4878,11 @@ app.get('/api/admin/worker-accounts/:id/contract-status', requireAdmin, async (r
     }
     db.prepare("UPDATE worker_onboarding SET ds_status=?, ds_worker_signed_at=?, ds_company_signed_at=?, updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
       .run(effectiveStatus, partnerSigned, companySigned, workerId);
+    // Also sync worker_contract_versions table
+    if (onb.ds_envelope_id) {
+      db.prepare("UPDATE worker_contract_versions SET ds_status=?, ds_company_signed_at=?, ds_worker_signed_at=? WHERE worker_account_id=? AND ds_envelope_id=?")
+        .run(effectiveStatus, companySigned, partnerSigned, workerId, onb.ds_envelope_id);
+    }
     if (effectiveStatus === 'completed') {
       db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'`)
         .run(workerId);
@@ -11615,9 +11620,8 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
       if (isCompleted) {
         try {
           const { status, companySigned, partnerSigned } = await dsealGetStatus(submissionId);
-          // Verify BOTH parties actually signed before marking as completed
-          // (DocuSeal Cloud form.completed may fire per-submitter)
-          if (status === 'completed' && companySigned && partnerSigned) {
+          // Trust DocuSeal completed status (timestamps may be missing due to API timing)
+          if (status === 'completed') {
             db.prepare("UPDATE worker_onboarding SET ds_status='completed', ds_worker_signed_at=?, ds_company_signed_at=?, status='completed', completed_at=CURRENT_TIMESTAMP, admin_note='双方已签署完成 ✅', updated_at=CURRENT_TIMESTAMP WHERE worker_account_id=? AND task_key='contract'")
               .run(partnerSigned, companySigned, wid);
             // Update contract version status

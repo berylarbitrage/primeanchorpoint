@@ -13434,6 +13434,20 @@ async function refreshOnboardingModal() {
     document.getElementById('onboardingTaskList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">入职流程尚未初始化。<br><button class="btn btn-sm btn-blue" style="margin-top:.75rem" onclick="initOnboarding()">初始化入职流程</button></div>';
     return;
   }
+
+  // Auto-sync contract signing status from DocuSeal if contract has envelope but not yet completed
+  const contractTask = tasks.find(t => t.key === 'contract');
+  if (contractTask && contractTask.ds_envelope_id && contractTask.status !== 'completed' && contractTask.status !== 'waived') {
+    try {
+      const cStatus = await api(`/admin/worker-accounts/${_onboardingWorkerId}/contract-status`);
+      if (cStatus && cStatus.status === 'completed') {
+        // Re-fetch tasks since contract status was updated on the server
+        const updatedTasks = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`);
+        if (Array.isArray(updatedTasks) && updatedTasks.length) { tasks = updatedTasks; }
+      }
+    } catch (e) { console.warn('[onboarding] contract status sync error:', e.message); }
+  }
+
   renderOnboardingTasks(tasks);
 }
 
