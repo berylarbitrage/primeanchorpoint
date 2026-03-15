@@ -1574,6 +1574,55 @@ try {
   }
 } catch(e) { /* ignore */ }
 
+// Migrate: fix wrong category assignments and config slot assignments based on known auto-generated template names
+try {
+  const _nameToSlot = {
+    'Company Contract / 公司合同':                               { category: 'company_contract', configKey: 'company_contract_template_id' },
+    'Independent Contractor Agreement (1099) / 劳务合同—1099':  { category: 'worker_1099',      configKey: 'worker_1099_template_id' },
+    'Employment Agreement (W-2) / 劳务合同—W2':                 { category: 'worker_w2',        configKey: 'worker_w2_template_id' },
+    'W-4 Employee Withholding Certificate':                      { category: 'w4',               configKey: 'w4_template_id' },
+    'W-9 Request for TIN':                                       { category: 'w9',               configKey: 'w9_template_id' },
+    'W-8BEN Certificate of Foreign Status (Individual)':         { category: 'w8ben',            configKey: 'w8ben_template_id' },
+    'W-8BEN-E Certificate of Foreign Status (Entity)':           { category: 'w8bene',           configKey: 'w8bene_template_id' },
+    'Form 8233 Exemption From Withholding':                      { category: 'form8233',         configKey: 'form8233_template_id' },
+    'I-9 Employment Eligibility Verification':                   { category: 'i9',               configKey: 'i9_template_id' },
+  };
+  const _fixTmpls = db.prepare('SELECT * FROM docuseal_templates').all();
+  const _fixCfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  if (_fixCfgRow) {
+    const _fixCfg = JSON.parse(_fixCfgRow.config || '{}');
+    let _fixChanged = false;
+    for (const tmpl of _fixTmpls) {
+      const correct = _nameToSlot[tmpl.name];
+      if (!correct) continue;
+      // Fix DB category if wrong
+      if (tmpl.category !== correct.category) {
+        db.prepare('UPDATE docuseal_templates SET category=? WHERE id=?').run(correct.category, tmpl.id);
+      }
+      // Remove this template ID from any config slot it doesn't belong to
+      for (const key of Object.keys(_fixCfg)) {
+        if (!key.endsWith('_template_id') || key === correct.configKey) continue;
+        const v = _fixCfg[key];
+        if (Array.isArray(v)) {
+          const filtered = v.filter(id => Number(id) !== tmpl.docuseal_template_id);
+          if (filtered.length !== v.length) { _fixCfg[key] = filtered.length ? filtered : null; _fixChanged = true; }
+        } else if (Number(v) === tmpl.docuseal_template_id) {
+          _fixCfg[key] = null; _fixChanged = true;
+        }
+      }
+    }
+    // Deduplicate any config slot arrays
+    for (const key of Object.keys(_fixCfg)) {
+      if (!key.endsWith('_template_id') || !Array.isArray(_fixCfg[key])) continue;
+      const deduped = [...new Set(_fixCfg[key].map(Number).filter(Boolean))];
+      if (deduped.length !== _fixCfg[key].length) { _fixCfg[key] = deduped.length ? deduped : null; _fixChanged = true; }
+    }
+    if (_fixChanged) {
+      db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(_fixCfg));
+    }
+  }
+} catch(e) { /* ignore */ }
+
 // Seed default integration rows if not present
 const intProviders = ['workbright','checkr','gusto','twilio','docuseal'];
 intProviders.forEach(p => {
