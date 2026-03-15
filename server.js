@@ -3273,30 +3273,34 @@ function generateW2EmploymentHtmlTemplate() {
 
 // ── 1099 Contractor Invoice Template (Letter-size single page) ──
 function generateContractorInvoiceHtmlTemplate() {
-  const f = 'border:1px solid #999;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';
-  const w = `${f}width:100%;min-height:16px;`;
+  // Pre-filled invoice template: system fills most fields via DocuSeal submission API,
+  // contractor only fills: service_period_start/end, hours_worked, reimbursable_amount, signature
+  const ro = 'border:1px solid #ddd;border-radius:2px;padding:1px 3px;background:#f5f5f5;min-height:16px;display:inline-block;'; // readonly style
+  const ed = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 3px;background:#fff;min-height:16px;display:inline-block;';  // editable style (amber)
   const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
   const companyAddr = process.env.COMPANY_ADDRESS || '';
   const companyEmail = process.env.COMPANY_EMAIL || '';
   const c = 'padding:3px 5px;border:1px solid #ccc;vertical-align:top;';
+  const hi = `${c}background:#fffbeb;`; // highlighted cell (contractor fills)
   return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:8pt;max-width:680px;margin:0 auto;padding:10px 16px;color:#111;line-height:1.35">
 <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
   <div style="font-size:14pt;font-weight:900;letter-spacing:2px">INVOICE</div>
   <div style="font-size:7.5pt;color:#555">1099 Contractor Invoice / 承包商发票</div>
+  <div style="font-size:6.5pt;color:#f59e0b;margin-top:2px">Amber fields = you fill / 橙色栏位 = 请您填写 &nbsp;|&nbsp; Grey fields = pre-filled / 灰色 = 系统自动带出</div>
 </div>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
-    <td style="${c}width:25%"><b>Invoice #</b><br><text-field name="invoice_number" role="First Party" required="true" style="${f}width:130px" placeholder="2026-001"></text-field></td>
-    <td style="${c}width:25%"><b>Date 日期</b><br><date-field name="invoice_date" role="First Party" required="true" style="${f}width:120px"></date-field></td>
-    <td style="${c}width:25%"><b>Period From 起始</b><br><text-field name="service_period_start" role="First Party" required="true" style="${f}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
-    <td style="${c}width:25%"><b>Period To 截止</b><br><text-field name="service_period_end" role="First Party" required="true" style="${f}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="${c}width:25%"><b>Invoice #</b><br><text-field name="invoice_number" role="First Party" required="true" readonly="true" style="${ro}width:130px" placeholder="(auto)"></text-field></td>
+    <td style="${c}width:25%"><b>Date 日期</b><br><date-field name="invoice_date" role="First Party" required="true" readonly="true" style="${ro}width:120px"></date-field></td>
+    <td style="${hi}width:25%"><b>Period From 起始 *</b><br><text-field name="service_period_start" role="First Party" required="true" style="${ed}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
+    <td style="${hi}width:25%"><b>Period To 截止 *</b><br><text-field name="service_period_end" role="First Party" required="true" style="${ed}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
   </tr>
 </table>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
   <tr>
     <td style="${c}width:50%">
-      <b>FROM — Contractor 承包商 (须与W-9一致)</b><br>
-      Name 姓名: <text-field name="contractor_name" role="First Party" required="true" style="${w}" placeholder="Legal name / business name"></text-field>
+      <b>FROM — Contractor 承包商</b> <span style="font-size:6.5pt;color:#999">(pre-filled / 系统带出)</span><br>
+      Name 姓名: <text-field name="contractor_name" role="First Party" required="true" readonly="true" style="${ro}width:100%;min-height:16px" placeholder="(pre-filled)"></text-field>
     </td>
     <td style="${c}width:50%">
       <b>BILL TO — Company 公司</b><br>
@@ -3306,21 +3310,23 @@ function generateContractorInvoiceHtmlTemplate() {
     </td>
   </tr>
 </table>
-<div style="font-weight:700;margin:4px 0 2px">SERVICE DESCRIPTION 服务明细 <span style="font-weight:400;color:#666;font-size:7pt">（逐项: 仓库分拣3班 / 装卸2次 / 清洁5小时）</span></div>
-<text-field name="service_description" role="First Party" required="true" style="${w};min-height:48px" placeholder="Line 1: Warehouse sorting — 3 shifts&#10;Line 2: Loading/unloading — 2 trips"></text-field>
-<div style="font-weight:700;margin:4px 0 2px">RATE &amp; COMPENSATION 计费方式 <span style="font-weight:400;color:#666;font-size:7pt">（$25/hr×12hrs / $300/shift×2 / Flat $800）</span></div>
-<text-field name="rate_description" role="First Party" required="true" style="${w};min-height:30px" placeholder="$25/hour × 12 hours = $300"></text-field>
+<div style="font-weight:700;margin:4px 0 2px">JOB / SERVICE 工作/服务 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled / 系统自动带出)</span></div>
+<text-field name="service_description" role="First Party" required="true" readonly="true" style="${ro}width:100%;min-height:30px" placeholder="(pre-filled from job assignment)"></text-field>
+<div style="font-weight:700;margin:4px 0 2px">RATE 费率 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled / 系统自动带出)</span></div>
+<text-field name="rate_description" role="First Party" required="true" readonly="true" style="${ro}width:100%;min-height:22px" placeholder="$XX/hour (pre-filled)"></text-field>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin:6px 0">
-  <tr><td style="${c}width:65%">Subtotal 小计</td><td style="${c}text-align:right">$ <text-field name="subtotal_amount" role="First Party" style="${f}width:100px" placeholder="0.00"></text-field></td></tr>
-  <tr><td style="${c}">Reimbursable Expenses 可报销费用</td><td style="${c}text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${f}width:100px" placeholder="0.00"></text-field></td></tr>
-  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">TOTAL DUE 应付总额</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" required="true" style="${f}width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>Hours / Units 工时 *</b></td><td style="${hi}text-align:right"><text-field name="hours_worked" role="First Party" required="true" style="${ed}width:100px" placeholder="e.g. 40"></text-field></td></tr>
+  <tr><td style="${c}width:65%">Subtotal 小计 <span style="font-size:6.5pt;color:#999">(auto)</span></td><td style="${c}text-align:right">$ <text-field name="subtotal_amount" role="First Party" readonly="true" style="${ro}width:100px" placeholder="auto"></text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="${hi}">Reimbursable Expenses 可报销费用</td><td style="${hi}text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
+  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">TOTAL DUE 应付总额 <span style="font-weight:400;font-size:6.5pt;color:#999">(auto)</span></td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" readonly="true" style="${ro}width:100px;font-weight:700;font-size:10pt" placeholder="auto"></text-field></td></tr>
 </table>
-<div style="font-weight:700;margin:4px 0 2px">NOTES 备注</div>
-<text-field name="invoice_notes" role="First Party" style="${w};min-height:30px" placeholder="Additional notes"></text-field>
-<div style="background:#f5f5f5;border:1px solid #999;padding:6px;font-size:8pt">
+<div style="font-weight:700;margin:4px 0 2px">PAYMENT TERMS 付款条件 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled)</span></div>
+<text-field name="payment_terms" role="First Party" readonly="true" style="${ro}width:200px" placeholder="Net 30"></text-field>
+<span style="font-size:7pt;color:#999;margin-left:6px">Due Date 到期日: </span><text-field name="payment_due_date" role="First Party" readonly="true" style="${ro}width:100px"></text-field>
+<div style="background:#fffbeb;border:2px solid #f59e0b;padding:6px;font-size:8pt;margin-top:6px;border-radius:4px">
   <b>CONTRACTOR CERTIFICATION 承包商声明</b> — I certify the above services were performed and amounts are correct. 本人确认服务已完成，金额准确。
   <table style="width:100%;margin-top:4px"><tr>
-    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Contractor Signature 承包商签名:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Contractor Signature 承包商签名 *:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:2px solid #f59e0b;border-radius:2px;background:#fff"></signature-field></td>
     <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Date 日期:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
