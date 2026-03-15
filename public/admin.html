@@ -1282,6 +1282,20 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
   <p style="font-size:.84rem;color:var(--gray-500);margin-bottom:1rem">1099 承包商提交的 Invoice，用于 FWPA 合规（合同—服务完成—付款）链条记录</p>
+
+  <!-- Send DocuSeal Invoice -->
+  <div class="card" style="margin-bottom:1rem;padding:1rem">
+    <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <label style="font-size:.85rem;font-weight:600;white-space:nowrap">📤 发送 DocuSeal Invoice：</label>
+      <select id="empInvWorkerSelect" style="min-width:220px;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+        <option value="">— 选择员工 —</option>
+      </select>
+      <button class="btn btn-green" onclick="sendDocuSealInvoice()" style="white-space:nowrap">📄 发送 Invoice 模板</button>
+      <span id="empInvSendStatus" style="font-size:.82rem;color:var(--gray-400)"></span>
+    </div>
+    <div style="font-size:.78rem;color:var(--gray-400);margin-top:.5rem">选择员工后发送 DocuSeal Invoice 模板，员工需填写金额、签字后提交回来。</div>
+  </div>
+
   <div class="card">
     <div id="empInvoiceListWrap">
       <div style="color:var(--gray-400);font-size:.85rem;padding:.5rem">加载中…</div>
@@ -2278,6 +2292,12 @@ tr:hover td{background:var(--sky-light)}
           <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Cash Payment Receipt</div>
           <select id="ds-sel-cash" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('cash_receipt', this.value)"><option value="">— 未设置 —</option></select>
           <div id="ds-cfg-cash-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 员工 Invoice</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice / Payment Request</div>
+          <select id="ds-sel-contractor-inv" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-contractor-inv-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
       </div>
 
@@ -17384,7 +17404,23 @@ async function reviewContractorInvoice(id, status) {
 }
 
 // ─── 员工 Invoice Tab (standalone page) ───
+let _empInvWorkersLoaded = false;
 async function loadEmpInvoiceTab() {
+  // Load worker dropdown (once)
+  if (!_empInvWorkersLoaded) {
+    try {
+      const workers = await api('/admin/worker-accounts');
+      const sel = document.getElementById('empInvWorkerSelect');
+      if (sel && Array.isArray(workers)) {
+        sel.innerHTML = '<option value="">— 选择员工 —</option>' +
+          workers.filter(w => w.active).map(w =>
+            `<option value="${w.id}">${esc(w.name || w.username)} ${w.emp_type === '1099' ? '(1099)' : w.emp_type === 'w2' ? '(W2)' : ''}</option>`
+          ).join('');
+        _empInvWorkersLoaded = true;
+      }
+    } catch(e) { console.error('Failed to load workers for invoice:', e); }
+  }
+  // Load invoice list
   const el = document.getElementById('empInvoiceListWrap');
   el.innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
   const rows = await api('/admin/contractor-invoices');
@@ -17393,6 +17429,7 @@ async function loadEmpInvoiceTab() {
     return;
   }
   const STATUS_BADGE = {
+    ds_pending: '<span style="padding:2px 8px;border-radius:6px;background:#e0f2fe;color:#0369a1;font-size:.75rem;font-weight:600">📄 已发送待填写</span>',
     submitted: '<span style="padding:2px 8px;border-radius:6px;background:#fffbeb;color:#92400e;font-size:.75rem;font-weight:600">⏳ 待审核</span>',
     approved: '<span style="padding:2px 8px;border-radius:6px;background:#dcfce7;color:#15803d;font-size:.75rem;font-weight:600">✅ 已批准</span>',
     rejected: '<span style="padding:2px 8px;border-radius:6px;background:#fee2e2;color:#dc2626;font-size:.75rem;font-weight:600">❌ 已拒绝</span>'
@@ -17403,25 +17440,52 @@ async function loadEmpInvoiceTab() {
       <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">工人</th>
       <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">日期</th>
       <th style="padding:.4rem .5rem;text-align:left">服务描述</th>
-      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">服务周期</th>
+      <th style="padding:.4rem .5rem;text-align:left;white-space:nowrap">来源</th>
       <th style="padding:.4rem .5rem;text-align:right;white-space:nowrap">金额</th>
       <th style="padding:.4rem .5rem;text-align:center">状态</th>
       <th style="padding:.4rem .5rem;text-align:center">操作</th>
     </tr></thead>
-    <tbody>${rows.map(r => `<tr style="border-bottom:1px solid var(--gray-100)">
+    <tbody>${rows.map(r => {
+      const isDs = r.ds_envelope_id && r.ds_envelope_id !== '';
+      const source = isDs ? '<span style="padding:1px 6px;border-radius:4px;background:#e0f2fe;color:#0369a1;font-size:.72rem;font-weight:600">DocuSeal</span>' : '<span style="padding:1px 6px;border-radius:4px;background:#f3f4f6;color:#6b7280;font-size:.72rem;font-weight:600">手动提交</span>';
+      return `<tr style="border-bottom:1px solid var(--gray-100)">
       <td style="padding:.5rem;font-family:monospace;font-size:.75rem;color:var(--sky);white-space:nowrap">${esc(r.invoice_number)}</td>
-      <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}</td>
+      <td style="padding:.5rem;white-space:nowrap;font-weight:600">${esc(r.worker_name||r.worker_username||'—')}${r.sent_by ? `<br><span style="font-size:.7rem;color:var(--gray-400);font-weight:400">发送人: ${esc(r.sent_by)}</span>` : ''}</td>
       <td style="padding:.5rem;white-space:nowrap;color:var(--gray-500)">${esc(r.invoice_date)}</td>
       <td style="padding:.5rem;max-width:200px;overflow:hidden;text-overflow:ellipsis" title="${esc(r.service_description)}">${esc(r.service_description)}</td>
-      <td style="padding:.5rem;white-space:nowrap;font-size:.78rem;color:var(--gray-500)">${r.service_period_start&&r.service_period_end ? esc(r.service_period_start)+' ~ '+esc(r.service_period_end) : '—'}</td>
-      <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">$${(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
+      <td style="padding:.5rem;white-space:nowrap">${source}</td>
+      <td style="padding:.5rem;text-align:right;font-weight:700;color:#065f46;white-space:nowrap">${r.status === 'ds_pending' ? '<span style="color:var(--gray-400);font-weight:400">待填写</span>' : '$'+(+r.total_amount).toFixed(2)}${r.hours_worked ? `<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${r.hours_worked}h × $${(+r.hourly_rate).toFixed(2)}</span>` : ''}</td>
       <td style="padding:.5rem;text-align:center">${STATUS_BADGE[r.status]||r.status}</td>
       <td style="padding:.5rem;text-align:center;white-space:nowrap">${r.status === 'submitted' ? `
         <button class="btn btn-sm" style="background:#dcfce7;color:#15803d;border:1px solid #86efac;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'approved')">✅ 批准</button>
         <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;font-size:.72rem" onclick="reviewContractorInvoice(${r.id},'rejected')">❌ 拒绝</button>
-      ` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}</td>
-    </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`).join('')}</tbody>
+      ` : r.status === 'ds_pending' ? `<span style="font-size:.72rem;color:#0369a1">等待员工签字…</span>` : `<span style="font-size:.72rem;color:var(--gray-400)">${r.reviewed_by ? '审核人: '+esc(r.reviewed_by) : '—'}</span>`}</td>
+    </tr>${r.status==='rejected'&&r.reject_reason ? `<tr><td colspan="8" style="padding:0 .5rem .5rem 2rem;color:#dc2626;font-size:.75rem">拒绝原因: ${esc(r.reject_reason)}</td></tr>` : ''}`;
+    }).join('')}</tbody>
   </table>`;
+}
+
+async function sendDocuSealInvoice() {
+  const sel = document.getElementById('empInvWorkerSelect');
+  const workerId = sel.value;
+  if (!workerId) return showToast('请先选择员工', 'error');
+  const workerName = sel.options[sel.selectedIndex].text;
+  if (!await showConfirm(`确认向 ${workerName} 发送 DocuSeal Invoice 模板？\n员工需填写金额并签字后提交。`)) return;
+  const statusEl = document.getElementById('empInvSendStatus');
+  statusEl.textContent = '发送中…';
+  statusEl.style.color = 'var(--sky)';
+  const r = await api('/admin/contractor-invoices/send-docuseal', {
+    method: 'POST', body: JSON.stringify({ worker_account_id: parseInt(workerId) })
+  });
+  if (r && r.success) {
+    showToast(`✅ Invoice 模板已发送给 ${workerName}`);
+    statusEl.textContent = `✅ 已发送 ${r.invoice_number}`;
+    statusEl.style.color = '#15803d';
+    loadEmpInvoiceTab();
+  } else {
+    statusEl.textContent = '';
+    showToast(r?.error || '发送失败', 'error');
+  }
 }
 
 // ─── Tax Document Modal (报税文件) ───
@@ -19489,6 +19553,7 @@ const _DS_SELECTORS = [
   { key: 'zelle_auth_template_id',       selId: 'ds-sel-zelle',              infoId: 'ds-cfg-zelle-info',             label: 'Zelle授权' },
   { key: 'third_party_pay_template_id',  selId: 'ds-sel-third-party',        infoId: 'ds-cfg-third-party-info',       label: '第三方平台' },
   { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收' },
+  { key: 'contractor_invoice_template_id', selId: 'ds-sel-contractor-inv',   infoId: 'ds-cfg-contractor-inv-info',    label: '员工Invoice' },
 ];
 
 function _dsRefreshSelects() {
@@ -19530,6 +19595,7 @@ function _dsRenderMyTemplates() {
     zelle_auth_template_id:        { bg:'#fdf4ff', color:'#86198f', label:'Zelle' },
     third_party_pay_template_id:   { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金' },
+    contractor_invoice_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
   };
   const rows = _dsMyTemplates.map(t => {
     const badges = Object.entries(_BADGE_STYLES).map(([k, s]) =>
