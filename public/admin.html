@@ -15101,6 +15101,8 @@ function trWizardCollectData() {
     if (indStatus && indStatus.value === 'citizen') { d.is_us_citizen = 'yes'; d.is_us_person = 'yes'; }
     else if (indStatus && indStatus.value === 'green_card') { d.has_green_card = 'yes'; d.is_us_person = 'yes'; }
     if (indStatus && (indStatus.value === 'citizen' || indStatus.value === 'green_card')) {
+      d.ind_legal_name = document.getElementById('trIndLegalName').value.trim();
+      d.ind_ssn = document.getElementById('trIndSsn').value.trim();
       d.addr_street = document.getElementById('trIndAddrStreet').value.trim();
       d.addr_street2 = document.getElementById('trIndAddrSuite').value.trim();
       d.addr_city = document.getElementById('trIndAddrCity').value.trim();
@@ -15241,7 +15243,9 @@ async function openTaxResidencyModal() {
       if (trData.is_us_citizen === 'yes') trSelectIndStatus('citizen');
       else if (trData.has_green_card === 'yes') trSelectIndStatus('green_card');
       else if (trData.is_us_person === 'no') trSelectIndStatus('neither');
-      // Load individual address fields
+      // Load individual name, SSN, and address fields
+      if (trData.ind_legal_name) { const el = document.getElementById('trIndLegalName'); if (el) el.value = trData.ind_legal_name; }
+      if (trData.ind_ssn_masked) { const el = document.getElementById('trIndSsn'); if (el) el.value = trData.ind_ssn_masked; }
       if (trData.addr_street) { const el = document.getElementById('trIndAddrStreet'); if (el) el.value = trData.addr_street; }
       if (trData.addr_street2) { const el = document.getElementById('trIndAddrSuite'); if (el) el.value = trData.addr_street2; }
       if (trData.addr_city) { const el = document.getElementById('trIndAddrCity'); if (el) el.value = trData.addr_city; }
