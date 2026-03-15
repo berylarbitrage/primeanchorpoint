@@ -3310,14 +3310,11 @@ function generateContractorInvoiceHtmlTemplate() {
     </td>
   </tr>
 </table>
-<div style="font-weight:700;margin:4px 0 2px">SERVICE DESCRIPTION 服务明细 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled, editable / 已预填，可修改补充)</span></div>
-<text-field name="service_description" role="First Party" required="true" style="${ed}width:100%;min-height:48px" placeholder="Describe services performed — e.g. Warehouse sorting, Loading/unloading"></text-field>
-<div style="font-weight:700;margin:4px 0 2px">AGREED RATE 约定费率 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled, editable / 已预填，可修改)</span></div>
-<text-field name="rate_description" role="First Party" required="true" style="${ed}width:100%;min-height:22px" placeholder="$25/hour, or $800 flat per project"></text-field>
+<div style="font-weight:700;margin:4px 0 2px">SERVICE DESCRIPTION 服务内容 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled by company, editable / 公司预填，可修改)</span></div>
+<text-field name="service_description" role="First Party" required="true" style="${ed}width:100%;min-height:48px" placeholder="e.g. Warehouse sorting and loading services for the period of [Start Date] to [End Date]"></text-field>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin:6px 0">
-  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>Hours / Units 工时</b> <span style="font-size:6.5pt;color:#999">(if hourly / 按时计费填写)</span></td><td style="${hi}text-align:right"><text-field name="hours_worked" role="First Party" style="${ed}width:100px" placeholder="e.g. 40"></text-field></td></tr>
-  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>Or: Flat / Per-Project Fee 固定/项目费</b> <span style="font-size:6.5pt;color:#999">(if applicable)</span></td><td style="${hi}text-align:right">$ <text-field name="flat_amount" role="First Party" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
-  <tr><td style="${c}width:65%">Subtotal 小计 <span style="font-size:6.5pt;color:#999">(hours×rate + flat)</span></td><td style="${c}text-align:right">$ <text-field name="subtotal_amount" role="First Party" style="${ro}width:100px" placeholder="auto"></text-field></td></tr>
+  <tr><td style="${c}width:65%"><b>Compensation Method 补偿方式</b></td><td style="${c}text-align:right"><text-field name="compensation_method" role="First Party" readonly="true" style="${ro}width:200px" placeholder="Contractor-proposed flat fee">Contractor-proposed flat fee</text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>Quoted Amount 报价金额</b></td><td style="${hi}text-align:right">$ <text-field name="quoted_amount" role="First Party" required="true" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
   <tr style="background:#fffbeb"><td style="${hi}">Reimbursable Expenses 可报销费用</td><td style="${hi}text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
   <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">TOTAL DUE 应付总额</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" required="true" style="${ed}width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></text-field></td></tr>
 </table>
