@@ -2830,7 +2830,7 @@ tr:hover td{background:var(--sky-light)}
   <div class="modal-actions" style="margin-top:1rem;gap:.5rem">
     <button class="btn" style="background:#ef4444;color:#fff" onclick="closeModal('workPermitModal')">关闭</button>
     <button class="btn btn-green" onclick="saveWorkPermit(false)">💾 保存</button>
-    <button class="btn btn-green" onclick="saveWorkPermit(true)">🛂 验证通过</button>
+    <button class="btn btn-green" onclick="confirmWorkPermitVerify()">🛂 验证通过</button>
   </div>
 </div></div>
 
@@ -3150,7 +3150,7 @@ tr:hover td{background:var(--sky-light)}
   <!-- Wizard actions -->
   <div class="modal-actions" style="margin-top:1rem">
     <button class="btn" onclick="closeModal('taxResidencyModal')">关闭</button>
-    <button class="btn btn-green" onclick="saveTaxResidency()">✅ 保存税务身份判定</button>
+    <button class="btn btn-green" onclick="confirmSaveTaxResidency()">✅ 保存税务身份判定</button>
   </div>
 </div></div>
 
@@ -15202,6 +15202,22 @@ async function openTaxResidencyModal() {
 }
 
 // Save tax residency from standalone modal
+function confirmSaveTaxResidency() {
+  if (!_onboardingWorkerId) return;
+  const hasType = document.getElementById('trTypeInd').checked || document.getElementById('trTypeEnt').checked;
+  if (!hasType) return showToast('❌ 请选择申请主体类型（个人或实体）', 'error');
+  const resultEl = document.getElementById('trFinalResultContent');
+  const summary = resultEl && resultEl.textContent.trim() ? resultEl.textContent.trim() : '税务身份判定';
+  showConfirmModal(
+    '确认保存税务身份判定',
+    `请确认税务身份判定信息核验无误并保存：\n\n${summary}`,
+    '✅ 确认保存',
+    'btn-green',
+    saveTaxResidency,
+    'green'
+  );
+}
+
 async function saveTaxResidency() {
   if (!_onboardingWorkerId) return;
   const hasType = document.getElementById('trTypeInd').checked || document.getElementById('trTypeEnt').checked;
@@ -15899,6 +15915,25 @@ async function openWorkPermitModal() {
   };
 
   document.getElementById('workPermitModal').classList.add('show');
+}
+
+function confirmWorkPermitVerify() {
+  const docType = document.getElementById('wpDocType').value;
+  if (!docType) return showToast('请选择证件类型', 'error');
+  const sel = document.getElementById('wpDocType');
+  const selOpt = sel.options[sel.selectedIndex];
+  const typeLabel = selOpt ? selOpt.text : docType;
+  const docNumber = document.getElementById('wpDocNumber').value.trim();
+  const expiryDate = document.getElementById('wpExpiryDate').value;
+  const summary = `${typeLabel}${docNumber ? ' #' + docNumber : ''}${expiryDate ? ' · 到期: ' + expiryDate : ''}`;
+  showConfirmModal(
+    '确认工作许可验证通过',
+    `请确认以下工作许可信息核验无误并标记为验证通过：\n\n${summary}`,
+    '🛂 确认验证通过',
+    'btn-green',
+    () => saveWorkPermit(true),
+    'green'
+  );
 }
 
 async function saveWorkPermit(doVerify) {
