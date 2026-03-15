@@ -13306,12 +13306,15 @@ async function loadWorkerAccounts() {
       <option value="opt" ${w.work_status==='opt'?'selected':''}>OPT/CPT</option>
       <option value="other" ${w.work_status==='other'?'selected':''}>其他</option>
     </select></td>
-    <td style="font-size:.78rem;white-space:nowrap"><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:90px;font-weight:600;${w.employment_type==='w2'?'color:#1d4ed8;background:#eff6ff':w.employment_type==='1099'?'color:#9a3412;background:#fffbeb':w.employment_type==='cash'?'color:#065f46;background:#ecfdf5':''}" onchange="updateWorkerEmploymentType(${w.id},this.value,this)">
-      <option value="">— 未定 —</option>
-      <option value="w2" ${w.employment_type==='w2'?'selected':''}>W-2</option>
-      <option value="1099" ${w.employment_type==='1099'?'selected':''}>1099</option>
-      <option value="cash" ${w.employment_type==='cash'?'selected':''}>💵 现金</option>
-    </select></td>
+    <td style="font-size:.78rem;white-space:nowrap">${w.employee_id
+      ? `<select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:90px;font-weight:600;${w.employment_type==='w2'?'color:#1d4ed8;background:#eff6ff':w.employment_type==='1099'?'color:#9a3412;background:#fffbeb':w.employment_type==='cash'?'color:#065f46;background:#ecfdf5':''}" onchange="updateWorkerEmploymentType(${w.id},this.value,this)">
+        <option value="">— 未定 —</option>
+        <option value="w2" ${w.employment_type==='w2'?'selected':''}>W-2</option>
+        <option value="1099" ${w.employment_type==='1099'?'selected':''}>1099</option>
+        <option value="cash" ${w.employment_type==='cash'?'selected':''}>💵 现金</option>
+      </select>`
+      : '<span style="color:var(--gray-400);font-size:.78rem">— 不确定 —</span>'
+    }</td>
     <td style="text-align:center">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
