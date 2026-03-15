@@ -3267,6 +3267,147 @@ function generateW2EmploymentHtmlTemplate() {
 </div>`;
 }
 
+// ── 1099 Contractor Invoice Template ──
+function generateContractorInvoiceHtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const companyAddr = process.env.COMPANY_ADDRESS || '';
+  const companyEmail = process.env.COMPANY_EMAIL || '';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
+  <div style="font-size:1.4rem;font-weight:900;letter-spacing:2px">INVOICE</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">1099 Contractor Invoice / 承包商发票</div>
+</div>
+
+<!-- Section 1-2: Invoice Number & Date -->
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr>
+    <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+      <div style="font-weight:700;margin-bottom:4px">Invoice # / 发票编号:</div>
+      <text-field name="invoice_number" role="First Party" required="true" style="${fs}width:200px" placeholder="2026-001"></text-field>
+    </td>
+    <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+      <div style="font-weight:700;margin-bottom:4px">Invoice Date / 开票日期:</div>
+      <date-field name="invoice_date" role="First Party" required="true" style="${fs}width:160px"></date-field>
+    </td>
+  </tr>
+</table>
+
+<!-- Section 3-4: Contractor & Company Info -->
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr>
+    <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+      <div style="font-weight:700;margin-bottom:4px">FROM — Contractor / 承包商信息:</div>
+      <div style="font-size:8pt;margin-bottom:2px">Name / 姓名 (须与 W-9 一致):</div>
+      <text-field name="contractor_name" role="First Party" required="true" style="${tf}" placeholder="Legal name or business name"></text-field>
+      <div style="font-size:8pt;margin:4px 0 2px">Address / 地址:</div>
+      <text-field name="contractor_address" role="First Party" style="${tf}" placeholder="Street, City, State, ZIP"></text-field>
+      <div style="font-size:8pt;margin:4px 0 2px">Phone / 电话:</div>
+      <text-field name="contractor_phone" role="First Party" style="${fs}width:180px" placeholder="(xxx) xxx-xxxx"></text-field>
+      <div style="font-size:8pt;margin:4px 0 2px">Email / 邮箱:</div>
+      <text-field name="contractor_email" role="First Party" style="${tf}" placeholder="email@example.com"></text-field>
+    </td>
+    <td style="padding:6px;border:1px solid #ccc;width:50%;vertical-align:top">
+      <div style="font-weight:700;margin-bottom:4px">BILL TO — Company / 公司信息:</div>
+      <div style="font-size:9pt;font-weight:600">${companyName}</div>
+      ${companyAddr ? `<div style="font-size:8pt;margin-top:2px">${companyAddr}</div>` : ''}
+      ${companyEmail ? `<div style="font-size:8pt;margin-top:2px">${companyEmail}</div>` : ''}
+    </td>
+  </tr>
+</table>
+
+<!-- Section 5: Service Period -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">SERVICE PERIOD / 服务期间</div>
+<p style="font-size:9pt">Services performed from / 服务日期从
+  <text-field name="service_period_start" role="First Party" required="true" style="${fs}width:130px" placeholder="MM/DD/YYYY"></text-field>
+  to / 到
+  <text-field name="service_period_end" role="First Party" required="true" style="${fs}width:130px" placeholder="MM/DD/YYYY"></text-field>
+</p>
+
+<!-- Section 6: Itemized Service Description -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">SERVICE DESCRIPTION / 服务内容明细</div>
+<p style="font-size:8pt;color:#555;margin-bottom:4px">Please itemize each service. 请逐项描述服务内容（如：仓库分拣 3 班 / 装卸 2 次 / 清洁服务 5 小时）</p>
+<text-field name="service_description" role="First Party" required="true" style="${tf};min-height:80px" placeholder="Line 1: Warehouse sorting — 3 shifts&#10;Line 2: Loading/unloading — 2 trips&#10;Line 3: Cleaning service — 5 hours"></text-field>
+
+<!-- Section 7: Rate & Method of Compensation -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">RATE &amp; COMPENSATION / 计费方式</div>
+<p style="font-size:8pt;color:#555;margin-bottom:4px">Specify rate and method. 请填写计费方式（如：$25/hour × 12 hours / $300/shift × 2 shifts / Flat fee $800）</p>
+<text-field name="rate_description" role="First Party" required="true" style="${tf};min-height:40px" placeholder="$25/hour × 12 hours = $300&#10;$300/shift × 2 shifts = $600"></text-field>
+
+<!-- Section 8: Amount Summary -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">AMOUNT SUMMARY / 金额汇总</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr>
+    <td style="padding:6px;border:1px solid #ccc;width:60%">Subtotal / 小计:</td>
+    <td style="padding:6px;border:1px solid #ccc;text-align:right">$ <text-field name="subtotal_amount" role="First Party" style="${fs}width:120px" placeholder="0.00"></text-field></td>
+  </tr>
+  <tr>
+    <td style="padding:6px;border:1px solid #ccc">Reimbursable Expenses / 可报销费用:</td>
+    <td style="padding:6px;border:1px solid #ccc;text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${fs}width:120px" placeholder="0.00"></text-field></td>
+  </tr>
+  <tr style="background:#f0f0f0;font-weight:700">
+    <td style="padding:8px;border:1px solid #999">TOTAL AMOUNT DUE / 应付总额:</td>
+    <td style="padding:8px;border:1px solid #999;text-align:right;font-size:11pt">$ <text-field name="total_amount" role="First Party" required="true" style="${fs}width:120px;font-weight:700;font-size:11pt" placeholder="0.00"></text-field></td>
+  </tr>
+</table>
+
+<!-- Section 9: Payment Due Date -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">PAYMENT DUE DATE / 付款到期日</div>
+<p style="font-size:9pt">Payment due by / 付款截止日期:
+  <text-field name="payment_due_date" role="First Party" style="${fs}width:160px" placeholder="MM/DD/YYYY"></text-field>
+</p>
+<p style="font-size:8pt;color:#555">If no due date is specified in the contract, payment is generally due within 30 days of service completion per Illinois law.<br>若合同未注明付款日期，依 Illinois 法律通常在完工后 30 天内付款。</p>
+
+<!-- Section 10: Payment Method -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">PAYMENT METHOD / 付款方式</div>
+<p style="font-size:9pt">Preferred payment method / 首选付款方式:
+  <text-field name="payment_method" role="First Party" style="${fs}width:200px" placeholder="ACH / Check / Zelle / Wire"></text-field>
+</p>
+<p style="font-size:8pt;color:#555">Note: Bank routing/account numbers should be provided via a separate payment authorization form, not on invoices. 注意：银行账户等敏感信息请通过单独的付款授权表提供，请勿填写在 invoice 上。</p>
+
+<!-- Section 11: Additional Notes -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">NOTES / 备注</div>
+<text-field name="invoice_notes" role="First Party" style="${tf};min-height:40px" placeholder="Any additional notes..."></text-field>
+
+<!-- Section 12: Signature -->
+<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
+  <div style="font-weight:700;margin-bottom:4px">CONTRACTOR CERTIFICATION / 承包商声明</div>
+  <p style="font-size:8pt;margin-bottom:8px">I certify that the above services were performed and the amounts are correct.<br>本人确认以上服务已完成，金额准确无误。</p>
+  <table style="width:100%"><tr>
+    <td style="width:60%;padding-right:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Contractor Signature / 承包商签名:</div>
+      <signature-field name="contractor_signature" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+    </td>
+    <td style="width:40%;padding-left:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Date / 日期:</div>
+      <date-field name="signature_date" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+</div>
+
+<!-- Company Approval (optional second signer) -->
+<div style="background:#f9f9f0;border:1px solid #999;padding:10px;margin-top:8px;font-size:9pt">
+  <div style="font-weight:700;margin-bottom:4px">COMPANY APPROVAL / 公司审批 (${companyName})</div>
+  <table style="width:100%"><tr>
+    <td style="width:60%;padding-right:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Approved by / 审批人签名:</div>
+      <signature-field name="company_signature" role="Second Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+    </td>
+    <td style="width:40%;padding-left:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Date / 日期:</div>
+      <date-field name="approval_date" role="Second Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+</div>
+
+<div style="text-align:center;font-size:7pt;color:#999;margin-top:12px;border-top:1px solid #ddd;padding-top:6px">
+  This invoice is issued pursuant to an independent contractor arrangement. The contractor is responsible for all applicable taxes.<br>
+  本发票依据独立承包商协议开具，承包商自行负责所有适用税款。
+</div>
+</div>`;
+}
+
 // ── Map of all auto-creatable templates ──
 const DOCUSEAL_AUTO_TEMPLATES = {
   company_contract: { name: 'Company Contract / 公司合同', configKey: 'company_contract_template_id', category: 'company_contract', generator: generateCompanyContractHtmlTemplate },
@@ -3278,6 +3419,7 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   w8bene: { name: 'W-8BEN-E Certificate of Foreign Status (Entity)', configKey: 'w8bene_template_id', category: 'w8bene', generator: generateW8BENEHtmlTemplate },
   form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', category: 'form8233', generator: generateForm8233HtmlTemplate },
   i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'i9', generator: generateI9HtmlTemplate },
+  contractor_invoice: { name: '1099 Contractor Invoice / 承包商发票', configKey: 'contractor_invoice_template_id', category: 'contractor_invoice', generator: generateContractorInvoiceHtmlTemplate },
 };
 
 function getDsealConfigTemplateId(type) {
