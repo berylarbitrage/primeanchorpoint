@@ -12927,6 +12927,22 @@ function isModalDirty(modalId) {
   return false;
 }
 function clearModalState(modalId) { delete _modalSnap[modalId]; }
+function captureModalStateSync(modalId) {
+  const m = document.getElementById(modalId);
+  if (!m) return;
+  const snap = {};
+  m.querySelectorAll('input,select,textarea').forEach(el => {
+    const k = el.id || el.name;
+    if (!k || el.type === 'file') return;
+    if (el.type === 'radio') { if (el.checked) snap['r:'+el.name] = el.value; }
+    else if (el.type === 'checkbox') snap[k] = String(el.checked);
+    else snap[k] = el.value;
+  });
+  m.querySelectorAll('.day-btn,.benefit-btn,.svc-tag').forEach(b => {
+    snap['btn:'+( b.dataset.day||b.dataset.val||b.dataset.v||b.textContent.trim())] = String(b.classList.contains('active'));
+  });
+  _modalSnap[modalId] = snap;
+}
 async function guardClose(modalId, extraFn) {
   if (isModalDirty(modalId)) {
     if (!await showConfirm('你有未保存的修改，确定要离开吗？')) return;
@@ -15353,8 +15369,8 @@ async function saveTaxResidency() {
 
   showToast(`✅ 税务身份判定已保存 · 推荐表格: ${recommendedForm}`, 'success', 3000);
 
-  // Re-capture snapshot so closing after save won't trigger unsaved warning
-  captureModalState('taxResidencyModal');
+  // Re-capture snapshot synchronously so closing after save won't trigger unsaved warning
+  captureModalStateSync('taxResidencyModal');
 
   // Refresh onboarding task list to show new tax doc tasks
   refreshOnboardingModal();
