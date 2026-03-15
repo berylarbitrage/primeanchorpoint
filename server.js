@@ -10134,6 +10134,91 @@ app.get('/api/worker/compliance', requireWorker, (req, res) => {
   });
 });
 
+// ─── Worker: Form Submission Summary ───
+app.get('/api/worker/submission-summary', requireWorker, (req, res) => {
+  const w = db.prepare('SELECT id, username, name, phone, email, work_status, employment_type, entity_type, employee_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!w) return res.status(404).json({ error: 'Account not found' });
+
+  // Get onboarding tasks
+  const existing = db.prepare('SELECT id FROM worker_onboarding WHERE worker_account_id=?').get(req.workerId);
+  if (!existing) initWorkerOnboarding(req.workerId);
+  const tasks = getOnboardingTasks(req.workerId).filter(t => t.visible_to_worker !== 0);
+
+  // Get compliance docs
+  const docs = db.prepare('SELECT id, doc_type, status, file_name, expires_at, created_at, updated_at, reviewer_notes FROM worker_compliance_docs WHERE worker_account_id=? ORDER BY created_at DESC').all(req.workerId);
+  const docsByType = {};
+  for (const d of docs) { if (!docsByType[d.doc_type]) docsByType[d.doc_type] = d; }
+
+  // Get I-9 form data (citizenship status)
+  const i9Doc = db.prepare("SELECT form_data FROM worker_compliance_docs WHERE worker_account_id=? AND doc_type='i9' ORDER BY created_at DESC LIMIT 1").get(req.workerId);
+  let citizenshipStatus = '';
+  if (i9Doc && i9Doc.form_data) {
+    try { citizenshipStatus = JSON.parse(i9Doc.form_data).citizenship_status || ''; } catch {}
+  }
+
+  // Get tax residency info
+  const taxRes = db.prepare('SELECT applicant_type, is_us_citizen, has_green_card, country_citizenship, immigration_status, work_permit_category, tax_status, recommended_form FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY updated_at DESC LIMIT 1').get(req.workerId);
+
+  // Get assignment/contract info
+  const assignment = req.workerEmployeeId
+    ? db.prepare('SELECT contract_type, status, start_date FROM assignments WHERE worker_account_id=? ORDER BY id DESC LIMIT 1').get(req.workerId)
+    : null;
+
+  // Derive work authorization category
+  let workAuthCategory = '';
+  if (citizenshipStatus === 'citizen' || (taxRes && taxRes.is_us_citizen === 'yes')) {
+    workAuthCategory = 'us_citizen';
+  } else if (citizenshipStatus === 'permanent_resident' || (taxRes && taxRes.has_green_card === 'yes')) {
+    workAuthCategory = 'green_card';
+  } else if (taxRes && taxRes.work_permit_category) {
+    const cat = taxRes.work_permit_category;
+    if (cat.startsWith('EAD')) workAuthCategory = 'ead';
+    else if (cat === 'H-1B' || cat === 'H-1B1') workAuthCategory = 'h1b';
+    else if (cat === 'F-1-OPT' || cat.includes('OPT')) workAuthCategory = 'opt';
+    else if (cat === 'F-1-CPT') workAuthCategory = 'cpt';
+    else workAuthCategory = cat.toLowerCase();
+  } else if (citizenshipStatus === 'work_authorized') {
+    workAuthCategory = 'work_authorized';
+  }
+
+  // Derive employment type
+  let empType = w.employment_type || '';
+  if (!empType && assignment) empType = assignment.contract_type || '';
+
+  // Compute completion stats
+  const visibleTasks = tasks;
+  const completedTasks = visibleTasks.filter(t => ['completed', 'waived'].includes(t.status));
+  const submittedTasks = visibleTasks.filter(t => t.status === 'submitted');
+  const pendingTasks = visibleTasks.filter(t => t.status === 'pending');
+
+  // Key form statuses
+  const formStatuses = {};
+  for (const t of tasks) {
+    formStatuses[t.key] = { status: t.status, completed_at: t.completed_at };
+  }
+
+  res.json({
+    worker: { name: w.name, username: w.username },
+    work_auth_category: workAuthCategory,
+    citizenship_status: citizenshipStatus,
+    employment_type: empType,
+    tax_residency: taxRes ? {
+      tax_status: taxRes.tax_status,
+      recommended_form: taxRes.recommended_form,
+      immigration_status: taxRes.immigration_status,
+      work_permit_category: taxRes.work_permit_category
+    } : null,
+    form_statuses: formStatuses,
+    compliance_docs: docsByType,
+    stats: {
+      total: visibleTasks.length,
+      completed: completedTasks.length,
+      submitted: submittedTasks.length,
+      pending: pendingTasks.length
+    }
+  });
+});
+
 // Submit I-9 form data
 app.post('/api/worker/compliance/i9', requireWorker, complianceUpload.fields([
   { name: 'list_a_doc', maxCount: 1 },
