@@ -13297,24 +13297,26 @@ async function loadWorkerAccounts() {
     <td><span class="wa-name">${esc(w.name||w.username)}</span><div class="wa-sub">${w.first_name ? esc(w.first_name+' '+w.last_name) : '未绑定员工'}</div></td>
     <td style="font-size:.8rem;white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
-    <td><select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:110px" onchange="updateWorkerStatus(${w.id},this.value)">
-      <option value="">— 未填 —</option>
-      <option value="citizen" ${w.work_status==='citizen'?'selected':''}>🇺🇸 公民</option>
-      <option value="green_card" ${w.work_status==='green_card'?'selected':''}>🟢 绿卡</option>
-      <option value="ead" ${w.work_status==='ead'?'selected':''}>📄 EAD</option>
-      <option value="h1b" ${w.work_status==='h1b'?'selected':''}>H-1B</option>
-      <option value="opt" ${w.work_status==='opt'?'selected':''}>OPT/CPT</option>
-      <option value="other" ${w.work_status==='other'?'selected':''}>其他</option>
-    </select></td>
-    <td style="font-size:.78rem;white-space:nowrap">${w.employee_id
-      ? `<select style="font-size:.78rem;padding:.25rem .35rem;border:1px solid var(--gray-200);border-radius:6px;background:#fff;cursor:pointer;max-width:90px;font-weight:600;${w.employment_type==='w2'?'color:#1d4ed8;background:#eff6ff':w.employment_type==='1099'?'color:#9a3412;background:#fffbeb':w.employment_type==='cash'?'color:#065f46;background:#ecfdf5':''}" onchange="updateWorkerEmploymentType(${w.id},this.value,this)">
-        <option value="">— 未定 —</option>
-        <option value="w2" ${w.employment_type==='w2'?'selected':''}>W-2</option>
-        <option value="1099" ${w.employment_type==='1099'?'selected':''}>1099</option>
-        <option value="cash" ${w.employment_type==='cash'?'selected':''}>💵 现金</option>
-      </select>`
-      : '<span style="color:var(--gray-400);font-size:.78rem">— 不确定 —</span>'
-    }</td>
+    <td style="font-size:.78rem;white-space:nowrap">${(()=>{
+      const ts = w.tax_status;
+      if (ts === 'citizen') return '<span style="padding:2px 6px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-weight:600">🇺🇸 公民</span>';
+      if (ts === 'resident_alien' || ts === 'likely_resident_alien') return '<span style="padding:2px 6px;border-radius:6px;background:#d1fae5;color:#065f46;font-weight:600">🟢 RA 居民</span>';
+      if (ts === 'nonresident_alien' || ts === 'likely_nonresident_alien') return '<span style="padding:2px 6px;border-radius:6px;background:#fef3c7;color:#92400e;font-weight:600">NRA 非居民</span>';
+      if (ts === 'us_entity') return '<span style="padding:2px 6px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-weight:600">🇺🇸 美国实体</span>';
+      if (ts === 'foreign_entity') return '<span style="padding:2px 6px;border-radius:6px;background:#fef3c7;color:#92400e;font-weight:600">境外实体</span>';
+      if (w.work_status === 'citizen') return '<span style="padding:2px 6px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-weight:600">🇺🇸 公民</span>';
+      if (w.work_status === 'green_card') return '<span style="padding:2px 6px;border-radius:6px;background:#d1fae5;color:#065f46;font-weight:600">🟢 绿卡</span>';
+      if (w.work_status) return '<span style="padding:2px 6px;border-radius:6px;background:#f3f4f6;color:#374151;font-weight:600">' + esc(w.work_status) + '</span>';
+      return '<span style="color:var(--gray-300)">— 待确认 —</span>';
+    })()}</td>
+    <td style="font-size:.78rem;white-space:nowrap">${(()=>{
+      if (!w.employee_id) return '<span style="color:var(--gray-400)">— 不确定 —</span>';
+      const et = w.employment_type;
+      if (et === 'w2') return '<span style="padding:2px 6px;border-radius:6px;background:#eff6ff;color:#1d4ed8;font-weight:600">W-2</span>';
+      if (et === '1099') return '<span style="padding:2px 6px;border-radius:6px;background:#fffbeb;color:#9a3412;font-weight:600">1099</span>';
+      if (et === 'cash') return '<span style="padding:2px 6px;border-radius:6px;background:#ecfdf5;color:#065f46;font-weight:600">💵 现金</span>';
+      return '<span style="color:var(--gray-300)">— 待确认 —</span>';
+    })()}</td>
     <td style="text-align:center">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
