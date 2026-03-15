@@ -2248,13 +2248,26 @@ function checkDsAnchors(docPath) {
 // ─── DocuSeal eSignature Integration ───
 const http = require('http');
 
+function dsealGetCreds() {
+  try {
+    const row = db.prepare("SELECT api_key, config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse(row?.config || '{}');
+    const apiKey = process.env.DOCUSEAL_API_KEY || row?.api_key || '';
+    const baseUrl = process.env.DOCUSEAL_URL || cfg.url || '';
+    return { apiKey, baseUrl };
+  } catch {
+    return { apiKey: process.env.DOCUSEAL_API_KEY || '', baseUrl: process.env.DOCUSEAL_URL || '' };
+  }
+}
+
 function dsealEnabled() {
-  return !!(process.env.DOCUSEAL_API_KEY && process.env.DOCUSEAL_URL);
+  const { apiKey, baseUrl } = dsealGetCreds();
+  return !!(apiKey && baseUrl);
 }
 
 async function dsealApiCall(method, apiPath, body) {
-  const baseUrl = (process.env.DOCUSEAL_URL || '').replace(/\/$/, '');
-  const apiKey = process.env.DOCUSEAL_API_KEY || '';
+  const { apiKey, baseUrl: rawUrl } = dsealGetCreds();
+  const baseUrl = rawUrl.replace(/\/$/, '');
   const bodyStr = body != null ? JSON.stringify(body) : null;
   // DocuSeal cloud (api.docuseal.com) uses paths without /api prefix
   const isCloud = /api\.docuseal\.(com|eu)/.test(baseUrl);
@@ -2326,7 +2339,7 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   }
   // Also try constructing direct URL from slug
   const workerSlug = worker?.slug || '';
-  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   console.log(`[DocuSeal] Worker sign URL: ${(finalWorkerUrl||'NONE').substring(0,100)}`);
@@ -2391,7 +2404,7 @@ async function dsealSendContractHtml({ contractText, docName, emailSubject, sign
     } catch (e) { console.error(`[DocuSeal] Failed to get worker embed_src: ${e.message}`); }
   }
   const workerSlug = worker?.slug || '';
-  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
@@ -2586,7 +2599,7 @@ async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip,
     } catch (e) { console.error(`[DocuSeal W-9] Failed to get embed_src: ${e.message}`); }
   }
   const slug = signer?.slug || '';
-  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
   const directUrl = slug ? `${baseHost}/s/${slug}` : '';
   const finalWorkerUrl = directUrl || workerSignUrl;
   console.log(`[DocuSeal W-9] Worker sign URL: ${(finalWorkerUrl || 'NONE').substring(0, 100)}`);
@@ -2706,7 +2719,7 @@ function _dsealFetchUrl(docUrl, _redirectCount = 0) {
     const isHttps = urlObj.protocol === 'https:';
     const transport = isHttps ? https : http;
     const opts = { hostname: urlObj.hostname, port: urlObj.port || (isHttps ? 443 : 80), path: urlObj.pathname + urlObj.search, method: 'GET', headers: {} };
-    try { if (urlObj.hostname === new URL(process.env.DOCUSEAL_URL || 'https://x').hostname) opts.headers['X-Auth-Token'] = process.env.DOCUSEAL_API_KEY; } catch {}
+    try { const _dc = dsealGetCreds(); if (urlObj.hostname === new URL(_dc.baseUrl || 'https://x').hostname) opts.headers['X-Auth-Token'] = _dc.apiKey; } catch {}
     const req = transport.request(opts, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && _redirectCount < 5) {
         res.resume();
@@ -5564,7 +5577,7 @@ app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) =>
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
   if (templateId) {
-    const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+    const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
     const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:20px;background:#f9fafb;font-family:Arial,sans-serif}</style></head><body>
       <div style="text-align:center;padding:2rem;color:#555">
         <p style="font-size:1.1rem;font-weight:600">使用 DocuSeal 官方 W-9 模板</p>
@@ -5797,7 +5810,7 @@ app.get('/api/worker/contract-sign-url', requireWorker, async (req, res) => {
             if (wPut.data?.embed_src) signUrl = wPut.data.embed_src;
           }
           if (!signUrl && workerSub.slug) {
-            const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+            const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
             signUrl = `${baseHost}/s/${workerSub.slug}`;
           }
           // Update stored URL
@@ -11772,7 +11785,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                       if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
                     }
                     if (!workerSignUrl && workerSub.slug) {
-                      const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+                      const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
                       workerSignUrl = `${baseHost}/s/${workerSub.slug}`;
                     }
                   }
@@ -12680,7 +12693,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const cfg = JSON.parse(row?.config || '{}');
   res.json({
     connected: dsealEnabled(),
-    url: (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, ''),
+    url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, ''),
     contract_template_id: cfg.contract_template_id || null,
     w9_template_id: cfg.w9_template_id || null,
   });
