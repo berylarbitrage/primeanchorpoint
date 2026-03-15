@@ -4378,6 +4378,7 @@ const ONBOARDING_STEPS = [
   { key: 'i9',              title: 'I-9 就业资格',         desc: 'I-9 Section 1 & 2 就业资格验证',                  required: true  },
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
   { key: 'w9',              title: 'W-9 税表',             desc: '独立承包商 W-9 税务信息表（1099 适用）',          required: false },
+  { key: 'tin_verify',      title: '核对税号',              desc: 'Admin 核对工人税号（SSN/EIN/ITIN）后方可入职',   required: true  },
   { key: 'gusto',           title: 'Gusto 薪资 / 入职表单', desc: '在 Gusto 填写直接存款及薪资信息 · 其他入职表单', required: true  },
   // Tax document tasks (auto-created by tax residency questionnaire)
   { key: 'tax_doc_w8ben',    title: 'W-8BEN 表格',           desc: '非居民外国个人预扣税声明',                       required: true  },
