@@ -4202,6 +4202,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   const getContractVersionCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_contract_versions WHERE worker_account_id=?");
   const getTaxResidency = db.prepare("SELECT tax_status, recommended_form, country_citizenship, country_tax_residence, treaty_country, claim_treaty_benefit, services_location FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY id DESC LIMIT 1");
   const getTaxFilingDocCount = db.prepare("SELECT COUNT(*) as cnt FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? AND file_path!=''");
+  const getPaymentTotal = db.prepare("SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt FROM worker_payments WHERE employee_id=?");
   const currentTaxYear = new Date().getFullYear() - 1; // filing for prior year
 
   const enriched = workers.map(w => {
@@ -4214,6 +4215,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const contractVerCount = getContractVersionCount.get(w.id);
     const taxRes = getTaxResidency.get(w.id);
     const taxFilingDocCount = getTaxFilingDocCount.get(w.id, currentTaxYear);
+    const payTotals = w.employee_id ? getPaymentTotal.get(w.employee_id) : null;
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -4234,7 +4236,9 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       tax_claim_treaty: taxRes?.claim_treaty_benefit || '',
       tax_services_location: taxRes?.services_location || '',
       tax_filing_doc_count: taxFilingDocCount?.cnt || 0,
-      current_tax_year: currentTaxYear
+      current_tax_year: currentTaxYear,
+      total_paid: payTotals?.total || 0,
+      payment_count: payTotals?.cnt || 0
     };
   });
 

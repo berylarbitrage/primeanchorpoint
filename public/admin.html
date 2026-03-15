@@ -1999,7 +1999,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
-      <th>合规文件</th><th>协议</th><th>税务</th><th>报税文件</th><th>身份Reverify日期</th><th>支付方式</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>合规文件</th><th>协议</th><th>税务</th><th>报税文件</th><th>身份Reverify日期</th><th>支付方式</th><th>薪资</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -2375,6 +2375,16 @@ tr:hover td{background:var(--sky-light)}
 
   <div class="modal-actions" style="margin-top:.5rem">
     <button class="btn" onclick="closeModal('onboardingModal')">关闭</button>
+  </div>
+</div></div>
+
+<!-- Worker Pay History Modal -->
+<div class="modal-bg" id="workerPayHistoryModal"><div class="modal" style="max-width:640px">
+  <h2>💰 薪资记录 — <span id="payHistoryWorkerName" style="color:var(--sky)"></span></h2>
+  <div id="payHistorySummary" style="margin:.5rem 0 .75rem;padding:.6rem 1rem;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;font-size:.9rem"></div>
+  <div id="payHistoryList" style="max-height:55vh;overflow-y:auto"></div>
+  <div class="modal-actions" style="margin-top:.75rem">
+    <button class="btn" onclick="closeModal('workerPayHistoryModal')">关闭</button>
   </div>
 </div></div>
 
@@ -13340,7 +13350,7 @@ async function loadWorkerAccounts() {
       const emp = w.employment_type || '';
       if (!emp || emp==='cash') return '<span style="color:var(--gray-300);font-size:.78rem">—</span>';
       const hasDoc = (w.tax_filing_doc_count || 0) > 0;
-      return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${hasDoc?'✅ 已上传':'📤 上传'}</button>`;
+      return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${hasDoc?'✅':'📤'}</button>`;
     })()}</td>
     <td style="font-size:.78rem;white-space:nowrap;text-align:center">${(() => {
       const isCitizen = w.tax_status === 'citizen' || w.work_status === 'citizen';
@@ -13357,6 +13367,13 @@ async function loadWorkerAccounts() {
       <option value="check" ${w.payment_method==='check'?'selected':''}>✅ 支票</option>
       <option value="direct_deposit" ${w.payment_method==='direct_deposit'?'selected':''}>🏦 直接存款</option>
     </select></td>
+    <td style="font-size:.78rem;white-space:nowrap;text-align:center">${(() => {
+      const total = w.total_paid || 0;
+      const cnt = w.payment_count || 0;
+      if (!w.employee_id) return '<span style="color:var(--gray-300)">—</span>';
+      const label = total > 0 ? `<span style="font-weight:700;color:#065f46">$${total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span><br><span style="color:var(--gray-400);font-size:.7rem">${cnt}笔</span>` : '<span style="color:var(--gray-400);font-size:.75rem">暂无记录</span>';
+      return `<span style="cursor:pointer" onclick="openWorkerPayHistoryModal(${w.id},'${esc(w.name||w.username)}')" title="点击查看明细">${label}</span>`;
+    })()}</td>
     <td style="font-size:.8rem">${w.expected_salary ? '$'+esc(w.expected_salary) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="font-size:.8rem">${w.our_salary_rating ? esc(w.our_salary_rating) : '<span style="color:var(--gray-300)">—</span>'}</td>
     <td style="max-width:160px">${skillPills(skills)}</td>
@@ -16929,6 +16946,42 @@ async function updateWorkerEmploymentType(id, employment_type, sel) {
   await api(`/admin/worker-accounts/${id}`, { method:'PUT', body:JSON.stringify({ employment_type }) });
   showToast(`✅ 雇佣类型已更新为「${label}」`);
   loadWorkerAccounts();
+}
+
+async function openWorkerPayHistoryModal(workerId, workerName) {
+  document.getElementById('payHistoryWorkerName').textContent = workerName;
+  document.getElementById('payHistoryList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">加载中…</div>';
+  document.getElementById('payHistorySummary').innerHTML = '';
+  document.getElementById('workerPayHistoryModal').classList.add('show');
+  const payments = await api(`/admin/worker-accounts/${workerId}/payments`);
+  if (!Array.isArray(payments) || payments.length === 0) {
+    document.getElementById('payHistorySummary').innerHTML = '暂无付款记录';
+    document.getElementById('payHistoryList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:var(--gray-400)">暂无记录</div>';
+    return;
+  }
+  const total = payments.reduce((s, p) => s + (p.amount || 0), 0);
+  document.getElementById('payHistorySummary').innerHTML =
+    `共 <strong>${payments.length}</strong> 笔付款 &nbsp;·&nbsp; 累计总额：<strong style="color:#065f46;font-size:1.05rem">$${total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong>`;
+  const methodLabel = { cash:'现金', check:'支票', direct_deposit:'直接存款' };
+  document.getElementById('payHistoryList').innerHTML = `
+    <table style="width:100%;font-size:.82rem;border-collapse:collapse">
+      <thead><tr style="border-bottom:2px solid var(--gray-200)">
+        <th style="padding:.4rem .6rem;text-align:left">日期</th>
+        <th style="padding:.4rem .6rem;text-align:left">金额</th>
+        <th style="padding:.4rem .6rem;text-align:left">方式</th>
+        <th style="padding:.4rem .6rem;text-align:left">周期</th>
+        <th style="padding:.4rem .6rem;text-align:left">职位</th>
+        <th style="padding:.4rem .6rem;text-align:left">备注</th>
+      </tr></thead>
+      <tbody>${payments.map(p => `<tr style="border-bottom:1px solid var(--gray-100)">
+        <td style="padding:.4rem .6rem;white-space:nowrap">${esc(p.payment_date)}</td>
+        <td style="padding:.4rem .6rem;font-weight:700;color:#065f46">$${(p.amount||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+        <td style="padding:.4rem .6rem">${methodLabel[p.payment_method]||esc(p.payment_method||'—')}</td>
+        <td style="padding:.4rem .6rem;font-size:.75rem;color:var(--gray-500)">${p.period_start&&p.period_end ? esc(p.period_start)+' ~ '+esc(p.period_end) : '—'}</td>
+        <td style="padding:.4rem .6rem;font-size:.75rem">${p.job_title ? esc(p.job_title) : '—'}</td>
+        <td style="padding:.4rem .6rem;font-size:.75rem;color:var(--gray-500)">${p.notes ? esc(p.notes) : '—'}</td>
+      </tr>`).join('')}</tbody>
+    </table>`;
 }
 
 async function updateWorkerPayMethod(id, payment_method, sel) {
