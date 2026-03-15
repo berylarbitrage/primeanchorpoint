@@ -281,7 +281,8 @@ function renderCfgBody() {
     html += `<div class="cat-label"><span>${icon}</span> ${escHtml(cat)}</div>`;
     html += `<div class="cfg-grid">`;
     for (const def of items) {
-      const curId = _config[def.key];
+      const rawId = _config[def.key];
+      const curId = Array.isArray(rawId) ? (rawId[0] || null) : rawId;
       const curTmpl = curId ? _allTemplates.find(t => t.id == curId) : null;
       const optHtml = _allTemplates.map(t =>
         `<option value="${t.id}"${t.id == curId ? ' selected' : ''}>#${t.id} — ${escHtml(t.name||'')}</option>`
@@ -329,11 +330,12 @@ function renderAllTemplates() {
   // Build a map of which keys use each template ID
   const usedBy = {};
   TEMPLATE_DEFS.forEach(def => {
-    const id = _config[def.key];
-    if (id) {
+    const raw = _config[def.key];
+    const ids = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    ids.forEach(id => {
       if (!usedBy[id]) usedBy[id] = [];
       usedBy[id].push(def.label);
-    }
+    });
   });
 
   const editBase = _dsUrl ? _dsUrl.replace(/\/$/, '') : '';
@@ -492,6 +494,13 @@ async function uploadTemplate() {
           body: JSON.stringify({ [category]: result.id })
         });
         _config[category] = result.id;
+        // Immediately add to _allTemplates so dropdown reflects the new template
+        // even before DocuSeal's list API returns it
+        if (!_allTemplates.find(t => t.id == result.id)) {
+          _allTemplates.push({ id: result.id, name, created_at: new Date().toISOString() });
+        }
+        renderCfgBody();
+        renderAllTemplates();
         const def = TEMPLATE_DEFS.find(d => d.key === category);
         toast(`模板「${name}」上传成功，已分配至「${def ? def.label : category}」`, 'success');
       } catch(e2) {
