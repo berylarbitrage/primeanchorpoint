@@ -15541,6 +15541,39 @@ function confirmCompleteTaxResidency() {
 
 async function completeTaxResidency() {
   if (!_onboardingWorkerId) return;
+
+  // Always save the latest form data before marking as completed
+  const hasType = document.getElementById('trTypeInd').checked || document.getElementById('trTypeEnt').checked;
+  if (!hasType) return showToast('❌ 请选择申请主体类型（个人或实体）', 'error');
+
+  if (document.getElementById('trTypeInd').checked) {
+    const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
+    if (indStatus && (indStatus.value === 'citizen' || indStatus.value === 'green_card')) {
+      if (!document.getElementById('trIndLegalName').value.trim()) return showToast('❌ 请填写 Legal Name', 'error');
+      if (!document.getElementById('trIndSsn').value.trim()) return showToast('❌ 请填写 SSN / ITIN', 'error');
+      if (!document.getElementById('trIndAddrStreet').value.trim()) return showToast('❌ 请填写 Street Address', 'error');
+      if (!document.getElementById('trIndAddrCity').value.trim()) return showToast('❌ 请填写 City', 'error');
+      if (!document.getElementById('trIndAddrState').value.trim()) return showToast('❌ 请填写 State', 'error');
+      if (!document.getElementById('trIndAddrZip').value.trim()) return showToast('❌ 请填写 ZIP Code', 'error');
+    }
+  }
+
+  const trData = trWizardCollectData();
+  const trResult = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`, {
+    method: 'POST', body: JSON.stringify(trData)
+  });
+
+  const recommendedForm = (trResult && trResult.recommended_form) || 'W-9';
+  if (recommendedForm !== 'W-9') {
+    await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/w9`, {
+      method: 'PUT', body: JSON.stringify({ status: 'waived', admin_note: `已自动豁免（非居民外国人，推荐 ${recommendedForm}）` })
+    });
+  }
+
+  if (trResult && trResult.wp_reset) {
+    showToast(`⚠️ 税务身份变更 (${trResult.old_wp_category} → ${trResult.new_wp_category})，工作许可验证已重置，需要重新验证`, 'warning', 5000);
+  }
+
   await updateOnboardingTask('tax_residency', 'completed');
   closeModal('taxResidencyModal');
   showToast('✅ 税务身份判定已确认完成', 'success');
