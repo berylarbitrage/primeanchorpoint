@@ -2294,10 +2294,22 @@ tr:hover td{background:var(--sky-light)}
           <div id="ds-cfg-cash-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 员工 Invoice</div>
-          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice / Payment Request</div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商发票 (中英)</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice (EN+ZH)</div>
           <select id="ds-sel-contractor-inv" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice', this.value)"><option value="">— 未设置 —</option></select>
           <div id="ds-cfg-contractor-inv-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商发票 (英文)</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice (EN)</div>
+          <select id="ds-sel-contractor-inv-en" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice_en', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-contractor-inv-en-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">📄 承包商发票 (英西)</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Contractor Invoice (EN+ES)</div>
+          <select id="ds-sel-contractor-inv-es" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice_es', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-contractor-inv-es-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">✅ 发票审批表 (内部)</div>
@@ -2346,7 +2358,9 @@ tr:hover td{background:var(--sky-light)}
               <option value="zelle_auth">Zelle</option>
               <option value="third_party_pay">PayPal / Venmo / CashApp</option>
               <option value="cash_receipt">现金签收</option>
-              <option value="contractor_invoice">承包商发票 / Contractor Invoice</option>
+              <option value="contractor_invoice">承包商发票 (中英) / Contractor Invoice (EN+ZH)</option>
+              <option value="contractor_invoice_en">承包商发票 (英文) / Contractor Invoice (EN)</option>
+              <option value="contractor_invoice_es">承包商发票 (英西) / Contractor Invoice (EN+ES)</option>
               <option value="invoice_approval">发票审批表 / Invoice Approval (内部)</option>
             </optgroup>
           </select>
@@ -19902,9 +19916,11 @@ const _DS_SELECTORS = [
   { key: 'zelle_auth_template_id',       selId: 'ds-sel-zelle',              infoId: 'ds-cfg-zelle-info',             label: 'Zelle授权',    doc_type: 'zelle_auth' },
   { key: 'third_party_pay_template_id',  selId: 'ds-sel-third-party',        infoId: 'ds-cfg-third-party-info',       label: '第三方平台',   doc_type: 'third_party_pay' },
   { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收',     doc_type: 'cash_receipt' },
-  // 员工 Invoice
-  { key: 'contractor_invoice_template_id', selId: 'ds-sel-contractor-inv',   infoId: 'ds-cfg-contractor-inv-info',    label: '员工Invoice',  doc_type: 'contractor_invoice' },
-  { key: 'invoice_approval_template_id',  selId: 'ds-sel-invoice-approval', infoId: 'ds-cfg-invoice-approval-info',  label: '发票审批',     doc_type: 'invoice_approval' },
+  // 发票
+  { key: 'contractor_invoice_template_id',    selId: 'ds-sel-contractor-inv',    infoId: 'ds-cfg-contractor-inv-info',    label: '发票(中英)',   doc_type: 'contractor_invoice' },
+  { key: 'contractor_invoice_en_template_id', selId: 'ds-sel-contractor-inv-en', infoId: 'ds-cfg-contractor-inv-en-info', label: '发票(英文)',   doc_type: 'contractor_invoice_en' },
+  { key: 'contractor_invoice_es_template_id', selId: 'ds-sel-contractor-inv-es', infoId: 'ds-cfg-contractor-inv-es-info', label: '发票(英西)',   doc_type: 'contractor_invoice_es' },
+  { key: 'invoice_approval_template_id',      selId: 'ds-sel-invoice-approval',  infoId: 'ds-cfg-invoice-approval-info',  label: '发票审批',     doc_type: 'invoice_approval' },
 ];
 
 function _dsRefreshSelects() {
