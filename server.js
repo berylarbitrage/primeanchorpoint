@@ -3295,9 +3295,6 @@ function generateContractorInvoiceHtmlTemplate() {
     <td style="${c}width:50%">
       <b>FROM — Contractor 承包商 (须与W-9一致)</b><br>
       Name 姓名: <text-field name="contractor_name" role="First Party" required="true" style="${w}" placeholder="Legal name / business name"></text-field>
-      Address 地址: <text-field name="contractor_address" role="First Party" style="${w}" placeholder="Street, City, State, ZIP"></text-field>
-      <span>Phone 电话: <text-field name="contractor_phone" role="First Party" style="${f}width:130px" placeholder="(xxx) xxx-xxxx"></text-field></span>
-      <span style="margin-left:4px">Email: <text-field name="contractor_email" role="First Party" style="${f}width:160px" placeholder="email@example.com"></text-field></span>
     </td>
     <td style="${c}width:50%">
       <b>BILL TO — Company 公司</b><br>
@@ -3316,23 +3313,16 @@ function generateContractorInvoiceHtmlTemplate() {
   <tr><td style="${c}">Reimbursable Expenses 可报销费用</td><td style="${c}text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${f}width:100px" placeholder="0.00"></text-field></td></tr>
   <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">TOTAL DUE 应付总额</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" required="true" style="${f}width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></text-field></td></tr>
 </table>
-<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:4px">
-  <tr>
-    <td style="${c}width:33%"><b>Payment Due 付款截止</b><br><text-field name="payment_due_date" role="First Party" style="${f}width:110px" placeholder="MM/DD/YYYY"></text-field></td>
-    <td style="${c}width:33%"><b>Payment Method 付款方式</b><br><text-field name="payment_method" role="First Party" style="${f}width:140px" placeholder="ACH / Check / Zelle"></text-field></td>
-    <td style="${c}width:34%"><b>Notes 备注</b><br><text-field name="invoice_notes" role="First Party" style="${w}" placeholder="Additional notes"></text-field></td>
-  </tr>
-</table>
-<div style="font-size:7pt;color:#888;margin-bottom:6px">IL FWPA: 合同未注明付款日→完工后30天内付款。Bank account info should be on a separate payment auth form, not here. 银行信息请用付款授权表。</div>
+<div style="font-weight:700;margin:4px 0 2px">NOTES 备注</div>
+<text-field name="invoice_notes" role="First Party" style="${w};min-height:30px" placeholder="Additional notes"></text-field>
 <div style="background:#f5f5f5;border:1px solid #999;padding:6px;font-size:8pt">
   <b>CONTRACTOR CERTIFICATION 承包商声明</b> — I certify the above services were performed and amounts are correct. 本人确认服务已完成，金额准确。
   <table style="width:100%;margin-top:4px"><tr>
-    <td style="width:55%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Contractor Signature 承包商签名:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
-    <td style="width:20%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Date 日期:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
-    <td style="width:25%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Company Approval 公司审批:</div><signature-field name="company_signature" role="Second Party" style="width:100%;height:44px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field><date-field name="approval_date" role="Second Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff;margin-top:2px"></date-field></td>
+    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Contractor Signature 承包商签名:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></signature-field></td>
+    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Date 日期:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">Independent contractor arrangement — contractor responsible for all applicable taxes. 独立承包商协议，承包商自行负责税款。</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">Independent contractor arrangement — contractor responsible for all applicable taxes. 独立承包商协议，承包商自行负责税款。<br>IL FWPA: 合同未注明付款日→完工后30天内付款 / Payment due within 30 days of completion if contract is silent.</div>
 </div>`;
 }
 
