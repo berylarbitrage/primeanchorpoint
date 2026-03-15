@@ -13335,6 +13335,7 @@ async function openOnboardingModalById(workerId) {
 }
 
 let _onboardingInterviewInfo = null;
+let _onboardingRecommendedForm = null;
 
 async function refreshOnboardingModal() {
   const [tasks, rows, intvInfo, taxResData] = await Promise.all([
@@ -13347,7 +13348,7 @@ async function refreshOnboardingModal() {
   _onboardingDispatchReady = !!(w && w.dispatch_ready);
   _onboardingWorkerData = w || null;
   _onboardingInterviewInfo = intvInfo || null;
-  const recommendedForm = taxResData && taxResData.recommended_form;
+  _onboardingRecommendedForm = (taxResData && taxResData.recommended_form) || null;
 
   const hasTasks = Array.isArray(tasks) && tasks.length > 0;
   const allDone = hasTasks && tasks.every(t => t.status === 'completed' || t.status === 'waived');
@@ -13426,9 +13427,9 @@ function renderOnboardingTasks(tasks) {
     // Tax form/doc tasks: hide until tax residency questionnaire is done
     if (taxGatedKeys.includes(t.key) && !taxResDone) return false;
     // Once tax residency is done, show only the relevant tax form
-    if (taxResDone && recommendedForm) {
-      if (t.key === 'w9' && recommendedForm !== 'W-9') return false;
-      if (taxDocKeys.includes(t.key) && recommendedForm === 'W-9') return false;
+    if (taxResDone && _onboardingRecommendedForm) {
+      if (t.key === 'w9' && _onboardingRecommendedForm !== 'W-9') return false;
+      if (taxDocKeys.includes(t.key) && _onboardingRecommendedForm === 'W-9') return false;
     }
     // If assigned_tasks is set, only show tasks in that list
     if (assignedTasks.length) return assignedTasks.includes(t.key);
