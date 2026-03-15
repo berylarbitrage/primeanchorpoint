@@ -3029,7 +3029,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
+  <div id="wpDateRow" style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.75rem">
     <div class="field">
       <label style="font-size:.78rem;font-weight:600">签发日期 ISSUE DATE</label>
       <input type="date" id="wpIssueDate" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
@@ -3040,7 +3040,7 @@ tr:hover td{background:var(--sky-light)}
     </div>
   </div>
 
-  <div class="field" style="margin-bottom:.75rem">
+  <div id="wpCategoryRow" class="field" style="margin-bottom:.75rem">
     <label style="font-size:.78rem;font-weight:600">签证类别 / USCIS CATEGORY</label>
     <input id="wpCategory" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="e.g. C09, H-1B, F-1 OPT">
   </div>
@@ -4889,7 +4889,7 @@ tr:hover td{background:var(--sky-light)}
       <option value="bg_check">背景调查报告</option>
       <option value="other">其他</option>
     </select></div>
-    <div class="field"><label>到期日期 (如适用)</label><input id="docExpiry" type="date"></div>
+    <div class="field" id="docExpiryField"><label>到期日期 (如适用)</label><input id="docExpiry" type="date"></div>
   </div>
   <div class="field"><label>标签/描述</label><input id="docLabel" placeholder="例：驾照 - Illinois"></div>
   <div class="field"><label>文件 (PDF/JPG/PNG/DOC, 最大 20MB)</label>
@@ -12962,6 +12962,14 @@ async function loadDocuments() {
   </tr>`).join('') : '<tr><td colspan="7" class="empty">该员工暂无文件</td></tr>';
 }
 
+function docToggleExpiry(docType) {
+  const field = document.getElementById('docExpiryField');
+  if (!field) return;
+  const hide = WP_NO_EXPIRY_DOCS.has(docType);
+  field.style.display = hide ? 'none' : '';
+  if (hide) document.getElementById('docExpiry').value = '';
+}
+
 function openDocModal() {
   document.getElementById('docEmpSel').value = document.getElementById('docEmpFilter').value || '';
   document.getElementById('docType').value   = 'ssn';
@@ -12969,6 +12977,9 @@ function openDocModal() {
   document.getElementById('docLabel').value  = '';
   document.getElementById('docNotes').value  = '';
   document.getElementById('docFile').value   = '';
+  const docTypeSel = document.getElementById('docType');
+  docTypeSel.onchange = function() { docToggleExpiry(this.value); };
+  docToggleExpiry(docTypeSel.value);
   document.getElementById('docModal').classList.add('show');
   captureModalState('docModal');
 }
@@ -15968,6 +15979,54 @@ const WP_DOC_OPTIONS = {
   ]
 };
 
+// Document types that do NOT have expiration dates (permanent / one-time documents)
+const WP_NO_EXPIRY_DOCS = new Set([
+  // Citizen identity docs (permanent, never expire)
+  'birth_cert',           // U.S. Birth Certificate
+  'naturalization',       // Certificate of Naturalization (N-550/N-570)
+  'citizenship_cert',     // Certificate of Citizenship (N-560/N-561)
+  'consular_report',      // Consular Report of Birth Abroad (FS-240)
+  // U.S. Entity docs (permanent)
+  'entity_formation',     // Articles / Certificate of Formation
+  'ein_letter',           // IRS EIN Confirmation Letter (CP 575/147C)
+  // Foreign Entity docs (permanent)
+  'foreign_cert',         // Certificate of Incorporation / Formation
+  'signing_auth',         // Signing Authority / Board Resolution
+  // HR document types (permanent / no expiry)
+  'ssn',                  // Social Security Card
+  'i9',                   // I-9 Form
+  'w4',                   // W-4 Form
+  'bg_check'              // Background Check Report
+]);
+
+// Document types that don't need USCIS category field
+const WP_NO_CATEGORY_DOCS = new Set([
+  'birth_cert', 'naturalization', 'citizenship_cert', 'consular_report',
+  'us_passport',
+  'entity_formation', 'ein_letter',
+  'foreign_cert', 'signing_auth',
+  'ssn', 'i9', 'w4', 'bg_check'
+]);
+
+function wpToggleDateFields(docType) {
+  const dateRow = document.getElementById('wpDateRow');
+  if (dateRow) {
+    const hideDate = WP_NO_EXPIRY_DOCS.has(docType);
+    dateRow.style.display = hideDate ? 'none' : '';
+    if (hideDate) {
+      document.getElementById('wpIssueDate').value = '';
+      document.getElementById('wpExpiryDate').value = '';
+      document.getElementById('wpExpiryWarning').style.display = 'none';
+    }
+  }
+  const catRow = document.getElementById('wpCategoryRow');
+  if (catRow) {
+    const hideCat = WP_NO_CATEGORY_DOCS.has(docType);
+    catRow.style.display = hideCat ? 'none' : '';
+    if (hideCat) document.getElementById('wpCategory').value = '';
+  }
+}
+
 // Required documents info by category
 const WP_REQUIRED_DOCS = {
   citizen: { title: 'U.S. Citizen → W-9', docs: ['身份证明（以下任一即可）:', '• 美国护照 U.S. Passport', '• 美国出生证明 U.S. Birth Certificate', '• 入籍证书 Certificate of Naturalization (N-550/N-570)', '• 公民证书 Certificate of Citizenship (N-560/N-561)', '• 海外出生领事报告 Consular Report of Birth Abroad (FS-240)'] },
@@ -15989,6 +16048,9 @@ function wpPopulateDocType(category, existingValue) {
     sel.insertAdjacentHTML('beforeend', `<option value="${o.value}">${o.label}</option>`);
   });
   if (existingValue) sel.value = existingValue;
+  // Toggle date fields based on selected doc type
+  sel.onchange = function() { wpToggleDateFields(this.value); };
+  wpToggleDateFields(existingValue || '');
 }
 
 function wpShowRequiredDocs(category) {
