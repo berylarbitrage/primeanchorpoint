@@ -19918,6 +19918,7 @@ function _dsRenderMyTemplates() {
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0">
         <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
+        <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
         ${dsUrl ? `<a href="${dsUrl}/templates/${t.docuseal_template_id}/edit" target="_blank" style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;text-decoration:none">编辑 ↗</a>` : ''}
         <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
       </div>
@@ -19959,6 +19960,72 @@ async function dsDeleteMyTemplate(localId, dsId, name) {
     _dsRefreshSelects();
     _dsRenderMyTemplates();
     showToast('模板已删除', 'success');
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
+function dsChangeCategoryModal(dsTemplateId) {
+  // Build current assignments for this template
+  const assigned = new Set(_DS_SELECTORS.filter(s => _dsConfig[s.key] == dsTemplateId).map(s => s.key));
+  const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
+  const tplName = tpl ? tpl.name : `#${dsTemplateId}`;
+
+  // Group selectors by section header
+  const groups = [
+    { title: '合同', keys: ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id'] },
+    { title: '税务表格', keys: ['w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id','i9_template_id','w7_template_id'] },
+    { title: '付款授权', keys: ['ach_auth_template_id','wire_auth_template_id','check_instruction_template_id','zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id','contractor_invoice_template_id'] },
+  ];
+
+  const rowsHtml = groups.map(g => {
+    const items = g.keys.map(k => {
+      const sel = _DS_SELECTORS.find(s => s.key === k);
+      if (!sel) return '';
+      const curOwner = _dsMyTemplates.find(t => t.docuseal_template_id == _dsConfig[k]);
+      const occupiedNote = (curOwner && curOwner.docuseal_template_id != dsTemplateId)
+        ? `<span style="font-size:.71rem;color:#94a3b8">（当前：${_dsEsc(curOwner.name)}）</span>` : '';
+      return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .2rem;cursor:pointer">
+        <input type="checkbox" data-key="${k}" ${assigned.has(k) ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer">
+        <span style="font-size:.83rem;font-weight:600">${sel.label}</span>${occupiedNote}
+      </label>`;
+    }).join('');
+    return `<div style="margin-bottom:.8rem"><div style="font-size:.75rem;font-weight:700;color:#94a3b8;margin-bottom:.25rem">${g.title}</div>${items}</div>`;
+  }).join('');
+
+  const modalHtml = `<div id="ds-cat-modal-overlay" onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center">
+    <div style="background:#fff;border-radius:12px;padding:1.5rem;width:360px;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2)">
+      <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">改变分类</div>
+      <div style="font-size:.8rem;color:#64748b;margin-bottom:1rem">为「${_dsEsc(tplName)}」选择所属分类（可多选）</div>
+      <div id="ds-cat-modal-groups">${rowsHtml}</div>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+        <button onclick="document.getElementById('ds-cat-modal-overlay').remove()" style="padding:.4rem 1rem;border-radius:7px;border:1px solid #e2e8f0;background:#fff;font-size:.82rem;cursor:pointer">取消</button>
+        <button onclick="dsApplyCategoryChanges(${dsTemplateId})" style="padding:.4rem 1rem;border-radius:7px;border:none;background:#0ea5e9;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">保存</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+async function dsApplyCategoryChanges(dsTemplateId) {
+  const overlay = document.getElementById('ds-cat-modal-overlay');
+  const checkboxes = overlay.querySelectorAll('input[type=checkbox]');
+  try {
+    for (const cb of checkboxes) {
+      const key = cb.dataset.key;
+      const wasAssigned = _dsConfig[key] == dsTemplateId;
+      if (cb.checked && !wasAssigned) {
+        // Assign this template to this category
+        await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ [key]: dsTemplateId }) });
+        _dsConfig[key] = dsTemplateId;
+      } else if (!cb.checked && wasAssigned) {
+        // Clear this category
+        await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ [key]: null }) });
+        _dsConfig[key] = null;
+      }
+    }
+    overlay.remove();
+    _dsRefreshSelects();
+    _dsRenderMyTemplates();
+    showToast('分类已更新', 'success');
   } catch(e) { showToast(e.message, 'error'); }
 }
 
