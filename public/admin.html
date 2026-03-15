@@ -2705,6 +2705,51 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div></div>
 
+<!-- Identity Document Verification Modal -->
+<div class="modal-bg" id="idVerifyModal"><div class="modal" style="max-width:660px;max-height:90vh;overflow-y:auto">
+  <h2>🪪 身份文件核验 — <span id="idVerifyWorkerName" style="color:var(--sky)"></span></h2>
+  <div id="idVerifyGuide" style="margin:.5rem 0 .75rem"></div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+    <div class="field" style="margin:0">
+      <label style="font-size:.8rem;font-weight:600">证件类型 DOCUMENT TYPE</label>
+      <select id="idVerifyDocType" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem"></select>
+    </div>
+    <div class="field" style="margin:0">
+      <label style="font-size:.8rem;font-weight:600">证件编号 DOCUMENT NUMBER</label>
+      <input id="idVerifyDocNumber" placeholder="证件编号" style="width:100%;padding:.5rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
+    </div>
+  </div>
+
+  <div class="field" style="margin-bottom:.75rem">
+    <label style="font-size:.8rem;font-weight:600">备注 NOTES</label>
+    <textarea id="idVerifyNotes" rows="2" placeholder="审核备注、附加信息..." style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
+  </div>
+
+  <div style="margin-bottom:.75rem">
+    <label style="font-size:.8rem;font-weight:600;display:flex;align-items:center;gap:.4rem">
+      📎 上传证件文件 Upload Documents (PDF / 图片)
+    </label>
+    <div id="idVerifyFileZone" style="border:1.5px dashed var(--gray-300);border-radius:8px;padding:.75rem 1rem;background:var(--gray-50);margin-top:.3rem">
+      <div style="font-size:.82rem;color:var(--gray-500);margin-bottom:.4rem">美国护照 U.S. Passport 或其他身份证明</div>
+      <input type="file" id="idVerifyFile" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif" style="font-size:.82rem">
+      <div id="idVerifyFileStatus" style="font-size:.8rem;margin-top:.3rem;color:var(--gray-500)"></div>
+    </div>
+  </div>
+
+  <!-- Previously submitted records -->
+  <div id="idVerifyRecordsSection" style="display:none;margin-bottom:.75rem">
+    <div style="font-weight:700;font-size:.85rem;color:var(--blue);margin-bottom:.4rem">📋 已有记录:</div>
+    <div id="idVerifyRecordsList" style="display:flex;flex-direction:column;gap:.35rem"></div>
+  </div>
+
+  <div class="modal-actions">
+    <button class="btn" onclick="closeModal('idVerifyModal')">关闭</button>
+    <button class="btn btn-blue" onclick="saveIdDoc()">💾 保存</button>
+    <button class="btn btn-green" onclick="verifyIdDocs()">✅ 验证通过</button>
+  </div>
+</div></div>
+
 <!-- Customer Account Modal -->
 <div class="modal-bg" id="customerAccountModal"><div class="modal" style="max-width:520px">
   <h2 id="customerAccModalTitle">新建客户账户</h2>
@@ -13811,12 +13856,16 @@ function renderOnboardingTasks(tasks) {
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openW9SendModal()">📋 ${t.ds_status==='completed'?'✅ W-9 已签署':t.ds_status==='sent'?'⏳ 等待签署':s==='submitted'?'📝 工人已填写':'发送 W-9'}</button>`
             : t.key==='interview'
             ? `<button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe;font-weight:700" onclick="openOnboardingInterviewSlotModal()">📅 ${isVisible?'重新发送面试邀请':'发送面试邀请'}</button>`
+            : t.key==='work_auth'
+            ? `<button class="btn btn-sm" style="background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd;font-weight:700" onclick="openWorkAuthModal()">${t.status==='completed'?'📑 Work Auth 已完成':isVisible?'📑 查看/重发认证任务':'📑 发送 Work Auth 认证'}</button>`
             : t.key==='tax_residency'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="openTaxResidencyModal()">🏛️ ${(s==='completed'||s==='submitted')?'查看/修改判定结果':'开始 Resident Test'}</button>`
             : t.key==='work_permit'
             ? `<button class="btn btn-sm" style="background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openWorkPermitModal()">🛂 ${s==='completed'?'查看/修改验证':'开始工作许可验证'}</button>`
             : t.key==='tin_verify'
             ? `<button class="btn btn-sm" style="background:#fefce8;color:#854d0e;border:1px solid #fde68a;font-weight:700" onclick="confirmOnboardingComplete('tin_verify','核对税号')">🔢 ${s==='completed'?'✅ 已核对':'核对税号'}</button>`
+            : (t.key==='i9'||t.key==='ead_upload')
+            ? `<button class="btn btn-sm" style="background:#f0fdf4;color:#065f46;border:1px solid #a7f3d0;font-weight:700" onclick="openIdVerifyModal(${_onboardingWorkerId},'${esc((_onboardingWorkerData&&(_onboardingWorkerData.name||_onboardingWorkerData.username))||'').replace(/'/g,"\\'")}','${esc((_onboardingWorkerData&&_onboardingWorkerData.work_status)||'other')}')">🪪 ${s==='completed'?'✅ 已验证':s==='submitted'?'📋 查看/审核文件':'📋 查看身份文件'}</button>${isVisible?'':` <button class="btn btn-sm" style="background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe" onclick="toggleOnboardingVisibility('${t.key}',1)">📤 发送给工人</button>`}`
             : `<button class="btn btn-sm" style="${isVisible?'background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0':'background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe'}" onclick="toggleOnboardingVisibility('${t.key}',${isVisible?0:1})">${isVisible?'✅ 已发送给工人':'📤 发送给工人完成'}</button>`}
         </div>
       </div>
@@ -16782,6 +16831,212 @@ async function downloadSignedW9() {
 }
 
 // ─── Work Auth Modal Functions ───
+// ─── Identity Document Verification Modal ───
+const ID_VERIFY_DOC_TYPES = {
+  citizen: [
+    { value: 'us_passport', label: '美国护照 U.S. Passport' },
+    { value: 'birth_certificate', label: '美国出生证明 U.S. Birth Certificate' },
+    { value: 'naturalization_cert', label: '入籍证书 Certificate of Naturalization (N-550/N-570)' },
+    { value: 'citizenship_cert', label: '公民证书 Certificate of Citizenship (N-560/N-561)' },
+    { value: 'consular_report', label: '海外出生领事报告 Consular Report of Birth Abroad (FS-240)' }
+  ],
+  green_card: [
+    { value: 'green_card', label: '永久居民卡 Permanent Resident Card (I-551)' },
+    { value: 'us_passport', label: '美国护照 U.S. Passport' }
+  ],
+  ead: [
+    { value: 'ead_card', label: 'EAD 工作授权卡 Employment Authorization Card (I-766)' },
+    { value: 'foreign_passport_i94', label: '外国护照 + I-94 Foreign Passport + I-94' },
+    { value: 'foreign_passport_ead', label: '外国护照 + EAD Foreign Passport + EAD (I-766)' }
+  ],
+  h1b: [
+    { value: 'foreign_passport_i94', label: '外国护照 + I-94 Foreign Passport + I-94' },
+    { value: 'ead_card', label: 'EAD 工作授权卡 (I-766)' }
+  ],
+  opt: [
+    { value: 'ead_card', label: 'EAD 工作授权卡 (I-766)' },
+    { value: 'foreign_passport_i20', label: '外国护照 + I-20 Foreign Passport + I-20 (F-1)' },
+    { value: 'foreign_passport_i94', label: '外国护照 + I-94 Foreign Passport + I-94' }
+  ],
+  other: [
+    { value: 'us_passport', label: '美国护照 U.S. Passport' },
+    { value: 'ead_card', label: 'EAD 工作授权卡 (I-766)' },
+    { value: 'foreign_passport_i94', label: '外国护照 + I-94 Foreign Passport + I-94' },
+    { value: 'drivers_license', label: '驾照 Driver\'s License' },
+    { value: 'state_id', label: '州身份证 State ID' },
+    { value: 'other', label: '其他 Other' }
+  ]
+};
+const ID_VERIFY_GUIDE = {
+  citizen: `<div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:.6rem .85rem;font-size:.82rem;color:#854d0e">
+    <span style="font-weight:700">🇺🇸 U.S. Citizen → W-9 — 需验证的材料:</span>
+    <ul style="margin:.3rem 0 0 1.2rem;padding:0;line-height:1.8">
+      <li>美国护照 U.S. Passport</li>
+      <li>美国出生证明 U.S. Birth Certificate</li>
+      <li>入籍证书 Certificate of Naturalization (N-550/N-570)</li>
+      <li>公民证书 Certificate of Citizenship (N-560/N-561)</li>
+      <li>海外出生领事报告 Consular Report of Birth Abroad (FS-240)</li>
+    </ul>
+  </div>`,
+  green_card: `<div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:8px;padding:.6rem .85rem;font-size:.82rem;color:#065f46">
+    <span style="font-weight:700">🟩 绿卡 Green Card — 需验证的材料:</span>
+    <ul style="margin:.3rem 0 0 1.2rem;padding:0;line-height:1.8">
+      <li>永久居民卡 Permanent Resident Card (I-551)</li>
+      <li>美国护照（如有）U.S. Passport (if available)</li>
+    </ul>
+  </div>`,
+  ead: `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:.6rem .85rem;font-size:.82rem;color:#1e40af">
+    <span style="font-weight:700">📄 EAD 工卡 — 需验证的材料:</span>
+    <ul style="margin:.3rem 0 0 1.2rem;padding:0;line-height:1.8">
+      <li>EAD 工作授权卡 Employment Authorization Card (I-766)</li>
+      <li>外国护照 + I-94 Foreign Passport + I-94 (Arrival/Departure Record)</li>
+      <li>外国护照 + EAD Foreign Passport + EAD (I-766)</li>
+    </ul>
+  </div>`,
+  h1b: `<div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:.6rem .85rem;font-size:.82rem;color:#7c3aed">
+    <span style="font-weight:700">H-1B — 需验证的材料:</span>
+    <ul style="margin:.3rem 0 0 1.2rem;padding:0;line-height:1.8">
+      <li>外国护照 + I-94 Foreign Passport + I-94</li>
+      <li>EAD 工作授权卡 (I-766) — 如适用</li>
+    </ul>
+  </div>`,
+  opt: `<div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:8px;padding:.6rem .85rem;font-size:.82rem;color:#7c3aed">
+    <span style="font-weight:700">OPT/CPT — 需验证的材料:</span>
+    <ul style="margin:.3rem 0 0 1.2rem;padding:0;line-height:1.8">
+      <li>EAD 工作授权卡 (I-766)</li>
+      <li>外国护照 + I-20 Foreign Passport + I-20 (F-1)</li>
+      <li>外国护照 + I-94 Foreign Passport + I-94</li>
+    </ul>
+  </div>`,
+  other: `<div style="background:var(--gray-50);border:1px solid var(--gray-200);border-radius:8px;padding:.6rem .85rem;font-size:.82rem;color:var(--gray-600)">
+    <span style="font-weight:700">其他工作状态 Other — 需验证的材料:</span>
+    <p style="margin:.3rem 0 0">请根据实际情况上传相应身份证明文件。</p>
+  </div>`
+};
+
+async function openIdVerifyModal(workerId, workerName, workStatus) {
+  _onboardingWorkerId = workerId;
+  document.getElementById('idVerifyWorkerName').textContent = workerName || '';
+  // Show document requirements guide
+  const status = workStatus || 'other';
+  document.getElementById('idVerifyGuide').innerHTML = ID_VERIFY_GUIDE[status] || ID_VERIFY_GUIDE.other;
+  // Populate doc type dropdown
+  const types = ID_VERIFY_DOC_TYPES[status] || ID_VERIFY_DOC_TYPES.other;
+  document.getElementById('idVerifyDocType').innerHTML = types.map(t => `<option value="${t.value}">${esc(t.label)}</option>`).join('');
+  // Clear form
+  document.getElementById('idVerifyDocNumber').value = '';
+  document.getElementById('idVerifyNotes').value = '';
+  document.getElementById('idVerifyFile').value = '';
+  document.getElementById('idVerifyFileStatus').textContent = '';
+  document.getElementById('idVerifyModal').classList.add('show');
+  await loadIdVerifyRecords(workerId);
+}
+
+async function loadIdVerifyRecords(workerId) {
+  const docs = await api(`/admin/worker-accounts/${workerId}/id-docs`);
+  const section = document.getElementById('idVerifyRecordsSection');
+  const list = document.getElementById('idVerifyRecordsList');
+  if (!docs || !docs.length) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+  const DOC_LABEL = {
+    us_passport: '美国护照 U.S. Passport',
+    birth_certificate: '美国出生证明 U.S. Birth Certificate',
+    naturalization_cert: '入籍证书 Certificate of Naturalization',
+    citizenship_cert: '公民证书 Certificate of Citizenship',
+    consular_report: '海外出生领事报告 Consular Report',
+    green_card: '永久居民卡 Green Card (I-551)',
+    ead_card: 'EAD 工作授权卡 (I-766)',
+    foreign_passport_i94: '外国护照 + I-94',
+    foreign_passport_ead: '外国护照 + EAD',
+    foreign_passport_i20: '外国护照 + I-20',
+    drivers_license: '驾照 Driver\'s License',
+    state_id: '州身份证 State ID',
+    other: '其他 Other'
+  };
+  list.innerHTML = docs.map(d => {
+    const label = DOC_LABEL[d.doc_type] || d.doc_type;
+    const date = (d.created_at || '').slice(0, 10);
+    const fileLink = d.file_name
+      ? `<a href="/api/admin/worker-accounts/${_onboardingWorkerId}/id-docs/${d.id}/file" target="_blank" style="font-size:.78rem;color:var(--sky)">${esc(d.file_name)}</a>`
+      : '';
+    return `<div style="background:#f0fdf4;border:1px solid #a7f3d0;border-radius:6px;padding:.45rem .75rem;font-size:.82rem;display:flex;align-items:center;justify-content:space-between;gap:.5rem;flex-wrap:wrap">
+      <div>
+        <span style="color:var(--gray-500)">类型:</span> <strong>${esc(label)}</strong>
+        ${d.doc_number ? `<span style="color:var(--gray-400);margin-left:.5rem">·</span> <span style="color:var(--gray-500)">编号:</span> <strong>${esc(d.doc_number)}</strong>` : ''}
+        ${d.notes ? `<div style="color:var(--gray-500);font-size:.78rem;margin-top:.1rem">备注: ${esc(d.notes)}</div>` : ''}
+        ${fileLink ? `<div style="margin-top:.15rem">📄 ${fileLink}</div>` : ''}
+        <div style="color:var(--gray-400);font-size:.75rem;margin-top:.1rem">${date}</div>
+      </div>
+      <button class="btn btn-sm btn-red" style="padding:.2rem .5rem;font-size:.75rem;flex-shrink:0" onclick="deleteIdDoc(${d.id})">🗑️</button>
+    </div>`;
+  }).join('');
+}
+
+async function saveIdDoc() {
+  if (!_onboardingWorkerId) return;
+  const docType = document.getElementById('idVerifyDocType').value;
+  const docNumber = document.getElementById('idVerifyDocNumber').value.trim();
+  const notes = document.getElementById('idVerifyNotes').value.trim();
+  const fileInput = document.getElementById('idVerifyFile');
+  if (!docType) { showToast('❌ 请选择证件类型', 'error'); return; }
+  const formData = new FormData();
+  formData.append('doc_type', docType);
+  formData.append('doc_number', docNumber);
+  formData.append('notes', notes);
+  if (fileInput.files[0]) formData.append('file', fileInput.files[0]);
+  const token = localStorage.getItem('adminToken') || sessionStorage.getItem('adminToken') || '';
+  const r = await fetch(`/api/admin/worker-accounts/${_onboardingWorkerId}/id-docs`, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + token },
+    body: formData
+  }).then(res => res.json()).catch(() => null);
+  if (r && r.success) {
+    showToast('✅ 已保存');
+    document.getElementById('idVerifyDocNumber').value = '';
+    document.getElementById('idVerifyNotes').value = '';
+    document.getElementById('idVerifyFile').value = '';
+    document.getElementById('idVerifyFileStatus').textContent = '';
+    await loadIdVerifyRecords(_onboardingWorkerId);
+  } else {
+    showToast('❌ ' + (r?.error || '保存失败'), 'error');
+  }
+}
+
+async function deleteIdDoc(docId) {
+  if (!_onboardingWorkerId) return;
+  if (!await showConfirm('确认删除该记录？')) return;
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/id-docs/${docId}`, { method: 'DELETE' });
+  if (r && r.success) {
+    showToast('✅ 已删除');
+    await loadIdVerifyRecords(_onboardingWorkerId);
+  } else {
+    showToast('❌ 删除失败', 'error');
+  }
+}
+
+async function verifyIdDocs() {
+  if (!_onboardingWorkerId) return;
+  // Check we have at least one record
+  const docs = await api(`/admin/worker-accounts/${_onboardingWorkerId}/id-docs`);
+  if (!docs || !docs.length) {
+    if (!await showConfirm('尚未保存任何身份证件记录，是否仍然标记为验证通过？')) return;
+  }
+  // Mark i9 task as completed
+  const r = await api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding/i9`, {
+    method: 'PUT', body: JSON.stringify({ status: 'completed' })
+  });
+  if (r && r.success) {
+    showToast('✅ 身份文件验证通过');
+    closeModal('idVerifyModal');
+    refreshOnboardingModal();
+  } else {
+    showToast('❌ ' + (r?.error || '操作失败'), 'error');
+  }
+}
+
 function openWorkAuthModal() {
   if (!_onboardingWorkerId) return;
   const w = _onboardingWorkerData;

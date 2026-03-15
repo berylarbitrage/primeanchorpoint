@@ -1217,6 +1217,19 @@ try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN holder_name TEXT DE
 try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN doc_number TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN ocr_raw TEXT DEFAULT ''"); } catch {}
 
+// ─── Worker Identity Docs (I-9 / EAD verification records) ───
+db.exec(`CREATE TABLE IF NOT EXISTS worker_id_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL,
+  doc_type TEXT NOT NULL,
+  doc_number TEXT DEFAULT '',
+  notes TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (worker_account_id) REFERENCES worker_accounts(id) ON DELETE CASCADE
+)`);
+
 // ─── Worker Onboarding Tasks ───
 db.exec(`CREATE TABLE IF NOT EXISTS worker_onboarding (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -11246,6 +11259,57 @@ try { db.exec("ALTER TABLE worker_compliance_docs ADD COLUMN last_expiry_notifie
 // Run daily at 9 AM
 setInterval(checkExpiringDocs, 24 * 60 * 60 * 1000);
 setTimeout(checkExpiringDocs, 60 * 1000); // First check 1 minute after startup
+
+// ─── Worker Identity Docs API (I-9 / EAD admin-side verification records) ───
+const idDocUpload = multer({
+  storage: multer.diskStorage({
+    destination: docsDir,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `id-doc-${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    }
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ok = /pdf|jpg|jpeg|png|heic|heif/.test(path.extname(file.originalname).toLowerCase());
+    cb(null, ok);
+  }
+});
+
+app.get('/api/admin/worker-accounts/:id/id-docs', requireAdmin, (req, res) => {
+  const docs = db.prepare('SELECT * FROM worker_id_docs WHERE worker_account_id=? ORDER BY created_at DESC').all(req.params.id);
+  res.json(docs);
+});
+
+app.post('/api/admin/worker-accounts/:id/id-docs', requireAdmin, idDocUpload.single('file'), (req, res) => {
+  const { doc_type, doc_number, notes } = req.body;
+  if (!doc_type) return res.status(400).json({ error: 'doc_type required' });
+  const file_path = req.file ? req.file.filename : '';
+  const file_name = req.file ? req.file.originalname : '';
+  const result = db.prepare(
+    'INSERT INTO worker_id_docs (worker_account_id, doc_type, doc_number, notes, file_path, file_name) VALUES (?,?,?,?,?,?)'
+  ).run(req.params.id, doc_type, doc_number || '', notes || '', file_path, file_name);
+  res.json({ success: true, id: result.lastInsertRowid });
+});
+
+app.delete('/api/admin/worker-accounts/:id/id-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_id_docs WHERE id=? AND worker_account_id=?').get(req.params.docId, req.params.id);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (doc.file_path) {
+    const fp = path.join(docsDir, doc.file_path);
+    if (fs.existsSync(fp)) try { fs.unlinkSync(fp); } catch {}
+  }
+  db.prepare('DELETE FROM worker_id_docs WHERE id=?').run(req.params.docId);
+  res.json({ success: true });
+});
+
+app.get('/api/admin/worker-accounts/:id/id-docs/:docId/file', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_id_docs WHERE id=? AND worker_account_id=?').get(req.params.docId, req.params.id);
+  if (!doc || !doc.file_path) return res.status(404).json({ error: 'Not found' });
+  const fp = path.join(docsDir, doc.file_path);
+  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'File not found' });
+  res.download(fp, doc.file_name || doc.file_path);
+});
 
 // ─── Customer Portal API ───
 app.post('/api/customer/login', (req, res) => {
