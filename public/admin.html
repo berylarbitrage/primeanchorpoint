@@ -2189,18 +2189,42 @@ tr:hover td{background:var(--sky-light)}
 
       <!-- Row 3: W-9 -->
       <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">📋 税务表格</div>
-      <div style="display:grid;grid-template-columns:1fr;gap:1rem">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">W-9 表格模板</div>
-          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">IRS W-9 税务信息表</div>
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">W-9</div>
+          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">美国居民税务信息表</div>
           <select id="ds-sel-w9" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('w9', this.value)">
             <option value="">— 未设置 —</option>
           </select>
           <div id="ds-cfg-w9-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
         </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">W-8BEN</div>
+          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">外籍个人预扣税身份证明</div>
+          <select id="ds-sel-w8ben" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('w8ben', this.value)">
+            <option value="">— 未设置 —</option>
+          </select>
+          <div id="ds-cfg-w8ben-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">W-8BEN-E</div>
+          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">外籍实体预扣税身份证明</div>
+          <select id="ds-sel-w8bene" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('w8bene', this.value)">
+            <option value="">— 未设置 —</option>
+          </select>
+          <div id="ds-cfg-w8bene-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">8233</div>
+          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">外籍个人税收协定豁免申请</div>
+          <select id="ds-sel-8233" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('form8233', this.value)">
+            <option value="">— 未设置 —</option>
+          </select>
+          <div id="ds-cfg-8233-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
       </div>
 
-      <p style="font-size:.8rem;color:#94a3b8;margin-top:.75rem">从下拉菜单中选择已上传的模板。发送合同或 W-9 时将使用对应模板。</p>
+      <p style="font-size:.8rem;color:#94a3b8;margin-top:.75rem">从下拉菜单中选择已上传的模板。发送合同或税务表格时将使用对应模板。</p>
     </div>
 
     <!-- Upload new template -->
@@ -16034,6 +16058,9 @@ const _DS_SELECTORS = [
   { key: 'worker_1099_template_id',      selId: 'ds-sel-worker-1099',       infoId: 'ds-cfg-worker-1099-info',       label: '劳务合同 1099' },
   { key: 'worker_w2_template_id',        selId: 'ds-sel-worker-w2',         infoId: 'ds-cfg-worker-w2-info',         label: '劳务合同 W2' },
   { key: 'w9_template_id',               selId: 'ds-sel-w9',                infoId: 'ds-cfg-w9-info',                label: 'W-9' },
+  { key: 'w8ben_template_id',            selId: 'ds-sel-w8ben',             infoId: 'ds-cfg-w8ben-info',             label: 'W-8BEN' },
+  { key: 'w8bene_template_id',           selId: 'ds-sel-w8bene',            infoId: 'ds-cfg-w8bene-info',            label: 'W-8BEN-E' },
+  { key: 'form8233_template_id',         selId: 'ds-sel-8233',              infoId: 'ds-cfg-8233-info',              label: '8233' },
 ];
 
 function _dsRefreshSelects() {
@@ -16063,6 +16090,9 @@ function _dsRenderMyTemplates() {
     worker_1099_template_id:      { bg:'#d1fae5', color:'#065f46', label:'1099' },
     worker_w2_template_id:        { bg:'#fef9c3', color:'#854d0e', label:'W2' },
     w9_template_id:               { bg:'#fff7ed', color:'#9a3412', label:'W-9' },
+    w8ben_template_id:            { bg:'#fae8ff', color:'#6b21a8', label:'W-8BEN' },
+    w8bene_template_id:           { bg:'#ede9fe', color:'#5b21b6', label:'W-8BEN-E' },
+    form8233_template_id:         { bg:'#fce7f3', color:'#9d174d', label:'8233' },
   };
   const rows = _dsMyTemplates.map(t => {
     const badges = Object.entries(_BADGE_STYLES).map(([k, s]) =>
