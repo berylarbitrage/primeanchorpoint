@@ -1387,6 +1387,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS work_permit_docs (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
+db.exec(`CREATE TABLE IF NOT EXISTS worker_tax_docs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  worker_account_id INTEGER NOT NULL REFERENCES worker_accounts(id) ON DELETE CASCADE,
+  doc_label TEXT DEFAULT '',
+  file_path TEXT DEFAULT '',
+  file_name TEXT DEFAULT '',
+  uploaded_by TEXT DEFAULT '',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
 // Add per-doc metadata columns to work_permit_docs
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN doc_number TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE work_permit_docs ADD COLUMN issue_date TEXT DEFAULT ''"); } catch {}
@@ -4176,6 +4186,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   `);
   const getContractInfo = db.prepare("SELECT ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'");
   const getContractVersionCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_contract_versions WHERE worker_account_id=?");
+  const getTaxDocCount = db.prepare("SELECT COUNT(*) as cnt FROM worker_tax_docs WHERE worker_account_id=?");
 
   const enriched = workers.map(w => {
     const interview = getInterview.get(w.id);
@@ -4185,6 +4196,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const qualCount = getQualifiedReferrals.get(w.id, refConfig.min_hours_to_qualify);
     const contractInfo = getContractInfo.get(w.id);
     const contractVerCount = getContractVersionCount.get(w.id);
+    const taxDocCount = getTaxDocCount.get(w.id);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -4198,7 +4210,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       qualified_referrals: qualCount?.cnt || 0,
       referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral,
       contract_ds_status: contractInfo?.ds_status || '',
-      contract_version_count: contractVerCount?.cnt || 0
+      contract_version_count: contractVerCount?.cnt || 0,
+      tax_doc_count: taxDocCount?.cnt || 0
     };
   });
 
@@ -5403,6 +5416,47 @@ app.put('/api/admin/worker-accounts/:id/work-permit-docs-meta', requireAdmin, (r
   docs.forEach(d => {
     stmt.run(d.doc_number || '', d.issue_date || '', d.expiry_date || '', d.notes || '', d.id, workerId);
   });
+  res.json({ success: true });
+});
+
+// ─── Tax Document Upload (报税文件) ───
+app.get('/api/admin/worker-accounts/:id/tax-docs', requireAdmin, (req, res) => {
+  const docs = db.prepare('SELECT id, doc_label, file_name, uploaded_by, created_at FROM worker_tax_docs WHERE worker_account_id=? ORDER BY created_at DESC').all(req.params.id);
+  res.json(docs);
+});
+
+app.post('/api/admin/worker-accounts/:id/tax-docs', requireAdmin, docUpload.single('file'), (req, res) => {
+  const workerId = parseInt(req.params.id);
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const docLabel = req.body.doc_label || '';
+  const filePath = req.file.path;
+  const fileName = req.file.originalname;
+  const uploadedBy = (req.session && req.session.username) || 'admin';
+
+  const result = db.prepare('INSERT INTO worker_tax_docs (worker_account_id, doc_label, file_path, file_name, uploaded_by) VALUES (?,?,?,?,?)')
+    .run(workerId, docLabel, filePath, fileName, uploadedBy);
+
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(workerId, uploadedBy, 'tax_doc', '', docLabel, `上传报税文件: ${docLabel} · ${fileName}`);
+
+  res.json({ success: true, id: result.lastInsertRowid, file_name: fileName });
+});
+
+app.get('/api/admin/tax-docs/:docId/download', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_tax_docs WHERE id=?').get(req.params.docId);
+  if (!doc || !doc.file_path) return res.status(404).json({ error: 'File not found' });
+  if (!fs.existsSync(doc.file_path)) return res.status(404).json({ error: 'File missing' });
+  res.download(doc.file_path, doc.file_name || 'document');
+});
+
+app.delete('/api/admin/tax-docs/:docId', requireAdmin, (req, res) => {
+  const doc = db.prepare('SELECT * FROM worker_tax_docs WHERE id=?').get(req.params.docId);
+  if (!doc) return res.status(404).json({ error: 'Not found' });
+  if (doc.file_path && fs.existsSync(doc.file_path)) fs.unlinkSync(doc.file_path);
+  db.prepare('DELETE FROM worker_tax_docs WHERE id=?').run(req.params.docId);
+  const changedBy = (req.session && req.session.username) || 'admin';
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value,note) VALUES (?,?,?,?,?,?)')
+    .run(doc.worker_account_id, changedBy, 'tax_doc', doc.file_name, '', `删除报税文件: ${doc.doc_label} · ${doc.file_name}`);
   res.json({ success: true });
 });
 
