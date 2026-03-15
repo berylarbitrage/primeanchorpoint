@@ -1457,6 +1457,10 @@ try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN exempt_days_2y
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN work_permit_category TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN last_entry_date TEXT DEFAULT ''"); } catch {}
 try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN entry_exit_records TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_legal_name TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_ssn_masked TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_ssn_encrypted TEXT DEFAULT ''"); } catch {}
+try { db.exec("ALTER TABLE tax_residency_questionnaire ADD COLUMN ind_ssn_iv TEXT DEFAULT ''"); } catch {}
 
 // Migrate old id_verify + ssn_verify → persona_verify
 try {
@@ -2277,13 +2281,26 @@ function checkDsAnchors(docPath) {
 // ─── DocuSeal eSignature Integration ───
 const http = require('http');
 
+function dsealGetCreds() {
+  try {
+    const row = db.prepare("SELECT api_key, config FROM integration_settings WHERE provider='docuseal'").get();
+    const cfg = JSON.parse(row?.config || '{}');
+    const apiKey = process.env.DOCUSEAL_API_KEY || row?.api_key || '';
+    const baseUrl = process.env.DOCUSEAL_URL || cfg.url || '';
+    return { apiKey, baseUrl };
+  } catch {
+    return { apiKey: process.env.DOCUSEAL_API_KEY || '', baseUrl: process.env.DOCUSEAL_URL || '' };
+  }
+}
+
 function dsealEnabled() {
-  return !!(process.env.DOCUSEAL_API_KEY && process.env.DOCUSEAL_URL);
+  const { apiKey, baseUrl } = dsealGetCreds();
+  return !!(apiKey && baseUrl);
 }
 
 async function dsealApiCall(method, apiPath, body) {
-  const baseUrl = (process.env.DOCUSEAL_URL || '').replace(/\/$/, '');
-  const apiKey = process.env.DOCUSEAL_API_KEY || '';
+  const { apiKey, baseUrl: rawUrl } = dsealGetCreds();
+  const baseUrl = rawUrl.replace(/\/$/, '');
   const bodyStr = body != null ? JSON.stringify(body) : null;
   // DocuSeal cloud (api.docuseal.com) uses paths without /api prefix
   const isCloud = /api\.docuseal\.(com|eu)/.test(baseUrl);
@@ -2355,7 +2372,7 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
   }
   // Also try constructing direct URL from slug
   const workerSlug = worker?.slug || '';
-  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   console.log(`[DocuSeal] Worker sign URL: ${(finalWorkerUrl||'NONE').substring(0,100)}`);
@@ -2364,7 +2381,34 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
 
 // Send contract via DocuSeal HTML API — converts plain text to HTML with field tags,
 // so DocuSeal reliably creates interactive signature/date fields.
-async function dsealSendContractHtml({ contractText, docName, emailSubject, signer1, signer2 }) {
+async function dsealSendContractHtml({ contractText, templateId, docName, emailSubject, signer1, signer2 }) {
+  // If a pre-built template is configured, use it directly
+  if (templateId) {
+    const todayDate = new Date().toISOString().slice(0, 10);
+    const subRes = await dsealApiCall('POST', '/api/submissions', {
+      template_id: parseInt(templateId),
+      send_email: false,
+      order: 'preserved',
+      submitters: [
+        { role: 'First Party', name: signer1.name, email: signer1.email,
+          fields: [{ name: 'date1', default_value: todayDate, readonly: true }] },
+        { role: 'Second Party', name: signer2.name, email: signer2.email,
+          fields: [{ name: 'date2', default_value: todayDate, readonly: true }] }
+      ]
+    });
+    console.log(`[DocuSeal] submissions(template ${templateId}): status=${subRes.status}`);
+    const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+    if (subRes.status >= 400 || !submitters.length) throw new Error(`DocuSeal 模板提交失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+    const company = submitters.find(s => s.role === 'First Party') || submitters[0];
+    const worker = submitters.find(s => s.role === 'Second Party') || submitters[1];
+    const submissionId = String(subRes.data?.id || company?.submission_id || company?.id || '');
+    const companyEmbedSrc = company?.embed_src || '';
+    let workerSignUrl = worker?.embed_src || '';
+    const workerSlug = worker?.slug || '';
+    const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+    if (!workerSignUrl && workerSlug) workerSignUrl = `${baseHost}/s/${workerSlug}`;
+    return { submissionId, companyEmbedSrc, workerSignUrl };
+  }
   // Convert plain text contract to HTML, replacing field tags with DocuSeal HTML elements
   const lines = (contractText || '').split('\n');
   const htmlLines = lines.map(line => {
@@ -2420,7 +2464,7 @@ async function dsealSendContractHtml({ contractText, docName, emailSubject, sign
     } catch (e) { console.error(`[DocuSeal] Failed to get worker embed_src: ${e.message}`); }
   }
   const workerSlug = worker?.slug || '';
-  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
   const workerDirectUrl = workerSlug ? `${baseHost}/s/${workerSlug}` : '';
   const finalWorkerUrl = workerDirectUrl || workerSignUrl;
   return { submissionId: String(submissionId || company.submission_id || company.id), companyEmbedSrc: company.embed_src, workerSignUrl: finalWorkerUrl };
@@ -2557,7 +2601,26 @@ function getDsealConfigTemplateId(type) {
   try {
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
     const cfg = JSON.parse(row?.config || '{}');
-    return type === 'w9' ? (cfg.w9_template_id || '') : (cfg.contract_template_id || '');
+    const map = {
+      w9: cfg.w9_template_id,
+      contract: cfg.contract_template_id,          // legacy alias → company contract
+      company_contract: cfg.company_contract_template_id || cfg.contract_template_id,
+      worker_1099: cfg.worker_1099_template_id,
+      worker_w2: cfg.worker_w2_template_id,
+      w4: cfg.w4_template_id,
+      w8ben: cfg.w8ben_template_id,
+      w8bene: cfg.w8bene_template_id,
+      form8233: cfg.form8233_template_id,
+      i9: cfg.i9_template_id,
+      w7: cfg.w7_template_id,
+      ach_auth: cfg.ach_auth_template_id,
+      wire_auth: cfg.wire_auth_template_id,
+      check_instruction: cfg.check_instruction_template_id,
+      zelle_auth: cfg.zelle_auth_template_id,
+      third_party_pay: cfg.third_party_pay_template_id,
+      cash_receipt: cfg.cash_receipt_template_id,
+    };
+    return map[type] || '';
   } catch { return ''; }
 }
 
@@ -2615,7 +2678,7 @@ async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip,
     } catch (e) { console.error(`[DocuSeal W-9] Failed to get embed_src: ${e.message}`); }
   }
   const slug = signer?.slug || '';
-  const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+  const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
   const directUrl = slug ? `${baseHost}/s/${slug}` : '';
   const finalWorkerUrl = directUrl || workerSignUrl;
   console.log(`[DocuSeal W-9] Worker sign URL: ${(finalWorkerUrl || 'NONE').substring(0, 100)}`);
@@ -2735,7 +2798,7 @@ function _dsealFetchUrl(docUrl, _redirectCount = 0) {
     const isHttps = urlObj.protocol === 'https:';
     const transport = isHttps ? https : http;
     const opts = { hostname: urlObj.hostname, port: urlObj.port || (isHttps ? 443 : 80), path: urlObj.pathname + urlObj.search, method: 'GET', headers: {} };
-    try { if (urlObj.hostname === new URL(process.env.DOCUSEAL_URL || 'https://x').hostname) opts.headers['X-Auth-Token'] = process.env.DOCUSEAL_API_KEY; } catch {}
+    try { const _dc = dsealGetCreds(); if (urlObj.hostname === new URL(_dc.baseUrl || 'https://x').hostname) opts.headers['X-Auth-Token'] = _dc.apiKey; } catch {}
     const req = transport.request(opts, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && _redirectCount < 5) {
         res.resume();
@@ -4231,6 +4294,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN expected_salary TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN our_salary_rating TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_method TEXT DEFAULT 'cash'"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN payment_details TEXT DEFAULT '{}'"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN has_ssn INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent INTEGER DEFAULT 0"); } catch {}
@@ -4316,7 +4380,7 @@ app.post('/api/admin/worker-accounts', requireAdmin, requireRole('admin'), (req,
 });
 
 app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (req, res) => {
-  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type } = req.body;
+  const { password, employee_id, active, suspended, expected_salary, our_salary_rating, payment_method, payment_details, assigned_tasks, work_status, has_ssn, position_interests, employment_type, entity_type } = req.body;
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   if (!w) return res.status(404).json({ error: 'Not found' });
   const changedBy = req.session && req.session.username ? req.session.username : 'admin';
@@ -4336,6 +4400,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   const newExpectedSalary = expected_salary !== undefined ? expected_salary : w.expected_salary;
   const newOurRating = our_salary_rating !== undefined ? our_salary_rating : w.our_salary_rating;
   const newPaymentMethod = payment_method !== undefined ? payment_method : w.payment_method;
+  const newPaymentDetails = payment_details !== undefined ? JSON.stringify(payment_details) : (w.payment_details || '{}');
   const newHasSsn = has_ssn !== undefined ? (has_ssn ? 1 : 0) : (w.has_ssn || 0);
   const newPositionInterests = position_interests !== undefined ? JSON.stringify(position_interests) : (w.position_interests || '[]');
   logChange('active', w.active, newActive);
@@ -4344,6 +4409,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   logChange('expected_salary', w.expected_salary, newExpectedSalary);
   logChange('our_salary_rating', w.our_salary_rating, newOurRating);
   logChange('payment_method', w.payment_method, newPaymentMethod);
+  if (payment_details !== undefined) logChange('payment_details', w.payment_details||'{}', newPaymentDetails);
   logChange('has_ssn', w.has_ssn||0, newHasSsn);
   if (entity_type !== undefined) logChange('entity_type', w.entity_type, entity_type);
   if (employee_id !== undefined && String(employee_id||'') !== String(w.employee_id||'')) logChange('employee_id', w.employee_id, employee_id);
@@ -4360,7 +4426,8 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
   }
   db.prepare(`UPDATE worker_accounts SET employee_id=?, active=?, suspended=?,
     expected_salary=COALESCE(?,expected_salary), our_salary_rating=COALESCE(?,our_salary_rating),
-    payment_method=COALESCE(?,payment_method), assigned_tasks=COALESCE(?,assigned_tasks),
+    payment_method=COALESCE(?,payment_method), payment_details=COALESCE(?,payment_details),
+    assigned_tasks=COALESCE(?,assigned_tasks),
     work_status=COALESCE(?,work_status), has_ssn=?, position_interests=?,
     employment_type=COALESCE(?,employment_type),
     entity_type=COALESCE(?,entity_type) WHERE id=?`)
@@ -4370,6 +4437,7 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       expected_salary !== undefined ? expected_salary : null,
       our_salary_rating !== undefined ? our_salary_rating : null,
       payment_method !== undefined ? payment_method : null,
+      payment_details !== undefined ? newPaymentDetails : null,
       assigned_tasks !== undefined ? JSON.stringify(assigned_tasks) : null,
       work_status !== undefined ? work_status : null,
       newHasSsn, newPositionInterests,
@@ -4884,9 +4952,11 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     const filename = `worker-contract-${workerId}-${Date.now()}.pdf`;
     const docPath = path.join(docsDir, filename);
     fs.writeFileSync(docPath, pdfBuf);
-    // Send via DocuSeal HTML API — converts text to HTML with proper field tags
+    // Send via DocuSeal — use configured template if available, otherwise generate HTML
+    const workerTemplateId = getDsealConfigTemplateId(empType === '1099' ? 'worker_1099' : 'worker_w2');
     const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendContractHtml({
       contractText: content,
+      templateId: workerTemplateId || undefined,
       docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}`,
       emailSubject: `请签署合同 / Please Sign — ${workerName} × ${companyName}`,
       signer1: { email: companyEmail, name: companyName },
@@ -5319,8 +5389,29 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     addr_street2: d.addr_street2 || '',
     addr_city: d.addr_city || '',
     addr_state: d.addr_state || '',
-    addr_zip: d.addr_zip || ''
+    addr_zip: d.addr_zip || '',
+    ind_legal_name: d.ind_legal_name || '',
+    ind_ssn_masked: '',
+    ind_ssn_encrypted: '',
+    ind_ssn_iv: ''
   };
+
+  // Handle ind_ssn: encrypt if a new (unmasked) value is provided; preserve existing if masked placeholder is sent back
+  const rawIndSsn = d.ind_ssn || '';
+  if (rawIndSsn && !rawIndSsn.includes('*')) {
+    fields.ind_ssn_masked = rawIndSsn.replace(/\d(?=\d{4})/g, '*');
+    const enc = encryptSSN(rawIndSsn);
+    fields.ind_ssn_encrypted = enc.encrypted;
+    fields.ind_ssn_iv = enc.iv;
+  } else if (rawIndSsn.includes('*')) {
+    // Masked value sent back — preserve existing encrypted SSN from DB
+    const existingTr = db.prepare('SELECT ind_ssn_masked, ind_ssn_encrypted, ind_ssn_iv FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId);
+    if (existingTr) {
+      fields.ind_ssn_masked = existingTr.ind_ssn_masked || '';
+      fields.ind_ssn_encrypted = existingTr.ind_ssn_encrypted || '';
+      fields.ind_ssn_iv = existingTr.ind_ssn_iv || '';
+    }
+  }
 
   db.prepare(`INSERT INTO tax_residency_questionnaire (
     worker_account_id, applicant_type, is_us_person, country_tax_residence, country_citizenship, entity_country_org,
@@ -5331,7 +5422,8 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     work_permit_category, immigration_status, i94_admission_date, status_expiration, docs_requested,
     spt_weighted_days, spt_result, tax_status, recommended_form, needs_manual_review,
     admin_override, admin_notes, completed_by,
-    addr_street, addr_street2, addr_city, addr_state, addr_zip, updated_at
+    addr_street, addr_street2, addr_city, addr_state, addr_zip,
+    ind_legal_name, ind_ssn_masked, ind_ssn_encrypted, ind_ssn_iv, updated_at
   ) VALUES (
     @worker_account_id, @applicant_type, @is_us_person, @country_tax_residence, @country_citizenship, @entity_country_org,
     @is_us_citizen, @has_green_card, @first_entry_date, @last_entry_date, @entry_exit_records, @days_current_year, @days_last_year, @days_two_years_ago,
@@ -5341,7 +5433,8 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     @work_permit_category, @immigration_status, @i94_admission_date, @status_expiration, @docs_requested,
     @spt_weighted_days, @spt_result, @tax_status, @recommended_form, @needs_manual_review,
     @admin_override, @admin_notes, @completed_by,
-    @addr_street, @addr_street2, @addr_city, @addr_state, @addr_zip, CURRENT_TIMESTAMP
+    @addr_street, @addr_street2, @addr_city, @addr_state, @addr_zip,
+    @ind_legal_name, @ind_ssn_masked, @ind_ssn_encrypted, @ind_ssn_iv, CURRENT_TIMESTAMP
   ) ON CONFLICT(worker_account_id) DO UPDATE SET
     applicant_type=excluded.applicant_type, is_us_person=excluded.is_us_person,
     country_tax_residence=excluded.country_tax_residence, country_citizenship=excluded.country_citizenship,
@@ -5367,6 +5460,8 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     completed_by=excluded.completed_by,
     addr_street=excluded.addr_street, addr_street2=excluded.addr_street2,
     addr_city=excluded.addr_city, addr_state=excluded.addr_state, addr_zip=excluded.addr_zip,
+    ind_legal_name=excluded.ind_legal_name, ind_ssn_masked=excluded.ind_ssn_masked,
+    ind_ssn_encrypted=excluded.ind_ssn_encrypted, ind_ssn_iv=excluded.ind_ssn_iv,
     updated_at=CURRENT_TIMESTAMP
   `).run(fields);
 
@@ -5594,7 +5689,7 @@ app.get('/api/admin/worker-accounts/:id/w9-preview', requireAdmin, (req, res) =>
   const w = db.prepare('SELECT * FROM worker_accounts WHERE id=?').get(req.params.id);
   const workerName = w ? (w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '') : '';
   if (templateId) {
-    const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+    const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
     const page = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:20px;background:#f9fafb;font-family:Arial,sans-serif}</style></head><body>
       <div style="text-align:center;padding:2rem;color:#555">
         <p style="font-size:1.1rem;font-weight:600">使用 DocuSeal 官方 W-9 模板</p>
@@ -5827,7 +5922,7 @@ app.get('/api/worker/contract-sign-url', requireWorker, async (req, res) => {
             if (wPut.data?.embed_src) signUrl = wPut.data.embed_src;
           }
           if (!signUrl && workerSub.slug) {
-            const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+            const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
             signUrl = `${baseHost}/s/${workerSub.slug}`;
           }
           // Update stored URL
@@ -11802,7 +11897,7 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
                       if (wPut.data?.embed_src) workerSignUrl = wPut.data.embed_src;
                     }
                     if (!workerSignUrl && workerSub.slug) {
-                      const baseHost = (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, '');
+                      const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
                       workerSignUrl = `${baseHost}/s/${workerSub.slug}`;
                     }
                   }
@@ -12708,21 +12803,28 @@ app.delete('/api/admin/invoices/:id', requireAdmin, blockManager, (req, res) => 
 app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const row = db.prepare("SELECT * FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
-  res.json({
-    connected: dsealEnabled(),
-    url: (process.env.DOCUSEAL_URL || '').replace(/api\./, '').replace(/\/+$/, ''),
-    contract_template_id: cfg.contract_template_id || null,
-    w9_template_id: cfg.w9_template_id || null,
-  });
+  const allKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
+    'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
+    'i9_template_id','w7_template_id',
+    'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
+    'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id'];
+  const out = { connected: dsealEnabled(), url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '') };
+  allKeys.forEach(k => { out[k] = cfg[k] || null; });
+  out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
+  res.json(out);
 });
 
 // POST /api/admin/docuseal/config — save template IDs
 app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
-  const { contract_template_id, w9_template_id } = req.body;
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
-  if (contract_template_id !== undefined) cfg.contract_template_id = contract_template_id || null;
-  if (w9_template_id !== undefined) cfg.w9_template_id = w9_template_id || null;
+  const _configKeys = ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
+    'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
+    'i9_template_id','w7_template_id',
+    'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
+    'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
+    'contract_template_id' /* legacy */];
+  _configKeys.forEach(k => { if (req.body[k] !== undefined) cfg[k] = req.body[k] || null; });
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
     .run(JSON.stringify(cfg));
   res.json({ success: true });
@@ -12751,8 +12853,7 @@ app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) =
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
     const cfg = JSON.parse(row?.config || '{}');
     const tid = parseInt(req.params.id);
-    if (cfg.contract_template_id === tid) cfg.contract_template_id = null;
-    if (cfg.w9_template_id === tid) cfg.w9_template_id = null;
+    Object.keys(cfg).forEach(k => { if (k.endsWith('_template_id') && cfg[k] == tid) cfg[k] = null; });
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
       .run(JSON.stringify(cfg));
     res.json({ success: true });
@@ -12802,8 +12903,8 @@ app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res
   // Clear from config if set as default
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
-  if (cfg.contract_template_id == local.docuseal_template_id) cfg.contract_template_id = null;
-  if (cfg.w9_template_id == local.docuseal_template_id) cfg.w9_template_id = null;
+  const _tid = local.docuseal_template_id;
+  Object.keys(cfg).forEach(k => { if (k.endsWith('_template_id') && cfg[k] == _tid) cfg[k] = null; });
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
     .run(JSON.stringify(cfg));
   // Delete from local DB
