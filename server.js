@@ -4379,8 +4379,10 @@ app.get('/api/admin/worker-accounts/:id/assignments', requireAdmin, (req, res) =
 });
 
 app.get('/api/admin/worker-accounts/:id/history', requireAdmin, (req, res) => {
-  const rows = db.prepare('SELECT * FROM worker_account_history WHERE worker_account_id=? ORDER BY created_at DESC LIMIT 100').all(req.params.id);
-  res.json(rows);
+  try {
+    const rows = db.prepare('SELECT * FROM worker_account_history WHERE worker_account_id=? ORDER BY created_at DESC LIMIT 100').all(req.params.id);
+    res.json(rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // Admin: get worker's most recent interview with slot info
@@ -12790,6 +12792,12 @@ function gracefulShutdown(signal) {
   } catch(e) { console.error('[Shutdown] Error:', e.message); }
   process.exit(0);
 }
+// Global error handler — return JSON instead of HTML for API errors
+app.use((err, req, res, _next) => {
+  console.error('[Global Error]', err.message);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
+
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
