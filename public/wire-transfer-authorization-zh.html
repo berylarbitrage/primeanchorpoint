@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wire Transfer Authorization / 电汇付款授权表 — Prime Anchorpoint</title>
+<link rel="icon" href="logo.svg" type="image/svg+xml">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--blue:#0F2B5B;--blue-dark:#091D40;--blue-mid:#1A3F7A;--sky:#4A90D9;--accent:#F5A623;--green:#16a34a;--white:#fff;--gray-100:#f0f2f5;--gray-200:#e2e5ea;--gray-400:#9BA3B0;--gray-600:#5F6B7A;--gray-800:#2D3748}
+*{margin:0;padding:0;box-sizing:border-box}body{font-family:'DM Sans',sans-serif;color:var(--gray-800);background:var(--white);line-height:1.7}a{text-decoration:none;color:var(--sky)}a:hover{text-decoration:underline}
+.page-header{background:var(--blue-dark);padding:1.25rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+.header-logo{display:flex;align-items:center;gap:10px}
+.header-logo img{width:32px;height:32px;object-fit:contain}
+.header-logo span{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:.95rem;color:#fff}
+.header-logo span em{color:var(--sky);font-style:normal}
+.back-link{font-size:.83rem;color:rgba(255,255,255,.6);transition:color .2s}.back-link:hover{color:#fff;text-decoration:none}
+.page-hero{background:var(--blue);padding:3.5rem 2rem 3rem;text-align:center}
+.page-hero h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:800;font-size:1.9rem;color:#fff;margin-bottom:.4rem}
+.page-hero h1 small{display:block;font-size:1.2rem;font-weight:600;margin-top:.3rem;color:rgba(255,255,255,.75)}
+.page-hero p{color:rgba(255,255,255,.6);font-size:.88rem}
+.content-wrap{max-width:720px;margin:0 auto;padding:3rem 2rem 5rem}
+.auth-statement{background:#f8faff;border-left:4px solid var(--blue);border-radius:6px;padding:1.25rem 1.5rem;margin-bottom:2.5rem}
+.auth-statement p{font-size:.95rem;color:var(--gray-800);line-height:1.75;margin-bottom:.5rem}
+.auth-statement p:last-child{margin-bottom:0;font-size:.88rem;color:var(--gray-600)}
+.section-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:.78rem;text-transform:uppercase;letter-spacing:1px;color:var(--blue);margin:0 0 1.25rem;padding-bottom:.4rem;border-bottom:2px solid var(--gray-100)}
+.section-title small{display:block;font-size:.72rem;font-weight:500;letter-spacing:.3px;color:var(--gray-400);text-transform:none;margin-top:.15rem}
+.form-section{margin-bottom:2.5rem}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;margin-bottom:1.25rem}
+.field-row.full{grid-template-columns:1fr}
+@media(max-width:580px){.field-row{grid-template-columns:1fr}}
+.field label{display:block;font-size:.75rem;font-weight:700;color:var(--gray-600);margin-bottom:.15rem;line-height:1.4}
+.field label span{display:block;font-size:.7rem;font-weight:400;color:var(--gray-400)}
+.field .line{border-bottom:2px solid var(--gray-800);min-height:2rem;margin-top:.35rem}
+.field .optional{font-size:.7rem;font-weight:400;color:var(--gray-400);font-style:italic}
+.cert-block{background:#f8faff;border:2px solid var(--blue);border-radius:10px;padding:1.75rem;margin-bottom:2.5rem}
+.cert-block p{font-size:.93rem;color:var(--gray-800);margin-bottom:.4rem}
+.cert-block p span{display:block;font-size:.85rem;color:var(--gray-600);margin-top:.1rem}
+.cert-block p:last-child{margin-bottom:0;margin-top:.8rem}
+.cert-block p:last-child,
+.cert-block p:last-child span{font-size:.87rem;color:var(--gray-600);font-style:italic}
+.sig-row{display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;margin-top:2.5rem}
+@media(max-width:580px){.sig-row{grid-template-columns:1fr}}
+.sig-field label{display:block;font-size:.75rem;font-weight:700;color:var(--gray-600);margin-bottom:.15rem;line-height:1.4}
+.sig-field label span{display:block;font-size:.7rem;font-weight:400;color:var(--gray-400)}
+.sig-field .sig-line{border-bottom:2px solid var(--gray-800);padding-bottom:.3rem;min-height:2.5rem;margin-top:.35rem}
+.page-footer{background:var(--blue-dark);padding:1.75rem 2rem;text-align:center;font-size:.8rem;color:rgba(255,255,255,.3)}
+.page-footer a{color:rgba(255,255,255,.5)}.page-footer a:hover{color:#fff}
+.legal-nav{display:flex;flex-wrap:wrap;gap:.5rem .75rem;justify-content:center;margin-top:.75rem}
+.legal-nav a{font-size:.78rem;color:rgba(255,255,255,.35)}.legal-nav a:hover{color:rgba(255,255,255,.8)}
+.legal-nav span{color:rgba(255,255,255,.15)}
+@media print{.page-header,.page-footer,.back-link{display:none}.page-hero{background:none;padding:1.5rem 0}.page-hero h1{color:var(--blue);font-size:1.4rem}.content-wrap{padding:1rem 0}}
+</style>
+</head>
+<body>
+<header class="page-header">
+  <a href="/" class="header-logo" style="text-decoration:none">
+    <img src="logo.svg" alt="Prime Anchorpoint">
+    <span>PRIME <em>ANCHORPOINT</em></span>
+  </a>
+  <a href="/" class="back-link">← Back to Home</a>
+</header>
+
+<div class="page-hero">
+  <h1>Wire Transfer Authorization
+    <small>电汇付款授权表</small>
+  </h1>
+  <p>Payee Banking Information Form &nbsp;·&nbsp; 收款方银行信息表</p>
+</div>
+
+<div class="content-wrap">
+
+  <div class="auth-statement">
+    <p>I authorize Prime Anchorpoint to send payments owed to me / my business to the bank account listed below.</p>
+    <p>本人授权 Prime Anchorpoint 将应付给本人 / 本人公司的款项电汇至以下银行账户。</p>
+  </div>
+
+  <!-- 1. Beneficiary Information -->
+  <div class="form-section">
+    <div class="section-title">
+      1. Beneficiary Information
+      <small>收款人信息</small>
+    </div>
+    <div class="field-row full">
+      <div class="field">
+        <label>Beneficiary Name <span>收款人姓名</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Bank Details -->
+  <div class="form-section">
+    <div class="section-title">
+      2. Bank Details
+      <small>银行信息</small>
+    </div>
+    <div class="field-row full">
+      <div class="field">
+        <label>Bank Name <span>银行名称</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>Routing / ABA / SWIFT <span>路由号 / ABA / SWIFT</span></label>
+        <div class="line"></div>
+      </div>
+      <div class="field">
+        <label>Account Number / IBAN <span>账号 / IBAN</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
+    <div class="field-row full">
+      <div class="field">
+        <label>Intermediary Bank <span class="optional">(if applicable)</span> <span>中间行（如适用）</span></label>
+        <div class="line"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Certification -->
+  <div class="cert-block">
+    <div class="section-title" style="margin-bottom:1rem">
+      3. Certification
+      <small>确认声明</small>
+    </div>
+    <p>
+      I certify that the banking information above is true and correct.
+      <span>本人确认以上银行信息真实准确。</span>
+    </p>
+    <p>
+      Any future change to the bank account must be submitted in writing.
+      <span>如银行账户信息有变更，须书面通知公司。</span>
+    </p>
+  </div>
+
+  <!-- Signature -->
+  <div class="sig-row">
+    <div class="sig-field">
+      <label>Signature <span>签字</span></label>
+      <div class="sig-line"></div>
+    </div>
+    <div class="sig-field">
+      <label>Date <span>日期</span></label>
+      <div class="sig-line"></div>
+    </div>
+  </div>
+
+</div>
+
+<footer class="page-footer">
+  <div>&copy; 2026 Prime Anchorpoint. All rights reserved.</div>
+  <div class="legal-nav">
+    <a href="/privacy">Privacy Policy</a><span>·</span>
+    <a href="/terms">Terms of Service</a><span>·</span>
+    <a href="/sms-terms">SMS Terms</a><span>·</span>
+    <a href="/data-deletion">Data Deletion Policy</a>
+  </div>
+</footer>
+</body>
+</html>

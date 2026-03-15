@@ -1576,6 +1576,55 @@ try {
   }
 } catch(e) { /* ignore */ }
 
+// Migrate: fix wrong category assignments and config slot assignments based on known auto-generated template names
+try {
+  const _nameToSlot = {
+    'Company Contract / 公司合同':                               { category: 'company_contract', configKey: 'company_contract_template_id' },
+    'Independent Contractor Agreement (1099) / 劳务合同—1099':  { category: 'worker_1099',      configKey: 'worker_1099_template_id' },
+    'Employment Agreement (W-2) / 劳务合同—W2':                 { category: 'worker_w2',        configKey: 'worker_w2_template_id' },
+    'W-4 Employee Withholding Certificate':                      { category: 'w4',               configKey: 'w4_template_id' },
+    'W-9 Request for TIN':                                       { category: 'w9',               configKey: 'w9_template_id' },
+    'W-8BEN Certificate of Foreign Status (Individual)':         { category: 'w8ben',            configKey: 'w8ben_template_id' },
+    'W-8BEN-E Certificate of Foreign Status (Entity)':           { category: 'w8bene',           configKey: 'w8bene_template_id' },
+    'Form 8233 Exemption From Withholding':                      { category: 'form8233',         configKey: 'form8233_template_id' },
+    'I-9 Employment Eligibility Verification':                   { category: 'i9',               configKey: 'i9_template_id' },
+  };
+  const _fixTmpls = db.prepare('SELECT * FROM docuseal_templates').all();
+  const _fixCfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  if (_fixCfgRow) {
+    const _fixCfg = JSON.parse(_fixCfgRow.config || '{}');
+    let _fixChanged = false;
+    for (const tmpl of _fixTmpls) {
+      const correct = _nameToSlot[tmpl.name];
+      if (!correct) continue;
+      // Fix DB category if wrong
+      if (tmpl.category !== correct.category) {
+        db.prepare('UPDATE docuseal_templates SET category=? WHERE id=?').run(correct.category, tmpl.id);
+      }
+      // Remove this template ID from any config slot it doesn't belong to
+      for (const key of Object.keys(_fixCfg)) {
+        if (!key.endsWith('_template_id') || key === correct.configKey) continue;
+        const v = _fixCfg[key];
+        if (Array.isArray(v)) {
+          const filtered = v.filter(id => Number(id) !== tmpl.docuseal_template_id);
+          if (filtered.length !== v.length) { _fixCfg[key] = filtered.length ? filtered : null; _fixChanged = true; }
+        } else if (Number(v) === tmpl.docuseal_template_id) {
+          _fixCfg[key] = null; _fixChanged = true;
+        }
+      }
+    }
+    // Deduplicate any config slot arrays
+    for (const key of Object.keys(_fixCfg)) {
+      if (!key.endsWith('_template_id') || !Array.isArray(_fixCfg[key])) continue;
+      const deduped = [...new Set(_fixCfg[key].map(Number).filter(Boolean))];
+      if (deduped.length !== _fixCfg[key].length) { _fixCfg[key] = deduped.length ? deduped : null; _fixChanged = true; }
+    }
+    if (_fixChanged) {
+      db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(_fixCfg));
+    }
+  }
+} catch(e) { /* ignore */ }
+
 // Seed default integration rows if not present
 const intProviders = ['workbright','checkr','gusto','twilio','docuseal'];
 intProviders.forEach(p => {
@@ -3884,13 +3933,15 @@ function getDsealConfigTemplateId(type) {
       contractor_invoice: cfg.contractor_invoice_template_id,
       invoice_approval: cfg.invoice_approval_template_id,
     };
-    return map[type] || '';
+    const val = map[type];
+    if (Array.isArray(val)) return val[0] || '';
+    return val || '';
   } catch { return ''; }
 }
 
 // Send W-9 form via DocuSeal template — uses pre-built template on DocuSeal
-async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip, ssn, tinType, businessName, taxClassification }) {
-  const templateId = getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
+async function dsealSendW9Html({ workerName, workerEmail, address, cityStateZip, ssn, tinType, businessName, taxClassification, overrideTemplateId }) {
+  const templateId = overrideTemplateId || getDsealConfigTemplateId('w9') || process.env.DOCUSEAL_W9_TEMPLATE_ID || '';
   const todayDate = new Date().toISOString().slice(0, 10);
   let subRes;
   if (templateId) {
@@ -6783,7 +6834,11 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
 
   syncOnboardedStatus(workerId);
 
-  res.json({ success: true, ...calc, taxTasks, wp_reset: wpReset, old_wp_category: oldCategoryKey, new_wp_category: newCategoryKey, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
+  // Cross-check: if work permit verification shows citizen/green_card but tax residency recommends non-W-9 form, flag conflict
+  const wpVerif = db.prepare('SELECT category FROM work_permit_verification WHERE worker_account_id=?').get(workerId);
+  const wpConflict = wpVerif && (wpVerif.category === 'citizen' || wpVerif.category === 'green_card') && calc.recommended_form !== 'W-9';
+
+  res.json({ success: true, ...calc, taxTasks, wp_reset: wpReset, old_wp_category: oldCategoryKey, new_wp_category: newCategoryKey, wp_conflict: wpConflict || false, wp_conflict_category: wpConflict ? wpVerif.category : null, questionnaire: db.prepare('SELECT * FROM tax_residency_questionnaire WHERE worker_account_id=?').get(workerId) });
 });
 
 // ─── Work Permit Verification ───
@@ -6987,8 +7042,9 @@ app.post('/api/admin/worker-accounts/:id/send-w9', requireAdmin, async (req, res
     if (dsealEnabled()) {
       try {
         const address = w.work_address || '';
+        const overrideTemplateId = req.body.template_id ? String(req.body.template_id) : '';
         const { submissionId, workerSignUrl } = await dsealSendW9Html({
-          workerName, workerEmail, address
+          workerName, workerEmail, address, overrideTemplateId
         });
         w9SubmissionId = submissionId || '';
         w9SignUrl = workerSignUrl || '';
@@ -14312,7 +14368,10 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
     'contractor_invoice_template_id','invoice_approval_template_id'];
-  const out = { connected: dsealEnabled(), url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '') };
+  const _rawBase = dsealGetCreds().baseUrl;
+  const _publicUrl = process.env.DOCUSEAL_PUBLIC_URL ||
+    _rawBase.replace('api.docuseal.co', 'app.docuseal.co').replace(/api\./, '').replace(/\/+$/, '');
+  const out = { connected: dsealEnabled(), url: _publicUrl };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
   res.json(out);
@@ -14345,7 +14404,15 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
     'contractor_invoice_template_id','invoice_approval_template_id',
     'contract_template_id' /* legacy */];
-  _configKeys.forEach(k => { if (req.body[k] !== undefined) cfg[k] = req.body[k] || null; });
+  _configKeys.forEach(k => {
+    if (req.body[k] === undefined) return;
+    const v = req.body[k];
+    if (Array.isArray(v)) {
+      cfg[k] = v.length > 0 ? v : null;
+    } else {
+      cfg[k] = v || null;
+    }
+  });
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
     .run(JSON.stringify(cfg));
   res.json({ success: true });
@@ -14374,7 +14441,15 @@ app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) =
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
     const cfg = JSON.parse(row?.config || '{}');
     const tid = parseInt(req.params.id);
-    Object.keys(cfg).forEach(k => { if (k.endsWith('_template_id') && cfg[k] == tid) cfg[k] = null; });
+    Object.keys(cfg).forEach(k => {
+      if (!k.endsWith('_template_id')) return;
+      if (Array.isArray(cfg[k])) {
+        const filtered = cfg[k].filter(id => id != tid);
+        cfg[k] = filtered.length > 0 ? filtered : null;
+      } else if (cfg[k] == tid) {
+        cfg[k] = null;
+      }
+    });
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
       .run(JSON.stringify(cfg));
     res.json({ success: true });
@@ -14399,6 +14474,22 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
     const dsId = r.data?.id || r.data?.template_id;
     if (dsId) {
       db.prepare('INSERT INTO docuseal_templates (name, docuseal_template_id, category) VALUES (?, ?, ?)').run(name, dsId, cat);
+      // Auto-update integration_settings config if a valid config key was provided as category
+      const validConfigKeys = [
+        'company_contract_template_id','worker_1099_template_id','worker_w2_template_id',
+        'w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id',
+        'i9_template_id','w7_template_id',
+        'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
+        'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
+        'contractor_invoice_template_id','invoice_approval_template_id'
+      ];
+      if (cat && validConfigKeys.includes(cat)) {
+        const cfgRow = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+        const cfg = JSON.parse(cfgRow?.config || '{}');
+        cfg[cat] = dsId;
+        db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
+          .run(JSON.stringify(cfg));
+      }
     }
     res.json(r.data);
   } catch (e) {
@@ -14410,6 +14501,16 @@ app.post('/api/admin/docuseal/upload-template', requireAdmin, express.json({ lim
 app.get('/api/admin/docuseal/my-templates', requireAdmin, (req, res) => {
   const rows = db.prepare('SELECT * FROM docuseal_templates ORDER BY created_at DESC').all();
   res.json(rows);
+});
+
+// PATCH /api/admin/docuseal/my-templates/:id — rename template in local DB
+app.patch('/api/admin/docuseal/my-templates/:id', requireAdmin, (req, res) => {
+  const { name } = req.body;
+  if (!name || !String(name).trim()) return res.status(400).json({ error: '名称不能为空' });
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  db.prepare('UPDATE docuseal_templates SET name=? WHERE id=?').run(String(name).trim(), local.id);
+  res.json({ ok: true });
 });
 
 // DELETE /api/admin/docuseal/my-templates/:id — delete from local DB and DocuSeal
@@ -14434,6 +14535,15 @@ app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res
   res.json({ success: true });
 });
 
+// PATCH /api/admin/docuseal/my-templates/:id — rename template in local DB
+app.patch('/api/admin/docuseal/my-templates/:id', requireAdmin, (req, res) => {
+  const { name } = req.body || {};
+  if (!name || !name.trim()) return res.status(400).json({ error: '名称不能为空' });
+  const result = db.prepare('UPDATE docuseal_templates SET name=? WHERE id=?').run(name.trim(), req.params.id);
+  if (!result.changes) return res.status(404).json({ error: '模板不存在' });
+  res.json({ success: true });
+});
+
 // PUT /api/admin/docuseal/my-templates/:id/rename — rename a template in local DB
 app.put('/api/admin/docuseal/my-templates/:id/rename', requireAdmin, (req, res) => {
   const { name } = req.body;
@@ -14444,6 +14554,16 @@ app.put('/api/admin/docuseal/my-templates/:id/rename', requireAdmin, (req, res) 
   res.json({ success: true, name: name.trim() });
 });
 
+// PUT /api/admin/docuseal/my-templates/:id/category — update category of a template in local DB
+app.put('/api/admin/docuseal/my-templates/:id/category', requireAdmin, (req, res) => {
+  const { category } = req.body;
+  if (!category || !category.trim()) return res.status(400).json({ error: '分类不能为空' });
+  const local = db.prepare('SELECT * FROM docuseal_templates WHERE id=?').get(req.params.id);
+  if (!local) return res.status(404).json({ error: '模板不存在' });
+  db.prepare('UPDATE docuseal_templates SET category=? WHERE id=?').run(category.trim(), req.params.id);
+  res.json({ success: true, category: category.trim() });
+});
+
 // PUT /api/admin/docuseal/templates/:dsId/rename — rename a template via DocuSeal API + local DB
 app.put('/api/admin/docuseal/templates/:dsId/rename', requireAdmin, async (req, res) => {
   const { name } = req.body;
@@ -14451,7 +14571,6 @@ app.put('/api/admin/docuseal/templates/:dsId/rename', requireAdmin, async (req, 
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });
   try {
     await dsealApiCall('PUT', `/api/templates/${req.params.dsId}`, { name: name.trim() });
-    // Also update local DB if template exists there
     db.prepare('UPDATE docuseal_templates SET name=? WHERE docuseal_template_id=?').run(name.trim(), parseInt(req.params.dsId));
     res.json({ success: true, name: name.trim() });
   } catch (e) { res.status(500).json({ error: e.message }); }
