@@ -2193,7 +2193,34 @@ async function dsealSendEnvelope({ docPath, docName, emailSubject, signer1, sign
 
 // Send contract via DocuSeal HTML API — converts plain text to HTML with field tags,
 // so DocuSeal reliably creates interactive signature/date fields.
-async function dsealSendContractHtml({ contractText, docName, emailSubject, signer1, signer2 }) {
+async function dsealSendContractHtml({ contractText, templateId, docName, emailSubject, signer1, signer2 }) {
+  // If a pre-built template is configured, use it directly
+  if (templateId) {
+    const todayDate = new Date().toISOString().slice(0, 10);
+    const subRes = await dsealApiCall('POST', '/api/submissions', {
+      template_id: parseInt(templateId),
+      send_email: false,
+      order: 'preserved',
+      submitters: [
+        { role: 'First Party', name: signer1.name, email: signer1.email,
+          fields: [{ name: 'date1', default_value: todayDate, readonly: true }] },
+        { role: 'Second Party', name: signer2.name, email: signer2.email,
+          fields: [{ name: 'date2', default_value: todayDate, readonly: true }] }
+      ]
+    });
+    console.log(`[DocuSeal] submissions(template ${templateId}): status=${subRes.status}`);
+    const submitters = subRes.data?.submitters || (Array.isArray(subRes.data) ? subRes.data : []);
+    if (subRes.status >= 400 || !submitters.length) throw new Error(`DocuSeal 模板提交失败 ${subRes.status}: ${JSON.stringify(subRes.data)}`);
+    const company = submitters.find(s => s.role === 'First Party') || submitters[0];
+    const worker = submitters.find(s => s.role === 'Second Party') || submitters[1];
+    const submissionId = String(subRes.data?.id || company?.submission_id || company?.id || '');
+    const companyEmbedSrc = company?.embed_src || '';
+    let workerSignUrl = worker?.embed_src || '';
+    const workerSlug = worker?.slug || '';
+    const baseHost = (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '');
+    if (!workerSignUrl && workerSlug) workerSignUrl = `${baseHost}/s/${workerSlug}`;
+    return { submissionId, companyEmbedSrc, workerSignUrl };
+  }
   // Convert plain text contract to HTML, replacing field tags with DocuSeal HTML elements
   const lines = (contractText || '').split('\n');
   const htmlLines = lines.map(line => {
@@ -2386,7 +2413,14 @@ function getDsealConfigTemplateId(type) {
   try {
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
     const cfg = JSON.parse(row?.config || '{}');
-    return type === 'w9' ? (cfg.w9_template_id || '') : (cfg.contract_template_id || '');
+    const map = {
+      w9: cfg.w9_template_id,
+      contract: cfg.contract_template_id,          // legacy alias → company contract
+      company_contract: cfg.company_contract_template_id || cfg.contract_template_id,
+      worker_1099: cfg.worker_1099_template_id,
+      worker_w2: cfg.worker_w2_template_id,
+    };
+    return map[type] || '';
   } catch { return ''; }
 }
 
@@ -4646,9 +4680,11 @@ app.post('/api/admin/worker-accounts/:id/send-contract', requireAdmin, async (re
     const filename = `worker-contract-${workerId}-${Date.now()}.pdf`;
     const docPath = path.join(docsDir, filename);
     fs.writeFileSync(docPath, pdfBuf);
-    // Send via DocuSeal HTML API — converts text to HTML with proper field tags
+    // Send via DocuSeal — use configured template if available, otherwise generate HTML
+    const workerTemplateId = getDsealConfigTemplateId(empType === '1099' ? 'worker_1099' : 'worker_w2');
     const { submissionId, companyEmbedSrc, workerSignUrl } = await dsealSendContractHtml({
       contractText: content,
+      templateId: workerTemplateId || undefined,
       docName: `${empType === '1099' ? 'Contractor Agreement' : 'Employment Agreement'} - ${workerName}`,
       emailSubject: `请签署合同 / Please Sign — ${workerName} × ${companyName}`,
       signer1: { email: companyEmail, name: companyName },
@@ -11747,18 +11783,24 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   res.json({
     connected: dsealEnabled(),
     url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, ''),
-    contract_template_id: cfg.contract_template_id || null,
+    company_contract_template_id: cfg.company_contract_template_id || cfg.contract_template_id || null,
+    worker_1099_template_id: cfg.worker_1099_template_id || null,
+    worker_w2_template_id: cfg.worker_w2_template_id || null,
     w9_template_id: cfg.w9_template_id || null,
   });
 });
 
 // POST /api/admin/docuseal/config — save template IDs
 app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
-  const { contract_template_id, w9_template_id } = req.body;
+  const { company_contract_template_id, worker_1099_template_id, worker_w2_template_id, w9_template_id,
+          contract_template_id /* legacy */ } = req.body;
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
-  if (contract_template_id !== undefined) cfg.contract_template_id = contract_template_id || null;
+  if (company_contract_template_id !== undefined) cfg.company_contract_template_id = company_contract_template_id || null;
+  if (worker_1099_template_id !== undefined) cfg.worker_1099_template_id = worker_1099_template_id || null;
+  if (worker_w2_template_id !== undefined) cfg.worker_w2_template_id = worker_w2_template_id || null;
   if (w9_template_id !== undefined) cfg.w9_template_id = w9_template_id || null;
+  if (contract_template_id !== undefined) cfg.contract_template_id = contract_template_id || null; // legacy
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
     .run(JSON.stringify(cfg));
   res.json({ success: true });
@@ -11787,8 +11829,11 @@ app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) =
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
     const cfg = JSON.parse(row?.config || '{}');
     const tid = parseInt(req.params.id);
-    if (cfg.contract_template_id === tid) cfg.contract_template_id = null;
-    if (cfg.w9_template_id === tid) cfg.w9_template_id = null;
+    if (cfg.contract_template_id == tid) cfg.contract_template_id = null;
+    if (cfg.company_contract_template_id == tid) cfg.company_contract_template_id = null;
+    if (cfg.worker_1099_template_id == tid) cfg.worker_1099_template_id = null;
+    if (cfg.worker_w2_template_id == tid) cfg.worker_w2_template_id = null;
+    if (cfg.w9_template_id == tid) cfg.w9_template_id = null;
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
       .run(JSON.stringify(cfg));
     res.json({ success: true });
@@ -11838,8 +11883,12 @@ app.delete('/api/admin/docuseal/my-templates/:id', requireAdmin, async (req, res
   // Clear from config if set as default
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
   const cfg = JSON.parse(row?.config || '{}');
-  if (cfg.contract_template_id == local.docuseal_template_id) cfg.contract_template_id = null;
-  if (cfg.w9_template_id == local.docuseal_template_id) cfg.w9_template_id = null;
+  const _tid = local.docuseal_template_id;
+  if (cfg.contract_template_id == _tid) cfg.contract_template_id = null;
+  if (cfg.company_contract_template_id == _tid) cfg.company_contract_template_id = null;
+  if (cfg.worker_1099_template_id == _tid) cfg.worker_1099_template_id = null;
+  if (cfg.worker_w2_template_id == _tid) cfg.worker_w2_template_id = null;
+  if (cfg.w9_template_id == _tid) cfg.w9_template_id = null;
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
     .run(JSON.stringify(cfg));
   // Delete from local DB

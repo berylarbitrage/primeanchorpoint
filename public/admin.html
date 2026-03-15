@@ -2152,22 +2152,54 @@ tr:hover td{background:var(--sky-light)}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M20 12h2M2 12h2M17.66 17.66l-1.41-1.41M6.34 17.66l1.41-1.41"/></svg>
         当前使用的模板
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+
+      <!-- Row 1: Company contracts -->
+      <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">🏢 与公司签署</div>
+      <div style="display:grid;grid-template-columns:1fr;gap:1rem;margin-bottom:1.25rem">
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
-          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">员工合同模板</div>
-          <select id="ds-sel-contract" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('contract', this.value)">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">公司合同模板</div>
+          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">公司与客户/合作方签署的合同</div>
+          <select id="ds-sel-company-contract" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('company_contract', this.value)">
             <option value="">— 未设置 —</option>
           </select>
-          <div id="ds-cfg-contract-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+          <div id="ds-cfg-company-contract-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+      </div>
+
+      <!-- Row 2: Worker contracts -->
+      <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">👷 与劳务签署</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.25rem">
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">劳务合同模板 — 1099</div>
+          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">独立承包商 (1099) 劳务合同</div>
+          <select id="ds-sel-worker-1099" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('worker_1099', this.value)">
+            <option value="">— 未设置 —</option>
+          </select>
+          <div id="ds-cfg-worker-1099-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
         </div>
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">劳务合同模板 — W2</div>
+          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">正式雇员 (W2) 劳动合同</div>
+          <select id="ds-sel-worker-w2" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('worker_w2', this.value)">
+            <option value="">— 未设置 —</option>
+          </select>
+          <div id="ds-cfg-worker-w2-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
+      </div>
+
+      <!-- Row 3: W-9 -->
+      <div style="font-size:.75rem;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">📋 税务表格</div>
+      <div style="display:grid;grid-template-columns:1fr;gap:1rem">
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
           <div style="font-size:.88rem;font-weight:700;margin-bottom:.5rem">W-9 表格模板</div>
+          <div style="font-size:.78rem;color:#94a3b8;margin-bottom:.4rem">IRS W-9 税务信息表</div>
           <select id="ds-sel-w9" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none" onchange="dsSetTemplate('w9', this.value)">
             <option value="">— 未设置 —</option>
           </select>
           <div id="ds-cfg-w9-info" style="font-size:.82rem;color:#64748b;margin-top:.2rem"></div>
         </div>
       </div>
+
       <p style="font-size:.8rem;color:#94a3b8;margin-top:.75rem">从下拉菜单中选择已上传的模板。发送合同或 W-9 时将使用对应模板。</p>
     </div>
 
@@ -15997,21 +16029,26 @@ async function _dsLoadMyTemplates() {
   }
 }
 
+const _DS_SELECTORS = [
+  { key: 'company_contract_template_id', selId: 'ds-sel-company-contract', infoId: 'ds-cfg-company-contract-info', label: '公司合同' },
+  { key: 'worker_1099_template_id',      selId: 'ds-sel-worker-1099',       infoId: 'ds-cfg-worker-1099-info',       label: '劳务合同 1099' },
+  { key: 'worker_w2_template_id',        selId: 'ds-sel-worker-w2',         infoId: 'ds-cfg-worker-w2-info',         label: '劳务合同 W2' },
+  { key: 'w9_template_id',               selId: 'ds-sel-w9',                infoId: 'ds-cfg-w9-info',                label: 'W-9' },
+];
+
 function _dsRefreshSelects() {
-  const selC = document.getElementById('ds-sel-contract');
-  const selW = document.getElementById('ds-sel-w9');
-  if (!selC || !selW) return;
   const optHtml = _dsMyTemplates.map(t =>
     `<option value="${t.docuseal_template_id}">#${t.docuseal_template_id} — ${_dsEsc(t.name)}</option>`
   ).join('');
-  selC.innerHTML = '<option value="">— 未设置 —</option>' + optHtml;
-  selW.innerHTML = '<option value="">— 未设置 —</option>' + optHtml;
-  if (_dsConfig.contract_template_id) selC.value = _dsConfig.contract_template_id;
-  if (_dsConfig.w9_template_id) selW.value = _dsConfig.w9_template_id;
-  const cName = _dsMyTemplates.find(t => t.docuseal_template_id == _dsConfig.contract_template_id);
-  const wName = _dsMyTemplates.find(t => t.docuseal_template_id == _dsConfig.w9_template_id);
-  document.getElementById('ds-cfg-contract-info').textContent = cName ? '发送合同时使用此模板' : '';
-  document.getElementById('ds-cfg-w9-info').textContent = wName ? '发送 W-9 时使用此模板' : '';
+  for (const s of _DS_SELECTORS) {
+    const el = document.getElementById(s.selId);
+    const info = document.getElementById(s.infoId);
+    if (!el) continue;
+    el.innerHTML = '<option value="">— 未设置 —</option>' + optHtml;
+    if (_dsConfig[s.key]) el.value = _dsConfig[s.key];
+    const matched = _dsMyTemplates.find(t => t.docuseal_template_id == _dsConfig[s.key]);
+    if (info) info.textContent = matched ? `发送${s.label}时使用此模板` : '';
+  }
 }
 
 function _dsRenderMyTemplates() {
@@ -16021,13 +16058,18 @@ function _dsRenderMyTemplates() {
     return;
   }
   const dsUrl = _dsConfig.url || '';
+  const _BADGE_STYLES = {
+    company_contract_template_id: { bg:'#dbeafe', color:'#1e40af', label:'公司合同' },
+    worker_1099_template_id:      { bg:'#d1fae5', color:'#065f46', label:'1099' },
+    worker_w2_template_id:        { bg:'#fef9c3', color:'#854d0e', label:'W2' },
+    w9_template_id:               { bg:'#fff7ed', color:'#9a3412', label:'W-9' },
+  };
   const rows = _dsMyTemplates.map(t => {
-    const isContract = _dsConfig.contract_template_id == t.docuseal_template_id;
-    const isW9 = _dsConfig.w9_template_id == t.docuseal_template_id;
-    const badges = [
-      isContract ? '<span style="display:inline-block;background:#d1fae5;color:#065f46;border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">合同</span>' : '',
-      isW9 ? '<span style="display:inline-block;background:#fff7ed;color:#9a3412;border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">W-9</span>' : '',
-    ].filter(Boolean).join('');
+    const badges = Object.entries(_BADGE_STYLES).map(([k, s]) =>
+      _dsConfig[k] == t.docuseal_template_id
+        ? `<span style="display:inline-block;background:${s.bg};color:${s.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${s.label}</span>`
+        : ''
+    ).filter(Boolean).join('');
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
         <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${badges}
@@ -16044,12 +16086,12 @@ function _dsRenderMyTemplates() {
 
 async function dsSetTemplate(type, id) {
   try {
-    const body = type === 'contract' ? { contract_template_id: id || null } : { w9_template_id: id || null };
-    await api('/api/admin/docuseal/config', { method: 'POST', body: JSON.stringify(body) });
-    if (type === 'contract') _dsConfig.contract_template_id = id || null;
-    else _dsConfig.w9_template_id = id || null;
+    const cfgKey = type + '_template_id';
+    await api('/api/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ [cfgKey]: id || null }) });
+    _dsConfig[cfgKey] = id || null;
     _dsRenderMyTemplates();
-    showToast(`已${id ? '设置' : '清除'} ${type === 'contract' ? '员工合同' : 'W-9'} 模板`, 'success');
+    const label = (_DS_SELECTORS.find(s => s.key === cfgKey) || {}).label || type;
+    showToast(`已${id ? '设置' : '清除'}「${label}」模板`, 'success');
   } catch(e) { showToast(e.message, 'error'); }
 }
 
@@ -16057,8 +16099,7 @@ async function dsDeleteMyTemplate(localId, dsId, name) {
   if (!confirm(`确定要删除模板「${name}」吗？\n\n这会同时从 DocuSeal 中删除此模板，不可撤销。`)) return;
   try {
     await api(`/api/admin/docuseal/my-templates/${localId}`, { method: 'DELETE' });
-    if (_dsConfig.contract_template_id == dsId) _dsConfig.contract_template_id = null;
-    if (_dsConfig.w9_template_id == dsId) _dsConfig.w9_template_id = null;
+    for (const s of _DS_SELECTORS) { if (_dsConfig[s.key] == dsId) _dsConfig[s.key] = null; }
     _dsMyTemplates = _dsMyTemplates.filter(t => t.id !== localId);
     _dsRefreshSelects();
     _dsRenderMyTemplates();
