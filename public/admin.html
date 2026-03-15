@@ -2310,9 +2310,40 @@ tr:hover td{background:var(--sky-light)}
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         上传新模板 PDF
       </div>
-      <div style="margin-bottom:1rem">
-        <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">模板名称 <span style="color:#ef4444">*</span></label>
-        <input type="text" id="ds-upload-name" placeholder="如：Employee Contract Template 2026" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+        <div>
+          <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">模板名称 <span style="color:#ef4444">*</span></label>
+          <input type="text" id="ds-upload-name" placeholder="如：Employee Contract Template 2026" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none">
+        </div>
+        <div>
+          <label style="display:block;font-size:.83rem;font-weight:600;color:#475569;margin-bottom:.35rem">类别（上传后自动设置）</label>
+          <select id="ds-upload-category" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.5rem .75rem;font-size:.88rem;outline:none;background:#fff">
+            <option value="">— 不自动分配 —</option>
+            <optgroup label="合同">
+              <option value="company_contract">公司合同</option>
+              <option value="worker_1099">劳务合同 — 1099</option>
+              <option value="worker_w2">劳务合同 — W2</option>
+            </optgroup>
+            <optgroup label="税务表格">
+              <option value="w4">W-4</option>
+              <option value="w9">W-9</option>
+              <option value="w8ben">W-8BEN</option>
+              <option value="w8bene">W-8BEN-E</option>
+              <option value="form8233">8233</option>
+              <option value="i9">I-9</option>
+              <option value="w7">W-7</option>
+            </optgroup>
+            <optgroup label="付款授权表格">
+              <option value="ach_auth">ACH / Direct Deposit</option>
+              <option value="wire_auth">Wire Transfer</option>
+              <option value="check_instruction">Check / 支票</option>
+              <option value="zelle_auth">Zelle</option>
+              <option value="third_party_pay">PayPal / Venmo / CashApp</option>
+              <option value="cash_receipt">现金签收</option>
+              <option value="contractor_invoice">员工 Invoice</option>
+            </optgroup>
+          </select>
+        </div>
       </div>
       <div id="ds-dropzone" style="border:2px dashed #e2e8f0;border-radius:8px;padding:2rem;text-align:center;color:#94a3b8;cursor:pointer;position:relative;transition:all .2s">
         <input type="file" accept=".pdf,application/pdf" id="ds-file-input" onchange="dsOnFileSelect(this)" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%">
@@ -19948,6 +19979,7 @@ function dsOnFileSelect(inp) {
 
 async function dsUploadTemplate() {
   const name = document.getElementById('ds-upload-name').value.trim();
+  const category = document.getElementById('ds-upload-category').value;
   if (!name) { showToast('请填写模板名称', 'error'); return; }
   if (!_dsFileData) { showToast('请选择 PDF 文件', 'error'); return; }
   const btn = document.getElementById('ds-upload-btn');
@@ -19956,10 +19988,19 @@ async function dsUploadTemplate() {
   btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite"></span> 上传中…';
   status.textContent = '';
   try {
-    await api('/admin/docuseal/upload-template', { method: 'POST', body: JSON.stringify({ name, file: _dsFileData }) });
-    showToast(`模板「${name}」上传成功`, 'success');
+    const result = await api('/admin/docuseal/upload-template', { method: 'POST', body: JSON.stringify({ name, file: _dsFileData }) });
+    if (category && result?.id) {
+      try {
+        await dsSetTemplate(category, result.id);
+      } catch(e2) {
+        showToast(`上传成功，但分配类别失败: ${e2.message}`, 'error');
+      }
+    } else {
+      showToast(`模板「${name}」上传成功`, 'success');
+    }
     status.textContent = '✓ 上传成功';
     document.getElementById('ds-upload-name').value = '';
+    document.getElementById('ds-upload-category').value = '';
     document.getElementById('ds-file-input').value = '';
     document.getElementById('ds-file-name').style.display = 'none';
     _dsFileData = null;
