@@ -19942,7 +19942,16 @@ function _dsRenderMyTemplates() {
     contractor_invoice_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
     invoice_approval_template_id:  { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
   };
+  const _CAT_BADGE = {
+    company_contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'}, worker_1099:{bg:'#dbeafe',color:'#1e40af',label:'合同'}, worker_w2:{bg:'#dbeafe',color:'#1e40af',label:'合同'}, contract:{bg:'#dbeafe',color:'#1e40af',label:'合同'},
+    w4:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, w9:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, w8ben:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, w8bene:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, form8233:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, i9:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, w7:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'}, tax:{bg:'#fff7ed',color:'#9a3412',label:'税务表格'},
+    ach_auth:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, wire_auth:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, check_instruction:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, zelle_auth:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, third_party_pay:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, cash_receipt:{bg:'#dcfce7',color:'#166534',label:'付款授权'}, payment:{bg:'#dcfce7',color:'#166534',label:'付款授权'},
+    contractor_invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'}, invoice:{bg:'#fef3c7',color:'#92400e',label:'员工Invoice'},
+    invoice_approval:{bg:'#d1fae5',color:'#065f46',label:'发票审批'},
+  };
   const rows = _dsMyTemplates.map(t => {
+    const cs = _CAT_BADGE[t.category];
+    const catBadge = cs ? `<span style="display:inline-block;background:${cs.bg};color:${cs.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${cs.label}</span>` : '';
     const badges = Object.entries(_BADGE_STYLES).map(([k, s]) => {
       const cfgVal = _dsConfig[k];
       const inSlot = Array.isArray(cfgVal) ? cfgVal.some(id => id == t.docuseal_template_id) : cfgVal == t.docuseal_template_id;
@@ -19950,7 +19959,7 @@ function _dsRenderMyTemplates() {
     }).filter(Boolean).join('');
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
-        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${badges}
+        <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${catBadge}${badges}
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${({company_contract:'合同',worker_1099:'合同',worker_w2:'合同',w4:'税务表格',w9:'税务表格',w8ben:'税务表格',w8bene:'税务表格',form8233:'税务表格',i9:'税务表格',w7:'税务表格',ach_auth:'付款授权',wire_auth:'付款授权',check_instruction:'付款授权',zelle_auth:'付款授权',third_party_pay:'付款授权',cash_receipt:'付款授权',contractor_invoice:'员工Invoice',invoice_approval:'发票审批(内部)',contract:'合同',tax:'税务表格',payment:'付款授权',invoice:'员工Invoice'})[t.category]||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
