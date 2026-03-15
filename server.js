@@ -4183,6 +4183,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN preferred_lang TEXT DEFAULT ''"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent INTEGER DEFAULT 0"); } catch {}
   try { db.exec("ALTER TABLE worker_accounts ADD COLUMN sms_consent_at TEXT DEFAULT ''"); } catch {}
+  try { db.exec("ALTER TABLE worker_accounts ADD COLUMN identity_reverify_date TEXT DEFAULT ''"); } catch {}
 
   // Enrich each worker with interview, compliance, skill, and referral data
   const getInterview = db.prepare(`SELECT i.status FROM interviews i WHERE i.worker_account_id=? ORDER BY i.id DESC LIMIT 1`);
@@ -4314,6 +4315,16 @@ app.put('/api/admin/worker-accounts/:id', requireAdmin, requireRole('admin'), (r
       entity_type !== undefined ? entity_type : null,
       req.params.id
     );
+  res.json({ success: true });
+});
+
+app.patch('/api/admin/worker-accounts/:id/identity-reverify-date', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { date } = req.body;
+  const w = db.prepare('SELECT identity_reverify_date FROM worker_accounts WHERE id=?').get(req.params.id);
+  if (!w) return res.status(404).json({ error: 'Not found' });
+  const changedBy = (req.session && req.session.username) || 'admin';
+  db.prepare('UPDATE worker_accounts SET identity_reverify_date=? WHERE id=?').run(date || '', req.params.id);
+  db.prepare('INSERT INTO worker_account_history (worker_account_id,changed_by,field_name,old_value,new_value) VALUES (?,?,?,?,?)').run(req.params.id, changedBy, 'identity_reverify_date', w.identity_reverify_date || '', date || '');
   res.json({ success: true });
 });
 
