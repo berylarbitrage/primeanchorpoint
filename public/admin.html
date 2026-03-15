@@ -1999,7 +1999,7 @@ tr:hover td{background:var(--sky-light)}
   <div id="accPanelWorker" class="card" style="display:none;overflow-x:auto">
     <table style="font-size:.82rem"><thead><tr>
       <th>工人编码</th><th>姓名</th><th>手机号</th><th>邮箱</th><th>身份</th><th>雇佣类型</th>
-      <th>合规文件</th><th>协议</th><th>税务</th><th>报税文件</th><th>身份Reverify日期</th><th>支付方式</th><th>薪资</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
+      <th>协议</th><th>税务</th><th>身份Reverify日期</th><th>支付方式</th><th>薪资</th><th>期望薪资</th><th>评分</th><th>技能</th><th>状态</th><th>派工</th><th>操作</th>
     </tr></thead>
     <tbody id="workerAccountsTable"></tbody></table>
   </div>
@@ -13311,6 +13311,7 @@ async function loadWorkerAccounts() {
     <td style="font-size:.8rem;white-space:nowrap">${fmtPhone(w.phone)}</td>
     <td style="font-size:.78rem">${esc(w.email||'—')}</td>
     <td style="font-size:.78rem;white-space:nowrap">${(()=>{
+      if (!w.onboarded) return '<span style="color:var(--gray-400)">— 不确定 —</span>';
       const ts = w.tax_status;
       if (ts === 'citizen') return '<span style="padding:2px 6px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-weight:600">🇺🇸 公民</span>';
       if (ts === 'resident_alien' || ts === 'likely_resident_alien') return '<span style="padding:2px 6px;border-radius:6px;background:#d1fae5;color:#065f46;font-weight:600">🟢 RA 居民</span>';
@@ -13333,24 +13334,17 @@ async function loadWorkerAccounts() {
     <td style="text-align:center">${w.contract_version_count > 0
       ? `<span class="wa-cbadge ${w.contract_ds_status==='completed'?'ok':w.contract_ds_status==='company_signed'||w.contract_ds_status==='sent'?'pend':'na'}" style="cursor:pointer" onclick="event.stopPropagation();showContractVersions(${w.id},'${esc(w.name||w.username)}')" title="点击查看协议历史">v${w.contract_version_count} ${w.contract_ds_status==='completed'?'✅':w.contract_ds_status==='company_signed'?'✍️':w.contract_ds_status==='sent'?'📤':w.contract_ds_status?'—':'🗑️'}</span>`
       : '<span style="color:var(--gray-300);font-size:.78rem">—</span>'}</td>
-    <td style="font-size:.78rem;white-space:nowrap;vertical-align:middle">${(() => {
-      const rf = w.recommended_form || '';
-      const ts = w.tax_status || '';
-      const emp = w.employment_type || '';
-      const parts = [];
-      if (rf) parts.push(`<span style="background:${rf==='W-9'?'#dbeafe':rf==='W-8BEN'?'#fce7f3':rf==='W-8BEN-E'?'#fef9c3':'#f3e8ff'};color:${rf==='W-9'?'#1d4ed8':rf==='W-8BEN'?'#9d174d':rf==='W-8BEN-E'?'#713f12':'#6b21a8'};font-size:.7rem;padding:1px 5px;border-radius:8px;font-weight:700">${esc(rf)}</span>`);
-      if (ts==='us_person'||ts==='resident_alien') parts.push('<span style="font-size:.72rem;color:#065f46">us 公民</span>');
-      else if (ts==='nonresident_alien') parts.push('<span style="font-size:.72rem;color:#9a3412">NRA</span>');
-      const filingForm = emp==='1099'&&(rf==='W-8BEN'||rf==='W-8BEN-E')?'1042-S':emp==='1099'?'1099-NEC':emp==='w2'&&(rf==='W-8BEN'||rf==='W-8BEN-E')?'W-2+1042-S':emp==='w2'?'W-2':'';
-      if (filingForm) parts.push(`<span style="font-size:.7rem;color:#92400e;font-weight:600">${filingForm}</span>`);
-      if (w.tax_claim_treaty==='yes'&&w.tax_treaty_country) parts.push(`<span style="font-size:.68rem;color:#7c3aed">🤝 ${esc(w.tax_treaty_country)}</span>`);
-      return parts.length ? `<div style="display:flex;flex-direction:column;gap:2px;align-items:flex-start">${parts.join('')}</div>` : '<span style="color:var(--gray-300)">—</span>';
-    })()}</td>
     <td style="text-align:center;vertical-align:middle">${(() => {
       const emp = w.employment_type || '';
       if (!emp || emp==='cash') return '<span style="color:var(--gray-300);font-size:.78rem">—</span>';
       const hasDoc = (w.tax_filing_doc_count || 0) > 0;
-      return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${hasDoc?'✅':'📤'}</button>`;
+      const rf = w.recommended_form || '';
+      const filingLabel = emp==='1099'&&(rf==='W-8BEN'||rf==='W-8BEN-E') ? '1042-S'
+        : emp==='1099' ? '1099-NEC'
+        : emp==='w2'&&(rf==='W-8BEN'||rf==='W-8BEN-E') ? 'W-2'
+        : emp==='w2' ? 'W-2'
+        : rf || '报税文件';
+      return `<button class="btn btn-sm" style="font-size:.72rem;padding:2px 8px;${hasDoc?'background:#dcfce7;color:#15803d;border:1px solid #86efac;':'background:#fffbeb;color:#92400e;border:1px solid #fde68a;'}" onclick="event.stopPropagation();openTaxFilingDocsModal(${w.id},'${esc(w.name||w.username)}',${w.current_tax_year||2025})">${esc(filingLabel)}</button>`;
     })()}</td>
     <td style="font-size:.78rem;white-space:nowrap;text-align:center">${(() => {
       const isCitizen = w.tax_status === 'citizen' || w.work_status === 'citizen';
@@ -13390,7 +13384,7 @@ async function loadWorkerAccounts() {
         ${extraBtns}
       </div>
     </td>
-  </tr>`;}).join('') : '<tr><td colspan="18" class="empty">暂无工人账户</td></tr>';
+  </tr>`;}).join('') : '<tr><td colspan="17" class="empty">暂无工人账户</td></tr>';
 }
 
 // ─── Onboarding Progress Modal ───
@@ -13415,13 +13409,21 @@ let _onboardingInterviewInfo = null;
 let _onboardingRecommendedForm = null;
 
 async function refreshOnboardingModal() {
-  const [tasks, rows, intvInfo, taxResData] = await Promise.all([
-    api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`),
-    api('/admin/worker-accounts'),
-    api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`),
-    api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`)
-  ]);
-  const w = rows && rows.find(r => r.id === _onboardingWorkerId);
+  let tasks, rows, intvInfo, taxResData;
+  try {
+    [tasks, rows, intvInfo, taxResData] = await Promise.all([
+      api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`),
+      api('/admin/worker-accounts'),
+      api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`),
+      api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`)
+    ]);
+  } catch (e) {
+    console.error('[onboarding] API error:', e);
+    document.getElementById('onboardingTaskList').innerHTML = '<div style="text-align:center;padding:1.5rem;color:#dc2626">加载失败，请刷新页面重试。<br><span style="font-size:.78rem;color:var(--gray-400)">' + e.message + '</span></div>';
+    return;
+  }
+  if (!Array.isArray(rows)) rows = [];
+  const w = rows.find(r => r.id === _onboardingWorkerId);
   _onboardingDispatchReady = !!(w && w.dispatch_ready);
   _onboardingWorkerData = w || null;
   _onboardingInterviewInfo = intvInfo || null;
