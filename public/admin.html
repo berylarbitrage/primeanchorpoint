@@ -2610,6 +2610,13 @@ tr:hover td{background:var(--sky-light)}
 
   <div style="margin-bottom:1rem">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <label style="font-size:.8rem;font-weight:600">意向岗位 Job Categories</label>
+    </div>
+    <div id="wdPositionInterests" style="display:grid;grid-template-columns:1fr 1fr;gap:.3rem"></div>
+  </div>
+
+  <div style="margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
       <label style="font-size:.8rem;font-weight:600">技能评分 Skills</label>
       <button class="btn btn-sm btn-green" onclick="addWdSkill()">+ 添加技能</button>
     </div>
@@ -14103,6 +14110,7 @@ async function sendResetLink(id, name) {
 let _workerDetailId = null;
 let _workerDetailSkills = [];
 let _workerAssignedTasks = [];
+let _workerDetailPositionInterests = [];
 
 const ALL_TASK_TYPES = [
   { key: 'drivers_license', label: '🪪 身份证件 ID Verification' },
@@ -14122,6 +14130,7 @@ async function openWorkerDetailModal(id) {
   _workerDetailId = id;
   _workerDetailSkills = (w.skills || []).map(s => ({...s}));
   try { _workerAssignedTasks = JSON.parse(w.assigned_tasks || '[]'); } catch { _workerAssignedTasks = []; }
+  try { _workerDetailPositionInterests = JSON.parse(w.position_interests || '[]'); } catch { _workerDetailPositionInterests = []; }
 
   const modal = document.getElementById('workerDetailModal');
   if (!modal) return;
@@ -14132,6 +14141,7 @@ async function openWorkerDetailModal(id) {
   document.getElementById('wdPaymentMethod').value = w.payment_method || 'cash';
   renderWdSkills();
   renderWdTasks();
+  await renderWdPositionInterests();
   modal.classList.add('show');
   loadWorkerHistory(id);
   loadWorkerAssignments(id);
@@ -14171,6 +14181,28 @@ function renderWdTasks() {
       ${t.label}
     </label>`;
   }).join('');
+}
+
+async function renderWdPositionInterests() {
+  const container = document.getElementById('wdPositionInterests');
+  if (!container) return;
+  await loadWorkerPositions();
+  container.innerHTML = _WORKER_POSITIONS.map(p => {
+    const checked = _workerDetailPositionInterests.includes(p.key) ? 'checked' : '';
+    return `<label style="display:flex;align-items:center;gap:.4rem;padding:.35rem .5rem;border:1px solid var(--gray-200);border-radius:6px;cursor:pointer;font-size:.8rem;${checked ? 'background:#f0f9ff;border-color:#bae6fd' : ''}">
+      <input type="checkbox" value="${p.key}" ${checked} onchange="toggleWdPosition('${p.key}',this.checked)">
+      ${esc(p.zh)}
+    </label>`;
+  }).join('');
+}
+
+function toggleWdPosition(key, checked) {
+  if (checked && !_workerDetailPositionInterests.includes(key)) {
+    _workerDetailPositionInterests.push(key);
+  } else if (!checked) {
+    _workerDetailPositionInterests = _workerDetailPositionInterests.filter(k => k !== key);
+  }
+  renderWdPositionInterests();
 }
 
 function toggleWdTask(key, checked) {
@@ -14216,7 +14248,8 @@ async function saveWorkerDetail() {
     expected_salary: document.getElementById('wdExpectedSalary').value,
     our_salary_rating: document.getElementById('wdOurRating').value,
     payment_method: document.getElementById('wdPaymentMethod').value,
-    assigned_tasks: _workerAssignedTasks
+    assigned_tasks: _workerAssignedTasks,
+    position_interests: _workerDetailPositionInterests
   };
   await api(`/admin/worker-accounts/${_workerDetailId}`, { method:'PUT', body: JSON.stringify(data) });
   // Save skills
