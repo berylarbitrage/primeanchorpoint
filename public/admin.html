@@ -4618,6 +4618,32 @@ tr:hover td{background:var(--sky-light)}
   </div>
 </div>
 
+<!-- ════ DS Rename Template Modal ════ -->
+<div class="modal-bg" id="dsRenameModal"><div class="modal" style="max-width:400px">
+  <h2>改名</h2>
+  <input type="hidden" id="dsRenameId">
+  <div class="field">
+    <label>新名称</label>
+    <input type="text" id="dsRenameInput" placeholder="模板名称" style="width:100%;box-sizing:border-box">
+  </div>
+  <div style="display:flex;gap:.75rem;margin-top:1.25rem">
+    <button class="btn" onclick="dsSaveRename()">保存</button>
+    <button class="btn" onclick="guardClose('dsRenameModal')" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">取消</button>
+  </div>
+</div></div>
+
+<!-- ════ DS Change Category Modal ════ -->
+<div class="modal-bg" id="dsChangeCatModal"><div class="modal" style="max-width:480px">
+  <h2>改变分类</h2>
+  <p id="dsChangeCatTitle" style="font-size:.88rem;color:#0ea5e9;margin-bottom:1.25rem"></p>
+  <input type="hidden" id="dsChangeCatDsId">
+  <div id="dsChangeCatBody" style="max-height:60vh;overflow-y:auto;padding-right:.25rem"></div>
+  <div style="display:flex;gap:.75rem;margin-top:1.25rem">
+    <button class="btn" onclick="dsSaveChangeCat()">保存</button>
+    <button class="btn" onclick="guardClose('dsChangeCatModal')" style="background:var(--gray-100);color:var(--gray-700);border:1px solid var(--gray-300)">取消</button>
+  </div>
+</div></div>
+
 <!-- ════ Partner DocuSeal Send Modal ════ -->
 <div class="modal-bg" id="partnerDsModal"><div class="modal" style="max-width:480px">
   <h2>✍ 发送合同签署邀请</h2>
@@ -19927,11 +19953,11 @@ function _dsRenderMyTemplates() {
         <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${badges}
         <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${({company_contract:'合同',worker_1099:'合同',worker_w2:'合同',w4:'税务表格',w9:'税务表格',w8ben:'税务表格',w8bene:'税务表格',form8233:'税务表格',i9:'税务表格',w7:'税务表格',ach_auth:'付款授权',wire_auth:'付款授权',check_instruction:'付款授权',zelle_auth:'付款授权',third_party_pay:'付款授权',cash_receipt:'付款授权',contractor_invoice:'员工Invoice',invoice_approval:'发票审批(内部)',contract:'合同',tax:'税务表格',payment:'付款授权',invoice:'员工Invoice'})[t.category]||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
       </div>
-      <div style="display:flex;gap:.4rem;flex-shrink:0">
-        <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
-        <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
-        ${dsUrl ? `<a href="${dsUrl}/templates/${t.docuseal_template_id}/edit" target="_blank" style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;text-decoration:none">编辑 ↗</a>` : ''}
-        <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
+      <div style="display:flex;gap:.4rem;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+        <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
+        <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;white-space:nowrap" onclick="dsChangeCategoryModal(${t.docuseal_template_id})">改分类</button>
+        ${dsUrl ? `<a href="${dsUrl}/templates/${t.docuseal_template_id}/edit" target="_blank" style="display:inline-flex;align-items:center;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155;text-decoration:none;white-space:nowrap">编辑 ↗</a>` : ''}
+        <button style="padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #fca5a5;background:#fff;color:#ef4444;white-space:nowrap" onclick="dsDeleteMyTemplate(${t.id}, ${t.docuseal_template_id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">删除</button>
       </div>
     </div>`;
   }).join('');
@@ -19974,14 +20000,25 @@ async function dsDeleteMyTemplate(localId, dsId, name) {
   } catch(e) { showToast(e.message, 'error'); }
 }
 
+async function dsRenameMyTemplate(localId, currentName) {
+  const newName = prompt('请输入新的模板名称：', currentName);
+  if (!newName || newName.trim() === currentName) return;
+  try {
+    await api(`/admin/docuseal/my-templates/${localId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName.trim() }) });
+    const t = _dsMyTemplates.find(t => t.id === localId);
+    if (t) t.name = newName.trim();
+    _dsRenderMyTemplates();
+    _dsRefreshSelects();
+    showToast('模板已改名', 'success');
+  } catch(e) { showToast(e.message, 'error'); }
+}
+
 function dsChangeCategoryModal(dsTemplateId) {
-  // Build current assignments for this template (config values may be arrays)
   const _cfgIncludes = (key, id) => { const v = _dsConfig[key]; return Array.isArray(v) ? v.some(x => x == id) : v == id; };
   const assigned = new Set(_DS_SELECTORS.filter(s => _cfgIncludes(s.key, dsTemplateId)).map(s => s.key));
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
   const tplName = tpl ? tpl.name : `#${dsTemplateId}`;
 
-  // Group selectors by section header
   const groups = [
     { title: '合同', keys: ['company_contract_template_id','worker_1099_template_id','worker_w2_template_id'] },
     { title: '税务表格', keys: ['w4_template_id','w9_template_id','w8ben_template_id','w8bene_template_id','form8233_template_id','i9_template_id','w7_template_id'] },
@@ -19996,10 +20033,10 @@ function dsChangeCategoryModal(dsTemplateId) {
       const curIds = Array.isArray(cfgVal) ? cfgVal : (cfgVal ? [cfgVal] : []);
       const otherOwners = _dsMyTemplates.filter(t => curIds.some(id => id == t.docuseal_template_id) && t.docuseal_template_id != dsTemplateId);
       const occupiedNote = otherOwners.length > 0
-        ? `<span style="font-size:.71rem;color:#94a3b8">（已有：${otherOwners.map(t => _dsEsc(t.name)).join(', ')}）</span>` : '';
+        ? `<span style="font-size:.71rem;color:#94a3b8;white-space:nowrap">（已有：${otherOwners.map(t => _dsEsc(t.name)).join(', ')}）</span>` : '';
       return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .2rem;cursor:pointer">
-        <input type="checkbox" data-key="${k}" ${assigned.has(k) ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer">
-        <span style="font-size:.83rem;font-weight:600">${sel.label}</span>${occupiedNote}
+        <input type="checkbox" data-key="${k}" ${assigned.has(k) ? 'checked' : ''} style="width:15px;height:15px;flex-shrink:0;cursor:pointer">
+        <span style="font-size:.83rem;font-weight:600;white-space:nowrap">${sel.label}</span>${occupiedNote}
       </label>`;
     }).join('');
     return `<div style="margin-bottom:.8rem"><div style="font-size:.75rem;font-weight:700;color:#94a3b8;margin-bottom:.25rem">${g.title}</div>${items}</div>`;
