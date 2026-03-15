@@ -12814,6 +12814,37 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   res.json(out);
 });
 
+// GET /api/admin/docuseal/connection — get connection credentials info
+app.get('/api/admin/docuseal/connection', requireAdmin, (req, res) => {
+  const row = db.prepare("SELECT api_key, config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  const envKey = process.env.DOCUSEAL_API_KEY;
+  const envUrl = process.env.DOCUSEAL_URL;
+  const dbKey = row?.api_key;
+  const dbUrl = cfg.url;
+  const activeKey = envKey || dbKey || '';
+  res.json({
+    url: envUrl || dbUrl || '',
+    url_source: envUrl ? 'env' : (dbUrl ? 'db' : ''),
+    api_key_preview: activeKey ? (activeKey.slice(0, 4) + '****') : '',
+    api_key_source: envKey ? 'env' : (dbKey ? 'db' : ''),
+    connected: dsealEnabled()
+  });
+});
+
+// POST /api/admin/docuseal/connection — save API key and URL to database
+app.post('/api/admin/docuseal/connection', requireAdmin, (req, res) => {
+  const { api_key, url } = req.body;
+  const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
+  const cfg = JSON.parse(row?.config || '{}');
+  if (url !== undefined) cfg.url = url || null;
+  db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(JSON.stringify(cfg));
+  if (api_key) {
+    db.prepare("UPDATE integration_settings SET api_key=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'").run(api_key);
+  }
+  res.json({ success: true, connected: dsealEnabled() });
+});
+
 // POST /api/admin/docuseal/config — save template IDs
 app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
   const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
