@@ -3304,7 +3304,9 @@ function getDsealConfigTemplateId(type) {
       cash_receipt: cfg.cash_receipt_template_id,
       contractor_invoice: cfg.contractor_invoice_template_id,
     };
-    return map[type] || '';
+    const val = map[type];
+    if (Array.isArray(val)) return val[0] || '';
+    return val || '';
   } catch { return ''; }
 }
 
@@ -13669,7 +13671,15 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
     'contractor_invoice_template_id',
     'contract_template_id' /* legacy */];
-  _configKeys.forEach(k => { if (req.body[k] !== undefined) cfg[k] = req.body[k] || null; });
+  _configKeys.forEach(k => {
+    if (req.body[k] === undefined) return;
+    const v = req.body[k];
+    if (Array.isArray(v)) {
+      cfg[k] = v.length > 0 ? v : null;
+    } else {
+      cfg[k] = v || null;
+    }
+  });
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
     .run(JSON.stringify(cfg));
   res.json({ success: true });
@@ -13698,7 +13708,15 @@ app.delete('/api/admin/docuseal/templates/:id', requireAdmin, async (req, res) =
     const row = db.prepare("SELECT config FROM integration_settings WHERE provider='docuseal'").get();
     const cfg = JSON.parse(row?.config || '{}');
     const tid = parseInt(req.params.id);
-    Object.keys(cfg).forEach(k => { if (k.endsWith('_template_id') && cfg[k] == tid) cfg[k] = null; });
+    Object.keys(cfg).forEach(k => {
+      if (!k.endsWith('_template_id')) return;
+      if (Array.isArray(cfg[k])) {
+        const filtered = cfg[k].filter(id => id != tid);
+        cfg[k] = filtered.length > 0 ? filtered : null;
+      } else if (cfg[k] == tid) {
+        cfg[k] = null;
+      }
+    });
     db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
       .run(JSON.stringify(cfg));
     res.json({ success: true });

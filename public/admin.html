@@ -19873,8 +19873,10 @@ function _dsRefreshSelects() {
       `<option value="${t.docuseal_template_id}">#${t.docuseal_template_id} — ${_dsEsc(t.name)}</option>`
     ).join('');
     el.innerHTML = '<option value="">— 未设置 —</option>' + optHtml;
-    if (_dsConfig[s.key]) el.value = _dsConfig[s.key];
-    const matched = _dsMyTemplates.find(t => t.docuseal_template_id == _dsConfig[s.key]);
+    const cfgVal = _dsConfig[s.key];
+    const firstId = Array.isArray(cfgVal) ? cfgVal[0] : cfgVal;
+    if (firstId) el.value = firstId;
+    const matched = _dsMyTemplates.find(t => t.docuseal_template_id == firstId);
     if (info) info.textContent = matched ? `发送${s.label}时使用此模板` : '';
   }
 }
@@ -19906,11 +19908,11 @@ function _dsRenderMyTemplates() {
     contractor_invoice_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
   };
   const rows = _dsMyTemplates.map(t => {
-    const badges = Object.entries(_BADGE_STYLES).map(([k, s]) =>
-      _dsConfig[k] == t.docuseal_template_id
-        ? `<span style="display:inline-block;background:${s.bg};color:${s.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${s.label}</span>`
-        : ''
-    ).filter(Boolean).join('');
+    const badges = Object.entries(_BADGE_STYLES).map(([k, s]) => {
+      const cfgVal = _dsConfig[k];
+      const inSlot = Array.isArray(cfgVal) ? cfgVal.some(id => id == t.docuseal_template_id) : cfgVal == t.docuseal_template_id;
+      return inSlot ? `<span style="display:inline-block;background:${s.bg};color:${s.color};border-radius:4px;padding:1px 7px;font-size:.73rem;font-weight:600;margin-left:.4rem">${s.label}</span>` : '';
+    }).filter(Boolean).join('');
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
         <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${badges}
@@ -19964,8 +19966,9 @@ async function dsDeleteMyTemplate(localId, dsId, name) {
 }
 
 function dsChangeCategoryModal(dsTemplateId) {
-  // Build current assignments for this template
-  const assigned = new Set(_DS_SELECTORS.filter(s => _dsConfig[s.key] == dsTemplateId).map(s => s.key));
+  // Build current assignments for this template (config values may be arrays)
+  const _cfgIncludes = (key, id) => { const v = _dsConfig[key]; return Array.isArray(v) ? v.some(x => x == id) : v == id; };
+  const assigned = new Set(_DS_SELECTORS.filter(s => _cfgIncludes(s.key, dsTemplateId)).map(s => s.key));
   const tpl = _dsMyTemplates.find(t => t.docuseal_template_id == dsTemplateId);
   const tplName = tpl ? tpl.name : `#${dsTemplateId}`;
 
@@ -19980,9 +19983,11 @@ function dsChangeCategoryModal(dsTemplateId) {
     const items = g.keys.map(k => {
       const sel = _DS_SELECTORS.find(s => s.key === k);
       if (!sel) return '';
-      const curOwner = _dsMyTemplates.find(t => t.docuseal_template_id == _dsConfig[k]);
-      const occupiedNote = (curOwner && curOwner.docuseal_template_id != dsTemplateId)
-        ? `<span style="font-size:.71rem;color:#94a3b8">（当前：${_dsEsc(curOwner.name)}）</span>` : '';
+      const cfgVal = _dsConfig[k];
+      const curIds = Array.isArray(cfgVal) ? cfgVal : (cfgVal ? [cfgVal] : []);
+      const otherOwners = _dsMyTemplates.filter(t => curIds.some(id => id == t.docuseal_template_id) && t.docuseal_template_id != dsTemplateId);
+      const occupiedNote = otherOwners.length > 0
+        ? `<span style="font-size:.71rem;color:#94a3b8">（已有：${otherOwners.map(t => _dsEsc(t.name)).join(', ')}）</span>` : '';
       return `<label style="display:flex;align-items:center;gap:.5rem;padding:.3rem .2rem;cursor:pointer">
         <input type="checkbox" data-key="${k}" ${assigned.has(k) ? 'checked' : ''} style="width:15px;height:15px;cursor:pointer">
         <span style="font-size:.83rem;font-weight:600">${sel.label}</span>${occupiedNote}
@@ -20008,20 +20013,25 @@ function dsChangeCategoryModal(dsTemplateId) {
 async function dsApplyCategoryChanges(dsTemplateId) {
   const overlay = document.getElementById('ds-cat-modal-overlay');
   const checkboxes = overlay.querySelectorAll('input[type=checkbox]');
-  try {
-    for (const cb of checkboxes) {
-      const key = cb.dataset.key;
-      const wasAssigned = _dsConfig[key] == dsTemplateId;
-      if (cb.checked && !wasAssigned) {
-        // Assign this template to this category
-        await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ [key]: dsTemplateId }) });
-        _dsConfig[key] = dsTemplateId;
-      } else if (!cb.checked && wasAssigned) {
-        // Clear this category
-        await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify({ [key]: null }) });
-        _dsConfig[key] = null;
-      }
+  const updates = {};
+  const tid = Number(dsTemplateId);
+  for (const cb of checkboxes) {
+    const key = cb.dataset.key;
+    const curVal = _dsConfig[key];
+    let curArr = (Array.isArray(curVal) ? curVal : (curVal ? [curVal] : [])).map(Number);
+    const inArr = curArr.includes(tid);
+    if (cb.checked && !inArr) {
+      curArr.push(tid);
+      updates[key] = curArr;
+    } else if (!cb.checked && inArr) {
+      curArr = curArr.filter(id => id !== tid);
+      updates[key] = curArr.length > 0 ? curArr : null;
     }
+  }
+  if (!Object.keys(updates).length) { overlay.remove(); return; }
+  try {
+    await api('/admin/docuseal/config', { method: 'POST', body: JSON.stringify(updates) });
+    Object.assign(_dsConfig, updates);
     overlay.remove();
     _dsRefreshSelects();
     _dsRenderMyTemplates();
