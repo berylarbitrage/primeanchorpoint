@@ -20735,8 +20735,6 @@ async function openInvpForEdit(id) {
   // Reset and populate builder
   window._invpManualEmps = [];
   _invpManualUidSeq = 1;
-  window._invpSelectedPartnerState = null;
-
   document.getElementById('invPageEditId').value = inv.id;
   document.getElementById('invPageNumber').value = inv.invoice_number || '';
   document.getElementById('invPageDate').value = inv.invoice_date || '';
@@ -20744,6 +20742,11 @@ async function openInvpForEdit(id) {
   document.getElementById('invPageEnd').value = inv.period_end || '';
   document.getElementById('invPageBillName').value = inv.company_name || '';
   document.getElementById('invPageBillAddr').value = inv.bill_to_addr || '';
+
+  // Look up partner state from company data
+  await loadInvpCompanies();
+  const partnerState = await _getPartnerStateFromData(inv.company_name || '');
+  window._invpSelectedPartnerState = partnerState || null;
   document.getElementById('invPageUniformRate').value = '';
   document.getElementById('invPageMarkupRate').value = inv.markup_rate || '';
   const sr = document.getElementById('invPageCompanySearch'); if (sr) sr.value = '';
@@ -20971,12 +20974,24 @@ async function showInvpBuilder() {
   loadInvpPresets().then(() => renderInvpProfilePreview());
 }
 
+async function _getPartnerStateFromData(billName) {
+  const partners = window._invpPartners || [];
+  const partner = partners.find(p => p.name === billName);
+  if (!partner) return null;
+  try {
+    const addrs = JSON.parse(partner.addresses || '[]');
+    if (addrs.length && addrs[0].state) return addrs[0].state.toUpperCase().slice(0,2);
+  } catch {}
+  return null;
+}
+
 async function invpRefreshInvoiceNumber() {
   const numEl = document.getElementById('invPageNumber');
   if (!numEl || numEl.value) return; // don't overwrite if already set
   const today = new Date();
-  const state = (window._invpSelectedPartnerState || 'XX').toUpperCase().slice(0,2);
   const billName = (document.getElementById('invPageBillName').value || '').trim();
+  const partnerState = await _getPartnerStateFromData(billName);
+  const state = (partnerState || window._invpSelectedPartnerState || 'XX').toUpperCase().slice(0,2);
   const companyAbbr = billName.split(/[\s\-&,]+/).map(w => (w[0]||'').toUpperCase()).join('').slice(0,4) || 'XX';
   const mm = String(today.getMonth()+1).padStart(2,'0');
   const dd = String(today.getDate()).padStart(2,'0');
@@ -21107,7 +21122,7 @@ function selectInvPartner(id) {
   const sugg = document.getElementById('invCompanySuggestions');
   if (sugg) sugg.style.display = 'none';
   // Update invoice number with customer state
-  window._invpSelectedPartnerState = stateAbbr || 'XX';
+  window._invpSelectedPartnerState = stateAbbr || null;
   const numEl = document.getElementById('invPageNumber');
   if (numEl) { numEl.value = ''; invpRefreshInvoiceNumber(); }
 }
