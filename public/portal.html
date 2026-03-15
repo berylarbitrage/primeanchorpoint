@@ -752,55 +752,88 @@ function googleTranslateElementInit() {
           <button onclick="toggleInvoiceForm()" id="btnToggleInvForm" style="padding:.45rem 1rem;border:1px solid var(--blue);background:#fff;color:var(--blue);border-radius:8px;font-size:.82rem;font-weight:600;cursor:pointer">+ 新建 Invoice</button>
         </div>
 
-        <!-- Invoice submission form (hidden by default) -->
+        <!-- Invoice submission form (hidden by default) — pre-filled, contractor fills only 3-5 fields -->
         <div id="invoiceFormWrap" style="display:none;border:1px solid var(--gray-200);border-radius:10px;padding:1.2rem;margin-bottom:1rem;background:#fafbfc">
-          <h3 style="margin:0 0 1rem;font-size:.95rem;color:var(--gray-700)">Invoice / Payment Request Form</h3>
+          <h3 style="margin:0 0 .6rem;font-size:.95rem;color:var(--gray-700)">Invoice / Payment Request Form</h3>
+          <p style="font-size:.78rem;color:var(--gray-500);margin:0 0 1rem">Pre-filled from your profile. Please complete the highlighted fields below.<br>系统已自动带出您的信息，请填写下方高亮栏位即可。</p>
+
+          <!-- Pre-filled summary (readonly) -->
+          <div id="invPrefillSummary" style="background:#f0f7ff;border:1px solid #bfdbfe;border-radius:8px;padding:.8rem 1rem;margin-bottom:1rem;font-size:.82rem;color:var(--gray-700)">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem .8rem">
+              <div><span style="color:var(--gray-400)">Contractor 承包商:</span> <b id="invPfName">—</b></div>
+              <div><span style="color:var(--gray-400)">Bill To 付款方:</span> <b>Prime Anchorpoint LLC</b></div>
+              <div><span style="color:var(--gray-400)">Job / Project:</span> <b id="invPfJob">—</b></div>
+              <div><span style="color:var(--gray-400)">Service Type 服务类型:</span> <b id="invPfType">—</b></div>
+              <div><span style="color:var(--gray-400)">Rate 费率:</span> <b id="invPfRate">—</b></div>
+              <div><span style="color:var(--gray-400)">Payment Terms 付款条件:</span> <b id="invPfTerms">—</b></div>
+              <div><span style="color:var(--gray-400)">Invoice Date 发票日期:</span> <b id="invPfDate">—</b></div>
+              <div><span style="color:var(--gray-400)">Due Date 到期日:</span> <b id="invPfDue">—</b></div>
+            </div>
+          </div>
+
           <form id="contractorInvoiceForm" onsubmit="submitContractorInvoice(event)">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Service Period Start / 服务开始日期 *</label>
-                <input type="date" name="service_period_start" required style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+            <!-- Hidden prefilled fields -->
+            <input type="hidden" name="hourly_rate" id="invHiddenRate">
+            <input type="hidden" name="payment_due_date" id="invHiddenDueDate">
+            <input type="hidden" name="job_id" id="invHiddenJobId">
+            <input type="hidden" name="job_title" id="invHiddenJobTitle">
+            <input type="hidden" name="service_type" id="invHiddenServiceType">
+
+            <!-- Job selector (only shown if multiple active jobs) -->
+            <div id="invJobSelectWrap" style="display:none;margin-bottom:.8rem">
+              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Select Job / 选择工作 *</label>
+              <select id="invJobSelect" onchange="onInvJobChange()" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem"></select>
+            </div>
+
+            <!-- ===== CONTRACTOR FILLS THESE (highlighted) ===== -->
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:.9rem 1rem;margin-bottom:.5rem">
+              <div style="font-size:.78rem;font-weight:700;color:#92400e;margin-bottom:.6rem">Please fill in / 请填写:</div>
+
+              <!-- 1. Service Period -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.8rem">
+                <div>
+                  <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">① Service Period Start / 服务开始日期 *</label>
+                  <input type="date" name="service_period_start" required style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                </div>
+                <div>
+                  <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">① Service Period End / 服务结束日期 *</label>
+                  <input type="date" name="service_period_end" required style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                </div>
               </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Service Period End / 服务结束日期 *</label>
-                <input type="date" name="service_period_end" required style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
+
+              <!-- 2. Hours or Units -->
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.8rem">
+                <div>
+                  <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">② Hours / Units 工时 *</label>
+                  <input type="number" name="hours_worked" step="0.5" min="0" required placeholder="e.g. 40" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                </div>
+                <div>
+                  <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">③ Expenses 费用报销 ($)</label>
+                  <input type="number" name="expenses" step="0.01" min="0" value="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                </div>
+              </div>
+
+              <!-- Auto-calculated total (readonly display) -->
+              <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.8rem;padding:.5rem .7rem;background:#fff;border-radius:6px;border:1px solid var(--gray-200)">
+                <span style="font-size:.82rem;color:var(--gray-500)">Total / 总金额:</span>
+                <span id="invCalcTotal" style="font-size:1.15rem;font-weight:800;color:var(--green)">$0.00</span>
+                <span style="font-size:.72rem;color:var(--gray-400);margin-left:auto">(auto-calculated / 自动计算)</span>
+                <input type="hidden" name="total_amount" id="invTotalAmount">
+              </div>
+
+              <!-- 4. Confirmation checkbox -->
+              <div style="margin-bottom:.3rem">
+                <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--gray-700)">
+                  <input type="checkbox" name="confirmed" required style="margin-top:2px;width:18px;height:18px;accent-color:#f59e0b">
+                  <span>④ I certify the above services were performed and amounts are correct. / 本人确认服务已完成，金额准确。<br>
+                  <span style="font-size:.72rem;color:var(--gray-400)">IL FWPA: Contractor responsible for all applicable taxes. 承包商自行负责税款。</span></span>
+                </label>
               </div>
             </div>
-            <div style="margin-top:.8rem">
-              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Description of Services / 服务描述 *</label>
-              <textarea name="service_description" required rows="3" placeholder="Describe the services performed during this period..." style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem;resize:vertical"></textarea>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-top:.8rem">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Hours Worked / 工时</label>
-                <input type="number" name="hours_worked" step="0.5" min="0" placeholder="0" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-              </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Hourly Rate / 时薪 ($)</label>
-                <input type="number" name="hourly_rate" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-              </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Or Flat Amount / 固定金额 ($)</label>
-                <input type="number" name="flat_amount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-              </div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:.8rem">
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Total Amount / 总金额 ($) *</label>
-                <input type="number" name="total_amount" step="0.01" min="0.01" required placeholder="0.00" id="invTotalAmount" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem;font-weight:700">
-              </div>
-              <div>
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Payment Due Date / 付款到期日</label>
-                <input type="date" name="payment_due_date" style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-              </div>
-            </div>
-            <div style="margin-top:.8rem">
-              <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">Notes / 备注</label>
-              <input type="text" name="notes" placeholder="Optional notes..." style="width:100%;padding:.45rem .6rem;border:1px solid var(--gray-300);border-radius:6px;font-size:.85rem">
-            </div>
-            <div style="display:flex;gap:.6rem;margin-top:1rem;justify-content:flex-end">
-              <button type="button" onclick="toggleInvoiceForm()" style="padding:.5rem 1.2rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-600);border-radius:8px;font-size:.85rem;cursor:pointer">取消</button>
-              <button type="submit" style="padding:.5rem 1.5rem;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">📤 Submit Invoice</button>
+
+            <div style="display:flex;gap:.6rem;margin-top:.8rem;justify-content:flex-end">
+              <button type="button" onclick="toggleInvoiceForm()" style="padding:.5rem 1.2rem;border:1px solid var(--gray-300);background:#fff;color:var(--gray-600);border-radius:8px;font-size:.85rem;cursor:pointer">取消 Cancel</button>
+              <button type="submit" style="padding:.5rem 1.5rem;border:none;background:var(--blue);color:#fff;border-radius:8px;font-size:.85rem;font-weight:700;cursor:pointer">Submit Invoice 提交</button>
             </div>
           </form>
         </div>
@@ -3880,30 +3913,89 @@ async function loadPayments() {
   }).join('');
 }
 
-// ─── Contractor Invoice / Payment Request ───
+// ─── Contractor Invoice / Payment Request (Pre-filled Form) ───
+let _invPrefill = null;  // cached prefill data
+let _invActiveJobs = [];
+
 function toggleInvoiceForm() {
   const wrap = document.getElementById('invoiceFormWrap');
-  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+  const showing = wrap.style.display === 'none';
+  wrap.style.display = showing ? 'block' : 'none';
+  if (showing) loadInvoicePrefill();
 }
 
-// Auto-calculate total from hours * rate
-document.addEventListener('input', e => {
-  if (!e.target.closest('#contractorInvoiceForm')) return;
+async function loadInvoicePrefill() {
+  const pf = await wApi('/invoice-prefill');
+  if (!pf) return;
+  _invPrefill = pf;
+  _invActiveJobs = pf.active_jobs || [];
+
+  // Fill readonly summary
+  document.getElementById('invPfName').textContent = pf.contractor_name || '—';
+  document.getElementById('invPfTerms').textContent = pf.payment_terms || 'Net 30';
+  document.getElementById('invPfDate').textContent = pf.invoice_date || '—';
+  document.getElementById('invPfDue').textContent = pf.payment_due_date || '—';
+  document.getElementById('invHiddenDueDate').value = pf.payment_due_date || '';
+
+  // Job selector
+  const selWrap = document.getElementById('invJobSelectWrap');
+  const sel = document.getElementById('invJobSelect');
+  if (_invActiveJobs.length > 1) {
+    sel.innerHTML = _invActiveJobs.map((j, i) =>
+      `<option value="${i}">${esc(j.title)}${j.company_name ? ' — ' + esc(j.company_name) : ''} ${j.hourly_rate ? '($' + j.hourly_rate + '/hr)' : ''}</option>`
+    ).join('');
+    selWrap.style.display = 'block';
+  } else {
+    selWrap.style.display = 'none';
+  }
+  // Set first job
+  applyJobPrefill(_invActiveJobs[0] || null);
+}
+
+function applyJobPrefill(job) {
+  document.getElementById('invPfJob').textContent = job ? (job.title + (job.company_name ? ' — ' + job.company_name : '')) : 'N/A';
+  document.getElementById('invPfType').textContent = job ? (job.title || 'Service') : '—';
+  const rate = job?.hourly_rate;
+  document.getElementById('invPfRate').textContent = rate ? `$${parseFloat(rate).toFixed(2)}/hr` : (job?.pay_display || '—');
+  document.getElementById('invHiddenRate').value = rate || 0;
+  document.getElementById('invHiddenJobId').value = job?.job_id || 0;
+  document.getElementById('invHiddenJobTitle').value = job?.title || '';
+  document.getElementById('invHiddenServiceType').value = job?.title || '';
+  recalcInvoiceTotal();
+}
+
+function onInvJobChange() {
+  const idx = parseInt(document.getElementById('invJobSelect').value) || 0;
+  applyJobPrefill(_invActiveJobs[idx] || null);
+}
+
+// Auto-calculate total = hours × rate + expenses
+function recalcInvoiceTotal() {
   const form = document.getElementById('contractorInvoiceForm');
   if (!form) return;
   const h = parseFloat(form.hours_worked?.value) || 0;
-  const r = parseFloat(form.hourly_rate?.value) || 0;
-  const f = parseFloat(form.flat_amount?.value) || 0;
-  const calc = h * r + f;
-  if (calc > 0) document.getElementById('invTotalAmount').value = calc.toFixed(2);
+  const r = parseFloat(document.getElementById('invHiddenRate').value) || 0;
+  const exp = parseFloat(form.expenses?.value) || 0;
+  const total = h * r + exp;
+  document.getElementById('invCalcTotal').textContent = '$' + total.toFixed(2);
+  document.getElementById('invTotalAmount').value = total.toFixed(2);
+}
+document.addEventListener('input', e => {
+  if (!e.target.closest('#contractorInvoiceForm')) return;
+  recalcInvoiceTotal();
 });
 
 async function submitContractorInvoice(e) {
   e.preventDefault();
   const form = e.target;
   const body = {};
-  new FormData(form).forEach((v, k) => { body[k] = ['hours_worked','hourly_rate','flat_amount','total_amount'].includes(k) ? parseFloat(v) || 0 : v; });
-  if (!body.total_amount) { alert('请填写总金额 / Total amount required'); return; }
+  new FormData(form).forEach((v, k) => {
+    if (k === 'confirmed') { body[k] = true; return; }
+    body[k] = ['hours_worked','hourly_rate','flat_amount','total_amount','expenses','job_id'].includes(k) ? parseFloat(v) || 0 : v;
+  });
+  // Ensure confirmed is set (checkbox won't appear in FormData if unchecked — but required attr handles it)
+  if (!body.confirmed) { alert('请勾选确认框 / Please check the confirmation box'); return; }
+  if (!body.total_amount || body.total_amount <= 0) { alert('总金额必须大于0 / Total must be > 0. 请填写工时。'); return; }
   const r = await wApi('/contractor-invoices', { method: 'POST', body: JSON.stringify(body) });
   if (r && r.success) {
     form.reset();
@@ -3945,6 +4037,8 @@ async function loadContractorInvoices() {
       <div style="display:flex;flex-wrap:wrap;gap:.35rem .9rem;font-size:.78rem;color:var(--gray-500)">
         <span>📅 ${esc(inv.service_period_start||'')} ~ ${esc(inv.service_period_end||'')}</span>
         ${inv.hours_worked ? `<span>⏱ ${inv.hours_worked}h × $${(+inv.hourly_rate).toFixed(2)}</span>` : ''}
+        ${inv.expenses ? `<span>💰 Expenses: $${(+inv.expenses).toFixed(2)}</span>` : ''}
+        ${inv.job_title ? `<span>📋 ${esc(inv.job_title)}</span>` : ''}
         ${inv.payment_due_date ? `<span>💳 Due: ${esc(inv.payment_due_date)}</span>` : ''}
       </div>
       <div style="margin-top:.5rem;display:flex;justify-content:space-between;align-items:center">

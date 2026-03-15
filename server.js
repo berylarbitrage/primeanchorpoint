@@ -1652,7 +1652,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS contractor_invoices (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 // Add DocuSeal columns to contractor_invoices
-['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_signed_at DATETIME','sent_by TEXT DEFAULT \'\''].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
+['ds_envelope_id TEXT DEFAULT \'\'','ds_status TEXT DEFAULT \'\'','ds_signed_at DATETIME','sent_by TEXT DEFAULT \'\'',
+ 'expenses REAL DEFAULT 0','job_id INTEGER DEFAULT 0','job_title TEXT DEFAULT \'\'','service_type TEXT DEFAULT \'\'','confirmed INTEGER DEFAULT 0'
+].forEach(col => { try { db.exec(`ALTER TABLE contractor_invoices ADD COLUMN ${col}`); } catch {} });
 
 // ─── Backup System ───
 const BACKUP_DIRS = (process.env.BACKUP_DIRS || './data/backups/copy1,./data/backups/copy2,./data/backups/copy3')
@@ -7029,13 +7031,28 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
     const workerEmail = w.email || `worker-${w.id}@placeholder.local`;
     const workerName = w.name || w.username || `Worker #${w.id}`;
     const todayDate = new Date().toISOString().slice(0, 10);
-    // Create DocuSeal submission — single signer (worker fills amount + signs)
+    const dueDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+
+    // Get active job info for pre-filling
+    const empId = w.employee_id;
+    let jobTitle = '', rateDesc = '';
+    if (empId) {
+      const ej = db.prepare(`SELECT ej.emp_hourly_rate, j.title FROM employee_jobs ej JOIN jobs j ON ej.job_id=j.id WHERE ej.employee_id=? AND ej.status='active' LIMIT 1`).get(empId);
+      if (ej) { jobTitle = ej.title || ''; rateDesc = ej.emp_hourly_rate ? `$${ej.emp_hourly_rate}/hour` : ''; }
+    }
+
+    // Create DocuSeal submission — pre-fill everything, worker only fills hours + expenses + signature
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
       submitters: [
         { role: 'First Party', name: workerName, email: workerEmail, fields: [
-          { name: 'invoice_date', default_value: todayDate, readonly: false }
+          { name: 'invoice_date', default_value: todayDate, readonly: true },
+          { name: 'contractor_name', default_value: workerName, readonly: true },
+          { name: 'service_description', default_value: jobTitle || 'Contractor Service', readonly: true },
+          { name: 'rate_description', default_value: rateDesc, readonly: true },
+          { name: 'payment_terms', default_value: 'Net 30', readonly: true },
+          { name: 'payment_due_date', default_value: dueDate, readonly: true }
         ] }
       ]
     });
@@ -11130,14 +11147,82 @@ app.get('/api/worker/payments', requireWorker, (req, res) => {
 });
 
 // ─── Worker Contractor Invoices ───
+
+// Pre-fill endpoint: returns contractor info + active job data so the form only needs 3-5 fields
+app.get('/api/worker/invoice-prefill', requireWorker, (req, res) => {
+  const w = db.prepare('SELECT id, name, first_name, last_name, username, employment_type, entity_type FROM worker_accounts WHERE id=?').get(req.workerId);
+  if (!w) return res.status(404).json({ error: 'Worker not found' });
+  const contractorName = w.name || [w.first_name, w.last_name].filter(Boolean).join(' ') || w.username || '';
+
+  // Get active jobs with pay rates
+  let activeJobs = [];
+  const wa = db.prepare('SELECT linked_inquiry_id, employee_id FROM worker_accounts WHERE id=?').get(req.workerId);
+  const empId = req.workerEmployeeId;
+  const linkedInqId = wa?.linked_inquiry_id || null;
+
+  if (empId) {
+    const ejJobs = db.prepare(`
+      SELECT ej.job_id, ej.emp_hourly_rate, j.title, j.pay, j.pay_period, j.company_name, j.employment_type AS job_type
+      FROM employee_jobs ej JOIN jobs j ON ej.job_id = j.id
+      WHERE ej.employee_id = ? AND ej.status = 'active'
+      ORDER BY ej.assigned_at DESC
+    `).all(empId);
+    activeJobs = ejJobs.map(j => ({
+      job_id: j.job_id, title: j.title, company_name: j.company_name || '',
+      hourly_rate: j.emp_hourly_rate || 0, pay_display: j.pay || '', pay_period: j.pay_period || ''
+    }));
+  }
+
+  // Also try assignments if no employee_jobs found
+  if (!activeJobs.length && linkedInqId) {
+    const aJobs = db.prepare(`
+      SELECT a.job_id, a.pay_rate, a.pay_type, j.title, j.pay, j.pay_period, j.company_name
+      FROM assignments a JOIN jobs j ON a.job_id = j.id
+      WHERE a.status != 'cancelled' AND a.inquiry_id = ?
+      ORDER BY a.assigned_at DESC
+    `).all(linkedInqId);
+    activeJobs = aJobs.map(j => ({
+      job_id: j.job_id, title: j.title, company_name: j.company_name || '',
+      hourly_rate: parseFloat(j.pay_rate) || 0, pay_display: j.pay || '', pay_period: j.pay_period || ''
+    }));
+  }
+
+  // Payment terms: IL FWPA default = Net 30
+  const paymentTerms = 'Net 30';
+  const today = new Date().toISOString().slice(0, 10);
+  const dueDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+
+  res.json({
+    contractor_name: contractorName,
+    worker_id: w.id,
+    employment_type: w.employment_type || '',
+    entity_type: w.entity_type || '',
+    active_jobs: activeJobs,
+    payment_terms: paymentTerms,
+    invoice_date: today,
+    payment_due_date: dueDate,
+    bill_to: 'Prime Anchorpoint LLC'
+  });
+});
+
 app.get('/api/worker/contractor-invoices', requireWorker, (req, res) => {
   const rows = db.prepare('SELECT * FROM contractor_invoices WHERE worker_account_id=? ORDER BY created_at DESC').all(req.workerId);
   res.json(rows);
 });
 
 app.post('/api/worker/contractor-invoices', requireWorker, (req, res) => {
-  const { service_description, service_period_start, service_period_end, hours_worked, hourly_rate, flat_amount, total_amount, payment_due_date, notes } = req.body;
-  if (!service_description || !total_amount) return res.status(400).json({ error: '请填写服务描述和总金额 / Service description and total amount required' });
+  const { service_description, service_period_start, service_period_end, hours_worked, hourly_rate,
+    flat_amount, total_amount, payment_due_date, notes, expenses, job_id, job_title, service_type, confirmed } = req.body;
+  if (!service_period_start || !service_period_end) return res.status(400).json({ error: '请填写服务期间 / Service period required' });
+  if (!confirmed) return res.status(400).json({ error: '请勾选确认框 / Please check the confirmation box' });
+  // Auto-generate service description from prefilled data if not provided
+  const descFinal = service_description || (job_title ? `${job_title} — ${service_type || 'Service'}` : 'Contractor Service');
+  const hrWorked = parseFloat(hours_worked) || 0;
+  const hrRate = parseFloat(hourly_rate) || 0;
+  const expAmt = parseFloat(expenses) || 0;
+  const flatAmt = parseFloat(flat_amount) || 0;
+  const calcTotal = parseFloat(total_amount) || (hrWorked * hrRate + flatAmt + expAmt);
+  if (!calcTotal || calcTotal <= 0) return res.status(400).json({ error: '总金额必须大于0 / Total amount must be > 0' });
   // Generate invoice number: INV-WORKERID-YYYYMMDD-SEQ
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const existing = db.prepare("SELECT COUNT(*) as cnt FROM contractor_invoices WHERE worker_account_id=? AND invoice_date LIKE ?").get(req.workerId, new Date().toISOString().slice(0, 10) + '%');
@@ -11146,12 +11231,13 @@ app.post('/api/worker/contractor-invoices', requireWorker, (req, res) => {
   const invoiceDate = new Date().toISOString().slice(0, 10);
   const r = db.prepare(`INSERT INTO contractor_invoices
     (worker_account_id, invoice_number, invoice_date, service_description, service_period_start, service_period_end,
-     hours_worked, hourly_rate, flat_amount, total_amount, payment_due_date, notes)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(req.workerId, invoiceNumber, invoiceDate, service_description,
+     hours_worked, hourly_rate, flat_amount, total_amount, payment_due_date, notes, expenses, job_id, job_title, service_type, confirmed)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(req.workerId, invoiceNumber, invoiceDate, descFinal,
       service_period_start || '', service_period_end || '',
-      hours_worked || 0, hourly_rate || 0, flat_amount || 0, total_amount,
-      payment_due_date || '', notes || '');
+      hrWorked, hrRate, flatAmt, calcTotal,
+      payment_due_date || '', notes || '', expAmt,
+      parseInt(job_id) || 0, job_title || '', service_type || '', confirmed ? 1 : 0);
   res.json({ success: true, id: r.lastInsertRowid, invoice_number: invoiceNumber });
 });
 
