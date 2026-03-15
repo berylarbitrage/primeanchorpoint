@@ -17287,6 +17287,7 @@ async function showWorkerHistory(id, name) {
       content.innerHTML = '<div style="color:var(--gray-400);padding:1rem 0;text-align:center">暂无变更记录</div>';
       return;
     }
+    let rowIdx = 0;
     content.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.83rem">
       <thead><tr style="border-bottom:2px solid var(--gray-200);color:var(--gray-500);font-size:.75rem">
         <th style="text-align:left;padding:.4rem .5rem;white-space:nowrap">时间</th>
@@ -17302,11 +17303,17 @@ async function showWorkerHistory(id, name) {
         const oldV = fmtWdVal(r.old_value);
         const newV = fmtWdVal(r.new_value);
         const note = r.note || '';
-        const noteRow = note ? `<tr><td colspan="5" style="padding:.1rem .5rem .5rem 2rem;color:var(--gray-500);font-size:.78rem;border-bottom:1px solid var(--gray-100)">💬 ${esc(note)}</td></tr>` : '';
-        return `<tr style="border-bottom:${note?'none':'1px solid var(--gray-100)'}">
+        const idx = rowIdx++;
+        const noteRow = note
+          ? `<tr id="wh-note-${idx}" style="display:none"><td colspan="5" style="padding:.1rem .5rem .5rem 2rem;color:var(--gray-500);font-size:.78rem;border-bottom:1px solid var(--gray-100)">💬 ${esc(note)}</td></tr>`
+          : '';
+        const clickable = note ? `cursor:pointer;user-select:none;` : '';
+        const expandIcon = note ? `<span id="wh-icon-${idx}" style="float:right;color:var(--gray-400);font-size:.7rem;margin-top:.15rem">▶</span>` : '';
+        const onclick = note ? `onclick="(function(){var n=document.getElementById('wh-note-${idx}');var ic=document.getElementById('wh-icon-${idx}');var open=n.style.display==='table-row';n.style.display=open?'none':'table-row';ic.textContent=open?'▶':'▼';this.style.borderBottom=open?'1px solid var(--gray-100)':'none';}).call(this)"` : '';
+        return `<tr style="border-bottom:1px solid var(--gray-100);${clickable}" ${onclick}>
           <td style="padding:.45rem .5rem;color:var(--gray-400);white-space:nowrap">${ts}</td>
           <td style="padding:.45rem .5rem;color:var(--sky);white-space:nowrap">${esc(r.changed_by||'—')}</td>
-          <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${rawField !== field ? esc(rawField) : ''}</span></td>
+          <td style="padding:.45rem .5rem;font-weight:600">${esc(field)}${expandIcon}<br><span style="font-weight:400;font-size:.72rem;color:var(--gray-400)">${rawField !== field ? esc(rawField) : ''}</span></td>
           <td style="padding:.45rem .5rem;color:#dc2626;white-space:nowrap">${esc(oldV)}</td>
           <td style="padding:.45rem .5rem;color:#16a34a;white-space:nowrap">${esc(newV)}</td>
         </tr>${noteRow}`;
