@@ -20765,7 +20765,8 @@ async function loadInvpList() {
     return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;background:#fef3c7;color:#92400e">草稿</span>';
   };
   wrap.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.88rem;white-space:nowrap">
       <thead><tr style="background:var(--gray-50);font-size:.8rem;color:var(--gray-500)">
         <th style="padding:8px 10px;text-align:left">Invoice 编号</th>
         <th style="padding:8px 10px;text-align:left">客户公司</th>
@@ -20795,7 +20796,7 @@ async function loadInvpList() {
           <td style="padding:8px 10px;color:var(--gray-500)">${r.invoice_date||''}</td>
           <td style="padding:8px 10px;text-align:center">${statusBadge(r.status)}</td>
           <td style="padding:8px 10px;text-align:center">
-            <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap">
+            <div style="display:flex;gap:.4rem;justify-content:center;flex-wrap:nowrap">
               <button class="btn btn-sm btn-outline" onclick="openInvpForEdit(${r.id})">查看/编辑</button>
               ${paidBadge}${receiptLink}${paidBtn}
               <button class="btn btn-sm btn-outline" onclick="openInvpHistoryModal(${r.id}, '${esc(r.invoice_number)}')">历史</button>
@@ -20805,7 +20806,7 @@ async function loadInvpList() {
         </tr>`;
         }).join('')}
       </tbody>
-    </table>`;
+    </table></div>`;
 }
 
 async function deleteInvpRecord(id) {
