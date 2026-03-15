@@ -803,30 +803,39 @@ function googleTranslateElementInit() {
                 <textarea name="service_description" id="invServiceDesc" required rows="2" placeholder="Describe services — e.g. Warehouse sorting 3 shifts, Loading 2 trips" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;resize:vertical;background:#fff"></textarea>
               </div>
 
-              <!-- 3. Agreed Rate (editable, pre-filled) + Billing mode -->
+              <!-- 3. Billing Mode Toggle -->
               <div style="margin-bottom:.8rem">
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">③ Agreed Rate 约定费率 <span style="font-weight:400;color:var(--gray-400)">(pre-filled, editable / 已预填，可修改)</span></label>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.4rem">③ Billing Mode 计费方式 *</label>
+                <div style="display:flex;gap:0;border-radius:8px;overflow:hidden;border:2px solid #f59e0b;width:fit-content">
+                  <button type="button" id="invModeHourly" onclick="setInvBillingMode('hourly')" style="padding:.4rem 1rem;font-size:.82rem;font-weight:700;border:none;cursor:pointer;background:#f59e0b;color:#fff;transition:all .15s">Hourly 按时</button>
+                  <button type="button" id="invModeProject" onclick="setInvBillingMode('project')" style="padding:.4rem 1rem;font-size:.82rem;font-weight:700;border:none;cursor:pointer;background:#fff;color:#92400e;transition:all .15s">Per-Project 按项目</button>
+                </div>
+              </div>
+
+              <!-- Hourly fields -->
+              <div id="invHourlyFields" style="margin-bottom:.8rem">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem">
                   <div>
-                    <label style="font-size:.72rem;color:var(--gray-500);display:block;margin-bottom:.2rem">Hourly Rate 时薪 ($)</label>
+                    <label style="font-size:.72rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">Agreed Rate 约定时薪 ($) <span style="font-weight:400;color:var(--gray-400)">(editable / 可修改)</span></label>
                     <input type="number" name="hourly_rate" id="invRateInput" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
                   </div>
                   <div>
-                    <label style="font-size:.72rem;color:var(--gray-500);display:block;margin-bottom:.2rem">Hours / Units 工时</label>
+                    <label style="font-size:.72rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">Hours / Units 工时</label>
                     <input type="number" name="hours_worked" step="0.5" min="0" placeholder="e.g. 40" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
                   </div>
                 </div>
               </div>
 
-              <!-- 4. Flat / Per-Project Fee (alternative to hourly) -->
-              <div style="margin-bottom:.8rem">
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">④ Or: Flat / Per-Project Fee 固定/项目费 ($) <span style="font-weight:400;color:var(--gray-400)">(if applicable / 适用时填写)</span></label>
-                <input type="number" name="flat_amount" step="0.01" min="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+              <!-- Per-Project fields -->
+              <div id="invProjectFields" style="display:none;margin-bottom:.8rem">
+                <label style="font-size:.72rem;font-weight:600;color:var(--gray-500);display:block;margin-bottom:.2rem">Project / Engagement Fee 项目费 ($)</label>
+                <input type="number" name="flat_amount" step="0.01" min="0" placeholder="e.g. 2000.00" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
+                <p style="font-size:.72rem;color:var(--gray-400);margin:.3rem 0 0">e.g. 2-week warehouse engagement, loading/sorting project, cleaning contract<br>例：两周仓库作业、装卸项目、清洁合同</p>
               </div>
 
-              <!-- 5. Expenses -->
+              <!-- 4. Expenses -->
               <div style="margin-bottom:.8rem">
-                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">⑤ Reimbursable Expenses 费用报销 ($)</label>
+                <label style="font-size:.78rem;font-weight:600;color:var(--gray-600);display:block;margin-bottom:.25rem">④ Reimbursable Expenses 费用报销 ($)</label>
                 <input type="number" name="expenses" step="0.01" min="0" value="0" placeholder="0.00" style="width:100%;padding:.45rem .6rem;border:2px solid #f59e0b;border-radius:6px;font-size:.85rem;background:#fff">
               </div>
 
@@ -838,11 +847,11 @@ function googleTranslateElementInit() {
                 <input type="hidden" name="total_amount" id="invTotalAmount">
               </div>
 
-              <!-- 6. Confirmation checkbox with manner-and-means language -->
+              <!-- 5. Confirmation checkbox with manner-and-means language -->
               <div style="margin-bottom:.3rem">
                 <label style="display:flex;align-items:flex-start;gap:.5rem;cursor:pointer;font-size:.82rem;color:var(--gray-700)">
                   <input type="checkbox" name="confirmed" required style="margin-top:2px;width:18px;height:18px;accent-color:#f59e0b">
-                  <span>⑥ I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.<br>
+                  <span>⑤ I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.<br>
                   本人确认服务已完成、金额准确。承包商保留自行决定服务执行方式与方法的权利。<br>
                   <span style="font-size:.72rem;color:var(--gray-400)">IL FWPA: Contractor responsible for all applicable taxes. 承包商自行负责税款。</span></span>
                 </label>
@@ -3989,7 +3998,36 @@ function onInvJobChange() {
   applyJobPrefill(_invActiveJobs[idx] || null);
 }
 
-// Auto-calculate total = hours × rate + flat + expenses
+let _invBillingMode = 'hourly';
+function setInvBillingMode(mode) {
+  _invBillingMode = mode;
+  const hourlyEl = document.getElementById('invHourlyFields');
+  const projectEl = document.getElementById('invProjectFields');
+  const btnH = document.getElementById('invModeHourly');
+  const btnP = document.getElementById('invModeProject');
+  if (mode === 'hourly') {
+    hourlyEl.style.display = '';
+    projectEl.style.display = 'none';
+    btnH.style.background = '#f59e0b'; btnH.style.color = '#fff';
+    btnP.style.background = '#fff'; btnP.style.color = '#92400e';
+    // Clear flat when switching to hourly
+    const flat = document.querySelector('#contractorInvoiceForm [name="flat_amount"]');
+    if (flat) flat.value = '';
+  } else {
+    hourlyEl.style.display = 'none';
+    projectEl.style.display = '';
+    btnP.style.background = '#f59e0b'; btnP.style.color = '#fff';
+    btnH.style.background = '#fff'; btnH.style.color = '#92400e';
+    // Clear hourly fields when switching to project
+    const rate = document.getElementById('invRateInput');
+    const hours = document.querySelector('#contractorInvoiceForm [name="hours_worked"]');
+    if (rate) rate.value = '';
+    if (hours) hours.value = '';
+  }
+  recalcInvoiceTotal();
+}
+
+// Auto-calculate total based on billing mode
 function recalcInvoiceTotal() {
   const form = document.getElementById('contractorInvoiceForm');
   if (!form) return;
