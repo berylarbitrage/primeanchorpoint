@@ -5250,11 +5250,10 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     updated_at=CURRENT_TIMESTAMP
   `).run(fields);
 
-  // Auto-update onboarding task status
-  db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
-    WHERE worker_account_id=? AND task_key='tax_residency' AND status IN ('pending','submitted')`)
+  // Mark as submitted (data saved) but NOT completed — admin must explicitly confirm completion
+  db.prepare(`UPDATE worker_onboarding SET status='submitted', updated_at=CURRENT_TIMESTAMP
+    WHERE worker_account_id=? AND task_key='tax_residency' AND status='pending'`)
     .run(workerId);
-  syncOnboardedStatus(workerId);
 
   // Auto-create onboarding tasks for required tax documents based on recommended form
   const taxTasks = getTaxDocTasks(calc.recommended_form, d);
