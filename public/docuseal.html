@@ -90,6 +90,16 @@
   .progress-log .ok{color:var(--green)}
   .progress-log .err{color:var(--red)}
   .progress-log .skip{color:var(--gray-400)}
+
+  /* ── Custom modal ── */
+  .modal-overlay{position:fixed;inset:0;background:rgba(15,27,50,.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:10000;opacity:0;transition:opacity .18s;pointer-events:none}
+  .modal-overlay.open{opacity:1;pointer-events:all}
+  .modal-box{background:#fff;border-radius:14px;padding:1.75rem 2rem;width:100%;max-width:420px;box-shadow:0 20px 60px rgba(0,0,0,.18);transform:translateY(8px) scale(.97);transition:transform .18s,opacity .18s;opacity:0}
+  .modal-overlay.open .modal-box{transform:translateY(0) scale(1);opacity:1}
+  .modal-title{font-size:1rem;font-weight:700;color:#1e293b;margin-bottom:1.1rem}
+  .modal-input{width:100%;border:1.5px solid var(--gray-200);border-radius:8px;padding:.6rem .85rem;font-size:.9rem;outline:none;color:#1e293b;transition:border .15s;font-family:inherit}
+  .modal-input:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(14,165,233,.12)}
+  .modal-actions{display:flex;gap:.65rem;justify-content:flex-end;margin-top:1.25rem}
 </style>
 </head>
 <body>
@@ -426,7 +436,7 @@ async function createAllTemplates() {
 
 // ── Rename template (via DocuSeal API + local DB) ──
 async function renameTemplate(dsId, currentName) {
-  const newName = prompt('请输入新的模板名称：', currentName);
+  const newName = await showPromptModal('重命名模板', currentName);
   if (!newName || newName.trim() === currentName) return;
   try {
     await api(`/api/admin/docuseal/templates/${dsId}/rename`, { method: 'PUT', body: JSON.stringify({ name: newName.trim() }) });
@@ -543,6 +553,50 @@ async function init() {
   await loadAllTemplates();
 }
 init();
+
+// ── Custom prompt modal ──
+function showPromptModal(title, defaultValue = '') {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('promptModal');
+    const input   = document.getElementById('promptInput');
+    const okBtn   = document.getElementById('promptOk');
+    const cancelBtn = document.getElementById('promptCancel');
+
+    document.getElementById('promptTitle').textContent = title;
+    input.value = defaultValue;
+    overlay.classList.add('open');
+
+    // focus + select all after transition
+    setTimeout(() => { input.focus(); input.select(); }, 180);
+
+    function finish(val) {
+      overlay.classList.remove('open');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKey);
+      resolve(val);
+    }
+    function onOk()    { finish(input.value); }
+    function onCancel(){ finish(null); }
+    function onKey(e)  { if (e.key === 'Enter') finish(input.value); else if (e.key === 'Escape') finish(null); }
+
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKey);
+  });
+}
 </script>
+
+<!-- Custom prompt modal -->
+<div class="modal-overlay" id="promptModal">
+  <div class="modal-box">
+    <div class="modal-title" id="promptTitle">重命名模板</div>
+    <input class="modal-input" id="promptInput" type="text" autocomplete="off" spellcheck="false">
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="promptCancel">取消</button>
+      <button class="btn btn-sky" id="promptOk">确认</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
