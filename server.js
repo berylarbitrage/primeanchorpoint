@@ -4278,6 +4278,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
   const getTaxResidency = db.prepare("SELECT tax_status, recommended_form, country_citizenship, country_tax_residence, treaty_country, claim_treaty_benefit, services_location FROM tax_residency_questionnaire WHERE worker_account_id=? ORDER BY id DESC LIMIT 1");
   const getTaxFilingDocCount = db.prepare("SELECT COUNT(*) as cnt FROM tax_filing_docs WHERE worker_account_id=? AND tax_year=? AND file_path!=''");
   const getPaymentTotal = db.prepare("SELECT COALESCE(SUM(amount),0) as total, COUNT(*) as cnt FROM worker_payments WHERE employee_id=?");
+  const getContractorInvCounts = db.prepare("SELECT COUNT(*) as total, SUM(CASE WHEN status='submitted' THEN 1 ELSE 0 END) as pending FROM contractor_invoices WHERE worker_account_id=?");
   const currentTaxYear = new Date().getFullYear() - 1; // filing for prior year
 
   const enriched = workers.map(w => {
@@ -4291,6 +4292,7 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
     const taxRes = getTaxResidency.get(w.id);
     const taxFilingDocCount = getTaxFilingDocCount.get(w.id, currentTaxYear);
     const payTotals = w.employee_id ? getPaymentTotal.get(w.employee_id) : null;
+    const cinvCounts = getContractorInvCounts.get(w.id);
 
     const complianceMap = {};
     docs.forEach(d => { complianceMap[d.doc_type] = d.status; });
@@ -4305,6 +4307,8 @@ app.get('/api/admin/worker-accounts', requireAdmin, requireRole('admin', 'staff'
       referral_bonus_earned: (qualCount?.cnt || 0) * refConfig.bonus_per_referral,
       contract_ds_status: contractInfo?.ds_status || '',
       contract_version_count: contractVerCount?.cnt || 0,
+      cinv_total: cinvCounts?.total || 0,
+      cinv_pending: cinvCounts?.pending || 0,
       recommended_form: taxRes?.recommended_form || '',
       tax_status: taxRes?.tax_status || '',
       tax_treaty_country: taxRes?.treaty_country || '',
