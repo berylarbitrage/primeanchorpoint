@@ -1545,7 +1545,8 @@ try {
       form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
       ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
       zelle_auth_template_id: 'zelle_auth', third_party_pay_template_id: 'third_party_pay', cash_receipt_template_id: 'cash_receipt',
-      contractor_invoice_template_id: 'contractor_invoice'
+      contractor_invoice_template_id: 'contractor_invoice',
+      invoice_approval_template_id: 'invoice_approval'
     };
     for (const [cfgKey, cat] of Object.entries(_catMap)) {
       const tid = _dsCfg[cfgKey];
@@ -1565,7 +1566,8 @@ try {
       form8233_template_id: 'form8233', i9_template_id: 'i9', w7_template_id: 'w7',
       ach_auth_template_id: 'ach_auth', wire_auth_template_id: 'wire_auth', check_instruction_template_id: 'check_instruction',
       zelle_auth_template_id: 'zelle_auth', third_party_pay_template_id: 'third_party_pay', cash_receipt_template_id: 'cash_receipt',
-      contractor_invoice_template_id: 'contractor_invoice'
+      contractor_invoice_template_id: 'contractor_invoice',
+      invoice_approval_template_id: 'invoice_approval'
     };
     for (const [cfgKey, docType] of Object.entries(_dtMap)) {
       const tid = _dsCfg2[cfgKey];
@@ -3408,6 +3410,145 @@ function generateContractorInvoiceHtmlTemplate() {
 </div>`;
 }
 
+// ── Invoice Approval Form (internal company use only) ──
+function generateInvoiceApprovalHtmlTemplate() {
+  const fs = 'border:1px solid #999;border-radius:3px;padding:2px 4px;background:#fff;min-height:20px;display:inline-block;';
+  const tf = `${fs}width:100%;min-height:22px;`;
+  const companyName = process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:10pt;max-width:720px;margin:0 auto;padding:20px;color:#111;line-height:1.6">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:16px">
+  <div style="font-size:1.4rem;font-weight:900;letter-spacing:2px">INVOICE APPROVAL FORM</div>
+  <div style="font-size:9pt;color:#555;margin-top:4px">Internal Use Only — 公司内部审批专用 (${companyName})</div>
+</div>
+<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:8px 12px;font-size:8pt;color:#856404;margin-bottom:12px">
+  <strong>CONFIDENTIAL / 机密:</strong> This form is for internal company approval only. Do not share with the contractor.<br>
+  本表仅供公司内部审批使用，请勿分享给承包商。
+</div>
+
+<!-- Linked Invoice Info -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">1. INVOICE REFERENCE / 关联发票信息</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Linked Invoice # / 关联发票编号:</div>
+      <text-field name="linked_invoice_number" role="First Party" required="true" style="${fs}width:220px" placeholder="INV-2026-001"></text-field>
+    </td>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Invoice Date / 发票日期:</div>
+      <text-field name="linked_invoice_date" role="First Party" style="${fs}width:160px" placeholder="MM/DD/YYYY"></text-field>
+    </td>
+  </tr>
+</table>
+
+<!-- Contractor Info -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">2. CONTRACTOR / 承包商</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Contractor Name / 承包商姓名:</div>
+      <text-field name="contractor_name" role="First Party" required="true" style="${tf}"></text-field>
+    </td>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Service Period / 服务期间:</div>
+      <text-field name="service_period" role="First Party" style="${tf}" placeholder="May 1 – May 7, 2026"></text-field>
+    </td>
+  </tr>
+</table>
+
+<!-- Requested vs Approved Amount -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">3. AMOUNT REVIEW / 金额审核</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Requested Amount (per invoice) / 发票请求金额:</div>
+      <div>$ <text-field name="requested_amount" role="First Party" required="true" style="${fs}width:140px" placeholder="0.00"></text-field></div>
+    </td>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Service Description Summary / 服务内容摘要:</div>
+      <text-field name="service_description" role="First Party" style="${tf}" placeholder="Brief summary of services"></text-field>
+    </td>
+  </tr>
+</table>
+
+<!-- Approval Decision -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">4. APPROVAL DECISION / 审批决定</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr>
+    <td style="padding:8px;border:1px solid #ccc;width:40%">
+      <div style="font-weight:700;margin-bottom:4px">Decision / 审批结果:</div>
+      <text-field name="approval_decision" role="First Party" required="true" style="${tf}" placeholder="Approved / Partially Approved / Rejected"></text-field>
+      <div style="font-size:7pt;color:#666;margin-top:2px">Options: Approved（批准）/ Partially Approved（部分批准）/ Rejected（拒绝）</div>
+    </td>
+    <td style="padding:8px;border:1px solid #ccc;width:30%">
+      <div style="font-weight:700;margin-bottom:4px">Approved Amount / 批准金额:</div>
+      <div style="font-size:12pt;font-weight:700">$ <text-field name="approved_amount" role="First Party" required="true" style="${fs}width:130px;font-size:12pt;font-weight:700" placeholder="0.00"></text-field></div>
+    </td>
+    <td style="padding:8px;border:1px solid #ccc;width:30%">
+      <div style="font-weight:700;margin-bottom:4px">Adjustment Reason / 调整原因:</div>
+      <text-field name="adjustment_reason" role="First Party" style="${tf}" placeholder="If different from requested"></text-field>
+    </td>
+  </tr>
+</table>
+
+<!-- Payment Schedule -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">5. PAYMENT SCHEDULE / 付款安排</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Payment Date or Expected Pay Date / 付款日期:</div>
+      <text-field name="payment_date" role="First Party" required="true" style="${fs}width:160px" placeholder="MM/DD/YYYY"></text-field>
+    </td>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Payment Method / 付款方式:</div>
+      <text-field name="payment_method" role="First Party" style="${fs}width:200px" placeholder="ACH / Check / Zelle / Wire"></text-field>
+    </td>
+  </tr>
+</table>
+<p style="font-size:8pt;color:#555">Per Illinois FWPA: if the contract does not specify a payment date, payment is generally due within 30 days of service completion.<br>
+依据 Illinois FWPA：若合同未注明付款日期，通常应在服务完成后 30 天内付款。</p>
+
+<!-- Reviewer Info -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">6. REVIEWER / 审批人信息</div>
+<table style="width:100%;border-collapse:collapse;font-size:9pt;margin:8px 0">
+  <tr>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Reviewer Name / 审批人姓名:</div>
+      <text-field name="reviewer_name" role="First Party" required="true" style="${tf}"></text-field>
+    </td>
+    <td style="padding:6px;border:1px solid #ccc;width:50%">
+      <div style="font-weight:700;margin-bottom:4px">Title / 职位:</div>
+      <text-field name="reviewer_title" role="First Party" style="${tf}" placeholder="e.g. Operations Manager"></text-field>
+    </td>
+  </tr>
+</table>
+
+<!-- Internal Notes -->
+<div style="font-weight:700;margin:12px 0 6px;font-size:9.5pt">7. INTERNAL NOTES / 内部备注</div>
+<text-field name="internal_notes" role="First Party" style="${tf};min-height:60px" placeholder="Any internal notes regarding this approval (not shared with contractor)..."></text-field>
+
+<!-- Company Signature -->
+<div style="background:#f5f5f5;border:1px solid #999;padding:10px;margin-top:16px;font-size:9pt">
+  <div style="font-weight:700;margin-bottom:4px">COMPANY APPROVAL SIGNATURE / 公司审批签名</div>
+  <p style="font-size:8pt;margin-bottom:8px">I authorize the above payment on behalf of ${companyName}.<br>本人代表 ${companyName} 授权上述付款。</p>
+  <table style="width:100%"><tr>
+    <td style="width:60%;padding-right:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Signature / 签名:</div>
+      <signature-field name="approval_signature" role="First Party" style="width:100%;height:60px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></signature-field>
+    </td>
+    <td style="width:40%;padding-left:12px;vertical-align:top">
+      <div style="font-size:8pt;font-weight:700;margin-bottom:4px">Approval Date / 审批日期:</div>
+      <date-field name="approval_date" role="First Party" style="width:100%;height:28px;display:block;border:1px solid #999;border-radius:3px;background:#fff"></date-field>
+    </td>
+  </tr></table>
+</div>
+
+<div style="text-align:center;font-size:7pt;color:#999;margin-top:12px;border-top:1px solid #ddd;padding-top:6px">
+  INTERNAL DOCUMENT — ${companyName} — This approval form is a company record and should not be shared with the contractor.<br>
+  内部文件 — 本审批表为公司内部记录，不应分享给承包商。Invoice 仅证明承包商提出了付款请求，本审批表证明公司同意付款。
+</div>
+</div>`;
+}
+
 // ── Map of all auto-creatable templates ──
 const DOCUSEAL_AUTO_TEMPLATES = {
   company_contract: { name: 'Company Contract / 公司合同', configKey: 'company_contract_template_id', category: 'company_contract', generator: generateCompanyContractHtmlTemplate },
@@ -3420,6 +3561,7 @@ const DOCUSEAL_AUTO_TEMPLATES = {
   form8233: { name: 'Form 8233 Exemption From Withholding', configKey: 'form8233_template_id', category: 'form8233', generator: generateForm8233HtmlTemplate },
   i9: { name: 'I-9 Employment Eligibility Verification', configKey: 'i9_template_id', category: 'i9', generator: generateI9HtmlTemplate },
   contractor_invoice: { name: '1099 Contractor Invoice / 承包商发票', configKey: 'contractor_invoice_template_id', category: 'contractor_invoice', generator: generateContractorInvoiceHtmlTemplate },
+  invoice_approval: { name: 'Invoice Approval Form / 发票审批表 (内部)', configKey: 'invoice_approval_template_id', category: 'invoice_approval', generator: generateInvoiceApprovalHtmlTemplate },
 };
 
 function getDsealConfigTemplateId(type) {
@@ -3445,6 +3587,7 @@ function getDsealConfigTemplateId(type) {
       third_party_pay: cfg.third_party_pay_template_id,
       cash_receipt: cfg.cash_receipt_template_id,
       contractor_invoice: cfg.contractor_invoice_template_id,
+      invoice_approval: cfg.invoice_approval_template_id,
     };
     return map[type] || '';
   } catch { return ''; }
@@ -13777,7 +13920,7 @@ app.get('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id'];
+    'contractor_invoice_template_id','invoice_approval_template_id'];
   const out = { connected: dsealEnabled(), url: (dsealGetCreds().baseUrl).replace(/api\./, '').replace(/\/+$/, '') };
   allKeys.forEach(k => { out[k] = cfg[k] || null; });
   out.company_contract_template_id = out.company_contract_template_id || cfg.contract_template_id || null;
@@ -13809,7 +13952,7 @@ app.post('/api/admin/docuseal/config', requireAdmin, (req, res) => {
     'i9_template_id','w7_template_id',
     'ach_auth_template_id','wire_auth_template_id','check_instruction_template_id',
     'zelle_auth_template_id','third_party_pay_template_id','cash_receipt_template_id',
-    'contractor_invoice_template_id',
+    'contractor_invoice_template_id','invoice_approval_template_id',
     'contract_template_id' /* legacy */];
   _configKeys.forEach(k => { if (req.body[k] !== undefined) cfg[k] = req.body[k] || null; });
   db.prepare("UPDATE integration_settings SET config=?, updated_at=CURRENT_TIMESTAMP WHERE provider='docuseal'")
