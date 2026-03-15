@@ -2299,6 +2299,12 @@ tr:hover td{background:var(--sky-light)}
           <select id="ds-sel-contractor-inv" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('contractor_invoice', this.value)"><option value="">— 未设置 —</option></select>
           <div id="ds-cfg-contractor-inv-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
         </div>
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:1rem">
+          <div style="font-size:.88rem;font-weight:700;margin-bottom:.25rem">✅ 发票审批表 (内部)</div>
+          <div style="font-size:.75rem;color:#94a3b8;margin-bottom:.4rem">Invoice Approval Form — 公司内部审批，不给承包商</div>
+          <select id="ds-sel-invoice-approval" style="width:100%;border:1px solid #e2e8f0;border-radius:6px;padding:.4rem .6rem;font-size:.85rem;outline:none" onchange="dsSetTemplate('invoice_approval', this.value)"><option value="">— 未设置 —</option></select>
+          <div id="ds-cfg-invoice-approval-info" style="font-size:.78rem;color:#64748b;margin-top:.2rem"></div>
+        </div>
       </div>
 
       <p style="font-size:.8rem;color:#94a3b8;margin-top:.75rem">从下拉菜单中选择已上传的模板，对应场景发送时将自动使用。</p>
@@ -2340,7 +2346,8 @@ tr:hover td{background:var(--sky-light)}
               <option value="zelle_auth">Zelle</option>
               <option value="third_party_pay">PayPal / Venmo / CashApp</option>
               <option value="cash_receipt">现金签收</option>
-              <option value="contractor_invoice">员工 Invoice</option>
+              <option value="contractor_invoice">承包商发票 / Contractor Invoice</option>
+              <option value="invoice_approval">发票审批表 / Invoice Approval (内部)</option>
             </optgroup>
           </select>
         </div>
@@ -19860,6 +19867,7 @@ const _DS_SELECTORS = [
   { key: 'cash_receipt_template_id',     selId: 'ds-sel-cash',               infoId: 'ds-cfg-cash-info',              label: '现金签收',     doc_type: 'cash_receipt' },
   // 员工 Invoice
   { key: 'contractor_invoice_template_id', selId: 'ds-sel-contractor-inv',   infoId: 'ds-cfg-contractor-inv-info',    label: '员工Invoice',  doc_type: 'contractor_invoice' },
+  { key: 'invoice_approval_template_id',  selId: 'ds-sel-invoice-approval', infoId: 'ds-cfg-invoice-approval-info',  label: '发票审批',     doc_type: 'invoice_approval' },
 ];
 
 function _dsRefreshSelects() {
@@ -19904,6 +19912,7 @@ function _dsRenderMyTemplates() {
     third_party_pay_template_id:   { bg:'#ecfdf5', color:'#065f46', label:'第三方' },
     cash_receipt_template_id:      { bg:'#fff1f2', color:'#9f1239', label:'现金' },
     contractor_invoice_template_id: { bg:'#fef3c7', color:'#92400e', label:'员工Invoice' },
+    invoice_approval_template_id:  { bg:'#d1fae5', color:'#065f46', label:'发票审批' },
   };
   const rows = _dsMyTemplates.map(t => {
     const badges = Object.entries(_BADGE_STYLES).map(([k, s]) =>
@@ -19914,7 +19923,7 @@ function _dsRenderMyTemplates() {
     return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.7rem .5rem;border-bottom:1px solid #f1f5f9">
       <div>
         <span style="font-weight:600;font-size:.88rem">${_dsEsc(t.name)}</span>${badges}
-        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${({company_contract:'合同',worker_1099:'合同',worker_w2:'合同',w4:'税务表格',w9:'税务表格',w8ben:'税务表格',w8bene:'税务表格',form8233:'税务表格',i9:'税务表格',w7:'税务表格',ach_auth:'付款授权',wire_auth:'付款授权',check_instruction:'付款授权',zelle_auth:'付款授权',third_party_pay:'付款授权',cash_receipt:'付款授权',contractor_invoice:'员工Invoice',contract:'合同',tax:'税务表格',payment:'付款授权',invoice:'员工Invoice'})[t.category]||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
+        <div style="font-size:.78rem;color:#94a3b8;margin-top:.15rem">DocuSeal #${t.docuseal_template_id} · ${({company_contract:'合同',worker_1099:'合同',worker_w2:'合同',w4:'税务表格',w9:'税务表格',w8ben:'税务表格',w8bene:'税务表格',form8233:'税务表格',i9:'税务表格',w7:'税务表格',ach_auth:'付款授权',wire_auth:'付款授权',check_instruction:'付款授权',zelle_auth:'付款授权',third_party_pay:'付款授权',cash_receipt:'付款授权',contractor_invoice:'员工Invoice',invoice_approval:'发票审批(内部)',contract:'合同',tax:'税务表格',payment:'付款授权',invoice:'员工Invoice'})[t.category]||t.category||'未分类'} · 上传于 ${t.created_at ? t.created_at.slice(0,10) : '—'}</div>
       </div>
       <div style="display:flex;gap:.4rem;flex-shrink:0">
         <button style="display:inline-flex;align-items:center;gap:.4rem;padding:.22rem .6rem;border-radius:7px;font-size:.75rem;font-weight:600;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#334155" onclick="dsRenameMyTemplate(${t.id}, '${_dsEsc(t.name).replace(/'/g,"\\'")}')">改名</button>
