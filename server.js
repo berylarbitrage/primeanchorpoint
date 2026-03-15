@@ -3310,27 +3310,29 @@ function generateContractorInvoiceHtmlTemplate() {
     </td>
   </tr>
 </table>
-<div style="font-weight:700;margin:4px 0 2px">JOB / SERVICE 工作/服务 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled / 系统自动带出)</span></div>
-<text-field name="service_description" role="First Party" required="true" readonly="true" style="${ro}width:100%;min-height:30px" placeholder="(pre-filled from job assignment)"></text-field>
-<div style="font-weight:700;margin:4px 0 2px">RATE 费率 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled / 系统自动带出)</span></div>
-<text-field name="rate_description" role="First Party" required="true" readonly="true" style="${ro}width:100%;min-height:22px" placeholder="$XX/hour (pre-filled)"></text-field>
+<div style="font-weight:700;margin:4px 0 2px">SERVICE DESCRIPTION 服务明细 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled, editable / 已预填，可修改补充)</span></div>
+<text-field name="service_description" role="First Party" required="true" style="${ed}width:100%;min-height:48px" placeholder="Describe services performed — e.g. Warehouse sorting, Loading/unloading"></text-field>
+<div style="font-weight:700;margin:4px 0 2px">AGREED RATE 约定费率 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled, editable / 已预填，可修改)</span></div>
+<text-field name="rate_description" role="First Party" required="true" style="${ed}width:100%;min-height:22px" placeholder="$25/hour, or $800 flat per project"></text-field>
 <table style="width:100%;border-collapse:collapse;font-size:8pt;margin:6px 0">
-  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>Hours / Units 工时 *</b></td><td style="${hi}text-align:right"><text-field name="hours_worked" role="First Party" required="true" style="${ed}width:100px" placeholder="e.g. 40"></text-field></td></tr>
-  <tr><td style="${c}width:65%">Subtotal 小计 <span style="font-size:6.5pt;color:#999">(auto)</span></td><td style="${c}text-align:right">$ <text-field name="subtotal_amount" role="First Party" readonly="true" style="${ro}width:100px" placeholder="auto"></text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>Hours / Units 工时</b> <span style="font-size:6.5pt;color:#999">(if hourly / 按时计费填写)</span></td><td style="${hi}text-align:right"><text-field name="hours_worked" role="First Party" style="${ed}width:100px" placeholder="e.g. 40"></text-field></td></tr>
+  <tr style="background:#fffbeb"><td style="${hi}width:65%"><b>Or: Flat / Per-Project Fee 固定/项目费</b> <span style="font-size:6.5pt;color:#999">(if applicable)</span></td><td style="${hi}text-align:right">$ <text-field name="flat_amount" role="First Party" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
+  <tr><td style="${c}width:65%">Subtotal 小计 <span style="font-size:6.5pt;color:#999">(hours×rate + flat)</span></td><td style="${c}text-align:right">$ <text-field name="subtotal_amount" role="First Party" style="${ro}width:100px" placeholder="auto"></text-field></td></tr>
   <tr style="background:#fffbeb"><td style="${hi}">Reimbursable Expenses 可报销费用</td><td style="${hi}text-align:right">$ <text-field name="reimbursable_amount" role="First Party" style="${ed}width:100px" placeholder="0.00"></text-field></td></tr>
-  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">TOTAL DUE 应付总额 <span style="font-weight:400;font-size:6.5pt;color:#999">(auto)</span></td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" readonly="true" style="${ro}width:100px;font-weight:700;font-size:10pt" placeholder="auto"></text-field></td></tr>
+  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">TOTAL DUE 应付总额</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <text-field name="total_amount" role="First Party" required="true" style="${ed}width:100px;font-weight:700;font-size:10pt" placeholder="0.00"></text-field></td></tr>
 </table>
 <div style="font-weight:700;margin:4px 0 2px">PAYMENT TERMS 付款条件 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled)</span></div>
 <text-field name="payment_terms" role="First Party" readonly="true" style="${ro}width:200px" placeholder="Net 30"></text-field>
 <span style="font-size:7pt;color:#999;margin-left:6px">Due Date 到期日: </span><text-field name="payment_due_date" role="First Party" readonly="true" style="${ro}width:100px"></text-field>
 <div style="background:#fffbeb;border:2px solid #f59e0b;padding:6px;font-size:8pt;margin-top:6px;border-radius:4px">
-  <b>CONTRACTOR CERTIFICATION 承包商声明</b> — I certify the above services were performed and amounts are correct. 本人确认服务已完成，金额准确。
+  <b>CONTRACTOR CERTIFICATION 承包商声明</b>
+  <div style="font-size:7.5pt;margin:3px 0">I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.<br>本人确认服务已完成、金额准确。承包商保留自行决定服务执行方式与方法的权利。</div>
   <table style="width:100%;margin-top:4px"><tr>
     <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Contractor Signature 承包商签名 *:</div><signature-field name="contractor_signature" role="First Party" style="width:100%;height:44px;display:block;border:2px solid #f59e0b;border-radius:2px;background:#fff"></signature-field></td>
     <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Date 日期:</div><date-field name="signature_date" role="First Party" style="width:100%;height:22px;display:block;border:1px solid #999;border-radius:2px;background:#fff"></date-field></td>
   </tr></table>
 </div>
-<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">Independent contractor arrangement — contractor responsible for all applicable taxes. 独立承包商协议，承包商自行负责税款。<br>IL FWPA: 合同未注明付款日→完工后30天内付款 / Payment due within 30 days of completion if contract is silent.</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">Independent contractor arrangement — contractor responsible for all applicable taxes and retains control over manner and means of service delivery. 独立承包商协议，承包商自行负责税款并保留对服务交付方式的控制权。<br>IL FWPA: 合同未注明付款日→完工后30天内付款 / Payment due within 30 days of completion if contract is silent.</div>
 </div>`;
 }
 
@@ -7045,7 +7047,7 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
       if (ej) { jobTitle = ej.title || ''; rateDesc = ej.emp_hourly_rate ? `$${ej.emp_hourly_rate}/hour` : ''; }
     }
 
-    // Create DocuSeal submission — pre-fill everything, worker only fills hours + expenses + signature
+    // Create DocuSeal submission — pre-fill suggestions, contractor can edit rate + description
     const subRes = await dsealApiCall('POST', '/api/submissions', {
       template_id: parseInt(templateId),
       send_email: true,
@@ -7053,8 +7055,8 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
         { role: 'First Party', name: workerName, email: workerEmail, fields: [
           { name: 'invoice_date', default_value: todayDate, readonly: true },
           { name: 'contractor_name', default_value: workerName, readonly: true },
-          { name: 'service_description', default_value: jobTitle || 'Contractor Service', readonly: true },
-          { name: 'rate_description', default_value: rateDesc, readonly: true },
+          { name: 'service_description', default_value: jobTitle || '', readonly: false },
+          { name: 'rate_description', default_value: rateDesc, readonly: false },
           { name: 'payment_terms', default_value: 'Net 30', readonly: true },
           { name: 'payment_due_date', default_value: dueDate, readonly: true }
         ] }
