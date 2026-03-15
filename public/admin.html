@@ -13310,6 +13310,7 @@ async function loadWorkerAccounts() {
       return '<span style="color:var(--gray-300)">— 待确认 —</span>';
     })()}</td>
     <td style="font-size:.78rem;white-space:nowrap">${(()=>{
+      if (!w.employee_id) return '<span style="color:var(--gray-400)">— 不确定 —</span>';
       const et = w.employment_type;
       if (et === 'w2') return '<span style="padding:2px 6px;border-radius:6px;background:#eff6ff;color:#1d4ed8;font-weight:600">W-2</span>';
       if (et === '1099') return '<span style="padding:2px 6px;border-radius:6px;background:#fffbeb;color:#9a3412;font-weight:600">1099</span>';
