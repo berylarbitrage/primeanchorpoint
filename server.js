@@ -4346,8 +4346,8 @@ const ONBOARDING_STEPS = [
   { key: 'interview',       title: '完成面试',             desc: '预约并参加 HR 面试',                              required: true  },
   { key: 'contract',        title: '签署合同 / Offer',     desc: '电子签署雇佣协议 / Contractor Agreement',         required: true  },
   { key: 'tax_residency',   title: '税务居民身份判定',      desc: '1099 承包商税务居民预判 / 表格分流（Resident Test）', required: false },
-  { key: 'background_check',title: '背景调查 (Checkr)',    desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台',    required: false },
   { key: 'work_permit',     title: '工作许可验证',          desc: '工作许可 / 签证授权状态核实（如适用）',            required: false },
+  { key: 'background_check',title: '背景调查 (Checkr)',    desc: 'SSN Trace + 犯罪记录调查 · 通过 Checkr 平台',    required: false },
   { key: 'persona_verify',  title: '身份验证 (Stripe Identity)',   desc: '驾照/ID + 自拍核验 · 由 HR 发起 · 通过 Stripe Identity', required: true },
   { key: 'i9',              title: 'I-9 就业资格',         desc: 'I-9 Section 1 & 2 就业资格验证',                  required: true  },
   { key: 'ead_upload',      title: 'EAD / 工卡上传',       desc: 'EAD 工卡及证件核验（如适用）',                    required: false },
@@ -5274,11 +5274,10 @@ app.post('/api/admin/worker-accounts/:id/tax-residency', requireAdmin, (req, res
     updated_at=CURRENT_TIMESTAMP
   `).run(fields);
 
-  // Auto-update onboarding task status
-  db.prepare(`UPDATE worker_onboarding SET status='completed', completed_at=CURRENT_TIMESTAMP, updated_at=CURRENT_TIMESTAMP
-    WHERE worker_account_id=? AND task_key='tax_residency' AND status IN ('pending','submitted')`)
+  // Mark as submitted (data saved) but NOT completed — admin must explicitly confirm completion
+  db.prepare(`UPDATE worker_onboarding SET status='submitted', updated_at=CURRENT_TIMESTAMP
+    WHERE worker_account_id=? AND task_key='tax_residency' AND status='pending'`)
     .run(workerId);
-  syncOnboardedStatus(workerId);
 
   // Auto-create onboarding tasks for required tax documents based on recommended form
   const taxTasks = getTaxDocTasks(calc.recommended_form, d);
