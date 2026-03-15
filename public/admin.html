@@ -13337,15 +13337,17 @@ async function openOnboardingModalById(workerId) {
 let _onboardingInterviewInfo = null;
 
 async function refreshOnboardingModal() {
-  const [tasks, rows, intvInfo] = await Promise.all([
+  const [tasks, rows, intvInfo, taxResData] = await Promise.all([
     api(`/admin/worker-accounts/${_onboardingWorkerId}/onboarding`),
     api('/admin/worker-accounts'),
-    api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`)
+    api(`/admin/worker-accounts/${_onboardingWorkerId}/interview-info`),
+    api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`)
   ]);
   const w = rows && rows.find(r => r.id === _onboardingWorkerId);
   _onboardingDispatchReady = !!(w && w.dispatch_ready);
   _onboardingWorkerData = w || null;
   _onboardingInterviewInfo = intvInfo || null;
+  const recommendedForm = taxResData && taxResData.recommended_form;
 
   const hasTasks = Array.isArray(tasks) && tasks.length > 0;
   const allDone = hasTasks && tasks.every(t => t.status === 'completed' || t.status === 'waived');
@@ -13413,7 +13415,8 @@ function renderOnboardingTasks(tasks) {
   const taxResTask = tasks.find(t => t.key === 'tax_residency');
   const taxResDone = taxResTask && ['completed','waived'].includes(taxResTask.status);
   // Tax form/doc tasks only show after tax residency is completed
-  const taxGatedKeys = ['w9', 'tax_doc_w8ben', 'tax_doc_w8bene', 'tax_doc_8233', 'tax_doc_passport', 'tax_doc_visa', 'tax_doc_i94', 'tax_doc_work_auth', 'tax_doc_w7_itin', 'tax_doc_8833', 'tax_doc_corp_cert', 'tax_doc_sign_auth', 'tax_doc_treaty_docs', 'tax_doc_treaty_stmt'];
+  const taxDocKeys = ['tax_doc_w8ben', 'tax_doc_w8bene', 'tax_doc_8233', 'tax_doc_passport', 'tax_doc_visa', 'tax_doc_i94', 'tax_doc_work_auth', 'tax_doc_w7_itin', 'tax_doc_8833', 'tax_doc_corp_cert', 'tax_doc_sign_auth', 'tax_doc_treaty_docs', 'tax_doc_treaty_stmt'];
+  const taxGatedKeys = ['w9', ...taxDocKeys];
 
   document.getElementById('onboardingTaskList').innerHTML = tasks.filter((t, idx) => {
     // Always show pre-interview steps
@@ -13422,6 +13425,11 @@ function renderOnboardingTasks(tasks) {
     if (!interviewDone) return false;
     // Tax form/doc tasks: hide until tax residency questionnaire is done
     if (taxGatedKeys.includes(t.key) && !taxResDone) return false;
+    // Once tax residency is done, show only the relevant tax form
+    if (taxResDone && recommendedForm) {
+      if (t.key === 'w9' && recommendedForm !== 'W-9') return false;
+      if (taxDocKeys.includes(t.key) && recommendedForm === 'W-9') return false;
+    }
     // If assigned_tasks is set, only show tasks in that list
     if (assignedTasks.length) return assignedTasks.includes(t.key);
     return true;
@@ -13632,8 +13640,8 @@ function selectEntityType(type) {
 }
 
 // Onboarding tasks auto-assigned per employment type
-const W2_TASKS = ['contract', 'background_check', 'work_permit', 'persona_verify', 'i9', 'ead_upload', 'gusto'];
-const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'background_check', 'work_permit', 'persona_verify'];
+const W2_TASKS = ['contract', 'i9', 'ead_upload', 'work_permit', 'background_check', 'persona_verify', 'gusto'];
+const C1099_TASKS = ['contract', 'tax_residency', 'w9', 'work_permit', 'background_check', 'persona_verify'];
 
 
 // ─── Tax Wizard (standalone modal, opens from onboarding task list) ───
