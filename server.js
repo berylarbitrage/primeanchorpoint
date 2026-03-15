@@ -11653,8 +11653,11 @@ app.post('/api/docuseal/webhook', express.json(), async (req, res) => {
             .run(partnerSigned, companySigned, wid);
           // If company just signed (First Party), notify worker to sign
           const submitterRole = data.role || data.metadata?.role || '';
-          const isCompanySigner = submitterRole === 'First Party' || (companySigned && !partnerSigned);
-          if (isCompanySigner) {
+          const isCompanySigner = submitterRole === 'First Party' || (!submitterRole && companySigned && !partnerSigned);
+          // Check if we already sent company-signed notification (avoid duplicate emails)
+          const currentOnb = db.prepare("SELECT ds_status FROM worker_onboarding WHERE worker_account_id=? AND task_key='contract'").get(wid);
+          const alreadyNotified = currentOnb && (currentOnb.ds_status === 'company_signed' || currentOnb.ds_status === 'completed');
+          if (isCompanySigner && !alreadyNotified) {
             // Update contract version status
             db.prepare("UPDATE worker_contract_versions SET ds_status='company_signed', ds_company_signed_at=? WHERE worker_account_id=? AND ds_envelope_id=?")
               .run(companySigned, wid, submissionId);
