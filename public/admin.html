@@ -2963,15 +2963,15 @@ tr:hover td{background:var(--sky-light)}
       </div>
       <div id="trIndUsFields" style="display:none">
         <div class="field" style="margin-bottom:.5rem">
-          <label style="font-size:.78rem;font-weight:600">Legal Name</label>
+          <label style="font-size:.78rem;font-weight:600">Legal Name <span style="color:#dc2626">*</span></label>
           <input id="trIndLegalName" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem">
         </div>
         <div class="field" style="margin-bottom:.5rem">
-          <label style="font-size:.78rem;font-weight:600">SSN / ITIN</label>
+          <label style="font-size:.78rem;font-weight:600">SSN / ITIN <span style="color:#dc2626">*</span></label>
           <input id="trIndSsn" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem" placeholder="XXX-XX-XXXX">
         </div>
         <div class="field" style="margin-bottom:.5rem">
-          <label style="font-size:.78rem;font-weight:600">U.S. Address</label>
+          <label style="font-size:.78rem;font-weight:600">U.S. Address <span style="color:#dc2626">*</span></label>
           <input id="trIndAddrStreet" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Street Address" oninput="document.getElementById('trIndAddrStatus').textContent=''">
           <input id="trIndAddrSuite" style="width:100%;padding:.4rem .6rem;border:1px solid var(--gray-200);border-radius:6px;font-size:.85rem;margin-bottom:.4rem" placeholder="Suite / Apt # (optional)" oninput="document.getElementById('trIndAddrStatus').textContent=''">
           <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:.4rem;margin-bottom:.4rem">
@@ -15206,6 +15206,19 @@ async function saveTaxResidency() {
   if (!_onboardingWorkerId) return;
   const hasType = document.getElementById('trTypeInd').checked || document.getElementById('trTypeEnt').checked;
   if (!hasType) return showToast('❌ 请选择申请主体类型（个人或实体）', 'error');
+
+  // Validate required fields for individual US person path
+  if (document.getElementById('trTypeInd').checked) {
+    const indStatus = document.querySelector('input[name="trIndStatus"]:checked');
+    if (indStatus && (indStatus.value === 'citizen' || indStatus.value === 'green_card')) {
+      if (!document.getElementById('trIndLegalName').value.trim()) return showToast('❌ 请填写 Legal Name', 'error');
+      if (!document.getElementById('trIndSsn').value.trim()) return showToast('❌ 请填写 SSN / ITIN', 'error');
+      if (!document.getElementById('trIndAddrStreet').value.trim()) return showToast('❌ 请填写 Street Address', 'error');
+      if (!document.getElementById('trIndAddrCity').value.trim()) return showToast('❌ 请填写 City', 'error');
+      if (!document.getElementById('trIndAddrState').value.trim()) return showToast('❌ 请填写 State', 'error');
+      if (!document.getElementById('trIndAddrZip').value.trim()) return showToast('❌ 请填写 ZIP Code', 'error');
+    }
+  }
 
   const trData = trWizardCollectData();
   const trResult = await api(`/admin/worker-accounts/${_onboardingWorkerId}/tax-residency`, {
