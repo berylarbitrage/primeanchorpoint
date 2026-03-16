@@ -8279,6 +8279,76 @@ app.post('/api/admin/contractor-invoices/send-docuseal', requireAdmin, requireRo
   }
 });
 
+// Admin: preview the contractor invoice with pre-filled data (HTML rendering)
+app.get('/api/admin/contractor-invoices/preview-filled', requireAdmin, requireRole('admin', 'staff'), (req, res) => {
+  const { contractor_name, invoice_date, service_description, period_start, period_end } = req.query;
+  const invDate = invoice_date || new Date().toISOString().slice(0, 10);
+  const invDateObj = new Date(invDate + 'T12:00:00');
+  const periodEnd = period_end || invDate;
+  const periodStart = period_start || new Date(invDateObj.getTime() - 6 * 86400000).toISOString().slice(0, 10);
+  const dueDate = new Date(invDateObj.getTime() + 30 * 86400000).toISOString().slice(0, 10);
+  const billToCompany = process.env.COMPANY_LEGAL_NAME || process.env.COMPANY_SIGNER_NAME || 'Prime Anchorpoint LLC';
+  const contractorName = contractor_name || '(承包商姓名)';
+  const serviceDesc = service_description || '(服务内容)';
+
+  const fieldStyle = 'border:1px solid #ddd;border-radius:2px;padding:1px 4px;background:#f5f5f5;display:inline-block;min-width:120px;font-size:8pt;color:#333';
+  const amberFieldStyle = 'border:2px solid #f59e0b;border-radius:2px;padding:1px 4px;background:#fffbeb;display:inline-block;min-width:120px;font-size:8pt;color:#666';
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Invoice Preview</title><style>@page{size:letter;margin:0.5in}body{background:#fff;padding:0;margin:0}</style></head><body>
+<div style="font-family:Arial,Helvetica,sans-serif;font-size:8pt;max-width:680px;margin:0 auto;padding:10px 16px;color:#111;line-height:1.35">
+<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:6px;margin-bottom:8px">
+  <div style="font-size:14pt;font-weight:900;letter-spacing:2px">INVOICE</div>
+  <div style="font-size:7.5pt;color:#555">1099 Contractor Invoice / 承包商发票</div>
+  <div style="font-size:6.5pt;color:#f59e0b;margin-top:2px">Amber fields = contractor fills / 橙色栏位 = 承包商填写 &nbsp;|&nbsp; Grey fields = pre-filled / 灰色 = 系统自动带出</div>
+</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
+  <tr>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Invoice #</b><br><span style="${fieldStyle}">(自动生成)</span></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%"><b>Date 日期</b><br><span style="${fieldStyle}">${invDate}</span></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%;background:#fffbeb"><b>Period From 起始 *</b><br><span style="${amberFieldStyle}">${periodStart}</span></td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:25%;background:#fffbeb"><b>Period To 截止 *</b><br><span style="${amberFieldStyle}">${periodEnd}</span></td>
+  </tr>
+</table>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin-bottom:6px">
+  <tr>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%">
+      <b>FROM — Contractor 承包商</b> <span style="font-size:6.5pt;color:#999">(pre-filled)</span><br>
+      Name 姓名: <span style="${fieldStyle};width:100%;box-sizing:border-box">${contractorName}</span>
+    </td>
+    <td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:50%">
+      <b>BILL TO — Company 公司</b><br>
+      <div style="font-weight:600">${billToCompany}</div>
+    </td>
+  </tr>
+</table>
+<div style="font-weight:700;margin:4px 0 2px">SERVICE DESCRIPTION 服务内容 <span style="font-weight:400;color:#999;font-size:7pt">(Pre-filled by company 系统自动带出，不可修改)</span></div>
+<div style="${fieldStyle};width:100%;box-sizing:border-box;min-height:36px;padding:3px 4px;white-space:pre-wrap">${serviceDesc}</div>
+<div style="font-weight:700;margin:4px 0 2px">Additional Notes 补充说明 <span style="font-weight:400;color:#999;font-size:7pt">(optional 选填)</span></div>
+<div style="${amberFieldStyle};width:100%;box-sizing:border-box;min-height:24px;color:#aaa">(承包商填写)</div>
+<table style="width:100%;border-collapse:collapse;font-size:8pt;margin:6px 0">
+  <tr><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;width:65%"><b>Compensation Method 补偿方式</b></td><td style="padding:3px 5px;border:1px solid #ccc;vertical-align:top;text-align:right"><span style="${fieldStyle}">Contractor-proposed flat project fee 承包商报价固定项目费用</span></td></tr>
+  <tr style="background:#fffbeb"><td style="padding:3px 5px;border:1px solid #ccc;background:#fffbeb;width:65%"><b>Quoted Amount 报价金额</b></td><td style="padding:3px 5px;border:1px solid #ccc;background:#fffbeb;text-align:right">$ <span style="${amberFieldStyle};color:#aaa">(承包商填写)</span></td></tr>
+  <tr style="background:#fffbeb"><td style="padding:3px 5px;border:1px solid #ccc;background:#fffbeb;">Reimbursable Expenses 可报销费用</td><td style="padding:3px 5px;border:1px solid #ccc;background:#fffbeb;text-align:right">$ <span style="${amberFieldStyle};color:#aaa">(可选)</span></td></tr>
+  <tr style="background:#f0f0f0;font-weight:700"><td style="padding:4px 5px;border:1px solid #999">TOTAL DUE 应付总额</td><td style="padding:4px 5px;border:1px solid #999;text-align:right;font-size:10pt">$ <span style="${amberFieldStyle};color:#aaa;font-weight:700;font-size:10pt">(承包商填写)</span></td></tr>
+</table>
+<div style="font-weight:700;margin:4px 0 2px">PAYMENT TERMS 付款条件 <span style="font-weight:400;color:#999;font-size:7pt">(pre-filled)</span></div>
+<span style="${fieldStyle}">Net 30</span>
+<span style="font-size:7pt;color:#999;margin-left:6px">Due Date 到期日: </span><span style="${fieldStyle}">${dueDate}</span>
+<div style="background:#fffbeb;border:2px solid #f59e0b;padding:6px;font-size:8pt;margin-top:6px;border-radius:4px">
+  <b>CONTRACTOR CERTIFICATION 承包商声明</b>
+  <div style="font-size:7.5pt;margin:3px 0">I certify the above services were performed and amounts are correct. Contractor retains the right to determine the manner and means of performing services.<br>本人确认服务已完成、金额准确。承包商保留自行决定服务执行方式与方法的权利。</div>
+  <table style="width:100%;margin-top:4px"><tr>
+    <td style="width:65%;padding-right:8px;vertical-align:top"><div style="font-size:7pt;font-weight:700">Contractor Signature 承包商签名 *:</div><div style="width:100%;height:44px;border:2px solid #f59e0b;border-radius:2px;background:#fff;display:flex;align-items:center;justify-content:center;color:#aaa;font-size:7pt">(承包商签名)</div></td>
+    <td style="width:35%;vertical-align:top"><div style="font-size:7pt;font-weight:700">Date 日期:</div><div style="height:22px;border:1px solid #999;border-radius:2px;background:#fff"></div></td>
+  </tr></table>
+</div>
+<div style="text-align:center;font-size:6.5pt;color:#aaa;margin-top:4px">Independent contractor arrangement — contractor responsible for all applicable taxes.<br>IL FWPA: 合同未注明付款日→完工后30天内付款 / Payment due within 30 days of completion if contract is silent.<br><span style="color:#f59e0b">■</span> = Contractor fills 承包商填写 &nbsp; <span style="color:#ddd;background:#888">■</span> = Pre-filled by system 系统自动带出</div>
+</div></body></html>`;
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
+
 // Admin: preview the contractor invoice DocuSeal template (proxied PDF)
 app.get('/api/admin/contractor-invoices/preview-template', requireAdmin, requireRole('admin', 'staff'), async (req, res) => {
   if (!dsealEnabled()) return res.status(503).json({ error: 'DocuSeal 未配置' });

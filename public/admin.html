@@ -2866,6 +2866,7 @@ tr:hover td{background:var(--sky-light)}
     <b>流程：</b>Admin填写服务周期、日期与服务内容后点击「发送」，承包商收到邮件+短信通知 → 填写金额 → 签字确认 → 提交回来待审核。
   </div>
   <div id="invPreviewSection" style="display:none;margin:.5rem 0">
+    <div id="invPreviewInfoBox" style="display:none;margin-bottom:.5rem;padding:.5rem .75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.82rem;color:#1e40af;line-height:1.7"></div>
     <div style="font-weight:700;font-size:.85rem;margin-bottom:.3rem">發票模板预览：</div>
     <iframe id="invPreviewFrame" src="" style="width:100%;height:500px;border:1px solid var(--gray-200);border-radius:6px"></iframe>
   </div>
@@ -18220,34 +18221,33 @@ function previewInvoiceTemplate() {
   const section = document.getElementById('invPreviewSection');
   const frame = document.getElementById('invPreviewFrame');
   const btn = document.getElementById('invPreviewBtn');
+  const infoBox = document.getElementById('invPreviewInfoBox');
   const lang = document.getElementById('invSendLang').value;
   if (section.style.display === 'none') {
-    // Build form data summary for preview
+    const contractorName = _invSendWorkerName || '';
+    const invoiceDate = document.getElementById('invSendDate').value || new Date().toISOString().slice(0,10);
+    const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
     const periodStart = document.getElementById('invSendPeriodStart').value;
     const periodEnd = document.getElementById('invSendPeriodEnd').value;
-    const invoiceDate = document.getElementById('invSendDate').value;
-    const serviceDesc = document.getElementById('invSendServiceDesc').value.trim();
-    const workerName = _invSendWorkerName || '';
-    let summaryEl = document.getElementById('invPreviewSummary');
-    if (!summaryEl) {
-      summaryEl = document.createElement('div');
-      summaryEl.id = 'invPreviewSummary';
-      section.insertBefore(summaryEl, section.firstChild);
-    }
     const langLabels = { contractor_invoice: '中文+英文', contractor_invoice_en: 'English', contractor_invoice_es: 'EN+ES' };
-    summaryEl.style.cssText = 'margin-bottom:.5rem;padding:.5rem .75rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:.82rem;color:#1e40af';
-    summaryEl.innerHTML = `<b>将预填入的数据 (Pre-filled Data):</b><br>` +
+    const invDateObj = new Date(invoiceDate + 'T12:00:00');
+    const dueDate = new Date(invDateObj.getTime() + 30 * 86400000).toISOString().slice(0, 10);
+    // Show pre-filled data info box
+    infoBox.style.display = 'block';
+    infoBox.innerHTML = `<b>将预填入的数据 (Pre-filled Data):</b><br>` +
       `<b>语言版本:</b> ${langLabels[lang] || lang}　` +
-      `<b>承包商:</b> ${workerName || '—'}　` +
+      `<b>承包商:</b> ${esc(contractorName) || '—'}　` +
       `<b>發票日期:</b> ${invoiceDate || '—'}　` +
       `<b>服务周期:</b> ${periodStart || '—'} ~ ${periodEnd || '—'}<br>` +
-      `<b>服务内容:</b> ${serviceDesc || '—'}<br>` +
-      `<span style="color:#92400e;font-size:.78rem">※ 以下PDF为空白模板预览；发送后承包商收到的版本将自动带入上述数据。</span>`;
-    frame.src = '/api/admin/contractor-invoices/preview-template?lang=' + encodeURIComponent(lang);
+      `<b>服务内容:</b> ${esc(serviceDesc) || '—'}<br>` +
+      `<span style="font-size:.77rem;color:#6b7280">※ 以下PDF为预览；发送后承包商收到的版本将自动带入上述数据。</span>`;
+    const params = new URLSearchParams({ contractor_name: contractorName, invoice_date: invoiceDate, service_description: serviceDesc, period_start: periodStart, period_end: periodEnd });
+    frame.src = '/api/admin/contractor-invoices/preview-filled?' + params.toString();
     section.style.display = 'block';
     btn.textContent = '✖ 关闭预览';
   } else {
     section.style.display = 'none';
+    infoBox.style.display = 'none';
     frame.src = '';
     btn.textContent = '🔍 预览模板';
   }
